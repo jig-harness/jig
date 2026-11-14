@@ -394,6 +394,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.235.1] - 2026-11-14
+
+### Fixed
+
+- Headless dispatch stages now run under a supervisor that stops the stage
+  when its launch wrapper dies. Durable supervisor and child identities keep
+  the account slot occupied while work survives, while a launch handoff is
+  unresolved, or while cleanup cannot be confirmed. Interrupted drives keep
+  their slots because their detached passes need a separate cleanup witness.
+  The dispatch database upgrades automatically; older plugin copies refuse
+  the upgraded database because they cannot account for these identities. Windows retains its
+  existing limits for observing cooperative process trees.
+
 ## [0.235.0] - 2026-11-14
 
 ### Added
@@ -8176,7 +8189,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.1...HEAD
+[0.235.1]: https://github.com/jig-harness/jig/compare/v0.235.0...v0.235.1
 [0.235.0]: https://github.com/jig-harness/jig/compare/v0.234.2...v0.235.0
 [0.234.2]: https://github.com/jig-harness/jig/compare/v0.234.1...v0.234.2
 [0.234.1]: https://github.com/jig-harness/jig/compare/v0.234.0...v0.234.1
