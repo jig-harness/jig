@@ -247,9 +247,7 @@ describe("the card with gutter", () => {
         await page.mouse.click(1, 1);
         await page.mouse.move(title.x + 4, title.y + title.height / 2);
         await page.mouse.down();
-        await page.evaluate(() => {
-          const node = document.querySelector(".itemTitle");
-          if (node === null) throw new Error("the title is shown");
+        await card.locator(".itemTitle").evaluate((node) => {
           window.getSelection()?.selectAllChildren(node);
         });
         await page.mouse.up();
