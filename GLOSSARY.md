@@ -9,6 +9,10 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+- **Preflight** — a small check that runs before a stage starts, to prove a
+  condition the stage needs. For example, the dispatcher checks whether an
+  account can reach a tracker before launching work that must use it.
+
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.
@@ -569,6 +573,24 @@ make, use the entry's term instead.
 
 ## Process
 
+- **Topic coordination** — the stage before pickup where a person brings
+  several linked ideas without a single work item, and `/jig:orchestrate`
+  turns them into recorded decisions, a reviewed plan and started issues.
+  Its coordinating session stays with the person and delegates investigation,
+  plan maintenance and filing. It does no implementation. Unlike an
+  *operator*, it shapes work before the line; unlike a *steward*, it does
+  not inspect the dispatcher's stopped work or propose recoveries.
+- **Track** — one related strand of a loosely bounded topic, investigated
+  separately during *topic coordination* before the person decides how the
+  strands fit together.
+- **Survey** — a read-only investigation of one *track* in a fresh session,
+  with a bounded return, opened-file evidence, existing positions quoted,
+  evidence against the idea and uncertainty made explicit.
+- **Plan keeper** — the separate session maintaining the reviewed plan
+  during *topic coordination*. It receives answers, issue numbers and
+  demotions from the coordinating session, keeping plan-tool mechanics out
+  of the person's discussion.
+
 - **Cause fingerprint** — a stable identity for one cause of a scheduled
   failure, built from the check or prerequisite, its scope and a normalized
   failure signature. It excludes changing details such as run IDs and times,
@@ -938,6 +960,18 @@ make, use the entry's term instead.
   worktree sees them, so nothing another worktree, or a person not working
   in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+  Throwaway working files go under `.context/scratch/`, and a working
+  directory that nothing needs once the work is finished carries a
+  `CACHEDIR.TAG` file; `jig gc` keeps anything else under `.context/` until
+  it is preserved, except a drive's handoff file (`pr-drive-<PR>.md`), which
+  it sets aside whole without archiving, so keep nothing there you need.
+- **Cache directory tag** — a file named `CACHEDIR.TAG`, starting with a
+  fixed signature line, that a tool leaves in a directory it can rebuild or
+  no longer needs, so backup tools and collectors can tell that directory
+  from content that may be the only copy of something. Jig's scripts tag
+  their working directories under `.context/` this way, and `jig gc` sets a
+  tagged directory aside where any other ignored content keeps a worktree
+  ([the collector's rule](plugin/gc/README.md#ignored-content)).
 - **Collection kind** — one class of resource a machine's garbage collector
   knows how to judge and remove (worktrees, scratch directories, container
   volumes, merged branches, tool state, registered processes), shipped with
@@ -2010,6 +2044,10 @@ make, use the entry's term instead.
 - **Maskable icon** — an app icon drawn to fill a full square, with its mark
   kept near the middle, so a launcher that crops icons to its own shape (a
   circle, a rounded square) does not cut the mark off.
+- **Forced colours** — an operating system's high-contrast mode, in which
+  the browser replaces a page's colours with a few system colours the
+  person chose. A page that tells things apart only by colour loses the
+  difference there, so it keeps shapes and borders that still show.
 - **Service worker** — a script a browser starts on demand, apart from the
   page itself, to handle events such as requests when the network is gone;
   the browser stops it whenever it has nothing to handle. The
@@ -2152,7 +2190,7 @@ make, use the entry's term instead.
   list), adds the call to the *cost ledger* and fails as one of the
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
-  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
+  ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
   tracker adapters' transports keep the budget and the deadline; the rest
   is planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
@@ -2310,7 +2348,10 @@ make, use the entry's term instead.
   launch of this host or a claim marker took it, or always under
   `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it.
+  a claimed item, so a person settles it. An item whose pickup already
+  opened its pull request is finished work, not a stall: when an open pull
+  request from the branch of the dispatcher's launch of it links it, the
+  dispatcher moves it to its `pr_open` state.
 - **Double claim** — an item more than one running session works on at
   once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts
@@ -2382,6 +2423,14 @@ make, use the entry's term instead.
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
   [design/control-plane.md](design/control-plane.md).
+- **Notification channel** — one way the *dispatcher*'s notices reach a
+  person: a workspace card in Orca, a team's chat. The tick sends each
+  notice through every channel a machine enables and keeps a record per
+  channel of what was delivered ([design/chat.md](design/chat.md)).
+- **Chat bridge** — the one process that turns a person's click or command
+  in a team's chat into one `jig send` request. It runs inside the *hub* or
+  on a host that is not enrolled, connects out to the chat tool and listens
+  on no socket ([design/chat.md](design/chat.md)).
 - **Device grant** — how a host enrolls in a *hub*: the host prints a short
   code, a person who administers the hub approves it, and the host receives a
   credential of its own, bound to the repositories and queues that person

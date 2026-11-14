@@ -95,6 +95,8 @@ export interface ClaimedItem {
   /** Its link as the tracker listing gave it; absent where a reader gives none. */
   url?: string | null;
   state: string;
+  /** The tracker's own issue type where the read took it, which selects the workflow whose `pr_open` the item moves to. */
+  nativeType?: string | null;
   /** Read for a served person rather than `dispatch.identity`: a person starts their own work too, so only this machine's pickup record makes the claim dispatch's. */
   served?: true;
   /** When the tracker last saw the item change; absent where the read has none. */
@@ -138,7 +140,8 @@ export type PickupClass =
   | "pickup-refused"
   | "claimed-idle"
   | "claimed"
-  | "claimed-by-person";
+  | "claimed-by-person"
+  | "claimed-pr-open";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -414,6 +417,31 @@ export interface ReleaseOutcome {
   detail: string;
 }
 
+/**
+ * A stalled pickup's item the tick moves to its `pr_open` state: an open
+ * pull request from the branch of this host's launch of it links it
+ * (`stalled-pr.ts`). The plan names the move; `--apply` on the host that
+ * owns the repository makes it and says what it did.
+ */
+export interface PrOpenMove {
+  /** The item's key. */
+  target: string;
+  /** The open pull request that links it. */
+  pr: number;
+  url: string;
+  /** Its head branch: the branch the launch's workspace has checked out. */
+  branch: string;
+  /** The launch record whose workspace names the branch. */
+  record: string;
+  /** The tracker's state the item was read in, which the fresh read must find again. */
+  from: string;
+  /** The tracker's name for `pr_open`. */
+  to: string;
+  /** What `--apply` did: `moved` (the item moved, and its comment's fate is in `detail`), `waits` (the fresh read changed, or the tick ran out of time), `refused` (the tracker did not move it); absent in a plan nothing applied. */
+  outcome?: "moved" | "waits" | "refused";
+  detail?: string;
+}
+
 /** A checkout the runtime does not list that holds a launch's branch and is in use: where it is, the branch, and what keeps it busy. */
 export interface BusyHolder {
   path: string;
@@ -603,6 +631,16 @@ export interface Defect {
   reason: string;
 }
 
+/** An account a preflight check held a repository's tracker stages back on, with the check's answer. */
+export interface PreflightHold {
+  probe: "tracker";
+  account: string;
+  /** The check's answer, verbatim. */
+  reason: string;
+  /** The stages it held back, in the order it first held each. */
+  stages: Stage[];
+}
+
 export interface RepoReport {
   steward?: { status: string; hash?: string; records?: number };
   path: string;
@@ -627,6 +665,8 @@ export interface RepoReport {
   inScope?: number[];
   /** What `--apply` launched, retried or held back; empty without it. */
   launches: LaunchOutcome[];
+  /** The accounts a preflight check held this repository's tracker stages back on this tick (`preflight.ts`); absent when it held none. */
+  preflight?: PreflightHold[];
   /** What `--apply` notified, where the machine file enables `notify`; empty otherwise. */
   notifications: NotifyOutcome[];
   /** What `--apply` did with the repository's notices workspace, where the machine file enables `notify` and one is open. */
@@ -635,6 +675,8 @@ export interface RepoReport {
   steers?: SteerOutcome[];
   /** What `--apply` did with the stale follow-up claims it released, where the machine file enables `followup`; absent when there were none. */
   releases?: ReleaseOutcome[];
+  /** The stalled pickups' items moved, or to be moved, to `pr_open` (`stalled-pr.ts`); absent when there were none. */
+  prOpenMoves?: PrOpenMove[];
   /** The dispatch labels' part, where the repository turns them on. */
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */

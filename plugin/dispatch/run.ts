@@ -38,6 +38,14 @@
  * `null` (`lib/quota-probe.ts`); the tick runs it in the session's
  * account's environment.
  *
+ *   bun … run.ts tracker <slug> <deadline-ms>
+ *
+ * prints, as JSON, whether the repository's tracker answers in this
+ * process's environment and working directory, opened from the
+ * configuration on its input (`lib/tracker-probe.ts`); the tick runs it in
+ * an account's environment and the repository's checkout before a stage
+ * that touches the tracker (`lib/preflight.ts`).
+ *
  * A follow-up's record starts a headless pass instead: its vendor's
  * non-interactive command (`claude -p`, `codex exec`) on the repository's
  * follow-up command and the pull request (`lib/session.ts`), bound to its
@@ -46,8 +54,8 @@
  * a drive's pass, and a Codex pass the bypass only when the record says the
  * tick admitted it on a host that opted in; the wrapper adds no permission
  * of its own. The wrapper stops the pass at the deadline the record names,
- * passes its output through, and keeps its last `Question:` line, nothing
- * else of it, on the exit of a pass that ended without recording `done`:
+ * passes its output through and keeps a bounded diagnostic tail. Its last
+ * `Question:` line is also kept unless the pass recorded `done`:
  * that is where a pass that needs a person states its question.
  *
  * A pickup's record starts a headless pass the same way, on
@@ -89,6 +97,7 @@ import { resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
 import { QuestionTail } from "./lib/question-tail.ts";
+import { passOutput } from "./lib/pass-output.ts";
 import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
 import { captureIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
@@ -189,6 +198,8 @@ interface Ran {
   output?: string;
   /** The end of the stage's error output, where the wrapper kept it. */
   errors?: string;
+  /** Per-stream reconstruction for startup notices whose chunks interleave. */
+  startupOutput?: string;
   code: number | null;
   signal: string | null;
   /** The stage's last `Question:` line, where the wrapper kept it. */
@@ -276,6 +287,7 @@ function runStage(
 ): Promise<Ran> {
   return new Promise((settle) => {
     const started = Date.now();
+    let output = "";
     let stdout = "";
     let stderr = "";
     const stdoutDecoder = new StringDecoder("utf8");
@@ -318,7 +330,9 @@ function runStage(
     const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
     let drained = !options.keepOutput;
     child.stdout?.on("data", (chunk: Buffer) => {
-      stdout = (stdout + stdoutDecoder.write(chunk)).slice(-8192);
+      const decoded = stdoutDecoder.write(chunk);
+      stdout = (stdout + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       if (!process.stdout.write(chunk)) {
         child.stdout?.pause();
         process.stdout.once("drain", () => child.stdout?.resume());
@@ -326,19 +340,25 @@ function runStage(
       tail.write(chunk);
     });
     child.stdout?.on("end", () => {
-      stdout = (stdout + stdoutDecoder.end()).slice(-8192);
+      const decoded = stdoutDecoder.end();
+      stdout = (stdout + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       drained = true;
     });
     let stderrDrained = child.stderr === null;
     child.stderr?.on("data", (chunk: Buffer) => {
-      stderr = (stderr + stderrDecoder.write(chunk)).slice(-8192);
+      const decoded = stderrDecoder.write(chunk);
+      stderr = (stderr + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       if (!process.stderr.write(chunk)) {
         child.stderr?.pause();
         process.stderr.once("drain", () => child.stderr?.resume());
       }
     });
     child.stderr?.on("end", () => {
-      stderr = (stderr + stderrDecoder.end()).slice(-8192);
+      const decoded = stderrDecoder.end();
+      stderr = (stderr + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       stderrDrained = true;
     });
     const forward = (name: NodeJS.Signals) => signalTree(name);
@@ -364,7 +384,8 @@ function runStage(
         signal,
         started,
         exited,
-        output: `${stdout}\n${stderr}`,
+        output,
+        startupOutput: `${stdout}\n${stderr}`,
         ...(child.stderr === null ? {} : { errors: stderr }),
         ...(!treeEnded ? { unconfirmed: true as const } : {}),
         ...(options.keepOutput && tail.question !== ""
@@ -474,7 +495,11 @@ function ownPass(record: LaunchRecord): boolean {
 /** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; a drive with the end of its error output kept; anything else as it is. */
 function runOptions(record: LaunchRecord): RunOptions {
   if (!ownPass(record))
-    return { keepOutput: false, keepErrors: isDrive(record), deadlineSec: 0 };
+    return {
+      keepOutput: isDrive(record),
+      keepErrors: isDrive(record),
+      deadlineSec: 0,
+    };
   const deadline = record.passTimeoutSec;
   return {
     keepOutput: true,
@@ -482,14 +507,12 @@ function runOptions(record: LaunchRecord): RunOptions {
   };
 }
 
-/** The end of a follow-up's or a pickup's pass output, kept on its exit when it ended without recording done. */
+/** Keep bounded diagnostic output independently of whether a pass asked a question. */
 function saidOf(
   record: LaunchRecord,
   ran: Ran,
 ): { said?: string; context?: string } {
-  const said = ran.said?.trim() ?? "";
-  if (said === "" || readResult(record.id) === "done") return {};
-  return { said, context: (ran.output ?? "").slice(-8000) };
+  return passOutput(ran, readResult(record.id), record.token);
 }
 
 /**
@@ -603,7 +626,7 @@ function startupOf(record: LaunchRecord, ran: Ran) {
     record,
     ran.code,
     ran.started,
-    ran.output ?? "",
+    ran.startupOutput ?? ran.output ?? "",
     ran.exited,
   );
 }
@@ -725,6 +748,37 @@ async function closeTabIfDone(
   }
 }
 
+/** `run.ts tracker <slug> <deadline-ms>`: the tracker preflight's answer, the configuration read from the input. */
+async function trackerMain(slug: string, deadline: string): Promise<number> {
+  const deadlineMs = Number(deadline);
+  if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) {
+    console.error(
+      `jig dispatch run: ${deadline} is not a deadline in milliseconds`,
+    );
+    return 2;
+  }
+  // Loaded only here: the wrapper itself never opens a tracker.
+  const { answerText, reachTracker } = await import("./lib/tracker-probe.ts");
+  let values: unknown;
+  try {
+    values = JSON.parse(await Bun.stdin.text());
+  } catch (error) {
+    // The tick's own handing over failed: that says nothing of the account's credential.
+    console.log(
+      JSON.stringify({
+        ok: false,
+        kind: "config",
+        reason: `the configuration on the input did not read: ${answerText(error)}`,
+      }),
+    );
+    return 0;
+  }
+  console.log(
+    JSON.stringify(await reachTracker(values, slug, process.cwd(), deadlineMs)),
+  );
+  return 0;
+}
+
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
   if (argv[0] === "identity" && argv.length === 2) {
@@ -742,9 +796,11 @@ export async function runMain(argv: string[]): Promise<number> {
     );
     return 0;
   }
+  if (argv[0] === "tracker" && argv.length === 3)
+    return trackerMain(argv[1] as string, argv[2] as string);
   if (argv.length !== 2) {
     console.error(
-      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since>",
+      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
     );
     return 2;
   }

@@ -14,6 +14,7 @@
 
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
+import type { TrackerBlockedFields } from "./blocked-port.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
 
 /**
@@ -224,13 +225,7 @@ export interface Issue extends FacetValues {
   project: string | null;
 }
 
-/** Why and since when an item is blocked, as the blocked fields carry it. */
-export interface BlockedFields {
-  /** One line: the park class and its reason. */
-  reason: string;
-  /** ISO 8601, UTC. */
-  since: string;
-}
+export type { BlockedFields } from "./blocked-port.ts";
 
 export interface IssueComment {
   body: string;
@@ -676,9 +671,10 @@ export interface TrackerLabel {
 /**
  * One tracker as the skills use it. "This team" below is where the
  * configured issues live: a Linear team, or one GitHub repository. Its
- * attachment operations are in `attachment.ts`.
+ * attachment operations are in `attachment.ts`, its blocked fields' in
+ * `blocked-port.ts`.
  */
-export interface Tracker extends TrackerAttachments {
+export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
   /**
@@ -733,17 +729,6 @@ export interface Tracker extends TrackerAttachments {
    * `signal` ends the request in flight and starts no further one.
    */
   postComment(issue: string, body: string, signal?: AbortSignal): Promise<void>;
-  /**
-   * Write the fields a repository names for a blocked item
-   * (`issue_tracker.jira.blocked_fields`), or clear them with `null`.
-   * Absent on an adapter with no such fields; `false` when the repository
-   * names none, so nothing was written.
-   */
-  writeBlockedFields?(
-    key: string,
-    value: BlockedFields | null,
-    signal?: AbortSignal,
-  ): Promise<boolean>;
 
   // ── Fleet metrics ──
   // A read by the epic label (`issue_tracker.labels.epic`) also takes the
@@ -848,6 +833,12 @@ export interface Tracker extends TrackerAttachments {
    * assignee) to the issue, from the tracker's history. Throws with the
    * reason when the history cannot be read in full or holds no such
    * assignment, so an unknown assigner is never read as a trusted one.
+   * An adapter that can tell the history's definite answer that no user
+   * made the assignment (it holds no assignment of `assignee`, or one made
+   * by an integration or an automation) throws `AssignerUnknown` for it,
+   * which a caller may keep until the issue changes; any other throw is a
+   * read to try again. Linear classifies this way; the GitHub and Jira
+   * adapters throw their API errors for it.
    */
   assignedBy(key: string, assignee?: string): Promise<Assigner>;
   /**

@@ -13,6 +13,7 @@ import type {
   QueueRelation,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -63,6 +64,8 @@ import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 interface Metadata {
   updatedAt: string;
   by: Assigner | null;
+  /** Why no user made the assignment, as the history read in full answered: kept like the rest until the item changes. */
+  noAssigner?: string;
   relations: IssueRelation[];
   children: PoolIssue[];
   description: string | null;
@@ -108,6 +111,21 @@ const itemOf = (i: PoolIssue) => ({
   url: i.url,
 });
 
+/** Who made the assignment, or the history's definite answer that no user did; a failed read throws. */
+async function assigner(
+  tracker: Tracker,
+  issue: PoolIssue,
+  identity: string,
+): Promise<Pick<Metadata, "by" | "noAssigner">> {
+  if (issue.assignee === null) return { by: null };
+  try {
+    return { by: await tracker.assignedBy(issue.identifier, identity) };
+  } catch (error) {
+    if (!(error instanceof AssignerUnknown)) throw error;
+    return { by: null, noAssigner: failureText(error) };
+  }
+}
+
 /** Cache entries without a timestamp are never reused. */
 async function metadata(
   tracker: Tracker,
@@ -125,16 +143,16 @@ async function metadata(
           ...kept,
           relations: carried.map(({ type, issue: i }) => ({ type, issue: i })),
         };
-  const by =
-    issue.assignee === null
-      ? null
-      : await tracker.assignedBy(issue.identifier, identity);
+  const assigned = await assigner(tracker, issue, identity);
+  // An item no user assigned is not placed, so its relations are not read.
   const relations =
     carried === null
-      ? await tracker.listRelations(issue.identifier)
+      ? assigned.noAssigner === undefined
+        ? await tracker.listRelations(issue.identifier)
+        : []
       : carried.map(({ type, issue: i }) => ({ type, issue: i }));
   const children =
-    issue.isEpic && issue.hasOpenChildren
+    assigned.noAssigner === undefined && issue.isEpic && issue.hasOpenChildren
       ? await tracker.openChildren(issue.identifier)
       : [];
   const description =
@@ -143,7 +161,7 @@ async function metadata(
       : "";
   const value = {
     updatedAt: issue.updatedAt ?? "",
-    by,
+    ...assigned,
     relations,
     children,
     description,
@@ -212,6 +230,7 @@ async function readPerson(
       title: i.title,
       url: i.url,
       state: i.state.name,
+      ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
       served: true as const,
     }));
     // Claims are monitored either way; an invalid scope only starts nothing.
@@ -603,14 +622,19 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
     await placeNode(ctx, node, found);
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    found.failed = true;
-    found.unplaced.push({
-      ...itemOf(issue),
-      record: "tracker",
-      reason: `the queue metadata could not be read: ${failureText(error)}`,
-    });
+    unreadable(issue, failureText(error), found);
   }
   return found;
+}
+
+/** An item whose queue metadata could not be read, or named no assigner: the walk's claims below it are unknown. */
+function unreadable(issue: PoolIssue, why: string, found: Found): void {
+  found.failed = true;
+  found.unplaced.push({
+    ...itemOf(issue),
+    record: "tracker",
+    reason: `the queue metadata could not be read: ${why}`,
+  });
 }
 
 /** Read what a node needs and place it: held with why, a candidate, or an epic whose children come next. */
@@ -627,6 +651,9 @@ async function placeNode(
     `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${issue.isEpic}`,
     () => metadata(tracker, issue, identity, cache, carried),
   );
+  // A kept no-assigner answer is reported as the failed read it stands for.
+  if (meta.noAssigner !== undefined)
+    return void unreadable(issue, meta.noAssigner, found);
   const initialHold = nodeHold(node, meta, identity, options);
   if (initialHold !== null) {
     // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
@@ -765,7 +792,7 @@ async function childStates(
   keys.forEach((key, i) => {
     const child = read[i];
     const info = infos[i];
-    if (child === null || child === undefined || !info) return;
+    if (!child || !info || info.noAssigner !== undefined) return;
     const blockedBy = info.relations
       .filter((r) => r.type === "blocked_by")
       .map((r) => r.issue);

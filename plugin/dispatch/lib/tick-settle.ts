@@ -33,6 +33,7 @@ import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
 import { aboutTargets } from "./line.ts";
 import { hasEnded } from "./log.ts";
+import { eraseStewardOutput } from "./steward.ts";
 import { pruneLaunches, type ReadRecord } from "./launches.ts";
 import type { readDrives } from "./sources/ledgers.ts";
 import { allRecords, type TickContext } from "./tick-context.ts";
@@ -180,6 +181,7 @@ export async function settleOutcomes(
     days ?? 30,
     context.apply?.root,
   );
+  eraseStewardOutput(context.nowMs, days ?? 30, context.apply?.root);
   return (
     unlogged.length > 0 ||
     receipt.repos.some(

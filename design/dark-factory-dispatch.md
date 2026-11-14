@@ -598,7 +598,20 @@ then finds claimed items with the same read over the in-progress state: one
 with no running session and no launch record still running for longer than
 `dispatch.stalled_after` (30 minutes by default) is reported as stalled and
 notified, never relaunched, since a relaunch would start a second
-implementer on a claimed item. One with more than one running session is
+implementer on a claimed item. A claimed item with no running session whose
+launch already opened its pull request is finished work, not a stall: when
+an open pull request whose head is the branch the runtime reports in the
+workspace of this host's launch record for the item links it as `do-item`
+links it (`Closes <KEY>` or `Refs <KEY>`), the host that owns the
+repository moves it from its in-progress state to `pr_open`, never to done,
+and comments on it from a fixed text naming the pull request; an item
+already in `pr_open` is not watched as stalled while that pull request is
+open. The open pull requests are those the tick's query of the repository
+already read, so the rule makes no forge request of its own. Where the
+repository names no `pr_open` state, or the open pull requests did not read
+this tick, nothing moves and the stall need says why, naming the pull
+request where there is one. A pull request no launch of this host opened is
+not this rule's case: the steward's `settle` record links it. One with more than one running session is
 a double claim (see Guards against a second launch). A repository with no factory identity
 configured has no pickups of its own; its other stages still run.
 
@@ -1707,9 +1720,12 @@ waits on the authenticated Windows smoke.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
 - **Write to the tracker** of its own accord. The item's own state is the
-  claim, and `do-item` sets it; the one exception is a stalled pickup's
+  claim, and `do-item` sets it; the exceptions are a stalled pickup's
   claim a person's answer chose to release, which moves the item back to
-  the state a pickup starts from. What it writes to the forge is the
+  the state a pickup starts from, and a stalled pickup's finished work:
+  the host that owns the repository moves an item to its `pr_open` state,
+  never to done, with a comment from a fixed text, when an open pull
+  request whose head is the branch of this host's launch of it links it. What it writes to the forge is the
   follow-up marker, the rearm label a person's answer chose and, where a
   repository turns dispatch labels on, the state labels.
 - **Read a state label to decide a launch.** A state label is derived from
@@ -1725,10 +1741,8 @@ waits on the authenticated Windows smoke.
   tick never infers contention from a conflict it just saw. A hold keeps
   only the dispatcher's own launches off.
 
-Item 50 narrows two of these rules, once built: the tick moves an item to
-its `pr_open` state when an open pull request on the branch of this host's
-launch names it, and relaunches a stalled pickup once in its own tree to
-push and record work that tree holds
+Item 50 narrows one more of these rules, once built: the tick relaunches a
+stalled pickup once in its own tree to push and record work that tree holds
 ([need-classes.md § What changes in the dispatcher's rules](need-classes.md#what-changes-in-the-dispatchers-rules)).
 
 ### Notifications

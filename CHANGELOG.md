@@ -394,13 +394,165 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.230.0] - 2026-11-14
+
+The turn-budget guard no longer asks Codex for a new approval with every Jig release.
+
+### Added
+
+- A one-time archive for worktrees made before marking began: right before
+  removing such a worktree, `jig gc` copies its unmarked ignored content into
+  `~/.local/state/jig/gc/archives/`, checks the copy, and names the archive
+  in the receipt. Content larger than the new machine setting
+  `gc.archive_max_bytes` (64 MiB by default, 0 to archive nothing), or a copy
+  that fails, keeps the worktree. The `receipts` kind removes archives past
+  `gc.receipts_days`.
+- **Documented: unattended Codex passes and hook trust.** The Codex notes and the host's opt-in to bypass say that a headless `codex exec` runs only approved hooks, to approve the guard once per Codex home, and that a pass command typed by hand may add `--dangerously-bypass-hook-trust` where the host vets every hook its Codex home loads. Jig's own pass commands do not add it.
+
+### Changed
+
+- Jig's procedures write the files they never need again under
+  `.context/scratch/`, and the drive's mailbox, foreground waits and intent
+  chains tag their directories, so a finished worktree holds only marked
+  working files.
+- **Codex: the turn-budget hook is registered by `jig upgrade`, not shipped by the plugin.** Codex re-reviews a plugin's hooks whenever any file of the plugin changes, and skips them until it is approved again. The Codex plugin now ships none. `jig upgrade` adds one `PreToolUse` entry to `$CODEX_HOME/hooks.json` (`~/.codex` by default) whose command never changes and runs the installed plugin copy's guard, so approving it once with `/hooks` stands across releases. After this release, approve the guard once in each Codex home; until then it does not run there. Run `jig upgrade --codex` with `CODEX_HOME` set to give another home the entry. `jig uninstall --machine --yes` removes it. Claude Code is unchanged.
+
+### Fixed
+
+- `jig gc` no longer keeps every finished worktree because of Jig's own
+  working files and a tool's cache. The `worktrees` kind sets aside ignored
+  content whose writer marked it disposable: a directory holding a
+  `CACHEDIR.TAG` (cache directory tag), `.context/scratch/`, and a drive's
+  handoff. Any
+  other ignored path still keeps the worktree, and the reason names it. The
+  receipt lists each path set aside with its rule (`details.setAside`). See
+  [the collector's rule](plugin/gc/README.md#ignored-content).
+- The steward's digest now includes each target's workspace state, bounded
+  pass output, linked open and merged pull requests and failing-check
+  history on the head and base commits. Unavailable reads remain explicit,
+  and pass output is quoted as untrusted data.
+- Dispatched passes retain output even without a question, and a steward
+  that ends without submitting leaves a cause in the outcome log.
+- The steward's durable digest keeps only a redacted, bounded summary of pass
+  output, and the output fields of a digest are erased once launch retention
+  has passed.
+
+## [0.229.1] - 2026-11-14
+
+### Fixed
+
+- A served Linear item whose assignment history names no user assignment (it holds no assignment of the person, or the assignment was made by an integration or an automation) is no longer read again on every dispatch tick. The answer is kept with the item's update time and reported with the same reason until the item changes; a failed or rate-limited history read is still read again on the next tick. **Consumer action:** none.
+
+## [0.229.0] - 2026-11-13
+
+### Added
+
+- The `orchestrate` skill turns a large, loosely bounded topic into recorded decisions, a reviewed plan and started issues. One session stays with the person while separate sessions survey the tracks, maintain the plan and file work. **Consumer action:** none.
+
+## [0.228.1] - 2026-11-13
+
+### Fixed
+
+- On Jira, a native priority can now be written with a scoped API token or an
+  OAuth access token that the gateway refuses on `priority/search`: the
+  adapter reads the site's priorities from `GET priority` instead, so
+  `tracker.ts create` and `update` set the priority.
+- `tracker.ts facet-stores` and the audit's tracker check now report a Jira
+  native priority store that cannot be used, naming the priority and the
+  reason: a name the site does not have, or a create screen of an issue type
+  Jig files without the priority field or without that value.
+- The note about the classic `read:jira-user` scope now appears only when the
+  account read (`myself`) is refused for its scope, not on any other request
+  refused with `scope does not match`.
+
+## [0.228.0] - 2026-11-13
+
+### Added
+
+- The dispatcher checks each account's tracker credential before it launches
+  a follow-up or a pickup. Once per tick for each account and tracker, it
+  reads the repository's tracker headless, in the repository's checkout and
+  the environment a pass on that account runs in. An account the tracker
+  refuses, or whose read gives no answer in time (an operating system
+  keychain waiting for an approval, a lapsed connection), takes none of
+  those launches: they go to another account or wait. The dashboard shows
+  one need per account for the whole host, `tracker-unreachable`, act
+  Authorize, naming every repository it holds and the tracker's answer,
+  instead of a failed pass for every pull request. A rate limit, a server
+  error, the network or a configuration that opens no tracker holds
+  nothing: the stage's own handling of them applies. A later passing check
+  clears the need and the launches start. `preflight` in the machine's
+  dispatch file names the checks: `[tracker]` by default, and `[]` turns
+  them off ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+
+## [0.227.2] - 2026-11-13
+
+The decision record for calls to outside systems is renumbered.
+
+### Changed
+
+- The decision record for the outbound-calls rule is now [ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md), so the number no longer collides with another record. The plugin instructions link to the new number.
+
+### Fixed
+
+- Release tagging retries failed required checks once before leaving a release untagged; configure `changelog.release.rerun_failed_gates` to change the budget or set it to `0` to disable retries.
+- The tag plan and release status keep reporting every untagged release even after a newer version is tagged. Older releases remain listed for manual tagging without triggering retries or holding newer tags back.
+
+## [0.227.1] - 2026-11-13
+
+### Fixed
+
+- On Jira, the drive-ledger projection now sends the `issue_tracker.jira.blocked_fields`
+  the transition into the blocked status carries on its screen with the move itself, so a
+  workflow whose transition requires the blocker reason accepts the move instead of refusing it
+  before the fields were written. Fields not on the transition's screen are still written by an
+  update after the move, and the return move is unchanged. A move Jira still refuses names the
+  transition, Jira's message, and which fields went with it.
+
+## [0.227.0] - 2026-11-13
+
+### Changed
+
+- The dispatch dashboard draws each word the records give a closed set with
+  one icon, always beside its word: the acts, the stages, where a coming item
+  came from and what will happen to it, the Ready to merge lanes, the load
+  gauges, an account's state, why a need waits, the answer states and the
+  page's own controls. A family keeps one shape, so it still reads in
+  greyscale and in [forced colours](GLOSSARY.md), the operating system's
+  high-contrast mode that replaces the page's colours with its own: an act is a filled pill, a stage an outlined chip
+  (its icon replaces the glyph it had), a source a dashed chip, and the rest
+  a bare icon beside the word. A word two sets share with the same meaning
+  keeps one icon, and the Help view lists every icon with its word. An account
+  whose wall was never recorded now says "wall not recorded" instead of
+  "behind a wall". **Consumer action:** none.
+
+## [0.226.2] - 2026-11-13
+
+The dispatcher reads a repository's pull requests in pages as large as the forge answers in time.
+
+### Fixed
+
+- A repository whose open pull requests each carry many check results could not be read at all. GitHub ends a query it has worked on for about ten seconds (HTTP 502 or 504); the dispatcher asked for fifty pull requests a page, and its fallback listing asked for every pull request's checks at once. Such a repository's turn failed on every tick, so it got no re-arm, follow-up or pickup. A page the forge runs out of time on is now asked again at half the size, down to one pull request, and the size that read is kept for the repository, so later ticks start from it. The kept size is tried larger again once pages answer quickly and an hour has passed since it last shrank. The comments query over merged pull requests shrinks the same way. The fallback listing is asked once more without the checks, which then read as unknown. The forge record says the page size where it is under fifty, and names both failures when neither read answers.
+
+## [0.226.1] - 2026-11-13
+
+### Fixed
+
+- Isolate drive test subprocesses from the developer checkout so local branch state does not break the tests. Released plugin behavior is unchanged. **Consumer action:** none.
+
+## [0.226.0] - 2026-11-13
+
+### Added
+
+- The dispatcher tells a stalled pickup's finished work from abandoned work. When a claimed item has no running session and an open pull request whose head is the branch of this host's launch of the item links it (`Closes <KEY>` or `Refs <KEY>`, as `do-item` writes it), the tick on the host that owns the repository moves the item from its in-progress state to `pr_open`, never to done, and comments on it naming the pull request. An item already in `pr_open` is not reported as stalled while that pull request is open. Where the repository names no `pr_open` state, or the open pull requests did not read, nothing moves and the stall need says why, naming the pull request where there is one. The rule reads the open pull requests the tick already reads, so it makes no forge request of its own; `jig dispatch` lists each move under the repository, and with `--apply` what it did.
+
 ## [0.225.2] - 2026-11-13
 
 Jig states one rule for every call it makes to a system it does not control.
 
 ### Added
 
-- [ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
+- [ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
 
 ## [0.225.1] - 2026-11-13
 
@@ -7871,7 +8023,18 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.225.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.230.0...HEAD
+[0.230.0]: https://github.com/jig-harness/jig/compare/v0.229.1...v0.230.0
+[0.229.1]: https://github.com/jig-harness/jig/compare/v0.229.0...v0.229.1
+[0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0
+[0.228.1]: https://github.com/jig-harness/jig/compare/v0.228.0...v0.228.1
+[0.228.0]: https://github.com/jig-harness/jig/compare/v0.227.2...v0.228.0
+[0.227.2]: https://github.com/jig-harness/jig/compare/v0.227.1...v0.227.2
+[0.227.1]: https://github.com/jig-harness/jig/compare/v0.227.0...v0.227.1
+[0.227.0]: https://github.com/jig-harness/jig/compare/v0.226.2...v0.227.0
+[0.226.2]: https://github.com/jig-harness/jig/compare/v0.226.1...v0.226.2
+[0.226.1]: https://github.com/jig-harness/jig/compare/v0.226.0...v0.226.1
+[0.226.0]: https://github.com/jig-harness/jig/compare/v0.225.2...v0.226.0
 [0.225.2]: https://github.com/jig-harness/jig/compare/v0.225.1...v0.225.2
 [0.225.1]: https://github.com/jig-harness/jig/compare/v0.225.0...v0.225.1
 [0.225.0]: https://github.com/jig-harness/jig/compare/v0.224.3...v0.225.0

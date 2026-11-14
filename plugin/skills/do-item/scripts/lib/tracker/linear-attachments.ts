@@ -124,7 +124,7 @@ export function linearFiles(
       const res = await fetchImpl(url, {
         method: "PUT",
         headers,
-        body: bytes,
+        body: new Uint8Array(bytes),
         redirect: "error",
         signal: bounded(signal),
       });
