@@ -23,7 +23,7 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { fileLockPath, withFileLock } from "../../../shared/file-lock.ts";
 
 const script = join(import.meta.dir, "..", "scripts", "check-fields.ts");
-const scratch = mkdtempSync(join(tmpdir(), "check-fields-"));
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), "check-fields-")));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 let n = 0;
 
@@ -157,18 +157,38 @@ describe("check-fields.ts", () => {
       fileLockPath(join(root, "position.json"), root, "sweep-position"),
       `${dead.pid}\nstale-token\n`,
     );
+    const lock = fileLockPath(
+      join(root, "position.json"),
+      root,
+      "sweep-position",
+    );
     const stderr = await run(
       ["check", "--yes", "--position", "position.json"],
       1,
       "file_issue:\n  sweep:\n    move: false\n",
     );
     expect(stderr).not.toContain("another run holds this read position");
+    // The run reached the tracker, which refuses it for want of a credential.
+    expect(stderr).not.toContain("check-fields: failed");
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  test("stops with the cause when the read position's directory cannot be made", async () => {
+    const root = join(scratch, `repo-${n}`);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "blocker"), "a file, not a directory\n");
+    const stderr = await run(
+      ["check", "--yes", "--position", "blocker/position.json"],
+      1,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).toContain("cannot be locked");
   });
 
   test("refuses a run reaching a held read position through a symlinked directory", async () => {
     const root = join(scratch, `repo-${n}`);
     mkdirSync(root, { recursive: true });
-    symlinkSync(root, join(root, "alias"));
+    symlinkSync(root, join(root, "alias"), "junction");
     const held = await withFileLock(
       join(realpathSync(root), "position.json"),
       () =>

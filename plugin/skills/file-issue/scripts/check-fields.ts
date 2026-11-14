@@ -41,8 +41,9 @@
  * anything; 2 usage.
  */
 
-import { existsSync, realpathSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, basename, resolve } from "node:path";
+import { swallow } from "../../../shared/errors.ts";
 import { withFileLock } from "../../../shared/file-lock.ts";
 import { parseArgs } from "node:util";
 import { ExitError, fail, runMain } from "../../../shared/cli.ts";
@@ -99,12 +100,24 @@ function print(json: boolean, report: unknown, lines: string[]): void {
   console.log(json ? JSON.stringify(report, null, 2) : lines.join("\n"));
 }
 
-/** `file` with symlinks resolved in its directory (and in itself when it exists), so aliases share one lock. */
+/**
+ * `file` with symlinks resolved through its nearest existing ancestor (and in
+ * itself when it exists), so aliases share one lock. It creates nothing and
+ * never throws: a path it cannot resolve stays as written, and the lock or the
+ * read that follows reports what is wrong with it.
+ */
 function canonicalPath(file: string): string {
   const path = resolve(file);
-  if (existsSync(path)) return realpathSync(path);
-  mkdirSync(dirname(path), { recursive: true });
-  return resolve(realpathSync(dirname(path)), basename(path));
+  const rest: string[] = [];
+  for (let at = path; ; at = dirname(at)) {
+    try {
+      return resolve(realpathSync(at), ...rest);
+    } catch (err) {
+      swallow(err, "an unresolvable path is used as written");
+    }
+    if (dirname(at) === at) return path;
+    rest.unshift(basename(at));
+  }
 }
 
 /** Milliseconds a run waits on a position's lock: long enough to reclaim a dead owner's, short enough to refuse a live one. */
@@ -171,15 +184,26 @@ async function check(argv: string[]): Promise<number> {
     return checkRun(values, overlay, settings, values.position);
   // Two runs sharing a position file would overwrite each other's progress.
   const path = canonicalPath(values.position);
-  const locked = await withFileLock(
-    path,
-    () => checkRun(values, overlay, settings, path),
-    {
-      root: dirname(path),
-      name: "sweep-position",
-      waitMs: POSITION_LOCK_WAIT_MS,
-    },
-  );
+  // A run that cannot make its lock directory stops: without the lock it
+  // could overwrite another run's progress.
+  let locked: Awaited<ReturnType<typeof withFileLock<number>>>;
+  try {
+    locked = await withFileLock(
+      path,
+      () => checkRun(values, overlay, settings, path),
+      {
+        root: dirname(path),
+        name: "sweep-position",
+        waitMs: POSITION_LOCK_WAIT_MS,
+      },
+    );
+  } catch (err) {
+    if (err instanceof ExitError) throw err;
+    return fail(
+      1,
+      `the read position ${path} cannot be locked (${(err as Error).message}); give --position a file in a directory this run can write`,
+    );
+  }
   if (locked === null)
     return fail(
       1,

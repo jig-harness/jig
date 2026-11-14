@@ -523,7 +523,7 @@ without counting against the budget, and `--position <file>` keeps the
 read's place in that file, so each run resumes after the last issue the
 previous one handled and goes on from the oldest at the end (a missing file starts from the oldest, and so does an unreadable
 one, with a warning; a second run on the same file is refused while one
-holds it; moving keeps no position). It moves (or, without moving,
+holds it, and so is one whose directory cannot be made or locked; moving keeps no position). It moves (or, without moving,
 comments on) at most 50 a run and lists at most 20 pages of 100. Listing pages share one tracker census, bounded to
 a minute; the page limit bounds the report, not tracker issue reads. The
 next run takes what remains. Offer to settle a
