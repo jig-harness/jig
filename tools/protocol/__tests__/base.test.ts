@@ -310,6 +310,25 @@ describe("the comparison with the integration branch", () => {
         { ...added, carriedBy: "tick (sometimes)", fieldRequired: false },
       ]),
     ).toEqual([]);
+    // No carriers at all is an empty set: it widens to an optional carrier and narrows from one.
+    const sometimesOnly = chapter([
+      { ...first, carriedBy: "manual (sometimes)" },
+      second,
+    ]);
+    const emptied = chapter([{ ...first, carriedBy: "" }, second]);
+    expect(
+      check(scratchRepo([sometimesOnly], [emptied]), [emptied]).problems,
+    ).toEqual([]);
+    expect(
+      check(scratchRepo([emptied], [sometimesOnly]), [sometimesOnly]).problems,
+    ).toEqual([]);
+    const alwaysOnly = chapter([
+      { ...first, carriedBy: "tick (always)" },
+      second,
+    ]);
+    expect(
+      check(scratchRepo([emptied], [alwaysOnly]), [alwaysOnly]).problems,
+    ).toHaveLength(1);
   });
 
   test("fails a field that is new and identifies a value, which would let two values share the base's identity", () => {

@@ -362,12 +362,14 @@ function changedFields(base: DataFile, self: DataValue, v: DataValue) {
 
 /**
  * The runs a payload field's `carriedBy` names, each with `always` or
- * `sometimes` (`tick (always), manual (sometimes)`); null when the text is
- * not that shape, which is then compared as written.
+ * `sometimes` (`tick (always), manual (sometimes)`); an empty text names
+ * none; null when the text is not that shape, which is then compared as
+ * written.
  */
 function carriedMap(text: Scalar | undefined): Map<string, string> | null {
   if (typeof text !== "string") return null;
   const runs = new Map<string, string>();
+  if (text === "") return runs;
   for (const part of text.split(", ")) {
     const m = /^(\S+) \((always|sometimes)\)$/.exec(part);
     if (m === null || runs.has(m[1] as string)) return null;
