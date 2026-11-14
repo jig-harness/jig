@@ -35,6 +35,8 @@ import type {
 } from "../lib/types.ts";
 import type { LaunchRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
+import { tickMarker } from "../lib/followup-marker.ts";
+import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import {
   ledgerComment,
   mergedPr,
@@ -47,6 +49,7 @@ import {
 import {
   account,
   dispatchState,
+  earlierRecord,
   machineFile,
   waitFor,
 } from "./launch-fixtures.ts";
@@ -432,6 +435,52 @@ it("preserves an account replay blocker's queue classification", async () => {
     waitsOn: "accounts",
   });
 });
+
+it("shows a pending marked follow-up replay in the receipt and dashboard queue", async () => {
+  const w = fixture();
+  queued(w, 8, 0);
+  w.setPrs("merged", [mergedPr(10, "merged/10", "2026-10-31T12:00:00Z")]);
+  const record = earlierRecord(w, {
+    id: "20261031T120000Z-aaaaaaaa",
+    account: "a",
+    action: "followup",
+    pr: 10,
+    marker: 10_000,
+    attempts: [
+      {
+        at: "2026-10-31T12:00:00.000Z",
+        outcome: "lost",
+        detail: "the runtime did not answer",
+      },
+    ],
+  });
+  w.setComments(10, [
+    forgeComment(
+      record.marker ?? 0,
+      tickMarker(record.id, {
+        pr: 10,
+        writer: { host: "sha256:0123456789abcdef" },
+        host: "sha256:0123456789abcdef",
+      }),
+    ),
+  ]);
+
+  const [replayed] = followups(await tick(w));
+  expect(replayed).toMatchObject({
+    target: "PR #10",
+    record: record.id,
+    outcome: "retried",
+  });
+  expect(line(w).queue).toContainEqual(
+    expect.objectContaining({
+      target: "PR #10",
+      source: "merged",
+      launch: expect.objectContaining({
+        outcome: "retried",
+      }),
+    }),
+  );
+}, 60_000);
 
 it("names the deadline when a later wave of admission probes cannot start", async () => {
   const s = state();

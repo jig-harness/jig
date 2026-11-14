@@ -581,6 +581,33 @@ function queueOf(view: RepoView): LineQueued[] {
   const planned = view.report.actions
     .map((action) => plannedStage(view, action))
     .filter((q): q is LineQueued => q !== null);
+  // A pending follow-up replay has no new planned action: its earlier launch
+  // record is what still owns the work. Keep its receipt visible in the queue
+  // so a replay held by admission, an account, or the tick deadline names what
+  // it waits on.
+  const replayed = view.report.launches
+    .filter(
+      (launch) =>
+        launch.action === "followup" &&
+        launch.record !== null &&
+        !view.report.actions.some(
+          (action) =>
+            action.stage === "followup" && action.target === launch.target,
+        ),
+    )
+    .map((launch) =>
+      queued(view, {
+        source: "merged",
+        group: groupOf(launch, "starts"),
+        target: launch.target,
+        why: launch.detail,
+        launch: {
+          outcome: launch.outcome,
+          detail: launch.detail,
+          ...(launch.waitsOn === undefined ? {} : { waitsOn: launch.waitsOn }),
+        },
+      }),
+    );
   const serial = (view.report.serialized?.held ?? []).map((h) =>
     queued(view, {
       source: "held",
@@ -608,7 +635,7 @@ function queueOf(view: RepoView): LineQueued[] {
         why: u.reason,
       }),
     );
-  return [...planned, ...serial, ...labelled, ...refused];
+  return [...planned, ...replayed, ...serial, ...labelled, ...refused];
 }
 
 function repoOf(
