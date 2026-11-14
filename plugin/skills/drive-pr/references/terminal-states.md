@@ -2526,8 +2526,9 @@ a long interactive round that reaches it leaves its successor nothing.
 Unlike context usage, this one is observable: the session transcript records
 every round-trip, and distinct `requestId`s since the last real user message
 count them. The plugin ships the counter as an agent-runtime hook,
-`<plugin-dir>/hooks/turn-budget-guard.ts`, registered by `hooks/hooks.json` to
-run before every tool call: it counts those ids off the transcript since its
+`<plugin-dir>/hooks/turn-budget-guard.ts`, registered by `hooks/hooks.json`
+(under Codex, by an entry `jig upgrade` writes into the Codex home) to run
+before every tool call: it counts those ids off the transcript since its
 last call and injects a wrap-up instruction once the count is within a margin
 of the cap, 50 turns under a cap of 1000, with one later reminder when half
 the margin remains. `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN` and
