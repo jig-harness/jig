@@ -1,0 +1,21 @@
+---
+import Base from "../../layouts/Base.astro";
+import { md } from "../../lib/markdown.ts";
+import { protocolChapters } from "../../lib/protocol-source.ts";
+import { indexBody } from "../../lib/protocol.ts";
+import { read } from "../../lib/site.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+const from = "plugin/protocol/README.md";
+const html = await md(indexBody(read(from), protocolChapters()), from);
+---
+
+<Base title="The Jig Protocol" description="The Jig Protocol: the contracts that tools and readers outside the skills can depend on.">
+  <section class="page wrap">
+    <article class="main" style="--main-max:1000px">
+      <span class="eyebrow">Reference · Protocol</span>
+      <h1 class="display">The Jig Protocol</h1>
+      <div class="prose" set:html={html} />
+      <p class="source"><a href={`${REPO_URL}/blob/main/${from}`}>Source: {from}</a></p>
+    </article>
+  </section>
+</Base>

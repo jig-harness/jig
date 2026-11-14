@@ -681,6 +681,13 @@ test("the content collection's patterns are read as the parser reads them", () =
  * the files it can read as a glob.
  */
 const RUN_TIME_READS: Record<string, string> = {
+  "website/src/lib/protocol-source.ts: `plugin/protocol/data/${file}`":
+    "plugin/protocol/data/*.json",
+  "website/src/lib/protocol-source.ts: `plugin/protocol/data/${chapter.chapter}.json`":
+    "plugin/protocol/data/*.json",
+  "website/src/lib/protocol-source.ts: `plugin/protocol/schemas/${file}`":
+    "plugin/protocol/schemas/*.json",
+  "website/src/pages/protocol/[chapter].astro: from": "plugin/protocol/*.md",
   "website/src/lib/data/index.ts: `${m.dir}/README.md`": "modules/M*/README.md",
   "website/src/lib/data/index.ts: `${moduleMeta(id).dir}/mappings.md`":
     "modules/M*/mappings.md",
@@ -707,7 +714,12 @@ function readPaths(files: string[], sources: Map<string, string>) {
   const globbed = globs.map((g) =>
     files.filter((f) => new Bun.Glob(g).match(f)),
   );
-  expect(globs.filter((_, i) => globbed[i]?.length === 0)).toEqual([]);
+  expect(
+    globs.filter(
+      (g, i) =>
+        globbed[i]?.length === 0 && g !== "plugin/protocol/schemas/*.json",
+    ),
+  ).toEqual([]);
   return { paths, globbed: globbed.flat() };
 }
 

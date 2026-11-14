@@ -783,7 +783,7 @@ chapters rendered on the site. Built in steps, one pull request each;
 built so far: the generator, its gate and the chapter on the drive's end
 states and exit codes ([plugin/protocol/](../plugin/protocol/README.md)).
 Open, in order: the other stable chapters, their schemas, their
-restatements as links, the provisional chapters, and the site's pages.
+restatements as links and the provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the
