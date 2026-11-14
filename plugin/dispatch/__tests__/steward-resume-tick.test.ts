@@ -25,10 +25,14 @@ import { withOrigin } from "./pickup-fixtures.ts";
 import { recordExit, readRecord } from "../lib/launches.ts";
 import { dispatched } from "../lib/runtime/port.ts";
 import {
+  judgedResumes,
   keepStewardRun,
+  stewardRecords,
   submitStewardRecords,
   STEWARD_RESUME,
 } from "../lib/steward.ts";
+import { framedResultOf } from "../lib/framed-result.ts";
+import { recordResult } from "../lib/launch-result.ts";
 import { pickupPassArgv, followupPassArgv } from "../lib/session.ts";
 import { stateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -42,7 +46,7 @@ afterEach(() => {
   current?.close();
   current = null;
 });
-function fixture(kind: "pickup" | "followup", batch = false) {
+function fixture(kind: "pickup" | "followup", batch = false, output = OUTPUT) {
   const w = world();
   current = w;
   w.setConfig(
@@ -120,8 +124,8 @@ function fixture(kind: "pickup" | "followup", batch = false) {
       at: new Date().toISOString(),
       code: 1,
       signal: null,
-      said: OUTPUT.split("\n")[1] ?? "",
-      context: OUTPUT,
+      said: output.split("\n").at(-1) ?? "",
+      context: output,
     },
     dispatchState(w),
   );
@@ -138,8 +142,8 @@ function fixture(kind: "pickup" | "followup", batch = false) {
           record: OLD,
           action: kind,
           target: kind === "pickup" ? "#12" : "PR #9",
-          question: OUTPUT.split("Question: ")[1] ?? "",
-          said: OUTPUT,
+          question: output.split("Question: ")[1] ?? "",
+          said: output,
         },
       ],
       failures: [],
@@ -289,4 +293,73 @@ test("a completed followup marker refuses a pending resume without deleting it",
       (l) => l.record === record.id && l.outcome === "retried",
     ),
   ).toBe(false);
+}, 60000);
+
+function resumeUnplaced(receipt: TickReceipt): string[] {
+  return (receipt.repos[0]?.unplaced ?? [])
+    .filter((u) => u.target.startsWith("steward record "))
+    .map((u) => u.reason);
+}
+
+async function refusedOnce(w: World, reason: string): Promise<void> {
+  const first = await tick(w);
+  expect(first.repos[0]?.launches.some((l) => l.outcome === "launched")).toBe(
+    false,
+  );
+  expect(resumeUnplaced(first)).toEqual([expect.stringContaining(reason)]);
+  const [kept] = stewardRecords(SLUG, dispatchState(w));
+  expect(kept).toMatchObject({ applied: true, effect: "refused" });
+  expect(judgedResumes(SLUG, dispatchState(w)).has(OLD)).toBe(true);
+  expect(resumeUnplaced(await tick(w))).toEqual([]);
+}
+
+test("a resume whose pass recommended no option is refused once with its reason", async () => {
+  const { w } = fixture(
+    "pickup",
+    false,
+    "The scope choice needs a person.\nQuestion: Which scope should #12 take?",
+  );
+  await refusedOnce(w, "a single recommended option");
+}, 60000);
+
+test("a resume of a pass that framed a decision for a person is refused once", async () => {
+  const { w } = fixture("pickup");
+  const framed = framedResultOf(
+    JSON.stringify({
+      schema: "parked-decision/v1",
+      class: "scope",
+      call: {
+        id: "a",
+        question: "Which cache key should this routine check use?",
+        options: [
+          { id: "a", name: "Reuse", summary: "Reuse the key.", pay: ["none"] },
+          {
+            id: "b",
+            name: "Wait",
+            summary: "Wait for a person.",
+            pay: ["a delay"],
+          },
+        ],
+        recommended: "a",
+        why: "The existing key already covers the check.",
+      },
+      steps: [],
+      alreadyDone: "Nothing was changed.",
+    }),
+    new Date().toISOString(),
+  );
+  expect(framed.ok).toBe(true);
+  if (!framed.ok) return;
+  expect(
+    recordResult(
+      OLD,
+      "failed",
+      dispatchState(w),
+      null,
+      null,
+      undefined,
+      framed.value,
+    ),
+  ).toBe(true);
+  await refusedOnce(w, "framed a decision");
 }, 60000);

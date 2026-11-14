@@ -74,26 +74,36 @@ function unavailable(
   });
 }
 
+/** Why the pass a resume names can never be resumed, from facts its ended record fixes. */
+type Refusal = { refused: string };
+
 function sourceOf(
   state: ApplyState,
   observation: RepoObservation,
   decision: ResumeDecision,
-): Source | null {
+): Source | Refusal {
   const old = state.records.find(
     (r) =>
       r.record.id === decision.record &&
       r.record.repo === observation.opened.repo.slug,
   );
-  if (
-    old?.state.kind !== "ended" ||
-    old.record.stewardResume !== undefined ||
-    old.result === "done" ||
-    !old.record.workspace
-  )
-    return null;
+  if (old?.state.kind !== "ended")
+    return { refused: "the resume names no ended pass of this repository" };
+  if (old.record.stewardResume !== undefined)
+    return { refused: "the pass is itself a resume" };
+  if (old.result === "done") return { refused: "the pass ended done" };
+  if (old.framed)
+    return {
+      refused: "the pass framed a decision for a person, who answers it",
+    };
+  if (!old.record.workspace) return { refused: "the pass kept no workspace" };
   if (old.record.action !== "pickup" && old.record.action !== "followup")
-    return null;
-  if (!eligiblePass(old)) return null;
+    return { refused: "only a pickup or a follow-up pass resumes" };
+  if (!eligiblePass(old))
+    return {
+      refused:
+        "the pass is not a headless pickup, or the follow-up lane retries it",
+    };
   const question = questionOf(old.state);
   const output = old.state.exit.context ?? old.state.exit.said ?? "";
   const policy = observation.opened.values.autonomy as
@@ -107,7 +117,10 @@ function sourceOf(
       policy?.park_classes ?? DEFAULT_PARK_CLASSES,
     ) === null
   )
-    return null;
+    return {
+      refused:
+        "the pass's output holds no question with a single recommended option outside the human-decision classes",
+    };
   return {
     record: {
       ...old.record,
@@ -151,21 +164,24 @@ function competed(
   );
 }
 
-function witnessOf(
-  state: ApplyState,
-  observation: RepoObservation,
-  id: number,
-  source: Source,
-  pending?: LaunchRecord,
-): boolean {
-  const previous = stewardRecords(source.record.repo, state.root).some(
+/** Whether another resume record for the same pass was already applied. */
+function resumedBefore(state: ApplyState, id: number, source: Source): boolean {
+  return stewardRecords(source.record.repo, state.root).some(
     (r) =>
       r.id !== id &&
       r.applied &&
       r.value.kind === "resume" &&
       r.value.record === source.record.id,
   );
-  if (previous || competed(state, source.record, pending)) return false;
+}
+
+function witnessOf(
+  state: ApplyState,
+  observation: RepoObservation,
+  source: Source,
+  pending?: LaunchRecord,
+): boolean {
+  if (competed(state, source.record, pending)) return false;
   if (pending && !sameTarget(source.record, pending)) return false;
   return !observation.forge.drives.some(
     (p) =>
@@ -508,6 +524,18 @@ async function startResume(
   );
 }
 
+/** A resume that can never apply is settled once, with its reason, so it is not checked again. */
+function refuseResume(
+  state: ApplyState,
+  observation: RepoObservation,
+  id: number,
+  reason: string,
+): void {
+  if (!claimStewardRecord(id, state.root)) return;
+  markStewardEffect(id, "refused", state.root);
+  unavailable(observation, `steward record ${id}`, reason);
+}
+
 export async function resumeSteward(
   state: ApplyState,
   observation: RepoObservation,
@@ -516,8 +544,22 @@ export async function resumeSteward(
   pending?: LaunchRecord,
 ): Promise<void> {
   const source = sourceOf(state, observation, decision);
-  if (source === null || !witnessOf(state, observation, id, source, pending))
+  if ("refused" in source) {
+    if (pending === undefined)
+      refuseResume(state, observation, id, source.refused);
     return;
+  }
+  if (resumedBefore(state, id, source)) {
+    if (pending === undefined)
+      refuseResume(
+        state,
+        observation,
+        id,
+        "an earlier resume of the same pass was already applied",
+      );
+    return;
+  }
+  if (!witnessOf(state, observation, source, pending)) return;
   if (!(await available(state, observation, source, pending))) return;
   const action: Action = {
     stage: source.record.action,

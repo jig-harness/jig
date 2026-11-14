@@ -77,6 +77,23 @@ test("the digest's historical passes keep output only for actual questions, boun
   expect(passes[1]?.said).toContain("[launch token]");
   expect(JSON.stringify(passes)).not.toContain("old-token");
 });
+test("the digest leaves out a pass a person decides or the tick already judged", () => {
+  const ended = (id: string, extra: object = {}) => ({
+    record: { id, repo: "example/repo", item: "#7", action: "pickup" },
+    state: { kind: "ended", exit: { said: "Question: Which option?" } },
+    ...extra,
+  });
+  const records = [
+    ended("open"),
+    ended("framed", { framed: { digest: "0".repeat(12) } }),
+    ended("judged"),
+  ] as unknown as ReadRecord[];
+  expect(
+    stewardPasses(records, "example/repo", new Set(["judged"])).map(
+      (p) => p.record,
+    ),
+  ).toEqual(["open"]);
+});
 function item(key: string, observed: boolean): WantedItem {
   return {
     key,

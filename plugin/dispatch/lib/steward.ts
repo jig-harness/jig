@@ -461,6 +461,18 @@ export function stewardRecords(
       : [{ ...r, value: record, applied: r.applied === 1 }];
   });
 }
+/** The passes a resume record already settled, launched or refused: the digest offers them no more. */
+export function judgedResumes(
+  repo: string,
+  root = stateRoot(),
+): ReadonlySet<string> {
+  return new Set(
+    stewardRecords(repo, root).flatMap((r) =>
+      r.applied && r.value.kind === "resume" ? [r.value.record] : [],
+    ),
+  );
+}
+
 /** The claim precedes any action; an interrupted application is never attempted twice. */
 export function claimStewardRecord(id: number, root = stateRoot()): boolean {
   return (
