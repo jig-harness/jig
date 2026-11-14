@@ -938,8 +938,8 @@ module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)
 holds this work.
 
 After the message design merges, file and prepare the design brief, then
-run an external Claude Design round. The person supplies the reference
-site with the brief and accepts the returned design. Only then change
+run an external Claude Design round without an outside reference site.
+The person accepts the returned design. Only then change
 README.md, FACTORY.md, FEATURES.md and the site together, including their
 parsers and tests. The design names what moves down a level and the
 Protocol's page routes; its generation and rendering belong to the

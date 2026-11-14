@@ -348,6 +348,12 @@ and the skill says why. On a Windows host the drive always starts in the
 background: Orca's tab there can run `cmd.exe` or PowerShell, and the
 command is written for a POSIX shell.
 
+A pass `jig dispatch` started has no background to start it in. When the
+drive cannot start in a tab, it records the pull request as its result, says
+in its closing report that the drive is unarmed and gives the command; the
+dispatcher then drives the pull request only where `dispatch.adopt` is
+enabled or you put the `drive` label on it.
+
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,
 so that flow is not run beside it.
