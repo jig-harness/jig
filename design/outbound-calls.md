@@ -62,8 +62,8 @@ module leaves its old path in the same pull request.
 | `failure`, `retry` | The closed classes; jittered backoff inside the call's deadline that honours `Retry-After`, for reads only | `tracker/read-retry.ts` and each transport's own classification |
 | `cache` | Answers kept by update time or by the system's validator, stable absences included | `shared/gh-conditional.ts`, the served queue's kept readings |
 | `coalesce`, `batch` | One request for identical reads in a run; reads by key in chunks | `dispatch/lib/tick-reads.ts`, the Linear read by key |
-| `paging` | Page caps, and a page that shrinks when the system runs out of time | Built with step 1 |
-| `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | Built with step 3; the hold moves into `budget` once GitHub joins it |
+| `paging` | Page caps, and a page that shrinks when the system runs out of time | `shared/outbound/paging.ts` |
+| `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | `shared/outbound/hold.ts`; the hold moves into `budget` once GitHub joins it |
 
 A transport supplies its profile, how to send one request
 (an HTTPS request or a run of a command-line client) and how to read a
