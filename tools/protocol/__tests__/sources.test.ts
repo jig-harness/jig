@@ -8,7 +8,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { load } from "../../../lib/vendor/js-yaml.mjs";
-import { encode } from "../../../plugin/shared/records/envelope.ts";
+import {
+  ENVELOPE_FIELDS,
+  encode,
+} from "../../../plugin/shared/records/envelope.ts";
 import {
   FOLLOWUP_FIELDS,
   FOLLOWUP_OUTCOMES,
@@ -171,7 +174,8 @@ describe("the hidden comment markers", () => {
   const eligible = RECORD_KINDS.filter(
     (k) => k.medium === "forge" || k.medium === "tracker",
   ).map((k) => k.name);
-  const values = COMMENT_MARKERS.values();
+  const all = COMMENT_MARKERS.values();
+  const values = all.filter((v) => v.part !== "envelope-field");
   const rendered = values
     .filter((v) => v.name !== null)
     .map((v) => String(v.name));
@@ -203,6 +207,20 @@ describe("the hidden comment markers", () => {
     expect(excluded).toContain("dispatch-followup");
     expect(FOLLOWUP_CLAIM_CHAPTER.takes()).toContain(
       "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-followup",
+    );
+  });
+
+  test("renders every field of the envelope as a value of its own, with its type and requiredness", () => {
+    expect(
+      all
+        .filter((v) => v.part === "envelope-field")
+        .map((v) => [v.marker, v.fieldType, v.fieldRequired]),
+    ).toEqual(
+      Object.entries(ENVELOPE_FIELDS).map(([name, f]) => [
+        name,
+        f.type,
+        f.required,
+      ]),
     );
   });
 
@@ -252,37 +270,48 @@ describe("the follow-up claim and its result", () => {
   const of = (kind: string) =>
     values
       .filter((v) => v.kind === kind || String(v.kind).endsWith(`-${kind}`))
-      .map((v) => (v.run === null ? String(v.name) : `${v.run}.${v.name}`));
+      .map((v) => String(v.name));
 
-  test("renders the registry's follow-up kind, every run and every run's outcomes, and nothing else", () => {
-    expect(of("record")).toEqual(
-      RECORD_KINDS.filter((k) => k.name === "dispatch-followup").map(
-        (k) => k.name,
-      ),
-    );
+  test("renders the registry's follow-up kind and its markers, every run, every run's outcomes and every payload field, and nothing else", () => {
+    const kind = RECORD_KINDS.find((k) => k.name === "dispatch-followup");
+    expect(of("record")).toEqual(kind === undefined ? [] : [kind.name]);
+    expect(of("marker")).toEqual([...(kind?.markers ?? [])]);
     expect(of("run")).toEqual(Object.keys(FOLLOWUP_RUNS));
     expect(of("outcome")).toEqual(
       Object.entries(FOLLOWUP_OUTCOMES).flatMap(([run, outcomes]) =>
         Object.keys(outcomes).map((o) => `${run}.${o}`),
       ),
     );
+    expect(of("field")).toEqual(Object.keys(FOLLOWUP_FIELDS));
     expect(values).toHaveLength(
-      of("record").length + of("run").length + of("outcome").length,
+      ["record", "marker", "run", "outcome", "field"].reduce(
+        (n, k) => n + of(k).length,
+        0,
+      ),
     );
     expect(FOLLOWUP_CLAIM_CHAPTER.excluded).toEqual([]);
   });
 
-  test("shows the kind, every run, every outcome and every payload field in its sections", () => {
-    const outcomes = Object.values(FOLLOWUP_OUTCOMES).flatMap((o) =>
-      Object.keys(o),
-    );
+  test("keeps a value's identity apart from its kind, so a withdrawal to a tombstone stays representable", () => {
+    expect(FOLLOWUP_CLAIM_CHAPTER.fields.kind?.identifies).toBe(false);
+    const identities = values.map((v) => JSON.stringify([v.name]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("shows the kind, every run, every field and each run's own outcomes in its sections", () => {
     expect(
       missingRows(FOLLOWUP_CLAIM_CHAPTER, [
         "dispatch-followup",
         ...Object.keys(FOLLOWUP_RUNS),
-        ...outcomes,
         ...Object.keys(FOLLOWUP_FIELDS),
       ]),
     ).toEqual([]);
+    // Each outcome with its run: a row for one run's outcome does not
+    // stand in for the same name under another run.
+    const rows = sectionsOf(FOLLOWUP_CLAIM_CHAPTER).split("\n");
+    const pairs = Object.entries(FOLLOWUP_OUTCOMES).flatMap(([run, outcomes]) =>
+      Object.keys(outcomes).map((o) => `| \`${o}\` | \`${run}\` |`),
+    );
+    expect(pairs.filter((p) => !rows.some((r) => r.startsWith(p)))).toEqual([]);
   });
 });

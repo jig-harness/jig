@@ -5,8 +5,11 @@ Version 1 · stable
 When a pull request merges, its follow-up settles what the merge still
 owes, by running the repository's follow-up command on it once. The
 [follow-up marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-claims that one follow-up, so that two runs never both run it, and says how
-it ended. A [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
+claims that one follow-up, so that one run takes it and the later run stops
+before it acts, and says how it ended. The claim settles who won once both
+markers are visible on the forge: two runs whose listings lag can each read
+themselves as the winner and both act, so a follow-up command's effect outside
+the pull request must be safe to repeat. A [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
 [tick](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) posts one
 before it starts the follow-up's session; a follow-up a person runs posts one
 through `jig dispatch marker claim`. The dispatcher reads the markers to
@@ -81,8 +84,8 @@ host writes the end.
 | Outcome | Run | Meaning |
 | --- | --- | --- |
 | `done` | `tick` | The follow-up's session recorded its result as done (`jig dispatch result`): the follow-up is finished, and nothing starts it again. |
-| `failed` | `tick` | The follow-up's session ended without recording done, or its launch died and is not retried: a person acts, and the marker keeps holding the follow-up against every later one until a person marks it done or deletes it. |
-| `running` | `manual` | A person's run claimed the follow-up and has not finished its last act. It holds the follow-up against every later run; a run that failed leaves it so (`jig dispatch marker failed`) until a person marks it done or deletes it. |
+| `failed` | `tick` | The follow-up's session ended without recording done, or its launch died and is not retried: a person acts, and the marker keeps holding the follow-up against every later one until a person marks it done or deletes it, or the dispatcher's recovery releases it once, as for a rate-limit wait or a routine that failed. |
+| `running` | `manual` | A person's run claimed the follow-up and has not finished its last act. It holds the follow-up against every later run; a run that failed leaves it so (`jig dispatch marker failed`) until a person marks it done or deletes it, or the dispatcher releases a stale one once. |
 | `done` | `manual` | A person's run finished its last act (`jig dispatch marker done`): the follow-up is finished. |
 
 <!-- /protocol:generated -->
@@ -95,14 +98,14 @@ carries a field on every marker or on some; "never" that it carries none.
 
 <!-- protocol:generated source=plugin/shared/records/followup-values.ts#FOLLOWUP_FIELDS -->
 
-| Field | A `tick` marker | A `manual` marker | Meaning |
-| --- | --- | --- | --- |
-| `pr` | always | always | The number of the pull request the marker is on; a marker whose record names another pull request does not read. |
-| `run` | always | always | Which run took the follow-up: one of the runs listed above. |
-| `record` | always | never | The launch record of the session the tick started, in the dispatcher's form `<yyyymmdd>T<hhmmss>Z-<8 hex>`. |
-| `host` | sometimes | never | The host whose tick took the follow-up, as a digest of its dispatcher's database instance: a public comment names no machine, and that host recognises its own marker. A marker posted before markers named their host carries none until the host that ends it writes its own. |
-| `owner` | sometimes | never | Whether the host that took the follow-up owns the repository's board, notifications and history rows; absent where that host does not say. |
-| `outcome` | sometimes | always | Where the follow-up stands: one of the outcomes listed above for the marker's run. A tick's marker carries none until its host writes the end. |
-| `endedAt` | sometimes | never | When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome. |
+| Field | Type | A `tick` marker | A `manual` marker | Meaning |
+| --- | --- | --- | --- | --- |
+| `pr` | integer | always | always | The number of the pull request the marker is on; a marker whose record names another pull request does not read. |
+| `run` | string | always | always | Which run took the follow-up: one of the runs listed above. |
+| `record` | string | always | never | The launch record of the session the tick started, in the dispatcher's form `<yyyymmdd>T<hhmmss>Z-<8 hex>`. |
+| `host` | string | sometimes | never | The host whose tick took the follow-up, as a digest of its dispatcher's database instance: a public comment names no machine, and that host recognises its own marker. A marker posted before markers named their host carries none until the host that ends it writes its own. |
+| `owner` | boolean | sometimes | never | Whether the host that took the follow-up owns the repository's board, notifications and history rows; absent where that host does not say. |
+| `outcome` | string | sometimes | always | Where the follow-up stands: one of the outcomes listed above for the marker's run. A tick's marker carries none until its host writes the end. |
+| `endedAt` | string | sometimes | never | When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome. |
 
 <!-- /protocol:generated -->

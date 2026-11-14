@@ -13,6 +13,7 @@
 import { Defect } from "../../../plugin/shared/errors.ts";
 import {
   ENVELOPE_FIELDS,
+  type EnvelopeField,
   encodeMarker,
 } from "../../../plugin/shared/records/envelope.ts";
 import {
@@ -159,13 +160,37 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     description:
       "The record kind's name in the records registry, which an enveloped record's kind field carries; null for a marker that is not a record.",
   },
+  part: {
+    type: "string",
+    nullable: false,
+    required: true,
+    identifies: true,
+    description:
+      "marker for a hidden marker of a record kind, not-record for a marker that is not a record, envelope-field for a field of the record envelope.",
+  },
   marker: {
     type: "string",
     nullable: false,
     required: true,
     identifies: true,
     description:
-      "One hidden marker, as its comment opens after `<!-- `; what follows it is its kind's own. A kind with several markers has one value for each.",
+      "One hidden marker, as its comment opens after `<!-- `; what follows it is its kind's own. A kind with several markers has one value for each. For an envelope field, the field's name.",
+  },
+  fieldType: {
+    type: "string",
+    nullable: true,
+    required: true,
+    identifies: false,
+    description:
+      "For an envelope field, the JSON type of its value; null for every other value.",
+  },
+  fieldRequired: {
+    type: "boolean",
+    nullable: true,
+    required: true,
+    identifies: false,
+    description:
+      "For an envelope field, whether every record carries it; null for every other value.",
   },
   medium: {
     type: "string",
@@ -212,7 +237,10 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
 function kindValues(k: RecordKind): DataValue[] {
   return (k.markers ?? []).map((marker) => ({
     name: k.name,
+    part: "marker",
     marker,
+    fieldType: null,
+    fieldRequired: null,
     medium: k.medium,
     version: k.version,
     key: k.key?.source ?? null,
@@ -221,9 +249,25 @@ function kindValues(k: RecordKind): DataValue[] {
   }));
 }
 
+const envelopeValue = ([field, f]: [string, EnvelopeField]): DataValue => ({
+  name: null,
+  part: "envelope-field",
+  marker: field,
+  fieldType: f.type,
+  fieldRequired: f.required,
+  medium: null,
+  version: null,
+  key: null,
+  writtenBy: null,
+  meaning: f.meaning,
+});
+
 const notRecordValue = (r: (typeof NOT_RECORDS)[number]): DataValue => ({
   name: null,
+  part: "not-record",
   marker: r.marker,
+  fieldType: null,
+  fieldRequired: null,
   medium: null,
   version: null,
   key: null,
@@ -253,6 +297,7 @@ export const COMMENT_MARKERS: Chapter = {
   values: (): DataValue[] => [
     ...kinds().flatMap(kindValues),
     ...NOT_RECORDS.map(notRecordValue),
+    ...Object.entries(ENVELOPE_FIELDS).map(envelopeValue),
   ],
   takes: () => [
     ...kinds().map((k) => `${REGISTRY}#RECORD_KINDS.${k.name}`),

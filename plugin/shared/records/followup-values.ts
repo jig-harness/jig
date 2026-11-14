@@ -40,13 +40,13 @@ export const FOLLOWUP_OUTCOMES = {
     },
     failed: {
       meaning:
-        "The follow-up's session ended without recording done, or its launch died and is not retried: a person acts, and the marker keeps holding the follow-up against every later one until a person marks it done or deletes it.",
+        "The follow-up's session ended without recording done, or its launch died and is not retried: a person acts, and the marker keeps holding the follow-up against every later one until a person marks it done or deletes it, or the dispatcher's recovery releases it once, as for a rate-limit wait or a routine that failed.",
     },
   },
   manual: {
     running: {
       meaning:
-        "A person's run claimed the follow-up and has not finished its last act. It holds the follow-up against every later run; a run that failed leaves it so (`jig dispatch marker failed`) until a person marks it done or deletes it.",
+        "A person's run claimed the follow-up and has not finished its last act. It holds the follow-up against every later run; a run that failed leaves it so (`jig dispatch marker failed`) until a person marks it done or deletes it, or the dispatcher releases a stale one once.",
     },
     done: {
       meaning:
@@ -82,6 +82,8 @@ export type Carried = "always" | "sometimes";
 
 /** A field of the marker's payload: which runs' markers carry it, and what it says. */
 export interface FollowupField extends FollowupValue {
+  /** The JSON type of the field's value. */
+  readonly type: "string" | "integer" | "boolean";
   readonly carriedBy: Readonly<Partial<Record<FollowupRun, Carried>>>;
 }
 
@@ -92,35 +94,42 @@ export interface FollowupField extends FollowupValue {
  */
 export const FOLLOWUP_FIELDS = {
   pr: {
+    type: "integer",
     carriedBy: { tick: "always", manual: "always" },
     meaning:
       "The number of the pull request the marker is on; a marker whose record names another pull request does not read.",
   },
   run: {
+    type: "string",
     carriedBy: { tick: "always", manual: "always" },
     meaning: "Which run took the follow-up: one of the runs listed above.",
   },
   record: {
+    type: "string",
     carriedBy: { tick: "always" },
     meaning:
       "The launch record of the session the tick started, in the dispatcher's form `<yyyymmdd>T<hhmmss>Z-<8 hex>`.",
   },
   host: {
+    type: "string",
     carriedBy: { tick: "sometimes" },
     meaning:
       "The host whose tick took the follow-up, as a digest of its dispatcher's database instance: a public comment names no machine, and that host recognises its own marker. A marker posted before markers named their host carries none until the host that ends it writes its own.",
   },
   owner: {
+    type: "boolean",
     carriedBy: { tick: "sometimes" },
     meaning:
       "Whether the host that took the follow-up owns the repository's board, notifications and history rows; absent where that host does not say.",
   },
   outcome: {
+    type: "string",
     carriedBy: { tick: "sometimes", manual: "always" },
     meaning:
       "Where the follow-up stands: one of the outcomes listed above for the marker's run. A tick's marker carries none until its host writes the end.",
   },
   endedAt: {
+    type: "string",
     carriedBy: { tick: "sometimes" },
     meaning:
       "When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome.",

@@ -83,9 +83,15 @@ function outcomesTable(): string {
 
 function fieldsTable(): string {
   return table(
-    ["Field", ...runs().map((run) => `A ${ticked(run)} marker`), "Meaning"],
+    [
+      "Field",
+      "Type",
+      ...runs().map((run) => `A ${ticked(run)} marker`),
+      "Meaning",
+    ],
     Object.entries(FOLLOWUP_FIELDS).map(([name, f]) => [
       ticked(name),
+      f.type,
       ...runs().map((run) => {
         const carried = (f.carriedBy as Partial<Record<FollowupRun, string>>)[
           run
@@ -102,9 +108,9 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     type: "string",
     nullable: false,
     required: true,
-    identifies: true,
+    identifies: false,
     description:
-      "record for the marker's kind in the records registry, run for a value of its run field, and <run>-outcome (tick-outcome, manual-outcome) for a value of the outcome field of that run's marker.",
+      "record for the marker's kind in the records registry, marker for one of its hidden markers, run for a value of its run field, <run>-outcome (tick-outcome, manual-outcome) for a value of the outcome field of that run's marker, and field for a field of its payload.",
   },
   name: {
     type: "string",
@@ -112,7 +118,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     required: true,
     identifies: true,
     description:
-      "The record kind's registered name, or the value as the marker's field carries it.",
+      "The record kind's registered name, one hidden marker as its comment opens after `<!-- `, a run's name, an outcome as `<run>.<outcome>` (`tick.done`), or the payload field's name.",
   },
   run: {
     type: "string",
@@ -120,15 +126,23 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     required: true,
     identifies: false,
     description:
-      "For an outcome, the run whose marker carries it; null for the record and the runs.",
+      "For an outcome, the run whose marker carries it; null for every other value.",
   },
-  markers: {
+  type: {
     type: "string",
     nullable: true,
     required: true,
     identifies: false,
     description:
-      "For the record, its hidden markers, each as written after `<!-- `, separated by a comma and a space; null otherwise.",
+      "For a payload field, the JSON type of its value; null for every other value.",
+  },
+  carriedBy: {
+    type: "string",
+    nullable: true,
+    required: true,
+    identifies: false,
+    description:
+      "For a payload field, the runs whose markers carry it, each with always or sometimes, as `tick (always), manual (sometimes)`; a marker of a run not named never carries it. Null for every other value.",
   },
   version: {
     type: "integer",
@@ -156,7 +170,17 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
   },
 };
 
-const NONE = { markers: null, version: null, key: null } as const;
+const NONE = {
+  type: null,
+  carriedBy: null,
+  version: null,
+  key: null,
+} as const;
+
+const carriedBy = (f: (typeof FOLLOWUP_FIELDS)[keyof typeof FOLLOWUP_FIELDS]) =>
+  Object.entries(f.carriedBy)
+    .map(([run, how]) => `${run} (${how})`)
+    .join(", ");
 
 function values(): DataValue[] {
   const k = followupKind();
@@ -165,11 +189,19 @@ function values(): DataValue[] {
       kind: "record",
       name: k.name,
       run: null,
-      markers: (k.markers ?? []).join(", "),
+      type: null,
+      carriedBy: null,
       version: k.version,
       key: k.key?.source ?? null,
       meaning: k.meaning,
     },
+    ...(k.markers ?? []).map((marker) => ({
+      kind: "marker",
+      name: marker,
+      run: null,
+      ...NONE,
+      meaning: k.meaning,
+    })),
     ...runs().map((run) => ({
       kind: "run",
       name: run,
@@ -179,10 +211,19 @@ function values(): DataValue[] {
     })),
     ...outcomes().map((o) => ({
       kind: outcomeKind(o.run),
-      name: o.name,
+      name: `${o.run}.${o.name}`,
       run: o.run,
       ...NONE,
       meaning: o.meaning,
+    })),
+    ...Object.entries(FOLLOWUP_FIELDS).map(([name, f]) => ({
+      kind: "field",
+      name,
+      run: null,
+      ...NONE,
+      type: f.type,
+      carriedBy: carriedBy(f),
+      meaning: f.meaning,
     })),
   ];
 }

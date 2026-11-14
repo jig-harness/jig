@@ -11,7 +11,7 @@ recurring defect. When touching this skill, check:
   `scripts/lib/state/schema.ts`, the database's tables and their version in
   `scripts/lib/state/db.ts` (a change adds a migration, says whether it is
   additive, and adds the table's entry to the records registry,
-  `shared/records/registry-machine.ts`), lock timing in
+  `../../shared/records/registry-machine.ts`), lock timing in
   `scripts/lib/state/lock.ts`, lease timing in
   `scripts/lib/state/lease-model.ts`, the mailbox's directives, outbox
   statuses and line fields in `scripts/lib/state/mailbox-values.ts` (the
