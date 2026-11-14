@@ -17,10 +17,13 @@ values generated from the code, their meaning written beside them in the
 code, and a gate that fails the build when the chapter and the code
 disagree.
 
-This is the design of [plan.md](plan.md) item 53. Its first build step is
-in place: the generator, its gate and the chapter on the drive's end states
-and exit codes, in [plugin/protocol/](../plugin/protocol/README.md); the
-steps after it in § Build order are open. The decision that a chapter and the code must agree is
+This is the design of [plan.md](plan.md) item 53. Its first, third and
+fourth build steps are in place, in
+[plugin/protocol/](../plugin/protocol/README.md): the generator, its gate
+and the chapter on the drive's end states and exit codes, the chapters on
+the drive mailbox and on the pull-request labels, and the chapter on the
+commands a repository supplies; the site renders the chapters at
+`/protocol/`. The other steps in § Build order are open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works
@@ -150,10 +153,10 @@ free while it is in use.
 | Chapter | Status | Source in code | Plan items that still move it |
 | --- | --- | --- | --- |
 | Drive end states and exit codes | stable | `TERMINAL_STATES`, `DRIVE_EXIT` and the exit sets beside them (`skills/drive-pr/scripts/lib/status/`), and the drive scripts' other exits | — |
-| The drive mailbox: what a person or a tool may tell a running drive | stable | `skills/drive-pr/scripts/lib/state/mailbox.ts` and `mailbox-stop.ts` beside it | — |
+| The drive mailbox: what a person or a tool may tell a running drive | stable | the tables in `skills/drive-pr/scripts/lib/state/mailbox-values.ts`, which `mailbox.ts` and `mailbox-stop.ts` beside it read | — |
 | Pull-request labels Jig writes and reads | stable | `shared/pr-labels/` | — |
 | Hidden comment markers on the forge and the tracker | stable | the forge and tracker kinds of `shared/records/registry.ts` except the claims below, `NOT_RECORDS`, and the marker codec in `shared/records/envelope.ts` | — |
-| Commands a repository supplies | stable | `shared/repo-command.ts` and each caller's contract (the preflight's exit `3`, a facet store's JSON) | — |
+| Commands a repository supplies | stable | `REPO_COMMANDS` in `shared/repo-commands.ts`: each command's contract (the preflight's exit `3`, a reflection store's JSON), which the runner in `shared/repo-command.ts` and each caller read | — |
 | The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and the follow-up outcomes (`dispatch/lib/followup-outcomes.ts`) | — |
 | Addresses and the verbs of `jig ask` and `jig send` | provisional | `shared/address.ts` and `send/` | 39, 42 |
 | Needs and structured answers | provisional | the decision record (`parked-decision/v1`) and the need classes | 46, 50 |
@@ -386,10 +389,18 @@ provisional with links to its plan items on the roadmap), the prose, and the
 generated tables, with an anchor per value so a page can link to one exit
 code or one label. The index page renders as the Protocol's landing page.
 The data files and schemas are published as they are, at addresses that
-keep the chapter's name and version. The route and the page table's row are
-the message design's to place
-([#1018](https://github.com/jig-harness/jig/issues/1018)), which owns
-`design/website.md`; this design hands them to it.
+keep the chapter's name and version. The agreed routes are `/protocol/` for the index and
+`/protocol/<chapter>/` for each chapter, built from `plugin/protocol/` with
+the chapter's existing filename stem as its slug. The agreement is shared
+with [the website design](website.md#page-types).
+
+The site's data address is `/protocol/<chapter>/v<version>/data.json`.
+Schemas are published unchanged at
+`/protocol/<chapter>/v<version>/schemas/<filename>.json`; their `$id` names
+the chapter and its version as path segments (`v<version>` or `<version>`).
+An ambiguous or unmatched chapter/version fails the build. Only the current
+version's files exist in this source tree; publishing a new chapter version
+does not supply an archive of earlier versions.
 
 ## Build order
 
@@ -419,7 +430,6 @@ Each step is one pull request, shippable alone.
    the skills reads it. The Addresses chapter exports the list of stations
    from `shared/address.ts` and folds in the operator test's restatements of
    the verbs.
-8. **The site's pages**, once the message design has placed their route.
 
 ## Left out
 
@@ -432,8 +442,6 @@ Each step is one pull request, shippable alone.
   types from the schemas; Jig does not.
 - **Chapters for contracts no outside reader reads.** A shape inside one
   skill stays documented with that skill.
-- **The site's route and the page table's row.** The message design places
-  them.
 - **What a dispatched session leaves behind**
   ([#1017](https://github.com/jig-harness/jig/issues/1017)). A later
   provisional chapter may cover its closing report once that design defines

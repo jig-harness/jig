@@ -242,6 +242,7 @@ export const CAUSE_ICONS = {
   "followup-stale": is(ClockAlert, "followup-stale"),
   "nudge-unanswered": is(BellOff, "nudge-unanswered"),
   "pickup-question": is(MessageSquareMore, "pickup-question"),
+  "pickup-ended": is(RotateCw, "pickup-ended"),
   "double-claim": is(CopyX, "double-claim"),
   "assigner-cannot-write": is(UserRoundX, "assigner-cannot-write"),
   "tracker-unreachable": is(Unplug, "tracker-unreachable"),

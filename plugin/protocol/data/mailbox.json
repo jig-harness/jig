@@ -1,0 +1,284 @@
+{
+  "chapter": "mailbox",
+  "title": "The drive mailbox",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "message-kind for a value of an inbox line's kind field, directive for a value of a directive's command field, outbox-status for a value of an outbox line's status field, inbox-field and outbox-field for a field of each file's lines."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The value as a line carries it, or the field's name."
+    },
+    "resumable": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a directive, whether a resume directive may name it as its target; null for every other value."
+    },
+    "writer": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an outbox status, who appends a record of it: pass (one of the drive's passes) or driver (drive.ts itself); null for every other value."
+    },
+    "type": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the JSON type of its value: string, integer or boolean; null for every other value."
+    },
+    "carriedBy": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the kinds or statuses of the lines that carry it, each with always or sometimes, as `note (always), directive (sometimes)`; a line of a kind not named never carries it. Null for every other value."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What it means to a reader that writes or reads the mailbox, and what that reader does with it."
+    }
+  },
+  "values": [
+    {
+      "kind": "message-kind",
+      "name": "note",
+      "resumable": null,
+      "writer": null,
+      "type": null,
+      "carriedBy": null,
+      "meaning": "Context for the drive's passes, which they may read (`mailbox.ts check`) and acknowledge; it never controls the drive. A note that lacks a field a note always carries is dropped with a warning; a line that is not valid JSON, or a note that carries `command`, `target` or `generation`, is read as a malformed directive and holds the drive's pushes. `mailbox.ts repair` removes the interrupted line; a note that parses but carries a directive field stays until a person edits or removes it."
+    },
+    {
+      "kind": "message-kind",
+      "name": "directive",
+      "resumable": null,
+      "writer": null,
+      "type": null,
+      "carriedBy": null,
+      "meaning": "A command the drive enforces mechanically, named in its `command` field. A directive line that does not parse holds the drive's pushes and ends the driver at its next checkpoint with exit 1, as an unreadable inbox does, and a re-armed drive ends again until a person repairs the file: `mailbox.ts repair` removes a line that is not valid JSON, while valid JSON of the wrong shape needs a person to correct or remove it."
+    },
+    {
+      "kind": "directive",
+      "name": "hold-push",
+      "resumable": true,
+      "writer": null,
+      "type": null,
+      "carriedBy": null,
+      "meaning": "Holds every push the drive makes through `guarded-push.ts`: the push is refused with exit 17 (`PUSH_HELD`) until a `resume` with target `hold-push`. The drive goes on with its rounds."
+    },
+    {
+      "kind": "directive",
+      "name": "pause",
+      "resumable": true,
+      "writer": null,
+      "type": null,
+      "carriedBy": null,
+      "meaning": "Holds the driver at its next checkpoint, keeping its locks, until a `resume` with target `pause`; one that lasts past `DRIVE_PR_PAUSE_MAX_SEC` ends the drive with exit 19 (`MAILBOX_PAUSE_TIMEOUT`)."
+    },
+    {
+      "kind": "directive",
+      "name": "stop",
+      "resumable": true,
+      "writer": null,
+      "type": null,
+      "carriedBy": null,
+      "meaning": "Ends the driver at its next checkpoint with exit 18 (`MAILBOX_STOPPED`), after any running pass finishes; one that also carries `now` ends it at once, cancelling the running pass, with exit 143. One naming a `generation` ends that driver alone; one naming none ends every later driver in the working tree too, until a `resume` with target `stop`."
+    },
+    {
+      "kind": "directive",
+      "name": "resume",
+      "resumable": false,
+      "writer": null,
+      "type": null,
+      "carriedBy": null,
+      "meaning": "Clears the directive its `target` names. With target `stop` it also withdraws every stop addressed to a generation."
+    },
+    {
+      "kind": "outbox-status",
+      "name": "received",
+      "resumable": null,
+      "writer": "pass",
+      "type": null,
+      "carriedBy": null,
+      "meaning": "A pass saw the inbox message the record's `id` names (`mailbox.ts ack`), and has not answered it; the message is no longer shown as unseen."
+    },
+    {
+      "kind": "outbox-status",
+      "name": "done",
+      "resumable": null,
+      "writer": "pass",
+      "type": null,
+      "carriedBy": null,
+      "meaning": "A pass answered the inbox message the record's `id` names (`mailbox.ts respond`); the answer is in `response`."
+    },
+    {
+      "kind": "outbox-status",
+      "name": "ack",
+      "resumable": null,
+      "writer": "driver",
+      "type": null,
+      "carriedBy": null,
+      "meaning": "The driver of the record's `generation` acted on the `stop` or `pause` directive the record's `id` names, so a sender sees the directive took effect."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "id",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "note (always), directive (always)",
+      "meaning": "The message's identifier, unique in the inbox; an outbox record names it in its own `id`."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "ts",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "note (always), directive (always)",
+      "meaning": "When the message was sent, as an ISO 8601 time."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "kind",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "note (always), directive (always)",
+      "meaning": "One of the message kinds listed above."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "from",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "note (always), directive (always)",
+      "meaning": "Who sent it: a person's or a session's name, as the sender gives it."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "pr",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "note (always), directive (always)",
+      "meaning": "The number of the pull request the message is for, as nonzero decimal digits with no leading zero (`12`, never `012` or `0`); a drive reads only its own pull request's messages, and a directive whose `pr` is not in that form holds the drive's pushes."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "body",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "note (always), directive (sometimes)",
+      "meaning": "The note's text, or a directive's reason."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "command",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "directive (always)",
+      "meaning": "One of the directives listed above."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "target",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "directive (sometimes)",
+      "meaning": "The directive a `resume` clears; carried by every `resume` and by no other directive."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "generation",
+      "resumable": null,
+      "writer": null,
+      "type": "integer",
+      "carriedBy": "directive (sometimes)",
+      "meaning": "The driver generation a `stop` addresses, a positive whole number the driver prints at its start; only a `stop` carries it."
+    },
+    {
+      "kind": "inbox-field",
+      "name": "now",
+      "resumable": null,
+      "writer": null,
+      "type": "boolean",
+      "carriedBy": "directive (sometimes)",
+      "meaning": "Always `true` where present, and only beside a `generation`: the driver cancels its running pass at once rather than waiting for it, and exits 143 (`drives.ts --stop`)."
+    },
+    {
+      "kind": "outbox-field",
+      "name": "id",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "received (always), done (always), ack (always)",
+      "meaning": "The `id` of the inbox message the record answers."
+    },
+    {
+      "kind": "outbox-field",
+      "name": "ts",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "received (always), done (always), ack (always)",
+      "meaning": "When the record was written, as an ISO 8601 time."
+    },
+    {
+      "kind": "outbox-field",
+      "name": "pr",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "received (always), done (always), ack (always)",
+      "meaning": "The number of the pull request the record is for: a record acknowledges only that pull request's message."
+    },
+    {
+      "kind": "outbox-field",
+      "name": "status",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "received (always), done (always), ack (always)",
+      "meaning": "One of the outbox statuses listed above."
+    },
+    {
+      "kind": "outbox-field",
+      "name": "response",
+      "resumable": null,
+      "writer": null,
+      "type": "string",
+      "carriedBy": "done (always)",
+      "meaning": "A pass's answer, never empty; only a `done` record carries it."
+    },
+    {
+      "kind": "outbox-field",
+      "name": "generation",
+      "resumable": null,
+      "writer": null,
+      "type": "integer",
+      "carriedBy": "ack (always)",
+      "meaning": "The generation of the driver that acted on the directive."
+    }
+  ]
+}

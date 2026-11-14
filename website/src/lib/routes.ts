@@ -41,6 +41,7 @@ export const FIXED: Readonly<Record<string, string>> = {
   "plugin/CONFIGURATION.md": "/adopt/configuration/",
   "plugin/EXTENDING.md": "/adopt/extending/",
   "plugin/MECHANISMS.md": "/adopt/mechanisms/",
+  "plugin/protocol/README.md": "/protocol/",
 };
 
 /** Whether a repository path exists (or, for `isFile`, is a file); the default knows of none. */
@@ -59,6 +60,8 @@ export function siteRoute(
   const p = path.replace(/\/$/, "");
   const fixed = FIXED[p] ?? FIXED[`${p}/README.md`];
   if (fixed) return fixed;
+  const chapter = /^plugin\/protocol\/([^/]+)\.md$/.exec(p);
+  if (chapter?.[1]) return `/protocol/${chapter[1]}/`;
   let m = /^modules\/(M\d+-[^/]+)(?:\/(README\.md|mappings\.md))?$/.exec(p);
   if (m?.[1]) {
     const base = `/modules/${moduleId(m[1])}/`;
