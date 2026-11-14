@@ -506,7 +506,11 @@ GitHub admission windows and dashboard quota displays remain planned.
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
 it keeps the orchestrator's model and effort and forwards the item's route
-to its implementer. Its prompt ends by asking the session to record
+to its implementer. Like a drive's pass, and like the follow-up and
+steward passes, it runs with Claude Code's background tasks off, and its
+prompt has it keep long steps in the foreground, bound each wait on another
+agent and push committed work before a long validation step, since a
+headless pass has no next turn to receive a background result. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
