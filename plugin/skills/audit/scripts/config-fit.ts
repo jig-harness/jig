@@ -92,6 +92,7 @@ import {
   titlePatternFindings,
 } from "./lib/trunk-fit.ts";
 import { policyFindings } from "./lib/pr-policy-fit.ts";
+import { ciPolicyFindings } from "./lib/ci-policy-fit.ts";
 import { reviewerEvidenceRule, reviewerFindings } from "./lib/reviewer-fit.ts";
 import {
   configuredAt,
@@ -540,19 +541,7 @@ function derivations(config: Config, schema: Schema, root: string): Finding[] {
 
 /** Rules that tie two fields together, which a per-field check cannot see. */
 function crossFieldRules(config: Config): Finding[] {
-  const findings: Finding[] = [];
-  const hold = at(config, "ci.hold_label");
-  const ciChecks = at(config, "ci.required_checks");
-  if (
-    typeof hold === "string" &&
-    !(Array.isArray(ciChecks) && ciChecks.length > 0)
-  )
-    findings.push({
-      id: "rule:ci.hold_label",
-      severity: "error",
-      message:
-        "ci.hold_label needs a nonempty ci.required_checks: the drive certifies a held head only against declared checks",
-    });
+  const findings: Finding[] = ciPolicyFindings(config);
   const pattern = at(config, "review.job_pattern");
   const reviewChecks = at(config, "review.required_checks");
   if (typeof pattern === "string" && pattern !== "") {
