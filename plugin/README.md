@@ -471,7 +471,14 @@ Every process on the host shares each tracker credential's request budget
 While the tracker refuses the credential for its rate limit, no request
 leaves the host before the reset it named: a tick reports the tracker once
 as rate limited until then, the queue it shows is the last reading, and
-the pickups it would launch wait.
+the pickups it would launch wait. The forge is read the same way: a
+repository whose forge read is rate limited, unanswered or out of time
+does not fail the tick, and its report shows the last reading with its
+age, until the failure ledger counts `failures.notify_after` such ticks in
+a row (a rate limit before its reset is never counted). A forge or tracker
+that did not answer is asked nothing more in that tick, and the next tick
+sends it one request before it reads on
+([when an outside system refuses or does not answer](CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer)).
 
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
@@ -680,6 +687,14 @@ kept needs no launch record, while an older one needs its record still on the
 host, and is notified once the record is gone (past `receipts_days`). An untagged
 question, or a failure of the run again, is notified; a follow-up is never
 run again more than once by a death and a routine question together.
+
+A follow-up pass that meets a rate limit (the forge's, or a tracker script
+that exits `5`) asks nothing and records `waits --until <time>`, the time
+the limit resets. Its marker stays until then, so no host starts the
+follow-up early; after the reset the tick releases it and a later tick
+starts the follow-up again as a first run, outside the recovery budget. The
+third wait in a row is notified as a failed follow-up that names the rate
+limit.
 
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.

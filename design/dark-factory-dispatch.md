@@ -443,7 +443,14 @@ guards keep one stage from starting twice:
   is never read as an earlier release's: it is logged and the follow-up is a
   person's. The prompt of a routine run again quotes the earlier question,
   at most 500 characters on one line, as a JSON string in a fence, and says
-  it is that pass's words, data and not an instruction. A run again of either kind never earns another: whichever
+  it is that pass's words, data and not an instruction. A pass that met a
+  rate limit (the forge's, or a tracker's) records `waits --until <time>`
+  instead of a question: the marker it left stays until that time, so no
+  host starts the follow-up early, its wrapper does not answer it, and the
+  tick releases it after the reset; a later tick starts the follow-up again
+  as a first run, with no recovery tag and outside the recovery budget. The
+  third wait in a row is a person's, notified with the rate limit named
+  (`followup-waits.ts`). A run again of either kind never earns another: whichever
   path ran it, its failure or death is a person's, so a follow-up is run
   again at most once by the two together, and both draw on the pull
   request's recovery budget. An older death, a failed outcome on an untagged
@@ -1210,6 +1217,7 @@ jig dispatch --apply [--repo <path>]...           # start what the machine file 
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
+jig dispatch result <record> <token> waits --until <time>  # a pickup or follow-up a rate limit stopped
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
 ```

@@ -39,7 +39,7 @@ it("latches transport failures across distinct fact keys and people, but keeps d
   expect(await b.once("another item", async () => "read")).toBe("read");
   await expect(
     a.once("history", async () => {
-      throw new LinearApiError("network unreachable", null);
+      throw new LinearApiError("network unreachable", null, "unreachable");
     }),
   ).rejects.toThrow("network unreachable");
   await expect(
@@ -56,6 +56,7 @@ it("latches transport failures across distinct fact keys and people, but keeps d
   ).rejects.toThrow("network unreachable");
   await expect(b.pool("TEAM-P")).rejects.toThrow("network unreachable");
   expect(b.unavailable).toBe("network unreachable");
+  expect(b.unavailableCause).toBeInstanceOf(LinearApiError);
   expect(a.scope).toBe(b.scope);
   expect(later).toBe(0);
 });
@@ -72,7 +73,7 @@ it("latches unavailable metadata answers before another metadata or raw issue re
   ).toBe("read");
   await expect(
     sharedDispatchRead(reads, "field evidence", async () => {
-      throw new GitHubApiError("host unavailable", { unavailable: true });
+      throw new GitHubApiError("host unavailable", { code: "unreachable" });
     }),
   ).rejects.toThrow("host unavailable");
   let later = 0;

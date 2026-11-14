@@ -45,7 +45,7 @@ it("gives a transport failure during an online walk a scoped notice and reading 
   const tracker = {
     ...fake.tracker(),
     assignedBy: async () => {
-      throw new LinearApiError("connection unavailable", null);
+      throw new LinearApiError("connection unavailable", null, "unreachable");
     },
   };
   const saved = new Map<string, unknown>();
@@ -77,7 +77,7 @@ it("gives a transport failure during an online walk a scoped notice and reading 
     {
       ...tracker,
       changedSince: async () => {
-        throw new LinearApiError("still offline", null);
+        throw new LinearApiError("still offline", null, "unreachable");
       },
     },
     [{ name: "Person", forge: [], tracker: { linear: "person@example.com" } }],

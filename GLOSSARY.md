@@ -2191,8 +2191,10 @@ make, use the entry's term instead.
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
   ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
-  tracker adapters' transports keep the budget and the deadline; the rest
-  is planned ([ROADMAP.md](ROADMAP.md) item 55).
+  tracker adapters' transports keep the budget and the deadline, and they
+  and the forge's `gh` calls fail as the failure classes; a tracker read
+  is sent once more after a failure that may clear, a forge call is not;
+  the rest is planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
   and until when the system refuses the credential. Every process on the

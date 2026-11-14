@@ -8,12 +8,12 @@
 import { describe, expect, it } from "bun:test";
 import { failed, ok } from "../../shared/outcome.ts";
 import { GROW_AFTER_MS, type KeptSize } from "../../shared/outbound/paging.ts";
+import { ghRunFailure } from "../../shared/outbound/github.ts";
 import {
   type AskComments,
   type AskPage,
   PAGE,
   type PageSizes,
-  ranOutOfTime,
   readComments,
   readRepository,
 } from "../lib/forge-batch.ts";
@@ -289,7 +289,11 @@ describe("named pull requests' comments the forge cannot answer a full query of"
 });
 
 describe("what says the forge ran out of time", () => {
-  const answered = (stderr: string) => ({ timedOut: false, stderr });
+  const answered = (stderr: string) => ({ code: 1, timedOut: false, stderr });
+  const ranOutOfTime = (
+    r: { code?: number; timedOut: boolean; stderr: string },
+    tookMs: number,
+  ) => ghRunFailure({ code: 1, ...r }, tookMs)?.code === "too-costly";
 
   it("is a gateway timeout the forge took its time over", () => {
     expect(ranOutOfTime(answered("gh: HTTP 504"), 11_000)).toBe(true);

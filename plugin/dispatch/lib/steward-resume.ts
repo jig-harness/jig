@@ -29,6 +29,7 @@ import {
 import { localRecoverySpent } from "./no-cause-stops.ts";
 import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { routineEnd } from "./routine-reruns.ts";
+import { waitEnd } from "./followup-waits.ts";
 import {
   dispatched,
   marksIn,
@@ -119,7 +120,7 @@ function sourceOf(
 
 function eligiblePass(old: ReadRecord): boolean {
   if (old.record.action === "pickup") return old.record.headless === true;
-  return !routineEnd(old);
+  return !routineEnd(old) && !waitEnd(old);
 }
 
 function sameTarget(old: Source["record"], pending: LaunchRecord): boolean {
