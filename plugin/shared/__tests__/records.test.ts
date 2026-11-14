@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   FOLLOWUP_KIND,
   FOLLOWUP_VERSION,
@@ -117,6 +118,12 @@ describe("the envelope codec", () => {
       [{ ...envelope(), writer: { login: "x" } }, "bad-writer"],
       [{ ...envelope(), at: "yesterday" }, "bad-time"],
       [{ ...envelope(), at: "2026-02-30T00:00:00Z" }, "bad-time"],
+      [{ ...envelope(), at: "2026-04-31T00:00:00Z" }, "bad-time"],
+      [{ ...envelope(), at: "2025-02-29T00:00:00Z" }, "bad-time"],
+      [{ ...envelope(), at: "2026-11-12T24:00:00Z" }, "bad-time"],
+      [{ ...envelope(), at: "2026-11-12T10:60:00Z" }, "bad-time"],
+      [{ ...envelope(), at: "2026-11-12T10:00:00+24:00" }, "bad-time"],
+      [{ ...envelope(), at: "2026-11-04T09:30:00.1234567890Z" }, "bad-time"],
       [{ ...envelope(), generation: -1 }, "bad-generation"],
       [{ ledgerVersion: 1 }, "no-envelope"],
     ];
@@ -129,6 +136,27 @@ describe("the envelope codec", () => {
     expect(other.ok ? "ok" : other.failure.code).toBe("unexpected-kind");
     const plain = readEnvelope({ ...envelope(), kind: "dispatch-receipt" });
     expect(plain.ok ? "ok" : plain.failure.code).toBe("unenveloped-kind");
+  });
+
+  it("reads and writes times in a browser without Temporal", async () => {
+    const script = `
+      delete globalThis.Temporal;
+      const { encode, readEnvelope } = await import(${JSON.stringify(
+        join(import.meta.dir, "../records/envelope.ts"),
+      )});
+      const e = { kind: "dispatch-followup", v: 1, key: "12",
+        writer: { login: "x", host: "sha256:0123456789abcdef", pid: 1 },
+        at: "2024-02-29T10:00:00.000+01:00" };
+      if (!readEnvelope(e).ok) throw new Error("refused a valid time");
+      if (readEnvelope({ ...e, at: "2026-02-30T00:00:00Z" }).ok)
+        throw new Error("accepted February 30");
+      encode(e, {});
+    `;
+    const child = Bun.spawnSync(["bun", "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(child, 0, "envelope without Temporal");
   });
 
   it("rejects impossible dates and key terminators in both readers and writers", () => {

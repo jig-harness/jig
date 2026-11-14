@@ -781,8 +781,8 @@ const FORGE: RecordKind[] = [
   {
     name: "drive-answer",
     medium: "forge",
-    owner: `${DRIVE}lib/answer-comment.ts`,
-    at: "a comment on the pull request answering one parked item, written by `jig send`",
+    owner: "shared/decisions/answer-record.ts",
+    at: "a comment on the pull request answering one parked item, written by `jig send` or the dispatch dashboard's Send",
     markers: ["jig-send-answer"],
     version: 1,
     key: ANSWER_KEY,

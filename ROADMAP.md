@@ -153,8 +153,10 @@ Serve is the first such front. The front names who is looking and shows each per
 own repositories. A chat with the [operator](GLOSSARY.md), the agent a
 person asks about the line, explains why work is stuck and drafts what to
 do. A person confirms every action, and the words of an answer are always
-theirs. The dashboard writes nothing until each write can show that a person made
-it. The first stage puts each pull request's status on the dispatch
+theirs. A person answers a parked decision from the page with Send, which
+posts from their own browser with their own GitHub token; the host never
+writes. Every other write from the dashboard waits until it can show that a
+person made it. The first stage puts each pull request's status on the dispatch
 dashboard a team already runs. A person decides on the rest once that stage
 is in use.
 

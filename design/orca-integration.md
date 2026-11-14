@@ -352,7 +352,7 @@ links its pull request and opens the Orca workspace that holds the work
 
 - **An answer** typed in a park's entry goes out through
   `jig send <address> answer`, as the person. It is one of the places a
-  person answers while the dashboard writes nothing
+  person answers, beside the dashboard page's Send
   ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes)). That only a
   click in Orca's window reaches the box is not tried yet. The box and the
   merge button act only on an event the browser marks as the user's own

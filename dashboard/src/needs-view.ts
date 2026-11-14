@@ -21,6 +21,7 @@ import { ago, clock, plural } from "./format.ts";
 import type { EveryoneAnswerState } from "./icons.ts";
 import { type DecisionRow, decisionRows } from "./picking.ts";
 import { noLinkText } from "./links.ts";
+import { type SendTarget, sendTargetOf } from "./send-target.ts";
 import { ROLES, type Role } from "./status.ts";
 import {
   type Clock,
@@ -70,6 +71,8 @@ export interface NeedView {
   answerKeys: string[];
   /** One row per decision, oldest first, each picked on its own. */
   rows: DecisionRow[];
+  /** Where the card's Send posts its answers, or why it has none (`send-target.ts`). */
+  send: { to: SendTarget } | { absent: string };
   /** What Copy key takes when there is no link. */
   keyText: string | null;
   foldLabel: string;
@@ -185,6 +188,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
   // The card leads with the oldest decision's options; the steps of every open decision go in its fold.
   const options = first?.options ?? [];
   const recommended = options.find((o) => o.recommended) ?? null;
+  const rows = decisionRows(n.decisions);
   return {
     rowKey: `${n.repo} ${n.target} ${n.cause}`,
     act: needAct(n),
@@ -216,7 +220,13 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     goLabel: n.url === null ? null : goLabelOf(n),
     noLink: noLinkOf(n),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
-    rows: decisionRows(n.decisions),
+    rows,
+    send: sendTargetOf({
+      repo: n.repo,
+      pr: n.pr,
+      url: n.url,
+      parked: n.cause === "parked" && rows.length > 0,
+    }),
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
     evidence: needEvidence(n, question !== null, clockNow.timeZone),

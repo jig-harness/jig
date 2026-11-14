@@ -45,12 +45,17 @@
  * run, fetch or follow what it names. A writer that breaks the strict form
  * is a defect, and `encode` throws.
  */
-import { Defect } from "../errors.ts";
 import { isRecord } from "../guards.ts";
-import { attempt, type Failure, failed, ok, type Outcome } from "../outcome.ts";
+import {
+  attempt,
+  Defect,
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../outcome.ts";
 import { type RecordKind, recordKind } from "./registry.ts";
-import { readWriter, type Writer } from "./writer.ts";
-import { isoFromMs, parseMs } from "../time.ts";
+import { readWriter, type Writer } from "./writer-shape.ts";
 
 export interface Envelope {
   kind: string;
@@ -94,17 +99,27 @@ export type ReadCode =
   | "no-marker";
 
 const ISO_TIME =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
-/** A real calendar day and time: no February 30, no 24:00. */
+/**
+ * A real calendar day and time: no February 30, no 24:00. It reads the fields
+ * itself because the codec also runs in the browser (the dashboard's Send),
+ * which stays on `Date` and cannot rely on Temporal (ADR-0018).
+ */
 function validTime(at: string): boolean {
-  return (
-    ISO_TIME.test(at) &&
-    Number.isFinite(parseMs(at)) &&
-    Number(at.slice(11, 13)) < 24 &&
-    isoFromMs(parseMs(`${at.slice(0, 10)}T00:00:00Z`)).slice(0, 10) ===
-      at.slice(0, 10)
-  );
+  if (!ISO_TIME.test(at)) return false;
+  const year = Number(at.slice(0, 4));
+  const month = Number(at.slice(5, 7));
+  const day = Number(at.slice(8, 10));
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > (days[month - 1] as number))
+    return false;
+  if (Number(at.slice(11, 13)) > 23) return false;
+  if (Number(at.slice(14, 16)) > 59 || Number(at.slice(17, 19)) > 59)
+    return false;
+  const offset = /[+-](\d{2}):(\d{2})$/.exec(at);
+  return offset === null || (Number(offset[1]) < 24 && Number(offset[2]) < 60);
 }
 
 /** A hidden marker's name: lowercase words joined by `-`, in `:`-separated parts. */

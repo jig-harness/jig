@@ -3,7 +3,8 @@
  * with its digest and the time it was parked, as a tick carries them. A card
  * of one decision under a class listed as Decide, a card of two decisions
  * that bear on each other, and a card whose one decision asks for
- * authorization and offers an option that cannot be undone.
+ * authorization and offers an option that cannot be undone. Their pull
+ * requests are on github.com, so each card can Send once a token is kept.
  */
 import type {
   LineDecision,
@@ -13,6 +14,11 @@ import { decisionOf } from "../plugin/dispatch/lib/line-decision.ts";
 import type { ParkedDecision } from "../plugin/shared/decisions/park.ts";
 import { need } from "./fixture-line.ts";
 import { API, iso, T, WEB } from "./fixture-rows.ts";
+
+/** A pull request's link on github.com, where Send posts. */
+function githubPull(repo: string, pr: number): string {
+  return `https://github.com/${repo}/pull/${pr}`;
+}
 
 /** The digest of each framing, as the park stored it. */
 export const PICK_DIGESTS = {
@@ -81,6 +87,7 @@ export function picksNeeds(): LineNeed[] {
       stage: "rearm",
       repo: WEB,
       pr: 501,
+      url: githubPull(WEB, 501),
       title: "Rename the export flag",
       since: T(8, 0),
       reason,
@@ -117,6 +124,7 @@ export function picksNeeds(): LineNeed[] {
       stage: "rearm",
       repo: WEB,
       pr: 502,
+      url: githubPull(WEB, 502),
       title: "Split the settings page",
       since: T(9, 0),
       reason,
@@ -184,6 +192,7 @@ export function picksNeeds(): LineNeed[] {
       stage: "rearm",
       repo: API,
       pr: 1300,
+      url: githubPull(API, 1300),
       title: "Retire the legacy invoice table",
       since: T(10, 0),
       reason,

@@ -69,6 +69,7 @@ describe("a need's answers in the palette", () => {
     const kept = allCards(lineOf("merge"), CLOCK, (need) => ({
       text: `answer ${need.rows[0]?.key}: go with B`,
       label: "answers",
+      answers: [],
       guarded: [],
       faults: [],
       picked: 0,
@@ -83,6 +84,7 @@ describe("a need's answers in the palette", () => {
     const held = allCards(lineOf("merge"), CLOCK, (need) => ({
       text: `answer ${need.rows[0]?.key}: choose Drop`,
       label: "answers",
+      answers: [],
       guarded: [],
       faults: [{ key: need.rows[0]?.key ?? "", place: 1, fault: "too long" }],
       picked: 1,
