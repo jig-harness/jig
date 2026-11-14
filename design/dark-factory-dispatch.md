@@ -1250,8 +1250,24 @@ the account's cap. A headless pass runs through a small wrapper,
 `plugin/dispatch/run.ts`, which is handed the record and adds its process
 identity before it starts the stage (host, boot id, process id and the
 process's start time, the identity `drives.ts` captures for a driver so
-that a reused process id is never read as the same process) and records
-the stage's exit when it ends. A record that has neither a process
+that a reused process id is never read as the same process). For a headless
+stage, the claim also reserves a supervisor and child handoff before either
+starts. A separate supervisor records its own identity, starts the stage,
+and records the child's identity while its child handle still owns that
+process id. The supervisor watches the wrapper's identity; when the wrapper
+dies it stops the stage and records its exit after cleanup. A dead wrapper
+therefore does not release a surviving stage's account slot. An interrupted
+handoff, an unreadable identity, or the loss of both wrapper and supervisor
+without a confirmed cleanup keeps the record unknown and holding its slot.
+An externally interrupted or signalled drive also stays unknown: its driver
+can own detached billed passes outside the supervisor's process group. A
+retained driver lock or unreleased driver record likewise withholds an
+exit. Natural failures and pass deadlines use those ownership records too:
+released cleanup or a drive that never acquired ownership can release its
+slot, while unreadable ownership evidence holds it for a person.
+A host restart proves those processes ended; otherwise a person checks the
+work before clearing the record. Legacy wrapper-only claims retain their
+earlier interpretation. A record that has neither a process
 identity nor an agent id is **pending**: it holds its stage and slot, and
 its launch is retried only under its own token, which the tick hands
 `launch` as the launch's key (see The session runtime interface), never as
@@ -1712,18 +1728,20 @@ account; binding the pass through the account's own configuration
 directory is what lets the adapter attribute the wall to that account,
 which a directory shared between accounts could not.
 
-A pass that outruns its deadline is ended with everything it started. On
-POSIX the wrapper leads the pass's own process group and signals the group.
-Windows has no process group to signal, so the wrapper samples the pass's
+A pass that outruns its deadline is stopped through its observed process
+ownership. Headless stages, including drives whose deadline is enforced by
+the driver itself, run under a separate supervisor. On POSIX the stage leads
+its own process group and the supervisor signals the group.
+Windows has no process group to signal, so the supervisor samples the pass's
 descendants while their parent links exist, keeps what it recorded after the
 pass exits, and ends them by identity. That cleanup is best-effort, and
 limits stand: a descendant started and parented between two samples can
-survive a pass, and when the tree cannot be shown to have ended the wrapper
-still exits, so the record's slot is released while a survivor may run on in the
-workspace. Closing them takes a persisted "cleanup uncertain" launch state that
-admission holds until reconciliation or a person's clearance, or ownership at
-creation through a Windows job object; both are separate work, and the first
-waits on the authenticated Windows smoke.
+survive a pass. When observed cleanup cannot be confirmed, the claim keeps
+that uncertainty and admission holds its slot after the wrapper and
+supervisor exit. This proves only what was observed, within
+[ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)'s
+cooperative scope; it does not add operating-system containment or prove
+that every possible descendant ended.
 
 ### What it never does
 

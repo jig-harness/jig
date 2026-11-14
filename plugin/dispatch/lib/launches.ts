@@ -13,7 +13,9 @@
  * - `claim`, the wrapper's (`run.ts`): the process identity it ran under
  *   (`shared/liveness.ts`: host id and name, boot id, process id and the
  *   process's start time), set by an update that only fills an empty column,
- *   so exactly one wrapper ever claims a record;
+ *   so exactly one wrapper ever claims a record; a headless stage reserves
+ *   pending supervisor and child identities, each acknowledged once by its
+ *   owner under that launch's token;
  * - `exit`, the wrapper's again: the stage's exit, once it ended; first write wins;
  * - `result`, a pickup's session's or a follow-up pass's own answer
  *   (`done` or `failed`), written once by `jig dispatch result` under the
@@ -27,7 +29,8 @@
  * | an exit | ended, with the stage's exit |
  * | a claim whose process is alive under the same identity | alive |
  * | a claim from another host, or an unreadable process table | unknown |
- * | a claim whose process is gone, or from before this host last restarted, and no exit | died, with why |
+ * | a legacy claim whose process is gone, or a claim from before this host last restarted, and no exit | died, with why |
+ * | a headless claim with no confirmed cleanup after wrapper death | unknown, holding its slot |
  * | no claim | pending |
  *
  * Pending, alive and unknown records hold their stage and their account's
@@ -42,6 +45,12 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
+import {
+  asClaim,
+  claimState,
+  uncertainCleanupState,
+  type StageSupervision,
+} from "./launch-supervision.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
@@ -58,9 +67,7 @@ import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
-  decodeIdentity,
   type HostIdentity,
-  judge,
   type ProcessIdentity,
   thisHost,
 } from "../../shared/liveness.ts";
@@ -246,6 +253,8 @@ export interface WaitingEpisode {
 /** The wrapper's process identity (`shared/liveness.ts`), and when it claimed the record. */
 export interface LaunchClaim extends ProcessIdentity {
   claimedAt: string;
+  /** Durable startup handoff and identities for the supervised stage. */
+  supervision?: StageSupervision;
 }
 
 export interface LaunchExit {
@@ -270,6 +279,8 @@ export type LaunchState =
       process: LaunchClaim;
       /** It ended on its account's wall, which was never written: the whole account stays closed. */
       wallUnrecorded?: true;
+      /** A registered process proved alive even though the launch cannot be settled. */
+      liveProcess?: ProcessIdentity;
     }
   | { kind: "died"; reason: string; process: LaunchClaim }
   | {
@@ -466,16 +477,6 @@ function isAttempt(value: unknown): value is LaunchAttempt {
   );
 }
 
-/** A claim as written, one from before host ids included; `null` when it is not one. */
-function asClaim(value: unknown): LaunchClaim | null {
-  const identity = decodeIdentity(value);
-  return identity === null ||
-    !isMapping(value) ||
-    typeof value.claimedAt !== "string"
-    ? null
-    : { ...identity, claimedAt: value.claimedAt };
-}
-
 function isExit(value: unknown): value is LaunchExit {
   return (
     isMapping(value) &&
@@ -625,20 +626,6 @@ export function recordExit(
     .run(JSON.stringify(exit), id);
 }
 
-/** Whether a claimed process is the one running now under its pid, by the shared rules. */
-function claimState(
-  claim: LaunchClaim,
-  rows: ProcessRow[] | null,
-  here: HostIdentity,
-): LaunchState {
-  const verdict = judge(claim, rows, here);
-  if (!verdict.ok)
-    return { kind: "unknown", reason: verdict.failure.reason, process: claim };
-  return verdict.value.state === "alive"
-    ? { kind: "alive", process: claim }
-    : { kind: "died", reason: verdict.value.reason, process: claim };
-}
-
 /** A row's exit, when it has one that reads. */
 function exitOf(row: Pick<LaunchRow, "id" | "exit">): LaunchExit | null {
   const exit = parseJson(row.exit, `the exit of launch record ${row.id}`);
@@ -680,6 +667,8 @@ function stateOf(
 ): LaunchState {
   const exit = exitOf(row);
   const claim = claimOf(row);
+  const uncertain = uncertainCleanupState(claim, rows, here);
+  if (uncertain !== null) return uncertain;
   if (exit?.wallUnrecorded === true)
     // The wall was never written: the account stays held until a person clears the record.
     return {

@@ -5,7 +5,7 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check |
+ * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -428,6 +428,11 @@ export const MIGRATIONS: readonly Migration[] = [
     ALTER TABLE log ADD COLUMN cause TEXT;
     ALTER TABLE log ADD COLUMN report_by TEXT;
   `,
+  },
+  {
+    // Child identities and an unresolved spawn handoff must hold slots even after wrapper death. Earlier readers ignore those fields.
+    additive: false,
+    sql: "SELECT 1;",
   },
 ];
 
