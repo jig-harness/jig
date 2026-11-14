@@ -96,22 +96,29 @@ export function runTitleSays(title: string): RunTitleSays {
   return null;
 }
 
-/** CodeRabbit's comment-only draft skip, recognized from its current body. */
+/**
+ * CodeRabbit's comment-only draft skip, recognized from its current body: a
+ * heading line `Draft PR not reviewed` in running Markdown. Fenced code,
+ * indented code and quoted text only show the notice, so they never count.
+ */
 export function commentSaysDraftSkip(app: string, body: string): boolean {
-  const draftNotice = body.split(/\r?\n/u).some((line) => {
-    const text = line
-      .trim()
-      .replace(/^>\s*/u, "")
-      .replace(/^#{1,6}\s+/u, "")
-      .trim();
-    return (
-      text === "Draft PR not reviewed" || text === "**Draft PR not reviewed**"
+  if (app !== "coderabbitai") return false;
+  let fence: string | null = null;
+  // The generated marker labels CodeRabbit's generic skip template too, so
+  // only the draft notice itself can prove this was a draft skip.
+  return body.split(/\r?\n/u).some((line) => {
+    const open = /^ {0,3}(`{3,}|~{3,})/u.exec(line)?.[1];
+    if (fence) {
+      if (open && open[0] === fence[0] && open.length >= fence.length)
+        fence = null;
+      return false;
+    }
+    if (open) {
+      fence = open;
+      return false;
+    }
+    return /^ {0,3}(?:#{1,6}\s+Draft PR not reviewed(?:\s+#+)?|\*\*Draft PR not reviewed\*\*)\s*$/u.test(
+      line,
     );
   });
-  return (
-    app === "coderabbitai" &&
-    // The generated marker labels CodeRabbit's generic skip template too.
-    // Its presence alone therefore cannot prove this was a draft skip.
-    draftNotice
-  );
 }

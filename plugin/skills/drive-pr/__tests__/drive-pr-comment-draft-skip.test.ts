@@ -47,7 +47,7 @@ function expectProbeExit(r: Awaited<ReturnType<typeof probeIn>>, code: number) {
 }
 
 describe("a comment-only draft skip", () => {
-  for (const body of [draftSkip, heading, "> ## Draft PR not reviewed"]) {
+  for (const body of [draftSkip, heading, "**Draft PR not reviewed**"]) {
     it("converges only when the configured reviewer supplies the draft notice", async () => {
       const r = await gate(body);
       expectProbeExit(r, 3);
@@ -97,6 +97,10 @@ describe("a comment-only draft skip", () => {
       await gate(draftSkip, {}, "someone"),
       await gate("The description says Draft PR not reviewed"),
       await gate("## Review summary"),
+      await gate("Old notice:\n```markdown\n## Draft PR not reviewed\n```"),
+      await gate("~~~\n## Draft PR not reviewed\n~~~"),
+      await gate("    ## Draft PR not reviewed"),
+      await gate("> ## Draft PR not reviewed"),
     ]) {
       expectProbeExit(result, 4);
       expect(result.state).toBe("AWAITING_REVIEWER");
