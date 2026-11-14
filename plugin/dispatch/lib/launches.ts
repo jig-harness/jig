@@ -48,6 +48,7 @@
 import {
   asClaim,
   claimState,
+  malformedLiveWrapper,
   uncertainCleanupState,
   type StageSupervision,
 } from "./launch-supervision.ts";
@@ -692,6 +693,21 @@ function stateOf(
         process: NO_PROCESS,
       };
     return { kind: "pending" };
+  }
+  if (claim === null) {
+    const liveWrapper = malformedLiveWrapper(
+      parseJson(row.claim, `the claim of launch record ${row.id}`),
+      rows,
+      here,
+    );
+    if (liveWrapper !== undefined)
+      return {
+        kind: "unknown",
+        reason:
+          "its supervision handoff does not read while a recorded process is alive",
+        process: liveWrapper,
+        liveProcess: liveWrapper,
+      };
   }
   if (claim === null)
     return {

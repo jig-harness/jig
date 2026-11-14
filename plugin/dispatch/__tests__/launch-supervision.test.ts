@@ -73,7 +73,7 @@ it.skipIf(
     const billFile = join(w.root, "billed-pid");
     writeFileSync(
       stage,
-      `const billed = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { detached: true, stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(billFile)}, String(billed.pid)); await Bun.write(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`,
+      'const billed = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { detached: true, stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(process.env.JIG_TEST_BILL_FILE!, String(billed.pid)); await Bun.write(process.env.JIG_TEST_STAGE_PID_FILE!, String(process.pid)); setInterval(() => {}, 1000);',
     );
     const child = Bun.spawn(
       [
@@ -85,7 +85,12 @@ it.skipIf(
         record.token,
       ],
       {
-        env: { ...w.env, JIG_DISPATCH_DRIVE_SCRIPT: stage },
+        env: {
+          ...w.env,
+          JIG_DISPATCH_DRIVE_SCRIPT: stage,
+          JIG_TEST_BILL_FILE: billFile,
+          JIG_TEST_STAGE_PID_FILE: pidFile,
+        },
         stdout: "pipe",
         stderr: "pipe",
       },

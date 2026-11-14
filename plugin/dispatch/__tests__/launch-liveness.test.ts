@@ -147,6 +147,18 @@ describe("a launch record's claim, judged by the shared process identity", () =>
     expect(reboot.records[0]?.state.kind).toBe("died");
   });
 
+  it("keeps uncertain cleanup when this host cannot verify a boot identity", async () => {
+    const identity = await ownClaim();
+    const dead = { ...identity, pid: 2147483647, bootId: "" };
+    const root = claimedRoot({
+      ...dead,
+      supervision: { supervisor: dead, child: dead },
+    });
+    uncertainStage(ID, root);
+    const { records } = await readLaunches(root, { ...thisHost(), bootId: "" });
+    expect(records[0]?.state.kind).toBe("unknown");
+  });
+
   it("acknowledges each process once and refuses the wrong token or registering owner", async () => {
     const identity = await ownClaim();
     const root = claimedRoot({

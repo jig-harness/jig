@@ -21,6 +21,7 @@ const QUESTION_CHARS = 1000;
 const STOP_GRACE_MS = 10_000;
 /** How long the wrapper waits, once the stage exited, for the rest of its output and for its descendants to end. */
 const DRAIN_MS = 2000;
+const DEFAULT_OPTIONS: RunOptions = { keepOutput: false, deadlineSec: 0 };
 
 export interface Ran {
   started?: number;
@@ -55,7 +56,12 @@ export interface RunOptions {
 }
 
 /** Whether a process group still has a member. */
-function groupAlive(pid: number): boolean {
+async function groupAlive(pid: number): Promise<boolean> {
+  const rows = await processTable();
+  if (rows !== null) {
+    const group = rows.find((row) => row.pid === pid)?.pgid ?? pid;
+    return rows.some((row) => row.pgid === group && !row.stat.startsWith("Z"));
+  }
   try {
     process.kill(-pid, 0);
     return true;
@@ -69,11 +75,11 @@ async function endGroup(
   pid: number | undefined,
   signalTree: (name: NodeJS.Signals) => void,
 ): Promise<boolean> {
-  if (pid === undefined || !groupAlive(pid)) return true;
+  if (pid === undefined || !(await groupAlive(pid))) return true;
   signalTree("SIGKILL");
   const gone = currentMs() + DRAIN_MS;
-  while (groupAlive(pid) && currentMs() < gone) await Bun.sleep(20);
-  return !groupAlive(pid);
+  while ((await groupAlive(pid)) && currentMs() < gone) await Bun.sleep(20);
+  return !(await groupAlive(pid));
 }
 
 /** The timers that stop a pass at its deadline: a signal, then a kill after the grace. */
@@ -123,7 +129,7 @@ export function runStage(
   argv: string[],
   cwd: string,
   env: Record<string, string>,
-  options: RunOptions = { keepOutput: false, deadlineSec: 0 },
+  options: RunOptions = DEFAULT_OPTIONS,
 ): Promise<Ran> {
   return new Promise((settle) => {
     const started = currentMs();
@@ -207,7 +213,7 @@ export function runStage(
     });
     let stopping = false;
     const stop = (name: NodeJS.Signals) => {
-      if (stopping) return;
+      if (ended || stopping) return;
       stopping = true;
       signalTree(name);
       timers.push(setTimeout(() => signalTree("SIGKILL"), STOP_GRACE_MS));

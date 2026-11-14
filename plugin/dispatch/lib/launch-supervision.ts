@@ -20,6 +20,13 @@ export interface StageSupervision {
   uncertain?: true;
 }
 
+/** A restart is evidence only where both identities carry a verifiable boot id. */
+function restarted(claim: LaunchClaim, here: HostIdentity): boolean {
+  return (
+    claim.bootId !== "" && here.bootId !== "" && claim.bootId !== here.bootId
+  );
+}
+
 /** Legacy wrapper-only claims still read; a malformed handoff never becomes legacy. */
 export function asClaim(value: unknown): LaunchClaim | null {
   const identity = decodeIdentity(value);
@@ -59,6 +66,34 @@ export function asClaim(value: unknown): LaunchClaim | null {
   };
 }
 
+/** Preserve a recognizable live wrapper when its supervision handoff is malformed. */
+export function malformedLiveWrapper(
+  value: unknown,
+  rows: ProcessRow[] | null,
+  here: HostIdentity,
+): LaunchClaim | undefined {
+  if (!isMapping(value) || typeof value.claimedAt !== "string")
+    return undefined;
+  const identity = decodeIdentity(value);
+  if (identity === null) return undefined;
+  const candidates = [identity];
+  if (isMapping(value.supervision)) {
+    candidates.push(
+      ...[value.supervision.supervisor, value.supervision.child]
+        .map(decodeIdentity)
+        .filter(
+          (candidate): candidate is ProcessIdentity => candidate !== null,
+        ),
+    );
+  }
+  return candidates.some((candidate) => {
+    const verdict = judge(candidate, rows, here);
+    return verdict.ok && verdict.value.state === "alive";
+  })
+    ? { ...identity, claimedAt: value.claimedAt }
+    : undefined;
+}
+
 /** A known-live wrapper or stage identity, independent of unresolved handoffs. */
 function liveStageProcess(
   claim: LaunchClaim,
@@ -85,11 +120,7 @@ export function uncertainCleanupState(
 ): LaunchState | null {
   if (claim?.supervision?.uncertain !== true) return null;
   const verdict = judge(claim, rows, here);
-  if (
-    verdict.ok &&
-    verdict.value.state === "dead" &&
-    claim.bootId !== here.bootId
-  )
+  if (verdict.ok && verdict.value.state === "dead" && restarted(claim, here))
     return null;
   const liveProcess = liveStageProcess(claim, rows, here);
   return {
@@ -119,7 +150,7 @@ export function claimState(
   const handoff = claim.supervision;
   if (handoff !== undefined) {
     // A reboot proves even an unacknowledged launch on this host is gone.
-    if (claim.bootId !== here.bootId)
+    if (restarted(claim, here))
       return { kind: "died", reason: wrapper.value.reason, process: claim };
     if (liveProcess !== undefined)
       return {
