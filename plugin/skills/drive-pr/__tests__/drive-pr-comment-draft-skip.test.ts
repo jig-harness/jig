@@ -48,7 +48,7 @@ function expectProbeExit(r: Awaited<ReturnType<typeof probeIn>>, code: number) {
 
 describe("a comment-only draft skip", () => {
   for (const body of [draftSkip, heading, "> ## Draft PR not reviewed"]) {
-    it(`converges on the configured reviewer's ${body === marker ? "marker" : "heading"}`, async () => {
+    it("converges only when the configured reviewer supplies the draft notice", async () => {
       const r = await gate(body);
       expectProbeExit(r, 3);
       expect(r.state).toBe("CONVERGED");
@@ -93,7 +93,7 @@ describe("a comment-only draft skip", () => {
 
   it("does not trust another author's skip or an unrelated heading", async () => {
     expectProbeExit(await gate(marker), 4);
-    expectProbeExit(await gate(marker, {}, "someone"), 4);
+    expectProbeExit(await gate(draftSkip, {}, "someone"), 4);
     expectProbeExit(
       await gate("The description says Draft PR not reviewed"),
       4,
@@ -102,7 +102,7 @@ describe("a comment-only draft skip", () => {
   });
 
   it("does not use CodeRabbit's comment for another configured reviewer", async () => {
-    const { dir, stateDir } = fixture(marker);
+    const { dir, stateDir } = fixture(draftSkip);
     const r = await probeIn(dir, stateDir, HEAD, [], {
       env: {
         DRIVE_PR_REVIEWER_APP: "other-reviewer",

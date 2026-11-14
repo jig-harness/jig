@@ -12,6 +12,7 @@ import {
   removeLease,
   removeTreeLease,
 } from "./state/lease.ts";
+import { isMine } from "./state/lease-records.ts";
 import { openStore } from "./state/store.ts";
 
 /** Capture after winning the Ready claim; call only after its durable commit. */
@@ -25,18 +26,14 @@ export async function standaloneReadyCleanup(
   const ref = leaseRef(store.stateDir, pr, actor);
   const tree = treeLeaseRef(store.stateDir, actor);
   const owns = (held: Lease | null): boolean =>
-    held !== null &&
-    (session.source === "none"
-      ? held.holder === "worktree"
-      : held.holder === "session" &&
-        held.pid === session.pid &&
-        held.host === session.host);
+    held !== null && isMine(held, session, actor);
   const sameHolder = (a: Lease | null, b: Lease | null): boolean =>
     a !== null &&
     b !== null &&
     a.holder === b.holder &&
     a.pid === b.pid &&
-    a.host === b.host;
+    a.host === b.host &&
+    a.sessionStarted === b.sessionStarted;
   const captured = await store.locked(async () => ({
     lease: readLease(ref),
     tree: readTreeLease(tree),

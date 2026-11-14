@@ -13,7 +13,14 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { worktreePathKey } from "../scripts/lib/state/actor.ts";
 import { leaseRef, treeLeaseRef } from "../scripts/lib/state/lease.ts";
-import { claimRow, putClaim, readLease, readTreeLease } from "./state-rows.ts";
+import {
+  claimRow,
+  putClaim,
+  putLease,
+  putTreeLease,
+  readLease,
+  readTreeLease,
+} from "./state-rows.ts";
 
 useDrivePrSuite();
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
@@ -131,5 +138,34 @@ describe("standalone mark-ready session leases", () => {
         treeLeaseRef(stateDir, `wt-${worktreePathKey(scratchClean.dir)}`),
       )?.pid,
     ).toBe(process.pid);
+  });
+
+  it("does not remove a successor session that reused the same pid and host", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      isDraft: false,
+      head: scratchClean.head,
+    });
+    const first = await markReady(dir, stateDir, [], {
+      CLAUDE_PID: String(process.pid),
+      DRIVE_PR_SESSION: "",
+      DRIVE_PR_SESSION_STARTED: "first-session",
+    });
+    expectSpawnExit({ ...first, stdout: first.outcome }, 0);
+    const actor = `wt-${worktreePathKey(scratchClean.dir)}`;
+    const prLease = leaseRef(stateDir, "999", actor);
+    const treeLease = treeLeaseRef(stateDir, actor);
+    putLease(prLease, { sessionStarted: "successor-session" });
+    putTreeLease(treeLease, { sessionStarted: "successor-session" });
+
+    const second = await markReady(dir, stateDir, [], {
+      CLAUDE_PID: String(process.pid),
+      DRIVE_PR_SESSION: "",
+      DRIVE_PR_SESSION_STARTED: "first-session",
+    });
+    expectSpawnExit({ ...second, stdout: second.outcome }, 0);
+    expect(second.outcome).toBe("already-marked");
+    expect(readLease(prLease)?.sessionStarted).toBe("successor-session");
+    expect(readTreeLease(treeLease)?.sessionStarted).toBe("successor-session");
   });
 });
