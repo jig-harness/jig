@@ -23,11 +23,12 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -76,7 +77,15 @@ export function writeUnwritten(
       why: why.replace(/\s+/g, " ").trim().slice(0, 500),
     };
     writeFileSync(temporary, `${JSON.stringify(body)}\n`, { mode: 0o600 });
-    renameSync(temporary, path);
+    // `rename` replaces an existing destination on POSIX. Linking the
+    // completed temporary file instead gives the first publisher ownership.
+    try {
+      linkSync(temporary, path);
+    } catch (error) {
+      if (!existsSync(path)) throw error;
+    } finally {
+      unlinkSync(temporary);
+    }
     return true;
   } catch (error) {
     swallow(error, "the evidence of an unwritten end could not be kept");

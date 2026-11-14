@@ -336,6 +336,25 @@ function planClaimed(
     return;
   }
   if (settledByPr(item.key, pr.step, plan)) return;
+  const hostHeld =
+    input.rerunsHeld !== null &&
+    input.launches.some(
+      (record) =>
+        record.record.action === "pickup" &&
+        (record.record.item === item.key ||
+          record.record.batchItems?.some((entry) => entry.key === item.key) ===
+            true) &&
+        holdsItem(record.record, item.key) &&
+        unwrittenResult(record),
+    );
+  if (hostHeld) {
+    plan.quiet.push({
+      target: item.key,
+      class: "pickup-ended",
+      why: `its pickup ended without a result this host could write; held while ${input.rerunsHeld}`,
+    });
+    return;
+  }
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {

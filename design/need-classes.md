@@ -489,9 +489,3 @@ on #884, whose health check it reads.
   a repository's maintainers decide, in its configuration.
 - **A sweep of the needs raised before this.** Clearing that backlog is a
   person's one-off task, not a mechanism.
-
-## Review
-
-Critiqued on 2026-11-12 by a reviewer with fresh context (a subagent that
-did not write it), against the draft of this design, its plan item and
-ADR-0018 on top of commit `96567939`.

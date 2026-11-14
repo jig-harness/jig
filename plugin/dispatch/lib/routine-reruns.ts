@@ -41,7 +41,7 @@ import {
   routineClassOf,
   type StandingAnswer,
 } from "./routine-questions.ts";
-import { isRerun } from "./session-startup.ts";
+import { isRerun, unwrittenResult } from "./session-startup.ts";
 import { releaseOwnMarkers } from "./followup-waits.ts";
 import { questionOf } from "./session.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -67,6 +67,9 @@ export function routineRerun(
   if (outcome?.outcome !== "failed" || outcome.unreadable !== undefined)
     return null;
   const found = launches.find((r) => r.record.id === outcome.record);
+  // An unwritten end is a host fault, never a routine question. Its recovery
+  // is owned by the host-health path and must not release this marker.
+  if (found !== undefined && unwrittenResult(found)) return null;
   if (outcome.rerun === true || (found !== undefined && isRerun(found.record)))
     return null;
   // A pass that recorded a wait for a rate limit asked nothing: `followup-waits.ts` owns it.

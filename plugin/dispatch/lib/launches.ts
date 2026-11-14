@@ -889,6 +889,7 @@ export function removeRecord(id: string, root = stateRoot()): void {
     db.query("DELETE FROM launches WHERE id = ?").run(id);
     db.query("DELETE FROM settled_ends WHERE record = ?").run(id);
   });
+  removeUnwritten(root, [id]);
 }
 
 /** A row as `inspectRow` read it: what a conditional removal compares against. */
@@ -942,6 +943,7 @@ export function removeRecordIf(
       .run(id, seen.claim, seen.exit);
     if (result.changes === 0) return false;
     db.query("DELETE FROM nudges WHERE record = ?").run(id);
+    removeUnwritten(root, [id]);
     return true;
   });
 }

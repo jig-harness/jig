@@ -236,6 +236,8 @@ interface RunOptions {
   deadlineSec: number;
 }
 
+const DEFAULT_RUN_OPTIONS: RunOptions = { keepOutput: false, deadlineSec: 0 };
+
 /** Whether a process group still has a member. */
 function groupAlive(pid: number): boolean {
   try {
@@ -304,7 +306,7 @@ function runStage(
   argv: string[],
   cwd: string,
   env: Record<string, string>,
-  options: RunOptions = { keepOutput: false, deadlineSec: 0 },
+  options: RunOptions = DEFAULT_RUN_OPTIONS,
 ): Promise<Ran> {
   return new Promise((settle) => {
     const started = currentMs();
