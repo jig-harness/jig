@@ -132,6 +132,7 @@ import {
   ownIdentity,
   type ProcessIdentity,
 } from "./liveness.ts";
+import { currentMs } from "./time.ts";
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
 /** The most slots a lock has, and so the slots an exclusive holder takes. */
@@ -470,7 +471,7 @@ interface SlotHolder {
 function slotHolders(
   paths: readonly string[],
   windows = process.platform === "win32",
-  now = Date.now(),
+  now = currentMs(),
 ): SlotHolder[] {
   return paths.flatMap((path) => {
     const seen = holder(path, windows);

@@ -45,6 +45,7 @@ import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { SESSION_LEASE_MIN } from "../../../../../shared/liveness.ts";
 import type { DriveDb } from "./db.ts";
+import { currentIso, isoFromMs, parseMs } from "../../../../../shared/time.ts";
 
 /** The files an earlier release kept in a clone's state directory, which the database replaces. */
 const FORMER = {
@@ -148,10 +149,10 @@ function text(path: string): string | null {
 
 function mtimeIso(path: string): string {
   try {
-    return new Date(statSync(path).mtimeMs).toISOString();
+    return isoFromMs(statSync(path).mtimeMs);
   } catch (err) {
     swallow(err, "a former state file's time could not be read");
-    return new Date().toISOString();
+    return currentIso();
   }
 }
 
@@ -187,7 +188,7 @@ function validLease(v: Record<string, unknown>, tree: boolean): boolean {
     v.command,
     v.sessionStarted,
   ];
-  if (!fields.every(str) || !Number.isFinite(Date.parse(v.lastSeen as string)))
+  if (!fields.every(str) || !Number.isFinite(parseMs(v.lastSeen as string)))
     return false;
   return !tree || (str(v.pr) && /^[0-9]+$/.test(v.pr) && str(v.revision));
 }
@@ -429,9 +430,9 @@ function leaseRow(db: Database, lease: Row): Row {
     boot_id: "",
     start: "",
     generation: nextGeneration(db),
-    expires_at: new Date(
-      Date.parse(String(lease.renewed_at)) + SESSION_LEASE_MIN * 60_000,
-    ).toISOString(),
+    expires_at: isoFromMs(
+      parseMs(String(lease.renewed_at)) + SESSION_LEASE_MIN * 60_000,
+    ),
   };
 }
 
@@ -467,7 +468,7 @@ function writeRows(drive: DriveDb, dir: string, rows: Rows | null): void {
     insertRow(db, "imports", {
       clone,
       dir,
-      at: new Date().toISOString(),
+      at: currentIso(),
       imported: count,
       skipped: JSON.stringify(rows?.skipped ?? []),
     });

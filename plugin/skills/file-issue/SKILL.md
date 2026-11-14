@@ -51,14 +51,14 @@ The skill reads `.config/jig.yaml` through the plugin's configuration
 reader; to read one value yourself, run
 `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" <field>`.
 
-| Field | What it sets | When absent |
-|-------|--------------|-------------|
-| `issue_tracker.taxonomy` | The label taxonomy, relative to the repository root | `label-taxonomy.yaml`; without one the skill stops before writing |
-| `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the issues are filed in, the prefix of their keys (`ENG` in `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming it. Not used on GitHub Issues |
-| `issue_tracker.adapter` | Which tracker adapter the tracker scripts use | The default adapter |
-| `issue_tracker.labels` | The label each role names (`hitl`, `manual_ops`, `epic`, `followup`, `bug`, `pattern_prefix`); the `labels` operation of `tracker.ts` prints them | The defaults in the [configuration reference](../../CONFIGURATION.md#issue_tracker) |
-| `drive.change_areas_catalog` | The change-area catalog labels are derived from when a diff exists | No catalog: labels come from the description |
-| `review.taxonomy.categories` | The category list an issue's category is checked against (with `unknown`, always allowed) | No list: the category is `unknown` |
+| Field                        | What it sets                                                                                                                                      | When absent                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `issue_tracker.taxonomy`     | The label taxonomy, relative to the repository root                                                                                               | `label-taxonomy.yaml`; without one the skill stops before writing                                         |
+| `issue_tracker.team`         | Linear and Jira: the team (Linear) or project (Jira) the issues are filed in, the prefix of their keys (`ENG` in `ENG-123`)                       | Required on Linear and Jira: the tracker scripts stop with a message naming it. Not used on GitHub Issues |
+| `issue_tracker.adapter`      | Which tracker adapter the tracker scripts use                                                                                                     | The default adapter                                                                                       |
+| `issue_tracker.labels`       | The label each role names (`hitl`, `manual_ops`, `epic`, `followup`, `bug`, `pattern_prefix`); the `labels` operation of `tracker.ts` prints them | The defaults in the [configuration reference](../../CONFIGURATION.md#issue_tracker)                       |
+| `drive.change_areas_catalog` | The change-area catalog labels are derived from when a diff exists                                                                                | No catalog: labels come from the description                                                              |
+| `review.taxonomy.categories` | The category list an issue's category is checked against (with `unknown`, always allowed)                                                         | No list: the category is `unknown`                                                                        |
 
 The taxonomy's own schema (types, statuses, flags, groups, categories) is
 described in the header of
@@ -70,17 +70,17 @@ Every read and write goes through the tracker scripts of the `do-item`
 skill, which reach the tracker the repository configured. Never call a
 tracker by another route.
 
-| Operation | Command |
-|-----------|---------|
-| Label roles | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" labels` |
-| Labels the tracker has | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" available-labels` |
-| Search issues | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" search "<text>"` |
-| Get an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"` |
-| Its comments | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" "<KEY>"` |
-| Its relations | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relations "<KEY>"` |
-| Create an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input issue.json` |
-| Change an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input patch.json` |
-| Relate two issues | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relate "<KEY>" <blocks\|related\|duplicate> "<TARGET>"` |
+| Operation              | Command                                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Label roles            | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" labels`                                                 |
+| Labels the tracker has | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" available-labels`                                       |
+| Search issues          | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" search "<text>"`                                        |
+| Get an issue           | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"`                                              |
+| Its comments           | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" "<KEY>"`                                          |
+| Its relations          | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relations "<KEY>"`                                      |
+| Create an issue        | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input issue.json`                              |
+| Change an issue        | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input patch.json`                      |
+| Relate two issues      | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relate "<KEY>" <blocks\|related\|duplicate> "<TARGET>"` |
 
 An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue
 of the configured repository; this document writes it as `<KEY>` (or
@@ -100,8 +100,10 @@ among `labels` or `addLabels`. Priority is `1` (urgent), `2` (high), `3`
 checked inside the tracker: one without a type, a priority or a size (an
 epic needs no size), or without a label of a required group, is refused
 before anything is written (exit `2`), naming what it lacks. Write each
-file with the Write tool under `.context/`, never by interpolating text
-into a shell command.
+file with the Write tool under `.context/scratch/`, never by interpolating
+text into a shell command. A draft whose tracker write failed is the only
+copy of its findings: move it out of `.context/scratch/` (to
+`.context/unfiled/`) before ending, so worktree collection keeps it.
 
 ### Asking the user
 
@@ -138,7 +140,7 @@ level, which the level itself answers.
    size:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --input .context/file-issue/<n>.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --input .context/scratch/file-issue/<n>.json
    bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> <label>...
    ```
 
@@ -148,6 +150,7 @@ level, which the level itself answers.
    taxonomy is missing or fails its lint, or the tracker could not be read;
    stop and report it, and write nothing. Exit `2`: a usage error in your
    command.
+
 2. **Only taxonomy labels.** A label the taxonomy lacks is a change to the
    taxonomy, not to this issue: say so and leave it off. Never create a
    label in the tracker from here.
@@ -391,7 +394,7 @@ It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
 with `"parent": "<PARENT-KEY>"`, each from its own JSON file:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/file-issue/<n>.json
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/scratch/file-issue/<n>.json
 ```
 
 Each prints the new issue's key and URL. Exit `2` with `refused to file
@@ -482,7 +485,7 @@ is on the child before it leaves the issue. Only once every child exists,
 change the issue:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input .context/file-issue/patch.json
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input .context/scratch/file-issue/patch.json
 ```
 
 with `addLabels` and `removeLabels` rather than a whole label list, and a
@@ -516,7 +519,11 @@ to triage, a comment naming what it lacks posted first, and lists the
 started ones without moving them. Where the repository sets
 `file_issue.sweep.move: false`, `--yes` instead posts the comment and moves
 nothing; an issue already carrying the comment's marker is passed over
-without counting against the budget. It moves (or, without moving,
+without counting against the budget, and `--position <file>` keeps the
+read's place in that file, so each run resumes after the last issue the
+previous one handled and goes on from the oldest at the end (a missing file starts from the oldest, and so does an unreadable
+one, with a warning; a second run on the same file is refused while one
+holds it, and so is one whose directory cannot be made or locked; moving keeps no position). It moves (or, without moving,
 comments on) at most 50 a run and lists at most 20 pages of 100. Listing pages share one tracker census, bounded to
 a minute; the page limit bounds the report, not tracker issue reads. The
 next run takes what remains. Offer to settle a
@@ -558,6 +565,7 @@ the user keeps until the move is done.
    names a destination store that cannot be written: the tracker needs the
    field, the issue type or the option it names first, which a person with
    the rights to add it sets up.
+
 3. **Copy**, once the user accepts the preview. It sets each open issue's
    destination from its source and keeps the source:
 

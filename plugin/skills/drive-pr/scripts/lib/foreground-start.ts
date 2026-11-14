@@ -10,6 +10,7 @@ import {
   processCompletionPath,
   processIdentityCompleted,
 } from "../../../../shared/process-registry.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 type Runner = ReturnType<typeof spawn>;
 
@@ -84,9 +85,9 @@ export async function handOffToRunner(
       { resultFile: authority },
     );
   }
-  const deadline = Date.now() + startBudgetMs;
+  const deadline = currentMs() + startBudgetMs;
   while (!progress.commandStarted() && !progress.settled() && !exited()) {
-    if (Date.now() >= deadline)
+    if (currentMs() >= deadline)
       return await abandonLaunch(runner, progress, startBudgetMs, launchedLine);
     await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
   }
@@ -110,9 +111,9 @@ function outcomeOf(
 }
 
 async function waitFor(until: () => boolean, ms: number): Promise<boolean> {
-  const deadline = Date.now() + ms;
+  const deadline = currentMs() + ms;
   while (!until()) {
-    if (Date.now() >= deadline) return false;
+    if (currentMs() >= deadline) return false;
     await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
   }
   return true;

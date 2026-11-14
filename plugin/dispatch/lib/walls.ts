@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 export interface Wall {
   account: string;
@@ -45,7 +46,7 @@ function wallsDir(account: string, root: string): string {
 export function writeWall(wall: Wall, root = stateRoot()): string {
   const dir = wallsDir(wall.account, root);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const name = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
+  const name = `${currentMs()}-${crypto.randomUUID().slice(0, 8)}.json`;
   const path = join(dir, name);
   const temporary = `${path}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(wall)}\n`, { mode: 0o600 });
@@ -59,7 +60,7 @@ function readWallFile(path: string): Wall | null {
     return isMapping(value) &&
       typeof value.account === "string" &&
       typeof value.resetAt === "string" &&
-      Number.isFinite(Date.parse(value.resetAt))
+      Number.isFinite(parseMs(value.resetAt))
       ? (value as unknown as Wall)
       : null;
   } catch (error) {
@@ -81,7 +82,7 @@ function liveWalls(dir: string, nowMs: number): Wall[] {
   for (const name of names) {
     const wall = readWallFile(join(dir, name));
     if (wall === null) continue;
-    if (Date.parse(wall.resetAt) <= nowMs)
+    if (parseMs(wall.resetAt) <= nowMs)
       rmSync(join(dir, name), { force: true });
     else live.push(wall);
   }
@@ -91,10 +92,7 @@ function liveWalls(dir: string, nowMs: number): Wall[] {
 function latestOf(walls: Wall[]): Wall | null {
   let latest: Wall | null = null;
   for (const wall of walls)
-    if (
-      latest === null ||
-      Date.parse(wall.resetAt) > Date.parse(latest.resetAt)
-    )
+    if (latest === null || parseMs(wall.resetAt) > parseMs(latest.resetAt))
       latest = wall;
   return latest;
 }

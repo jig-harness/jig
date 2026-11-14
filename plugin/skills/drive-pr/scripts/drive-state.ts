@@ -194,6 +194,7 @@
  */
 
 import { writeFileSync } from "node:fs";
+import { claimAdvisoryRepair } from "./lib/state/advisory-repair.ts";
 import {
   ciHoldTransitions,
   completedRequiredCi,
@@ -310,6 +311,7 @@ import {
   withoutSuperseded,
   workflowRunsBehind,
 } from "./lib/status/workflow-runs.ts";
+import { parseMs } from "../../../shared/time.ts";
 
 function usage(): void {
   console.error(`usage: drive-state.ts <command> [PR] [flags]
@@ -372,6 +374,7 @@ function usage(): void {
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
   record-decision [PR]              a decision the agent took, JSON on stdin
+  claim-advisory-repair [PR]        charge one answered fix receipt, {key,resolvedAt} on stdin
   reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
   record-event [PR]                 a self-restart or re-arm, JSON on stdin
   rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
@@ -726,6 +729,7 @@ const STDIN_COMMANDS = new Map<
   ],
   ["seed-ledger", seedLedgerCommand],
   ["record-decision", decisions.recordDecision],
+  ["claim-advisory-repair", claimAdvisoryRepair],
   ["reverse-decision", decisions.reverseDecision],
   ["record-event", recordEvent],
   ["rule", recordRuling],
@@ -799,6 +803,7 @@ async function main(): Promise<number> {
     "park",
     "unpark",
     "record-decision",
+    "claim-advisory-repair",
     "reverse-decision",
     "record-event",
     "rule",
@@ -1396,7 +1401,7 @@ async function main(): Promise<number> {
         !isGitSha(a.sha) ||
         a.actorName === "" ||
         /\r|\n/.test(a.actorName) ||
-        !Number.isFinite(Date.parse(a.createdAt))
+        !Number.isFinite(parseMs(a.createdAt))
       ) {
         fail(
           2,
@@ -1512,7 +1517,7 @@ async function main(): Promise<number> {
       // strictly AFTER a real push (§ 3 → § 6), so the push already happened
       // whether or not THIS actor currently holds anything to stamp a SHA onto.
       await store.update((s) => ({
-        ...withProgress(s, "push-landed", new Date()),
+        ...withProgress(s, "push-landed", Temporal.Now.instant()),
         held: s.held.map((h) => {
           if (h.actor !== me) return h;
           if (
@@ -1855,7 +1860,9 @@ async function main(): Promise<number> {
         // of `'push-landed'` above, which genuinely does run strictly after a
         // real push (the two calls shared one label that was only accurate for
         // one of them).
-        await store.update((s) => withProgress(s, "ci-verified", new Date()));
+        await store.update((s) =>
+          withProgress(s, "ci-verified", Temporal.Now.instant()),
+        );
         return 0;
       } finally {
         if (remoteHeartbeat !== null) clearInterval(remoteHeartbeat);
@@ -2887,7 +2894,7 @@ async function main(): Promise<number> {
           // empty-batch no-op and the contended-claim refusal above, so this
           // call is a genuine drain, never a no-op.
           const next: DriveState = {
-            ...withProgress(state, "held-drained", new Date()),
+            ...withProgress(state, "held-drained", Temporal.Now.instant()),
             held: [],
           };
           store.write(next);
@@ -3031,7 +3038,7 @@ async function main(): Promise<number> {
         // no-op `return 0` above (`--if-comment-url` mismatch, a missing key
         // with `--if-present`), so this branch is a genuine release.
         const next: DriveState = {
-          ...withProgress(state, "held-drained", new Date()),
+          ...withProgress(state, "held-drained", Temporal.Now.instant()),
           held: state.held.filter((h) => h.key !== a.key),
         };
         store.write(next);
@@ -3080,7 +3087,9 @@ async function main(): Promise<number> {
         "progress",
       );
       if (delaySec > 0) await sleep(delaySec);
-      await store.update((s) => withProgress(s, a.phaseArg, new Date()));
+      await store.update((s) =>
+        withProgress(s, a.phaseArg, Temporal.Now.instant()),
+      );
       return 0;
     }
 

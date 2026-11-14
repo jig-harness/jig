@@ -12,6 +12,7 @@
 
 import { swallow } from "../../../../../shared/errors.ts";
 import { ghCall } from "../proc.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 export const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
 
@@ -185,12 +186,12 @@ function replacedSuites(
   const replaced = new Map<number, number[]>();
   for (const run of workflowRuns) {
     if (run.status !== "completed" || run.conclusion !== "cancelled") continue;
-    const started = Date.parse(run.startedAt);
+    const started = parseMs(run.startedAt);
     const successors = workflowRuns.filter(
       (other) =>
         other.id !== run.id &&
         other.workflowId === run.workflowId &&
-        Date.parse(other.startedAt) >= started &&
+        parseMs(other.startedAt) >= started &&
         hasResult(other, jobs),
     );
     if (successors.length > 0)
@@ -272,14 +273,14 @@ function replacedAttempt(
     !RESULT_CONCLUSIONS.has(run.conclusion)
   )
     return false;
-  const floor = Date.parse(run.startedAt);
-  const started = Date.parse(job.started ?? job.startedAt ?? "");
+  const floor = parseMs(run.startedAt);
+  const started = parseMs(job.started ?? job.startedAt ?? "");
   if (!Number.isFinite(started) || !Number.isFinite(floor) || started >= floor)
     return false;
   const latest = jobs.filter(
     (other) =>
       other.suiteId === job.suiteId &&
-      Date.parse(other.started ?? other.startedAt ?? "") >= floor,
+      parseMs(other.started ?? other.startedAt ?? "") >= floor,
   );
   return (
     hasResult(run, latest) && !answeredBySkip(job, [run.checkSuiteId], latest)

@@ -17,6 +17,7 @@ import type { ParkedItem } from "./state/schema.ts";
 import type { PendingAnswer, AnswerChoice } from "./state/pass-handoff.ts";
 import { parseDecisionRecord } from "./state/framed-park.ts";
 import { recordOptions, recordSteps } from "./state/park-frame.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 export interface CommentLike {
   author: string;
@@ -37,7 +38,7 @@ export function isAnswer(c: CommentLike, after: number): boolean {
   return (
     TRUSTED_ASSOCIATIONS.has(c.association) &&
     c.author !== "" &&
-    Date.parse(answerTime(c)) > after &&
+    parseMs(answerTime(c)) > after &&
     !/^\*\*(accepted|rejected|wont-fix|deferred|moot)\*\*/.test(c.body) &&
     !withoutAnswerRecord(c.body).includes("<!--")
   );
@@ -375,7 +376,7 @@ export function parseAnswerComment(
   c: CommentLike,
   place: "thread" | "conversation",
 ): PendingAnswer | null {
-  if (item.at === undefined || !isAnswer(c, Date.parse(item.at))) return null;
+  if (item.at === undefined || !isAnswer(c, parseMs(item.at))) return null;
   const lines = answerLines(item, c.body);
   if (lines.length === 0) return null;
   // A note by itself is not an answer, including on a review thread.
@@ -433,7 +434,7 @@ export function noteWithoutAnswer(
   item: ParkedItem,
   c: CommentLike,
 ): string | null {
-  if (item.at === undefined || !isAnswer(c, Date.parse(item.at))) return null;
+  if (item.at === undefined || !isAnswer(c, parseMs(item.at))) return null;
   const lines = answerLines(item, c.body);
   if (lines.length !== 1) return null;
   const line = addressedLine(lines[0] ?? "", item.key);
@@ -503,7 +504,7 @@ export function latestAnswers(
   const latest = new Map<string, PendingAnswer>();
   for (const answer of [...answers].sort(
     (a, b) =>
-      Date.parse(a.at) - Date.parse(b.at) ||
+      parseMs(a.at) - parseMs(b.at) ||
       a.url.localeCompare(b.url) ||
       (a.bodyHash ?? "").localeCompare(b.bodyHash ?? ""),
   ))

@@ -15,6 +15,7 @@ import {
   retireFixtureScope,
   type FixtureScope,
 } from "../../shared/test-fixture-registry.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 import type { Proof } from "../types.ts";
 
 /** Keep platform diagnostics before converting an outcome to a receipt's reason. */
@@ -41,13 +42,13 @@ function newestEntry(
       const directories = [root];
       let newest = createdAt;
       for (const directory of directories) {
-        if (Date.now() > deadline)
+        if (currentMs() > deadline)
           return failed("timed-out", "Scratch idle scan exceeded its deadline");
         const stat = lstatSync(directory);
         newest = Math.max(newest, stat.mtimeMs);
         if (!stat.isDirectory()) continue;
         for (const entry of readdirSync(directory, { withFileTypes: true })) {
-          if (Date.now() > deadline)
+          if (currentMs() > deadline)
             return failed(
               "timed-out",
               "Scratch idle scan exceeded its deadline",
@@ -90,12 +91,12 @@ export async function fixtureScratchProof(
   }
   const age = newestEntry(
     root,
-    Math.max(...scopes.map((scope) => Date.parse(scope.createdAt))),
-    Date.now() + 30_000,
+    Math.max(...scopes.map((scope) => parseMs(scope.createdAt))),
+    currentMs() + 30_000,
   );
   if (!age.ok)
     return { state: "unverified", reason: recordFixtureFailure(age.failure) };
-  if (Date.now() - age.value < idleDays * 86_400_000)
+  if (currentMs() - age.value < idleDays * 86_400_000)
     return { state: "live", reason: "scratch idle guard has not elapsed" };
   return {
     state: "dead",

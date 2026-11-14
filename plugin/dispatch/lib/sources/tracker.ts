@@ -14,12 +14,21 @@
  * which the plan watches for stalls and double claims; and the fresh read a
  * pickup's launch makes just before it starts.
  */
+import { cacheForTracker } from "./tracker-cache.ts";
+import { sharedView, type ServedView } from "./served-reads.ts";
+import { nativeQueueRequirements } from "../../../skills/do-item/scripts/lib/tracker/dispatch-source.ts";
+import { scopeFailureRow } from "./scope-failures.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
 import { within } from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
-import { limitedRow, readServedPickups, type ServedPolicy } from "./served.ts";
+import {
+  limitedRow,
+  readServedPickups,
+  type ServedPolicy,
+  type ServedOptions,
+} from "./served.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -32,7 +41,13 @@ import {
   isWorkingIssue,
   trackerStateMaps,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
+import {
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../shared/outcome.ts";
+import { combinedFailure, readFailureOf } from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import {
   type FacetBound,
@@ -45,10 +60,12 @@ import type {
   ClaimedItem,
   DispatchSection,
   FacetRecord,
+  ReadFailure,
   RecordRead,
   Unplaced,
   WantedItem,
 } from "../types.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 export interface TrackerReading {
   read: RecordRead;
@@ -84,6 +101,7 @@ async function readClaimed(
         title: i.title,
         url: i.url,
         state: i.state.name,
+        ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
         ...(i.updatedAt === undefined ? {} : { updatedAt: i.updatedAt }),
       }));
   } catch (error) {
@@ -125,6 +143,7 @@ async function byTrustedAssigner(
   tracker: Tracker,
   issues: ReadonlyArray<PoolIssue>,
   identity: string,
+  view?: ServedView,
 ): Promise<{
   wanted: WantedItem[];
   unplaced: Unplaced[];
@@ -133,34 +152,64 @@ async function byTrustedAssigner(
   const wanted: WantedItem[] = [];
   const unplaced: Unplaced[] = [];
   for (const issue of issues) {
-    let by: Awaited<ReturnType<Tracker["assignedBy"]>>;
-    try {
-      by = await tracker.assignedBy(issue.identifier, identity);
-    } catch (error) {
-      if (isRateLimited(error)) {
-        return { wanted: [], unplaced, limited: error };
-      }
-      unplaced.push({
+    const read = await readAssigner(tracker, issue, identity, view);
+    if ("limited" in read)
+      return { wanted: [], unplaced, limited: read.limited };
+    if ("unplaced" in read) {
+      unplaced.push(read.unplaced);
+      continue;
+    }
+    wanted.push(read.wanted);
+  }
+  return { wanted, unplaced };
+}
+
+/** One assigned item's assigner read, as a wanted item, an unplaced one or the rate limit. */
+async function readAssigner(
+  tracker: Tracker,
+  issue: PoolIssue,
+  identity: string,
+  view?: ServedView,
+): Promise<
+  | { wanted: WantedItem }
+  | { unplaced: Unplaced }
+  | { limited: TrackerRateLimited }
+> {
+  let by: Awaited<ReturnType<Tracker["assignedBy"]>>;
+  try {
+    by =
+      view === undefined
+        ? await tracker.assignedBy(issue.identifier, identity)
+        : await view.once(
+            `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
+            () => tracker.assignedBy(issue.identifier, identity),
+          );
+  } catch (error) {
+    if (isRateLimited(error)) return { limited: error };
+    return {
+      unplaced: {
         target: issue.identifier,
         title: issue.title,
         url: issue.url,
         record: "tracker",
         reason: `who assigned it cannot be read: ${failureText(error)}`,
-      });
-      continue;
-    }
-    if (!by.trusted) {
-      unplaced.push({
+      },
+    };
+  }
+  if (!by.trusted) {
+    return {
+      unplaced: {
         target: issue.identifier,
         title: issue.title,
         url: issue.url,
         record: "tracker",
         reason: `assigned to ${identity} by ${by.name}, who cannot write to ${tracker.team}; only a person with write access starts a pickup`,
         cause: "assigner-cannot-write",
-      });
-      continue;
-    }
-    wanted.push({
+      },
+    };
+  }
+  return {
+    wanted: {
       key: issue.identifier,
       title: issue.title,
       url: issue.url,
@@ -168,9 +217,8 @@ async function byTrustedAssigner(
       assignee: issue.assignee?.name ?? identity,
       assignedBy: by.name,
       ...(issue.updatedAt === undefined ? {} : { updatedAt: issue.updatedAt }),
-    });
-  }
-  return { wanted, unplaced };
+    },
+  };
 }
 
 /**
@@ -182,6 +230,7 @@ async function trustedAndClaimed(
   tracker: Tracker,
   identity: string,
   issues: ReadonlyArray<PoolIssue>,
+  view?: ServedView,
 ): Promise<
   | { limited: TrackerRateLimited }
   | {
@@ -194,10 +243,27 @@ async function trustedAndClaimed(
     tracker,
     issues,
     identity,
+    view,
   );
   if (limited !== undefined) return { limited };
   try {
-    return { wanted, unplaced, claimed: await readClaimed(tracker, identity) };
+    return {
+      wanted,
+      unplaced,
+      claimed:
+        view === undefined
+          ? await readClaimed(tracker, identity)
+          : view.progress().map((i) => ({
+              key: i.identifier,
+              title: i.title,
+              url: i.url,
+              state: i.state.name,
+              ...(i.updatedAt === undefined ? {} : { updatedAt: i.updatedAt }),
+              ...(i.nativeType === undefined
+                ? {}
+                : { nativeType: i.nativeType }),
+            })),
+    };
   } catch (error) {
     if (isRateLimited(error)) return { limited: error };
     throw error;
@@ -219,7 +285,7 @@ async function readAssigned(
   const states = section.states as CanonicalState[];
   if (
     bound !== undefined &&
-    (bound.signal.aborted || Date.now() >= bound.deadline)
+    (bound.signal.aborted || currentMs() >= bound.deadline)
   )
     return failed(
       "stopped",
@@ -242,6 +308,124 @@ async function readAssigned(
   }
 }
 
+/** The failure class of a read the tracker did not answer, when a call failed it. */
+function failureField(failure: Failure): { failure?: ReadFailure } {
+  const read = readFailureOf(failure);
+  return read === undefined ? {} : { failure: read };
+}
+
+/** The assigned lane is absent when the repository names no factory identity. */
+function noFactory(): TrackerReading {
+  return {
+    read: {
+      record: "tracker",
+      source: "dispatch.identity",
+      ok: true,
+      detail: "no dispatch.identity: this repository has no pickups",
+    },
+    wanted: [],
+    unplaced: [],
+    claimed: [],
+  };
+}
+
+/** Keep claims unknown whenever the assigned queue could not be read. */
+function failedFactory(
+  source: string,
+  identity: string,
+  reason: string,
+  stores: FacetRecord | undefined,
+  failure?: Failure,
+): TrackerReading {
+  return {
+    read: {
+      record: "tracker",
+      source,
+      ok: false,
+      detail: `the items assigned to ${identity} could not be read: ${reason}`,
+      ...(failure === undefined ? {} : failureField(failure)),
+      ...(stores === undefined ? {} : { facets: stores }),
+    },
+    wanted: [],
+    unplaced: [],
+    claimed: null,
+  };
+}
+
+/** The repository's dispatch states applied to its own projection of the native queue. */
+function factoryItems(
+  tracker: Tracker,
+  section: DispatchSection,
+  view: ServedView,
+): PoolIssue[] {
+  const all = view.all?.() ?? [
+    ...view.open().map((h) => h.issue),
+    ...view.progress(),
+  ];
+  return all.filter((issue) =>
+    section.states.some(
+      (state) =>
+        tracker
+          .stateName(state as CanonicalState, issue.nativeType ?? null)
+          ?.trim()
+          .toLowerCase() === issue.state.name.trim().toLowerCase(),
+    ),
+  );
+}
+
+/** Native adapters consume the queue the tick prefetched; other adapters keep their bounded assigned read. */
+async function factoryView(
+  tracker: Tracker,
+  identity: string,
+  served: ServedOptions | undefined,
+  cache: PickupReads,
+  bound: FacetBound | undefined,
+  states: readonly CanonicalState[],
+): Promise<ServedView | undefined> {
+  if (tracker.dispatchSource === undefined || served === undefined)
+    return undefined;
+  tracker.dispatchSource.configure?.([
+    ...(tracker.dispatchSource.requirements ?? []),
+    ...nativeQueueRequirements(tracker, states),
+  ]);
+  const view = await sharedView(
+    served.views,
+    tracker,
+    identity,
+    { ...served, ...(bound === undefined ? {} : { bound }) },
+    cache,
+  );
+  view.save();
+  return view;
+}
+
+/** A scope that did not answer leaves one aged row and no authoritative claims. */
+function unavailableFactory(
+  tracker: Tracker,
+  identity: string,
+  view: ServedView,
+  stores: FacetRecord | undefined,
+): TrackerReading {
+  const source = `${tracker.adapter} ${tracker.team}`;
+  const row = scopeFailureRow(
+    tracker,
+    view,
+    view.unavailable ?? "the scope could not be read",
+  );
+  const cause = view.unavailableCause;
+  const failed = failedFactory(
+    source,
+    identity,
+    row.reason,
+    stores,
+    cause === undefined
+      ? undefined
+      : { code: "unreadable", reason: row.reason, cause },
+  );
+  failed.unplaced.push(row);
+  return failed;
+}
+
 /**
  * The pickups; `open` opens the tracker, and is not called when there are
  * none to read. With `facets`, the record also says where the tracker
@@ -254,21 +438,12 @@ async function readFactoryPickups(
   section: DispatchSection,
   facets?: { bound: () => FacetBound },
   cache: PickupReads = pickupReads,
+  served?: ServedOptions,
 ): Promise<TrackerReading> {
-  if (section.identity === null)
-    return {
-      read: {
-        record: "tracker",
-        source: "dispatch.identity",
-        ok: true,
-        detail: "no dispatch.identity: this repository has no pickups",
-      },
-      wanted: [],
-      unplaced: [],
-      claimed: [],
-    };
+  if (section.identity === null) return noFactory();
   const identity = section.identity;
   const tracker = open();
+  cache = cacheForTracker(tracker, cache);
   const source = `${tracker.adapter} ${tracker.team}`;
   // One bound for the whole facet read: the stores and the assigned items
   // share its allowance and its cancellation.
@@ -279,26 +454,44 @@ async function readFactoryPickups(
     bound === undefined
       ? undefined
       : await readFacetStores(tracker, reportBound(bound));
-  const assigned = await readAssigned(tracker, identity, section, bound);
+  const view = await factoryView(
+    tracker,
+    identity,
+    served,
+    cache,
+    bound,
+    section.states as CanonicalState[],
+  );
+  if (view?.limited)
+    return limitedFactory(tracker, identity, view.limited, stores, view);
+  if (view?.unavailable !== undefined)
+    return unavailableFactory(tracker, identity, view, stores);
+  const assigned =
+    view === undefined
+      ? await readAssigned(tracker, identity, section, bound)
+      : ok(factoryItems(tracker, section, view));
   if (!assigned.ok && isRateLimited(assigned.failure.cause))
-    return limitedFactory(tracker, identity, assigned.failure.cause, stores);
+    return limitedFactory(
+      tracker,
+      identity,
+      assigned.failure.cause,
+      stores,
+      view,
+    );
   if (!assigned.ok)
-    return {
-      read: {
-        record: "tracker",
-        source,
-        ok: false,
-        detail: `the items assigned to ${identity} could not be read: ${assigned.failure.reason}`,
-        ...(stores === undefined ? {} : { facets: stores }),
-      },
-      wanted: [],
-      unplaced: [],
-      claimed: null,
-    };
+    return failedFactory(
+      source,
+      identity,
+      assigned.failure.reason,
+      stores,
+      assigned.failure,
+    );
   const issues = assigned.value;
-  const read = await trustedAndClaimed(tracker, identity, issues);
+  const read = await trustedAndClaimed(tracker, identity, issues, view);
   if ("limited" in read)
-    return limitedFactory(tracker, identity, read.limited, stores);
+    return limitedFactory(tracker, identity, read.limited, stores, view);
+  if (view?.unavailable !== undefined)
+    return unavailableFactory(tracker, identity, view, stores);
   const { wanted, unplaced } = read;
   const claimed = await scopedClaims(
     tracker,
@@ -394,16 +587,25 @@ export async function freshPickup(
   return issue;
 }
 
+/** The tick's served input as the options a served read takes: everything but the people. */
+function servedReadOptions<T extends { people: readonly ServedPerson[] }>(
+  served: T,
+): Omit<T, "people"> {
+  const { people: _people, ...options } = served;
+  return options;
+}
+
 /** Factory and host-served work share the same plan and capacity checks. */
 export async function readPickups(
   open: () => Tracker,
   section: DispatchSection,
   facets?: { bound: () => FacetBound },
-  served?: {
+  servedInput?: {
     cache?: import("../pickup-reads.ts").PickupReads;
     people: readonly ServedPerson[];
     nowMs: number;
     headroom: boolean;
+    bound?: FacetBound;
     hitl?: string;
     manualOps?: string;
     executionPlanBlock?: string;
@@ -413,36 +615,37 @@ export async function readPickups(
     trackerNamespace?: string;
   },
 ): Promise<TrackerReading> {
+  const served =
+    servedInput === undefined
+      ? undefined
+      : { ...servedInput, views: servedInput.views ?? new Map() };
   let tracker: Tracker | undefined;
   const once = () => (tracker ??= open());
+  const factoryReading = await readFactoryPickups(
+    once,
+    section,
+    facets,
+    served?.cache,
+    served,
+  );
+  // A failed native scope is a wall for this tick: do not let the optional
+  // ready-pool lane send unrelated tracker reads after it.
   const factory = withPool(
-    await readFactoryPickups(once, section, facets, served?.cache),
-    await readPool(once, section, served, facets?.bound()),
+    factoryReading,
+    factoryReading.claimed === null
+      ? null
+      : await readPool(once, section, served, facets?.bound()),
     once,
   );
   if (served === undefined || served.people.length === 0) return factory;
-  const extra = await readServedPickups(once(), served.people, {
-    ...(served.cache === undefined ? {} : { cache: served.cache }),
-    nowMs: served.nowMs,
-    headroom: served.headroom,
-    ...(served.hitl === undefined ? {} : { hitl: served.hitl }),
-    ...(served.manualOps === undefined ? {} : { manualOps: served.manualOps }),
-    ...(served.executionPlanBlock === undefined
-      ? {}
-      : { executionPlanBlock: served.executionPlanBlock }),
-    ...(served.repoScope === undefined ? {} : { repoScope: served.repoScope }),
-    ...(served.views === undefined ? {} : { views: served.views }),
-    ...(served.unlabeled === undefined ? {} : { unlabeled: served.unlabeled }),
-    ...(served.trackerNamespace === undefined
-      ? {}
-      : { trackerNamespace: served.trackerNamespace }),
-  });
+  const extra = await readServedPickups(
+    once(),
+    served.people,
+    servedReadOptions(served),
+  );
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
-    read: {
-      ...factory.read,
-      detail: `${factory.read.detail}; ${extra.wanted.length} served pickup(s)`,
-    },
+    read: servedRead(factory.read, extra),
     wanted: [
       ...extra.wanted,
       ...factory.wanted.filter((i) => !keys.has(i.key)),
@@ -461,6 +664,44 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
+  };
+}
+
+/**
+ * The aggregate record with the served lane's reading in it: a served queue
+ * that failed to read makes the record not ok, with the failure's class, so
+ * settlement treats it as it does the identity's own failed read. The record
+ * keeps one failure for the identity's read and every failed served read
+ * (`combinedFailure`), so it waits only when every one of them clears by
+ * waiting.
+ */
+function servedRead(
+  read: TrackerReading["read"],
+  extra: Awaited<ReturnType<typeof readServedPickups>>,
+): TrackerReading["read"] {
+  const detail = `${read.detail}; ${extra.wanted.length} served pickup(s)`;
+  if (extra.incomplete !== true) return { ...read, detail };
+  const failure = combinedFailure([
+    ...(read.ok ? [] : [read.failure]),
+    ...(extra.failures ?? []).map((cause) =>
+      cause === undefined
+        ? undefined
+        : readFailureOf({
+            code: "unreadable",
+            reason: failureText(cause),
+            cause,
+          }),
+    ),
+  ]);
+  // The record's failure is the combined one alone: the read's own is in it.
+  const { failure: _own, ...rest } = read as typeof read & {
+    failure?: ReadFailure;
+  };
+  return {
+    ...rest,
+    ok: false,
+    detail: `${detail}; a served queue could not be read`,
+    ...(failure === undefined ? {} : { failure }),
   };
 }
 
@@ -525,6 +766,7 @@ function limitedFactory(
   identity: string,
   limited: Parameters<typeof limitedRow>[1],
   stores: FacetRecord | undefined,
+  view?: ServedView,
 ): TrackerReading {
   return {
     read: {
@@ -535,7 +777,7 @@ function limitedFactory(
       ...(stores === undefined ? {} : { facets: stores }),
     },
     wanted: [],
-    unplaced: [limitedRow(tracker, limited)],
+    unplaced: [limitedRow(tracker, limited, view)],
     claimed: null,
   };
 }

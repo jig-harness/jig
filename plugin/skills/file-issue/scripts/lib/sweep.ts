@@ -15,7 +15,11 @@
  * With `move: false` (`file_issue.sweep.move`, for a lane where only a
  * person may move a ready issue back), each such issue gets the comment and
  * keeps its state. It then stays in every later listing, so an issue that
- * already carries the marker is passed over before the budget is counted.
+ * already carries the marker is passed over before the budget is counted,
+ * and the read keeps a position between runs (`position`): it resumes after
+ * the last issue the previous run handled, in creation order, and on reaching
+ * the end starts again from the oldest, so a population past the read cap is
+ * reached in turn rather than through its first pages only.
  *
  * Its bounds: at most 20 listing pages of 100 incomplete issues and 50
  * issues moved (or, without moving, commented on) a run, the writes paced
@@ -28,12 +32,15 @@
 
 import type {
   Facet,
+  FacetReadOptions,
   FacetStores,
   IncompleteIssue,
   IncompletePage,
+  IncompleteQuery,
   Tracker,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { failureLine, type Writer, WriteRefused } from "./pace.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 export const SWEEP_LIMITS = { pages: 20, pageSize: 100, moves: 50 } as const;
 
@@ -51,6 +58,27 @@ export interface SweepOptions {
   limits?: Partial<{ pages: number; pageSize: number; moves: number }>;
   /** Told of each issue as it is moved, by key, so a run cut short still shows what it did. */
   progress?: (line: string) => void;
+  /**
+   * Without moving: where the previous run left the read, the cursor of the
+   * last issue it handled, or `null` to start from the oldest. Absent, the
+   * read keeps no position. Moving ignores it: a moved issue leaves the
+   * population, so the read always starts from the oldest.
+   */
+  position?: { after: string | null };
+}
+
+/** Where a comment-only read started and where the next run resumes. */
+export interface SweepPosition {
+  /** The cursor this run resumed after, or `null` from the oldest issue. */
+  from: string | null;
+  /** The cursor the next run resumes after, or `null` from the oldest issue. */
+  next: string | null;
+  /** The key of the issue the next run resumes after, or `null`. */
+  nextAfter: string | null;
+  /** The read reached the end of the population, and went on from the oldest if its cap allowed. */
+  wrapped: boolean;
+  /** The read reached the end with no page left to go on from the oldest. */
+  endedAtEnd: boolean;
 }
 
 export interface SweepReport {
@@ -88,6 +116,8 @@ export interface SweepReport {
   apply: boolean;
   /** Whether the run moves issues to triage or only comments on them. */
   move: boolean;
+  /** The read position kept between comment-only runs, or `null` when none is kept. */
+  position: SweepPosition | null;
 }
 
 /** The marker naming what an issue lacks and the retired labels it carries. */
@@ -139,6 +169,60 @@ function emptiedStore(counts: IncompletePage["counts"]): string | null {
   return null;
 }
 
+/** Where a paged read stands: where it started, where it goes on, and whether it is done. */
+interface ReadCursor {
+  start: string | null;
+  after: string | null;
+  /** The read reached the end of the population and went on from the oldest. */
+  wrapped: boolean;
+  /** Every issue the read can reach was read this run. */
+  covered: boolean;
+}
+
+/** Move the read past one page, of which `kept` issues were listed: on, from the oldest at the end, or done. */
+function advance(c: ReadCursor, got: IncompletePage, kept: number): void {
+  const reachedStart =
+    c.wrapped && c.start !== null && got.next !== null && got.next >= c.start;
+  if (kept < got.issues.length || reachedStart) c.covered = true;
+  else if (got.next !== null) c.after = got.next;
+  else if (c.start === null || c.wrapped) c.covered = true;
+  else {
+    c.wrapped = true;
+    c.after = null;
+  }
+}
+
+/**
+ * Read the incomplete issues not yet started, as many pages as `pages`. With
+ * a position, the read starts after it, and on reaching the end goes on from
+ * the oldest issue up to the position, so no issue is read twice in a run.
+ */
+async function readPages(
+  tracker: Tracker,
+  query: IncompleteQuery,
+  pages: number,
+  read: FacetReadOptions,
+  report: SweepReport,
+): Promise<ReadCursor> {
+  const start = report.position?.from ?? null;
+  const c: ReadCursor = { start, after: start, wrapped: false, covered: false };
+  for (let page = 0; page < pages && !c.covered; page++) {
+    const got = await tracker.incompleteIssues(
+      { ...query, after: c.after },
+      read,
+    );
+    if (page === 0) report.counts = got.counts;
+    // Pages come oldest first, so past the wrap the issues up to the start
+    // are a prefix of the page.
+    const issues = c.wrapped
+      ? got.issues.filter((i) => start === null || i.cursor <= start)
+      : got.issues;
+    report.listed.push(...issues);
+    advance(c, got, issues.length);
+  }
+  return c;
+}
+
 /** Read every page the caps allow, then the one page of started issues. */
 async function readAll(
   tracker: Tracker,
@@ -146,25 +230,20 @@ async function readAll(
   opts: SweepOptions,
   report: SweepReport,
 ): Promise<void> {
-  const pages = opts.limits?.pages ?? SWEEP_LIMITS.pages;
   const limit = opts.limits?.pageSize ?? SWEEP_LIMITS.pageSize;
   const read = {
     census: {},
-    deadline: Date.now() + 60_000,
+    deadline: currentMs() + 60_000,
     ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
   };
-  let after: string | null = null;
-  for (let page = 0; page < pages; page++) {
-    const got = await tracker.incompleteIssues(
-      { ...query, after, limit },
-      read,
-    );
-    if (page === 0) report.counts = got.counts;
-    report.listed.push(...got.issues);
-    after = got.next;
-    if (after === null) break;
+  const pages = opts.limits?.pages ?? SWEEP_LIMITS.pages;
+  const c = await readPages(tracker, { ...query, limit }, pages, read, report);
+  report.readCapped = !c.covered;
+  if (report.position !== null) {
+    report.position.wrapped = c.wrapped;
+    // Wrapped with no page left: nothing past the end was read this run.
+    report.position.endedAtEnd = c.wrapped && !c.covered && c.after === null;
   }
-  report.readCapped = after !== null;
   const started = await tracker.incompleteIssues(
     {
       ...query,
@@ -336,7 +415,43 @@ function freshReport(
     stopped: null,
     apply: opts.apply,
     move: opts.move ?? true,
+    position:
+      opts.position === undefined || (opts.move ?? true)
+        ? null
+        : {
+            from: opts.position.after,
+            next: opts.position.after,
+            nextAfter: null,
+            wrapped: false,
+            endedAtEnd: false,
+          },
   };
+}
+
+/**
+ * Where the next run resumes: after the last issue of the unbroken run of
+ * listed issues this run handled (commented on, found marked, or skipped as
+ * changed), so an issue the budget or a stop left is read first next time; from
+ * the oldest when this run handled every issue up to the end of the population
+ * and read none past it, or the whole population; and where this run started
+ * when it handled none.
+ */
+function nextPosition(report: SweepReport, position: SweepPosition): void {
+  const handled = new Set([
+    ...report.commented,
+    ...report.marked,
+    ...report.skipped,
+  ]);
+  const left = report.listed.findIndex((i) => !handled.has(i.identifier));
+  if (left === -1 && (!report.readCapped || position.endedAtEnd)) {
+    position.next = null;
+    position.nextAfter = null;
+    return;
+  }
+  const last = report.listed[(left === -1 ? report.listed.length : left) - 1];
+  if (last === undefined) return;
+  position.next = last.cursor;
+  position.nextAfter = last.identifier;
 }
 
 /** Write to the listed issues, one by one, until the cap or a stop. */
@@ -393,8 +508,10 @@ export async function sweep(
   );
   report.read = true;
   report.storeProblem = emptiedStore(report.counts);
-  if (report.apply && report.storeProblem === null)
+  if (report.apply && report.storeProblem === null) {
     await applyAll(tracker, opts, report);
+    if (report.position !== null) nextPosition(report, report.position);
+  }
   return report;
 }
 
@@ -443,6 +560,30 @@ function doneLine(report: SweepReport, remaining: number): string {
   return `commented on ${report.commented.length}, moved none (file_issue.sweep.move is false); ${report.marked.length} already commented on; ${remaining} remain${capped}`;
 }
 
+/** Where the read started and where the next run resumes, when it keeps a position. */
+function positionLines(report: SweepReport): string[] {
+  const p = report.position;
+  if (p === null) return [];
+  const from =
+    p.from === null
+      ? "read from the oldest issue"
+      : "read resumed after the position the last run kept";
+  const wrapped = p.endedAtEnd
+    ? ", reached the end of the population"
+    : p.wrapped
+      ? ", reached the end and went on from the oldest"
+      : "";
+  if (!report.apply || report.storeProblem !== null)
+    return [`${from}${wrapped}; the position is kept as it was`];
+  const next =
+    p.nextAfter !== null
+      ? `the next run resumes after ${p.nextAfter}`
+      : p.next === null
+        ? "the next run starts from the oldest issue"
+        : "the next run resumes where this one started";
+  return [`${from}${wrapped}; ${next}`];
+}
+
 /** What the run moved, what remains, and why it stopped. */
 function outcomeLines(report: SweepReport): string[] {
   if (report.storeProblem !== null)
@@ -479,6 +620,7 @@ export function sweepLines(report: SweepReport): string[] {
   return [
     ...storeLines(report),
     ...listingLines(report),
+    ...positionLines(report),
     ...outcomeLines(report),
   ];
 }

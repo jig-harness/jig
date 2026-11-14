@@ -20,6 +20,7 @@ import {
   renewLockRow,
   takeLockRow,
 } from "./../state/lock.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 
 // ── Single-instance locking ─────────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ export function claimAlive(claim: Claim): boolean {
     start: claim.start,
   });
   if (verdict.ok && verdict.value.state === "dead") return false;
-  const age = Date.now() - Date.parse(claim.renewedAt);
+  const age = currentMs() - parseMs(claim.renewedAt);
   return claimLive({
     pid: claim.pid,
     host: claim.host,

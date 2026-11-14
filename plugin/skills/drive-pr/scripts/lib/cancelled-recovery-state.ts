@@ -3,6 +3,7 @@ import { driveDb } from "./state/db.ts";
 import { canonicalPr, resolveStateDir } from "./state/store.ts";
 import type { RecoveryRecord } from "./cancelled-recovery.ts";
 import { fail } from "./cli.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 export async function observeCancellation(
   pr: string,
@@ -11,7 +12,7 @@ export async function observeCancellation(
   const drive = driveDb(await resolveStateDir());
   drive.db.run(
     "INSERT OR IGNORE INTO cancelled_ci (clone, pr, head, first_seen, requested_at) VALUES (?, ?, ?, ?, NULL)",
-    [drive.clone, canonicalPr(pr), head, Date.now()],
+    [drive.clone, canonicalPr(pr), head, currentMs()],
   );
   const record = await readCancellation(pr, head);
   if (record === null)
@@ -61,7 +62,7 @@ export async function claimCancellation(
         "UPDATE cancelled_ci SET requested_at = ?, workflow_ids = ? WHERE clone = ? AND pr = ? AND head = ? AND requested_at IS NULL RETURNING head",
       )
       .get(
-        Date.now(),
+        currentMs(),
         JSON.stringify(workflowIds),
         drive.clone,
         canonicalPr(pr),

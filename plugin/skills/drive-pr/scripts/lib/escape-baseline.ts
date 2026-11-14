@@ -29,6 +29,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { optionalOverlayString } from "./overlay.ts";
+import { isCalendarDate } from "../../../../shared/time.ts";
 
 /** The default baseline document, repository-relative. */
 export const BASELINE_DOC_PATH = "docs/review-loop-baseline.md";
@@ -399,7 +400,7 @@ export function parseRecordedEscapeBaseline(
     !isValidIsoDate(since) ||
     !isValidIsoDate(until) ||
     // Fixed-width `YYYY-MM-DD` strings compare chronologically as strings,
-    // so no `Date` parse is needed for the ordering check.
+    // so no date parse is needed for the ordering check.
     since > until
   ) {
     return null;
@@ -411,24 +412,12 @@ export function parseRecordedEscapeBaseline(
  * `WINDOW_RE`/`RATE_RE` only check that a date is digit-shaped
  * (`\d{4}-\d{2}-\d{2}`), which `2026-99-99` satisfies — a stray typo in the
  * doc would otherwise render as an authoritative-looking impossible date
- * rather than degrading to the "unmeasured" marker. Round-trips through
- * `Date.UTC` and checks the components survived, which also rejects
- * calendar overflow (`2026-02-30` silently rolling forward to March).
+ * rather than degrading to the "unmeasured" marker. Reading it as a
+ * calendar date that rejects overflow also rejects `2026-02-30`, which would
+ * otherwise roll forward to March.
  */
 function isValidIsoDate(s: string): boolean {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (m === null) return false;
-  const [, yStr, moStr, dStr] = m;
-  const y = Number(yStr);
-  const mo = Number(moStr);
-  const d = Number(dStr);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
-  const date = new Date(Date.UTC(y, mo - 1, d));
-  return (
-    date.getUTCFullYear() === y &&
-    date.getUTCMonth() === mo - 1 &&
-    date.getUTCDate() === d
-  );
+  return isCalendarDate(s);
 }
 
 /**

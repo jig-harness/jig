@@ -15,6 +15,7 @@ import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { decodeJson, isRecord } from "../../../shared/guards.ts";
 import { gitEnv, tryGit } from "./notes-dir.ts";
 import { parseRemote } from "./remote.ts";
+import { isoFromMs } from "../../../shared/time.ts";
 
 /** Runs `gh` with `args` in `cwd`; its output, or null when it cannot answer. */
 export type Gh = (args: string[], cwd: string) => string | null;
@@ -538,7 +539,7 @@ function newestStatuses(statuses: Record<string, unknown>[]): CommitCheck[] {
 export function github(
   root: string,
   gh: Gh = runGh,
-  now: () => Date = () => new Date(),
+  now: () => Temporal.Instant = () => Temporal.Now.instant(),
 ): Hosting {
   const ask = asker(gh, root);
   return {
@@ -563,9 +564,9 @@ export function github(
       // before the horizon have ended and are not read.
       const workflows = releaseWorkflows(ask);
       if (!Array.isArray(workflows)) return workflows;
-      const since = new Date(now().getTime() - ACTIVE_HORIZON_DAYS * 86_400_000)
-        .toISOString()
-        .replace(/\.\d{3}Z$/, "Z");
+      const since = isoFromMs(
+        now().epochMilliseconds - ACTIVE_HORIZON_DAYS * 86_400_000,
+      ).replace(/\.\d{3}Z$/, "Z");
       const found: Record<string, unknown>[] = [];
       for (const workflow of workflows) {
         const listed = runsOf(ask, workflow.id, branch, since);

@@ -796,6 +796,7 @@ async function evaluateFresh(
       report.apiHead,
       runs,
       runsUnreadable,
+      ctx.pr,
     ),
   );
 

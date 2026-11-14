@@ -3,7 +3,9 @@
  * the standard tier of `routing.models.codex` (else Codex's own
  * configuration), accepts `--pass-model` overrides, and kills a
  * Codex pass that outruns the pass deadline. The turn-budget hook counts
- * Codex responses and warns, but imposes no runtime turn cap.
+ * Codex responses and warns, but imposes no runtime turn cap. The host's
+ * `drive.codex_pass_args` goes before the prompt of a Codex pass command
+ * with no arguments of its own, once, and not into one that carries its own.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -74,6 +76,14 @@ describe("the documented Codex pass command", () => {
     expect(passCommand("claude", 999, true)).toEqual(
       passCommand("claude", 999),
     );
+    expect(passCommand("codex", 999, true, ["--x"]).slice(2)).toEqual([
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--x",
+      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+    ]);
+    expect(passCommand("claude", 999, true, ["--x"])).toEqual(
+      passCommand("claude", 999),
+    );
     expect(skillPrompt("codex", "/followup 12")).toBe(
       "Use the followup skill: /followup 12",
     );
@@ -135,6 +145,89 @@ describe("the documented Codex pass command", () => {
     const r = await dryRun(["--pass-model", "gpt-override"]);
     expectSpawnExit({ ...r, stdout: null }, 0);
     expect(wouldRun(r.stderr)).toStartWith("codex exec -m gpt-override ");
+  });
+
+  describe("drive.codex_pass_args", () => {
+    const HOOK_TRUST = {
+      JIG__DRIVE__CODEX_PASS_ARGS: "[--dangerously-bypass-hook-trust]",
+    };
+    const PROMPT = "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999";
+
+    it("adds the words after the bypass and before the prompt, and names them in the driver log", async () => {
+      const r = await dryRun([], HOOK_TRUST);
+      expectSpawnExit({ ...r, stdout: null }, 0);
+      expect(wouldRun(r.stderr)).toBe(
+        `codex exec -m gpt-5.6-terra --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust ${PROMPT}`,
+      );
+      expect(r.stderr).toContain(
+        "pass args: --dangerously-bypass-hook-trust (drive.codex_pass_args)",
+      );
+    });
+
+    it("runs an armed command's words once, as written", async () => {
+      const armed = passCommand("codex", 999, true, [
+        "--dangerously-bypass-hook-trust",
+      ]);
+      const r = await runDrive(
+        ROUND_READY,
+        ["--dry-run", "--no-head-sync", "--bots-only", "--", ...armed],
+        undefined,
+        { env: { DRIVE_PR_QUOTA_NO_SPAWN_PREP: "1", ...HOOK_TRUST } },
+      );
+      expect(
+        wouldRun(r.stderr).split("--dangerously-bypass-hook-trust"),
+      ).toHaveLength(2);
+      expect(r.stderr).toContain(
+        "(drive.codex_pass_args, as written in the pass command)",
+      );
+    });
+
+    it("keeps a Codex command that carries its own arguments as written, saying the setting was not added", async () => {
+      const own = ["codex", "exec", "--sandbox", "workspace-write", PROMPT];
+      const r = await runDrive(
+        ROUND_READY,
+        ["--dry-run", "--no-head-sync", "--bots-only", "--", ...own],
+        undefined,
+        { env: { DRIVE_PR_QUOTA_NO_SPAWN_PREP: "1", ...HOOK_TRUST } },
+      );
+      expect(wouldRun(r.stderr)).not.toContain("hook-trust");
+      expect(r.stderr).toContain(
+        "the pass command's own, kept as written; drive.codex_pass_args (--dangerously-bypass-hook-trust) is added only to a pass command without arguments of its own",
+      );
+    });
+
+    it("takes an empty --pass-args as none and refuses its words, which are Claude Code's", async () => {
+      const none = await dryRun(["--pass-args", ""], HOOK_TRUST);
+      expectSpawnExit({ ...none, stdout: null }, 0);
+      expect(wouldRun(none.stderr)).not.toContain("hook-trust");
+      expect(none.stderr).toContain("pass args: none (--pass-args)");
+      const words = await dryRun(["--pass-args", "--verbose"]);
+      expectSpawnExit({ ...words, stdout: null }, 2);
+      expect(words.stderr).toContain(
+        "--pass-args applies to a Claude Code pass command",
+      );
+    });
+
+    it.each([
+      [
+        "a list that ends in an option without its value",
+        "[--sandbox]",
+        "cannot end with --sandbox",
+      ],
+      ["the model", "[-m, gpt-x]", "cannot hold -m"],
+      ["a word Codex reads as the prompt", "[exec]", "cannot hold exec"],
+      [
+        "a value that is not a list",
+        "--dangerously-bypass-hook-trust",
+        "must be a list of words",
+      ],
+    ])("stops the drive on %s, naming the field", async (_, value, why) => {
+      const r = await dryRun([], { JIG__DRIVE__CODEX_PASS_ARGS: value });
+      expectSpawnExit({ ...r, stdout: null }, 1);
+      expect(r.stderr).toContain("drive.codex_pass_args");
+      expect(r.stderr).toContain(why);
+      expect(r.stderr).not.toContain("would run");
+    });
   });
 
   it("kills a Codex pass that outruns a positive pass deadline", async () => {

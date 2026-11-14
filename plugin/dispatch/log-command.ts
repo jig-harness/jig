@@ -13,6 +13,7 @@ import { acceptanceLine, acceptanceOf } from "./lib/acceptance.ts";
 import { bucket, type LogRow, rowsOf } from "./lib/log.ts";
 import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
+import { parseMs } from "../shared/time.ts";
 
 export interface LogOptions {
   /** An ISO time; rows timed before it are left out. */
@@ -50,7 +51,7 @@ export function logMain(
   const since =
     options.since === undefined
       ? Number.MIN_SAFE_INTEGER
-      : Date.parse(options.since);
+      : parseMs(options.since);
   if (options.acceptance === true) {
     const parks = db
       .query(

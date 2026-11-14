@@ -76,6 +76,7 @@ import {
   tsArgv,
 } from "./lib/proc.ts";
 import { isRecord as isPlainObject } from "../../../shared/guards.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 const VERDICTS = ["over-strict", "proportionate", "under-strict"] as const;
 type Verdict = (typeof VERDICTS)[number];
@@ -389,7 +390,7 @@ const round = await capture(
 
 const record = {
   v: 1,
-  recordedAt: new Date().toISOString(),
+  recordedAt: currentIso(),
   pr: prNumber,
   round: round === null ? null : Number(round),
   headSha,

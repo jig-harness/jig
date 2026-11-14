@@ -35,6 +35,7 @@ import {
   type Signal,
 } from "./fleet-health.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 export const PANEL = "fleet-health";
 
@@ -140,15 +141,15 @@ export function readFleetHealthAdvisory(
   if (!isRecord(parsed.data) || !Array.isArray(parsed.data.signals)) {
     return NO_ADVISORY;
   }
-  // Canonical UTC only: bare `Date.parse` also accepts date-only and
-  // timezone-less strings, whose instant depends on the reading host.
+  // Canonical UTC only: `parseMs` also accepts date-only and timezone-less
+  // strings, which the round trip below refuses.
   const generatedMs =
     typeof parsed.generatedAt === "string"
-      ? Date.parse(parsed.generatedAt)
+      ? parseMs(parsed.generatedAt)
       : Number.NaN;
   if (
     !Number.isFinite(generatedMs) ||
-    new Date(generatedMs).toISOString() !== parsed.generatedAt
+    isoFromMs(generatedMs) !== parsed.generatedAt
   ) {
     return NO_ADVISORY;
   }

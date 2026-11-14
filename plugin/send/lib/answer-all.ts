@@ -53,6 +53,7 @@ import {
   TICK,
 } from "./answer-parks.ts";
 import { type PartSent, type Planned, refused } from "./plan.ts";
+import { currentIso } from "../../shared/time.ts";
 
 interface Eligible {
   item: ParkedItem;
@@ -174,7 +175,7 @@ async function postAll(
       e.resolved.text,
       pr,
       localWriter("forge", login),
-      new Date().toISOString(),
+      currentIso(),
       e.resolved.parts,
     );
     const posted = await postAnswerComment(repo, pr, body);

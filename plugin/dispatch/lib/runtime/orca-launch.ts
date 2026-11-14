@@ -39,6 +39,7 @@ import {
 import { readRecord } from "../launches.ts";
 import { markComment } from "./orca-comment.ts";
 import type { LaunchStage, RuntimeReceipt } from "./port.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 const RUN_TS = resolve(import.meta.dir, "../../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
@@ -118,14 +119,14 @@ export async function orcaLaunch(
 ): Promise<RuntimeReceipt> {
   // One timeout covers the whole launch, as the launcher reserves: the mark
   // takes at most a third of it and the terminal what is left.
-  const until = Date.now() + timeoutMs;
+  const until = currentMs() + timeoutMs;
   const unmarked = await markComment(
     workspace.path,
     stage.mark,
     Math.floor(timeoutMs / 3),
   );
   // The mark can spend the launch's whole timeout: no terminal starts past it.
-  if (until - Date.now() <= 0)
+  if (until - currentMs() <= 0)
     return {
       ok: false,
       detail: `the launch's ${seconds(timeoutMs)}s were spent marking the workspace; no terminal was created`,
@@ -146,7 +147,7 @@ async function startTerminal(
   key: string,
   until: number,
 ): Promise<RuntimeReceipt> {
-  const timeoutMs = Math.max(1, until - Date.now());
+  const timeoutMs = Math.max(1, until - currentMs());
   const done = await run(
     [
       orcaBinary(),
@@ -174,7 +175,7 @@ async function startTerminal(
     const detail = `orca terminal create: ${JSON.stringify(envelope.result).slice(0, 300)}${tabNote}`;
     if (stage.kind === "headless") return { ok: true, detail };
     const handle = handleOf(envelope.result);
-    const left = until - Date.now();
+    const left = until - currentMs();
     const agentId =
       handle === null || left <= 0 ? null : await agentIdOf(handle, left);
     return agentId === null
@@ -232,7 +233,7 @@ async function recordAndCloseEarlier(
   const subject = subjectOf(stage.record);
   if (subject === null)
     return "; the tab is not recorded as a run tab: its launch record does not read";
-  if (Date.now() >= until)
+  if (currentMs() >= until)
     return "; the tab stays open after its run: the launch's time was spent before it could be recorded";
   const tabs = defaultRunTabDeps();
   const recorded = await recordRunTab(

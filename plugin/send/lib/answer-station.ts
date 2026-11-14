@@ -38,6 +38,7 @@ import type { AnswerRequest } from "./answer-request.ts";
 import { optionInFull, resolveChoice } from "./answer-choice.ts";
 import { asFlag, type Sender, TICK } from "./answer-parks.ts";
 import { type Planned, refused } from "./plan.ts";
+import { currentIso } from "../../shared/time.ts";
 
 type OneAnswer = Extract<AnswerRequest, { all: false }>;
 
@@ -192,7 +193,7 @@ function planFound(
         text,
         posted.number,
         localWriter("forge", sender.login),
-        new Date().toISOString(),
+        currentIso(),
         parts,
       );
       const written = await postAnswerComment(posted.repo, posted.number, body);

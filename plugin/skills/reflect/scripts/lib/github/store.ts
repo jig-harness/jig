@@ -22,6 +22,7 @@ import {
   type DecisionEvent,
   distinctById,
   idConflicts,
+  nowAt,
   parseEvent,
   type ReflectionEvent,
 } from "../events.ts";
@@ -560,14 +561,14 @@ export async function appendEvents(
   client: GitHubClient,
   repo: Repository,
   lines: readonly Line[],
-  now: Date,
+  now: Temporal.Instant,
 ): Promise<AppendResult> {
   const issues = await readStore(client, repo);
   const plan = new AppendPlan(issues);
   planFindingsFirst(lines, (event, text) => plan.add(event, text));
   const copies = [...allCopies(issues), ...lines];
   const state = computeState([...winnersOf(copies).values()]);
-  const stamp = `${now.toISOString().slice(0, 19)}Z`;
+  const stamp = nowAt(now);
   for (const target of plan.targets)
     await writeTarget(client, repo, target, stamp, state);
   const { failures } = await syncViews(

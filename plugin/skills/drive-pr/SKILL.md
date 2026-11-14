@@ -303,6 +303,22 @@ CI-repair pass handed neither a run nor a check name has nothing to work from.
 Once the budget is spent — or on the first red if it is `0` — the drive takes
 the original exit-`1` stop and hands the red CI back for repair.
 
+**Held and advisory failures spend no automatic repair pass.** While the live
+CI hold label is present, a held-head check in M13's shape, or named in
+`ci.hold_sentinels`, reads as `held: …`, never green. Releasing the label
+restores ordinary failure handling. The lists come from the base branch;
+a stacked base cannot add names outside the integration branch's policy.
+When the converged head's only failing checks are in `ci.advisory_checks`,
+the driver parks once per head and check set under `reviewer-posture`
+(exit `8`), with **Fix the finding**, **Waive it**, and **Leave it to me**.
+A person's structured fix answer authorizes one repair attempt, retained
+across re-arms. Authorization is consumed before dispatch; a stop in that
+window can leave it spent without a pass, and requires a person to recover
+rather than an automatic retry that could duplicate work. A waiver records their judgment on the pull request; required
+checks and certification still apply. Mixed failures target repair at the
+non-advisory checks. When `autonomy.park_classes` omits `reviewer-posture`,
+`ci.advisory_checks` has no effect and the configuration check warns.
+
 **A failure of the infrastructure is re-run, not repaired.** Before it spends a
 repair pass, the driver reads each failed run's failed-step log against the
 rule `fix-ci` shares
@@ -414,10 +430,11 @@ A pass pushes, calls the forge and has nobody to ask, so on a host that set
 `drive.codex_bypass: true` in its user file an arm writes
 `--dangerously-bypass-approvals-and-sandbox` after `exec`, and that pass runs
 without a sandbox or approvals. Without it Codex's own configuration decides.
-`drive.ts` runs a Codex pass command as given, so the command above carries no
-bypass: `arm-drive.ts` is the entry point that reads the setting, and a
+`drive.ts` adds no bypass to a Codex pass command, so the command above
+carries none: `arm-drive.ts` is the entry point that reads the setting, and a
 command typed by hand names `--dangerously-bypass-approvals-and-sandbox`
-after `exec` itself.
+after `exec` itself. The host's `drive.codex_pass_args` (§ The pass
+arguments) goes after the bypass, before the prompt.
 
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode. A Codex
@@ -448,7 +465,9 @@ model and refuses `--pass-model` (exit `2`).
 before `-p`, such as `--permission-mode bypassPermissions`, without which a
 pass in a prompting mode is denied every write under a protected path such
 as `.claude/skills/**` (`--permission-mode auto` lets a classifier approve
-some). They come from `--pass-args "<words>"` for this run
+some). A Codex pass command can carry extra words before its prompt, such as
+`--dangerously-bypass-hook-trust`, without which it runs only the hooks its
+Codex home trusts. Claude Code's words come from `--pass-args "<words>"` for this run
 (one value, split on spaces; empty for none), else `drive.pass_args`, which
 `drive.ts` adds only to a pass command with no arguments of its own; a
 command that carries its own, as an arm command or a printed re-arm or
@@ -457,13 +476,26 @@ its user file or one run's environment sets it. A repository's file that sets
 it, an empty list included, stops the drive (exit `1`), naming the field, since
 a drive reads that file from the pull request's own checkout. The driver log's `pass args:` and
 `permission mode:` lines and the `drives.ts` row name them (`inherited` when
-the command sets no mode: Claude Code's own settings then decide). Another agent tool's pass command ignores
-`drive.pass_args`, and the log says so; `--pass-args` is refused for it
-(exit `2`). A Codex pass's `permission mode:` is read from its own words:
-`no sandbox, no approvals` with the bypass, `inherited` without it. A `drive.pass_args` that is not a list of words stops the drive
-(exit `1`), naming the field. A list that ends in an option left without its
-value, such as `--permission-mode`, stops the drive naming `drive.pass_args`:
-exit `1` from the field, exit `2` from `--pass-args`.
+the command sets no mode: Claude Code's own settings then decide). A Codex
+pass takes `drive.codex_pass_args` instead, by the same rules: the host's
+only, added after the bypass and before the prompt only to a command with no
+arguments of its own (`codex exec`, its `-m`, the bypass and the prompt), and
+named on the log's `pass args:` line. It has no flag for one run:
+`--pass-args`'s words are refused for a Codex pass (exit `2`), and its empty
+value means none. Another agent tool's pass command ignores both settings,
+and the log says so; `--pass-args`'s words are refused for it too (exit `2`).
+A Codex pass's `permission mode:` is read from its own words:
+`no sandbox, no approvals` with the bypass, its selected sandbox mode when it
+sets one, and `inherited` when it sets neither. A
+`drive.pass_args` or `drive.codex_pass_args` that is not a list of words stops
+the drive (exit `1`), naming the field. A list that ends in an option left
+without its value, such as `--permission-mode` or Codex's `--sandbox`, stops
+the drive naming its field: exit `1` from the field, exit `2` from
+`--pass-args`. `drive.codex_pass_args` also refuses the words Codex would read
+as the model (`-m`, `--model`, `-c model=…`), the prompt or a subcommand (a
+word that is neither an option nor an option's value, `-`, `--`,
+`-i`/`--image`), `--yolo`, and `--dangerously-bypass-approvals-and-sandbox`, which are
+`drive.codex_bypass`'s.
 
 **The attach.** Once it holds the tree's driver lock and the PR's,
 `drive.ts` attaches the PR to the tree it runs in
@@ -972,6 +1004,15 @@ hold**), and a finding is released to be triaged afresh. The record lists
 what was reopened and, apart, what could not be; the first pass is told
 both.
 
+When no driver of this clone holds the lock, the drive ledger decides. A
+ledger that still names this tree's own driver `running` means that driver
+ended without writing its stop, releasing its locks as it went: the takeover
+is admitted as `DEAD`, stops nothing, and settles what the driver left in
+this tree as any re-arm does. One that names this clone's driver in another
+working tree is refused with exit `2`, naming that tree, since what it left
+is that tree's: re-arm from there. One that names no running driver is
+refused with exit `2` too: re-arm without `--take-over`.
+
 **Across clones** no process can be stopped and no lock is shared, so the
 takeover goes through the drive ledger (§ Running it, *The drive ledger*).
 When no driver of this clone holds the drive and the ledger names a running
@@ -1127,7 +1168,8 @@ could forge or forget.
    prints one JSON object: `command`, the driver's start command in the
    portable one-line form,
    `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`,
-   with the `drive.pass_args` words before `-p` when it is set;
+   with the `drive.pass_args` words before `-p` when it is set (a Codex
+   session's command carries `drive.codex_pass_args` before its prompt);
    `model`; `permissionMode`; `handles`; and `status`, which says what to do. A tab is a
    fresh login shell of the user's: `bun`, `claude` and the Claude account
    or profile the driver uses come from that shell, not from this session.
@@ -1280,10 +1322,12 @@ Orca can and otherwise receives `spawn`. Poll its command handle once for
 the arm check. If the host ends child processes with the session, keep the
 session alive and poll until the drive ends, or use an external terminal;
 a command handle alone does not prove the drive survives session exit.
-`--pass-model` supports either vendor; `--pass-args` remains Claude Code's
-and is refused for Codex (exit `2`). A Codex pass carries the bypass only on a
-host that set `drive.codex_bypass`; `permissionMode` says `inherited` on any
-other. In any other agent tool, do not arm:
+`--pass-model` supports either vendor; `--pass-args`'s words remain Claude
+Code's and are refused for Codex (exit `2`). A Codex pass carries the bypass
+only on a host that set `drive.codex_bypass`, and the host's
+`drive.codex_pass_args` before its prompt; `permissionMode` says the selected
+sandbox mode when present, or `inherited` only when neither it nor the bypass
+is present. In any other agent tool, do not arm:
 `arm-drive.ts` answers `print` with Claude Code's command, so print it, say
 why, and do not substitute a guessed pass command. A person can put their
 own tool's command after the `--` and run it.
@@ -1461,7 +1505,7 @@ Write the reply as § 3 does, then post, record and resolve it in one call:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/provisional-reply.ts" <THREAD_NODE_ID> [PR] --class escalated --what "<what was decided, one line>"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/provisional-reply.ts" <THREAD_NODE_ID> [PR] --class escalated --what "<what was decided, one line>"
 ```
 
 It refuses (exit `3`) below `wide`, and unless the arbiter's ruling you
@@ -2065,14 +2109,14 @@ thread under its class.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/thread-reply.md` with the file editor:
+Write `.context/scratch/thread-reply.md` with the file editor:
 
 ```text
 **accepted** — fixed the missing guard; landing in this round's still-unpushed commit.
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR]
 ```
 
 Reply files contain only the text to post. Write each body with the file
@@ -2154,14 +2198,14 @@ state the fix-dependent case explicitly:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/thread-reply.md` with the file editor:
+Write `.context/scratch/thread-reply.md` with the file editor:
 
 ```text
 **moot** — the code this anchored to is removed by this round's own unpushed fix.
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --moot-pending-push
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --moot-pending-push
 ```
 
 Omitting the flag is the default (resolve now) — the same behavior as every
@@ -2404,14 +2448,14 @@ Summary-only findings answer differently, because there is no thread:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/finding-reason.md` with the file editor:
+Write `.context/scratch/finding-reason.md` with the file editor:
 
 ```text
 valid, but a docs-polish item on an unchanged file; declined per the triage rubric (docs tier).
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"  --outcome wont-fix --fingerprint b9a7a18089043564 [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"  --outcome wont-fix --fingerprint b9a7a18089043564 [PR]
 ```
 
 The outcome is a **flag**, and the body is composed for you — so the closed
@@ -2433,14 +2477,14 @@ refuses such a body, but the fix belongs at the `hold` call:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/finding-reason.md` with the file editor:
+Write `.context/scratch/finding-reason.md` with the file editor:
 
 ```text
 fixed the missing lock; will post the answer once pushed.
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR]  --key b9a7a18089043564 --kind finding --outcome accepted
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR]  --key b9a7a18089043564 --kind finding --outcome accepted
 ```
 
 Their marker is proof the finding is answered, so it may not exist before the
@@ -2561,7 +2605,7 @@ arbiter ruling on a thread as it arrives, its verdict, its `class:` and its
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/ruling.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" rule [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/ruling.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" rule [PR]
 ```
 
 An `escalate` ruling needs its class; one whose `human-decision:` is yes is
@@ -2613,7 +2657,7 @@ falls in.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
 ```
 
 `<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
@@ -2878,8 +2922,8 @@ Record it with the plan that provoked it piped in as provenance, and name the
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file .context/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR] --json
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts" [PR] --verdict over-strict --area docs --evidence "box re-ran the whole suite for a 3-line docs edit; requiredBy is package.json, untouched since round 1" --suggest "split docs/**/*.md out of the full-profile area" --testbox-outcome pass --testbox-minutes 18
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file .context/scratch/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR] --json
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts" [PR] --verdict over-strict --area docs --evidence "box re-ran the whole suite for a 3-line docs edit; requiredBy is package.json, untouched since round 1" --suggest "split docs/**/*.md out of the full-profile area" --testbox-outcome pass --testbox-minutes 18
 ```
 
 `--area` is **required**. When the repository configures its change-area
@@ -3181,7 +3225,7 @@ reverse it, in one line each. A provisional reply is recorded by
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" record-decision [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" record-decision [PR]
 ```
 
 The level is recorded with it: the level in force when the command runs, or

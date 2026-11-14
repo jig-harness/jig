@@ -1,6 +1,7 @@
 /** The steward breaks ties without overriding the queue's own precedence. */
 import { compareQueue, queueHold, type QueueItem } from "./queue-rank.ts";
 import type { WantedItem } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 interface OrderRecord {
   kind: "order";
@@ -56,7 +57,7 @@ function exchange<T>(out: T[], group: Ranked<T>[]): void {
 function rankOf(item: WantedItem): QueueItem | null {
   const issue = item.queueIssue;
   const rank = item.queueRank;
-  if (!issue || !rank || !Number.isFinite(Date.parse(issue.createdAt)))
+  if (!issue || !rank || !Number.isFinite(parseMs(issue.createdAt)))
     return null;
   const value: QueueItem = { issue, blockers: [], ...rank };
   return queueHold(value) === null ? value : null;

@@ -19,6 +19,7 @@ import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../lib/test-helpers/windows-skip.ts";
 import { newRunId, writeReceipt } from "../dispatch/receipts.ts";
+import { isoOf } from "../shared/time.ts";
 import { orcaInstalledName } from "../shared/orca.ts";
 import { type Machine, machine, SCHEDULERS } from "./lifecycle-fixtures.ts";
 
@@ -29,13 +30,13 @@ const onWindows = skipsOnWindows(
 
 /** A finished dispatcher tick's receipt, with its exit status. */
 function dispatchReceipt(m: Machine, exitStatus: number): void {
-  const now = new Date();
+  const now = Temporal.Now.instant();
   writeReceipt(
     {
       version: 1,
       runId: newRunId(now),
-      startedAt: now.toISOString(),
-      finishedAt: now.toISOString(),
+      startedAt: isoOf(now),
+      finishedAt: isoOf(now),
       completed: true,
       apply: true,
       exitStatus,
@@ -136,6 +137,37 @@ test.skipIf(onWindows)(
     expect(again.stdout.toString()).toMatch(
       /FAIL {2}dispatch:last-run: \S+ exited 1(: [^\n;]+)?; 2 runs in a row have failed, since \S+\n/,
     );
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig upgrade registers the turn-budget guard in an existing Codex home, once, beside the hooks already there",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    m.release("0.3.0", m.plugin);
+    const codexHome = join(m.home, ".codex");
+    mkdirSync(codexHome, { recursive: true });
+    const hooksFile = join(codexHome, "hooks.json");
+    const mine = { hooks: [{ type: "command", command: "mine" }] };
+    writeFileSync(hooksFile, JSON.stringify({ hooks: { PreToolUse: [mine] } }));
+    const first = m.jig(["upgrade", "--json"]);
+    expectSpawnExit(first, 0);
+    const report = JSON.parse(first.stdout.toString()) as {
+      jobs: { target: string; outcome: string }[];
+    };
+    expect(report.jobs).toContainEqual(
+      expect.objectContaining({
+        target: "codex turn-budget hook",
+        outcome: "refreshed",
+      }),
+    );
+    const groups = JSON.parse(readFileSync(hooksFile, "utf8")).hooks.PreToolUse;
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toEqual(mine);
+    expect(groups[1].hooks[0].command).toContain("codex-turn-budget-guard.ts");
+    const before = readFileSync(hooksFile, "utf8");
+    expectSpawnExit(m.jig(["upgrade"]), 0);
+    expect(readFileSync(hooksFile, "utf8")).toBe(before);
   },
 );
 

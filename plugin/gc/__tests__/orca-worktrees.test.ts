@@ -202,6 +202,14 @@ console.log(JSON.stringify([{ state: "MERGED", headRefOid: ${JSON.stringify(head
   };
   mkdirSync(join(user, ".jig"));
   writeFileSync(join(user, ".jig", "jig.yaml"), dump({ gc: machine }));
+  // Marking began before the checkout was made, so its ignored content gets
+  // no one-time archive unless a test moves the stamp (`predateMarking`).
+  const state = join(user, ".local", "state", "jig", "gc");
+  mkdirSync(state, { recursive: true });
+  writeFileSync(
+    join(state, "marking-since"),
+    `${new Date(Date.now() - 30 * DAY_MS).toISOString()}\n`,
+  );
   const id = `repo-1::${tree}`;
   const writeState = (state: Partial<OrcaState>): void =>
     writeFileSync(
@@ -216,6 +224,8 @@ console.log(JSON.stringify([{ state: "MERGED", headRefOid: ${JSON.stringify(head
   writeState({});
   return {
     root,
+    state,
+    machine,
     guard: join(user, ".local", "state", "jig", "orca-guard"),
     repo,
     tree,
@@ -535,6 +545,72 @@ describe.skipIf(
     const file = line(gc(f, ["--json"]));
     expect(file.outcome).toBe("finding");
     expect(file.reason).toContain("node_modules");
+  }, 60_000);
+
+  test("Jig's marked working files do not veto", () => {
+    const f = setup();
+    commitAndPush(f, "ignore working files", {
+      ".gitignore": ".context/\n",
+    });
+    mkdirSync(join(f.tree, ".context", "scratch"), { recursive: true });
+    writeFileSync(join(f.tree, ".context", "scratch", "reply.md"), "draft\n");
+    idle(f);
+    expect(line(gc(f, ["--json"]))).toMatchObject({
+      outcome: "would-collect",
+      details: {
+        setAside: [{ path: ".context/scratch/", rule: "jig-scratch" }],
+      },
+    });
+  }, 60_000);
+
+  /** A checkout with an unmarked note, made (by its commondir's time) before marking began. */
+  function predatingMarking(): ReturnType<typeof setup> {
+    const f = setup();
+    commitAndPush(f, "ignore working files", { ".gitignore": ".context/\n" });
+    mkdirSync(join(f.tree, ".context"));
+    writeFileSync(join(f.tree, ".context", "msg.txt"), "a person's note\n");
+    idle(f);
+    writeFileSync(
+      join(f.state, "marking-since"),
+      `${new Date().toISOString()}\n`,
+    );
+    return f;
+  }
+
+  test("a checkout made before marking has its unmarked content archived once, then is removed", () => {
+    const f = predatingMarking();
+    expect(line(gc(f, ["--json"]))).toMatchObject({
+      outcome: "would-collect",
+      reason: expect.stringContaining("archived once before removal"),
+      details: { archive: { paths: [".context/"], bytes: 16 } },
+    });
+    const collected = line(gc(f, ["--collect", "--json"]));
+    expect(collected.outcome).toBe("collected");
+    const archive = (collected.details as { archive: { path: string } })
+      .archive;
+    expect(archive.path.startsWith(join(f.state, "archives"))).toBe(true);
+    expect(collected.reason).toContain(archive.path);
+    expect(
+      readFileSync(
+        join(archive.path, "content", ".context", "msg.txt"),
+        "utf8",
+      ),
+    ).toBe("a person's note\n");
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
+  test("content past the archive bound keeps a checkout made before marking", () => {
+    const f = predatingMarking();
+    writeFileSync(
+      join(f.env.HOME as string, ".jig", "jig.yaml"),
+      dump({ gc: { ...f.machine, archive_max_bytes: 4 } }),
+    );
+    const receipt = line(gc(f, ["--collect", "--json"]));
+    expect(receipt.outcome).toBe("finding");
+    expect(receipt.reason).toContain("ignored local content (.context/)");
+    expect(receipt.reason).toContain("4-byte bound");
+    expect(existsSync(join(f.state, "archives"))).toBe(false);
+    expect(existsSync(f.tree)).toBe(true);
   }, 60_000);
 
   test("collecting an idle Orca checkout runs the remove hook, parks, and removes it through Orca", () => {

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { isCalendarDate } from "../../../../shared/time.ts";
 
 // The frontmatter reader every M4 script shares. It reads an explicit subset of
 // YAML and rejects anything outside it with a message, rather than guessing:
@@ -622,21 +623,7 @@ export function frontmatterValue(
 
 /** A real calendar date written `YYYY-MM-DD`: the shape alone admits 2026-02-30. */
 export function isDate(text: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-  if (!match) return false;
-  const [year, month, day] = match.slice(1).map(Number) as [
-    number,
-    number,
-    number,
-  ];
-  // setUTCFullYear keeps years 0-99 as written; Date.UTC maps them to 19xx.
-  const date = new Date(0);
-  date.setUTCFullYear(year, month - 1, day);
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
+  return isCalendarDate(text);
 }
 
 /** True when a value counts as present for a required field. */

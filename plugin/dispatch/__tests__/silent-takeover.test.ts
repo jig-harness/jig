@@ -3,7 +3,8 @@
  * started, armed by hand in another clone on this host. Where this host
  * shows that driver's run ended it is taken over, once per ledger facts;
  * where its driver still runs, or its clone is on another host, a person is
- * told, once.
+ * told, once. A takeover drive.ts refuses as a usage error is not launched
+ * again on the same ledger facts: a person is told once, with its message.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -14,7 +15,9 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeDriverRecord } from "../../skills/drive-pr/scripts/lib/ledger-stop.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { readRecord } from "../lib/launches.ts";
+import { existingStateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   ledgerComment,
@@ -280,4 +283,49 @@ describe("jig dispatch --apply and a silent driver no launch started", () => {
     expect(notified(again)).toEqual([["PR #7", "needs-person", "suppressed"]]);
     expect(driveRuns(w)).toEqual([]);
   }, 90_000);
+});
+
+describe("jig dispatch --apply and a takeover drive.ts refuses as a usage error", () => {
+  it("does not launch it again on the same ledger facts, and tells a person once with the drive's message", async () => {
+    const w = fixture(`${CLONE}@${hostLabel()}`, await deadPid());
+    // This machine's re-arm started the driver, and ended without its stop on the ledger.
+    ended(
+      w,
+      "20261030T190000Z-aaaaaaaa",
+      "2026-10-30T19:00:00.000Z",
+      "generation 2, exit null, heartbeat x",
+    );
+    const said =
+      "drive.ts --take-over: no driver holds PR #7's lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.";
+    writeFileSync(
+      join(w.dir, "drive-exit"),
+      String(DRIVE_EXIT.UNSUPPORTED_CLI),
+    );
+    writeFileSync(
+      join(w.dir, "drive-stderr"),
+      `pass model: chosen by the pass command\n${said}\nRe-arm it without --take-over.\n`,
+    );
+    const [launched] = launches(await tick(w));
+    expect(launched).toMatchObject({ action: "takeover", outcome: "launched" });
+    const record = launched?.record ?? "";
+    await waitFor("the takeover's exit", () => exitWritten(w, record));
+    expect(driveRuns(w)[0]?.argv).toContain("--take-over");
+    // The wrapper kept the drive's message on the exit.
+    const row = existingStateDb(dispatchState(w))
+      ?.query("SELECT exit FROM launches WHERE id = ?")
+      .get(record) as { exit: string } | null | undefined;
+    expect(JSON.parse(row?.exit ?? "{}").usage).toBe(
+      `${said} Re-arm it without --take-over.`,
+    );
+
+    const second = await tick(w);
+    expect(launches(second)).toEqual([]);
+    expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
+    expect(second.repos[0]?.actions[0]?.notice?.text).toContain(said);
+
+    const third = await tick(w);
+    expect(launches(third)).toEqual([]);
+    expect(notified(third)).toEqual([["PR #7", "needs-person", "suppressed"]]);
+    expect(driveRuns(w)).toHaveLength(1);
+  }, 180_000);
 });

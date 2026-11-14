@@ -172,6 +172,21 @@ describe("one query per repository", () => {
       "the repository query did not read, so each was read on its own",
     );
   });
+
+  it("names both failures when neither the query nor the listing reads", async () => {
+    const w = fixture();
+    w.setPrs("open", [openPr(7, HEAD)]);
+    writeFileSync(join(w.dir, "prs-open-fail"), "");
+    const r = await w.dispatch([
+      "--followup-since",
+      "2026-10-30T00:00:00Z",
+      "--json",
+    ]);
+    const receipt = JSON.parse(r.stdout) as TickReceipt;
+    expect(forgeDetail(receipt)).toBe(
+      "the pull requests cannot be read: gh pr list exited 1: gh: HTTP 422; the repository query did not read either: gh api graphql exited 1: gh: HTTP 422",
+    );
+  });
 });
 
 describe("the reads before a launch", () => {

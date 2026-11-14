@@ -268,3 +268,86 @@ describe("drive.codex_bypass on each side", () => {
     expect(report(run).permissionMode).toBe("inherited");
   });
 });
+
+describe("drive.codex_pass_args on each side", () => {
+  const passOf = (argv: string[]) => argv.slice(argv.indexOf("--") + 1);
+  const HOOK_TRUST = "--dangerously-bypass-hook-trust";
+  const host = `drive:\n  codex_bypass: true\n  codex_pass_args: [${HOOK_TRUST}]\n`;
+
+  it("a host that sets it arms Codex with the words after the bypass and before the prompt", async () => {
+    const run = await arm(sides(host), CODEX);
+    expectSpawnExit(run, 0);
+    expect(report(run)).toMatchObject({
+      passArgs: [HOOK_TRUST],
+      passArgsSource: "drive.codex_pass_args",
+      permissionMode: "no sandbox, no approvals",
+    });
+    const pass = passOf(report(run).argv);
+    expect(pass.slice(0, 2)).toEqual(["codex", "exec"]);
+    expect(pass.slice(-3, -1)).toEqual([CODEX_BYPASS, HOOK_TRUST]);
+    expect(pass.at(-1)).toContain("/jig:drive-pr --bots-only 42");
+  });
+
+  it("an environment variable sets it for one run", async () => {
+    const run = await arm(sides(), {
+      ...CODEX,
+      JIG__DRIVE__CODEX_PASS_ARGS: `[${HOOK_TRUST}]`,
+    });
+    expectSpawnExit(run, 0);
+    expect(passOf(report(run).argv).at(-2)).toBe(HOOK_TRUST);
+  });
+
+  it("an empty --pass-args arms with none, and its words are refused for Codex", async () => {
+    const none = await arm(sides(host), CODEX, ["--pass-args", ""]);
+    expectSpawnExit(none, 0);
+    expect(report(none)).toMatchObject({
+      passArgs: [],
+      passArgsSource: "--pass-args",
+    });
+    expect(passOf(report(none).argv)).not.toContain(HOOK_TRUST);
+    const words = await arm(sides(host), CODEX, ["--pass-args", "--verbose"]);
+    expectSpawnExit(words, 2);
+    expect(report(words).reason).toContain("drive.codex_pass_args");
+  });
+
+  it.each([
+    ["the words", `[${HOOK_TRUST}]`],
+    ["an empty list", "[]"],
+  ])(
+    "a repository's file that sets %s is refused, naming the field",
+    async (_, value) => {
+      const run = await arm(
+        sides(host, driveField("codex_pass_args", value)),
+        CODEX,
+      );
+      expectSpawnExit(run, 1);
+      expect(report(run).reason).toContain("drive.codex_pass_args");
+      expect(report(run).command).not.toContain(HOOK_TRUST);
+    },
+  );
+
+  it.each([
+    ["not a list", HOOK_TRUST, "must be a list of words"],
+    ["the model", "[-m, gpt-x]", "cannot hold -m"],
+    [
+      "an option left without its value",
+      "[--sandbox]",
+      "cannot end with --sandbox",
+    ],
+  ])(
+    "a value that is %s stops a Codex arm naming the field",
+    async (_, value, why) => {
+      const run = await arm(sides(driveField("codex_pass_args", value)), CODEX);
+      expectSpawnExit(run, 1);
+      expect(report(run).reason).toContain("drive.codex_pass_args");
+      expect(report(run).reason).toContain(why);
+    },
+  );
+
+  it("a Claude Code arm does not read it", async () => {
+    const run = await arm(sides(driveField("codex_pass_args", "[--sandbox]")));
+    expectSpawnExit(run, 0);
+    expect(report(run).passArgs).toEqual([]);
+    expect(report(run).command).not.toContain("--sandbox");
+  });
+});

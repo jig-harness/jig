@@ -1,4 +1,3 @@
-import { ChevronRight } from "lucide-react";
 import { ItemTitle, Pr, RepoLink } from "./pr.tsx";
 /**
  * The log's rows. TanStack Table holds the columns and which rows are open;
@@ -22,7 +21,9 @@ import { Evidence, StageHint } from "./fold.tsx";
 import { cardAttrs } from "./keys.ts";
 import type { Forges } from "./links.ts";
 import { type RowClock, rowView, type RowView } from "./log-view.ts";
-import { Mark, StageChip } from "./marks.tsx";
+import { Glyph, StageChip } from "./icon-word.tsx";
+import { CONTROL_ICONS } from "./icons.ts";
+import { Mark } from "./marks.tsx";
 import { stageMeaning } from "./status.ts";
 
 const PAGE = 25;
@@ -59,7 +60,6 @@ const columns = helper.columns([
         />
         <RepoLink repo={row.original.repo} url={row.original.url} />
         <StageChip
-          mark={row.original.mark}
           stage={row.original.stage}
           title={stageMeaning(row.original.stage)}
         />
@@ -88,7 +88,7 @@ const columns = helper.columns([
 function RowBody({ view }: { view: RowView }) {
   return (
     <div className="rowBody">
-      <StageHint mark={view.mark} stage={view.stage} />
+      <StageHint stage={view.stage} />
       <DecisionText source={view.reason} lines />
       <div className="copyRow">
         <CopyButton
@@ -205,7 +205,7 @@ export function LogTable({
           aria-expanded={row.getIsExpanded()}
           onClick={row.getToggleExpandedHandler()}
         >
-          <ChevronRight size={16} aria-hidden="true" />
+          <Glyph of={CONTROL_ICONS.disclosure} size={16} />
         </button>
       </div>
       {row.getIsExpanded() ? <RowBody view={row.original} /> : null}

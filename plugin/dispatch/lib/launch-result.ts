@@ -7,6 +7,8 @@ import { derivedNext, type NextOwner } from "./next-owner.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import type { FramedResult } from "./framed-result.ts";
+import { storedEndedRow } from "./closing-report-store.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /**
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
@@ -36,7 +38,7 @@ export function recordResult(
       )
       .run(
         result === "waits" ? "failed" : result,
-        framed?.at ?? new Date().toISOString(),
+        framed?.at ?? currentIso(),
         next === null ? null : JSON.stringify(next),
         until ?? null,
         refused,
@@ -56,15 +58,8 @@ function reclassifyEnded(
   result: SessionResult,
   next: NextOwner | null,
 ): void {
-  const stored = db
-    .query("SELECT row FROM log WHERE key = ?")
-    .get(`ended ${id}`) as { row: string } | null;
-  const row: unknown = stored === null ? null : JSON.parse(stored.row);
-  if (
-    !isMapping(row) ||
-    row.kind !== "ended" ||
-    (row.stage !== "pickup" && row.stage !== "followup")
-  )
+  const row = storedEndedRow(db, id);
+  if (row === null || (row.stage !== "pickup" && row.stage !== "followup"))
     return;
   const storedExit = db
     .query("SELECT exit FROM launches WHERE id = ?")

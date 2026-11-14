@@ -21,6 +21,7 @@ import {
 } from "./steward.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { Action, DrivenPr } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 type Rearm = Extract<StewardRecord, { kind: "rearm" }>;
 type Need = Extract<StewardRecord, { kind: "need" }>;
@@ -153,7 +154,7 @@ function applyRearm(
     observation.opened.repo.slug,
     pr.number,
     state.records,
-    Date.now(),
+    currentMs(),
   );
   if (spent !== null) {
     observation.opened.report.unplaced.push({
