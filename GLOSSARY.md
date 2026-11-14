@@ -2671,6 +2671,26 @@ make, use the entry's term instead.
   never takes the last unit of room, so the drives that turn earlier work
   into merges keep running. It reports what it would hold before a person
   turns the limit on ([load factor](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+- **Footprint** — the paths an issue is expected to touch, predicted
+  before the work starts and kept as a record on the issue, with who
+  predicted it: the pickup once it has read the code, a scout, the planner,
+  or the issue's filing from the *change-area catalog*. The *dispatcher*
+  compares it with the files of open pull requests to tell work that will
+  collide from work that will not
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-footprint-record)).
+- **Overlap cost** — the conflict-resolution rounds starting an issue is
+  expected to bring, from the paths its *footprint* shares with the work in
+  flight and how often merges of those paths conflicted. The *dispatcher*
+  starts work with no overlap first and colliding work when capacity is
+  left, and caps how many pieces of work in flight may change one file
+  (the overlap bound)
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-cost)).
+- **Validation capacity** — how many passes a host can take through
+  validation within the time a pass can wait for it: the runs the
+  machine-wide test lock lets through at once, times that wait, divided by
+  how long one run takes. A gauge of the *load factor*, so the *dispatcher*
+  starts no more passes than the host can test in time
+  ([overlap-aware admission](design/overlap-aware-admission.md#validation-capacity)).
 - **Served person** — a person a *dispatcher*'s host works for, named with
   their forge logins and tracker identities in the host's own dispatch
   file. An open item a person with write access assigned to them, and each
