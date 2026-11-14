@@ -3,7 +3,7 @@ import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { run } from "../../shared/proc.ts";
+import { ghCallTimeoutSeconds, run } from "../../shared/proc.ts";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import type { WorktreeRequest } from "./worktree-evidence.ts";
 import { currentMs } from "../../shared/time.ts";
@@ -186,12 +186,12 @@ export async function requests(
       "--json",
       "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: ghCallTimeoutSeconds(), env: gitEnvironment() },
   );
   if (result.code !== 0)
     return failed(
       "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
+      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
     );
   const values: unknown = JSON.parse(result.stdout);
   if (!Array.isArray(values) || values.length >= 200)
@@ -229,12 +229,12 @@ export async function requestByNumber(
       "--json",
       "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: ghCallTimeoutSeconds(), env: gitEnvironment() },
   );
   if (result.code !== 0)
     return failed(
       "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
+      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
     );
   const matched = request(
     JSON.parse(result.stdout),
@@ -312,14 +312,14 @@ export async function requestsForCommit(
       host,
       `repos/${source}/commits/${commit}/pulls?per_page=${COMMIT_REQUESTS_PAGE}`,
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: ghCallTimeoutSeconds(), env: gitEnvironment() },
   );
   // A commit only this machine has is in no pull request.
   if (result.code !== 0 && UNKNOWN_COMMIT.test(result.stderr)) return ok([]);
   if (result.code !== 0)
     return failed(
       "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
+      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
     );
   let values: unknown;
   try {
