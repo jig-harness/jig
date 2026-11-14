@@ -88,9 +88,12 @@ export function orcaResult<T>(port: OpenPort, args: string[], what: string): T {
 }
 
 /**
- * Run a hook as one command in the worktree, bounded by the hook's limit,
- * its output logged line by line. Nothing supervises what the hook starts:
- * a child that outlives the call is left to the machine it runs on.
+ * Run a hook as one command in the worktree, through `ctx`, bounded by the
+ * hook's limit, its output logged line by line. Nothing supervises what the
+ * hook starts: a child that outlives the call is left to the machine it runs
+ * on. A hook on this machine runs under `supervisedHook`
+ * (`supervised-hook.ts`) instead; this one is for a host Jig cannot
+ * supervise on, reached over SSH.
  */
 export const boundedHook: HookRunner = (ctx, worktree, hook) => {
   const done = ctx.run([hook], {

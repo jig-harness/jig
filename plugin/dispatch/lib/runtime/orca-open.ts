@@ -23,7 +23,6 @@ import { orcaCommandOrInstalled } from "../../../shared/orca.ts";
 import { BusyHolderError } from "../../../shared/orca-workspace/holder.ts";
 import { openBranch } from "../../../shared/orca-workspace/open.ts";
 import {
-  boundedHook,
   type OpenPort,
   orcaAnswer,
 } from "../../../shared/orca-workspace/port.ts";
@@ -32,6 +31,7 @@ import {
   localContext,
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
+import { supervisedHook } from "../../../shared/orca-workspace/supervised-hook.ts";
 import { treeDrivers } from "../../../skills/drive-pr/scripts/lib/state/tree-drivers.ts";
 import { resolvePullRequestHead } from "./orca-pr-head.ts";
 import { failureText } from "../text.ts";
@@ -49,7 +49,7 @@ function portOn(ctx: Context): OpenPort {
   const orca = orcaCommandOrInstalled(process.env);
   return {
     host: ctx,
-    runHook: boundedHook,
+    runHook: supervisedHook,
     orcaCall: <T>(args: string[], what: string) =>
       orcaAnswer<T>(ctx.run([orca, ...args, "--json"]), what),
     where: "",

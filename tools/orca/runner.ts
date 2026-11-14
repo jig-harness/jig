@@ -10,9 +10,9 @@
  * runs, so every step reads the same `Context` interface.
  *
  * A hook is the one step that differs in kind. On this machine it runs under
- * the Herdr tool's supervisor (tools/herdr/lifecycle.ts): the leader of a
- * process group of its own, ended with its children when it fails, outlives
- * its limit, or the tool has gone. On a server's host it runs as one SSH
+ * the shared supervisor (plugin/shared/orca-workspace/supervised-hook.ts):
+ * the leader of a process group of its own, ended with its children when it
+ * fails, outlives its limit, or the tool has gone. On a server's host it runs as one SSH
  * command under the call's deadline, with nothing from Jig there to
  * supervise it: a hook that outlives the deadline, or starts a child that
  * outlives it, is left to the host (design/plan.md, Orca: what is left).
@@ -28,7 +28,7 @@ import {
   boundedHook,
   type HookRunner,
 } from "../../plugin/shared/orca-workspace/port.ts";
-import { runHook } from "../herdr/lifecycle.ts";
+import { supervisedHook } from "../../plugin/shared/orca-workspace/supervised-hook.ts";
 import { assertHost, SSH_OPTIONS, shellQuote } from "../herdr/remote.ts";
 import {
   COMMAND_TIMEOUT_MS,
@@ -157,7 +157,7 @@ export function workspace(
       options.ssh === undefined ? local : remoteRunner(options.ssh),
       log,
     ),
-    runHook: options.ssh === undefined ? runHook : remoteHook,
+    runHook: options.ssh === undefined ? supervisedHook : remoteHook,
     target,
     ...(options.ssh === undefined ? {} : { ssh: options.ssh }),
   };
