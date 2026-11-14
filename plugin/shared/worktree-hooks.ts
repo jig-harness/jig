@@ -7,8 +7,9 @@
  *   .config/worktree-hooks/create   run in a new worktree, once
  *   .config/worktree-hooks/remove   run in a worktree about to be removed
  *
- * The workspace tools and `jig gc` run them through here, so a hook runs the
- * same way whichever of them opens or removes the worktree.
+ * The workspace tools, the dispatcher's Orca opens and `jig gc` run them
+ * through here (`orca-workspace/supervised-hook.ts` on the open's side), so
+ * a hook runs the same way whichever of them opens or removes the worktree.
  */
 import {
   accessSync,
@@ -90,7 +91,7 @@ for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => e
 const failed = (error) => end(1, "the supervisor of " + hook + " failed (" + (error?.message ?? error) + "); ended the hook");
 process.on("uncaughtException", failed);
 process.on("unhandledRejection", failed);
-// The same start as processStart in tools/herdr/owner.ts reads, which this script
+// The same start as processStart in orca-workspace/process-start.ts reads, which this script
 // cannot import; empty when it cannot be read, and the id alone is recorded.
 const startOf = (pid) => {
   try {

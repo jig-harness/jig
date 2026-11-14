@@ -603,6 +603,12 @@ fields:
   ci.hold_label:
     type: string
     read_by: [drive-pr]
+  ci.rerun_failed_once:
+    type: boolean
+    default: true
+    repository_only: true
+    read_by: [drive-pr]
+    since: 0.237.1
   ci.hold_sentinels:
     type: list
     items: string
