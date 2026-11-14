@@ -53,6 +53,7 @@ import {
   lockIdentity,
 } from "../../../../../shared/liveness.ts";
 import { lockStaleMinutes, lockWaitSec, pollForLock } from "./lock.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 export interface FileLock {
   acquire(): Promise<void>;
@@ -96,7 +97,7 @@ function stale(path: string, text: string, staleMs: number): boolean {
     if (verdict.ok && verdict.value.state === "dead") return true;
   }
   try {
-    return Date.now() - statSync(path).mtimeMs > staleMs;
+    return currentMs() - statSync(path).mtimeMs > staleMs;
   } catch (err) {
     swallow(err, "a lock file is gone before its age was read");
     return false;
@@ -136,7 +137,7 @@ function underGuard(
   } catch (err) {
     if (errnoCode(err) !== "EEXIST") throw err;
     try {
-      if (Date.now() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
+      if (currentMs() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
     } catch (inner) {
       swallow(inner, "a removal guard is gone before it could be judged");
     }
@@ -162,7 +163,7 @@ function sweepObsoleteGuards(path: string, staleMs: number): void {
       if (!name.startsWith(prefix)) continue;
       const guard = join(dirname(path), name);
       try {
-        if (Date.now() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
+        if (currentMs() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
       } catch (err) {
         swallow(err, "a removal guard is gone before it could be swept");
       }

@@ -66,6 +66,7 @@ import { peekLiveLeasesFor } from "./lib/state/lease.ts";
 import { createLock, LockAcquireTimeoutError } from "./lib/state/lock.ts";
 import { judgeQuarantine } from "./lib/state/quarantine.ts";
 import { peekResolvedStateDir, resolveStateDir } from "./lib/state/store.ts";
+import { currentMs, parseMs } from "../../../shared/time.ts";
 
 const DEFAULT_MIN_AGE_DAYS = 7;
 const MAX_MIN_AGE_DAYS = 365;
@@ -248,7 +249,7 @@ function judgePr(
   const newest = newestMtimeMs(stateDir, family.names);
   if (newest === null)
     return { family, action: "keep", reason: "an entry could not be read" };
-  if (Date.now() - newest < minAgeMs)
+  if (currentMs() - newest < minAgeMs)
     return {
       family,
       action: "keep",
@@ -270,7 +271,7 @@ function judgeImported(stateDir: string, family: Family): Verdict {
   const record = peekImport(stateDir);
   if (record === null)
     return { family, action: "keep", reason: "this clone was never imported" };
-  const age = Date.now() - Date.parse(record.at);
+  const age = currentMs() - parseMs(record.at);
   if (!Number.isFinite(age) || age < IMPORTED_RETENTION_DAYS * DAY_MS)
     return {
       family,

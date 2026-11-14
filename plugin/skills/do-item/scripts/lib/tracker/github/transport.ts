@@ -40,6 +40,7 @@ import {
 import { guarded } from "../../../../../../shared/outbound/hold.ts";
 import { retryRead } from "../../../../../../shared/outbound/retry.ts";
 import { pager, postGraphQL, runClient } from "../graphql.ts";
+import { currentMs } from "../../../../../../shared/time.ts";
 
 export const GITHUB_TIMEOUT_MS = 30_000;
 
@@ -191,7 +192,7 @@ async function call(
   const deadline = AbortSignal.timeout(GITHUB_TIMEOUT_MS);
   const bound =
     signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
-  const deadlineAt = Date.now() + GITHUB_TIMEOUT_MS;
+  const deadlineAt = currentMs() + GITHUB_TIMEOUT_MS;
   // Once an attempt has begun, a cancellation may have cut a request that
   // landed: `retryRead` throws the bare reason, which carries no marker.
   let dispatched = false;
@@ -243,7 +244,7 @@ async function ghOnce(
   bound: AbortSignal,
   signal: AbortSignal | undefined,
 ): Promise<Answer> {
-  const began = Date.now();
+  const began = currentMs();
   const r = await runClient(
     runner,
     ["api", "graphql", "--include", "--input", "-"],
@@ -254,7 +255,7 @@ async function ghOnce(
     },
   );
   if (cancelled(signal)) return abortedError(signal, true);
-  return ghRunAnswer(r, Date.now() - began);
+  return ghRunAnswer(r, currentMs() - began);
 }
 
 /** What a finished `gh api graphql` run that took `tookMs` answered. */
@@ -405,7 +406,7 @@ async function postOnce(
   payload: { query: string; variables: Record<string, unknown> },
   bound: AbortSignal,
 ): Promise<Answer> {
-  const began = Date.now();
+  const began = currentMs();
   let res: Response;
   try {
     res = await postGraphQL(fetchImpl, url, `bearer ${token}`, payload, {
@@ -435,7 +436,7 @@ async function postOnce(
     res.status,
     res.headers,
     text,
-    Date.now() - began,
+    currentMs() - began,
   );
   if (failure === null) return answerOf(body, res.headers);
   return errorsFailure(body, failure) ?? errorOf(failure);

@@ -36,6 +36,7 @@ import {
   parseObject,
 } from "./events.ts";
 import { currentChange, pendingDir, sessionBlock } from "./context.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 export interface ContributedLine {
   type: "contributed";
@@ -554,7 +555,7 @@ function claimFor(
   name: string,
   key: string,
   original: string,
-  at = Date.now(),
+  at = currentMs(),
 ): string | null {
   const claimed = join(dir, `${CLAIM_PREFIX}${at}-${key}-${original}`);
   try {
@@ -741,7 +742,7 @@ export function adoptPending(
   if (!existsSync(dir)) return 0;
   const key = recordOwner(dir, path);
   let adopted = 0;
-  for (const { name, claim } of pendingCandidates(dir, Date.now())) {
+  for (const { name, claim } of pendingCandidates(dir, currentMs())) {
     const original = claim?.original ?? name;
     const claimed =
       claim === null

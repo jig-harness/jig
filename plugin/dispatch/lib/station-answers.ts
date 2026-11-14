@@ -51,6 +51,7 @@ import {
   finishAnswer,
 } from "./station-answer-store.ts";
 import type { Action, RepoReport } from "./types.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 /** Before any park: a decision the tick framed has no park time, and its digest binds an answer. */
 const EPOCH = "1970-01-01T00:00:00.000Z";
@@ -393,7 +394,7 @@ function settleInterrupted(
   prior: ActedAnswer,
   root: string | undefined,
 ): ActedAnswer {
-  const age = Date.now() - Date.parse(claimedAt(row, root) ?? "");
+  const age = currentMs() - parseMs(claimedAt(row, root) ?? "");
   if (prior.outcome !== null || !(age > INTERRUPTED_AFTER_MS)) return prior;
   const detail =
     "the tick stopped partway through this step, so whether it took effect is not known; check the need's facts, and answer again to have it carried out afresh";

@@ -60,6 +60,7 @@ import {
   windowAt,
 } from "./off-hours.ts";
 import { JigError } from "./errors.ts";
+import { parseInstant } from "./time.ts";
 
 /** The levels, least autonomous first. */
 export const AUTONOMY_LEVELS = ["attended", "unattended", "wide"] as const;
@@ -453,7 +454,7 @@ function isInteractive(env: Env): boolean {
 export function resolveAutonomy(
   config: LayeredConfig,
   env: Env = process.env,
-  now: Date = new Date(),
+  now: Temporal.Instant = Temporal.Now.instant(),
   policy: PolicySnapshot = readPolicySnapshot(env),
 ): Autonomy {
   checkSection(config);
@@ -706,24 +707,27 @@ function failureReason(err: unknown, expected: readonly string[]): string {
 /** The effective level for the repository the working directory is in. */
 export function currentAutonomy(
   env: Env = process.env,
-  now: Date = new Date(),
+  now: Temporal.Instant = Temporal.Now.instant(),
 ): Autonomy {
   return resolveAutonomy(layeredConfig(undefined, env), env, now);
 }
 
 /** `--at <instant>` taken out of `args`; `undefined` when absent. */
-function takeAt(args: string[]): Date | undefined | "invalid" {
+function takeAt(args: string[]): Temporal.Instant | undefined | "invalid" {
   const i = args.indexOf("--at");
   if (i < 0) return undefined;
   const [, value = ""] = args.splice(i, 2);
-  const at = new Date(value);
-  return value === "" || Number.isNaN(at.getTime()) ? "invalid" : at;
+  try {
+    return parseInstant(value);
+  } catch {
+    return "invalid";
+  }
 }
 
 /** What the command line asks for; `null` for a usage error. */
 function parseCommand(
   args: string[],
-): { command: string; json: boolean; at: Date | undefined } | null {
+): { command: string; json: boolean; at: Temporal.Instant | undefined } | null {
   const at = takeAt(args);
   const rest = args.filter((a) => a !== "--json");
   const command = rest[0] ?? "level";
@@ -733,7 +737,7 @@ function parseCommand(
     : { command, json: args.includes("--json"), at };
 }
 
-function printLevel(json: boolean, at: Date | undefined): void {
+function printLevel(json: boolean, at: Temporal.Instant | undefined): void {
   const a = currentAutonomy(process.env, at);
   process.stdout.write(
     json ? `${JSON.stringify(a)}\n` : `${describeAutonomy(a)}\n`,

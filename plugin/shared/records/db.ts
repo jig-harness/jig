@@ -57,6 +57,7 @@ import {
   verifyMigrations,
 } from "./migrations.ts";
 import { sourceDatabaseRefusal } from "./source.ts";
+import { currentIso } from "../time.ts";
 
 /** How long a write waits for another connection's transaction to end. */
 const BUSY_MS = 10_000;
@@ -194,7 +195,7 @@ function migrate(db: Database, spec: DatabaseSpec): Outcome<null, OpenCode> {
             randomUUID(),
             now,
             minimumReader(spec.migrations, now),
-            new Date().toISOString(),
+            currentIso(),
           ],
         );
       else if (meta.version !== now && now <= known)

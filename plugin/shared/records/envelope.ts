@@ -55,6 +55,7 @@ import {
   type Outcome,
 } from "../outcome.ts";
 import { type RecordKind, recordKind } from "./registry.ts";
+import { isoFromMs, parseMs } from "../time.ts";
 import { readWriter, type Writer } from "./writer-shape.ts";
 
 export interface Envelope {
@@ -101,13 +102,13 @@ export type ReadCode =
 const ISO_TIME =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
-/** A real calendar day and time, without Date.parse's day or midnight normalization. */
+/** A real calendar day and time: no February 30, no 24:00. */
 function validTime(at: string): boolean {
   return (
     ISO_TIME.test(at) &&
-    Number.isFinite(Date.parse(at)) &&
+    Number.isFinite(parseMs(at)) &&
     Number(at.slice(11, 13)) < 24 &&
-    new Date(`${at.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) ===
+    isoFromMs(parseMs(`${at.slice(0, 10)}T00:00:00Z`)).slice(0, 10) ===
       at.slice(0, 10)
   );
 }

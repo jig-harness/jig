@@ -24,9 +24,10 @@ import { swallow } from "../../../../shared/errors.ts";
 import { holdLabelPolicy } from "./ci-policy.ts";
 import { parsePrSnapshot } from "./ci-hold.ts";
 import { workflowRunsFor, withoutSuperseded } from "./status/workflow-runs.ts";
+import { currentIso, currentMs } from "../../../../shared/time.ts";
 
 const live: RecoveryDeps = {
-  now: Date.now,
+  now: currentMs,
   observe: observeCancellation,
   claim: claimCancellation,
   async confirm(pr, head) {
@@ -112,7 +113,7 @@ const live: RecoveryDeps = {
             person,
             decision,
             round: state.rounds,
-            at: new Date().toISOString(),
+            at: currentIso(),
           },
         ],
       };

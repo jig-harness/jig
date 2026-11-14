@@ -76,6 +76,7 @@ import {
   waitWords,
 } from "./followup-waits.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 export interface FollowupInput {
   slug: string;
@@ -102,7 +103,7 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet">;
 type Want = (action: Action, joined: (w: Workspace) => boolean) => void;
 
 function age(createdAt: string, nowMs: number): string {
-  const at = Date.parse(createdAt);
+  const at = parseMs(createdAt);
   if (!Number.isFinite(at)) return "an unknown time";
   const minutes = Math.floor((nowMs - at) / 60_000);
   return minutes < 120 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`;
@@ -128,7 +129,7 @@ function planClaimed(
   plan: Plan,
   held: () => void,
 ): void {
-  const posted = Date.parse(marker.createdAt);
+  const posted = parseMs(marker.createdAt);
   const joined = holding(input.sessions, (w) => w.prs.includes(pr.number));
   if (
     !Number.isFinite(posted) ||

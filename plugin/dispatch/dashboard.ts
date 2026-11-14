@@ -40,6 +40,7 @@ import type { Answer, RowsAnswer } from "./lib/dashboard-contract.ts";
 import { prReader } from "./lib/dashboard-pr.ts";
 import { queryLog } from "./lib/dashboard-log.ts";
 import { hostTimeZone } from "./lib/host-time.ts";
+import { currentMs } from "../shared/time.ts";
 import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
 import { authorityAllowed, isLoopback, type Listen } from "./lib/listen.ts";
 import { existingStateDb } from "./lib/state.ts";
@@ -294,7 +295,7 @@ export function serveDashboard(options: {
     );
   const fronts = (options.allowedHosts ?? []).map((name) => name.toLowerCase());
   const root = options.root ?? stateRoot();
-  const now = options.now ?? Date.now;
+  const now = options.now ?? currentMs;
   const page = readPage("index.html");
   const refused = readPage("refused.html");
   const appFiles = readAppFiles();

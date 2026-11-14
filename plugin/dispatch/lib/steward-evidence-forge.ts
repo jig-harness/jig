@@ -10,6 +10,7 @@ import {
   type EvidenceRead,
   type EvidenceRoom,
 } from "./steward-evidence-git.ts";
+import { parseMs } from "../../shared/time.ts";
 
 export interface LinkedPullRequest {
   number: number;
@@ -155,7 +156,7 @@ export async function linkedPullRequests(
               w.branch === p.headRefName &&
               w.prs.includes(number),
           ) &&
-          Date.parse(p.createdAt as string) >= Date.parse(r.record.createdAt) &&
+          parseMs(p.createdAt as string) >= parseMs(r.record.createdAt) &&
           r.next !== null &&
           r.next !== undefined &&
           "address" in r.next &&

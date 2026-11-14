@@ -180,7 +180,7 @@ describe("lib/state/schema.ts — lastProgressAt / quotaPark shape", () => {
   });
 
   it("withProgress stamps lastProgressAt, sets phase when given, and clears quotaPark", () => {
-    const now = new Date("2026-09-12T12:00:00.000Z");
+    const now = Temporal.Instant.from("2026-09-12T12:00:00.000Z");
     const s: DriveState = {
       ...freshState(999),
       phase: "old-phase",
@@ -192,17 +192,17 @@ describe("lib/state/schema.ts — lastProgressAt / quotaPark shape", () => {
       },
     };
     const next = withProgress(s, "round-advanced", now);
-    expect(next.lastProgressAt).toBe(now.toISOString());
+    expect(next.lastProgressAt).toBe("2026-09-12T12:00:00.000Z");
     expect(next.phase).toBe("round-advanced");
     expect(next.quotaPark).toBeNull();
   });
 
   it("withProgress with an empty phase preserves the prior phase rather than blanking it", () => {
-    const now = new Date("2026-09-12T12:00:00.000Z");
+    const now = Temporal.Instant.from("2026-09-12T12:00:00.000Z");
     const s: DriveState = { ...freshState(999), phase: "push-landed" };
     const next = withProgress(s, "", now);
     expect(next.phase).toBe("push-landed");
-    expect(next.lastProgressAt).toBe(now.toISOString());
+    expect(next.lastProgressAt).toBe("2026-09-12T12:00:00.000Z");
   });
 });
 

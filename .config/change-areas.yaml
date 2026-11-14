@@ -395,6 +395,7 @@ areas:
           - "plugin/shared/errors.ts"
           - "plugin/shared/log.ts"
           - "plugin/shared/outcome.ts"
+          - "plugin/shared/time.ts"
         command: "bun tools/protocol/generate.ts"
         check: "bun tools/protocol/generate.ts --check"
         notes: >-

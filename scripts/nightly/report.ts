@@ -22,6 +22,7 @@ import {
 import { NightlyError, PLATFORMS, type TestId } from "./baseline.ts";
 import type { NightlyResult, StaleEntry } from "./classify.ts";
 import { githubTracking, reconcileTrackingIssue } from "./tracking-issue.ts";
+import { parseMs } from "../../plugin/shared/time.ts";
 
 /** One job of the run, as the run's job listing gives it. */
 export interface Job {
@@ -167,8 +168,8 @@ function capped(tests: Listed[]): string[] {
 }
 
 function minutes(job: Job): string {
-  const start = Date.parse(job.started_at ?? "");
-  const end = Date.parse(job.completed_at ?? "");
+  const start = parseMs(job.started_at ?? "");
+  const end = parseMs(job.completed_at ?? "");
   return Number.isFinite(start) && Number.isFinite(end)
     ? ` after ${Math.round((end - start) / 60_000)} min`
     : "";

@@ -104,6 +104,7 @@ import {
   prSubject,
   recordRunTab,
 } from "../../../shared/orca-tabs.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 const USAGE =
   'usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--pass-args "WORDS"] [--max-rounds N] [--keep-draft] [--handoff-at V]';
@@ -421,7 +422,7 @@ async function main(): Promise<number> {
   const deps: TabDeps = {
     orca: runOrca,
     liveDrive,
-    now: Date.now,
+    now: currentMs,
     sleep: (ms) => sleep(ms / 1000),
     confirmMs: confirmSeconds() * 1000,
     pollMs: 1500,

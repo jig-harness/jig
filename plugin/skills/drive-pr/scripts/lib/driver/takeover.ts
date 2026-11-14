@@ -69,6 +69,7 @@ const STOP_OTHER_HOLDER_EXIT = 3;
 import { registerCleanup } from "../../../../../shared/cleanup.ts";
 
 import { type LedgerIdentity, ledgerTakeover } from "./ledger.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 /** One `drives.ts --doctor --json` row, as far as a takeover reads it. */
 interface DoctorRowJson {
@@ -509,9 +510,9 @@ async function stopWedgedHolder(
     );
   // The stopped driver releases its locks on the way out; a forced one leaves
   // a lock whose holder is gone, which the acquisition recovers.
-  const deadline = Date.now() + helperTimeoutSeconds() * 1000;
+  const deadline = currentMs() + helperTimeoutSeconds() * 1000;
   while (liveHolder(prLock.stateDir, prLock.name) !== null) {
-    if (Date.now() >= deadline)
+    if (currentMs() >= deadline)
       fail(
         SINGLE_INSTANCE_LOCK_EXIT,
         `drive.ts --take-over: PR #${pr}'s lock still reads live after the stop; not taking over.`,

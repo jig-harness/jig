@@ -43,6 +43,7 @@ import {
   recordResult,
   type SessionResult,
 } from "./lib/launches.ts";
+import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
 
 const USAGE =
   "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time>";
@@ -223,7 +224,7 @@ function refusalFor(
     result !== "failed" ||
     args.refused.length === 0 ||
     args.reasons.length === 0 ||
-    args.refused.some((t) => !Number.isFinite(Date.parse(t))) ||
+    args.refused.some((t) => !Number.isFinite(parseMs(t))) ||
     args.reasons.some((r) => !r.trim()) ||
     (args.keys.length === 0 &&
       (args.refused.length !== 1 || args.reasons.length !== 1))
@@ -245,9 +246,9 @@ function refusalFor(
 /** The time a `waits` result names, in the column's form; `null` when it is not one. */
 function waitsUntil(flag?: string, value?: string): string | null {
   if (flag !== "--until" || value === undefined) return null;
-  const at = Date.parse(value);
-  if (!Number.isFinite(at) || at > Date.now() + MAX_WAIT_MS) return null;
-  return new Date(at).toISOString();
+  const at = parseMs(value);
+  if (!Number.isFinite(at) || at > currentMs() + MAX_WAIT_MS) return null;
+  return isoFromMs(at);
 }
 
 /** A command line this command takes: `done|failed` with their options, or `waits --until <time>`. */
@@ -341,7 +342,7 @@ export function framedResultMain(
     );
     return 2;
   }
-  const framed = framedResultOf(text, new Date().toISOString());
+  const framed = framedResultOf(text, currentIso());
   if (!framed.ok) {
     console.error(
       `jig dispatch result: the decision was not recorded: ${framed.failure.reason}`,

@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -371,7 +372,12 @@ runTest(
     const root = mkdtempSync(join(tmpdir(), "jig-reader-marker-"));
     const enabled = join(root, "enabled");
     const worker = join(root, "worker.ts");
-    writeFileSync(enabled, "installation");
+    const file = join(root, "marker-file");
+    const folder = join(root, "marker-folder");
+    const swap = join(root, "marker-swap");
+    writeFileSync(file, "installation");
+    mkdirSync(folder);
+    symlinkSync(file, enabled);
     writeFileSync(
       worker,
       `import {keepDashboard} from ${JSON.stringify(reader)}; process.exitCode=await keepDashboard({root:${JSON.stringify(root)},dataRoot:${JSON.stringify(join(root, "data"))},listen:{host:"127.0.0.1",port:0},requireToken:true,allowedHosts:[],entry:"/the/entry/jig.ts",pollMs:20,current:async()=>true});`,
@@ -386,8 +392,9 @@ runTest(
         (value) => value.ok,
       );
       expect(access.ok && access.value.entry).toBe("/the/entry/jig.ts");
-      rmSync(enabled);
-      mkdirSync(enabled);
+      // One atomic rename, so a poll never sees the marker absent in between.
+      symlinkSync(folder, swap);
+      renameSync(swap, enabled);
       expectSpawnExit(
         {
           exitCode: await child.exited,

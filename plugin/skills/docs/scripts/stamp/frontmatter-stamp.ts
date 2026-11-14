@@ -31,8 +31,10 @@ import { linesWithBreaks, readFrontmatter } from "../lib/docs.ts";
 const LAST_UPDATED = /^last_updated[ \t]*:.*$/m;
 
 /** Today's date in UTC, `YYYY-MM-DD`. */
-export function utcToday(now: Date = new Date()): string {
-  return now.toISOString().slice(0, 10);
+export function utcToday(
+  now: Temporal.Instant = Temporal.Now.instant(),
+): string {
+  return now.toZonedDateTimeISO("UTC").toPlainDate().toString();
 }
 
 /**

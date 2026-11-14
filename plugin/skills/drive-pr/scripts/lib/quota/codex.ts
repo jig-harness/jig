@@ -48,6 +48,7 @@ import {
   readFullySync,
   scanBudgetExceeded,
 } from "./types.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 
 function sessionsRoot(): string {
   const override = process.env.DRIVE_PR_CODEX_SESSIONS_DIR;
@@ -89,7 +90,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
   // Wall-clock half of the same circuit breaker as the entry count below —
   // see `maxCandidateScanMs()`'s own doc comment for why a count alone
   // cannot bound how long a degraded filesystem keeps this walk running.
-  const deadlineAt = Date.now() + maxCandidateScanMs();
+  const deadlineAt = currentMs() + maxCandidateScanMs();
   // Walked entry-by-entry via `forEachDirEntry`, never `readdirSync`: an
   // eager `readdirSync` materializes the WHOLE listing before the
   // `scanned` budget below gets to check even once, so a single Y/M/D
@@ -112,7 +113,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
           scanned,
           MAX_CANDIDATE_FILES_SCANNED,
           deadlineAt,
-          Date.now(),
+          currentMs(),
         )
       ) {
         stoppedEarly = true;
@@ -158,6 +159,9 @@ function candidateFiles(sinceMs: number): CandidateScan {
   return { files: out, truncated };
 }
 
+/** The widest moment from the epoch, either way, a `Temporal.Instant` holds. */
+const INSTANT_LIMIT_MS = 8.64e15;
+
 interface Window {
   usedPercent: number;
   windowMinutes: number;
@@ -182,12 +186,11 @@ function readWindow(v: unknown): Window | null {
   if (typeof o.resets_at !== "number" || !Number.isFinite(o.resets_at))
     return null;
   // A syntactically valid JSON number (e.g. `1e300`) can still be outside the
-  // range `Date` supports (±8,640,000,000,000,000ms), which yields an Invalid
-  // Date whose `toISOString()` throws later, inside the pass-failure handler
-  // this module exists to keep from crashing. Reject it here instead — a
-  // window whose reset cannot be represented is malformed telemetry, not a
-  // reset of "now".
-  if (Number.isNaN(new Date(o.resets_at * 1000).getTime())) return null;
+  // range a `Temporal.Instant` holds (±8,640,000,000,000,000ms), and building
+  // one throws, inside the pass-failure handler this module exists to keep
+  // from crashing. Reject it here instead — a window whose reset cannot be
+  // represented is malformed telemetry, not a reset of "now".
+  if (Math.abs(o.resets_at * 1000) > INSTANT_LIMIT_MS) return null;
   // Defaulting a missing/malformed `used_percent` to 0 used to be a harmless
   // "no positive evidence" reading. It stopped being harmless once a healthy
   // reading could actively CLEAR an earlier exhausted candidate (the
@@ -391,7 +394,7 @@ export const codexAdapter: QuotaAdapter = {
         }
         const ts =
           typeof record.timestamp === "string"
-            ? Date.parse(record.timestamp)
+            ? parseMs(record.timestamp)
             : Number.NaN;
         if (!Number.isFinite(ts) || ts < sinceFloorMs || ts > untilMs) continue;
         // `newestAt` deliberately does NOT advance yet. `readdirSync` file
@@ -538,8 +541,10 @@ export const codexAdapter: QuotaAdapter = {
             block: {
               vendor: "codex",
               window: classify(hit.windowMinutes),
-              resetAt: new Date(hit.resetsAt * 1000),
-              observedAt: new Date(ts),
+              resetAt: Temporal.Instant.fromEpochMilliseconds(
+                Math.trunc(hit.resetsAt * 1000),
+              ),
+              observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
               evidence:
                 `${named ? `rate_limit_reached_type=${String(reached)}; ` : ""}` +
                 `${hit !== namedWindow ? "a more restrictive exhausted window: " : ""}` +
@@ -570,7 +575,7 @@ export const codexAdapter: QuotaAdapter = {
               vendor: "codex",
               window: "unknown",
               resetAt: null,
-              observedAt: new Date(ts),
+              observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
               evidence: `rate_limit_reached_type=${String(reached)} (${named ? "named slot malformed" : "unrecognised"}); no window confirmed at 100%`,
               source: path,
             },
@@ -594,7 +599,7 @@ export const codexAdapter: QuotaAdapter = {
               vendor: "codex",
               window: "unknown",
               resetAt: null,
-              observedAt: new Date(ts),
+              observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
               evidence: `a readable window used ${exhaustedAmongReadable.usedPercent}% of a ${exhaustedAmongReadable.windowMinutes}-minute window, but an unreadable sibling window prevents confirming it is the most restrictive wall`,
               source: path,
             },

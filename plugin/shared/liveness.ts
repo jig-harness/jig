@@ -56,8 +56,10 @@ import {
   parsePosixProcessTable,
   parseWindowsProcessTable,
   type ProcessRow,
+  processStartMs,
   processTable,
 } from "./process-table.ts";
+import { currentMs, isoFromMs, isoOf, parseMs } from "./time.ts";
 
 /**
  * The mutex expiry, in minutes: how long a lock that guards one
@@ -503,10 +505,6 @@ function otherStart(
 const QUARTER_HOUR_MS = 900_000;
 const WIDEST_ZONE_GAP_MS = 26 * 3_600_000;
 
-const LSTART_TEXT =
-  /^\w{3} (\w{3}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/;
-const MONTHS = "JanFebMarAprMayJunJulAugSepOctNovDec";
-
 /**
  * A start time as milliseconds on a civil clock with no time zone, so the
  * judge's own zone and its daylight-saving gaps cannot move it: the process
@@ -514,14 +512,7 @@ const MONTHS = "JanFebMarAprMayJunJulAugSepOctNovDec";
  * `NaN` for any other text.
  */
 function civilMs(text: string): number {
-  const m = LSTART_TEXT.exec(text.trim());
-  if (m === null) return Date.parse(text);
-  const month = MONTHS.indexOf(m[1] ?? "") / 3;
-  if (!Number.isInteger(month) || month < 0) return Number.NaN;
-  const [day, hour, minute, second, year] = [m[2], m[3], m[4], m[5], m[6]].map(
-    Number,
-  ) as [number, number, number, number, number];
-  return Date.UTC(year, month, day, hour, minute, second);
+  return processStartMs(text, "UTC");
 }
 
 /**
@@ -585,7 +576,7 @@ function signalCheck(identity: ProcessIdentity): Liveness | null {
       `pid ${pid} answers; this check does not read a creation time on Windows, so a reused pid cannot be told apart`,
     );
   const seen = confirmed.get(encodeIdentity(identity));
-  return seen !== undefined && Date.now() - seen < RECONFIRM_MS
+  return seen !== undefined && currentMs() - seen < RECONFIRM_MS
     ? ok({ state: "alive", reason: `pid ${pid} still runs` })
     : null;
 }
@@ -607,7 +598,7 @@ function startCheck(identity: ProcessIdentity, deadline?: number): Liveness {
   const verdict = judgeRow(identity, row === "absent" ? null : row);
   const key = encodeIdentity(identity);
   if (verdict.ok && verdict.value.state === "alive")
-    confirmed.set(key, Date.now());
+    confirmed.set(key, currentMs());
   else confirmed.delete(key);
   return verdict;
 }
@@ -685,29 +676,29 @@ export interface Lease {
 export function takeLease(
   holder: ProcessIdentity,
   generation: number,
-  now: Date = new Date(),
+  now: Temporal.Instant = Temporal.Now.instant(),
   ttlMin = SESSION_LEASE_MIN,
 ): Lease {
-  const at = now.toISOString();
+  const at = isoOf(now);
   return {
     holder,
     generation,
     startedAt: at,
     renewedAt: at,
-    expiresAt: new Date(now.getTime() + ttlMin * 60_000).toISOString(),
+    expiresAt: isoFromMs(now.epochMilliseconds + ttlMin * 60_000),
   };
 }
 
 /** The same lease, renewed at `now` for another `ttlMin` minutes. */
 export function renewLease(
   lease: Lease,
-  now: Date = new Date(),
+  now: Temporal.Instant = Temporal.Now.instant(),
   ttlMin = SESSION_LEASE_MIN,
 ): Lease {
   return {
     ...lease,
-    renewedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + ttlMin * 60_000).toISOString(),
+    renewedAt: isoOf(now),
+    expiresAt: isoFromMs(now.epochMilliseconds + ttlMin * 60_000),
   };
 }
 
@@ -718,12 +709,12 @@ export function renewLease(
  */
 export function isStale(
   lease: Lease,
-  now: Date = new Date(),
+  now: Temporal.Instant = Temporal.Now.instant(),
   holder?: Liveness,
 ): boolean {
   if (holder?.ok && holder.value.state === "dead") return true;
-  const expires = Date.parse(lease.expiresAt);
-  return Number.isFinite(expires) && now.getTime() >= expires;
+  const expires = parseMs(lease.expiresAt);
+  return Number.isFinite(expires) && now.epochMilliseconds >= expires;
 }
 
 /**

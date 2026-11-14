@@ -56,12 +56,23 @@ function fixtureInput(
 }
 function observationTime(value: string | undefined): number | undefined {
   if (!value) return undefined;
-  const now = Date.parse(value);
-  if (!Number.isFinite(now) || new Date(now).toISOString() !== value)
+  const now = canonicalInstant(value);
+  if (!now)
     throw new PreconditionError(
       "--now must be a canonical ISO UTC timestamp, including milliseconds",
     );
-  return now;
+  return now.epochMilliseconds;
+}
+/** The instant `value` names when it is written exactly as `2026-10-20T00:00:00.000Z`. */
+function canonicalInstant(value: string): Temporal.Instant | undefined {
+  try {
+    const instant = Temporal.Instant.from(value);
+    if (instant.toString({ fractionalSecondDigits: 3 }) === value)
+      return instant;
+  } catch {
+    // Not an ISO 8601 instant at all.
+  }
+  return undefined;
 }
 function renderEntry(entry: EntryReport): string {
   const waiver = entry.waiver

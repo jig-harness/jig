@@ -51,6 +51,7 @@ import {
   takeRepositoryLock,
 } from "../receipts.ts";
 import type { RepoReport } from "./types.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { repoFailure, tickFailure } from "./tick-failure.ts";
 import {
   onlyRateLimited,
@@ -84,7 +85,7 @@ export async function logRepo(
             return null;
           },
         ),
-      nowIso: new Date(context.nowMs).toISOString(),
+      nowIso: isoFromMs(context.nowMs),
       about: aboutTargets(
         slug,
         context.lineInputs.get(report.path),
@@ -175,7 +176,7 @@ export async function settleOutcomes(
       all: records,
       drives: null,
       merged: async () => null,
-      nowIso: new Date(context.nowMs).toISOString(),
+      nowIso: isoFromMs(context.nowMs),
     });
   } finally {
     exclusive.release();
@@ -306,7 +307,7 @@ export function settleFailures(
   context.failuresSettled = true;
   const root = context.apply?.root ?? stateRoot();
   const settings = failureSettings(machine);
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   try {
     for (const r of receipt.repos) {
       const path = resolve(r.path);
@@ -385,7 +386,7 @@ function quietWakeUps(
   root: string,
   nowMs: number,
 ): void {
-  const at = new Date(nowMs).toISOString();
+  const at = isoFromMs(nowMs);
   const rows = readFailures(undefined, root);
   const release = stateDb(root).query("DELETE FROM notices WHERE key = ?");
   for (const r of receipt.repos) {
@@ -438,7 +439,7 @@ export function finalizeTickFailure(
   if (context.failuresSettled !== true) return;
   if (context.tickSettledExit === receipt.exitStatus) return;
   const root = context.apply?.root ?? stateRoot();
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   try {
     settleTick(receipt, context, root, nowMs, true);
     reportFailures(receipt, root, failureSettings(options.machine), nowMs);

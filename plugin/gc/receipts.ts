@@ -16,6 +16,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Receipt } from "./types.ts";
+import { parseMs } from "../shared/time.ts";
 
 export function stateRoot(): string {
   return join(homedir(), ".local", "state", "jig", "gc");
@@ -109,7 +110,7 @@ function isDate(value: unknown): boolean {
   return (
     typeof value === "string" &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) &&
-    Number.isFinite(Date.parse(value))
+    Number.isFinite(parseMs(value))
   );
 }
 function isKnownKind(value: unknown): boolean {

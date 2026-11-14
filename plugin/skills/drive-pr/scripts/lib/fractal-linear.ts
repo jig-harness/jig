@@ -27,6 +27,7 @@ import type {
   LedgerIssue,
   Tracker,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 export interface LinearWindow {
   sinceMs: number;
@@ -42,7 +43,7 @@ function round2(n: number): number {
 
 /** Whole days from `iso` to `nowMs`, floored: an issue 6.9 days old is in its 7th day. */
 function daysSince(iso: string, nowMs: number): number {
-  return Math.floor((nowMs - Date.parse(iso)) / DAY_MS);
+  return Math.floor((nowMs - parseMs(iso)) / DAY_MS);
 }
 
 /**
@@ -62,7 +63,7 @@ export function ledgerContextOf(
   const since = nowMs - windowDays * DAY_MS;
   const inWindow = (iso: string | null): boolean => {
     if (iso === null) return false;
-    const t = Date.parse(iso);
+    const t = parseMs(iso);
     return Number.isFinite(t) && t >= since && t <= nowMs;
   };
   const minted = issues.filter((i) => inWindow(i.createdAt)).length;

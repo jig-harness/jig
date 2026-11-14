@@ -58,7 +58,7 @@ the repository's own pin:
 
 ```yaml
 env:
-  NODE_VERSION: '24'
+  NODE_VERSION: '26'
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}   # Turborepo remote cache, where used
   TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 

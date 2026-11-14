@@ -57,6 +57,7 @@ import {
   jiraAuthorization,
   resolveJiraCredential,
 } from "./credential.ts";
+import { currentMs } from "../../../../../../shared/time.ts";
 
 /** How to repair an absent or refused Jira credential. */
 export const JIRA_CREDENTIAL_HELP =
@@ -243,7 +244,7 @@ export function httpFailure(
     {
       status,
       code: answerClass(status, tookMs) ?? "invalid",
-      ...(status === 429 ? { until: limitedUntil(Date.now(), headers) } : {}),
+      ...(status === 429 ? { until: limitedUntil(currentMs(), headers) } : {}),
       retryAfterMs: retryAfterMs(headers),
       errorMessages,
       errors,
@@ -433,7 +434,7 @@ function observeLimit(
   governor: BudgetGovernor | undefined,
 ): TrackerRateLimited | null {
   if (response.status !== 429 || governor === undefined) return null;
-  const until = limitedUntil(Date.now(), response.headers);
+  const until = limitedUntil(currentMs(), response.headers);
   const why = `Jira refused ${what} (HTTP 429)`;
   governor.observe(key, { limitedUntil: until, why });
   return new TrackerRateLimited("jira", until, why);
@@ -543,7 +544,7 @@ export function httpTransport(
     const what = `${request.method} ${request.path}`;
     // One deadline for the whole call: the token command, the request, a
     // renewal and the request sent again all spend the same budget.
-    const deadlineAt = Date.now() + JIRA_TIMEOUT_MS;
+    const deadlineAt = currentMs() + JIRA_TIMEOUT_MS;
     const deadline = AbortSignal.timeout(JIRA_TIMEOUT_MS);
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
@@ -565,10 +566,10 @@ export function httpTransport(
     // connection after its headers, or answers with no JSON, is `unreachable`
     // inside the retry and the hold.
     const timed = async (): Promise<Read> => {
-      const began = Date.now();
+      const began = currentMs();
       dispatched = true;
       const response = await sender();
-      tookMs = Date.now() - began;
+      tookMs = currentMs() - began;
       if (request.bytes === true && response.ok)
         return { res: response, bytes: await fileBytes(response, bound, what) };
       const text = await bodyText(response, bound, what);

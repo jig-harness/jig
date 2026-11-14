@@ -4,6 +4,7 @@ import { isRecord } from "../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import type { ChangedPr } from "./change-probe.ts";
+import { parseMs } from "../../shared/time.ts";
 
 type Read = { changed: ChangedPr[]; calls: number };
 
@@ -45,7 +46,7 @@ export async function issueUpdates(
   const changed: ChangedPr[] = [];
   let calls = 0;
   for (const slug of slugs) {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isFinite(Date.parse(since)))
+    if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isFinite(parseMs(since)))
       return failed(
         "unreadable",
         "the issue probe needs a repository slug and an ISO time",
@@ -83,7 +84,7 @@ function readUpdatedIssue(
     !Number.isSafeInteger(node.number) ||
     Number(node.number) < 1 ||
     typeof node.updated_at !== "string" ||
-    !Number.isFinite(Date.parse(node.updated_at))
+    !Number.isFinite(parseMs(node.updated_at))
   )
     return failed(
       "unreadable",

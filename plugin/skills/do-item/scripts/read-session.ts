@@ -2,6 +2,7 @@
 /** Read a session snapshot and refresh retention without shell-specific touch. */
 import { swallow } from "../../../shared/errors.ts";
 import { readFileSync, utimesSync } from "node:fs";
+import { currentMs } from "../../../shared/time.ts";
 
 const [path, ...extra] = process.argv.slice(2);
 if (!path || extra.length) {
@@ -11,7 +12,7 @@ if (!path || extra.length) {
   try {
     const content = readFileSync(path, "utf8");
     try {
-      const now = new Date();
+      const now = currentMs() / 1000;
       utimesSync(path, now, now);
     } catch (error) {
       swallow(

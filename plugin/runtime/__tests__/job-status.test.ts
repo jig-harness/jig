@@ -51,11 +51,21 @@ test("a job text in no form install writes has no schedule", () => {
     expect(installedSchedule(scheduler, "edited by hand")).toBeNull();
 });
 
+/** A local wall-clock time as the instant it names. */
+const local = (wall: string) =>
+  Temporal.PlainDateTime.from(wall)
+    .toZonedDateTime(Temporal.Now.timeZoneId())
+    .toInstant();
+
 test("a daily job runs next at its hour today, or tomorrow once it has passed", () => {
-  const morning = new Date(2026, 10, 1, 3, 59);
-  expect(nextRun({ hour: 4 }, morning)).toEqual(new Date(2026, 10, 1, 4, 0));
-  const onTheHour = new Date(2026, 10, 1, 4, 0);
-  expect(nextRun({ hour: 4 }, onTheHour)).toEqual(new Date(2026, 10, 2, 4, 0));
+  const morning = local("2026-11-01T03:59");
+  expect(nextRun({ hour: 4 }, morning)?.epochMilliseconds).toBe(
+    local("2026-11-01T04:00").epochMilliseconds,
+  );
+  const onTheHour = local("2026-11-01T04:00");
+  expect(nextRun({ hour: 4 }, onTheHour)?.epochMilliseconds).toBe(
+    local("2026-11-02T04:00").epochMilliseconds,
+  );
   expect(nextRun({ everyMinutes: 5 }, morning)).toBeNull();
 });
 
@@ -67,11 +77,13 @@ test("schedules read in words", () => {
 
 test("tomorrow's hour is the configured one after the clocks skipped today's", () => {
   // 2026-03-08 is the spring-forward day in New York: 02:00 does not exist,
-  // so today's setHours(2) lands at 03:00, which has passed by noon.
+  // so today's 02:00 runs at 03:00, which has passed by noon.
   const script = `
     import { nextRun } from ${JSON.stringify(join(import.meta.dir, "../job-status.ts"))};
-    const next = nextRun({ hour: 2 }, new Date(2026, 2, 8, 12, 0));
-    console.log(JSON.stringify([next.getDate(), next.getHours()]));
+    const zone = Temporal.Now.timeZoneId();
+    const noon = Temporal.PlainDateTime.from("2026-03-08T12:00").toZonedDateTime(zone);
+    const next = nextRun({ hour: 2 }, noon.toInstant()).toZonedDateTimeISO(zone);
+    console.log(JSON.stringify([next.day, next.hour]));
   `;
   const result = Bun.spawnSync(["bun", "-e", script], {
     env: { ...process.env, TZ: "America/New_York" },

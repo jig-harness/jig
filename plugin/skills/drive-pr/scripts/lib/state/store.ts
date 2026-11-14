@@ -33,6 +33,7 @@ import { renderHandoff } from "./handoff.ts";
 import { isFormerFile } from "./import.ts";
 import { createLock, type PathLock } from "./lock.ts";
 import { type DriveState, freshState, isUsableState } from "./schema.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /** The version of the `DriveState` document a row's `v` column says it was written in. */
 export const DRIVE_STATE_VERSION = 1;
@@ -226,13 +227,7 @@ export function writeStateRow(
   drive.db.run(
     `INSERT INTO drive_state (clone, pr, v, state, updated_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (clone, pr) DO UPDATE SET v = excluded.v, state = excluded.state, updated_at = excluded.updated_at`,
-    [
-      drive.clone,
-      canonicalPr(pr),
-      DRIVE_STATE_VERSION,
-      text,
-      new Date().toISOString(),
-    ],
+    [drive.clone, canonicalPr(pr), DRIVE_STATE_VERSION, text, currentIso()],
   );
 }
 
@@ -316,10 +311,10 @@ function refuseUnusable(
       "lastCountedHead, attemptsHead, verifiedSha and phase must be strings.",
       "lastEscalatedInvariant must also be a string: newline-free and",
       "length-capped, exactly what set-escalated writes.",
-      "lastProgressAt must be '' (never) or a string Date.parse can read.",
+      "lastProgressAt must be '' (never) or an ISO 8601 time.",
       "quotaPark must be null or an object carrying non-empty, newline-free",
-      "vendor and window strings, a resetAt that is null or Date.parse-able,",
-      "and a Date.parse-able at.",
+      "vendor and window strings, a resetAt that is null or an ISO 8601 time,",
+      "and an ISO 8601 time as at.",
       "Every ROUNDPATHS entry must carry an integer round between 1 and",
       "rounds inclusive, and a 'paths' array of strings that is already",
       "SORTED, de-duplicated, newline-free and length-capped, exactly what",

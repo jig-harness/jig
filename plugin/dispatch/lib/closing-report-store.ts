@@ -24,6 +24,7 @@ import type { ParkedDecision } from "../../shared/decisions/park.ts";
 import { swallow } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /** A report as the launch record keeps it. */
 export interface KeptReport {
@@ -103,7 +104,7 @@ export function recordReport(
   report: ClosingReport,
   by: ReportWriter,
   root = stateRoot(),
-  at = new Date().toISOString(),
+  at = currentIso(),
 ): boolean {
   const db = stateDb(root);
   const kept: KeptReport = { report, by, at };

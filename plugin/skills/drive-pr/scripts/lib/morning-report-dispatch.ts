@@ -21,6 +21,7 @@ import {
   receiptOrWhy,
   receiptPaths,
 } from "../../../../dispatch/receipts.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 export interface DispatchEntry {
   /** When the tick that did it started (a tick enters the report when its receipt is published, at its end). */
@@ -155,8 +156,8 @@ function readable(repo: Repo): boolean {
 
 /** When a tick's receipt became readable: its end, since the receipt is written after every repository finished. */
 function publishedAt(receipt: Receipt): number {
-  const end = Date.parse(receipt.finishedAt);
-  return Number.isFinite(end) ? end : Date.parse(receipt.startedAt);
+  const end = parseMs(receipt.finishedAt);
+  return Number.isFinite(end) ? end : parseMs(receipt.startedAt);
 }
 
 /** One repository's entries in one receipt. */

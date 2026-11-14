@@ -64,6 +64,7 @@ import {
   git as defaultGit,
   type RunResult,
 } from "./proc.ts";
+import { currentMs } from "./time.ts";
 
 export interface CallContext {
   cwd?: string;
@@ -136,7 +137,7 @@ export function createConditionalCache({
     if (ctx.timeoutSec === undefined) return undefined;
     return Math.max(
       0,
-      Math.ceil(ctx.timeoutSec - (Date.now() - startMs) / 1000),
+      Math.ceil(ctx.timeoutSec - (currentMs() - startMs) / 1000),
     );
   }
 
@@ -156,7 +157,7 @@ export function createConditionalCache({
     // the process can `chdir`) under a long-lived driver. Two local `git` reads
     // per poll are free next to the API read they guard.
     return (async () => {
-      const startMs = Date.now();
+      const startMs = currentMs();
       // Each probe is bounded by its own default AND by what is left of the
       // caller's budget, so two stalled reads cannot spend it twice over.
       const opts = () => ({
@@ -270,7 +271,7 @@ export function createConditionalCache({
     ctx: CallContext,
     keepBody: boolean,
   ): Promise<ConditionalGet> {
-    const startMs = Date.now();
+    const startMs = currentMs();
     // Distinct request identity per mode: the entry key AND the in-entry guard.
     const request = keepBody ? path : `etag-only ${path}`;
     const dir = ghCacheDir();
@@ -432,7 +433,7 @@ export function createConditionalCache({
     args: string[],
     opts: CallContext & { stderr?: "pipe" | "inherit" | "ignore" } = {},
   ): Promise<RunResult> {
-    const startMs = Date.now();
+    const startMs = currentMs();
     const dir = ghCacheDir();
     const scope = dir === null ? null : await repoScope(opts);
     const request = `repo view ${JSON.stringify(args)}`;
@@ -448,7 +449,7 @@ export function createConditionalCache({
         typeof e.stdout === "string" &&
         e.stdout.trim() !== "" &&
         typeof e.at === "number" &&
-        Date.now() - e.at < REPO_VIEW_TTL_MS
+        currentMs() - e.at < REPO_VIEW_TTL_MS
       ) {
         const hit: RunResult = {
           code: 0,
@@ -493,7 +494,7 @@ export function createConditionalCache({
         v: ENTRY_VERSION,
         request,
         stdout: r.stdout,
-        at: Date.now(),
+        at: currentMs(),
       });
     }
     return r;

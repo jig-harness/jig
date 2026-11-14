@@ -24,6 +24,8 @@
  */
 
 /** One change of an issue's assignee: account ids, `null` for nobody. */
+import { parseMs } from "../../../../../shared/time.ts";
+
 export interface AssigneeChange {
   from: string | null;
   to: string | null;
@@ -47,13 +49,13 @@ export type AssignmentCheck =
 function ordered(changes: readonly AssigneeChange[]): AssigneeChange[] {
   return changes
     .map((c, i) => ({ c, i }))
-    .sort((a, b) => Date.parse(a.c.at) - Date.parse(b.c.at) || a.i - b.i)
+    .sort((a, b) => parseMs(a.c.at) - parseMs(b.c.at) || a.i - b.i)
     .map(({ c }) => c);
 }
 
 /** A change's identity for matching one listing against another. */
 function identity(c: AssigneeChange): string {
-  return JSON.stringify([c.from, c.to, Date.parse(c.at)]);
+  return JSON.stringify([c.from, c.to, parseMs(c.at)]);
 }
 
 /**

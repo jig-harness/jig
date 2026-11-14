@@ -84,7 +84,8 @@ it("stops paging once the shared merge-facts deadline is spent", async () => {
     import { readFileSync, writeFileSync } from "node:fs";
     const clock = process.env.MERGE_FIXTURE + "/clock";
     writeFileSync(clock, "0");
-    Date.now = () => Number(readFileSync(clock, "utf8"));
+    Temporal.Now.instant = () =>
+      Temporal.Instant.fromEpochMilliseconds(Number(readFileSync(clock, "utf8")));
     const read = await readMergeFacts("example-org/repo", Array.from({ length: 41 }, (_, i) => i + 1), 30);
     console.log(JSON.stringify(read));
   `,

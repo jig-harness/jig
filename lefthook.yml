@@ -29,6 +29,7 @@ pre-commit:
         - "plugin/shared/errors.ts"
         - "plugin/shared/log.ts"
         - "plugin/shared/outcome.ts"
+        - "plugin/shared/time.ts"
       timeout: 60s
       run: bun tools/protocol/generate.ts --stage
       stage_fixed: true
