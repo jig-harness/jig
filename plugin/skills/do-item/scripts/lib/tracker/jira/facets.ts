@@ -249,6 +249,7 @@ function lackingHealth(
   field: FacetField,
   lacking: ReadonlyArray<string>,
   project: string,
+  restricted: ReadonlyArray<string> = [],
 ) {
   const many = lacking.length > 1;
   return {
@@ -261,7 +262,7 @@ function lackingHealth(
       many ? "those screens" : "the screen",
     ).slice(0, 300),
     fails: `filing ${listed(
-      lacking.map((n) => `${article(n)} ${n}`),
+      [...lacking, ...restricted].map((n) => `${article(n)} ${n}`),
       "or",
     )} fails`,
   };
@@ -576,8 +577,8 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return first;
   }
 
-  /** The health where a create screen offers fewer options than the store's values; it stops only the filing of its type. */
-  async function restrictedHealth(
+  /** The issue types whose create screen offers fewer options than the store's values, with the first refusal of each. */
+  async function restrictedTypes(
     s: ResolvedFacet,
     screens: { t: IssueTypeMeta; screen: FieldMeta }[],
     signal?: AbortSignal,
@@ -588,6 +589,11 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       if (refusal !== null && !restricted.has(x.t.name))
         restricted.set(x.t.name, refusal);
     }
+    return restricted;
+  }
+
+  /** The health where a create screen offers fewer options than the store's values; it stops only the filing of its type. */
+  function restrictedHealth(restricted: Map<string, string>) {
     if (restricted.size === 0) return null;
     return {
       status: "failed" as const,
@@ -624,16 +630,22 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       await encode(s, v, async () => null, signal);
     }
     const lacking = screens.filter((x) => !x.screen.has(field.id));
+    // A screen without the field fails its type's filing; the screens that
+    // have it are still checked, so the health names every type that fails.
+    const restricted = await restrictedTypes(
+      s,
+      screens.filter((x) => x.screen.has(field.id)),
+      signal,
+    );
     if (lacking.length > 0)
       return lackingHealth(
         s,
         field,
         lacking.map((x) => x.t.name),
         project,
+        [...restricted.keys()],
       );
-    return (
-      (await restrictedHealth(s, screens, signal)) ?? { status: "ok" as const }
-    );
+    return restrictedHealth(restricted) ?? { status: "ok" as const };
   }
 
   async function health(s: ResolvedFacet, signal?: AbortSignal) {

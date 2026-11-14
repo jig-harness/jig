@@ -242,33 +242,46 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       total: 1,
     });
     const all = screen(["XS", "Small", "Medium", "Large", "XL"]);
-    const { t } = jira(
-      routes({
-        ...SITE,
-        "GET field": [
-          {
-            id: "customfield_10020",
-            name: "Size",
-            schema: { type: "option" },
-          },
-        ],
-        ...Object.fromEntries(
-          ["t0", "t1", "t2", "t3", "t4"].map((id) => [
-            `GET issue/createmeta/ENG/issuetypes/${id}`,
-            id === "t4" ? screen(["Small", "Medium"]) : all,
-          ]),
-        ),
-      }),
-      options,
-    );
-    const health = (await t.facetStores()).facets.find(
-      (f) => f.facet === "size",
-    )?.health;
+    const healthOf = async (screens: Record<string, unknown>) => {
+      const { t } = jira(
+        routes({
+          ...SITE,
+          "GET field": [
+            {
+              id: "customfield_10020",
+              name: "Size",
+              schema: { type: "option" },
+            },
+          ],
+          ...Object.fromEntries(
+            ["t0", "t1", "t2", "t3", "t4"].map((id) => [
+              `GET issue/createmeta/ENG/issuetypes/${id}`,
+              screens[id] ?? all,
+            ]),
+          ),
+        }),
+        options,
+      );
+      return (await t.facetStores()).facets.find((f) => f.facet === "size")
+        ?.health;
+    };
+    const health = await healthOf({ t4: screen(["Small", "Medium"]) });
     expect(health).toMatchObject({
       status: "failed",
       unavailable: false,
       error: expect.stringContaining("which has Small, Medium"),
       fails: "filing a Sub-task fails",
+    });
+    // A screen without the field does not hide the restricted screens.
+    expect(
+      await healthOf({
+        t1: { fields: [], startAt: 0, maxResults: 100, total: 0 },
+        t4: screen(["Small", "Medium"]),
+      }),
+    ).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("not on the create screen of Bug"),
+      fails: "filing a Bug or a Sub-task fails",
     });
   });
 });
