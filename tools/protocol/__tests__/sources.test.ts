@@ -66,6 +66,7 @@ function directImports(module: string): string[] {
 function importsOf(module: string): string[] {
   const seen = new Set<string>();
   const visit = (path: string) => {
+    if (!path.endsWith(".ts")) return;
     for (const next of directImports(path))
       if (!seen.has(next)) {
         seen.add(next);
