@@ -254,6 +254,21 @@ describe("closingReportOf", () => {
     expect(read.value.concluded).toContain("set");
   });
 
+  it("masks a secret with nested brackets, under either key form", () => {
+    const read = closingReportOf(
+      JSON.stringify({
+        ...BASE,
+        concluded: `password=[outer[inner] secret tail] set; "password": [outer[inner] swordfish tail] set; token=[a[b[c] d] e]rest set`,
+      }),
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    for (const leak of ["tail", "secret", "swordfish", "rest", "inner", "]"]) {
+      expect(read.value.concluded).not.toContain(leak);
+    }
+    expect(read.value.concluded).toContain("set");
+  });
+
   it("refuses a decision over its own byte limit and a null decision", () => {
     const big = { ...DECISION, alreadyDone: "x".repeat(9000) };
     const over = closingReportOf(

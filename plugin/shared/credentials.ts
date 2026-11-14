@@ -15,39 +15,81 @@ const SECRET_KEY =
 const QUOTED = `(?:"(?:[^"\\\\]|\\\\.|"")*"|'(?:[^'\\\\]|\\\\.|'')*')`;
 
 /**
- * A bracketed value: a run of bracket groups (whitespace allowed inside one,
- * an unclosed one taking its line) and non-whitespace text between and after
- * them. A password may contain any number of brackets, so the value ends at
- * the next whitespace outside a bracket group, never at a `]`.
+ * End of a bracketed value starting at `start` (a `[`): bracket groups may
+ * nest and hold whitespace, an unclosed one takes its line, and the value
+ * ends at the first whitespace, `,` or `}` outside every group. A password
+ * may contain any number of brackets, so a `]` never ends it by itself.
  */
-const BRACKET_GROUP = "\\[[^\\]\\n]*\\]?";
-const BRACKETED = `${BRACKET_GROUP}(?:${BRACKET_GROUP}|[^\\s,}\\[])*`;
+function bracketedEnd(text: string, start: number): number {
+  let depth = 0;
+  let i = start;
+  for (; i < text.length; i++) {
+    const c = text[i] ?? "";
+    if (c === "\n") break;
+    if (c === "[") depth++;
+    else if (c === "]") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && (/\s/.test(c) || c === "," || c === "}")) break;
+  }
+  return i;
+}
+
+/**
+ * Replace each `prefix` match plus the value after it. The value is a quoted
+ * string, a bracketed value, or else what `plain` matches there; `skip`
+ * leaves a value already masked alone.
+ */
+function maskValues(
+  text: string,
+  prefix: RegExp,
+  plain: RegExp,
+  render: (m: RegExpExecArray) => string,
+  skip?: (rest: string) => boolean,
+): string {
+  const quoted = new RegExp(QUOTED, "y");
+  const plainY = new RegExp(plain.source, "y");
+  let out = "";
+  let last = 0;
+  prefix.lastIndex = 0;
+  for (let m = prefix.exec(text); m; m = prefix.exec(text)) {
+    const at = m.index + m[0].length;
+    let end = -1;
+    quoted.lastIndex = at;
+    plainY.lastIndex = at;
+    if (skip?.(text.slice(at))) continue;
+    if (quoted.test(text)) end = quoted.lastIndex;
+    else if (text[at] === "[") end = bracketedEnd(text, at);
+    else if (plainY.test(text)) end = plainY.lastIndex;
+    if (end < 0) continue;
+    out += text.slice(last, m.index) + render(m);
+    last = end;
+    prefix.lastIndex = end;
+  }
+  return out + text.slice(last);
+}
 
 /** Replace every credential-shaped value in `text` with `mark`. */
 export function maskCredentials(text: string, mark: string): string {
-  return text
-    .replace(
-      new RegExp(
-        `(["'])(${SECRET_KEY})\\1\\s*[:=]\\s*(?:${QUOTED}|${BRACKETED}|[^\\s,}\\]]+)`,
-        "gi",
+  const keyed = maskValues(
+    text,
+    new RegExp(`(["'])(${SECRET_KEY})\\1\\s*[:=]\\s*`, "gi"),
+    /[^\s,}\]]+/,
+    (m) => `${m[1]}${m[2]}${m[1]}: "${mark}"`,
+  );
+  return maskValues(
+    keyed
+      .replace(
+        /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+        (_, scheme: string) => `${scheme} ${mark}`,
+      )
+      .replace(
+        new RegExp(`\\b(${SECRET_KEY})\\s*[=:]\\s*${QUOTED}`, "gi"),
+        (_, key: string) => `${key}=${mark}`,
       ),
-      (_, q: string, key: string) => `${q}${key}${q}: "${mark}"`,
-    )
-    .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
-      (_, scheme: string) => `${scheme} ${mark}`,
-    )
-    .replace(
-      new RegExp(`\\b(${SECRET_KEY})\\s*[=:]\\s*${QUOTED}`, "gi"),
-      (_, key: string) => `${key}=${mark}`,
-    )
-    .replace(
-      new RegExp(
-        `\\b(${SECRET_KEY})\\s*[=:]\\s*(?!(?:<redacted>|\\[(?:redacted|launch token)\\])(?!\\S))(?:${BRACKETED}|\\S+)`,
-        "gi",
-      ),
-      (_, key: string) => `${key}=${mark}`,
-    )
+    new RegExp(`\\b(${SECRET_KEY})\\s*[=:]\\s*`, "gi"),
+    /\S+/,
+    (m) => `${m[1]}=${mark}`,
+    (rest) => /^(?:<redacted>|\[(?:redacted|launch token)\])(?!\S)/.test(rest),
+  )
     .replace(
       /\b(?:gh[pousr]_|github_pat_|sk-|xox[abp]-|lin_api_)[A-Za-z0-9_-]{8,}/g,
       mark,
