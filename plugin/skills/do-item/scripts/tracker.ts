@@ -133,7 +133,11 @@ import {
   failureOf,
   OutboundError,
 } from "../../../shared/outbound/failure.ts";
-import { claimServedIssue } from "./lib/served-claim.ts";
+import {
+  type ServedClaim,
+  claimServedIssue,
+  servedClaimStillStands,
+} from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue, claimStillStands } from "./lib/claim.ts";
 import { blockedClaimRefusal } from "./lib/blocked-claim.ts";
@@ -448,21 +452,24 @@ async function claim(
       const ancestorKey = ancestor
         ? (shape?.normalize(ancestor) ?? ancestor)
         : undefined;
+      const served: ServedClaim | null = person
+        ? {
+            person,
+            ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+            ...(blocking
+              ? { blocking: shape?.normalize(blocking) ?? blocking }
+              : {}),
+            hitlLabel: config.labels.hitl,
+            manualOpsLabel: config.labels.manualOps,
+            ...(planBlock?.ok && planBlock.value !== undefined
+              ? { executionPlanBlock: planBlock.value }
+              : {}),
+            claimFrom: settings.claimFrom,
+          }
+        : null;
       const body = () =>
-        person
-          ? claimServedIssue(tracker, normalized, {
-              person,
-              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-              ...(blocking
-                ? { blocking: shape?.normalize(blocking) ?? blocking }
-                : {}),
-              hitlLabel: config.labels.hitl,
-              manualOpsLabel: config.labels.manualOps,
-              ...(planBlock?.ok && planBlock.value !== undefined
-                ? { executionPlanBlock: planBlock.value }
-                : {}),
-              claimFrom: settings.claimFrom,
-            })
+        served
+          ? claimServedIssue(tracker, normalized, served)
           : claimIssue(tracker, normalized, { claimFrom: settings.claimFrom });
       if (!settings.claimMarker) return body();
       // The marker names who the item will be assigned to, before it is.
@@ -475,7 +482,11 @@ async function claim(
         { session: claimSession(), branch: await claimBranch(root), claimant },
         body,
         undefined,
-        (claimed) => claimStillStands(tracker, normalized, claimed),
+        async (claimed) =>
+          (await claimStillStands(tracker, normalized, claimed)) ??
+          (served
+            ? await servedClaimStillStands(tracker, normalized, served)
+            : null),
       );
     },
   );

@@ -93,7 +93,8 @@ const RECOVERY_DELAY_MS = 3_000;
  * The longest recovery reads for, by the clock: the reads and sleeps of one
  * attempt stop once it has run this long, whatever `RECOVERY_READS` still
  * allows. A read in flight is not cancelled (the tracker port takes no
- * signal), so a slow read can finish past it.
+ * signal), so a slow read can finish past it; such a read, like a sleep or a
+ * revalidation that ends past the bound, settles nothing.
  */
 export const RECOVERY_DEADLINE_MS = 90_000;
 
@@ -344,7 +345,9 @@ export async function claimWithMarker(
   /**
    * Settle who owns the item this attempt has written, from the outcome
    * records of the earlier attempts it saw (`open`); never by writing the
-   * item.
+   * item. The two listings already read (`first`, then `after`) count as
+   * observations: the first of them that triggered recovery is evaluated
+   * before another listing is requested.
    */
   async function recover(seen: string[]): Promise<TokenResult> {
     const open = new Set(seen);
@@ -352,59 +355,41 @@ export async function claimWithMarker(
     let last: View | undefined;
     // The first outcome each attempt was seen to record, kept across reads.
     const outcomes = new Map<string, ClaimOutcome>();
+    for (const v of [first, after]) remember(outcomes, v);
     const startedAt = clock.now();
-    for (let read = 1; read <= RECOVERY_READS; read++) {
-      if (read > 1) {
-        if (clock.now() - startedAt >= RECOVERY_DEADLINE_MS) {
-          failure = `recovery ran past ${RECOVERY_DEADLINE_MS / 1000} seconds`;
-          break;
-        }
-        await clock.sleep(RECOVERY_DELAY_MS);
-      }
-      try {
-        last = await view(tracker, key);
-      } catch (error) {
-        failure = reasonOf(error);
+    const expired = () => clock.now() - startedAt >= RECOVERY_DEADLINE_MS;
+    // Read 0 is the listing the claim already holds: `after`.
+    for (let read = 0; read <= RECOVERY_READS; read++) {
+      const listing = read === 0 ? after : await nextListing(expired);
+      if (typeof listing === "string") {
+        failure = listing;
         break;
       }
-      for (const [a, o] of last.outcomes)
-        if (!outcomes.has(a)) outcomes.set(a, o);
-      last = { markers: last.markers, outcomes: new Map(outcomes) };
+      remember(outcomes, listing);
+      last = { markers: listing.markers, outcomes: new Map(outcomes) };
       const settled = settle(last, attempt, ownAt, open);
       if (settled === "held") {
         const reason = `another claim's marker on ${key} is earlier and that claim holds it; this one stands down`;
         await withdraw(reason, last);
         return { outcome: "stood_down", issue: key, reason, recovery: "held" };
       }
-      if (settled === "reclaimed") {
-        const changed = await revalidate?.(result).catch(
-          (error: unknown) =>
-            `${key} could not be read again to confirm the claim: ${reasonOf(error)}`,
-        );
-        if (changed) {
-          const reason = `${key} changed while the claim settled, so it is not started here: ${changed}`;
-          await withdraw(reason, last, "unresolved");
-          return {
-            outcome: "stood_down",
-            issue: key,
-            reason,
-            recovery: "unresolved",
-          };
-        }
-        await record("claimed");
-        return {
-          ...result,
-          marker: { posted: true, confirmed: true },
-          recovery: "reclaimed",
-        };
-      }
+      if (settled === "reclaimed") return reclaim(last, expired);
     }
     const why =
       failure !== null
         ? `its claim markers could not be read again (${failure})`
         : "an earlier claim's marker on it recorded no outcome, or this claim's own marker is gone";
-    const reason = `${key} was assigned and started, but who holds it cannot be established: ${why}; a person must check it`;
-    await withdraw(reason, last, "unresolved");
+    return standDownUnresolved(
+      `${key} was assigned and started, but who holds it cannot be established: ${why}; a person must check it`,
+      last,
+    );
+  }
+
+  async function standDownUnresolved(
+    reason: string,
+    seen: View | undefined,
+  ): Promise<TokenResult> {
+    await withdraw(reason, seen, "unresolved");
     return {
       outcome: "stood_down",
       issue: key,
@@ -412,6 +397,55 @@ export async function claimWithMarker(
       recovery: "unresolved",
     };
   }
+
+  /**
+   * The next recovery listing after a pause, or why there is none: the
+   * deadline passed before or after the pause, or the read failed or ended
+   * past it (such a listing settles nothing).
+   */
+  async function nextListing(expired: () => boolean): Promise<View | string> {
+    const ranOut = `recovery ran past ${RECOVERY_DEADLINE_MS / 1000} seconds`;
+    if (expired()) return ranOut;
+    await clock.sleep(RECOVERY_DELAY_MS);
+    if (expired()) return ranOut;
+    try {
+      const listing = await view(tracker, key);
+      return expired() ? ranOut : listing;
+    } catch (error) {
+      return reasonOf(error);
+    }
+  }
+
+  /** Every earlier attempt released: confirm the item is still the claim's, inside the deadline, then record it. */
+  async function reclaim(
+    last: View,
+    expired: () => boolean,
+  ): Promise<TokenResult> {
+    const changed =
+      (await revalidate?.(result).catch(
+        (error: unknown) =>
+          `${key} could not be read again to confirm the claim: ${reasonOf(error)}`,
+      )) ??
+      (expired()
+        ? `recovery ran past ${RECOVERY_DEADLINE_MS / 1000} seconds`
+        : null);
+    if (changed)
+      return standDownUnresolved(
+        `${key} changed while the claim settled, so it is not started here: ${changed}`,
+        last,
+      );
+    await record("claimed");
+    return {
+      ...result,
+      marker: { posted: true, confirmed: true },
+      recovery: "reclaimed",
+    };
+  }
+}
+
+/** Keep the first outcome each attempt is seen to record. */
+function remember(outcomes: Map<string, ClaimOutcome>, v: View): void {
+  for (const [a, o] of v.outcomes) if (!outcomes.has(a)) outcomes.set(a, o);
 }
 
 /**

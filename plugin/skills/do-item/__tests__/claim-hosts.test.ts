@@ -23,6 +23,7 @@ import {
 import {
   CLAIM_LAPSE_MS,
   claimWithMarker,
+  RECOVERY_DEADLINE_MS,
   RECOVERY_READS,
   type TokenTracker,
 } from "../scripts/lib/claim-token.ts";
@@ -373,23 +374,65 @@ describe("the claim marker as the claim's token", () => {
     expect(outcomesIn(s.comments)).toEqual(["unresolved"]);
   });
 
-  it("stops reading past the recovery deadline and stands down unresolved", async () => {
+  it("stops reading at the recovery deadline and never reclaims on a release that appears after it", async () => {
     const s = store();
     const late = theirs("x", 1_000);
-    const h = lagging(s, late, () => []);
     let now = Date.now();
+    const started = now;
     const clock: Clock = {
       now: () => now,
       sleep: async () => {
         now += 40_000;
       },
     };
-    const out = await claimWithMarker(h.tracker, "#5", FACTS, claimed, clock);
+    const readAt: number[] = [];
+    const tracker = s.tracker({
+      issueComments: async () => {
+        readAt.push(now - started);
+        const pastDeadline = now - started >= RECOVERY_DEADLINE_MS;
+        return {
+          uuid: "u",
+          comments:
+            readAt.length === 1
+              ? [...s.comments]
+              : [
+                  late,
+                  ...s.comments,
+                  ...(pastDeadline ? [outcomeOf("x", "released")] : []),
+                ],
+        };
+      },
+    });
+    const out = await claimWithMarker(tracker, "#5", FACTS, claimed, clock);
     expect(out).toMatchObject({
       outcome: "stood_down",
       recovery: "unresolved",
     });
-    expect(h.reads()).toBeLessThan(10);
+    // No request begins at or past the deadline.
+    expect(readAt.filter((t) => t >= RECOVERY_DEADLINE_MS)).toEqual([]);
+  });
+
+  it("settles on a release the read before the write saw, without another listing", async () => {
+    // The first listing shows x's marker with its release; the one after the
+    // write shows the marker without it, and later listings stay that way.
+    const s = store();
+    const x = theirs("x", 1_000);
+    let reads = 0;
+    const tracker = s.tracker({
+      issueComments: async () => {
+        reads++;
+        return {
+          uuid: "u",
+          comments:
+            reads === 1
+              ? [x, ...s.comments, outcomeOf("x", "released")]
+              : [x, ...s.comments],
+        };
+      },
+    });
+    const out = await claimWithMarker(tracker, "#5", FACTS, claimed, CLOCK);
+    expect(out).toMatchObject({ outcome: "claimed", recovery: "reclaimed" });
+    expect(reads).toBe(2);
   });
 
   it("keeps a release it saw when a later lagging read shows the marker without it", async () => {
