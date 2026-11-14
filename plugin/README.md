@@ -2422,7 +2422,8 @@ plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
 plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
-plugin/hooks/hooks.json                  the agent-runtime hooks both tools register
+plugin/hooks/hooks.json                  the agent-runtime hooks Claude Code registers
+plugin/hooks/codex-hooks.json            the Codex plugin's hooks file, empty: jig upgrade registers Codex's
 plugin/hooks/<name>.ts                   the hook scripts, each tested in hooks/__tests__/
 ```
 
