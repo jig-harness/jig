@@ -119,6 +119,17 @@ describe("the comparison with the integration branch", () => {
     ]);
   });
 
+  test("passes a value added with the meaning another value carries", () => {
+    const shared = fixtureChapter({
+      values: [
+        ...VALUES,
+        { name: "ALPHA", code: 3, meaning: "the first thing happened" },
+      ],
+    });
+    const root = scratchRepo([fixtureChapter()], [shared]);
+    expect(check(root, [shared]).problems).toEqual([]);
+  });
+
   test("passes a meaning reworded in place", () => {
     const reworded = fixtureChapter({
       values: [

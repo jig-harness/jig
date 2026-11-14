@@ -363,20 +363,19 @@ function changedFields(base: DataFile, self: DataValue, v: DataValue) {
 const withdrawalMay = (field: string, spec: FieldSpec, v: DataValue) =>
   field === "kind" || (spec.nullable && (v[field] ?? null) === null);
 
-/** The meaning of a value still listed, taken by another. */
+/**
+ * A value the base lists whose meaning changed to that of another value
+ * still listed. A value the base does not list is added, and may share a
+ * meaning, as the markers of one record kind do; a value whose own identity
+ * is gone is reported gone, not here.
+ */
 function meaningProblems(view: ValueView): string[] {
   const out: string[] = [];
   for (const [k, v] of view.after) {
     const self = view.before.get(k);
-    if (self !== undefined && self.meaning === v.meaning) continue;
-    // A value whose own identity is gone is reported gone, not here.
+    if (self === undefined || self.meaning === v.meaning) continue;
     for (const [other, w] of view.before)
-      if (
-        other !== k &&
-        view.after.has(other) &&
-        w.meaning === v.meaning &&
-        w.meaning !== self?.meaning
-      )
+      if (other !== k && view.after.has(other) && w.meaning === v.meaning)
         out.push(
           `the value ${view.show(v)} now carries the meaning the base gives ${view.show(w)}`,
         );

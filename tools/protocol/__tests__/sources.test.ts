@@ -197,7 +197,9 @@ describe("the hidden comment markers", () => {
     for (const name of new Set(rendered))
       expect(
         values.filter((v) => v.name === name).map((v) => v.marker),
-      ).toEqual(RECORD_KINDS.find((k) => k.name === name)?.markers ?? []);
+      ).toEqual([
+        ...(RECORD_KINDS.find((k) => k.name === name)?.markers ?? []),
+      ]);
     expect(excluded).toContain("dispatch-followup");
     expect(FOLLOWUP_CLAIM_CHAPTER.takes()).toContain(
       "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-followup",
