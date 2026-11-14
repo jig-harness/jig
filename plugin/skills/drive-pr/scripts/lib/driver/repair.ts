@@ -35,6 +35,7 @@ export function passEnv(
 ): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.CLAUDECODE;
+  env.JIG_OUTBOUND_CALLER = `pass:drive:${task?.task ?? "review"}:${env.JIG_LAUNCH ?? "manual"}`;
   // A headless pass has no next turn to receive a background task's result.
   // Claude Code removes background tool parameters and auto-backgrounding
   // under this setting; other pass runtimes ignore this vendor variable.

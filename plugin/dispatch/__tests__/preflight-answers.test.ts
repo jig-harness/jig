@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TrackerRateLimited } from "../../shared/tracker-budget.ts";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
 import { TrackerConfigError } from "../../skills/do-item/scripts/lib/tracker/config-error.ts";
 import { admitAccount, type ApplyState } from "../lib/actions/launch.ts";
 import type { LineNeed } from "../lib/dashboard-contract.ts";

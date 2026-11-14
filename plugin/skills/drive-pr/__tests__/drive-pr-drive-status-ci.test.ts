@@ -180,6 +180,8 @@ describe("the CI verdict over commit statuses", () => {
       { context: JENKINS, target_url: BUILD_URL },
     ]);
     expect(env.DRIVE_PR_ROUND_REPAIR_SKILL).toBe("ci-support");
+    expect(env.JIG_OUTBOUND_CALLER).toStartWith("pass:drive:ci-repair:");
+    expect(passEnv().JIG_OUTBOUND_CALLER).toStartWith("pass:drive:review:");
   });
 
   it("removes inherited repair variables from an ordinary pass", () => {

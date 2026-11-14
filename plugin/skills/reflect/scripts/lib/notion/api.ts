@@ -9,6 +9,9 @@
  * error that outlasts the retries, or a write Notion answered with a server
  * error; 1 for anything Notion refused.
  */
+import { credentialKey } from "../../../../../shared/outbound/budget.ts";
+import { recordCall } from "../../../../../shared/outbound/ledger.ts";
+import { statusClass } from "../../../../../shared/outbound/failure.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isMapping } from "../../../../../shared/config-layers.ts";
 
@@ -123,8 +126,7 @@ export class NotionApi {
   ): Promise<Record<string, unknown>> {
     let failure = "";
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const response = await this.send(method, path, body);
-      const text = await response.text();
+      const { response, text } = await this.attempt(method, path, body);
       if (response.ok) return jsonObject(text, `${method} ${path}`);
       failure = refusal(response.status, errorMessage(text), method, path);
       if (!read && !NOT_APPLIED.has(response.status))
@@ -148,6 +150,53 @@ export class NotionApi {
       3,
       `Notion kept failing ${method} ${path} after ${MAX_ATTEMPTS} attempts (${failure})`,
     );
+  }
+
+  /** Keep one record per attempt, including body reads that lose their answer. */
+  private async attempt(
+    method: Method,
+    path: string,
+    body: unknown,
+  ): Promise<{ response: Response; text: string }> {
+    const began = Date.now();
+    let status: number | null = null;
+    let lost = true;
+    let invalid = false;
+    try {
+      const response = await this.send(method, path, body);
+      status = response.status;
+      const text = await response.text();
+      lost = false;
+      if (response.ok) {
+        const parsed = parseJson(text);
+        invalid = !parsed.ok || !isMapping(parsed.value);
+      }
+      return { response, text };
+    } finally {
+      // IDs and cursors never become operation keys.
+      const route = (path.split("?")[0] ?? "")
+        .split("/")
+        .map((part, i) =>
+          i <= 2 || new Set(["children", "query"]).has(part) ? part : ":id",
+        )
+        .join("/");
+      const operation = `${method} ${route}`;
+      recordCall({
+        system: "notion",
+        credential: credentialKey("notion", this.token),
+        operation,
+        cost: 1,
+        unit: "requests",
+        durationMs: Date.now() - began,
+        failure: lost
+          ? "unreachable"
+          : invalid
+            ? "invalid"
+            : status === null
+              ? null
+              : statusClass(status),
+      });
+    }
   }
 
   /** Send one request, paced; a request that reaches nobody is unavailable. */

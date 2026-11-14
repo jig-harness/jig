@@ -256,9 +256,6 @@ request per step:
 
 - **A page that shrinks**: a paged read asks again for half the page when
   the system runs out of time, and keeps the size that read.
-- **The cost ledger and its reports**: requests, cost and time per
-  operation and caller; a line per system in the tick report, a
-  `jig budget` command, and one need when a quota is about to run out.
 - **GitHub in the budget record**: its hourly and secondary limits beside
   the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,

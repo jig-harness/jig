@@ -78,7 +78,9 @@
 import {
   DEFAULT_DISPATCHER_SHARE,
   setDispatcherShare,
-} from "../shared/tracker-budget.ts";
+} from "../shared/outbound/budget.ts";
+import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
+import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
@@ -194,7 +196,10 @@ function upgradeField(): Pick<TickReceipt, "upgrade"> {
 /** Where the systems a tick held outlive it, for the next tick's probe (`shared/outbound/hold.ts`). */
 const UNANSWERED_FILE = "unanswered.json";
 
-async function startTick(options: TickOptions): Promise<StartedTick> {
+async function startTick(
+  options: TickOptions,
+  runId: string,
+): Promise<StartedTick> {
   // The deadline counts from here, so the startup read below spends it too.
   const startedMs = Date.now();
   const now = options.now ?? new Date();
@@ -207,7 +212,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
   const read = await readLaunches();
   const receipt: TickReceipt = {
     version: 1,
-    runId: newRunId(now),
+    runId,
     startedAt: now.toISOString(),
     finishedAt: now.toISOString(),
     completed: false,
@@ -538,6 +543,10 @@ async function closeTick(
   receipt.completed = receipt.defect === undefined;
   settleFailures(receipt, context);
   receipt.finishedAt = new Date().toISOString();
+  const costs = ledgerReport({ since: context.startedMs - 3_600_000 });
+  receipt.outbound = systemSpending(costs, `tick:${receipt.runId}`, Date.now());
+  if (costs.unavailable === true) receipt.outboundUnavailable = true;
+  else receipt.quotaRisks = quotaRisks(costs, Date.now());
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
@@ -672,7 +681,15 @@ function abortedReceipt(
   }
 }
 
-export async function runTick(options: TickOptions): Promise<TickResult> {
+export function runTick(options: TickOptions): Promise<TickResult> {
+  const runId = newRunId(options.now ?? new Date());
+  return withCaller(`tick:${runId}`, () => runTickWithCaller(options, runId));
+}
+
+async function runTickWithCaller(
+  options: TickOptions,
+  runId: string,
+): Promise<TickResult> {
   // A plugin host may run inside Electron. Its Node mode and crash reporter
   // belong to that host, not to programs this tick starts.
   for (const key of Object.keys(process.env))
@@ -689,7 +706,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     acting: false,
   };
   try {
-    return await lockedTick(options, timer, tick);
+    return await lockedTick(options, timer, tick, runId);
   } catch (error) {
     if (!tick.acting)
       abortedReceipt(
@@ -710,8 +727,9 @@ async function lockedTick(
   options: TickOptions,
   timer: PhaseTimer<TickPhase>,
   tick: { acting: boolean; upgrade?: ScheduledUpgrade },
+  runId: string,
 ): Promise<TickResult> {
-  const started = await timer.time("start", () => startTick(options));
+  const started = await timer.time("start", () => startTick(options, runId));
   // The scheduled upgrade is taken once, so a throw after this carries it.
   if (started.receipt.upgrade !== undefined)
     tick.upgrade = started.receipt.upgrade;

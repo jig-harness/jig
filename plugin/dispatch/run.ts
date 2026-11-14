@@ -621,6 +621,7 @@ async function wrap(id: string, token: string): Promise<number> {
     {
       ...withoutRunTabMarker(passEnvironment(process.env, record)),
       [LAUNCH_VARIABLE]: id,
+      JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
     },
     runOptions(record),
   );

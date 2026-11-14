@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { gcComponent } from "./gc/component.ts";
 import { dispatchComponent } from "./dispatch/component.ts";
 import { askComponent } from "./ask/component.ts";
+import { budgetComponent } from "./budget/component.ts";
 import { sendComponent } from "./send/component.ts";
 import { runMain as dispatchRun } from "./dispatch/run.ts";
 import type { CommandComponent, Component } from "./runtime/component.ts";
@@ -34,6 +35,7 @@ const COMMANDS: readonly CommandComponent[] = [
   ...COMPONENTS,
   askComponent,
   sendComponent,
+  budgetComponent,
 ];
 
 const verbs = verbCommands(COMPONENTS.map((component) => component.name));

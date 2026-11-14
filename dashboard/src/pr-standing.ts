@@ -55,6 +55,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "double-claim": "Claimed twice",
   "assigner-cannot-write": "Assigned by someone who cannot write",
   "tracker-unreachable": "An account cannot reach the tracker",
+  "low-quota": "Quota projected to run out",
 };
 
 const KIND_TONE: Record<StandingKind, StandingTone> = {

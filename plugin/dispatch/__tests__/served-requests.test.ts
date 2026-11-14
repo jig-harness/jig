@@ -12,7 +12,7 @@ import {
 import type { ServedViews } from "../lib/sources/served-reads.ts";
 import { readPickups } from "../lib/sources/tracker.ts";
 import type { DispatchSection } from "../lib/types.ts";
-import { TrackerRateLimited } from "../../shared/tracker-budget.ts";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { linearTracker } from "../../skills/do-item/scripts/lib/tracker/linear.ts";
 import { parseTrackerConfig } from "../../skills/do-item/scripts/lib/tracker/config.ts";

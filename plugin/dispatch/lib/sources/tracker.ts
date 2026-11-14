@@ -32,7 +32,7 @@ import {
 import {
   isRateLimited,
   type TrackerRateLimited,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import {
   type CanonicalState,
   type PoolIssue,

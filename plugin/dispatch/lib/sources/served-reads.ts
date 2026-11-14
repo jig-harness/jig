@@ -40,7 +40,7 @@ import { nativeSharedView } from "./native-view.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import {
   CANONICAL_STATES,
   type CanonicalState,

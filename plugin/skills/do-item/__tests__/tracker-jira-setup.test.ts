@@ -20,7 +20,7 @@ import {
   budgetGovernor,
   isRateLimited,
   memoryBudgetStore,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import { GATEWAY, SITE, tokenRun } from "./jira-fixtures.ts";
 
 const fieldOf = (f: () => unknown): string | null => {

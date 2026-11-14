@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
+import { recordGhAttempt } from "./outbound/gh-ledger.ts";
 import type { OutboundFailure } from "./outbound/failure.ts";
 
 /** Stable child-process diagnostic code for incomplete forge accounting. */
@@ -228,25 +229,29 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
   if (!held)
     return traceCommand("ghCall", "gh", deadline, () =>
-      run(args, { ...opts, timeoutSec: deadline }),
+      recordGhAttempt(args, opts, () =>
+        run(args, { ...opts, timeoutSec: deadline }),
+      ),
     );
   return traceCommand("ghCall", "gh", deadline, () => {
     // The run's elapsed time tells a 502/504 the forge ran out of time on
     // (`too-costly`, which the paged reader answers with a smaller page) from
     // a fault it answered at once (which holds the forge).
     let tookMs = 0;
-    return guarded(
-      GITHUB,
-      async () => {
-        const began = Date.now();
-        try {
-          return await run(args, { ...opts, timeoutSec: deadline });
-        } finally {
-          tookMs = Date.now() - began;
-        }
-      },
-      (r) => ghRunFailure(r, tookMs),
-      refuse,
+    return recordGhAttempt(args, opts, () =>
+      guarded(
+        GITHUB,
+        async () => {
+          const began = Date.now();
+          try {
+            return await run(args, { ...opts, timeoutSec: deadline });
+          } finally {
+            tookMs = Date.now() - began;
+          }
+        },
+        (r) => ghRunFailure(r, tookMs),
+        refuse,
+      ),
     );
   });
 }

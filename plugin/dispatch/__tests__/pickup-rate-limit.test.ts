@@ -16,7 +16,7 @@ import {
 } from "../lib/launches.ts";
 import { freshServedPickup } from "../lib/sources/served.ts";
 import { resultMain } from "../result.ts";
-import { TrackerRateLimited } from "../../shared/tracker-budget.ts";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { dispatchState, earlierRecord } from "./launch-fixtures.ts";
 import { world, type World } from "./fixtures.ts";
