@@ -4,6 +4,7 @@
  * new member starts a pass at once, within the host's hourly budget; and a
  * need that arrives framed is neither a member nor a target for a `need`.
  */
+import { DEFAULT_PARK_CLASSES } from "../../shared/autonomy.ts";
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -89,7 +90,7 @@ function input(actions: Action[]): BacklogInput {
     held: new Set(),
     queue: [],
     records: [],
-    parkClasses: undefined,
+    parkClasses: DEFAULT_PARK_CLASSES,
     labels: {},
     station: STATION,
   };

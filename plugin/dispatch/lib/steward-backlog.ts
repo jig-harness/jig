@@ -34,7 +34,7 @@ export interface BacklogInput {
   queue: readonly PoolIssue[];
   records: readonly ReadRecord[];
   /** The repository's registry classes (`autonomy.park_classes`). */
-  parkClasses: unknown;
+  parkClasses: readonly string[];
   /** The hold labels a facet is never filled under. */
   labels: { hitl?: string; manualOps?: string };
   station: StationContext;
@@ -144,7 +144,7 @@ function resumeMembers(input: BacklogInput): BacklogMember[] {
       (r) =>
         r.record.repo === input.slug &&
         !input.records.some((o) => o.record.stewardResume === r.record.id) &&
-        resumeSource(r, input.parkClasses) !== null,
+        "record" in resumeSource(r, input.parkClasses),
     )
     .map((r) => ({ kind: "resume", target: r.record.id, facts: "" }));
 }

@@ -74,9 +74,10 @@ import type {
 import { armsUnarmed, factsOf } from "./drive-hold.ts";
 import { launchHeads } from "../failed-rearms.ts";
 import {
-  accountBlocked,
+  accountBlock,
   admitAccount,
   type ApplyState,
+  type ReplayBlock,
   dropPendingRecord,
   isTakeover,
   type LaunchClaimer,
@@ -169,7 +170,7 @@ async function retryPending(
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["rearm", "takeover"])) {
     const action = { target: `PR #${record.pr}`, stage: "rearm" } as Action;
-    let blocked =
+    let blocked: string | ReplayBlock | null =
       record.pr === null ? null : (fresh.unplaced?.get(record.pr) ?? null);
     blocked ??= await retryBlocked(state, repo, record, fresh);
     let claim: number | null = null;
@@ -227,7 +228,7 @@ async function retryBlocked(
   repo: RepoTarget,
   record: LaunchRecord,
   fresh: FreshDrive,
-): Promise<string | null> {
+): Promise<string | ReplayBlock | null> {
   let again: Outcome<DrivenPr | null>;
   try {
     again = await fresh.read(
@@ -263,7 +264,7 @@ async function retryBlocked(
   const stopped =
     (await replayOriginalTree(record, read)) ??
     (await replayWorkspace(state, repo, record, read)) ??
-    (await accountBlocked(state, record));
+    (await accountBlock(state, record));
   if (stopped === null) await refreshHeads(state, record, read);
   return stopped;
 }
