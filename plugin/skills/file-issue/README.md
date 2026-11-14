@@ -196,7 +196,17 @@ reference](../../CONFIGURATION.md#file_issue)): the sweep then posts the
 same comment and marker and leaves each issue in its state. Such an issue
 stays in every later listing, so one that already carries the marker for
 what it lacks is passed over before the run's budget is counted, and is
-never commented on twice.
+never commented on twice. Give the scheduled run
+`--position <file>`, a file the scheduler keeps between runs (a file on the
+host, or a CI cache): the run saves its place there, the next one resumes
+after the last issue it handled, oldest first, and the read goes on from
+the oldest issue when it reaches the end. A population larger than one
+run's read is then reached in turn, and an issue whose missing facets
+changed is commented on again when the read comes round to it. Without the
+file every run reads from the oldest issue, and issues past the read cap
+are never reached. An issue whose comment is always refused, such as a
+locked one, stops each run at the same place: the run reports the refused
+write, and the read moves on once a person settles that issue.
 
 It reads one tracker census within a minute, shared across the listing
 pages and the started-issue list. The listing holds at most 20 pages of

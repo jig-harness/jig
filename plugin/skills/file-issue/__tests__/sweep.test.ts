@@ -3,6 +3,7 @@ import { sweepSettings } from "../scripts/lib/sweep-settings.ts";
 import { describe, expect, it } from "bun:test";
 import { pacedWriter, WriteRefused } from "../scripts/lib/pace.ts";
 import {
+  type SweepOptions,
   sweep,
   sweepComment,
   sweepLines,
@@ -306,6 +307,7 @@ describe("the weekly sweep", () => {
         state: { name: "state backlog", type: "backlog" },
         missing: [],
         retired: ["bug", "priority: high"],
+        cursor: "2026-01-01T00:00:00Z|#1",
       },
     ]);
     expect(sweepMarker(report.listed[0] as (typeof report.listed)[0])).toBe(
@@ -594,6 +596,199 @@ describe("the sweep with move: false", () => {
     expect(sweepLines(again).join("\n")).toContain(
       "3 already commented on; 0 remain",
     );
+  });
+});
+
+/**
+ * `count` todo issues lacking a priority, created in key order, and as many
+ * complete ones and one more, so the lacking stay short of the half that
+ * reads as a store that stopped answering.
+ */
+function population(count: number): FakeRepo {
+  const repo = new FakeRepo();
+  for (let n = 1; n <= count; n++)
+    repo.add(`#${n}`, {
+      labels: ["bug", "small"],
+      createdAt: `2026-01-01T00:00:${String(n).padStart(3, "0")}Z`,
+    });
+  for (let n = 0; n <= count; n++)
+    repo.add(`#${100 + n}`, {
+      labels: labelled("bug", "high", "small"),
+      createdAt: `2026-01-02T00:00:${String(n).padStart(3, "0")}Z`,
+    });
+  return repo;
+}
+
+/** Comment-only runs that carry the position from one to the next, as a scheduled runner does. */
+function positioned(repo: FakeRepo, limits: SweepOptions["limits"]) {
+  const { tracker } = repo.view(LABEL_SECTION);
+  let after: string | null = null;
+  return async (apply = true) => {
+    const report = await sweep(tracker, {
+      apply,
+      move: false,
+      retired: none,
+      writer: pacedWriter(fakeClock()),
+      ...(limits === undefined ? {} : { limits }),
+      position: { after },
+    });
+    after = report.position?.next ?? null;
+    return report;
+  };
+}
+
+describe("the comment-only sweep's read position", () => {
+  it("reaches every issue past the read cap in turn, moving none and commenting once", async () => {
+    const repo = population(7);
+    const run = positioned(repo, { pages: 1, pageSize: 3 });
+    const first = await run();
+    expect(first.readCapped).toBe(true);
+    expect(first.commented).toEqual(["#1", "#2", "#3"]);
+    expect(first.position?.nextAfter).toBe("#3");
+    expect(sweepLines(first)).toContain(
+      "read from the oldest issue; the next run resumes after #3",
+    );
+    const second = await run();
+    expect(second.commented).toEqual(["#4", "#5", "#6"]);
+    expect(sweepLines(second)).toContain(
+      "read resumed after the position the last run kept; the next run resumes after #6",
+    );
+    // The end of the population, with no page left: the next run starts
+    // again from the oldest, which already carry the marker.
+    const third = await run();
+    expect(third.listed.map((i) => i.identifier)).toEqual(["#7"]);
+    expect(third.commented).toEqual(["#7"]);
+    expect(sweepLines(third)).toContain(
+      "read resumed after the position the last run kept, reached the end of the population; the next run starts from the oldest issue",
+    );
+    const fourth = await run();
+    expect(fourth.marked).toEqual(["#1", "#2", "#3"]);
+    expect(fourth.commented).toEqual([]);
+    expect(repo.issues.every((i) => i.state === "backlog")).toBe(true);
+    expect(repo.writes.map((w) => w.kind)).toEqual(Array(7).fill("comment"));
+    // Round again: nothing is unchanged and uncommented, so nothing is written.
+    for (let n = 0; n < 3; n++) await run();
+    expect(repo.writes).toHaveLength(7);
+  });
+
+  it("goes on from the oldest within a run that reaches the end with pages to spare, reading no issue twice", async () => {
+    const repo = population(5);
+    const run = positioned(repo, { pages: 3, pageSize: 2, moves: 3 });
+    const first = await run();
+    expect(first.commented).toEqual(["#1", "#2", "#3"]);
+    expect(first.position?.nextAfter).toBe("#3");
+    const second = await run();
+    expect(second.position?.wrapped).toBe(true);
+    expect(second.listed.map((i) => i.identifier)).toEqual([
+      "#4",
+      "#5",
+      "#1",
+      "#2",
+      "#3",
+    ]);
+    expect(second.readCapped).toBe(false);
+    expect(second.commented).toEqual(["#4", "#5"]);
+    expect(second.marked).toEqual(["#1", "#2", "#3"]);
+    expect(second.position?.next).toBeNull();
+  });
+
+  it("revisits an issue whose missing facets changed when the position comes round to it", async () => {
+    const repo = population(4);
+    const run = positioned(repo, { pages: 1, pageSize: 2 });
+    await run();
+    await run();
+    expect(repo.writes).toHaveLength(4);
+    // #1 loses its type too after its comment.
+    repo.get("#1").labels = ["small"];
+    const third = await run();
+    expect(third.listed.map((i) => i.identifier)).toEqual(["#1", "#2"]);
+    expect(third.commented).toEqual(["#1"]);
+    expect(repo.get("#1").comments.at(-1)).toStartWith(
+      "<!-- jig:issue-fields missing=type,priority -->",
+    );
+  });
+
+  it("resumes after the last issue it handled when the budget runs out before the read does", async () => {
+    const repo = population(5);
+    const run = positioned(repo, { pages: 1, pageSize: 4, moves: 2 });
+    const first = await run();
+    expect(first.commented).toEqual(["#1", "#2"]);
+    expect(first.position?.nextAfter).toBe("#2");
+    const second = await run();
+    expect(second.listed.map((i) => i.identifier)).toEqual(["#3", "#4", "#5"]);
+    expect(second.commented).toEqual(["#3", "#4"]);
+    expect(second.position?.nextAfter).toBe("#4");
+  });
+
+  it("restarts at the issue a refused write stopped on", async () => {
+    const repo = population(4);
+    const run = positioned(repo, { pages: 2, pageSize: 2 });
+    repo.refuse = (w) =>
+      w.key === "#3"
+        ? Object.assign(new Error("Resource not accessible by integration"), {
+            status: 403,
+          })
+        : null;
+    const first = await run();
+    expect(first.stopped).not.toBeNull();
+    expect(first.commented).toEqual(["#1", "#2"]);
+    expect(first.position?.nextAfter).toBe("#2");
+    repo.refuse = () => null;
+    const second = await run();
+    expect(second.listed.map((i) => i.identifier)).toEqual([
+      "#3",
+      "#4",
+      "#1",
+      "#2",
+    ]);
+    expect(second.commented).toEqual(["#3", "#4"]);
+    expect(second.marked).toEqual(["#1", "#2"]);
+    // The whole population was read and handled: the next run starts from the oldest.
+    expect(second.position?.next).toBeNull();
+    expect(sweepLines(second)).toContain(
+      "read resumed after the position the last run kept, reached the end and went on from the oldest; the next run starts from the oldest issue",
+    );
+  });
+
+  it("goes on from the oldest in the same run when the position is past every issue", async () => {
+    const repo = population(3);
+    const { tracker } = repo.view(LABEL_SECTION);
+    const report = await sweep(tracker, {
+      apply: true,
+      move: false,
+      retired: none,
+      writer: pacedWriter(fakeClock()),
+      position: { after: "2026-12-31T00:00:00Z|#99" },
+    });
+    expect(report.commented).toEqual(["#1", "#2", "#3"]);
+    expect(report.readCapped).toBe(false);
+    expect(report.position?.next).toBeNull();
+  });
+
+  it("keeps the position as it was without --yes, and keeps none when moving", async () => {
+    const repo = population(3);
+    const { tracker } = repo.view(LABEL_SECTION);
+    const after = "2026-01-01T00:00:001Z|#1";
+    const report = await sweep(tracker, {
+      apply: false,
+      move: false,
+      retired: none,
+      writer: pacedWriter(fakeClock()),
+      position: { after },
+    });
+    expect(report.listed.map((i) => i.identifier)).toEqual(["#2", "#3", "#1"]);
+    expect(report.position?.next).toBe(after);
+    expect(sweepLines(report)).toContain(
+      "read resumed after the position the last run kept, reached the end and went on from the oldest; the position is kept as it was",
+    );
+    const moving = await sweep(tracker, {
+      apply: true,
+      retired: none,
+      writer: pacedWriter(fakeClock()),
+      position: { after },
+    });
+    expect(moving.position).toBeNull();
+    expect(moving.moved).toEqual(["#1", "#2", "#3"]);
   });
 });
 

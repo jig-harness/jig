@@ -717,7 +717,7 @@ treats an open issue outside triage that lacks a type, a priority or a size.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `file_issue.sweep.move` | `true` or `false` | `true` | file-issue | Whether the sweep moves each such issue not yet started back to `triage`. `false` is for a lane where only a person may move a ready issue back: the sweep posts its comment, with its marker, and leaves the issue in its state. The issue then stays in every later listing, so one that already carries the marker for what it lacks is passed over before the 50-a-run budget is counted, and is never commented on twice. Until the sweep keeps a read position between runs, only the first 20 pages of 100 such issues are reached |
+| `file_issue.sweep.move` | `true` or `false` | `true` | file-issue | Whether the sweep moves each such issue not yet started back to `triage`. `false` is for a lane where only a person may move a ready issue back: the sweep posts its comment, with its marker, and leaves the issue in its state. The issue then stays in every later listing, so one that already carries the marker for what it lacks is passed over before the 50-a-run budget is counted, and is never commented on twice. Run it with `check-fields.ts check --yes --position <file>`, the file kept between runs, so each run resumes where the last one left off in creation order and a population past the read cap of 20 pages of 100 is reached in turn; without the option every run reads from the oldest issue |
 
 An unknown field in `file_issue` or `file_issue.sweep` is refused.
 
