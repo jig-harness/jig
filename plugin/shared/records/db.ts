@@ -315,6 +315,9 @@ function refreshConnection(
   spec: DatabaseSpec,
 ): Outcome<Database, OpenCode> {
   try {
+    // Callers that need best-effort access (such as outbound accounting) must
+    // apply their timeout before inspecting or migrating a cached connection.
+    db.run(`PRAGMA busy_timeout = ${spec.busyMs ?? BUSY_MS}`);
     const inspected = inspectDatabase(db, spec);
     if (inspected.refusal !== null) return inspected.refusal;
     if (inspected.write) {
