@@ -351,7 +351,9 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   launch: process.env.JIG_LAUNCH ?? null,
 }) + "\\n");
 const until = Date.now() + 60000;
+if (fs.existsSync(F + "/drive-stderr")) process.stderr.write(fs.readFileSync(F + "/drive-stderr"));
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);
+if (fs.existsSync(F + "/drive-output")) process.stdout.write(fs.readFileSync(F + "/drive-output"));
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 

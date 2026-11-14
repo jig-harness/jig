@@ -82,7 +82,7 @@ import {
   trackerDefaultKey,
   unlabeledModeOf,
 } from "./sources/served-repo.ts";
-import { lowBudget, type TickReads } from "./tick-reads.ts";
+import { lowBudget, type TickReads, type TickBudget } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
 import {
@@ -148,6 +148,8 @@ export interface Tracked {
 
 /** Everything one repository's observe phase read, handed to its plan, act and label phases. */
 export interface RepoObservation {
+  /** Cached forge budget from this tick, for optional act-phase evidence reads. */
+  forgeBudget?: TickBudget;
   opened: OpenedRepo;
   tracked: Tracked;
   /** The dispatch labels, where the repository turns them on. */
@@ -438,6 +440,7 @@ export async function observeRepo(
       )
     : undefined;
   return {
+    forgeBudget: await reads.budget(),
     opened,
     tracked,
     labels,

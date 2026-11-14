@@ -117,7 +117,10 @@ here reaches every repository at once.
   skill, and reading the sibling's `SKILL.md` (`../<name>/SKILL.md`) works in
   any of them. Any other capability names its fallback beside it.
 - **A hook** lives in `hooks/<name>.ts`, is registered in `hooks/hooks.json`
-  through `${CLAUDE_PLUGIN_ROOT}` (the one file both tools read), holds to
+  through `${CLAUDE_PLUGIN_ROOT}` (the file Claude Code reads; the Codex plugin
+  ships an empty `hooks/codex-hooks.json`, and a hook Codex needs is
+  registered in the Codex home by `jig upgrade`, as `runtime/codex-hook.ts`
+  does for the turn-budget guard), holds to
   the rules of M1's rung
   ([core piece 8](../modules/M1-gates-enforcement-ladder/README.md#core-pieces)),
   and has its tests in `hooks/__tests__/`; `tools/plugin/plugin.test.ts`

@@ -2021,7 +2021,12 @@ list of scouts that run before it, not a label to a scout.
 
 **Add `.context/` to `.gitignore`.** A drive keeps working files there, at
 the root of the working tree, and refuses to push or certify a tree with
-untracked files.
+untracked files. The skills write throwaway working files under
+`.context/scratch/`, and a working directory of Jig's that nothing needs once
+the work is finished carries a `CACHEDIR.TAG` file; `jig gc` keeps anything
+else under `.context/` until it is preserved, except a drive's handoff file
+(`pr-drive-<PR>.md`), which it sets aside whole without archiving: keep nothing
+you need in it.
 
 **Continuous integration.** Without configuration a drive waits, on the final
 head, for the checks the base branch's protection requires, and every push
@@ -2127,12 +2132,32 @@ them together.
 - **Skills** work in Codex as in Claude Code. Codex does not fill in
   `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
   skill's own directory.
-- **The turn-budget hook runs once trusted.** Codex reads the plugin's
-  `hooks/hooks.json` but skips a plugin's hooks until their current
-  definition is trusted (`/hooks`), and asks again when a release changes
-  them. The guard counts distinct response ids from Codex token usage
-  records, resets at each task-start event, and warns near the configured
-  budget. The warning does not impose a runtime turn cap.
+- **The turn-budget hook is registered in Codex's own `hooks.json`.** Codex
+  skips a plugin's hooks until their current definition and the plugin's
+  contents are trusted (`/hooks`), and asks again whenever a release changes
+  any file of the plugin, so the Codex plugin ships none
+  (`.codex-plugin/plugin.json` names an empty hooks file). `jig upgrade`
+  registers the guard in `$CODEX_HOME/hooks.json` (`~/.codex` by default)
+  instead, as one `PreToolUse` entry whose command never changes: it runs
+  `~/.local/state/jig/hooks/<home key>/codex-turn-budget-guard.ts` (one directory per Codex home, started with Bun's environment files and checkout configuration off), which runs the guard
+  of the installed plugin copy. Codex trusts a hook there by its definition
+  alone, so approve it once with `/hooks` and every later release keeps that
+  approval. Another Codex home (an account's own) gets the entry when
+  `jig upgrade --codex` runs with `CODEX_HOME` set to it, and a host that
+  rewrites that file loses the entry until the next upgrade writes it again.
+  `jig uninstall --machine --yes` removes the entry and the shim. The guard
+  counts distinct response ids from Codex token usage records, resets at each
+  task-start event, and warns near the configured budget. The warning does not
+  impose a runtime turn cap.
+- **An unattended Codex pass skips hooks nobody approved.** Codex runs only
+  trusted hooks, and a headless `codex exec` cannot ask. Approve the guard once
+  per Codex home before the first unattended pass (`/hooks` in an interactive
+  session of that home). Where a host cannot, and it vets the hooks that home
+  loads itself, a pass command typed by hand adds `--dangerously-bypass-hook-trust`,
+  which runs the enabled hooks without persisted trust for that one run. Jig's
+  own pass commands do not add it, and `drive.codex_bypass` does not imply it:
+  it skips Codex's review of every hook source, the user's and a repository's
+  among them.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a
