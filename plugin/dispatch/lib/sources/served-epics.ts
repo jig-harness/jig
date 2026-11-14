@@ -16,10 +16,12 @@ export function takeUnreadSlot(
   unread: string[],
   key: string,
   error: unknown,
+  note: (error: unknown) => void,
 ): Promise<null> {
   if (isRateLimited(error) || isUnavailable(error))
     return Promise.reject(error);
-  unread.push(key);
+  if (!unread.includes(key)) unread.push(key);
+  note(error);
   return Promise.resolve(null);
 }
 
@@ -215,7 +217,7 @@ export function summarizeEpics(
         });
       continue;
     }
-    const all = [...walk.children, ...walk.unread];
+    const all = [...new Set([...walk.children, ...walk.unread])];
     const held = all.map(rowOf).find((u) => u !== undefined);
     const parked = walk.parked[0];
     const first = parked ?? held?.target ?? all[0];

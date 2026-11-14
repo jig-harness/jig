@@ -47,6 +47,7 @@ import {
   type UnlabeledMode,
   unlabeledOutcome,
 } from "./served-repo.ts";
+import { freshAuthority } from "./served-authority.ts";
 import { planKeys, servedPlan, type ServedPlan } from "./served-plan.ts";
 import {
   type ServedView,
@@ -526,7 +527,18 @@ async function enqueueChildren(
   let serial: Serial | undefined;
   let selection: ServedPlan;
   try {
-    const live = await childStates(ctx, children, meta, unread);
+    const planned = servedPlan(
+      meta.description ?? "",
+      issue.identifier,
+      {},
+      options.executionPlanBlock,
+    ).present;
+    const live = await childStates(
+      ctx,
+      children,
+      meta,
+      planned ? undefined : { unread, found },
+    );
     selection = servedPlan(
       meta.description ?? "",
       issue.identifier,
@@ -537,7 +549,12 @@ async function enqueueChildren(
       ? []
       : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
     const busy = children
-      .filter((c) => c.state.type === "started" && !parked.includes(c))
+      .filter(
+        (c) =>
+          c.state.type === "started" &&
+          !parked.includes(c) &&
+          !unread.includes(c.identifier),
+      )
       .map((c) => c.identifier);
     ctx.walks.push({
       key: issue.identifier,
@@ -754,12 +771,12 @@ function nodeHold(
     : null;
 }
 
-/** The live state of an epic's children and the issues its plan names, read together. */
+/** The live state of an epic's children and the issues its plan names, read together; `slots` is set for an epic with no plan, where an unreadable child takes one slot. */
 async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
   meta: Metadata,
-  unread: string[],
+  slots?: { unread: string[]; found: Found },
 ): Promise<Record<string, LiveIssue>> {
   const { tracker, identity, options, cache, view } = ctx;
   const live: Record<string, LiveIssue> = {};
@@ -785,9 +802,13 @@ async function childStates(
             cache,
             view.held(child.identifier)?.relations ?? null,
             view,
-          ).catch((error: unknown) =>
-            takeUnreadSlot(unread, child.identifier, error),
-          ),
+          ).catch((error: unknown) => {
+            // An epic with a plan keeps the failure: its consistency needs this read.
+            if (slots === undefined) throw error;
+            return takeUnreadSlot(slots.unread, child.identifier, error, (e) =>
+              unreadable(child, failureText(e), slots.found, e),
+            );
+          }),
     ),
   );
   const blockersOf = new Map<string, string[]>();
@@ -814,71 +835,6 @@ async function childStates(
       live[blocker] = { state: other.state.type, blockedBy: [] };
   });
   return live;
-}
-
-async function freshAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  ancestor?: string,
-): Promise<string | null> {
-  return ancestor === undefined
-    ? directAuthority(tracker, issue, identity)
-    : inheritedAuthority(tracker, issue, identity, ancestor);
-}
-
-async function directAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-): Promise<string | null> {
-  const user = await tracker.user(identity);
-  if (issue.assignee?.id !== user.id) return "the served assignment changed";
-  if (!(await tracker.assignedBy(issue.identifier, identity)).trusted)
-    return "the assigner cannot write";
-  return null;
-}
-
-async function inheritedAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  ancestor: string,
-): Promise<string | null> {
-  if (issue.assignee !== null)
-    return "the inherited item has acquired an assignee";
-  const user = await tracker.user(identity);
-  const seen = new Set<string>();
-  let current: PoolIssue | null = issue;
-  for (;;) {
-    if (current === null || current.truncated.length)
-      return "the inherited ancestry cannot be read completely";
-    if (seen.has(current.identifier) || seen.size >= 100)
-      return "the inherited ancestry is cyclic or too deep";
-    seen.add(current.identifier);
-    if (current.identifier === ancestor)
-      return ancestorChanged(tracker, current, user.id, identity);
-    if (current.assignee !== null)
-      return "the inherited ancestry assignment changed";
-    const full = await tracker.getIssue(current.identifier);
-    if (full === null || full.parent === null)
-      return "the inherited ancestor is no longer live";
-    current = await tracker.poolIssue(full.parent.identifier);
-  }
-}
-
-async function ancestorChanged(
-  tracker: Tracker,
-  ancestor: PoolIssue,
-  userId: string,
-  identity: string,
-): Promise<string | null> {
-  if (
-    ancestor.assignee?.id !== userId ||
-    !(await tracker.assignedBy(ancestor.identifier, identity)).trusted
-  )
-    return "the inherited assignment changed";
-  return null;
 }
 
 function candidateOf(

@@ -600,6 +600,19 @@ describe("an assigned epic's children", () => {
     );
   });
 
+  it("counts a started child whose relations cannot be read once, and records the failed read", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [started("#3"), ...kids("#2", "#4")] },
+      failing: ["#3"],
+    }).read({ epicWidth: 2 });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+    expect(reasons(read)["#3"]).toContain(
+      "the queue metadata could not be read",
+    );
+    expect(read.incomplete).toBe(true);
+  });
+
   it("holds a directly assigned child while a sibling cannot be read", async () => {
     const unread = { ...issue("#3", [], null), truncated: ["labels"] };
     const read = await world({
