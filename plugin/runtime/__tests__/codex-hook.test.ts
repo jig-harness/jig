@@ -229,49 +229,47 @@ test("an empty hooks file is not JSON: reported and left alone", () => {
   expect(removeCodexHook({ ...p, confirm: true }).failed).toBe(true);
 });
 
-test.skipIf(process.platform === "win32")(
-  "each Codex home gets its own state directory, and removal in one leaves the other",
-  () => {
-    const root = mkdtempSync(join(tmpdir(), "jig-codex-hook-homes-"));
-    const homeA = join(root, "codex-a");
-    const homeB = join(root, "codex-b");
-    mkdirSync(homeA);
-    mkdirSync(homeB);
-    const script = join(import.meta.dir, "..", "codex-hook.ts");
-    const run = (call: string, codex: string) => {
-      const child = Bun.spawnSync(
-        [
-          process.execPath,
-          "-e",
-          `const m = await import(${JSON.stringify(script)}); ${call}`,
-        ],
-        {
-          env: {
-            ...process.env,
-            HOME: root,
-            USERPROFILE: root,
-            CODEX_HOME: codex,
-          },
+test("each Codex home gets its own state directory, and removal in one leaves the other", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-codex-hook-homes-"));
+  const homeA = join(root, "codex-a");
+  const homeB = join(root, "codex-b");
+  mkdirSync(homeA);
+  mkdirSync(homeB);
+  const script = join(import.meta.dir, "..", "codex-hook.ts");
+  const run = (call: string, codex: string) => {
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `const m = await import(${JSON.stringify(script)}); ${call}`,
+      ],
+      {
+        env: {
+          ...process.env,
+          HOME: root,
+          USERPROFILE: root,
+          CODEX_HOME: codex,
         },
-      );
-      expectSpawnExit(child, 0);
-    };
-    run("m.refreshCodexHook();", homeA);
-    run("m.refreshCodexHook();", homeB);
-    const shimDirectory = (codex: string) => {
-      const command: string =
-        hooksOf(codex).hooks.PreToolUse[0].hooks[0].command;
-      return dirname(command.replace(/'$/, "").replace(/^.*'/, ""));
-    };
-    const dirA = shimDirectory(homeA);
-    const dirB = shimDirectory(homeB);
-    expect(dirA).not.toBe(dirB);
-    expect(dirA).toStartWith(join(root, ".local"));
-    run("m.removeCodexHook({ confirm: true });", homeA);
-    expect(existsSync(dirA)).toBe(false);
-    expect(existsSync(join(dirB, "codex-turn-budget-guard.ts"))).toBe(true);
-  },
-);
+      },
+    );
+    expectSpawnExit(child, 0);
+  };
+  run("m.refreshCodexHook();", homeA);
+  run("m.refreshCodexHook();", homeB);
+  const shimDirectory = (codex: string) => {
+    const command: string = hooksOf(codex).hooks.PreToolUse[0].hooks[0].command;
+    const match = command.match(/(["'])([^"']+)\1$/);
+    expect(match).not.toBeNull();
+    return dirname(match?.[2] as string);
+  };
+  const dirA = shimDirectory(homeA);
+  const dirB = shimDirectory(homeB);
+  expect(dirA).not.toBe(dirB);
+  expect(dirA).toStartWith(join(root, ".local"));
+  run("m.removeCodexHook({ confirm: true });", homeA);
+  expect(existsSync(dirA)).toBe(false);
+  expect(existsSync(join(dirB, "codex-turn-budget-guard.ts"))).toBe(true);
+});
 
 test("the Codex plugin ships no hooks of its own; Claude Code's registration keeps the guard", () => {
   const manifest = JSON.parse(

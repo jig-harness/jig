@@ -14,8 +14,7 @@
  *   (`shared/liveness.ts`: host id and name, boot id, process id and the
  *   process's start time), set by an update that only fills an empty column,
  *   so exactly one wrapper ever claims a record;
- * - `exit`, the wrapper's again: the stage's exit, once it ended; the first
- *   one written stands;
+ * - `exit`, the wrapper's again: the stage's exit, once it ended; first write wins;
  * - `result`, a pickup's session's or a follow-up pass's own answer
  *   (`done` or `failed`), written once by `jig dispatch result` under the
  *   record's token.
@@ -152,8 +151,9 @@ export interface LaunchRecord {
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
   pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
-  /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
+  /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass (a Codex pass carries the bypass only when this is `true`), and the host's `drive.codex_pass_args` read with it, which a Codex pass carries before its prompt (absent for none); the wrapper reads neither setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
+  codexPassArgs?: string[];
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */

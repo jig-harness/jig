@@ -1296,7 +1296,8 @@ implementation. Skip this check for issues about the repository's own code.
       tool this session runs in: Claude Code's (`claude --model <model> -p
       "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
       on the standard tier of `routing.models.codex`, overridden by `--pass-model`, with its bypass
-      only on a host that set `drive.codex_bypass`). A Codex session
+      only on a host that set `drive.codex_bypass` and the host's
+      `drive.codex_pass_args` before its prompt). A Codex session
       that cannot open a tab gets `spawn`. In any other
       agent tool the script answers `print`. Do not guess one for another
       agent tool.

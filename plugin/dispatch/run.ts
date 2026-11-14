@@ -11,8 +11,10 @@
  * the pull request's workspace, the pass being the documented pass command
  * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR>"`, or
  * Codex's `codex exec …`, with the bypass when the record says the tick
- * admitted it on a host that opted in) and the deadline the one the tick
- * admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
+ * admitted it on a host that opted in, and the host's `drive.codex_pass_args`
+ * the record keeps before the prompt, or `--pass-args ''` on a record that
+ * keeps none, so `drive.ts` adds no others) and the deadline the one the
+ * tick admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
  * or `CODEX_HOME`) and the credential variables and the other directory
  * variable removed, so the pass bills the account the tick admitted. When
  * the drive ends it records the exit, and an exit of `QUOTA_PARKED` (`16`,
@@ -52,8 +54,8 @@
  * account the same way. A Claude Code pass gets the host's
  * `drive.pass_args`, read here in the workspace as `drive.ts` reads them for
  * a drive's pass, and a Codex pass the bypass only when the record says the
- * tick admitted it on a host that opted in; the wrapper adds no permission
- * of its own. The wrapper stops the pass at the deadline the record names,
+ * tick admitted it on a host that opted in, with the `drive.codex_pass_args`
+ * the record keeps; the wrapper adds no permission of its own. The wrapper stops the pass at the deadline the record names,
  * passes its output through and keeps a bounded diagnostic tail. Its last
  * `Question:` line is also kept unless the pass recorded `done`:
  * that is where a pass that needs a person states its question.
@@ -149,7 +151,9 @@ const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
 /**
  * The drive command a record starts, under the same trusted startup as this
  * wrapper: the documented pass command of the record's vendor, under the
- * pass deadline and the host's opt-in the record was admitted with.
+ * pass deadline and the host's opt-in the record was admitted with. A Codex
+ * pass carries the extra words the record keeps; with none, `--pass-args ''`
+ * keeps `drive.ts` from adding any it reads later.
  */
 function driveCommand(record: LaunchRecord, script: string): string[] {
   const pr = String(record.pr);
@@ -157,7 +161,14 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
   const settleTree =
     record.redrive?.uncleanTree === true ||
     (record.rearmLabel != null && record.facts.includes(", exit 12,"));
-  const pass = passCommand(record.vendor, pr, record.codexBypass === true);
+  const words = record.codexPassArgs ?? [];
+  const pass = passCommand(
+    record.vendor,
+    pr,
+    record.codexBypass === true,
+    words,
+  );
+  const pinned = record.vendor === "codex" && words.length === 0;
   if (settleTree)
     pass[pass.length - 1] +=
       "\nThe original tree holds uncommitted work. Inspect it: commit and push edits that belong to this change, or discard edits only when they are known disposable. Stop if ownership is unclear. Settle the existing tree before reporting convergence.";
@@ -170,6 +181,7 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     ...(record.action === "takeover" ? ["--take-over"] : []),
     "--bots-only",
     ...(settleTree ? ["--settle-worktree"] : []),
+    ...(pinned ? ["--pass-args", ""] : []),
     ...(typeof deadline === "number"
       ? ["--pass-timeout", String(deadline)]
       : []),
@@ -473,13 +485,15 @@ async function tryWriteWall(
  * recorded. Throws when the pass's permission settings do not read.
  */
 function stageArgv(record: LaunchRecord): string[] {
+  // `drive.pass_args` is Claude Code's: a Codex pass never reads it, so a bad value cannot stop one.
+  const claudeWords = (): readonly string[] =>
+    record.vendor === "codex" ? [] : configuredPassArgs().words;
   if (record.action === "steward")
-    return stewardPassArgv(record, configuredPassArgs().words);
+    return stewardPassArgv(record, claudeWords());
   if (isDrive(record)) return driveCommand(record, driveScript());
   if (record.action === "followup")
-    return followupPassArgv(record, configuredPassArgs().words);
-  if (!isInteractive(record))
-    return pickupPassArgv(record, configuredPassArgs().words);
+    return followupPassArgv(record, claudeWords());
+  if (!isInteractive(record)) return pickupPassArgv(record, claudeWords());
   return sessionArgv(record);
 }
 
