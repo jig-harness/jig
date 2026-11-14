@@ -2,10 +2,15 @@
  * Replacing a driver that still holds a drive's locks: `drive.ts <PR>
  * --take-over`, in the same clone. This file decides the takeover and stops
  * the holder; `takeover-complete.ts` finishes it once this driver holds the
- * locks. When no driver of this clone holds the drive, a driver in another
- * clone is taken over through the pull request's drive ledger instead
- * (`ledger.ts`): admitted on a heartbeat older than the lease window, and
- * claimed on the pull request once the locks are held.
+ * locks. When no driver of this clone holds the drive, the pull request's
+ * drive ledger decides (`ledger.ts`): a driver in another clone is admitted
+ * on a heartbeat older than the lease window, and claimed on the pull
+ * request once the locks are held; this tree's own driver that the ledger
+ * still names running is `DEAD`, since it released its locks as it ended
+ * without writing its stop, and what it left is this tree's, which this
+ * driver settles as any re-arm does. This clone's driver in another tree is
+ * refused with exit `2`, since what it left is that tree's, as is a ledger
+ * that names no running driver.
  *
  * Admitted against exactly two holders, both decided by `drives.ts --doctor`
  * rather than by the caller: one whose verdict is `WEDGED` (a live driver,
@@ -34,7 +39,7 @@
  */
 import { ExitError, fail, isDigits, sleep } from "./../cli.ts";
 
-import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
+import { git, helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
 import type { ClaimDiag } from "./../claim.ts";
 
@@ -63,7 +68,7 @@ const STOP_OTHER_HOLDER_EXIT = 3;
 
 import { registerCleanup } from "../../../../../shared/cleanup.ts";
 
-import { type LedgerIdentity, admitCrossCloneTakeover } from "./ledger.ts";
+import { type LedgerIdentity, ledgerTakeover } from "./ledger.ts";
 
 /** One `drives.ts --doctor --json` row, as far as a takeover reads it. */
 interface DoctorRowJson {
@@ -196,18 +201,8 @@ export async function decideTakeover(
       1,
       `drive.ts --take-over: could not read drives.ts --doctor for PR #${pr}; refusing to take over blind.`,
     );
-  if (row === null || row.state === "empty") {
-    // No driver of this clone holds it: a driver in another clone may, by
-    // the pull request's drive ledger.
-    const crossClone =
-      ledger === null ? null : await admitCrossCloneTakeover(pr, ledger);
-    if (crossClone !== null) return crossClone;
-    fail(
-      2,
-      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.`,
-      "Re-arm it without --take-over.",
-    );
-  }
+  // No driver of this clone holds it: the pull request's drive ledger decides.
+  if (row === null || row.state === "empty") return decideByLedger(pr, ledger);
   const verdict = row.doctor?.verdict ?? "UNKNOWN";
   let admitted: TakeoverPlan["verdict"];
   let vanished: string | null = null;
@@ -229,6 +224,123 @@ export async function decideTakeover(
     holderStarted: row.diag?.started ?? null,
     held: await heldSnapshot(pr),
     ...(vanished === null ? {} : { vanishedTree: vanished }),
+  };
+}
+
+/**
+ * Decide a takeover no lock of this clone holds by the pull request's drive
+ * ledger: it may name a driver in another clone, or this clone's own that
+ * ended without writing its stop. Refuses (throws the exit) otherwise.
+ */
+async function decideByLedger(
+  pr: string,
+  ledger: LedgerIdentity | null,
+): Promise<TakeoverPlan> {
+  const read =
+    ledger === null
+      ? ({ kind: "none" } as const)
+      : await ledgerTakeover(pr, ledger);
+  if (read.kind === "cross-clone") return read.plan;
+  if (read.kind === "this-tree") return admitReleasedDriver(pr, read.actor);
+  if (read.kind === "other-tree") {
+    const tree = await treeOfActor(read.actor);
+    fail(
+      2,
+      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names this clone's driver in another working tree (${tree === null ? `actor ${read.actor}, whose path is not among this clone's registered working trees` : tree}) as running: that driver ended without writing its stop, and what it left is that tree's, so this tree does not take it over.`,
+      tree === null
+        ? `Find the working tree whose \`git worktree list\` path hashes to ${read.actor} (a removed tree leaves nothing to re-arm from), re-arm it from there, or stop it there (drives.ts --stop) and re-arm it here.`
+        : `Re-arm it from ${tree}, or stop it there (drives.ts --stop) and re-arm it here.`,
+    );
+  }
+  return fail(
+    2,
+    `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.`,
+    "Re-arm it without --take-over.",
+  );
+}
+
+/**
+ * The held batch as it stands after startup, before reconciliation runs.
+ * Startup's ledger seeding may replace the batch the plan read; an entry of
+ * the plan's finding absent from this read is `carried` forward by `heldAfterStartup`.
+ * Reconciliation deletes holds it supersedes only from entries present here,
+ * so an entry missing from this read was not removed by it. A batch that
+ * cannot be read stops the takeover (exit `1`).
+ */
+export async function heldAtStartup(pr: string): Promise<HeldItem[]> {
+  return heldSnapshot(pr);
+}
+
+/**
+ * The held batch once reconciliation has run: each entry present now is taken
+ * as it is now, with its current metadata, and a finding entry the plan read
+ * that the `atStartup` read (`heldAtStartup`, taken before reconciliation) did
+ * not hold is carried after them. An entry present at startup and gone now was
+ * removed by reconciliation and is not carried back. A thread entry is never
+ * carried: whether its reply still stands is the sweep's to decide (it leaves
+ * a human leave-open thread and an unsettled scanner outcome without a hold),
+ * and the gate's sweep re-holds a thread from its latest qualifying reply. A
+ * batch that cannot be read again stops the takeover (exit `1`) rather than
+ * reconciling over a stale one.
+ */
+export async function heldAfterStartup(
+  pr: string,
+  planned: readonly HeldItem[],
+  atStartup: readonly HeldItem[],
+): Promise<HeldItem[]> {
+  const held = await heldSnapshot(pr);
+  const same = (a: HeldItem, b: HeldItem) =>
+    a.key === b.key && a.kind === b.kind;
+  for (const item of planned)
+    if (
+      item.kind === "finding" &&
+      !atStartup.some((s) => same(s, item)) &&
+      !held.some((h) => same(h, item))
+    )
+      held.push(item);
+  return held;
+}
+
+/**
+ * The path of this clone's registered working tree that `actor` (`wt-` and the
+ * path's hash) names, or `null` when none of `git worktree list` hashes to it.
+ */
+async function treeOfActor(actor: string): Promise<string | null> {
+  const listed = await git(["worktree", "list", "--porcelain"], {
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (listed.code !== 0) return null;
+  for (const line of listed.stdout.split("\n")) {
+    if (!line.startsWith("worktree ")) continue;
+    const path = line.slice("worktree ".length);
+    try {
+      if (`wt-${worktreePathKey(path)}` === actor) return path;
+    } catch (err) {
+      swallow(err, "a registered working tree no longer resolves");
+    }
+  }
+  return null;
+}
+
+/**
+ * Admit this tree's own driver that the ledger still names running while it
+ * holds no lock: it released its locks as it ended, without writing its
+ * stop, and what it left is in this tree, which this driver settles as any
+ * re-arm does. Nothing is stopped.
+ */
+async function admitReleasedDriver(
+  pr: string,
+  actor: string,
+): Promise<TakeoverPlan> {
+  console.error(
+    `drive.ts --take-over: no driver holds PR #${pr}'s lock, but its drive ledger names this tree's driver (${actor}) as running: it ended without writing its stop, so it is DEAD; taking the drive over in its tree.`,
+  );
+  return {
+    verdict: "DEAD",
+    fromActor: actor,
+    fromAccount: null,
+    holderStarted: null,
+    held: await heldSnapshot(pr),
   };
 }
 
@@ -266,6 +378,22 @@ function requireProcessGone(pr: string, row: DoctorRowJson): void {
   );
 }
 
+/** What a dead holder's tree still holds, named for the refusal. */
+function leftoverKinds(
+  leftovers: Exclude<
+    Awaited<ReturnType<typeof gatherWorktreeLeftovers>>,
+    "missing" | null
+  >,
+): string[] {
+  return [
+    leftovers.uncommitted ? "uncommitted changes" : "",
+    leftovers.unpushed ? "unpushed commits" : "",
+    leftovers.unconcludedOp !== null
+      ? `an unconcluded git operation (${leftovers.unconcludedOp})`
+      : "",
+  ].filter((s) => s !== "");
+}
+
 /**
  * Refuses a dead holder whose tree holds leftovers or cannot be inspected;
  * returns the tree when it no longer exists, else `null` for a clean one.
@@ -285,13 +413,7 @@ async function requireNoLeftovers(
       `Its previous driver is gone, but its working tree ${tree === "" ? "is not recorded" : `(${tree}) could not be inspected`} for leftovers.`,
       "Check it by hand, push or discard what it holds, then take over.",
     );
-  const found = [
-    leftovers.uncommitted ? "uncommitted changes" : "",
-    leftovers.unpushed ? "unpushed commits" : "",
-    leftovers.unconcludedOp !== null
-      ? `an unconcluded git operation (${leftovers.unconcludedOp})`
-      : "",
-  ].filter((s) => s !== "");
+  const found = leftoverKinds(leftovers);
   if (found.length > 0)
     refuse(
       pr,
@@ -456,17 +578,28 @@ export async function explainHolder(
   console.error(
     `Its doctor verdict: ${verdict}${row.doctor ? ` — ${row.doctor.reason}` : ""}.`,
   );
-  if (verdict === "WEDGED") {
-    console.error("It is wedged, so a takeover is admitted:");
-    const agent = pr === own.pr ? own.agent : [];
-    console.error(
-      `  ${armCommand(driveTs, pr, botsOnly, " --take-over", agent)}`,
-    );
-  } else {
+  explainAdmission(
+    verdict,
+    armCommand(
+      driveTs,
+      pr,
+      botsOnly,
+      " --take-over",
+      pr === own.pr ? own.agent : [],
+    ),
+  );
+}
+
+/** Say whether a takeover is admitted against a holder with `verdict`, and the command when it is. */
+function explainAdmission(verdict: string, command: string): void {
+  if (verdict !== "WEDGED") {
     console.error(
       "Do not stop a driver that is making progress; a takeover is admitted only once it is WEDGED or dead.",
     );
+    return;
   }
+  console.error("It is wedged, so a takeover is admitted:");
+  console.error(`  ${command}`);
 }
 
 /** Run `fn`, and on an exit-11 refusal explain the holder before rethrowing. */

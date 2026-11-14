@@ -347,7 +347,9 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   launch: process.env.JIG_LAUNCH ?? null,
 }) + "\\n");
 const until = Date.now() + 60000;
+if (fs.existsSync(F + "/drive-stderr")) process.stderr.write(fs.readFileSync(F + "/drive-stderr"));
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);
+if (fs.existsSync(F + "/drive-output")) process.stdout.write(fs.readFileSync(F + "/drive-output"));
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 
@@ -619,16 +621,19 @@ export function world(): World {
   let later: { after: number; nodes: Array<Record<string, unknown>> } | null =
     null;
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
-    if (op === "TrackerIssues") {
+    if (op === "TrackerIssues" || op === "TrackerDispatchQueue") {
       listings += 1;
       if (later !== null && listings > later.after) issues = later.nodes;
-      const filter = v.filterBy as Record<string, unknown>;
+      const assignee =
+        op === "TrackerDispatchQueue"
+          ? v.identity
+          : (v.filterBy as Record<string, unknown>).assignee;
       return {
         repository: {
           issues: conn(
             issues.filter((n) =>
               (n.assignees as { nodes: Array<{ login: string }> }).nodes.some(
-                (a) => a.login === filter.assignee,
+                (a) => a.login === assignee,
               ),
             ),
           ),
@@ -637,7 +642,7 @@ export function world(): World {
     }
     if (op === "TrackerUser")
       return { user: { id: `U_${String(v.login)}`, login: v.login } };
-    if (op === "TrackerIssue") {
+    if (op === "TrackerIssue" || op === "TrackerDispatchIssue") {
       const found = issues.find((n) => n.number === v.number);
       return {
         repository: {

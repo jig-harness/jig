@@ -110,7 +110,11 @@ Every field of the file, for every skill, is in the plugin's
 **Ignore `.context/`.** The drive keeps working files (its handoff note,
 mailbox, foreground-wait records) in `.context/` at the root of the working
 tree, and it refuses to push or certify a tree with untracked files. Add
-`.context/` to the repository's `.gitignore`.
+`.context/` to the repository's `.gitignore`. Throwaway working files go
+under `.context/scratch/`, and the mailbox and foreground-wait directories
+carry a `CACHEDIR.TAG` file, since nothing needs them once the work is
+finished; `jig gc` keeps anything else under `.context/` until it is
+preserved.
 
 The foreground supervisor establishes its process identity before starting the
 command. If it cannot establish ownership, the command does not run and the
@@ -703,6 +707,15 @@ after it, and can still refuse (a dirty tree, an unfinished git operation, a
 fork, another repository); such a refusal says the holder was stopped and
 prints the plain re-arm command. Do not stop a driver that is making
 progress.
+
+With no driver of this clone holding the lock, the drive ledger decides.
+When it still names this tree's own driver as running, that driver ended
+without writing its stop and released its locks as it went, so the takeover
+goes ahead (verdict `DEAD`), stops nothing, and deals with what that driver
+left in this tree as any re-arm does. When it names this clone's driver in
+another working tree, the takeover refuses with exit `2` and names that tree:
+re-arm from there. When it names no running driver, there is nothing to take
+over, and it refuses with exit `2`: re-arm without `--take-over`.
 
 A driver in **another clone** cannot be stopped from here, so the takeover
 goes through the drive ledger on the pull request. When no driver of this

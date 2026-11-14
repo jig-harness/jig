@@ -76,7 +76,10 @@ writer, or is an append-only log whose every append takes a lock, so two
 agents never overwrite each other. And a file's name says what it belongs
 to (the pull request or item), so a later session can tell what is stale.
 Jig's skills keep theirs in `.context/` at the root of the worktree, which
-the repository gitignores.
+the repository gitignores. Throwaway working files go under
+`.context/scratch/`, and a working directory that nothing needs once the
+work is finished carries a `CACHEDIR.TAG` file; `jig gc` keeps anything else
+under `.context/` until it is preserved.
 
 ## The machine-local store
 

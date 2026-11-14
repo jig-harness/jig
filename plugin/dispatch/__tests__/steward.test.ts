@@ -19,8 +19,35 @@ import { stateDb, closeStateDb } from "../lib/state.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { failed, ok } from "../../shared/outcome.ts";
 
 describe("steward boundaries", () => {
+  test("reordering target evidence leaves the digest hash and collection priority unchanged", () => {
+    const targets: NonNullable<StewardDigest["targets"]> = ["PR #8", "#7"].map(
+      (target) => ({
+        target,
+        workspace: failed("unreadable", "no workspace"),
+        lastPass: null,
+        pullRequests: ok([]),
+        checks: ok([]),
+      }),
+    );
+    const digest: StewardDigest = {
+      version: 1,
+      repo: "example/repo",
+      drives: [],
+      needs: [],
+      queue: [],
+      passes: [],
+      failures: [],
+      load: null,
+      targets,
+    };
+    expect(digestHash(digest)).toBe(
+      digestHash({ ...digest, targets: [...targets].reverse() }),
+    );
+    expect(digest.targets?.map((row) => row.target)).toEqual(["PR #8", "#7"]);
+  });
   test("cadence and the rolling cap rule a run out before any digest is read", () => {
     const now = 3_600_000;
     expect(stewardWaits([], now, 1_200_000)).toBe(false);

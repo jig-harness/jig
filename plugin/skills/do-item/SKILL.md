@@ -59,14 +59,14 @@ implement, open a pull request or arm a drive.
 
 1. For an issue key, fetch the issue with `scripts/get_issue.ts` as in
    [Step 1](#step-1-fetch-the-issue), and write the returned JSON to
-   `.context/scout-input.json`. Stop if the fetch fails. For `--text`, write
+   `.context/scratch/scout-input.json`. Stop if the fetch fails. For `--text`, write
    JSON with the task verbatim as `title` and `description`, and `labels: []`,
    to that file; do not read or write the tracker. Free text routes through
    the configured title keywords or default agent, since it has no labels.
 2. Run the same routing used by a pickup:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scout-input.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scratch/scout-input.json
    ```
 
    Report the recommended agent and scouts. Stop on a non-zero exit. If the
@@ -85,12 +85,13 @@ implement, open a pull request or arm a drive.
    bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD
    ```
 
-   Write `.context/scout-findings.md` with the first line exactly
+   Write `.context/scratch/scout-findings.md` with the first line exactly
    `## Scout Findings (<hash>)`, substituting that hash, followed by the
    collected findings. Print the complete findings for both forms. For an
    issue key, also post that file through the tracker comment operation as in
    [Step 4a item 3](#step-4a-standard-start-no-sub-issues). Report a failed
-   post and retain the file. For free text, the printed findings are the
+   post and move the file to `.context/scout-findings.md`, out of
+   `.context/scratch/`, so that `jig gc` keeps it until it is posted. For free text, the printed findings are the
    result; no tracker comment is posted. A later pickup's Step 2 selects an
    issue's comment under the existing hash and freshness rules.
 
@@ -787,12 +788,12 @@ implementation. Skip this check for issues about the repository's own code.
    with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
    while a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
-   tracker text, so write it alone to `.context/workspace-title.md` with the
+   tracker text, so write it alone to `.context/scratch/workspace-title.md` with the
    file editor and pass the file, never the title inside the command; quote
    the key, since a GitHub key (`#123`) starts a shell comment unquoted:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/workspace-title.md
+   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/scratch/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -1394,10 +1395,10 @@ implementation. Skip this check for issues about the repository's own code.
         launch it again, and report the drive's terminal outcome afterward.
 
       Once armed, name the workspace for the driving stage (same rules as at
-      pickup, with `.context/workspace-title.md` still holding the title):
+      pickup, with `.context/scratch/workspace-title.md` still holding the title):
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/workspace-title.md --pr <PR>
+      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/scratch/workspace-title.md --pr <PR>
       ```
 
       Post the prepared tracker comment with the arm outcome and the

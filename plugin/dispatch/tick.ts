@@ -1,5 +1,6 @@
 /**
- * One tick, in two phases. The observe phase reads every repository at once
+ * One tick, in two phases. The observe phase opens every repository first,
+ * reads shared tracker queues, then derives every repository's work at once
  * (the dispatch section from the default branch, the tracker, the forge's
  * pull requests and their drive ledgers, the runtime's sessions), each
  * repository under its observe lock and every read through one bounded pool
@@ -82,11 +83,13 @@ import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
+import { prepareTrackers } from "./lib/tick-trackers.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
 import { dropRepeatedLabelNeeds } from "./lib/sources/served-repo.ts";
+import { dropRepeatedScopeFailures } from "./lib/sources/scope-failures.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
@@ -108,7 +111,8 @@ import {
   actTurn,
   defectReport,
   type Observed,
-  observeTurn,
+  openTurn,
+  observeOpenedTurn,
   startTurn,
 } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
@@ -240,7 +244,10 @@ async function observeAll(
   // A repository named twice is read once.
   // Checkouts of one repository in this tick share the repository's lock: the first holds it.
   const claimed = new Set<string>();
-  // Every observation is awaited, taking its lock included, before any lock is given up.
+  const prepared: Array<
+    Extract<Awaited<ReturnType<typeof openTurn>>, { turn: unknown }>
+  > = [];
+  // Every configuration is awaited, taking its lock included, before tracker reads begin.
   await Promise.all(
     [...new Set(context.options.repos)].map(async (path) => {
       const turn = startTurn(path);
@@ -261,7 +268,7 @@ async function observeAll(
             for (const held of own) held.release();
           },
         });
-        const observed = await observeTurn(turn, context, (slug) => {
+        const observed = await openTurn(turn, context, (slug) => {
           if (claimed.has(slug)) return null;
           const repository = takeRepositoryLock(slug);
           if ("heldBy" in repository) return repository.heldBy;
@@ -272,9 +279,26 @@ async function observeAll(
         if ("busy" in observed) {
           out.busy.set(path, observed.busy);
           give();
-        } else out.observed.set(path, observed);
+        } else if ("turn" in observed) prepared.push(observed);
+        else out.observed.set(path, observed);
       } catch (error) {
         out.observed.set(path, { report: defectReport(turn, error) });
+      }
+    }),
+  );
+  await prepareTrackers(
+    prepared.map(({ opened }) => opened),
+    context,
+  );
+  await Promise.all(
+    prepared.map(async (opened) => {
+      try {
+        const observed = await observeOpenedTurn(opened, context);
+        if (!("busy" in observed)) out.observed.set(opened.turn.path, observed);
+      } catch (error) {
+        out.observed.set(opened.turn.path, {
+          report: defectReport(opened.turn, error),
+        });
       }
     }),
   );
@@ -384,13 +408,13 @@ async function actAll(
   const { apply, options } = context;
   const order = options.repos;
   const acted: string[] = [];
-  dropRepeatedLabelNeeds(
-    [...new Set(order)].flatMap((path) => {
-      const observed = observe.observed.get(path);
-      if (observed === undefined) return [];
-      return ["report" in observed ? observed.report : observed.opened.report];
-    }),
-  );
+  const reports = [...new Set(order)].flatMap((path) => {
+    const observed = observe.observed.get(path);
+    if (observed === undefined) return [];
+    return ["report" in observed ? observed.report : observed.opened.report];
+  });
+  dropRepeatedScopeFailures(reports);
+  dropRepeatedLabelNeeds(reports);
   for (const path of new Set(order)) {
     const observed = observe.observed.get(path);
     if (observed === undefined) continue;

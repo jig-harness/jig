@@ -82,7 +82,7 @@ import {
   trackerDefaultKey,
   unlabeledModeOf,
 } from "./sources/served-repo.ts";
-import { lowBudget, type TickReads } from "./tick-reads.ts";
+import { lowBudget, type TickReads, type TickBudget } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -110,6 +110,8 @@ export interface ObserveContext {
 
 /** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
 export interface OpenedRepo {
+  /** Opened once while gathering tracker scopes, reused during repository derivation. */
+  tracker?: Tracker;
   repo: RepoTarget;
   values: Record<string, unknown>;
   section: DispatchSection;
@@ -141,6 +143,8 @@ export interface Tracked {
 
 /** Everything one repository's observe phase read, handed to its plan, act and label phases. */
 export interface RepoObservation {
+  /** Cached forge budget from this tick, for optional act-phase evidence reads. */
+  forgeBudget?: TickBudget;
   opened: OpenedRepo;
   tracked: Tracked;
   /** The dispatch labels, where the repository turns them on. */
@@ -302,6 +306,7 @@ export async function observeRepo(
                   !s.wallUnrecorded,
               ),
             reads,
+            opened.tracker,
           ),
         ),
       ),
@@ -405,6 +410,7 @@ export async function observeRepo(
       )
     : undefined;
   return {
+    forgeBudget: await reads.budget(),
     opened,
     tracked,
     labels,
@@ -512,6 +518,7 @@ async function readTracker(
   nowMs: number,
   headroom: boolean,
   reads: Pick<TickReads, "budget" | "servedViews">,
+  preparedTracker?: Tracker,
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
@@ -554,7 +561,7 @@ async function readTracker(
     };
     const reading = await readPickups(
       () => {
-        tracked.tracker = openTracker(config, repo.path);
+        tracked.tracker = preparedTracker ?? openTracker(config, repo.path);
         return tracked.tracker;
       },
       section,

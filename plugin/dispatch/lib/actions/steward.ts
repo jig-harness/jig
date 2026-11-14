@@ -7,15 +7,21 @@ import { readFailures } from "../failures.ts";
 import {
   holds,
   type LaunchRecord,
+  type ReadRecord,
   newRecordId,
   newToken,
   targetOf,
 } from "../launches.ts";
 import { loadReport } from "../load.ts";
+import { durableSummary, passOutput } from "../pass-output.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
-import { questionOf, sessionIdFor } from "../session.ts";
+import { questionIn, sessionIdFor } from "../session.ts";
 import { stateDb } from "../state.ts";
 import { dispatched } from "../runtime/port.ts";
+import {
+  collectStewardEvidence,
+  STEWARD_HISTORY_TARGET_LIMIT,
+} from "../steward-evidence.ts";
 import {
   digestHash,
   keepStewardRun,
@@ -193,6 +199,12 @@ async function digestOf(
   const read = await stewardQueue(tracked, () => readRoomMs(state));
   if (!read.ok) return read;
   const queue = read.value;
+  const targets = await collectStewardEvidence(
+    state.records,
+    observation,
+    queue,
+    () => readRoomMs(state),
+  );
   return ok({
     version: 1,
     repo: repo.slug,
@@ -202,21 +214,9 @@ async function digestOf(
     })),
     needs: report.actions.filter((a) => a.stage === "notify"),
     queue,
-    passes: state.records.flatMap((r) =>
-      r.record.repo === repo.slug &&
-      (r.record.action === "pickup" || r.record.action === "followup") &&
-      r.state.kind === "ended"
-        ? [
-            {
-              record: r.record.id,
-              action: r.record.action,
-              target: targetOf(r.record),
-              question: questionOf(r.state),
-              said: r.state.exit.context ?? r.state.exit.said ?? null,
-            },
-          ]
-        : [],
-    ),
+    targets,
+    targetHistoryLimit: STEWARD_HISTORY_TARGET_LIMIT,
+    passes: stewardPasses(state.records, repo.slug),
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
     history: (
@@ -269,4 +269,39 @@ export async function stewardQueue(
     if (issue.read !== null) queue.push(issue.read);
   }
   return ok(queue);
+}
+
+/** The durable summary of a pass's output, or `null` when it kept none. */
+function keptSummary(context: string | undefined): string | null {
+  const summary = durableSummary(context ?? "");
+  return summary === "" ? null : summary;
+}
+
+/** Question context remains separate from each target's latest output. */
+export function stewardPasses(
+  records: ReadRecord[],
+  slug: string,
+): StewardDigest["passes"] {
+  return records.flatMap((r) => {
+    if (r.record.repo !== slug || r.state.kind !== "ended") return [];
+    if (r.record.action !== "pickup" && r.record.action !== "followup")
+      return [];
+    const { exit } = r.state;
+    const kept = passOutput(
+      { output: exit.context || exit.said || "", said: exit.said ?? "" },
+      null,
+      r.record.token ?? "",
+    );
+    const asked = questionIn(kept.said ?? "");
+    const question = asked === null ? null : durableSummary(asked);
+    return [
+      {
+        record: r.record.id,
+        action: r.record.action,
+        target: targetOf(r.record),
+        question,
+        said: asked === null ? null : keptSummary(kept.context),
+      },
+    ];
+  });
 }

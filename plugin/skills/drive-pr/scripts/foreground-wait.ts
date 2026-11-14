@@ -41,7 +41,8 @@
  * naming Codex's own long-running command session as the way to run the step.
  *
  * STATE. Every launch owns one generation directory,
- * `.context/foreground-wait/gen-<n>/` (gitignored), holding that launch's log,
+ * `.context/foreground-wait/gen-<n>/` (gitignored, and tagged disposable with a
+ * `CACHEDIR.TAG` beside the generations), holding that launch's log,
  * pids and result. The directory is the launch claim: `mkdir` is atomic, so of
  * two concurrent launches exactly one creates `gen-<n+1>`, and no launch can
  * touch another's files. The result is published by rename
@@ -110,6 +111,7 @@ import {
 } from "./lib/foreground-log.ts";
 import { readTimeoutEnv } from "./lib/proc.ts";
 import { processTable } from "../../../shared/process-table.ts";
+import { markDisposable } from "../../../shared/disposable-mark.ts";
 import {
   beginProcessRegistration,
   clearPendingProcessRegistration,
@@ -519,6 +521,9 @@ async function launch(argv: string[]): Promise<number> {
     return 2;
   }
   mkdirSync(ROOT, { recursive: true });
+  // A finished launch is needed by nothing: the tag lets a collector set the
+  // directory aside, and `generations()` reads only `gen-<n>` names.
+  markDisposable(ROOT);
   for (;;) {
     const gens = generations();
     const latest = gens.at(-1);

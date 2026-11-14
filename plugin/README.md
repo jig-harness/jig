@@ -705,7 +705,9 @@ age and whose claim it is, to mark done or delete.
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit; a
 re-arm that failed without moving its ledger, with the close-and-reopen
-recovery where the pull request is behind its branch;
+recovery where the pull request is behind its branch; a re-arm or takeover
+that `drive.ts` refused as a usage error on the ledger as it still is, with
+the drive's message, which is not launched again until the ledger moves;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`; and a
 pull request that enters Ready to merge. Each message
@@ -2006,7 +2008,12 @@ list of scouts that run before it, not a label to a scout.
 
 **Add `.context/` to `.gitignore`.** A drive keeps working files there, at
 the root of the working tree, and refuses to push or certify a tree with
-untracked files.
+untracked files. The skills write throwaway working files under
+`.context/scratch/`, and a working directory of Jig's that nothing needs once
+the work is finished carries a `CACHEDIR.TAG` file; `jig gc` keeps anything
+else under `.context/` until it is preserved, except a drive's handoff file
+(`pr-drive-<PR>.md`), which it sets aside whole without archiving: keep nothing
+you need in it.
 
 **Continuous integration.** Without configuration a drive waits, on the final
 head, for the checks the base branch's protection requires, and every push
@@ -2416,7 +2423,8 @@ plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
 plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
-plugin/hooks/hooks.json                  the agent-runtime hooks both tools register
+plugin/hooks/hooks.json                  the agent-runtime hooks Claude Code registers
+plugin/hooks/codex-hooks.json            the Codex plugin's hooks file, empty: jig upgrade registers Codex's
 plugin/hooks/<name>.ts                   the hook scripts, each tested in hooks/__tests__/
 ```
 

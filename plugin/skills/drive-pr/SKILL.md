@@ -987,6 +987,15 @@ hold**), and a finding is released to be triaged afresh. The record lists
 what was reopened and, apart, what could not be; the first pass is told
 both.
 
+When no driver of this clone holds the lock, the drive ledger decides. A
+ledger that still names this tree's own driver `running` means that driver
+ended without writing its stop, releasing its locks as it went: the takeover
+is admitted as `DEAD`, stops nothing, and settles what the driver left in
+this tree as any re-arm does. One that names this clone's driver in another
+working tree is refused with exit `2`, naming that tree, since what it left
+is that tree's: re-arm from there. One that names no running driver is
+refused with exit `2` too: re-arm without `--take-over`.
+
 **Across clones** no process can be stopped and no lock is shared, so the
 takeover goes through the drive ledger (§ Running it, *The drive ledger*).
 When no driver of this clone holds the drive and the ledger names a running
@@ -1479,7 +1488,7 @@ Write the reply as § 3 does, then post, record and resolve it in one call:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/provisional-reply.ts" <THREAD_NODE_ID> [PR] --class escalated --what "<what was decided, one line>"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/provisional-reply.ts" <THREAD_NODE_ID> [PR] --class escalated --what "<what was decided, one line>"
 ```
 
 It refuses (exit `3`) below `wide`, and unless the arbiter's ruling you
@@ -2083,14 +2092,14 @@ thread under its class.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/thread-reply.md` with the file editor:
+Write `.context/scratch/thread-reply.md` with the file editor:
 
 ```text
 **accepted** — fixed the missing guard; landing in this round's still-unpushed commit.
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR]
 ```
 
 Reply files contain only the text to post. Write each body with the file
@@ -2172,14 +2181,14 @@ state the fix-dependent case explicitly:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/thread-reply.md` with the file editor:
+Write `.context/scratch/thread-reply.md` with the file editor:
 
 ```text
 **moot** — the code this anchored to is removed by this round's own unpushed fix.
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --moot-pending-push
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --moot-pending-push
 ```
 
 Omitting the flag is the default (resolve now) — the same behavior as every
@@ -2422,14 +2431,14 @@ Summary-only findings answer differently, because there is no thread:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/finding-reason.md` with the file editor:
+Write `.context/scratch/finding-reason.md` with the file editor:
 
 ```text
 valid, but a docs-polish item on an unchanged file; declined per the triage rubric (docs tier).
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"  --outcome wont-fix --fingerprint b9a7a18089043564 [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"  --outcome wont-fix --fingerprint b9a7a18089043564 [PR]
 ```
 
 The outcome is a **flag**, and the body is composed for you — so the closed
@@ -2451,14 +2460,14 @@ refuses such a body, but the fix belongs at the `hold` call:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-Write `.context/finding-reason.md` with the file editor:
+Write `.context/scratch/finding-reason.md` with the file editor:
 
 ```text
 fixed the missing lock; will post the answer once pushed.
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR]  --key b9a7a18089043564 --kind finding --outcome accepted
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR]  --key b9a7a18089043564 --kind finding --outcome accepted
 ```
 
 Their marker is proof the finding is answered, so it may not exist before the
@@ -2579,7 +2588,7 @@ arbiter ruling on a thread as it arrives, its verdict, its `class:` and its
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/ruling.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" rule [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/ruling.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" rule [PR]
 ```
 
 An `escalate` ruling needs its class; one whose `human-decision:` is yes is
@@ -2631,7 +2640,7 @@ falls in.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
 ```
 
 `<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
@@ -2896,8 +2905,8 @@ Record it with the plan that provoked it piped in as provenance, and name the
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file .context/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR] --json
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts" [PR] --verdict over-strict --area docs --evidence "box re-ran the whole suite for a 3-line docs edit; requiredBy is package.json, untouched since round 1" --suggest "split docs/**/*.md out of the full-profile area" --testbox-outcome pass --testbox-minutes 18
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file .context/scratch/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR] --json
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts" [PR] --verdict over-strict --area docs --evidence "box re-ran the whole suite for a 3-line docs edit; requiredBy is package.json, untouched since round 1" --suggest "split docs/**/*.md out of the full-profile area" --testbox-outcome pass --testbox-minutes 18
 ```
 
 `--area` is **required**. When the repository configures its change-area
@@ -3194,7 +3203,7 @@ reverse it, in one line each. A provisional reply is recorded by
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" record-decision [PR]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" record-decision [PR]
 ```
 
 The level is recorded with it: the level in force when the command runs, or

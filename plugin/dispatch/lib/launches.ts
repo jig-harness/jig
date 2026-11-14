@@ -14,8 +14,7 @@
  *   (`shared/liveness.ts`: host id and name, boot id, process id and the
  *   process's start time), set by an update that only fills an empty column,
  *   so exactly one wrapper ever claims a record;
- * - `exit`, the wrapper's again: the stage's exit, once it ended; the first
- *   one written stands;
+ * - `exit`, the wrapper's again: the stage's exit, once it ended; first write wins;
  * - `result`, a pickup's session's or a follow-up pass's own answer
  *   (`done` or `failed`), written once by `jig dispatch result` under the
  *   record's token.
@@ -76,7 +75,7 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
@@ -253,10 +252,10 @@ export interface LaunchExit {
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
   signal: string | null;
-  /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
-  wallUnrecorded?: true;
+  wallUnrecorded?: true; // the stage ended on the account's wall, which the wrapper could not record
   /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
   said?: string;
+  usage?: string; // a drive's exit on drive.ts's usage error: the end of its message, one line
 }
 
 export type LaunchState =
@@ -475,7 +474,8 @@ function isExit(value: unknown): value is LaunchExit {
   return (
     isMapping(value) &&
     typeof value.at === "string" &&
-    (value.code === null || typeof value.code === "number")
+    (value.code === null || typeof value.code === "number") &&
+    (value.usage === undefined || typeof value.usage === "string")
   );
 }
 
@@ -881,7 +881,7 @@ export function pruneLaunches(
     latestPickups,
     latestRedrives,
     latestArms,
-    latestFailedRearms,
+    latestDriveRefusals,
   ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)

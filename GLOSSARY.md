@@ -960,6 +960,18 @@ make, use the entry's term instead.
   worktree sees them, so nothing another worktree, or a person not working
   in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+  Throwaway working files go under `.context/scratch/`, and a working
+  directory that nothing needs once the work is finished carries a
+  `CACHEDIR.TAG` file; `jig gc` keeps anything else under `.context/` until
+  it is preserved, except a drive's handoff file (`pr-drive-<PR>.md`), which
+  it sets aside whole without archiving, so keep nothing there you need.
+- **Cache directory tag** — a file named `CACHEDIR.TAG`, starting with a
+  fixed signature line, that a tool leaves in a directory it can rebuild or
+  no longer needs, so backup tools and collectors can tell that directory
+  from content that may be the only copy of something. Jig's scripts tag
+  their working directories under `.context/` this way, and `jig gc` sets a
+  tagged directory aside where any other ignored content keeps a worktree
+  ([the collector's rule](plugin/gc/README.md#ignored-content)).
 - **Collection kind** — one class of resource a machine's garbage collector
   knows how to judge and remove (worktrees, scratch directories, container
   volumes, merged branches, tool state, registered processes), shipped with
@@ -2753,10 +2765,6 @@ make, use the entry's term instead.
   browser's drawing interface for three-dimensional graphics) and
   JavaScript; without them, for a reader who asks for reduced motion, or on
   a narrow screen, a still drawing stands in its place
-  ([design/website.md](design/website.md)).
-- **Jig Protocol** — the planned readable account of Jig's operating rules,
-  arranged as generated, linkable chapters for teams that adopt Jig. Its
-  design determines its final source, generation and rendering
   ([design/website.md](design/website.md)).
 - **GLB** — the binary form of glTF, the standard file format for
   three-dimensional models on the web: one file holding a model's parts,

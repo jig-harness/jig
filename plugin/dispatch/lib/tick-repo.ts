@@ -16,11 +16,15 @@
  * `--apply`, each stage is a boundary of its own (`stageDefect`): a defect
  * in one stops that stage only, and the turn's other stages still run.
  */
-import { enforcedDeadlineMs } from "./actions/launch.ts";
 import { defectOf, logDefect, logStageDefect } from "./defect.ts";
 import { PhaseTimer } from "./phase-timer.ts";
 import { actObserved } from "./tick-apply.ts";
-import { allRecords, emptyReport, type TickContext } from "./tick-context.ts";
+import {
+  allRecords,
+  emptyReport,
+  tickDeadline,
+  type TickContext,
+} from "./tick-context.ts";
 import { projectObserved } from "./tick-labels.ts";
 import { lineInputOf } from "./tick-line.ts";
 import { finalParkLedgers } from "./final-park-ledgers.ts";
@@ -55,15 +59,19 @@ export type Observed =
   | { busy: string };
 
 /**
- * Open and observe one repository; the report that refuses it when it does
+ * Open one repository; the report that refuses it when it does
  * not open. `claim` takes the repository's own lock once its slug is known
  * and returns who holds it when another tick does: nothing is read then.
  */
-export async function observeTurn(
+export async function openTurn(
   turn: RepoTurn,
   context: TickContext,
   claim: (slug: string) => string | null = () => null,
-): Promise<Observed> {
+): Promise<
+  | { turn: RepoTurn; opened: OpenedRepo }
+  | { report: RepoReport }
+  | { busy: string }
+> {
   const { path, timer } = turn;
   const opened = await timer.time("open", () => openRepo(path, context));
   if (!("repo" in opened)) return { report: timed(opened, timer) };
@@ -72,6 +80,16 @@ export async function observeTurn(
   turn.report = opened.report;
   const { owner, reflection } = opened;
   context.reflections.push({ slug: opened.repo.slug, path, reflection, owner });
+  return { turn, opened };
+}
+
+/** Derive one repository's work after the tick has gathered its tracker scopes. */
+export async function observeOpenedTurn(
+  prepared: { turn: RepoTurn; opened: OpenedRepo },
+  context: TickContext,
+): Promise<Observed> {
+  const { turn, opened } = prepared;
+  const { path, timer } = turn;
   const observation = await observeRepo(
     opened,
     {
@@ -106,22 +124,6 @@ export async function observeTurn(
     finalParks,
   });
   return { turn, opened, observation };
-}
-
-/**
- * When the tick must have ended, less the time its receipt needs, as the
- * launches count it (`timeLeftMs`): from the invocation's start and the
- * deadline its launcher enforces. A tick with no machine file has none.
- */
-function tickDeadline(context: TickContext): { deadline?: number } {
-  const machine = context.options.machine;
-  if (machine === undefined || machine === null) return {};
-  return {
-    deadline:
-      context.startedMs +
-      enforcedDeadlineMs(machine) -
-      machine.runtimeTimeoutMs,
-  };
 }
 
 /** Plan, log, act on and label one observed repository, under the act lock; its report. */
