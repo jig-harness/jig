@@ -102,6 +102,8 @@ export interface PlanInput {
   releases?: ReadonlyMap<number, FollowupRelease>;
   /** The launch records whose follow-up marker a tick released as a retry (`settledEnds`). */
   retried?: ReadonlySet<string>;
+  /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
+  rerunsHeld?: string | null;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -225,6 +227,7 @@ export function planTick(input: PlanInput): Plan {
         releases: input.releases ?? new Map(),
         owner: input.shared?.owner ?? true,
         retried: input.retried ?? new Set(),
+        rerunsHeld: input.rerunsHeld ?? null,
         nowMs: input.nowMs,
       },
       plan,

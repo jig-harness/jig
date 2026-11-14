@@ -79,6 +79,8 @@ export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
 import { latestArms, latestFailedRearms } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
+import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
+import { asResult } from "./launch-result.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -209,6 +211,8 @@ export interface LaunchRecord {
   endedAt?: string;
   /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
   cancelledAt?: string;
+  /** For a follow-up: the machine file's `failures.rerun_died` when the record was written, kept only when it is `0`, which runs no follow-up again after a death or an unwritten result. */
+  rerunDied?: number;
   /** For a follow-up: its prompt offered the routine question tags (`routine-questions.ts`), so its question's class is read from its tag. Absent on a record written before passes tagged their questions. */
   routineTags?: boolean;
   /** For a follow-up's routine run again: the question the earlier pass stopped on and the classes whose standing answers its prompt gives; absent on any other record. */
@@ -290,6 +294,8 @@ export interface ReadRecord {
   refusal?: PickupRefusal | null;
   /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
   framed?: FramedResult;
+  /** When the pass's result or the stage's exit could not be written on this host (`unwritten-result.ts`); absent otherwise. */
+  unwritten?: string;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -599,37 +605,27 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
   return {
     record,
     state: stateOf(row, null, thisHost()),
+    ...answerOf(row, record, root),
+  };
+}
+
+/** What a row says of the session's own answer, and the evidence that it could not be written. */
+function answerOf(
+  row: LaunchRow,
+  record: LaunchRecord,
+  root: string,
+): Omit<ReadRecord, "record" | "state"> {
+  return {
     result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
     ...framedOf(row.result_decision),
+    ...unwrittenOf(root, row.id, record.token),
   };
 }
 
-export { recordResult } from "./launch-result.ts";
-
-/**
- * A row's answer. A `waits` result is kept as `failed` with the time in
- * `result_until`, so a copy of the plugin that knows no `waits` reads a
- * failed pass, which it holds until a person settles it.
- */
-export function asResult(
-  value: string | null,
-  until: string | null = null,
-): SessionResult | null {
-  if (value === "failed" && until !== null) return "waits";
-  return value === "done" || value === "failed" ? value : null;
-}
-
-/** A record's recorded answer; `null` when none. */
-export function readResult(
-  id: string,
-  root = stateRoot(),
-): SessionResult | null {
-  const row = launchRow(id, root);
-  return asResult(row?.result ?? null, row?.result_until ?? null);
-}
+export { asResult, readResult, recordResult } from "./launch-result.ts";
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
 export function claimOf(row: LaunchRow): LaunchClaim | null | undefined {
@@ -781,11 +777,7 @@ export async function readLaunches(
     records.push({
       record,
       state: stateOf(row, rows, here),
-      result: asResult(row.result, row.result_until ?? null),
-      next: readNext(row.result_next),
-      ...waitsOf(row),
-      refusal: readRefusal(row.refusal),
-      ...framedOf(row.result_decision),
+      ...answerOf(row, record, root),
     });
   }
   return { records, unreadable };
@@ -908,6 +900,7 @@ export function pruneLaunches(
       removeSettled.run(id);
     }
   });
+  removeUnwritten(root, removed);
   return removed;
 }
 

@@ -134,6 +134,8 @@ import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
 import { newerStateRefusal } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
+import { writeUnwritten } from "./lib/unwritten-result.ts";
+import { stateRoot } from "./receipts.ts";
 import { failedStartup } from "./lib/session-startup.ts";
 
 const CLAIMED = 3;
@@ -613,19 +615,26 @@ async function finishRun(
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
-  const startup = startupOf(record, ran);
-  const startupWallUnrecorded =
-    startup !== undefined && !recordStartupWall(record, startup);
-  recordExit(id, {
-    at: new Date().toISOString(),
-    code,
-    signal,
-    ...(wallUnrecorded || startupWallUnrecorded
-      ? { wallUnrecorded: true as const }
-      : {}),
-    ...(startup === undefined ? {} : { startup }),
-    ...saidOf(record, ran),
-  });
+  try {
+    const startup = startupOf(record, ran);
+    const startupWallUnrecorded =
+      startup !== undefined && !recordStartupWall(record, startup);
+    recordExit(id, {
+      at: new Date().toISOString(),
+      code,
+      signal,
+      ...(wallUnrecorded || startupWallUnrecorded
+        ? { wallUnrecorded: true as const }
+        : {}),
+      ...(startup === undefined ? {} : { startup }),
+      ...saidOf(record, ran),
+    });
+  } catch (error) {
+    // A pass's end the database refused is the host's fault: the evidence outside it lets the tick tell that from a pass that failed.
+    if (!isDrive(record))
+      writeUnwritten(stateRoot(), id, record.token, "exit", failureText(error));
+    throw error;
+  }
   await endSharedClaim(id);
   await labelFollowup(id);
   await closeTabIfDone(record, code);

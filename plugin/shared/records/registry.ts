@@ -18,6 +18,7 @@
  * its "became ready" and "left ready" rows are rows of the outcome log
  * (`dispatch-outcome`), not kinds of their own.
  */
+import { DISPATCHER } from "./registry-dispatcher.ts";
 import type { Medium } from "./writer.ts";
 
 export interface RecordKind {
@@ -83,9 +84,6 @@ const DRIVE = "skills/drive-pr/scripts/";
 const STATE = `${DRIVE}lib/state/`;
 const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
-const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
-/** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 28;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -128,18 +126,6 @@ function driveTable(name: string, owner: string, table: string): RecordKind {
     at: DRIVE_DB_FILE,
     table,
     version: DRIVE_DB,
-  };
-}
-
-/** A table of the dispatcher's database. */
-function dispatchTable(name: string, owner: string, table: string): RecordKind {
-  return {
-    name,
-    medium: "machine",
-    owner,
-    at: `${DISPATCH_DIR}state.sqlite`,
-    table,
-    version: DISPATCH_DB,
   };
 }
 
@@ -206,179 +192,6 @@ const DRIVE_STATE: RecordKind[] = [
     "drive-clone-id",
     `${STATE}clone-key.ts`,
     "<git common dir>/drive-pr-clone-id",
-    0,
-  ),
-];
-
-const DISPATCHER: RecordKind[] = [
-  dispatchTable("dispatch-launch", "dispatch/lib/launches.ts", "launches"),
-  dispatchTable(
-    "dispatch-pickup-claim",
-    "dispatch/lib/pickup-claim.ts",
-    "pickup_claims",
-  ),
-  dispatchTable(
-    "dispatch-thread-sample",
-    "dispatch/lib/expectations.ts",
-    "thread_samples",
-  ),
-  dispatchTable(
-    "dispatch-waiting-episode",
-    "dispatch/lib/session-walls.ts",
-    "waiting_episodes",
-  ),
-  dispatchTable("dispatch-notice", "dispatch/lib/actions/notify.ts", "notices"),
-  dispatchTable(
-    "dispatch-notices-content",
-    "dispatch/lib/actions/notices-content.ts",
-    "notices_content",
-  ),
-  dispatchTable(
-    "dispatch-notices-read",
-    "dispatch/lib/actions/retire-notices.ts",
-    "notices_read",
-  ),
-  dispatchTable("dispatch-nudge", "dispatch/lib/actions/steer.ts", "nudges"),
-  dispatchTable(
-    "dispatch-followup-outcome",
-    "dispatch/lib/followup-outcomes.ts",
-    "followup_outcomes",
-  ),
-  dispatchTable(
-    "dispatch-followup-release",
-    "dispatch/lib/followup-releases.ts",
-    "followup_releases",
-  ),
-  dispatchTable("dispatch-idle", "dispatch/lib/idle.ts", "idle"),
-  dispatchTable("dispatch-hold", "dispatch/lib/serial-holds.ts", "holds"),
-  dispatchTable("dispatch-outcome", "dispatch/lib/log.ts", "log"),
-  dispatchTable(
-    "dispatch-log-cursor",
-    "dispatch/lib/log-export.ts",
-    "log_export",
-  ),
-  dispatchTable(
-    "dispatch-tick-line",
-    "dispatch/lib/line-store.ts",
-    "tick_line",
-  ),
-  dispatchTable(
-    "dispatch-settled-end",
-    "dispatch/lib/launches.ts",
-    "settled_ends",
-  ),
-  dispatchTable(
-    "dispatch-reflection-finding",
-    "dispatch/lib/reflection-findings.ts",
-    "reflection_findings",
-  ),
-  dispatchTable(
-    "dispatch-merge-read",
-    "dispatch/lib/merge-reads.ts",
-    "merge_reads",
-  ),
-  dispatchTable(
-    "dispatch-pickup-read",
-    "dispatch/lib/pickup-reads.ts",
-    "pickup_reads",
-  ),
-  dispatchTable(
-    "dispatch-load-sample",
-    "dispatch/lib/load-samples.ts",
-    "load_samples",
-  ),
-  dispatchTable("dispatch-failure", "dispatch/lib/failures.ts", "failures"),
-  dispatchTable(
-    "dispatch-station-answer",
-    "dispatch/lib/station-answer-store.ts",
-    "station_answers",
-  ),
-  dispatchTable(
-    "dispatch-steward-run",
-    "dispatch/lib/steward.ts",
-    "steward_runs",
-  ),
-  dispatchTable(
-    "dispatch-steward-record",
-    "dispatch/lib/steward.ts",
-    "steward_records",
-  ),
-  {
-    name: "tracker-budget",
-    medium: "machine",
-    owner: "shared/tracker-budget.ts",
-    at: "~/.local/state/jig/tracker/budget.sqlite",
-    table: "tracker_budget",
-    version: 1,
-  },
-  plain(
-    "machine",
-    "dispatch-receipt",
-    "dispatch/receipts.ts",
-    `${DISPATCH_DIR}receipts/<date>/<run id>.json`,
-    1,
-  ),
-  plain(
-    "machine",
-    "dispatch-tick-lock",
-    "dispatch/receipts.ts",
-    `${DISPATCH_DIR}tick.lock, observe/<16 hex>.lock, tick-index`,
-    0,
-  ),
-  plain(
-    "machine",
-    "dispatch-wall",
-    "dispatch/lib/walls.ts",
-    `${DISPATCH_DIR}walls/<account>/<ms>-<8 hex>.json`,
-    0,
-  ),
-  plain(
-    "machine",
-    "dispatch-wake",
-    "shared/wake.ts",
-    `${DISPATCH_DIR}wake/<digest>/pending/<request>, waiter, started, last-run.log`,
-    0,
-  ),
-  plain(
-    "machine",
-    "dispatch-probe",
-    "dispatch/lib/change-probe.ts",
-    `${DISPATCH_DIR}probe/state.json`,
-    1,
-  ),
-  plain(
-    "machine",
-    "dispatch-dashboard-install",
-    "dispatch/dashboard-install.ts",
-    `${DISPATCH_DIR}dashboard/enabled`,
-    0,
-  ),
-  plain(
-    "machine",
-    "dispatch-dashboard-access",
-    "dispatch/dashboard-reader.ts",
-    `${DISPATCH_DIR}dashboard/access.json`,
-    0,
-  ),
-  plain(
-    "machine",
-    "dispatch-dashboard-reader-lock",
-    "shared/file-lock.ts",
-    `${DISPATCH_DIR}dashboard/reader.<digest>.lock`,
-    0,
-  ),
-  plain(
-    "machine",
-    "dispatch-outcome-log",
-    "dispatch/lib/log-export.ts",
-    `${DISPATCH_DIR}log-<year>-<month>.jsonl`,
-    0,
-  ),
-  plain(
-    "machine",
-    "dispatch-workspace-note",
-    "dispatch/lib/runtime/orca-comment.ts",
-    "the session runtime's workspace name and comment: the dispatched mark and each notification's key line",
     0,
   ),
 ];

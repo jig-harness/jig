@@ -48,6 +48,7 @@ import {
   targetOf,
 } from "./launches.ts";
 import { sessionResultClass } from "./session-result-class.ts";
+import { unwrittenResult } from "./session-startup.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -401,6 +402,12 @@ function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
+  // Its question, if it asked one, is about the host that could not write its result: never a person's.
+  if (unwrittenResult(r))
+    return {
+      class: "died",
+      reason: `no result recorded: this host could not write it (since ${r.unwritten}); the host's health check reports the cause`,
+    };
   const result = sessionResultClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,

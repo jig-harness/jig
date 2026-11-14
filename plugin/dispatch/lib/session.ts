@@ -129,6 +129,10 @@ function pickupPrompt(
   ].join("\n");
 }
 
+/** What a pass does when the result command itself fails on the host (`result.ts`'s exit 4). */
+const UNWRITTEN_LINE =
+  "If that command exits 4 (this host could not write the result), stop there: ask no question about the dispatcher's database or host; the dispatcher keeps the attempt and settles it itself.";
+
 /** How a pickup records its end, once. */
 function pickupResultLines(
   record: Pick<LaunchRecord, "id" | "token" | "batchItems">,
@@ -144,6 +148,7 @@ function pickupResultLines(
     refused,
     `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
     `- you stopped short of that (another refusal, a question, a failure): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
+    UNWRITTEN_LINE,
   ];
 }
 
@@ -279,6 +284,7 @@ function followupPrompt(record: LaunchRecord): string {
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
     `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
+    UNWRITTEN_LINE,
   ].join("\n");
 }
 

@@ -33,6 +33,7 @@
  *   backoff: 2m
  *   backoff_max: 1h
  *   notify_after: 3
+ *   rerun_died: 1      # 0 runs no follow-up again after a death or an unwritten result
  * dashboard:
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
@@ -200,7 +201,7 @@ const TOP_KEYS = [
   "preflight",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
-const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after"];
+const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after", "rerun_died"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -816,12 +817,17 @@ function failures(value: unknown): Checked<FailureSettings> {
     FAILURE_DEFAULTS.notifyAfter,
   );
   if (!notifyAfter.ok) return notifyAfter;
+  const rerunDied = value.rerun_died ?? FAILURE_DEFAULTS.rerunDied;
+  // A run again never earns another, so the bound is one or none.
+  if (rerunDied !== 0 && rerunDied !== 1)
+    return invalid("failures.rerun_died must be 0 or 1");
   if (backoffMaxMs.value < backoffMs.value)
     return invalid("failures.backoff_max must be at least failures.backoff");
   return ok({
     backoffMs: backoffMs.value,
     backoffMaxMs: backoffMaxMs.value,
     notifyAfter: notifyAfter.value,
+    rerunDied,
   });
 }
 

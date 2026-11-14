@@ -49,6 +49,7 @@ import {
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { questionOf } from "./session.ts";
+import { unwrittenResult } from "./session-startup.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
@@ -399,7 +400,8 @@ function settledByPr(
 /**
  * The need an item's latest pickup raises when its pass ended on a
  * question without recording `done`: the question, notified once per
- * launch record; `null` otherwise.
+ * launch record; `null` otherwise, and for a pass whose result or exit the
+ * host could not write (`unwritten-result.ts`).
  */
 function questionAsked(
   slug: string,
@@ -416,10 +418,12 @@ function questionAsked(
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
+  // A pass whose result the host could not write asks nothing of a person: its question is the host's, whose health check reports it.
   if (
     latest === undefined ||
     latest.result === "done" ||
-    latest.result === "waits"
+    latest.result === "waits" ||
+    unwrittenResult(latest)
   )
     return null;
   // A pass that framed its decision asks its question there, whether or not it also ended on a question line.

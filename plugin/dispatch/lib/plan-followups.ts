@@ -19,9 +19,9 @@
  * | the same, stale, a claim on it released before | notified to a person, never released twice |
  * | this host's, its outcome done | quiet: done |
  * | this host's, its launch record still holding | running |
- * | this host's, its pass died with no result and no question, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
+ * | this host's, its pass died with no result and no question within the session lease, or could not record its result or exit on this host at any age (whatever it said), not itself a run again, launched while `failures.rerun_died` was not `0` | running: while the host's health check passes, the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget; while it fails, held as it stands, the host's own need the one a person sees |
  * | this host's, its outcome failed on a question tagged with a routine class, or failed before passes tagged their questions, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once with the class's standing answer (every class's, for one that failed before), within the same recovery budget (`routine-reruns.ts`) |
- * | this host's, its outcome failed on an untagged question or none, its run again failed or died, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one, never started again |
+ * | this host's, its outcome failed on an untagged question or none, its run again failed, died or could not record its result, a death older than the session lease, one launched under `failures.rerun_died: 0`, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one (never one from a pass whose result could not be written: that question is the host's fault), never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
  *
  * A tick's marker names the host that posted it; one that names none was
@@ -30,6 +30,15 @@
  * it. This
  * host's own marker is read through its launch record and outcome record,
  * and through the answer written on the marker once both are gone.
+ *
+ * A death or an unwritten result is the host's fault, so its run again
+ * waits for the host's health check (`rerun-gate.ts`), released and
+ * launched only by a tick whose previous tick passed it. A death's own age
+ * limit, the session lease, still runs while the host fails: past it, the
+ * session may have been settled by a person, and nothing tells it from an
+ * abandoned one. A pass the host's database failed is not that case: its
+ * result or its exit could not be written, so the host kept evidence of it
+ * (`unwritten-result.ts`), and that run again has no age limit.
  *
  * A marker is a claim, not a completion; a person settles a failed or
  * held follow-up by deleting its marker (wanted again) or, for a manual
@@ -61,6 +70,7 @@ import {
   isRerun,
   retriedDeath,
   retryableStartup,
+  unwrittenResult,
 } from "./session-startup.ts";
 import { questionOf } from "./session.ts";
 import { type RoutineRerun, routineRerun } from "./routine-reruns.ts";
@@ -84,6 +94,8 @@ export interface FollowupInput {
   owner: boolean;
   /** The launch records whose marker a tick released as a retry, and whose claims owe nothing more (`settledEnds`). */
   retried: ReadonlySet<string>;
+  /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`); `null` while the host's health check passes. */
+  rerunsHeld: string | null;
   nowMs: number;
 }
 
@@ -304,10 +316,14 @@ function planTickMarker(
   }
   const released = releaseWhy(input, pr.number, marker, found, ended);
   if (released !== null) {
+    const held = released.fault ? input.rerunsHeld : null;
     plan.running.push({
       target,
       stage: "followup",
-      reason: `launch record ${id}'s pass ${released}: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
+      reason:
+        held === null
+          ? `launch record ${id}'s pass ${released.what}: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`
+          : `launch record ${id}'s pass ${released.what}: held while ${held}; once it passes, the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
       evidence: { record: id, marker: marker.id },
     });
     return;
@@ -330,8 +346,9 @@ function planTickMarker(
 
 /**
  * What the pass of a follow-up the tick releases the marker of did, in
- * words: it died for the first time, or it ended failed on a question that
- * owes a routine run again; `null` when its marker is not released.
+ * words, and whether that is the host's fault: it died for the first time or
+ * could not record its result, or it ended failed on a question that owes a
+ * routine run again; `null` when its marker is not released.
  */
 function releaseWhy(
   input: FollowupInput,
@@ -339,14 +356,24 @@ function releaseWhy(
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
   ended: "done" | "failed" | null,
-): string | null {
+): { what: string; fault: boolean } | null {
   if (found !== undefined && retriedDeath(found, input.nowMs))
-    return "died with no result and no question";
+    return { what: faultOf(found), fault: true };
   if (ended !== "failed") return null;
   const owed = routineRerun(input.outcomes.get(pr), input.launches);
   return owed?.record === marker.run.record
-    ? `${stoppedOn(owed)}, so it runs again with the standing answer`
+    ? {
+        what: `${stoppedOn(owed)}, so it runs again with the standing answer`,
+        fault: false,
+      }
     : null;
+}
+
+/** What the host's fault did to a follow-up's pass, in words: its result or exit was not written, or it died. */
+function faultOf(r: ReadRecord): string {
+  return unwrittenResult(r)
+    ? "could not record its result on this host"
+    : "died with no result and no question";
 }
 
 /** What a follow-up that owes a routine run again stopped on, in words. */
@@ -380,11 +407,16 @@ function failedTick(
   return action;
 }
 
-/** The question a failed follow-up's pass stopped on: its launch record's, else its outcome record's; `null` when neither keeps one. */
+/**
+ * The question a failed follow-up's pass stopped on: its launch record's,
+ * else its outcome record's; `null` when neither keeps one, or when the
+ * host could not write the pass's result, whose question is the host's.
+ */
 function questionFor(
   found: ReadRecord | undefined,
   kept: FollowupOutcome | undefined,
 ): string | null {
+  if (found !== undefined && unwrittenResult(found)) return null;
   return questionOf(found?.state) ?? kept?.question ?? null;
 }
 
@@ -397,6 +429,8 @@ function againWords(
   const rerun =
     (found !== undefined && isRerun(found.record)) || kept?.rerun === true;
   if (!rerun) return unread;
+  if (found !== undefined && unwrittenResult(found))
+    return `, its result again unwritten on this host after the tick ran it again once${unread}`;
   return found !== undefined && diedWithoutResult(found)
     ? `, dying again after the tick ran it again once${unread}`
     : `, failing again after the tick ran it again once${unread}`;
@@ -452,7 +486,8 @@ function planTick(
 /**
  * The follow-up of a pull request that a follow-up launched now runs again:
  * this host's latest follow-up of it that started, when that one died for
- * the first time and a tick released its marker as a retry (`retried`);
+ * the first time or could not record its result, and a tick released its
+ * marker as a retry (`retried`);
  * `undefined` otherwise. A launch that never started is skipped, so the
  * startup retry of a run again is one too. A follow-up a person asked for
  * again by deleting a failed marker is a new one, not a run again.
@@ -469,6 +504,7 @@ function deathOf(input: FollowupInput, pr: number): ReadRecord | undefined {
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
   return latest !== undefined &&
+    latest.record.rerunDied !== 0 &&
     diedWithoutResult(latest) &&
     !isRerun(latest.record) &&
     input.retried.has(latest.record.id)
@@ -476,15 +512,28 @@ function deathOf(input: FollowupInput, pr: number): ReadRecord | undefined {
     : undefined;
 }
 
-/** A merged pull request with no trusted follow-up marker: the tick wants one, run again after a death within the recovery budget. */
+/**
+ * A merged pull request with no trusted follow-up marker: the tick wants
+ * one, run again after a death or an unwritten result within the recovery
+ * budget, and then only while the host's health check passes.
+ */
 function wantFollowup(
   input: FollowupInput,
   pr: MarkedPr,
   ignored: readonly { id: number; login: string }[],
+  plan: Plan,
   want: Want,
 ): void {
   const joined = (w: Workspace) => w.prs.includes(pr.number);
   const again = againOf(input, pr);
+  if (again?.routine === null && input.rerunsHeld !== null) {
+    plan.quiet.push({
+      target: `PR #${pr.number}`,
+      class: "followup-held",
+      why: `launch record ${again.record}'s follow-up ${again.what}: held while ${input.rerunsHeld}; it runs again once that passes`,
+    });
+    return;
+  }
   const spent =
     again === null
       ? null
@@ -560,7 +609,9 @@ function againOf(input: FollowupInput, pr: MarkedPr): Again | null {
     return {
       record: died.record.id,
       marker: died.record.marker,
-      what: "died with no result",
+      what: unwrittenResult(died)
+        ? "could not record its result on this host"
+        : "died with no result",
       facts: `${RECOVERY_FACTS}merged ${pr.mergedAt}`,
       routine: null,
     };
@@ -608,7 +659,7 @@ function planMerged(
   }
   const [marker] = trusted;
   if (marker === undefined) {
-    wantFollowup(input, pr, ignored, want);
+    wantFollowup(input, pr, ignored, plan, want);
     return;
   }
   if (marker.run.kind === "unreadable") {

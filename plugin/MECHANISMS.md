@@ -460,6 +460,10 @@ development and shipped as a version.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
+  follow-up of this host's whose pass died during its work, or whose result
+  or exit this host could not write, is run once more, after the host's
+  health check passes (`dispatch/lib/session-startup.ts`,
+  `dispatch/lib/rerun-gate.ts`), unless `failures.rerun_died` is `0`. A
   follow-up of this host's that stopped on a routine question (`local-leftover`,
   `person-owed` or `drafted-items`, the classes in
   `dispatch/lib/routine-questions.ts`) is run once more with the class's

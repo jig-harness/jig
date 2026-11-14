@@ -9,6 +9,30 @@ import { inTransaction, stateDb } from "./state.ts";
 import type { FramedResult } from "./framed-result.ts";
 
 /**
+ * A row's answer. A `waits` result is kept as `failed` with the time in
+ * `result_until`, so a copy of the plugin that knows no `waits` reads a
+ * failed pass, which it holds until a person settles it.
+ */
+export function asResult(
+  value: string | null,
+  until: string | null = null,
+): SessionResult | null {
+  if (value === "failed" && until !== null) return "waits";
+  return value === "done" || value === "failed" ? value : null;
+}
+
+/** A record's recorded answer; `null` when none. */
+export function readResult(
+  id: string,
+  root = stateRoot(),
+): SessionResult | null {
+  const row = stateDb(root)
+    .query("SELECT result, result_until FROM launches WHERE id = ?")
+    .get(id) as { result: string | null; result_until: string | null } | null;
+  return asResult(row?.result ?? null, row?.result_until ?? null);
+}
+
+/**
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
  * false when the record already had one, which stands. A `waits` result
  * carries `until`: it is kept as `failed` with `until` beside it

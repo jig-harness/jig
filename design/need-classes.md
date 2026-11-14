@@ -134,15 +134,16 @@ finished.
   also covers a pass whose result write failed, and waits until the host's
   health check passes. It stays one run again per follow-up, counted
   against the pull request's recovery budget; `failures.rerun_died: 0`
-  turns it off (#944).
+  turns it off, and it takes no bound above `1` (#944).
 - A pickup that died or recorded no result is not started afresh, which
   could be a second implementer: it takes the stalled pickup's
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
   follow-up's question (#944).
-- These re-runs are the tick's rule, in `routine-reruns.ts`, never a
-  steward record: the tick decides them from its own records.
+- These re-runs are the tick's rule, beside the routine re-runs
+  (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
+  tick decides them from its own records.
 
 #### A stalled pickup
 

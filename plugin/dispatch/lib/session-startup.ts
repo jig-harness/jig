@@ -1,8 +1,12 @@
 /**
  * The follow-ups a tick runs again rather than handing to a person: a
  * headless session that stopped before it could start, retried for as long as
- * it does, and a pass that died during its work with no result and no
- * question, run again once while its death is recent (`retriedDeath`).
+ * it does; a pass that died during its work with no result and no question,
+ * run again once while its death is recent; and a pass whose result or exit
+ * the host could not write (`unwritten-result.ts`), run again once whatever
+ * it said and however long ago (`retriedDeath`). The last two are the host's
+ * faults: the tick releases their markers only while the host's health check
+ * passes (`rerun-gate.ts`), and `failures.rerun_died: 0` turns them off.
  */
 import { statSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -121,18 +125,30 @@ export function retryableStartup(r: ReadRecord): boolean {
 }
 
 /**
- * Whether a follow-up's session died during its work: its wrapper died, or
- * the pass ended on a signal or a failing exit, with no result recorded and
- * no question stated. One that recorded `failed`, stopped on a question, or
- * exited cleanly without a result is not a death.
+ * Whether a follow-up's pass ended with no result through no fault of its
+ * own: its wrapper died, or the pass ended on a signal or a failing exit, with
+ * no result recorded and no question stated; or, whatever its exit and its
+ * question, its result or exit could not be written on the host
+ * (`unwrittenResult`). One that recorded `failed`, stopped on a question, or
+ * exited cleanly without a result, with everything written, is not one.
  */
 export function diedWithoutResult(r: ReadRecord): boolean {
   if (r.record.action !== "followup" || r.result !== null) return false;
   if (retryableStartup(r)) return false;
+  if (unwrittenResult(r)) return true;
   if (r.state.kind === "died") return true;
   if (r.state.kind !== "ended") return false;
   const { code, signal } = r.state.exit;
   return (code !== 0 || signal !== null) && questionOf(r.state) === null;
+}
+
+/** Whether a pass that ended has no result and the host kept evidence that its result or exit could not be written. */
+export function unwrittenResult(r: ReadRecord): boolean {
+  return (
+    r.result === null &&
+    r.unwritten !== undefined &&
+    (r.state.kind === "ended" || r.state.kind === "died")
+  );
 }
 
 /** Whether a follow-up is itself a run again, of one that died or that stopped on a routine question: its failure is a person's. */
@@ -156,12 +172,18 @@ function endedAtMs(r: ReadRecord): number {
   return Date.parse(r.record.endedAt ?? r.record.createdAt);
 }
 
-/** A follow-up that died during its work for the first time, within the retry window: its marker is released, and it runs again once. */
+/**
+ * A follow-up that died during its work for the first time, within the retry
+ * window, or whose result or exit the host could not write, at any age: its
+ * marker is released, and it runs again once. Never one launched while
+ * `failures.rerun_died` was `0`.
+ */
 export function retriedDeath(r: ReadRecord, nowMs = Date.now()): boolean {
   return (
+    r.record.rerunDied !== 0 &&
     diedWithoutResult(r) &&
     !isRerun(r.record) &&
-    nowMs - endedAtMs(r) <= RETRY_WITHIN_MS
+    (unwrittenResult(r) || nowMs - endedAtMs(r) <= RETRY_WITHIN_MS)
   );
 }
 

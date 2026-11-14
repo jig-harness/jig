@@ -24,12 +24,7 @@ import { shellQuote } from "../shared/cli.ts";
 import { swallow } from "../shared/errors.ts";
 import { decodeJson, isRecord } from "../shared/guards.ts";
 import { run } from "../shared/proc.ts";
-import type {
-  Component,
-  ComponentStatus,
-  DoctorCheck,
-  LastRun,
-} from "./component.ts";
+import type { Component, ComponentStatus, DoctorCheck } from "./component.ts";
 import {
   available,
   describeSource,
@@ -55,6 +50,7 @@ import {
 } from "./path-command.ts";
 import { recordedPrograms } from "./refresh.ts";
 import { upgradeCheck } from "./upgrade-stamp.ts";
+import { lastRunCheck } from "./last-run.ts";
 import {
   detectScheduler,
   launcherDirectory,
@@ -508,34 +504,6 @@ async function jobChecks(
         )
       : programsCheck(name, job),
   ];
-}
-
-/** The failed runs in a row a failed last run ends, when there is more than the one. */
-function failedRunText(failing: LastRun["failing"]): string {
-  if (failing === undefined || failing.runs < 2) return "";
-  return `; ${failing.capped ? "at least " : ""}${failing.runs} runs in a row have failed, since ${failing.since}`;
-}
-
-/** The last run's receipt: passes when it completed with exit 0. */
-function lastRunCheck(name: string, last: LastRun | null): DoctorCheck {
-  const id = `${name}:last-run`;
-  if (last === null) return skip(id, "no receipt yet");
-  if (last.unread !== undefined)
-    return fail(
-      id,
-      `the newest ${last.unread} receipts hold no tick that ran, so the last run is unknown`,
-      `jig receipts ${name}`,
-    );
-  if (last.completed && last.exitStatus === 0)
-    return pass(id, `${last.runId}, exit 0`);
-  const outcome = last.completed
-    ? `${last.runId} exited ${last.exitStatus}`
-    : `${last.runId} did not complete: it is still running, or it stopped before it finished`;
-  return fail(
-    id,
-    `${outcome}${last.reason === undefined ? "" : `: ${last.reason}`}${failedRunText(last.failing)}`,
-    `jig receipts ${name} ${last.runId}`,
-  );
 }
 
 /** A component's own checks, then its launcher copy, its job's programs and its last run. */

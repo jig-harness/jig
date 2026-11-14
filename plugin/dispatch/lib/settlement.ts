@@ -2,7 +2,7 @@
 import type { LaunchEnd, SharedRecords } from "../../shared/records/shared.ts";
 import type { ActionBook } from "./failures.ts";
 import { settledEnds, type ReadRecord } from "./launches.ts";
-import { retryableFollowup } from "./session-startup.ts";
+import { retryableFollowup, retryableStartup } from "./session-startup.ts";
 
 /** The part of a dispatcher tick's context settlement needs. */
 interface SettlementContext {
@@ -10,6 +10,8 @@ interface SettlementContext {
   slug: string;
   host: string;
   root?: string;
+  /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
+  rerunsHeld?: string | null;
 }
 
 /** One end this host owes: its own claim's, on a pull request. */
@@ -22,7 +24,11 @@ export interface OwedEnd {
   host?: string;
 }
 
-/** Settle the startup markers a prior retry left for this host. */
+/**
+ * Release the markers of this host's follow-ups that owe a retry: a startup
+ * that never began, always; a death or an unwritten result only while the
+ * host's health check passes, so a later tick runs it again then.
+ */
 export async function settleRetryableFollowups(
   ctx: SettlementContext,
   records: readonly ReadRecord[],
@@ -42,6 +48,7 @@ export async function settleRetryableFollowups(
       record.record.repo !== ctx.slug ||
       !retryableFollowup(record) ||
       settled.has(record.record.id) ||
+      (ctx.rerunsHeld != null && !retryableStartup(record)) ||
       (startupScope !== undefined &&
         !startupScope.has(Number(record.record.pr)))
     )

@@ -202,6 +202,7 @@ function planRepo(
     ),
     launches: records,
     retried: settledEnds(),
+    rerunsHeld: context.rerunsHeld ?? null,
     idleSince: readIdle(repo),
     nowMs,
   });

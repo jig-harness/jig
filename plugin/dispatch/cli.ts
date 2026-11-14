@@ -65,7 +65,12 @@ import { markerMain } from "./marker.ts";
 import { probeMain } from "./probe-command.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
 import { upgradeLine } from "../runtime/upgrade-record.ts";
-import { framedResultMain, refusedResultMain, resultMain } from "./result.ts";
+import {
+  framedResultMain,
+  guardedResult,
+  refusedResultMain,
+  resultMain,
+} from "./result.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -659,7 +664,10 @@ function subcommandMain(
   args: Subcommand,
   script: string,
 ): number | Promise<number> {
-  if (args.action === "result") return sessionResultMain(args);
+  if (args.action === "result")
+    return guardedResult(args.record, args.token, () =>
+      sessionResultMain(args),
+    );
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "log")
     return logMain({

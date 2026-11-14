@@ -24,11 +24,21 @@
  * that does not pass the check records nothing, so the pass can fix it and
  * run the command again.
  *
+ * When the state database refuses the read or the write (a schema out of
+ * step with its version, a broken or locked file), the command keeps the
+ * evidence of the attempt outside the database (`lib/unwritten-result.ts`)
+ * and tells the pass to stop and ask no person about the dispatcher: the
+ * fault is the host's, its health check reports it, and the tick settles
+ * the stage itself once the database reads again.
+ *
  * Exit codes: 0 recorded; 2 usage, no such record, a token that is not the
  * record's, a drive's record, or a decision the check refuses; 3 the record
- * already has a result.
+ * already has a result; 4 the host could not write it.
  */
 import { derivedNext, type NextOwner } from "./lib/next-owner.ts";
+import { failureText } from "./lib/text.ts";
+import { writeUnwritten } from "./lib/unwritten-result.ts";
+import { stateRoot } from "./receipts.ts";
 import { framedResultOf } from "./lib/framed-result.ts";
 import { timingSafeEqual } from "node:crypto";
 import {
@@ -44,6 +54,8 @@ import {
 
 const USAGE =
   "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time>";
+/** The host could not write the result: the evidence is kept, and the dispatcher settles the stage. */
+const UNWRITTEN = 4;
 /** The longest a pickup may wait on a rate limit: a tracker's window is an hour or less. */
 const MAX_WAIT_MS = 24 * 60 * 60_000;
 /** The record already has a result, which stands. */
@@ -361,4 +373,27 @@ export function framedResultMain(
     }),
   );
   return 0;
+}
+
+/**
+ * Run one of the result commands for record `id`, keeping the evidence of
+ * the attempt outside the state database when the database throws (exit
+ * `UNWRITTEN`), so the tick that reads it again knows the pass tried.
+ */
+export async function guardedResult(
+  id: string,
+  token: string,
+  record: () => number | Promise<number>,
+  root = stateRoot(),
+): Promise<number> {
+  try {
+    return await record();
+  } catch (error) {
+    const why = failureText(error);
+    const kept = writeUnwritten(root, id, token, "result", why);
+    console.error(
+      `jig dispatch result: this host could not write the result (${why}). ${kept ? "The dispatcher keeps evidence of this attempt and settles the stage itself" : "Its evidence could not be kept either; the dispatcher reads the stage as ended without a result"}: stop now, and ask no person about the dispatcher's database or host, whose health check (jig doctor dispatch) reports the cause.`,
+    );
+    return UNWRITTEN;
+  }
 }

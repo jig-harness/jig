@@ -52,6 +52,8 @@ export interface TickContext {
   actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
+  /** Why runs again of the follow-ups the host failed are held this tick (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
+  rerunsHeld?: string | null;
   /** Each repository's failure ledger book, by `owner/name`, opened by its first action. */
   books?: Map<string, ActionBook>;
   /** The failure ledger's rows for the repositories and the tick were written: a defect after it counts nothing twice. */

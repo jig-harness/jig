@@ -162,6 +162,7 @@ export async function actObserved(
     outcomes: readOutcomes(repo.slug),
     nowMs: context.nowMs,
     book,
+    rerunsHeld: context.rerunsHeld ?? null,
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);

@@ -414,9 +414,17 @@ guards keep one stage from starting twice:
   recent (within the session lease, 6 hours): the tick releases the marker
   it left, whether or not an answer was written onto it, and a later tick
   starts the follow-up again under a record whose facts carry the recovery
-  tag, within the pull request's recovery budget (see Launch records). Only
-  the death whose marker a tick released this way makes the next follow-up a
-  run again; one a person asks for by deleting a failed marker is a new
+  tag, within the pull request's recovery budget (see Launch records). A
+  pass whose result or exit the host could not write (`jig dispatch result`
+  keeps that evidence outside the state database when the database refuses
+  it, as the wrapper does for an exit) is run again once in the same manner,
+  whatever it said and with no age limit, and the question it asked is never
+  a person's. Both wait for the host's health check: the tick releases the
+  marker, and starts the run again, only while the dispatcher's last run
+  passed (`jig doctor dispatch`'s `dispatch:last-run`), and holds the
+  follow-up quietly while it fails; `failures.rerun_died: 0` turns both off.
+  Only the death whose marker a tick released this way makes the next
+  follow-up a run again; one a person asks for by deleting a failed marker is a new
   follow-up. A pass that ended failed on a **routine question** (see
   Sessions that wait) is run again once in the same manner, with no age
   limit, since it waits on no session lease: its outcome record

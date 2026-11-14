@@ -585,10 +585,11 @@ export async function settleOwnClaims(
   nowIso: string,
   startupScope?: ReadonlySet<number>,
   book?: ActionBook,
+  rerunsHeld: string | null = null,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
   const retryFailures = await settleRetryableFollowups(
-    ctx,
+    { ...ctx, rerunsHeld },
     records,
     nowIso,
     startupScope,
