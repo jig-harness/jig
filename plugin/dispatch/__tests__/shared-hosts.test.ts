@@ -36,6 +36,7 @@ import {
   stoppedLedger,
   type World,
   world,
+  checkoutOn,
 } from "./fixtures.ts";
 import { account, driveRuns, waitFor } from "./launch-fixtures.ts";
 import { claudeRuns, withOrigin } from "./pickup-fixtures.ts";
@@ -115,7 +116,7 @@ function host(
   );
   const rows = opts.prs.map((pr, i) => {
     const path = join(w.root, `ws-${name}-${pr.number}`);
-    mkdirSync(path, { recursive: true });
+    checkoutOn(w.repo, path, pr.head, w.env);
     return {
       worktreeId: `repo-1::${path}`,
       repoId: "repo-1",

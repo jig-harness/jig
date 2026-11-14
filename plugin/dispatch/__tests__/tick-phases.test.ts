@@ -268,7 +268,7 @@ describe("admission", () => {
 const LAUNCHED =
   'orca terminal create: {"terminal":{"handle":"term-1"}}; the tab stays open after its run, since it is not recorded: Orca\'s answer names no terminal handle and shell PID';
 const unopened = (n: number) =>
-  `the workspace could not be opened: PR #${n}: cannot read origin's URLs (exit 2): error: No such remote 'origin'`;
+  `the workspace could not be opened: PR #${n}: cannot verify origin's head (exit 2): the branch is absent`;
 const FULL = "no account has a free slot: a 2/2, b 1/1";
 
 /**

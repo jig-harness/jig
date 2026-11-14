@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -8,6 +8,7 @@ import {
   openPr,
   stoppedLedger,
   ledgerComment,
+  checkoutOn,
 } from "./fixtures.ts";
 import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { cloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
@@ -136,12 +137,10 @@ describe("steward tick integration", () => {
       ["steward", "rearm"],
     );
     const ws = join(w.root, "original-stopped-tree");
-    mkdirSync(ws, { recursive: true });
-    const initialized = Bun.spawnSync(["git", "init", "-q", ws]);
-    expectSpawnExit(initialized, 0);
+    checkoutOn(w.repo, ws, "feature/steward", w.env);
     const ledger = stoppedLedger(7, 2);
     ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
-    ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
+    ledger.driver.clone = cloneId(cloneKey(join(w.repo, ".git")));
     ledger.narrative = [
       "The forge request timed out during a brief outage; retry the same operation.",
     ];

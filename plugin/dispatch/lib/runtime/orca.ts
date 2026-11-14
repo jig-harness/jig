@@ -50,6 +50,7 @@ import {
   openNoticesWorkspace,
   openPullRequestWorkspace,
 } from "./orca-open.ts";
+import { verifyPullRequestWorkspace } from "./orca-pr-workspace.ts";
 import { orcaRetire } from "./orca-retire.ts";
 import { orcaSteer } from "./orca-steer.ts";
 import {
@@ -410,6 +411,17 @@ export function orcaRuntime(
         ? openPullRequestWorkspace(found, target, deadlines.workspaceTimeoutMs)
         : openItemWorkspace(found, target, deadlines.workspaceTimeoutMs);
     },
+    verifyWorkspace: (repo, workspace, target, timeoutMs) =>
+      verifyPullRequestWorkspace(
+        repo.path,
+        workspace.path,
+        target.pr,
+        target.head,
+        Math.min(
+          timeoutMs ?? deadlines.workspaceTimeoutMs,
+          deadlines.workspaceTimeoutMs,
+        ),
+      ),
     async launch(workspace, stage, _account, key) {
       if (stage.kind === "interactive" && !binding.ok)
         return { ok: false, detail: binding.reason };

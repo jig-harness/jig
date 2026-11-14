@@ -222,6 +222,21 @@ export interface SessionRuntime {
     target: ItemTarget | PullRequestTarget | NoticesTarget,
   ): Promise<RuntimeReceipt>;
   /**
+   * Prove that a workspace `openWorkspace` did not just open for this launch
+   * (one joined to the pull request, a recovery's tree, a pending launch's
+   * recorded workspace) is still the pull request's checkout before anything
+   * runs in it: a checkout of the repository's clone, its origin the head
+   * repository at the head the forge reports, and its commit on that head's
+   * line of history. Why it is refused, or `null` once proven, within
+   * `timeoutMs` when given. The proof changes no work in the workspace.
+   */
+  verifyWorkspace(
+    repo: RepoTarget,
+    workspace: { id: string; path: string },
+    target: { pr: number; head: string },
+    timeoutMs?: number,
+  ): Promise<string | null>;
+  /**
    * A session in the workspace that runs the stage, billed to `account`.
    * `key` is the launch record's token: a second call with a key already
    * launched starts no second session (for a session run through the

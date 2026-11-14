@@ -14,10 +14,17 @@
  * reaches through `JIG_GITHUB_GRAPHQL_URL`. The tick runs as a child with
  * its own home, so its receipts and lock never touch the real ones.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   conn,
   issueNode,
@@ -430,8 +437,15 @@ export interface OrcaAgent {
 
 export interface OrcaRow {
   branch: string;
-  /** A real directory, for a workspace a launch runs in; `/ws/<i>` when absent. */
+  /**
+   * A real directory, for a workspace a launch runs in; `/ws/<i>` when
+   * absent. One under the world's root is made a checkout of the clone on
+   * `branch` (`checkoutOn`), keeping what it holds, unless `checkout` is
+   * `false`.
+   */
   path?: string;
+  /** `false` keeps `path` as it is: a directory that is no checkout of the clone. */
+  checkout?: false;
   linkedPR?: number;
   agents?: OrcaAgent[];
   unverifiableTerminalCount?: number;
@@ -548,6 +562,66 @@ export interface World {
     stderr: string;
   }>;
   close(): void;
+}
+
+/**
+ * Make `path` a checkout of the clone at `repo` on `branch`, as a workspace
+ * Orca lists is, keeping every file it already holds: the branch is made
+ * from `main` when the clone lacks it, and the clone gets an `origin` (the
+ * clone itself) when it has none, and the branch is published there, so a
+ * workspace's proof reads it. A path
+ * that already is a checkout is left as it is.
+ */
+export function checkoutOn(
+  repo: string,
+  path: string,
+  branch: string,
+  env: Record<string, string>,
+): void {
+  const git = (...args: string[]) =>
+    Bun.spawnSync(["git", ...args], { env, stdout: "pipe", stderr: "pipe" });
+  mkdirSync(path, { recursive: true });
+  if (git("-C", path, "rev-parse", "--show-prefix").stdout.toString() === "\n")
+    return;
+  if (git("-C", repo, "remote", "get-url", "origin").exitCode !== 0)
+    expectSpawnExit(git("-C", repo, "remote", "add", "origin", repo), 0);
+  if (
+    git("-C", repo, "rev-parse", "--verify", `refs/heads/${branch}`)
+      .exitCode !== 0
+  )
+    expectSpawnExit(git("-C", repo, "branch", branch, "main"), 0);
+  const published = git(
+    "-C",
+    repo,
+    "ls-remote",
+    "--exit-code",
+    "origin",
+    `refs/heads/${branch}`,
+  );
+  if (published.exitCode !== 0)
+    expectSpawnExit(git("-C", repo, "push", "-q", "origin", branch), 0);
+  // git adds a worktree only into an empty folder: add it beside, then move its link in.
+  const beside = `${path}.checkout`;
+  expectSpawnExit(
+    git(
+      "-C",
+      repo,
+      "worktree",
+      "add",
+      "-q",
+      "-f",
+      "--no-checkout",
+      beside,
+      branch,
+    ),
+    0,
+  );
+  renameSync(join(beside, ".git"), join(path, ".git"));
+  rmSync(beside, { recursive: true });
+  expectSpawnExit(git("-C", repo, "worktree", "repair", path), 0);
+  expectSpawnExit(git("-C", path, "reset", "-q"), 0);
+  // The branch's files the folder lacks; one it holds keeps its content.
+  git("-C", path, "checkout-index", "-a", "-q");
 }
 
 export function world(): World {
@@ -751,7 +825,10 @@ export function world(): World {
       else write("base-head", sha);
       if (next !== undefined) write("base-head-next", next);
     },
-    setWorkspaces: (rows) =>
+    setWorkspaces: (rows) => {
+      for (const r of rows)
+        if (r.path?.startsWith(root) && r.checkout !== false)
+          checkoutOn(forge.repo, r.path, r.branch, env);
       write("orca-ps.json", {
         worktrees: rows.map((r, i) => ({
           worktreeId: `repo-1::/ws/${i}`,
@@ -780,7 +857,8 @@ export function world(): World {
         hostScope: { hostIds: ["local"], omittedHostIds: [] },
         totalCount: rows.length,
         truncated: false,
-      }),
+      });
+    },
     setFiles: (pr, files) => write(`files-${pr}.json`, files),
     setRepoFile: (path, text) => {
       mkdirSync(dirname(join(dir, "repo-files", path)), { recursive: true });

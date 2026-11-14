@@ -32,6 +32,8 @@ const CONFIG = `issue_tracker:
   github:
     repository: ${SLUG}
 `;
+import { publishedBranch, withOrigin } from "./pickup-fixtures.ts";
+
 const HEAD = "feature/7-answered";
 
 let current: World | null = null;
@@ -59,7 +61,9 @@ async function drivePrinted(
   w.setConfig(CONFIG);
   w.setPrs("open", [openPr(7, HEAD)]);
   w.setComments(7, [ledgerComment(701, stoppedLedger(7, 4))]);
-  // A real clone: the drive's state directory needs one.
+  // A real clone, its pull request's branch published: the drive's state directory needs one, and the workspace's proof reads its origin.
+  withOrigin(w);
+  publishedBranch(w, HEAD);
   w.setWorkspaces([{ branch: HEAD, linkedPR: 7, path: w.repo }]);
   machineFile(w, [account(w, "a", "a@example.com")]);
   if (userLayer !== undefined)
