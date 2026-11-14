@@ -326,7 +326,11 @@ export async function openWithinBudget(
   reserveNotice = true,
 ): Promise<Opened> {
   const late = outOfTime(state) ?? openRoomWait(state);
-  if (late !== null) return { waits: late };
+  if (late !== null)
+    return {
+      waits: late,
+      ...(lane ? { waitsOn: "tick-deadline" as const } : {}),
+    };
   const spent = takeOpen(state, reserveNotice && "notices" in target, lane);
   if (spent !== null) return spent;
   let opened: RuntimeReceipt;
@@ -429,11 +433,7 @@ function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
   return replaced !== undefined && holds(replaced.state);
 }
 
-/**
- * Whether every launch before the latest one is a known failure. An earlier
- * attempt whose answer was lost may still have started the wrapper, so a
- * record carrying one is kept until its claim or exit settles it.
- */
+/** A lost earlier answer might have started the wrapper, so only known failures release it. */
 function releasable(record: LaunchRecord): boolean {
   return record.attempts.slice(0, -1).every((a) => a.outcome === "failed");
 }
@@ -494,6 +494,7 @@ export function waits(
   action: Action,
   detail: string,
   account: string | null = null,
+  waitsOn?: LaneWait,
 ): LaunchOutcome {
   return {
     target: action.target,
@@ -502,6 +503,7 @@ export function waits(
     account,
     record: null,
     detail,
+    ...(action.stage === "followup" ? { waitsOn: waitsOn ?? "admission" } : {}),
   };
 }
 
@@ -575,20 +577,34 @@ export function replayable(
     .map((r) => r.record);
 }
 
-/** Replay a pending record's launch under its own record and key, unless `blocked` says why not. */
+/** A replay blocker names the queue lane that explains why it cannot run. */
+export type ReplayBlock = { detail: string; waitsOn: LaneWait };
+
+/** Replay a pending record, preserving its key even when blocked. */
 export async function replay(
   state: ApplyState,
   record: LaunchRecord,
   action: Action,
-  blocked: string | null,
+  blocked: string | ReplayBlock | null,
 ): Promise<LaunchOutcome> {
-  const late = blocked ?? outOfTime(state) ?? launchRoom(state);
+  const detail = typeof blocked === "string" ? blocked : blocked?.detail;
+  const waitsOn =
+    detail === undefined
+      ? "tick-deadline"
+      : typeof blocked === "string"
+        ? undefined
+        : blocked?.waitsOn;
+  const late = detail ?? outOfTime(state) ?? launchRoom(state);
   if (late !== null)
-    return waits(
-      action,
-      `the pending launch of ${record.id} is not replayed: ${late}`,
-      record.account,
-    );
+    return {
+      ...waits(
+        action,
+        `the pending launch of ${record.id} is not replayed: ${late}`,
+        record.account,
+        waitsOn,
+      ),
+      record: record.id,
+    };
   const attempt = await callLaunch(state, record);
   if (attempt.outcome === "failed" && releasable(record))
     release(state, record);
@@ -596,7 +612,9 @@ export async function replay(
 }
 
 /** An identity check's answer, or that the tick has no time for one: a deferral, not a verdict on the account. */
-type IdentityAnswer = IdentityCheck | { waits: string };
+type IdentityAnswer =
+  | IdentityCheck
+  | { waits: string; waitsOn: "tick-deadline" };
 
 async function identityOf(
   state: ApplyState,
@@ -610,39 +628,51 @@ async function identityOf(
     return {
       waits:
         "the tick deadline has no room for the identity check and its receipt; a later tick retries this one",
+      waitsOn: "tick-deadline",
     };
   // Read afresh each time: a login file can change between two launches.
   return checkIdentity(slots.account, timeoutSec);
 }
 
 /** Why the account a pending record names cannot take its replayed launch now; `null` when it can. */
-export async function accountBlocked(
+export async function accountBlock(
   state: ApplyState,
   record: LaunchRecord,
-): Promise<string | null> {
+): Promise<ReplayBlock | null> {
+  const blocked = (detail: string, waitsOn: LaneWait = "accounts") => ({
+    detail,
+    waitsOn,
+  });
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const slots = slotsOf(state.table, record);
   if (slots === undefined)
-    return `${record.account} is no longer in the machine file`;
+    return blocked(`${record.account} is no longer in the machine file`);
   if (
     slots.account.vendor !== record.vendor ||
     slots.account.configDir !== record.configDir
   )
-    return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
+    return blocked(
+      `${slots.account.name} no longer has the vendor and directory the launch was recorded with`,
+    );
   if (record.vendor === "codex" && !state.codexOptIn.on)
-    return `${slots.account.name}: ${state.codexOptIn.why}`;
+    return blocked(`${slots.account.name}: ${state.codexOptIn.why}`);
   if (slots.wallUnrecorded)
-    return `${slots.account.name} ended on a wall that was not recorded`;
+    return blocked(
+      `${slots.account.name} ended on a wall that was not recorded`,
+    );
   if (slots.wall !== null)
-    return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
+    return blocked(
+      `${slots.account.name} is walled until ${slots.wall.resetAt}`,
+    );
   const identity = await identityOf(state, slots);
-  if ("waits" in identity) return identity.waits;
-  if (!identity.ok) return `identity check: ${identity.reason}`;
+  if ("waits" in identity) return blocked(identity.waits, identity.waitsOn);
+  if (!identity.ok)
+    return blocked(`identity check: ${identity.reason}`, "admission");
   const preflight = state.preflight;
   if (preflight === undefined || !checksStage(preflight, record.action))
     return null;
   const late = noPreflightRoom(state);
-  if (late !== null) return late;
+  if (late !== null) return blocked(late, "tick-deadline");
   const held = await heldAccounts(
     preflight,
     record.repo,
@@ -650,7 +680,7 @@ export async function accountBlocked(
     [slots.account],
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
   );
-  return held.size === 0 ? null : heldDetail(held);
+  return held.size === 0 ? null : blocked(heldDetail(held));
 }
 
 /** Why the tick has no time left for a preflight probe and its receipt; `null` when it has. */
@@ -672,12 +702,15 @@ async function preflightHolds(
   repo: string,
   action: Action,
   pickupDeadlineSec: number,
-): Promise<{ held: Map<string, string> } | { outcome: LaunchOutcome }> {
+): Promise<
+  { held: Map<string, string>; waitsOn?: LaneWait } | { outcome: LaunchOutcome }
+> {
   const preflight = state.preflight;
   if (preflight === undefined || !checksStage(preflight, action.stage))
     return { held: new Map() };
   const late = noPreflightRoom(state);
-  if (late !== null) return { outcome: waits(action, late) };
+  if (late !== null)
+    return { outcome: waits(action, late, null, "tick-deadline") };
   const deadlineSec =
     action.stage === "pickup" || action.stage === "steward"
       ? pickupDeadlineSec
@@ -686,15 +719,20 @@ async function preflightHolds(
   const never = new Set(
     notAdmitted(accounts, deadlineSec, state.codexOptIn).map((n) => n.account),
   );
+  let deferred = false;
   const held = await heldAccounts(
     preflight,
     repo,
     action.stage,
     accounts.filter((a) => !never.has(a.name)),
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
-    () => noPreflightRoom(state),
+    () => {
+      const late = noPreflightRoom(state);
+      if (late !== null) deferred = true;
+      return late;
+    },
   );
-  return { held };
+  return { held, ...(deferred ? { waitsOn: "tick-deadline" as const } : {}) };
 }
 
 function admission(
@@ -777,13 +815,22 @@ export async function admitAccount(
         outcome: refusal ?? {
           ...waits(action, withHeld(state, held, admitted.waits)),
           // A follow-up says what it waits on: here, the accounts.
-          ...(action.stage === "followup" ? { waitsOn: "accounts" } : {}),
+          ...(action.stage === "followup"
+            ? { waitsOn: checked.waitsOn ?? "accounts" }
+            : {}),
         },
       };
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);
     if ("waits" in identity)
-      return { outcome: waits(action, identity.waits, slots.account.name) };
+      return {
+        outcome: waits(
+          action,
+          identity.waits,
+          slots.account.name,
+          identity.waitsOn,
+        ),
+      };
     if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
@@ -817,18 +864,20 @@ async function changedWhileOpening(
       action,
       `${name} ended on a wall that was not recorded while the workspace opened`,
       name,
+      "accounts",
     );
   if (slots.wall !== null)
     return waits(
       action,
       `${name} was walled until ${slots.wall.resetAt} while the workspace opened`,
       name,
+      "accounts",
     );
   const after = await identityOf(state, slots);
-  if ("waits" in after) return waits(action, after.waits, name);
+  if ("waits" in after) return waits(action, after.waits, name, after.waitsOn);
   // The launch that follows is a runtime call of its own.
   const late = after.ok ? launchRoom(state) : null;
-  if (late !== null) return waits(action, late, name);
+  if (late !== null) return waits(action, late, name, "tick-deadline");
   return after.ok
     ? null
     : refused(
@@ -891,6 +940,9 @@ export async function launchHeld(
       account: record.account,
       record: null,
       detail: late,
+      ...(record.action === "followup"
+        ? { waitsOn: "tick-deadline" as const }
+        : {}),
     };
   }
   const attempt = await callLaunch(state, record);
