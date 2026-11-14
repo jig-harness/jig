@@ -416,23 +416,19 @@ async function walk(
     planHold: undefined,
   }));
   while (generation.length > 0) {
-    const settled = await Promise.allSettled(
-      generation.map((node) => visitNode(ctx, node)),
-    );
+    const visits = generation.map((node) => visitNode(ctx, node));
+    const settled = await Promise.allSettled(visits);
     generation = [];
-    let stopped: { error: unknown } | undefined;
     for (const s of settled) {
-      if (s.status === "rejected") {
-        stopped ??= { error: s.reason };
-        continue;
-      }
+      if (s.status === "rejected") continue;
       all.unplaced.push(...s.value.unplaced);
       all.candidates.push(...s.value.candidates);
       all.failures.push(...s.value.failures);
       generation.push(...s.value.pending);
     }
-    // What the sibling visits found stays in `all` when one ends the walk.
-    if (stopped !== undefined) throw stopped.error;
+    // What the sibling visits found stays in `all` when one ends the walk:
+    // the settled visits reject here with the first one's error.
+    await Promise.all(visits);
   }
   return all;
 }
