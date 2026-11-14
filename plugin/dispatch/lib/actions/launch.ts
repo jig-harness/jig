@@ -581,20 +581,30 @@ export function replayable(
     .map((r) => r.record);
 }
 
+/** A replay blocker keeps the queue lane that explains why it cannot run. */
+export type ReplayBlock = { detail: string; waitsOn: LaneWait };
+
 /** Replay a pending record's launch under its own record and key, unless `blocked` says why not. */
 export async function replay(
   state: ApplyState,
   record: LaunchRecord,
   action: Action,
-  blocked: string | null,
+  blocked: string | ReplayBlock | null,
 ): Promise<LaunchOutcome> {
-  const late = blocked ?? outOfTime(state) ?? launchRoom(state);
+  const detail = typeof blocked === "string" ? blocked : blocked?.detail;
+  const waitsOn =
+    detail === undefined
+      ? "tick-deadline"
+      : typeof blocked === "string"
+        ? undefined
+        : blocked?.waitsOn;
+  const late = detail ?? outOfTime(state) ?? launchRoom(state);
   if (late !== null)
     return waits(
       action,
       `the pending launch of ${record.id} is not replayed: ${late}`,
       record.account,
-      blocked === null ? "tick-deadline" : undefined,
+      waitsOn,
     );
   const attempt = await callLaunch(state, record);
   if (attempt.outcome === "failed" && releasable(record))
@@ -629,7 +639,7 @@ async function identityOf(
 export async function accountBlock(
   state: ApplyState,
   record: LaunchRecord,
-): Promise<{ detail: string; waitsOn: LaneWait } | null> {
+): Promise<ReplayBlock | null> {
   const blocked = (detail: string, waitsOn: LaneWait = "accounts") => ({
     detail,
     waitsOn,
@@ -672,14 +682,6 @@ export async function accountBlock(
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
   );
   return held.size === 0 ? null : blocked(heldDetail(held));
-}
-
-/** Why a pending record's account blocks its replay, for callers that need only the text. */
-export async function accountBlocked(
-  state: ApplyState,
-  record: LaunchRecord,
-): Promise<string | null> {
-  return (await accountBlock(state, record))?.detail ?? null;
 }
 
 /** Why the tick has no time left for a preflight probe and its receipt; `null` when it has. */
@@ -863,12 +865,14 @@ async function changedWhileOpening(
       action,
       `${name} ended on a wall that was not recorded while the workspace opened`,
       name,
+      "accounts",
     );
   if (slots.wall !== null)
     return waits(
       action,
       `${name} was walled until ${slots.wall.resetAt} while the workspace opened`,
       name,
+      "accounts",
     );
   const after = await identityOf(state, slots);
   if ("waits" in after) return waits(action, after.waits, name, after.waitsOn);

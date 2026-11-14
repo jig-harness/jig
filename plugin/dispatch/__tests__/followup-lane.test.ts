@@ -418,6 +418,21 @@ it("names the tick deadline before a follow-up, workspace open, admission probe 
   });
 });
 
+it("preserves an account replay blocker's queue classification", async () => {
+  const s = state();
+  const action = { stage: "followup", target: "PR #7" } as Action;
+  expect(
+    await replay(s, { id: "pending", account: "a" } as LaunchRecord, action, {
+      detail: "a is walled",
+      waitsOn: "accounts",
+    }),
+  ).toMatchObject({
+    outcome: "waits",
+    detail: "the pending launch of pending is not replayed: a is walled",
+    waitsOn: "accounts",
+  });
+});
+
 it("names the deadline when a later wave of admission probes cannot start", async () => {
   const s = state();
   s.root = dispatchState(fixture());

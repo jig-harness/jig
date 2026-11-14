@@ -43,7 +43,7 @@ import {
   waits,
   replayable,
   replay,
-  accountBlocked,
+  accountBlock,
   readRoomMs,
 } from "./launch.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
@@ -71,7 +71,7 @@ export async function applySteward(
       evidence: {},
     };
     report.launches.push(
-      await replay(state, record, action, await accountBlocked(state, record)),
+      await replay(state, record, action, await accountBlock(state, record)),
     );
   }
   if (

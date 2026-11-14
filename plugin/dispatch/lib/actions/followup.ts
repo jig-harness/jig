@@ -607,18 +607,8 @@ async function retryMarked(
       safety === null
         ? await accountBlock(state, record)
         : { detail: safety.wait, waitsOn: "admission" as const };
-    const outcome = await replay(
-      state,
-      record,
-      action,
-      blocked?.detail ?? null,
-    );
-    report.launches.push(
-      headless(
-        blocked === null ? outcome : { ...outcome, waitsOn: blocked.waitsOn },
-        record,
-      ),
-    );
+    const outcome = await replay(state, record, action, blocked);
+    report.launches.push(headless(outcome, record));
   }
   return held;
 }
