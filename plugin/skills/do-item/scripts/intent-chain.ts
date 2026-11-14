@@ -54,6 +54,7 @@
  */
 
 import { renameWithRetry } from "../../../shared/rename-with-retry.ts";
+import { markDisposable } from "../../../shared/disposable-mark.ts";
 import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
@@ -1023,6 +1024,11 @@ export function main(argv: string[]): number {
   };
   if (root && chainDir) {
     const dir = chainDir;
+    // Nothing needs a chain once its work is finished: the tag lets a
+    // collector set the directory aside. A failed tag only keeps it longer,
+    // so it is not a companion write's failure. The prunes below remove only
+    // `.md` files and pickup archives, never the tag.
+    markDisposable(dir);
     attempt("immutable pickup", () => {
       pickupId = writePickup(
         dir,
@@ -1047,6 +1053,7 @@ export function main(argv: string[]): number {
       attempt("session snapshot", () => {
         const path = sessionSnapshotPath(sessionRoot, sessionId);
         writeSessionSnapshot(path, rendered.text);
+        markDisposable(dirname(path));
         sessionPath = path;
       });
     }
