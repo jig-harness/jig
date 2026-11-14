@@ -709,14 +709,22 @@ rules, timestamps and failure states serve desktop and phone.
 The phone excludes operator chat, command palettes and advanced filter
 composition: reading and deciding have priority over composing and
 investigating on a small screen. It excludes session chat and steering,
-which need the workspace and its context. The current phone view remains
-read-only. The [priorities and overview design](priorities-and-overview.md#phone-unlock-and-browser-evidence)
+which need the workspace and its context. Pull request #891 gives the
+phone one write, Send, which answers a parked decision from the phone's own
+browser as the person, over the HTTPS front, under the decision record it
+introduces (ADR-0019 there). This paragraph's amendment applies on top of
+that once it merges. The
+[priorities and overview design](priorities-and-overview.md#phone-unlock-and-browser-evidence)
 and [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)
-define the later phone actions and local unlock: every desktop act except
-merge, only after the browser-write path and physical-device probes pass,
-with confirmation of exactly what will be sent. The private HTTP fallback
-stays read-only; phone writes require the private-network HTTPS front.
-Before #399, no surface gains a write by this work. Copying text is not
+are the separate phone design this contract asked for. They widen the
+phone's writes to every act the desktop page gets except merging, after
+the physical-device probes pass, each with a confirmation of exactly what
+will be sent. The phone keeps its token encrypted at rest under an optional
+local unlock, on for a phone by default; with the unlock off, the token is
+kept as #891's record keeps it. On the plain HTTP fallback the phone stays
+read-only. The unlock shows the page that the person is at the device; it
+proves nothing to the forge or the line. Before #399, no surface gains a
+write by this work. Copying text is not
 sending it. All supported acts have visible buttons or links; no hover or
 keyboard shortcut is required.
 

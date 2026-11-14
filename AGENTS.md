@@ -148,7 +148,6 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
   budget, bound the call's cost, record what it cost, fail as one of the
   closed classes, and say what the reader does with no answer.
   [design/outbound-calls.md](design/outbound-calls.md) says how.
-- **Browser action design** follows [ADR-0023](docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md) when implementing overview actions or phone token storage.
 - **Standing decisions** are in [docs/adr/](docs/adr/); read the record before
   deciding something it settles. When several approaches are viable and no
   rule decides, lean the way [docs/dispositions.md](docs/dispositions.md) says.

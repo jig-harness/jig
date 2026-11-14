@@ -1,8 +1,10 @@
 # Declared priorities, a progress review and the overview: design
 
 **What problem this solves.** A person can see individual failures without
-seeing whether their goals are advancing. An epic's priority does not reach
-its children, and written priorities disagree with the tracker's fields.
+seeing whether their goals are advancing. The priority of an
+[epic](../GLOSSARY.md), the issue that groups the issues of one goal, does
+not reach its children, and written priorities disagree with the tracker's
+fields.
 With this built, a declared purpose and a reproducible ranking explain the
 shortlist, a scheduled review spots lack of progress across work, and one
 overview shows the goals, activity and decisions together.
@@ -13,8 +15,12 @@ design round follows that review. It extends [M9's computed prioritization
 invariant](../modules/M9-tasks-memory/README.md#computed-prioritization),
 not its scored criteria. The review pass is named **progress review**
 ([glossary](../GLOSSARY.md)). It becomes part of M9 after a host opt-in
-trial on Jig and one consumer repository proves it; no new practice module
-or audit score is introduced now.
+trial on Jig and one [consumer repository](../GLOSSARY.md) (a repository
+that uses Jig) proves it; no new practice module or audit score is
+introduced now. It is part of M9 rather than a module of its own because it
+reviews progress against the same record M9's computed prioritization
+reads: declaring priorities, ranking from them and checking progress
+against them are one practice, and two modules would share one record.
 
 ## How it works
 
@@ -36,6 +42,17 @@ person to choose. These are schema-defined rules, not silent normalization. `own
 repository levels; only the host's individual record names a person.
 The schema rejects unknown fields, duplicate ids, empty selectors, negative
 values, shares above one, and a share total above one at a level.
+`peripheralFloor` counts within that total, not on top of it: it is a
+minimum of the peripheral objectives' starts, so it may not exceed their
+shares plus the residual share, and a record where it does is infeasible.
+
+The repository record is read by the owner host's
+[dispatcher](../GLOSSARY.md), the scheduled command that starts unattended
+sessions. The site record is read by the [hub](../GLOSSARY.md), the optional
+service several dispatchers' hosts report to
+([control plane design](control-plane.md),
+[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)),
+and is built when the hub is.
 
 | Level | Proposed home and reader | Independence |
 | --- | --- | --- |
@@ -91,10 +108,12 @@ facet stays unknown and appears as a gap, never as low priority.
 Membership is derived from the declared epic keys or labels and their live
 children. At each applicable level an item's **allocation owner** is the
 first matching objective in that record's explicit order. Only that owner
-may include the item in its ready pool, consume its share or concurrency
+may include the item in its [ready pool](../GLOSSARY.md) (the tracker
+states ready work waits in), consume its share or concurrency
 limit, or count its start toward the class floor. Other objective memberships
 are reporting relations only. Ownership is derived before ranking and pinned
-to each claim's input revision; an overlapping core-owned item cannot be
+to the input revision of each claim (the marker a pickup writes when it
+takes an item, [glossary](../GLOSSARY.md)); an overlapping core-owned item cannot be
 selected through a peripheral objective or repay its floor. Cycles, ambiguous
 tracker scopes and unreadable
 parentage are reported as incomplete evidence and excluded from allocation.
@@ -103,13 +122,16 @@ orders siblings and does not erase the epic's entitlement.
 
 The shortlist is computed in this order:
 
-1. Apply existing start guards, holds, blocker rules, claims and personal
+1. Apply existing start guards, holds (a person's mark that keeps the line
+   off an item), blocker rules, claims and personal
    limits. Keep excluded work in the report with its reason. Never loosen a
    guard to fill a slot.
 2. Place eligible Urgent issues first, across every objective and outside
    objectives. Assigned bugs follow in tracker Priority order, independent
    of objective membership. A bug that is Urgent occupies only its Urgent
-   position. Stable ties use tracker scope then canonical key.
+   position. Stable ties use tracker scope then canonical key. An Urgent or
+   bug start counts against no objective's share or concurrency limit; it
+   takes a host slot and counts against personal limits.
 3. Allocate remaining prospective starts by weighted fair allocation to
    ready objectives under the concurrent caps. For the next start let `N`
    be objective-work starts already charged in the current UTC week plus
@@ -165,18 +187,30 @@ silently retunes its weights.
 
 ### Progress review: proposals after mechanical facts
 
-The progress review reads a mechanical digest first. Like the
-[steward](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md),
-it proposes; the tick or the person acts. It never picks, starts, answers,
-re-ranks, files, changes a priority, or changes configuration. The steward
-keeps individual stopped items. Its digest and reliability fixes, followed
-by its remit fixes, land before this pass is enabled.
+The progress review first reads a mechanical digest: the facts a script
+gathers before the pass reads them. Like the [steward](../GLOSSARY.md) (the
+agent pass that proposes recoveries for stopped work), within the frame
+[ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)
+sets, it proposes; the [tick](../GLOSSARY.md) (one run of the dispatcher)
+or the person acts. It never picks, starts, answers, re-ranks, files,
+changes a priority, or changes configuration. The steward keeps individual
+stopped items. Its open fixes land before this pass is enabled, and all six
+gate build step 2: first its digest and reliability fixes, #953 (the facts
+its digest lacks, and passes that end without submitting), #924 (start on a
+judgment backlog, not on any change) and #925 (why its resume and re-arm
+proposals are not applied); then its remit fixes, #954 (a settle record for
+a stalled item or a stale claim), #955 (one more re-drive after a
+classified flaky check) and #956 (a re-run of failed checks).
 
-The proposed `progress_review` host setting has `enabled`, `cadence`,
-`hourly_budget` and `max_runtime`, following the steward's existing stage
-shape. The owner host schedules the stage; the same skill runs on demand.
-A hash of priorities revisions, tracker snapshot, ranking output, line record
-revisions and outcome-log watermark suppresses unchanged scheduled runs.
+The proposed `progress_review` host setting has `enabled` and `every`, the
+keys the steward's setting has. Like the steward, the stage has a fixed
+deadline and a fixed cap of starts in a rolling hour, not further settings.
+The owner host schedules the stage; the `priorities` skill runs the same
+review on demand, so the review needs no skill of its own. A hash of
+priorities revisions, tracker snapshot, ranking output, the revisions of the
+[line](../GLOSSARY.md)'s records (what the dispatcher and the sessions it
+starts record) and the watermark of the [outcome log](../GLOSSARY.md) (a row
+per ended launch and its cause) suppresses unchanged scheduled runs.
 A time bucket in the hash advances when a configured no-movement threshold
 is crossed, even if no item changed. Budget exhaustion leaves a due review
 for the next admissible tick, with a reason, not a failed person decision.
@@ -208,7 +242,7 @@ Only these finding kinds are accepted:
 | `repeated-hold` | Hold class, distinct occurrences and interval, proposed systematic remedy and existing issue or draft | Recommended fixes |
 | `idle-capacity` | Free eligible slots, ready references, limits and exclusion reasons | Activity and insights |
 | `scope-growth` | Approved plan revision, added children, and work outside all objectives | Goals and insights |
-| `decision-owed` | Existing decision id, owner role, age, blocked references and current options | Needs-you and the chat digest |
+| `decision-owed` | Existing decision id, owner role, age, blocked references and current options | Needs you (the dashboard's view of what waits on a person) and the chat digest (#1106) |
 
 The tick validates the closed schema and re-reads target revisions before
 accepting a proposal. It publishes facts only; it cannot turn a reason into
@@ -230,12 +264,14 @@ criterion during the trial.
 
 ### One overview, structured facts
 
-The overview is a view inside the existing dispatch dashboard (item 42),
+The overview is a view inside the existing
+[dispatch dashboard](../GLOSSARY.md) (item 42),
 then inside the hub (item 49), not a second dashboard or per-run report.
 It works in an ordinary browser. A level switch selects repository, individual
 or site. A standalone host offers its supported levels; site is absent until
 the hub ships. Individual filtering is local to an authorized host view and
-never expands the source feed's audience.
+never expands the audience of the [source feed](../GLOSSARY.md), the
+protocol through which one dashboard reads another machine's records.
 
 Every issue or pull-request reference has `kind`, scoped `id`, `state`,
 `url`, and `counterparts` (typed references by id, with an empty list when
@@ -243,7 +279,8 @@ known absent and `unknown` when unread). A fact relation has `subjects`,
 `relation` (a closed verb such as `waits-on`, `implements`, `blocks`),
 `objects`, `count`, `observedAt` and `sourceRevision`. Counts are derived from
 those sets, with a separate total and pagination cursor for truncated sets.
-Sentences are rendered from facts; the planner and progress review author
+Sentences are rendered from facts; the planner (the proposed skill that
+writes an epic's execution plan) and progress review author
 this contract. Free-text interpretation is detail, never the source of a
 status, count, action target or relation.
 
@@ -252,24 +289,30 @@ status, count, action target or relation.
 | Goals as stated | Effective priorities record: purpose, end state, owner role, share/limit, floor and rank explanation |
 | Urgent, always tracked | Full normalized Urgent tracker set, start exclusions, claims and last stage event |
 | Epic progress | Tracker child set, approved plan revision, acceptance and stage events; canceled children shown separately |
-| Assigned bugs, by priority | Assigned normalized bug set with tracker Priority and claim/PR counterparts |
-| Current activity | Launches, session presence, drive ledger, holds, dependency edges and outcome log |
+| Assigned bugs, by priority | Assigned normalized bug set with tracker Priority and claim and pull-request counterparts |
+| Current activity | Launches, session presence, [drive ledger](../GLOSSARY.md) (the state a pull request's review loop keeps on it), holds, dependency edges and outcome log |
 | Insights | Validated progress-review findings and source ages |
 | Recommended systematic fixes | Repeated-hold findings and existing issues or checked File drafts |
-| Decisions owed | Registry needs and decision-owed ordering; same ids as Needs-you and the chat digest |
+| Decisions owed | Registry needs and decision-owed ordering; same ids as Needs you and the chat digest |
 
 Each epic opens a table pairing issues with their pull requests, including
 multiple or absent counterparts. Its stage totals distinguish implementation
-before a PR, PRs being driven, PRs parked, waiting on other items and waiting
+before a pull request (PR), PRs being driven, PRs parked, waiting on other items and waiting
 on the person. Stage membership is exclusive for totals; dependency relations
 remain visible beside it. Precedence is done, ready to merge, parked on you,
-waiting on other items, stalled, actively progressing. Ready uses the existing
-merge-ready predicate. Stalled requires a crossed no-movement deadline with
-complete observations. Unknown or stale evidence gets its own neutral mark,
-never a successful or stalled status invented from absence.
+waiting on other items, unknown, stalled, actively progressing. A mark
+applies only when the evidence it rests on is complete and current. Ready
+uses the existing [merge-ready predicate](dispatch-board.md#ready-exactly),
+the rule the dispatch board uses to say a pull request may merge now.
+Stalled requires a crossed no-movement deadline with complete observations.
+Unknown applies when no earlier mark's evidence holds and the observations
+stalled or progressing need are missing or stale, so absence never becomes
+a successful or stalled status.
 
 Every mark has an icon, colour and word: actively progressing, stalled,
-parked on you, waiting on other items, ready to merge, done. Issue and PR
+parked on you, waiting on other items, ready to merge, done, and unknown,
+whose word is “Unknown” and whose icon is a question mark in a neutral
+colour. Issue and PR
 references use distinct icons and labels, links and hover panels. Default
 text is short; desktop hover exposes counts and detail, and a visible details
 button exposes exactly the same information on touch and keyboard.
@@ -280,22 +323,33 @@ with the overview design round; existing Needs-you rows do not change now.
 
 ### Actions: the person's browser makes one write
 
-The action path builds only after the browser-write path and its decision
-record land. Each action is one existing write the line reads, sent directly
-from the browser to the forge or tracker as the person, with no request to a
-host. Before sending, a confirmation shows target, action, selected option,
+The action path builds only after pull request #891 merges. It adds the
+page's Send, which answers a parked decision from the browser, and its
+decision record (ADR-0019 there). These acts take the same path, and
+[ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)
+records what they keep from that record and what they amend. Each action is
+one existing write the line reads, sent directly from the browser to the
+[forge](../GLOSSARY.md) (the code host) or tracker as the person, with no
+request to a host. Before sending, a confirmation shows target, action, selected option,
 exact payload and expected effect. Refresh the target revision and permission
 before confirming; a changed decision or head invalidates the confirmation.
 A lost response is unknown, not failure: re-read for the request id before
 retrying. Idempotency keys use the existing writer's identity where supported.
-The same governed transport obligations apply to browser calls; budgets can
-only cover what the browser observes, so server rate-limit responses remain
-authoritative and are shown with their reset time.
+Each call meets the [governed transport](../GLOSSARY.md)'s obligations
+([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)) as ADR-0023
+applies them to a browser. The page reads the host's published forge and
+tracker balance through the read feed it already gets and sends nothing
+below the share the tick keeps; it obeys a rate-limit refusal until its
+reset and shows that time; it maps each answer to a failure class. A browser
+cannot reserve budget in the host's record or write to its cost ledger, so
+ADR-0023 records a scoped exception to ADR-0021 for those two and for the
+page's own door to each system.
 
 Acts become sendable in this order:
 
 1. Answers to pickup and follow-up questions.
-2. Release, hold, re-arm and assign, through the existing request kinds.
+2. Release, hold, re-arm (restart a pull request's review loop) and assign,
+   through the existing request kinds.
 3. File: recheck the draft, duplicate search, scope and current authority,
    then create the issue as the person. A duplicate is linked instead of
    creating another. A changed draft requires confirmation again.
@@ -309,11 +363,14 @@ Acts become sendable in this order:
 The only new action record kinds are the File draft and steward approval.
 An answer, release or hold reuses its existing writer and parser. Refusing
 a proposal records the refusal without an effect. No action marks an item
-or an outside-code step done: every write has an agent or station on the
-other side, except the person's own merge.
+or an outside-code step done: every write has an agent or
+[station](../GLOSSARY.md) (a stage of the line, such as a pickup or a
+follow-up) on the other side, except the person's own merge.
 
 For a checkable outside-code step, the person's answer requests a follow-up
-recheck of the item in ops-pending. The follow-up reads the closing condition
+recheck of the item in [ops-pending](../GLOSSARY.md), the tracker state a
+merged item waits in while a person's step outside the code is owed. The
+follow-up reads the closing condition
 again, records evidence and transitions only when satisfied. A condition
 that only the person can attest becomes an ordinary question with “it works”,
 “it failed”, “not yet”; the answer is evidence for the follow-up, not a direct
@@ -321,23 +378,31 @@ state write. Repeated deliveries share the request id. Failed and not-yet
 answers preserve ops-pending and show the next step. This adds a recheck
 entry point to today's once-at-merge follow-up decision.
 
-Until the pass trust boundary lands, these acts are trusted exactly as
-`jig send` from a person's terminal is. The unlock below does not improve
-what the forge or line can prove about the author. Attested classes remain
-unavailable until their existing trust requirements are met. GitHub ships
+Until the [pass trust boundary](../GLOSSARY.md) (plan item 40: the
+mechanisms that tell a comment a pass posts under the person's login from
+the person's own) lands, these acts are trusted exactly as `jig send` from a
+person's terminal is. The unlock below does not improve what the forge or
+line can prove about the author. [Attested classes](../GLOSSARY.md),
+decision classes whose answers count only with proof that a person gave
+them, remain unavailable until their existing trust requirements are met. GitHub ships
 first, Linear next; Jira retains read views until its action transport exists.
 
 ### Phone unlock and browser evidence
 
 [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)
-amends the dashboard's phone contract. Phones get the desktop's sendable acts
-except merge, using visible controls and the same confirmation. Phone writes
-require the private-network HTTPS front; the plain HTTP fallback is read-only.
-No action depends on hover. Unlock defaults on for phones and off for desktops;
-both the choice and the 30-minute session length are settings. Turning
-unlock off on a phone keeps that phone read-only and removes its stored
-token; it never enables unprotected phone writes. A desktop with unlock off
-uses explicit session-only token entry with no persistent token storage.
+amends the dashboard's phone contract and the record pull request #891
+introduces. It keeps that record's path, token, HTTPS-or-loopback rule,
+content security policy and trust; it adds the acts below, a confirmation
+for every act, no merge on a phone and the optional unlock. Phones get the
+desktop's sendable acts except merge, using visible controls and the same
+confirmation. Phone writes require the private-network HTTPS front; on the
+plain HTTP fallback the phone stays read-only. No action depends on hover.
+Unlock defaults on for phones and off for desktops; both the choice and the
+30-minute session length are settings. With the unlock on, the token is
+stored only encrypted. With it off, on either device, the token is kept as
+#891's record keeps it, in the browser's local storage, and the settings
+panel says it is not protected at rest. The page never moves a token into
+that storage on its own.
 
 The optional unlock uses **WebAuthn** and its **PRF extension**
 ([glossary](../GLOSSARY.md)), not a boolean saved after a biometric prompt.
@@ -373,9 +438,9 @@ This is a source review, not a physical-device test. Before action code is
 built, record a successful create/get/decrypt round-trip, rejection, expiry,
 and reload on current stable iOS Safari and Android Chrome, naming browser,
 OS and credential provider versions. An unsupported browser or credential
-shows “Unlock unavailable” and remains read-only on phones; it never stores a
-plaintext token as fallback. A desktop can use the existing explicit
-session-only token entry without persistence. Losing the credential requires
+shows “Unlock unavailable” and stores no token under the unlock; it never
+falls back to plain storage on its own, and only the person's turning the
+unlock off keeps the token as #891's record does. Losing the credential requires
 a new token and enrollment, not recovery material stored beside the ciphertext.
 Enrollment, rotation and deletion have visible controls; deletion removes the
 ciphertext and tells the person to revoke the forge token separately.
@@ -391,9 +456,10 @@ the overview's visual design round follows this document and precedes UI work.
    input hashes give equal output, inherited rank, duplicate membership,
    unknown facets, urgent/bug bypass, cap intersection, peripheral debt and
    disagreement reports. Site fields are not required by the host.
-2. **Progress review trial.** After the steward's digest, reliability and
-   remit fixes land, add the mechanical digest, registered records, bounded
-   scheduled stage, on-demand skill and closing report behind host opt-in.
+2. **Progress review trial.** After the steward's fixes land (#953, #924
+   and #925, then #954, #955 and #956), add the mechanical digest,
+   registered records, bounded scheduled stage, the `priorities` skill's
+   on-demand review and closing report behind host opt-in.
    Prove changed time buckets trigger no-movement findings, unchanged input
    reuses output, partial data never claims absence and every report includes
    Urgent. Run on Jig and one consumer repository; record whether proposed
@@ -402,19 +468,24 @@ the overview's visual design round follows this document and precedes UI work.
    facts and relations in the existing dashboard, including all required
    sections, statuses, epic issue/PR pairs and clearable options. Test keyboard,
    touch, phone widths, stale/partial sources and distinct reference kinds.
-4. **Browser actions and unlock.** After the existing browser-write path
-   merges and the physical-device probes above pass, implement actions in the
+4. **Browser actions and unlock.** After pull request #891 merges, the
+   read feed carries the host's forge and tracker balance, and the
+   physical-device probes above pass, implement actions in the
    stated order, GitHub first then Linear. Add the File draft and steward
    approval records and the ops-pending follow-up recheck. Test duplicate
    sends, changed heads, stale proposals, unauthorized acts, PRF absence,
-   expiry after suspension, and phone refusal to merge or write over HTTP.
-5. **Hub level.** With the hub, add the site priorities record and overview
-   level using its source feed and owner leases. Prove individual declarations
+   expiry after suspension, refusal below the budget share, and phone
+   refusal to merge or write over HTTP.
+5. **Hub level.** With the hub ([control plane design](control-plane.md),
+   [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)),
+   add the site priorities record and overview level using its source feed
+   and the [leases](../GLOSSARY.md) it grants a host (each a short-lived
+   record of which host owns a launch). Prove individual declarations
    stay on hosts and an unavailable hub leaves repository ranking whole.
 6. **M9 adoption.** Only after both trial repositories validate the practice,
    move the operated mechanism into M9 guidance and mappings, then define
-   evidence-based maturity criteria and update the audit. No speculative
-   plugin hook or new module ships in this design pull request.
+   evidence-based maturity criteria and update the audit. Until then the
+   design adds no plugin hook and no practice module.
 
 ## Left out
 

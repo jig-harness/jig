@@ -147,7 +147,7 @@ made by the person's browser, phone unlock and no phone merge.
 The person reviews the design before implementation. Build the record and
 ranker, then trial the progress review on Jig and a consumer repository,
 then the overview after its visual design round. Browser actions wait for
-the existing write path and device probes; site-level records arrive with
+the browser write path to merge and for device probes; site-level records arrive with
 the optional hub. Done when equal input snapshots reproduce the shortlist
 and every Urgent issue appears in each review. The overview must explain
 progress and waiting from structured facts, and browser actions must preserve
