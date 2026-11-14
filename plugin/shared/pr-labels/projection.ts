@@ -47,43 +47,86 @@ export const DEFAULT_LABELS: LabelConfig = {
   onlyLabeled: false,
 };
 
+/** Who writes a state label: a drive, a follow-up, or the dispatcher's tick. */
+export type LabelWriter = "drive" | "followup" | "tick";
+
+/** A label of the set: what it says, which the label setup gives it as its description. */
+export interface LabelValue {
+  readonly meaning: string;
+}
+
+/** A state label, with every writer that adds it. */
+export interface StateLabel extends LabelValue {
+  readonly writers: readonly LabelWriter[];
+}
+
 /**
  * The state labels the projection keeps current: each managed pull
  * request carries at most one of them. A state outside this list (one a
  * later stage owns, which no ledger produces) is never added or removed
- * by the projection.
+ * by the projection. The tick writes every state; a drive and a follow-up
+ * write only their own (`write.ts`).
  */
-export const PROJECTED_STATES = [
-  "driving",
-  "converged",
-  "parked",
-  "stale",
-  "held",
-  "followed-up",
-  "followup-failed",
-] as const;
-export type StateName = (typeof PROJECTED_STATES)[number];
+export const STATE_LABELS = {
+  driving: {
+    writers: ["drive", "tick"],
+    meaning:
+      "A drive runs on this pull request, or the dispatcher re-arms the one that stopped",
+  },
+  converged: {
+    writers: ["drive", "tick"],
+    meaning: "The drive converged at the pull request's head: a person merges",
+  },
+  parked: {
+    writers: ["drive", "tick"],
+    meaning: "The drive stopped on something only a person settles",
+  },
+  stale: {
+    writers: ["tick"],
+    meaning:
+      "Its drive converged then went stale, or stopped or parked on a conflict: the dispatcher re-drives it",
+  },
+  held: {
+    writers: ["tick"],
+    meaning:
+      "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
+  },
+  "followed-up": {
+    writers: ["followup", "tick"],
+    meaning: "Merged, and its follow-up is done",
+  },
+  "followup-failed": {
+    writers: ["followup", "tick"],
+    meaning: "Merged, and its follow-up failed: a person acts",
+  },
+} as const satisfies Readonly<Record<string, StateLabel>>;
+export type StateName = keyof typeof STATE_LABELS;
+export const PROJECTED_STATES = Object.keys(
+  STATE_LABELS,
+) as readonly StateName[];
 
 /** The labels a person writes and the tick reads. */
-export const COMMANDS = ["drive", "rearm", "hold"] as const;
-export type CommandName = (typeof COMMANDS)[number];
+export const COMMAND_LABELS = {
+  drive: {
+    meaning: "A person asks the dispatcher to drive this pull request",
+  },
+  rearm: {
+    meaning:
+      "A person asks the dispatcher to re-arm a stopped drive in its existing tree",
+  },
+  hold: {
+    meaning: "A person stands the dispatcher down from this pull request",
+  },
+} as const satisfies Readonly<Record<string, LabelValue>>;
+export type CommandName = keyof typeof COMMAND_LABELS;
+export const COMMANDS = Object.keys(COMMAND_LABELS) as readonly CommandName[];
 
-/** What each label says, for the label setup, which creates them. */
-const MEANINGS: Record<StateName | CommandName, string> = {
-  driving:
-    "A drive runs on this pull request, or the dispatcher re-arms the one that stopped",
-  converged: "The drive converged at the pull request's head: a person merges",
-  parked: "The drive stopped on something only a person settles",
-  stale:
-    "Its drive converged then went stale, or stopped or parked on a conflict: the dispatcher re-drives it",
-  held: "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
-  "followed-up": "Merged, and its follow-up is done",
-  "followup-failed": "Merged, and its follow-up failed: a person acts",
-  drive: "A person asks the dispatcher to drive this pull request",
-  rearm:
-    "A person asks the dispatcher to re-arm a stopped drive in its existing tree",
-  hold: "A person stands the dispatcher down from this pull request",
-};
+/** The states `writer` adds; the tick adds every state. */
+export function statesWrittenBy(writer: LabelWriter): StateName[] {
+  return PROJECTED_STATES.filter((s) =>
+    (STATE_LABELS[s].writers as readonly LabelWriter[]).includes(writer),
+  );
+}
 
 /** One label of the set, as `gh label create` takes it. */
 export interface LabelSpec {
@@ -128,12 +171,12 @@ export function labelSet(config: LabelConfig): LabelSpec[] {
     ...PROJECTED_STATES.map((s) => ({
       name: labelName(config, s),
       color: STATE_COLORS[s] ?? STATE_COLOR,
-      description: MEANINGS[s],
+      description: STATE_LABELS[s].meaning,
     })),
     ...COMMANDS.map((c) => ({
       name: labelName(config, c),
       color: COMMAND_COLOR,
-      description: MEANINGS[c],
+      description: COMMAND_LABELS[c].meaning,
     })),
   ];
 }

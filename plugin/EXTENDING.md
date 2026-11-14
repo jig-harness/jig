@@ -263,8 +263,9 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     custom field, as `issue_tracker.facets` names them
     ([`jira/facets.ts`](skills/do-item/scripts/lib/tracker/jira/facets.ts)):
     a custom field, named by its name or its id, is read in the request that
-    reads the issue and written in the one that files or changes it, an
-    option checked against the create or edit screen first; with the issue
+    reads the issue and written in the one that files or changes it, the
+    field's presence on the create or edit screen of the issue's type and an
+    option's value checked against that screen first; with the issue
     type as the store, a type with no standard issue type of its name, an
     issue under an Epic and a sub-task keep the type in its label, which
     wins over that fallback issue type when the issue is read;
