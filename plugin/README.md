@@ -507,7 +507,11 @@ GitHub admission windows and dashboard quota displays remain planned.
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
 it keeps the orchestrator's model and effort and forwards the item's route
-to its implementer. Its prompt ends by asking the session to record
+to its implementer. Like a drive's pass, and like the follow-up and
+steward passes, it runs with Claude Code's background tasks off, and its
+prompt has it keep long steps in the foreground, bound each wait on another
+agent and push committed work before a long validation step, since a
+headless pass has no next turn to receive a background result. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
@@ -948,13 +952,18 @@ request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set, which includes one a drive armed by hand
 has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
 creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
-ones, the marker labels with them, with no job installed, and with `--yes`
-names each it created and lists the rest with the command a person who may
-create labels runs; `jig install dispatch --repo <path>` does the same
+ones, the marker labels with them, and the labels of the set whose
+description is not the one this release gives them, with no job installed,
+and with `--yes` names each it created or updated (the description only: a
+color a person chose stays) and lists the rest with the command a person who
+may create or edit labels runs; `jig install dispatch --repo <path>` does the same
 beside the timer. A label write the forge refuses is reported (in the
 receipt, or on the drive's or the command's output) and fails nothing, except
 `jig dispatch marker failed`, which exits `1` when it cannot write its enabled
-label, since that label is its only record of the failure. An
+label, since that label is its only record of the failure, and
+`jig dispatch labels --yes` (with the labels phase of
+`jig install dispatch --repo <path> --yes`), which exits `1` while a label it
+needs is still missing or outdated after the write. An
 optional workflow, drive-pr's
 [`templates/github/state-labels.yml`](skills/drive-pr/templates/github/state-labels.yml),
 replaces `jig:converged` with `jig:stale` on a push to the pull request,
@@ -1378,7 +1387,8 @@ a probe run then reads nothing, and the next install removes its timer.
 dispatcher timer was installed before the probe existed gets the probe's at
 its next `jig install dispatch --yes`. `jig install dispatch
 --repo <path>` also lists the [state labels](#the-dispatcher) that
-repository turns on and lacks, and creates them with `--yes`, as
+repository turns on and lacks, and those whose description an earlier
+release wrote, and creates or updates them with `--yes`, as
 `jig dispatch labels` does with no job installed. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
 and is the one form that sets an interval other than the machine file's.

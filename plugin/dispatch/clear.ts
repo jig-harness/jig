@@ -6,7 +6,7 @@
  * `lib/stuck-launches.ts`), or one that
  * does not read (which keeps every `--apply` from launching). Each holds
  * its stage and its account's slot until it is cleared. A record whose
- * wrapper is alive is refused: stop the session first.
+ * wrapper or registered stage process is alive is refused: stop the session first.
  *
  * It takes the tick lock, so no tick holding the record in memory writes
  * it back after it is removed.
@@ -35,6 +35,8 @@ function refusal(id: string, row: InspectedRow): string | null {
   const { state, record } = row;
   if (state.kind === "alive")
     return `${id} is running (process ${state.process.pid}); stop its session first`;
+  if (state.kind === "unknown" && state.liveProcess !== undefined)
+    return `${id} has a running supervised process (${state.liveProcess.pid}); stop its session first`;
   // The claim speaks whether or not the record reads.
   if (record === null) return null;
   if (state.kind === "unknown") return null;
