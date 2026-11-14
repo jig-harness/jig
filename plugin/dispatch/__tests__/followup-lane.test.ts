@@ -436,7 +436,7 @@ it("preserves an account replay blocker's queue classification", async () => {
   });
 });
 
-it("shows a pending marked follow-up replay in the receipt and dashboard queue", async () => {
+it("keeps a replayed follow-up out of the dashboard queue while its session is active", async () => {
   const w = fixture();
   queued(w, 8, 0);
   w.setPrs("merged", [mergedPr(10, "merged/10", "2026-10-31T12:00:00Z")]);
@@ -471,12 +471,60 @@ it("shows a pending marked follow-up replay in the receipt and dashboard queue",
     record: record.id,
     outcome: "retried",
   });
+  expect(line(w).queue.some((q) => q.target === "PR #10")).toBe(false);
+}, 60_000);
+
+it("shows a held pending replay in the dashboard queue", async () => {
+  const w = fixture();
+  queued(w, 8, 0);
+  const configured = account(w, "a", "a@example.com");
+  machineFile(
+    w,
+    [{ ...configured, identity: "expected@example.com" }],
+    {},
+    ["followup"],
+    { followup_since: "2026-10-30T00:00:00Z" },
+  );
+  w.setPrs("merged", [mergedPr(10, "merged/10", "2026-10-31T12:00:00Z")]);
+  const record = earlierRecord(w, {
+    id: "20261031T120000Z-bbbbbbbb",
+    account: "a",
+    action: "followup",
+    pr: 10,
+    marker: 10_000,
+    attempts: [
+      {
+        at: "2026-10-31T12:00:00.000Z",
+        outcome: "lost",
+        detail: "the runtime did not answer",
+      },
+    ],
+  });
+  w.setComments(10, [
+    forgeComment(
+      record.marker ?? 0,
+      tickMarker(record.id, {
+        pr: 10,
+        writer: { host: "sha256:0123456789abcdef" },
+        host: "sha256:0123456789abcdef",
+      }),
+    ),
+  ]);
+
+  const [held] = followups(await tick(w));
+  expect(held).toMatchObject({
+    target: "PR #10",
+    record: record.id,
+    outcome: "waits",
+    waitsOn: "admission",
+  });
   expect(line(w).queue).toContainEqual(
     expect.objectContaining({
       target: "PR #10",
       source: "merged",
       launch: expect.objectContaining({
-        outcome: "retried",
+        outcome: "waits",
+        waitsOn: "admission",
       }),
     }),
   );

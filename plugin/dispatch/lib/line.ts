@@ -583,14 +583,15 @@ function queueOf(view: RepoView): LineQueued[] {
     .map((action) => plannedStage(view, action))
     .filter((q): q is LineQueued => q !== null);
   // A pending follow-up replay has no new planned action: its earlier launch
-  // record is what still owns the work. Keep its receipt visible in the queue
-  // so a replay held by admission, an account, or the tick deadline names what
-  // it waits on.
+  // record is what still owns the work. Keep only one that did not start in
+  // the queue, so it names what it waits on without duplicating an active
+  // session.
   const replayed = view.report.launches
     .filter(
       (launch) =>
         launch.action === "followup" &&
         launch.record !== null &&
+        !STARTED.has(launch.outcome) &&
         !view.report.actions.some(
           (action) =>
             action.stage === "followup" && action.target === launch.target,
