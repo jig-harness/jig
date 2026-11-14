@@ -172,15 +172,17 @@ export function gitHubLimitReset(
   return { until: resetOf(headers, wait, now), retryAfterMs: wait };
 }
 
-/** When a spent limit clears: the reset GitHub names, else its `Retry-After`, else the fallback. */
+/** When a spent limit clears: the later of the reset GitHub names and its `Retry-After`, else the fallback. */
 function resetOf(
   headers: Headers,
   wait: number | null,
   now: () => number,
 ): number {
   const reset = Number(headers.get("x-ratelimit-reset") ?? "");
-  if (Number.isFinite(reset) && reset * 1000 > now()) return reset * 1000;
-  return now() + (wait ?? FORGE_FALLBACK_LIMIT_MS);
+  const named =
+    Number.isFinite(reset) && reset * 1000 > now() ? reset * 1000 : null;
+  if (named === null && wait === null) return now() + FORGE_FALLBACK_LIMIT_MS;
+  return Math.max(named ?? 0, wait === null ? 0 : now() + wait);
 }
 
 /**

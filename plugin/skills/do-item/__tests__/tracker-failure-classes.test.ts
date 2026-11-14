@@ -16,7 +16,10 @@ import {
   retriedOnce,
   TIMEOUT_FLOOR_MS,
 } from "../../../shared/outbound/failure.ts";
-import { ghRunFailure } from "../../../shared/outbound/github.ts";
+import {
+  gitHubLimitReset,
+  ghRunFailure,
+} from "../../../shared/outbound/github.ts";
 import { heldRun } from "../../../shared/proc.ts";
 import { TrackerRateLimited } from "../../../shared/tracker-budget.ts";
 import {
@@ -350,6 +353,16 @@ describe("a reset named beside GraphQL errors", () => {
     )) as { code: string; until: number };
     expect(error.code).toBe("rate-limited");
     expect(error.until).toBeGreaterThan(before);
+    expect(error.until).toBeLessThanOrEqual(Date.now() + 15 * 60_000);
+  });
+
+  it("holds a GitHub limit until both its reset and its Retry-After have passed", () => {
+    const now = 1_000_000_000_000;
+    const headers = new Headers({
+      "x-ratelimit-reset": String(now / 1000 + 60),
+      "Retry-After": "120",
+    });
+    expect(gitHubLimitReset(headers, () => now).until).toBe(now + 120_000);
   });
 });
 

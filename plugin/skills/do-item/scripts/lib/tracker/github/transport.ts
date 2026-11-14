@@ -299,7 +299,7 @@ function ghExitAnswer(
       : null) ??
     run ??
     outboundFailure("invalid", `gh api graphql exited ${r.code}`);
-  const named = errorsFailure(body, answered ? failure : null);
+  const named = errorsFailure(body, answered ? failure : null, parsed.headers);
   if (named !== null) return named;
   const said = (r.stderr || parsed.body).trim().slice(0, 300);
   return errorOf({
