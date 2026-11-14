@@ -603,6 +603,8 @@ function answered(
   return out;
 }
 
+const EXPIRED = Symbol("delivery expired");
+
 /** The channel's answers for `batch`; a throw, which the port does not allow, is reported and answers every cause of the batch as lost. */
 async function answersOf(
   channel: NotificationChannel<Cause>,
@@ -618,41 +620,39 @@ async function answersOf(
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const expired = new Promise<never>((_resolve, reject) => {
+      const expired = new Promise<typeof EXPIRED>((resolve) => {
         timeout = setTimeout(() => {
           controller.abort();
-          reject(new Error(`delivery did not finish within ${timeoutMs}ms`));
+          resolve(EXPIRED);
         }, timeoutMs);
       });
       const delivery = channel.deliver(batch, {
         timeLeftMs,
         signal: controller.signal,
       });
-      const deliveries = await Promise.race([delivery, expired]).catch(
-        async (error: unknown) => {
-          // The channel stops before its next effect once aborted: wait for
-          // it to quiesce, within one more delivery bound, before the batch
-          // is answered, so no write lands after its outcome is recorded.
-          if (controller.signal.aborted)
-            await Promise.race([
-              delivery.then(
-                () => undefined,
-                () => undefined,
-              ),
-              new Promise((resolve) =>
-                setTimeout(resolve, deliveryTimeoutMs).unref?.(),
-              ),
-            ]);
-          throw error;
-        },
-      );
-      if (controller.signal.aborted)
+      const deliveries = await Promise.race([delivery, expired]);
+      if (deliveries === EXPIRED) {
+        // The channel stops before its next effect once aborted: wait for it
+        // to quiesce, within one more delivery bound, before the batch is
+        // answered, so no write lands after its outcome is recorded.
+        let grace: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          delivery.then(
+            () => undefined,
+            () => undefined,
+          ),
+          new Promise((resolve) => {
+            grace = setTimeout(resolve, deliveryTimeoutMs);
+          }),
+        ]);
+        clearTimeout(grace);
         return lostAnswers(
           channel,
           batch,
           report,
           `delivery did not finish within ${timeoutMs}ms`,
         );
+      }
       if (!Array.isArray(deliveries))
         return lostAnswers(
           channel,

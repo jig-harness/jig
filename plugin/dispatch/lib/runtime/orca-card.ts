@@ -56,6 +56,7 @@ import {
 } from "../notice-records.ts";
 import { carries, holdsNotice } from "../notices.ts";
 import { failureText } from "../text.ts";
+import { currentMs } from "../../../shared/time.ts";
 import type { NoticeCause, RepoReport, RepoTarget } from "../types.ts";
 import { noticeComment } from "./notice-comment.ts";
 import {
@@ -500,7 +501,7 @@ export async function retireCard(
     causes,
     records: retirementRecords(repo, root),
     lingerMs,
-    nowMs: Date.now(),
+    nowMs: currentMs(),
     root,
   });
 }
