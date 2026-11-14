@@ -6,13 +6,14 @@
  * read the tracker's rate limit refuses stops the walk, which reports the
  * limit once rather than one unplaced row per item.
  */
+import { cacheForTracker } from "./tracker-cache.ts";
 import type {
-  Assigner,
-  IssueRelation,
   PoolIssue,
-  QueueRelation,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { metadata, type Metadata } from "./served-metadata.ts";
+import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
+import { scopeFailureRow } from "./scope-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -44,7 +45,6 @@ import {
 import { planKeys, servedPlan, type ServedPlan } from "./served-plan.ts";
 import {
   type ServedView,
-  trackerScope,
   type ServedViews,
   sharedView,
 } from "./served-reads.ts";
@@ -60,13 +60,6 @@ import {
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 
-interface Metadata {
-  updatedAt: string;
-  by: Assigner | null;
-  relations: IssueRelation[];
-  children: PoolIssue[];
-  description: string | null;
-}
 interface Candidate extends QueueItem {
   identity: string;
   by: string;
@@ -82,6 +75,8 @@ export interface ServedReading {
   limitedUntil?: string;
   /** A served identity's queue failed to read for another reason: the claims are not known. */
   incomplete?: boolean;
+  /** What each failed read raised, `undefined` for one no call failed, so every class reaches the record. */
+  failures?: unknown[];
 }
 export interface ServedPolicy {
   hitl?: string;
@@ -98,6 +93,7 @@ export interface ServedOptions extends ServedPolicy {
   cache?: PickupReads;
   nowMs: number;
   headroom: boolean;
+  bound?: import("./tracker-facets.ts").FacetBound;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
 }
@@ -108,66 +104,19 @@ const itemOf = (i: PoolIssue) => ({
   url: i.url,
 });
 
-/** Cache entries without a timestamp are never reused. */
-async function metadata(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  cache: PickupReads,
-  carried: QueueRelation[] | null,
-): Promise<Metadata> {
-  const key = `${trackerScope(tracker)}:item:${issue.identifier}:${identity}:${issue.isEpic ? "epic" : ""}`;
-  const kept = cache.get<Metadata>(key);
-  if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
-    return carried === null
-      ? kept
-      : {
-          ...kept,
-          relations: carried.map(({ type, issue: i }) => ({ type, issue: i })),
-        };
-  const by =
-    issue.assignee === null
-      ? null
-      : await tracker.assignedBy(issue.identifier, identity);
-  const relations =
-    carried === null
-      ? await tracker.listRelations(issue.identifier)
-      : carried.map(({ type, issue: i }) => ({ type, issue: i }));
-  const children =
-    issue.isEpic && issue.hasOpenChildren
-      ? await tracker.openChildren(issue.identifier)
-      : [];
-  const description =
-    children.length > 0
-      ? ((await tracker.getIssue(issue.identifier))?.description ?? null)
-      : "";
-  const value = {
-    updatedAt: issue.updatedAt ?? "",
-    by,
-    relations,
-    children,
-    description,
-  };
-  if (issue.updatedAt && description !== null) cache.set(key, value);
-  return value;
-}
-
 /** The single row a rate-limited tracker leaves on the receipt. */
 export function limitedRow(
   tracker: Pick<Tracker, "adapter" | "team">,
   limited: TrackerRateLimited,
-  view: Pick<ServedView, "readAt"> | null = null,
+  view: Pick<ServedView, "readAt" | "scope"> | null = null,
 ): Unplaced {
   const until = new Date(limited.resetAt).toISOString();
-  const kept =
-    view !== null && view.readAt > 0
-      ? `; the queue shown is the reading of ${new Date(view.readAt).toISOString()}`
-      : "";
-  return {
+  const row: Unplaced = {
     target: `${tracker.adapter} ${tracker.team}`,
     record: "tracker",
-    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it${kept}`,
+    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
   };
+  return view === null ? row : scopeFailureRow(tracker, view, row.reason);
 }
 
 /** What the walks of every served identity in one reading share about epics. */
@@ -183,7 +132,33 @@ interface PersonReading {
   unplaced: Unplaced[];
   candidates: Candidate[];
   limited: { error: TrackerRateLimited; view: ServedView | null } | null;
-  failed: boolean;
+  /** What failed each read: the scope's cause or the error thrown, `undefined` for a read no call failed. */
+  failures: unknown[];
+}
+
+/** A served item in progress, as the claim dispatch monitors. */
+function servedClaim(i: PoolIssue) {
+  return {
+    key: i.identifier,
+    title: i.title,
+    url: i.url,
+    state: i.state.name,
+    ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
+    served: true as const,
+  };
+}
+
+/** The one unplaced row an identity's failed read leaves. */
+function readFailureRow(
+  tracker: Tracker,
+  identity: string,
+  view: ServedView | null,
+  error: unknown,
+): Unplaced {
+  const reason = `the served assignments could not be read: ${failureText(error)}`;
+  return view?.scope !== undefined && isUnavailable(error)
+    ? scopeFailureRow(tracker, view, reason)
+    : { target: identity, record: "tracker", reason };
 }
 
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
@@ -200,21 +175,24 @@ async function readPerson(
     unplaced: [],
     candidates: [],
     limited: null,
-    failed: false,
+    failures: [],
   };
   let view: ServedView | null = null;
   try {
     view = await sharedView(options.views, tracker, identity, options, cache);
     if (view.limited !== null) got.limited = { error: view.limited, view };
+    if (view.unavailable !== undefined) {
+      got.failures.push(view.unavailableCause ?? view.unavailable);
+      got.unplaced.push(
+        scopeFailureRow(
+          tracker,
+          view,
+          `the served assignments could not be read: ${view.unavailable}`,
+        ),
+      );
+    }
     const progress = view.progress();
-    got.claimed = progress.map((i) => ({
-      key: i.identifier,
-      title: i.title,
-      url: i.url,
-      state: i.state.name,
-      ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
-      served: true as const,
-    }));
+    got.claimed = progress.map(servedClaim);
     // Claims are monitored either way; an invalid scope only starts nothing.
     if (options.repoScope?.invalid !== undefined) return got;
     // The walk fills `got` as it goes, so a limit met in a later generation
@@ -227,19 +205,23 @@ async function readPerson(
       ],
       got,
     );
-    if (view.limited === null) view.save();
   } catch (error) {
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
-      got.failed = true;
-      got.unplaced.push({
-        target: identity,
-        record: "tracker",
-        reason: `the served assignments could not be read: ${failureText(error)}`,
-      });
+      got.failures.push(error);
+      got.unplaced.push(readFailureRow(tracker, identity, view, error));
     }
+  } finally {
+    view?.save();
   }
   return got;
+}
+
+/** A failed queue makes the reading incomplete; every cause is kept. */
+function noteFailure(out: ServedReading, got: PersonReading): void {
+  if (got.failures.length === 0) return;
+  out.failures = [...(out.failures ?? []), ...got.failures];
+  out.incomplete = true;
 }
 
 /** Read every served identity for this adapter; an unreadable identity starts nothing. */
@@ -248,7 +230,9 @@ export async function readServedPickups(
   people: readonly ServedPerson[],
   options: ServedOptions,
 ): Promise<ServedReading> {
-  const cache = options.cache ?? pickupReads;
+  options =
+    options.views === undefined ? { ...options, views: new Map() } : options;
+  const cache = cacheForTracker(tracker, options.cache ?? pickupReads);
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
@@ -275,7 +259,7 @@ export async function readServedPickups(
     out.claimed.push(...got.claimed);
     out.unplaced.push(...got.unplaced);
     candidates.push(...got.candidates);
-    if (got.failed) out.incomplete = true;
+    noteFailure(out, got);
     limited ??= got.limited;
   }
   if (limited !== null) {
@@ -409,8 +393,8 @@ interface Found {
   unplaced: Unplaced[];
   candidates: Candidate[];
   pending: Pending[];
-  /** A read of this node failed, so the reading is incomplete. */
-  failed?: boolean;
+  /** What failed each read of this node, `undefined` for a read no call failed: the reading is incomplete. */
+  failures: unknown[];
 }
 
 /**
@@ -432,21 +416,43 @@ async function walk(
     planHold: undefined,
   }));
   while (generation.length > 0) {
-    const found = await Promise.all(
-      generation.map((node) => visitNode(ctx, node)),
-    );
+    // Each visit fills a record the walk owns, so what a visit found before
+    // it rejected is merged all the same.
+    const nodes = generation.map((node) => ({ node, found: newFound() }));
+    const visits = nodes.map(({ node, found }) => visitNode(ctx, node, found));
+    const settled = await Promise.allSettled(visits);
     generation = [];
-    for (const f of found) {
-      all.unplaced.push(...f.unplaced);
-      all.candidates.push(...f.candidates);
-      if (f.failed) all.failed = true;
-      generation.push(...f.pending);
+    settled.forEach((s, i) => {
+      const found = nodes[i]?.found;
+      if (found === undefined) return;
+      all.unplaced.push(...found.unplaced);
+      all.candidates.push(...found.candidates);
+      all.failures.push(...found.failures);
+      if (s.status === "fulfilled") generation.push(...found.pending);
+    });
+    try {
+      await Promise.all(visits);
+    } catch (error) {
+      // The walk ends with this one error; every other rejected visit is a
+      // failed read kept here, and a rate limit is the walk's limit alone.
+      for (const s of settled)
+        if (
+          s.status === "rejected" &&
+          s.reason !== error &&
+          !isRateLimited(s.reason)
+        )
+          all.failures.push(s.reason);
+      throw error;
     }
   }
   return all;
 }
 
-/** Reads an epic's open children; one that cannot be read is reported and set aside. */
+/**
+ * Reads an epic's open children; one that cannot be read is reported and set
+ * aside. A rate-limited read is thrown only once every sibling's result is
+ * recorded, so a sibling's own defect is not lost to the limit.
+ */
 async function readChildren(
   ctx: WalkContext,
   meta: Metadata,
@@ -456,30 +462,35 @@ async function readChildren(
   const read = await Promise.all(
     meta.children.map(async (kept) => {
       try {
-        return { child: await view.pool(kept.identifier), failure: undefined };
+        return { child: await view.pool(kept.identifier), error: undefined };
       } catch (error) {
-        if (isRateLimited(error)) throw error;
-        return { child: null, failure: failureText(error) };
+        return { child: null, error };
       }
     }),
   );
   const children: PoolIssue[] = [];
   const unread: string[] = [];
+  const limits: unknown[] = [];
   meta.children.forEach((kept, i) => {
-    const { child, failure } = read[i] ?? { child: null, failure: undefined };
+    const { child, error } = read[i] ?? { child: null, error: undefined };
+    if (isRateLimited(error)) {
+      limits.push(error);
+      return;
+    }
     if (child === null || child.truncated.length) {
       unread.push(kept.identifier);
-      found.failed = true;
+      found.failures.push(error);
       found.unplaced.push({
         ...itemOf(kept),
         record: "tracker",
         reason:
-          failure === undefined
+          error === undefined
             ? "the child cannot be read completely"
-            : `the child cannot be read: ${failure}`,
+            : `the child cannot be read: ${failureText(error)}`,
       });
     } else children.push(child);
   });
+  if (limits.length > 0) return Promise.reject(limits[0]);
   return { children, unread };
 }
 
@@ -583,16 +594,23 @@ function leavesNode(
   );
 }
 
-async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
+function newFound(): Found {
+  return { unplaced: [], candidates: [], pending: [], failures: [] };
+}
+
+async function visitNode(
+  ctx: WalkContext,
+  node: Pending,
+  found: Found,
+): Promise<Found> {
   const { tracker, options, seen } = ctx;
-  const found: Found = { unplaced: [], candidates: [], pending: [] };
   const { issue, ancestor } = node;
   if (leavesNode(issue, options, seen, tracker)) return found;
   // A child assigned elsewhere is not inherited. A direct assignment is read in its owner's list.
   if (ancestor !== undefined && issue.assignee !== null) return found;
   seen.add(issue.identifier);
   if (issue.truncated.length) {
-    found.failed = true;
+    found.failures.push(undefined);
     found.unplaced.push({
       ...itemOf(issue),
       record: "tracker",
@@ -604,14 +622,25 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
     await placeNode(ctx, node, found);
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    found.failed = true;
-    found.unplaced.push({
-      ...itemOf(issue),
-      record: "tracker",
-      reason: `the queue metadata could not be read: ${failureText(error)}`,
-    });
+    if (ctx.view.scope !== undefined && isUnavailable(error)) throw error;
+    unreadable(issue, failureText(error), found, error);
   }
   return found;
+}
+
+/** An item whose queue metadata could not be read, or named no assigner: the walk's claims below it are unknown. */
+function unreadable(
+  issue: PoolIssue,
+  why: string,
+  found: Found,
+  cause?: unknown,
+): void {
+  found.failures.push(cause);
+  found.unplaced.push({
+    ...itemOf(issue),
+    record: "tracker",
+    reason: `the queue metadata could not be read: ${why}`,
+  });
 }
 
 /** Read what a node needs and place it: held with why, a candidate, or an epic whose children come next. */
@@ -624,14 +653,14 @@ async function placeNode(
   const { issue, ancestor } = node;
   const unplace = unplacer(issue, options.trackerNamespace, found);
   const carried = view.held(issue.identifier)?.relations ?? null;
-  const meta = await view.once(
-    `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${issue.isEpic}`,
-    () => metadata(tracker, issue, identity, cache, carried),
-  );
+  const meta = await metadata(tracker, issue, identity, cache, carried, view);
+  // A kept no-assigner answer is reported as the failed read it stands for.
+  if (meta.noAssigner !== undefined)
+    return void unreadable(issue, meta.noAssigner, found);
   const initialHold = nodeHold(node, meta, identity, options);
   if (initialHold !== null) {
     // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
-    if (meta.description === null) found.failed = true;
+    if (meta.description === null) found.failures.push(undefined);
     return void unplace(initialHold);
   }
   const open = await openBlockers(
@@ -749,16 +778,13 @@ async function childStates(
     read.map((child) =>
       child === null || child.truncated.length
         ? null
-        : view.once(
-            `metadata ${child.identifier} ${child.updatedAt ?? ""} ${child.isEpic}`,
-            () =>
-              metadata(
-                tracker,
-                child,
-                identity,
-                cache,
-                view.held(child.identifier)?.relations ?? null,
-              ),
+        : metadata(
+            tracker,
+            child,
+            identity,
+            cache,
+            view.held(child.identifier)?.relations ?? null,
+            view,
           ),
     ),
   );
@@ -766,7 +792,7 @@ async function childStates(
   keys.forEach((key, i) => {
     const child = read[i];
     const info = infos[i];
-    if (child === null || child === undefined || !info) return;
+    if (!child || !info || info.noAssigner !== undefined) return;
     const blockedBy = info.relations
       .filter((r) => r.type === "blocked_by")
       .map((r) => r.issue);

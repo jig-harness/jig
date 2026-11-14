@@ -43,7 +43,7 @@ import type {
 } from "../../../shared/records/shared.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
 import { carried, returnCarried } from "../station-answer-store.ts";
-import { admittedVendor, type Slots } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
 import { readMarkers } from "../followup-marker.ts";
@@ -309,7 +309,7 @@ function newFollowupRecord(
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     passTimeoutSec: state.passDeadlineSec,
-    codexBypass: state.codexOptIn.on,
+    ...codexLaunchFields(state.codexOptIn),
     replaces: null,
     // A run again of a follow-up that died or stopped on a routine question says so in its facts: a second failure is a person's.
     facts: action.facts ?? `merged ${pr.mergedAt}`,

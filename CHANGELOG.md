@@ -394,6 +394,141 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.232.0] - 2026-11-14
+
+Every call to the forge and the issue trackers now fails as one of the defined failure classes, and the dispatcher waits out the ones that clear by waiting instead of failing a tick or asking a person.
+
+The turn-budget guard no longer asks Codex for a new approval with every Jig release.
+
+### Added
+
+- The forge's and the trackers' failed calls are each one of a closed set of [failure classes](GLOSSARY.md): `rate-limited` (with the time it clears), `unreachable`, `too-costly`, `server-fault`, `unauthorized`, `not-found` and `invalid`. The shared library `plugin/shared/outbound/` defines the classes and classifies the forge's and GitHub's answers; the Linear and Jira transports classify their own responses into them. Every caller reads the class, never a status or a message. [The configuration reference](plugin/CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer) has each class's policy.
+- `tracker.ts` exits with one code per class: `5` for a spent rate limit, as before, with its `RATE-LIMITED until <time>` line, then `6` unreachable, `7` too costly, `8` server fault, `9` unauthorized, `10` not found and `11` invalid, the class named at the start of the error line. A failure no call to the tracker caused still exits `1`. [do-item's tracker operations](plugin/skills/do-item/SKILL.md#tracker-operations) list them. **Consumer action:** advised at instructions. A runbook or script that reads `tracker.ts`'s exit `1` as every failure reads `6` to `11` as failures too.
+- A follow-up pass that meets the forge's or the tracker's rate limit records `waits --until <reset>` and asks nobody. The dispatcher leaves its marker until the reset, then starts the follow-up again as a first run; the third such wait in a row goes to a person as a failed follow-up, naming the rate limit.
+- Every pickup, follow-up and steward pass the dispatcher starts now ends by writing a closing report: a short `closing-report/v1` record of what the run concluded, the next step and who takes it, a question with its framed decision when a person must decide, why it fell short when it did, and up to 10 references as evidence. The pass records it with the new `jig dispatch report <record> <token> <file>`, which its prompt names beside `jig dispatch result`. The command replaces email addresses, account identifiers and tokens or other credential-shaped values with `<redacted>`, checks the record and names everything wrong in one refusal; it may run more than once, before or after the result, the last report that passes standing, and it never changes the result. The launch record keeps the report whole, and the outcome log's `ended` row carries its fields and who wrote it (`by`), with `cause` and `by` as new columns of the log. A pickup now records its result as soon as its drive is armed and writes its report at the end. See [plugin/README.md](plugin/README.md#the-closing-report).
+- `file-issue`'s weekly sweep keeps a read position between runs when it only
+  comments (`file_issue.sweep.move: false`): `check-fields.ts check --yes
+  --position <file>` saves where the run left off, oldest issue first, and the
+  next run resumes there, going on from the oldest issue at the end. A
+  population larger than one run's read of 20 pages of 100 is now reached in
+  turn, and an issue whose missing facets changed is commented on again when
+  the read comes round to it. Keep the file between scheduled runs (a file on
+  the host, or a CI cache); without it every run reads from the oldest issue.
+- **Documented: unattended Codex passes and hook trust.** The Codex notes and the host's opt-in to bypass say that a headless `codex exec` runs only approved hooks, to approve the guard once per Codex home, and that a host which vets every hook its Codex home loads may set `drive.codex_pass_args: [--dangerously-bypass-hook-trust]` for Jig-generated Codex passes.
+- **`drive.codex_pass_args`: a host's extra arguments for a Codex pass.** A list of words in the host's user file (`~/.jig/jig.yaml`) or one run's environment (`JIG__DRIVE__CODEX_PASS_ARGS`), such as `[--dangerously-bypass-hook-trust]`, which lets an unattended `codex exec` run the hooks its Codex home loads without a person approving them. The words go after `codex exec` (after the bypass `drive.codex_bypass` adds) and before the prompt: an arm from a Codex session writes them into the pass command, the dispatcher records them on the launch record and every Codex pass it launches carries them, and `drive.ts` adds them to a Codex pass command with no arguments of its own, keeping one that carries its own as written. The driver log's `pass args:` line names the words and their source. It follows `drive.pass_args`'s rules: a repository's file that sets it stops the drive naming the field, and it refuses the words Codex would read as the model (`-m`, `--model`, `-c model=…`), the prompt or a subcommand, the bypass, and a list that ends in an option without its value. `drive.pass_args` stays Claude Code's, and `--pass-args ''` now also keeps `drive.codex_pass_args` out of a Codex drive. The audit warns about a user file that sets it to a value a drive would stop on. See [a host's opt-in to bypass](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass): the flag skips Codex's review of every hook source, so vet the hooks your Codex home loads first.
+
+### Changed
+
+- One retry for every tracker read: a read the tracker did not answer, or answered with a 5xx fault, is sent once more after a backoff of about a second, within the call's deadline, honouring `Retry-After`. The Linear transport had no retry and now has it; the GitHub and Jira transports sent a read up to four times on HTTP 429 and 503, and now send it at most twice, and never again after a 429. A write is never sent twice.
+- A tick no longer exits 1 for a repository whose every failed read clears by waiting. A rate-limited read is no failure before its reset and is not counted in the failure ledger; an unreachable, timed-out or faulting forge or tracker fails the tick only once the repository's failures in a row reach `failures.notify_after`. The report shows the forge's last reading of that repository with its time and its age. A refused credential is told to a person at once.
+- A forge or tracker that did not answer receives no further request in the same tick, and the next tick sends it one request alone before it reads on. The holds outlive the tick in `~/.local/state/jig/dispatch/unanswered.json`, and the tick's receipt names each held system (`unanswered`).
+- The steward digest's kept summary of a pass's output now also replaces JSON Web Tokens, using the same list of credential shapes as the closing report.
+- **Codex: the turn-budget hook is registered by `jig upgrade`, not shipped by the plugin.** Codex re-reviews a plugin's hooks whenever any file of the plugin changes, and skips them until it is approved again. The Codex plugin now ships none. `jig upgrade` adds one `PreToolUse` entry to `$CODEX_HOME/hooks.json` (`~/.codex` by default) whose command never changes and runs the installed plugin copy's guard, so approving it once with `/hooks` stands across releases. After this release, approve the guard once in each Codex home; until then it does not run there. Run `jig upgrade --codex` with `CODEX_HOME` set to give another home the entry. `jig uninstall --machine --yes` removes it. Claude Code is unchanged. **Consumer action:** required at machine. Run `jig upgrade --codex` and approve the guard with `/hooks` in every Codex home that runs unattended passes.
+
+### Fixed
+
+- Codex drive arguments now reject the `--yolo` bypass alias, preserve an already recorded command when current settings cannot be read, and report attached sandbox options accurately. **Consumer action:** none.
+
+## [0.231.0] - 2026-11-14
+
+### Added
+
+- The plugin ships the first chapter of the [Jig Protocol](GLOSSARY.md),
+  [protocol/drive-exits.md](plugin/protocol/drive-exits.md): every end
+  state and exit code of a drive, with what each one means, for a program
+  that reads how a drive ended without reading Jig's code, and the same
+  values as JSON in `protocol/data/drive-exits.json`. The chapter is
+  generated from drive-pr's own table of states, and Jig's build fails when
+  the two disagree. `guarded-push.ts`'s exit `17` (a `hold-push` directive
+  in force) is now part of that table, so no other exit can take the code.
+  **Consumer action:** none.
+
+### Fixed
+
+- `jig dispatch` no longer launches a drive again, tick after tick, when
+  `drive.ts` refused the last launch as a usage error (exit `2`) and the
+  pull request's drive ledger has not changed since. The drive becomes a
+  person's: one notice says which launch was refused and carries the drive's
+  own message, which the dispatcher now keeps from the drive's error output on
+  that exit. The next launch happens once the ledger moves, or when a person
+  asks for a re-arm.
+- `drive.ts --take-over` now takes over a drive whose ledger still names this
+  working tree's own driver as running though no driver holds its lock: that
+  driver ended without writing its stop, so the takeover goes ahead as a dead
+  driver's and stops nothing. When the ledger names this clone's driver in
+  another working tree, the refusal now names that tree and says to re-arm
+  from there.
+- `drive.ts --take-over` reads the held batch again after startup and reopens
+  each hold as it stands then; a batch it cannot read again stops the takeover
+  with exit `1` instead of reconciling over the earlier one.
+- `tracker.ts update` and `create` now refuse to add a type or size label
+  where the repository keeps that facet outside labels (GitHub's issue type
+  or a field, Linear's estimate, a Jira field). The message names the
+  facet's value and where it is kept. Taking such a label off an issue stays
+  allowed, except on Jira, whose adapter refuses removing a label that is a
+  `field_labels` value. Where the facet is kept in labels nothing changes.
+  A caller that added such a label by hand sets the facet instead.
+  **Consumer action:** none.
+- The plugin's file map, the mechanisms page and the drive-pr notes on the
+  turn-budget guard no longer say that Codex registers the guard from
+  `hooks/hooks.json`: Codex gets it from the entry `jig upgrade` writes into
+  the Codex home.
+
+## [0.230.1] - 2026-11-14
+
+### Fixed
+
+- Repositories sharing a tracker scope and served people reuse one queue reading even when their state maps or facet settings differ, reducing repeated dispatcher requests while preserving each repository's interpretation. **Consumer action:** none.
+
+## [0.230.0] - 2026-11-14
+
+The turn-budget guard no longer asks Codex for a new approval with every Jig release.
+
+### Added
+
+- A one-time archive for worktrees made before marking began: right before
+  removing such a worktree, `jig gc` copies its unmarked ignored content into
+  `~/.local/state/jig/gc/archives/`, checks the copy, and names the archive
+  in the receipt. Content larger than the new machine setting
+  `gc.archive_max_bytes` (64 MiB by default, 0 to archive nothing), or a copy
+  that fails, keeps the worktree. The `receipts` kind removes archives past
+  `gc.receipts_days`.
+- **Documented: unattended Codex passes and hook trust.** The Codex notes and the host's opt-in to bypass say that a headless `codex exec` runs only approved hooks, to approve the guard once per Codex home, and that a pass command typed by hand may add `--dangerously-bypass-hook-trust` where the host vets every hook its Codex home loads. Jig's own pass commands do not add it.
+
+### Changed
+
+- Jig's procedures write the files they never need again under
+  `.context/scratch/`, and the drive's mailbox, foreground waits and intent
+  chains tag their directories, so a finished worktree holds only marked
+  working files.
+- **Codex: the turn-budget hook is registered by `jig upgrade`, not shipped by the plugin.** Codex re-reviews a plugin's hooks whenever any file of the plugin changes, and skips them until it is approved again. The Codex plugin now ships none. `jig upgrade` adds one `PreToolUse` entry to `$CODEX_HOME/hooks.json` (`~/.codex` by default) whose command never changes and runs the installed plugin copy's guard, so approving it once with `/hooks` stands across releases. After this release, approve the guard once in each Codex home; until then it does not run there. Run `jig upgrade --codex` with `CODEX_HOME` set to give another home the entry. `jig uninstall --machine --yes` removes it. Claude Code is unchanged.
+
+### Fixed
+
+- `jig gc` no longer keeps every finished worktree because of Jig's own
+  working files and a tool's cache. The `worktrees` kind sets aside ignored
+  content whose writer marked it disposable: a directory holding a
+  `CACHEDIR.TAG` (cache directory tag), `.context/scratch/`, and a drive's
+  handoff. Any
+  other ignored path still keeps the worktree, and the reason names it. The
+  receipt lists each path set aside with its rule (`details.setAside`). See
+  [the collector's rule](plugin/gc/README.md#ignored-content).
+- The steward's digest now includes each target's workspace state, bounded
+  pass output, linked open and merged pull requests and failing-check
+  history on the head and base commits. Unavailable reads remain explicit,
+  and pass output is quoted as untrusted data.
+- Dispatched passes retain output even without a question, and a steward
+  that ends without submitting leaves a cause in the outcome log.
+- The steward's durable digest keeps only a redacted, bounded summary of pass
+  output, and the output fields of a digest are erased once launch retention
+  has passed.
+
+## [0.229.1] - 2026-11-14
+
+### Fixed
+
+- A served Linear item whose assignment history names no user assignment (it holds no assignment of the person, or the assignment was made by an integration or an automation) is no longer read again on every dispatch tick. The answer is kept with the item's update time and reported with the same reason until the item changes; a failed or rate-limited history read is still read again on the next tick. **Consumer action:** none.
+
 ## [0.229.0] - 2026-11-13
 
 ### Added
@@ -7974,7 +8109,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.229.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.232.0...HEAD
+[0.232.0]: https://github.com/jig-harness/jig/compare/v0.231.0...v0.232.0
+[0.231.0]: https://github.com/jig-harness/jig/compare/v0.230.1...v0.231.0
+[0.230.1]: https://github.com/jig-harness/jig/compare/v0.230.0...v0.230.1
+[0.230.0]: https://github.com/jig-harness/jig/compare/v0.229.1...v0.230.0
+[0.229.1]: https://github.com/jig-harness/jig/compare/v0.229.0...v0.229.1
 [0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0
 [0.228.1]: https://github.com/jig-harness/jig/compare/v0.228.0...v0.228.1
 [0.228.0]: https://github.com/jig-harness/jig/compare/v0.227.2...v0.228.0

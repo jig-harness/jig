@@ -12,7 +12,9 @@
  *   end: the stage, the repository, the item or pull request, the account,
  *   the model, the duration, a drive's rounds, an outcome class from the
  *   closed list (`OUTCOME_CLASSES`) and a reason that carries the stage's
- *   own answer verbatim (the exit, the recorded result, or the last state);
+ *   own answer verbatim (the exit, the recorded result, or the last state),
+ *   and what the run's closing report says, with who wrote it (`by`), its
+ *   `cause` and writer also kept as columns;
  * - **event**: once per cause, timed when the tick observed it, for what
  *   the tick observed rather than what ended (a stalled pickup, a double
  *   claim, a stage drifting from its expectation, a session waiting, a stop
@@ -48,6 +50,8 @@ import {
   targetOf,
 } from "./launches.ts";
 import { sessionResultClass } from "./session-result-class.ts";
+import { type ReportFields, reportFields } from "./closing-report-store.ts";
+import { stewardNoSubmitCause } from "./pass-output.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -69,8 +73,8 @@ export const OUTCOME_CLASSES = [
 ] as const;
 export type OutcomeClass = (typeof OUTCOME_CLASSES)[number];
 
-/** One launch record's end. */
-export interface EndedRow {
+/** One launch record's end, with what its closing report says (`closing-report-store.ts`). */
+export interface EndedRow extends ReportFields {
   kind: "ended";
   key: string;
   at: string;
@@ -215,8 +219,8 @@ export function bucket(row: LogRow): string {
 export function insertRow(db: Database, row: LogRow): boolean {
   const done = db
     .query(
-      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target, cause, report_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING`,
     )
     .run(
@@ -231,6 +235,8 @@ export function insertRow(db: Database, row: LogRow): boolean {
       row.reason,
       JSON.stringify(row),
       row.target,
+      row.kind === "ended" ? (row.cause ?? null) : null,
+      row.kind === "ended" ? (row.by ?? null) : null,
     );
   return done.changes === 1;
 }
@@ -401,6 +407,10 @@ function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
+  // A steward that did not submit has no outcome, even if its retained output
+  // contains a Question line that the generic classifier can describe.
+  if (r.record.action === "steward" && r.result === null)
+    return sessionEndClass(r, endedAt);
   const result = sessionResultClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,
@@ -428,9 +438,13 @@ function sessionEndClass(
         : `its agent finished ${s.agent}`
       : goneWithoutExit(s);
   const wall = wallAtEnd(r, endedAt);
+  const reason =
+    r.record.action === "steward"
+      ? `steward ended without submitting; cause: ${stewardNoSubmitCause(s.kind === "ended" ? (s.exit.context ?? "") : "")}; ${how}`
+      : `no result recorded; ${how}`;
   return wall === null
-    ? { class: "died", reason: `no result recorded; ${how}` }
-    : { class: "quota wall", reason: `no result recorded; ${how}; ${wall}` };
+    ? { class: "died", reason }
+    : { class: "quota wall", reason: `${reason}; ${wall}` };
 }
 
 /** The class and reason of a record that ended, first match in table order. */
@@ -522,5 +536,6 @@ export function endedRow(
         ? (r.next ?? null)
         : derivedNext(record.action, placed.class, reason),
     ...aboutFields(about),
+    ...reportFields(r.report),
   };
 }

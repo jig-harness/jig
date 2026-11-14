@@ -471,7 +471,14 @@ Every process on the host shares each tracker credential's request budget
 While the tracker refuses the credential for its rate limit, no request
 leaves the host before the reset it named: a tick reports the tracker once
 as rate limited until then, the queue it shows is the last reading, and
-the pickups it would launch wait.
+the pickups it would launch wait. The forge is read the same way: a
+repository whose forge read is rate limited, unanswered or out of time
+does not fail the tick, and its report shows the last reading with its
+age, until the failure ledger counts `failures.notify_after` such ticks in
+a row (a rate limit before its reset is never counted). A forge or tracker
+that did not answer is asked nothing more in that tick, and the next tick
+sends it one request before it reads on
+([when an outside system refuses or does not answer](CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer)).
 
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
@@ -549,7 +556,35 @@ never held by it.
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch report <record> <token> <file>
 ```
+
+#### The closing report
+
+Every pickup, follow-up and steward pass ends by writing a
+[closing report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+a short `closing-report/v1` record of what it concluded, in the words of
+the agent that did the work: `concluded` (at most 600 characters), the
+`suggested_next` step and who takes it (`line`, `person` with the act they
+take, or `none`), a `question` with its framed `decision` when a person
+must decide, the `cause` when the run fell short (`needs-person`,
+`refused`, `tool-failed`, `environment`, `scope`, `deadline`, `startup`,
+`usage-limit`, `crashed` or `unknown`) and up to 10 `evidence` references
+(`pr:#12`, `commit:<sha>`, `item:<key>`, `path:<path>`, `run:<CI run
+address>`), never contents. The prompt names the command,
+`jig dispatch report <record> <token> <file>`, and asks for the report as
+the pass's last act; a pickup records its result as soon as its drive is
+armed and its report at the end. The command replaces email addresses,
+account identifiers and tokens or other credential-shaped values (a
+`Bearer` value, a vendor token such as `ghp_…`, a JSON Web Token, a value
+named as a secret) with `<redacted>`, checks the record and names
+everything wrong in one refusal, so the pass can fix it and run the command
+again. It may run more than once, before or after the result: the last
+report that passes stands, and none touches the result. The launch record
+keeps the report whole; the outcome log's `ended` row keeps its fields and
+who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
+left none), with `cause` and `by` as columns. A run that ends without a
+report still leaves its `Question:` line.
 
 #### Every need is a decision
 
@@ -621,7 +656,7 @@ terminal tab running the dispatcher's wrapper, as the account's vendor's
 non-interactive command (`claude -p`, `codex exec`), bound to the admitted
 account through its configuration directory, under the pass deadline, and
 with the host's own permission settings (`drive.pass_args`, and
-`drive.codex_bypass` for a Codex account; see
+`drive.codex_bypass` and `drive.codex_pass_args` for a Codex account; see
 [a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)), never with
 one the dispatcher adds. So it starts on Orca, which cannot yet bind an
 interactive session to an account. A hidden-marker comment on the merged
@@ -681,6 +716,14 @@ host, and is notified once the record is gone (past `receipts_days`). An untagge
 question, or a failure of the run again, is notified; a follow-up is never
 run again more than once by a death and a routine question together.
 
+A follow-up pass that meets a rate limit (the forge's, or a tracker script
+that exits `5`) asks nothing and records `waits --until <time>`, the time
+the limit resets. Its marker stays until then, so no host starts the
+follow-up early; after the reset the tick releases it and a later tick
+starts the follow-up again as a first run, outside the recovery budget. The
+third wait in a row is notified as a failed follow-up that names the rate
+limit.
+
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.
 Its account stays out of admission for `wall_backoff`, and its marker is
@@ -705,7 +748,9 @@ age and whose claim it is, to mark done or delete.
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit; a
 re-arm that failed without moving its ledger, with the close-and-reopen
-recovery where the pull request is behind its branch;
+recovery where the pull request is behind its branch; a re-arm or takeover
+that `drive.ts` refused as a usage error on the ledger as it still is, with
+the drive's message, which is not launched again until the ledger moves;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`; and a
 pull request that enters Ready to merge. Each message
@@ -2031,7 +2076,12 @@ list of scouts that run before it, not a label to a scout.
 
 **Add `.context/` to `.gitignore`.** A drive keeps working files there, at
 the root of the working tree, and refuses to push or certify a tree with
-untracked files.
+untracked files. The skills write throwaway working files under
+`.context/scratch/`, and a working directory of Jig's that nothing needs once
+the work is finished carries a `CACHEDIR.TAG` file; `jig gc` keeps anything
+else under `.context/` until it is preserved, except a drive's handoff file
+(`pr-drive-<PR>.md`), which it sets aside whole without archiving: keep nothing
+you need in it.
 
 **Continuous integration.** Without configuration a drive waits, on the final
 head, for the checks the base branch's protection requires, and every push
@@ -2137,12 +2187,33 @@ them together.
 - **Skills** work in Codex as in Claude Code. Codex does not fill in
   `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
   skill's own directory.
-- **The turn-budget hook runs once trusted.** Codex reads the plugin's
-  `hooks/hooks.json` but skips a plugin's hooks until their current
-  definition is trusted (`/hooks`), and asks again when a release changes
-  them. The guard counts distinct response ids from Codex token usage
-  records, resets at each task-start event, and warns near the configured
-  budget. The warning does not impose a runtime turn cap.
+- **The turn-budget hook is registered in Codex's own `hooks.json`.** Codex
+  skips a plugin's hooks until their current definition and the plugin's
+  contents are trusted (`/hooks`), and asks again whenever a release changes
+  any file of the plugin, so the Codex plugin ships none
+  (`.codex-plugin/plugin.json` names an empty hooks file). `jig upgrade`
+  registers the guard in `$CODEX_HOME/hooks.json` (`~/.codex` by default)
+  instead, as one `PreToolUse` entry whose command never changes: it runs
+  `~/.local/state/jig/hooks/<home key>/codex-turn-budget-guard.ts` (one directory per Codex home, started with Bun's environment files and checkout configuration off), which runs the guard
+  of the installed plugin copy. Codex trusts a hook there by its definition
+  alone, so approve it once with `/hooks` and every later release keeps that
+  approval. Another Codex home (an account's own) gets the entry when
+  `jig upgrade --codex` runs with `CODEX_HOME` set to it, and a host that
+  rewrites that file loses the entry until the next upgrade writes it again.
+  `jig uninstall --machine --yes` removes the entry and the shim. The guard
+  counts distinct response ids from Codex token usage records, resets at each
+  task-start event, and warns near the configured budget. The warning does not
+  impose a runtime turn cap.
+- **An unattended Codex pass skips hooks nobody approved.** Codex runs only
+  trusted hooks, and a headless `codex exec` cannot ask. Approve the guard once
+  per Codex home before the first unattended pass (`/hooks` in an interactive
+  session of that home). Where a host cannot, and it vets the hooks that home
+  loads itself, it sets
+  [`drive.codex_pass_args: [--dangerously-bypass-hook-trust]`](CONFIGURATION.md#a-hosts-opt-in-to-bypass)
+  in its user file, and every Codex pass it arms or the dispatcher launches
+  runs the enabled hooks without persisted trust. `drive.codex_bypass` does
+  not imply it. The flag skips Codex's review of every hook source, the
+  user's and a repository's among them.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a
@@ -2420,7 +2491,8 @@ plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
 plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
-plugin/hooks/hooks.json                  the agent-runtime hooks both tools register
+plugin/hooks/hooks.json                  the agent-runtime hooks Claude Code registers
+plugin/hooks/codex-hooks.json            the Codex plugin's hooks file, empty: jig upgrade registers Codex's
 plugin/hooks/<name>.ts                   the hook scripts, each tested in hooks/__tests__/
 ```
 

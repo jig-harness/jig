@@ -335,7 +335,6 @@ describe("Jira adapter: fields read as labels", () => {
       routes({
         "GET field": new JiraApiError("not found", {
           status: 404,
-          notFound: true,
         }),
         "GET issue/ENG-1": TAGGED,
       }),

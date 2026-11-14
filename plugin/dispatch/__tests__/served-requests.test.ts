@@ -17,8 +17,17 @@ import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { linearTracker } from "../../skills/do-item/scripts/lib/tracker/linear.ts";
 import { parseTrackerConfig } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
+import { defaultFacets } from "../../skills/do-item/scripts/lib/tracker/facets/config.ts";
 import { FakeLinear } from "./served-linear-fake.ts";
 
+function nativeSource(
+  tracker: Tracker,
+): NonNullable<Tracker["dispatchSource"]> {
+  const source = tracker.dispatchSource;
+  if (source === undefined)
+    throw new Error("the adapter must expose native dispatch reads");
+  return source;
+}
 const PERSON = "person@example.com";
 const people = [
   { name: "Person", forge: ["person"], tracker: { linear: PERSON } },
@@ -120,8 +129,8 @@ describe("a served queue's cost in tracker requests", () => {
     expect(
       fake.requests.filter((r) => r !== "TrackerAssignmentHistory"),
     ).toEqual([
-      "TrackerQueue",
-      "TrackerQueue",
+      "TrackerNativeQueue",
+      "TrackerNativeQueue",
       "TrackerQueueByKey",
       "TrackerQueueByKey",
     ]);
@@ -187,6 +196,107 @@ describe("a served queue's cost in tracker requests", () => {
     );
   });
 
+  it("keeps a history that names no user assignment until the item changes", async () => {
+    for (const history of ["none", "no-user"] as const) {
+      const fake = queue();
+      fake.add({ identifier: "ENG-900", assignee: PERSON, history });
+      const tracker = fake.tracker();
+      const cache = memoryCache();
+      const first = await tick(tracker, cache, 0);
+      const row = first.unplaced.find((u) => u.target === "ENG-900");
+      expect(row?.reason).toContain(
+        history === "none"
+          ? "its history holds no assignment of"
+          : "its assignment was made by no user",
+      );
+      const mark = fake.count();
+      const second = await tick(tracker, cache, 2);
+      expect(fake.requests.slice(mark)).toEqual(["TrackerChanges"]);
+      expect(second.unplaced.find((u) => u.target === "ENG-900")).toEqual(row);
+      expect(second.wanted).toHaveLength(50);
+
+      // The item changes: its history is read again.
+      fake.touch("ENG-900", at(3));
+      const changed = fake.count();
+      await tick(tracker, cache, 4);
+      expect(fake.requests.slice(changed)).toContain(
+        "TrackerAssignmentHistory",
+      );
+    }
+  });
+
+  it("reads neither the children nor the description of an epic no user assigned", async () => {
+    const fake = queue();
+    fake.add({
+      identifier: "ENG-900",
+      assignee: PERSON,
+      labels: ["epic"],
+      history: "none",
+    });
+    fake.add({ identifier: "ENG-901", parent: "ENG-900" });
+    const read = await tick(fake.tracker(), memoryCache(), 0);
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "ENG-900",
+        reason: expect.stringContaining("its history holds no assignment of"),
+      }),
+    );
+    expect(fake.requests).not.toContain("TrackerOpenChildren");
+    expect(fake.requests).not.toContain("TrackerIssue");
+  });
+
+  it("reads a malformed history again on the next tick", async () => {
+    for (const history of ["no-actor", "bad-target"] as const) {
+      const fake = queue();
+      fake.add({ identifier: "ENG-900", assignee: PERSON, history });
+      const tracker = fake.tracker();
+      const cache = memoryCache();
+      await tick(tracker, cache, 0);
+      const mark = fake.count();
+      await tick(tracker, cache, 2);
+      expect(fake.requests.slice(mark)).toContain("TrackerAssignmentHistory");
+    }
+  });
+
+  it("reads a failed history again on the next tick", async () => {
+    const fake = queue();
+    fake.add({ identifier: "ENG-900", assignee: PERSON, history: "fail" });
+    const tracker = fake.tracker();
+    const cache = memoryCache();
+    const first = await tick(tracker, cache, 0);
+    expect(first.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "ENG-900",
+        reason: expect.stringContaining("cannot be read"),
+      }),
+    );
+    const mark = fake.count();
+    await tick(tracker, cache, 2);
+    expect(fake.requests.slice(mark)).toContain("TrackerAssignmentHistory");
+  });
+
+  it("reads a rate-limited history again on the next tick", async () => {
+    const fake = queue();
+    fake.add({ identifier: "ENG-900", assignee: PERSON });
+    const base = fake.tracker();
+    let refuse = true;
+    const tracker: Tracker = {
+      ...base,
+      assignedBy: async (key, assignee) => {
+        if (refuse && key === "ENG-900")
+          throw new TrackerRateLimited("linear", T0 + 60_000, "RATELIMITED");
+        return base.assignedBy(key, assignee);
+      },
+    };
+    const cache = memoryCache();
+    const first = await tick(tracker, cache, 0);
+    expect(first.limitedUntil).toBeDefined();
+    refuse = false;
+    const second = await tick(tracker, cache, 2);
+    expect(second.limitedUntil).toBeUndefined();
+    expect(second.wanted.map((w) => w.key)).toContain("ENG-900");
+  });
+
   it("ignores a change to another team's issue assigned to the same person", async () => {
     const fake = queue();
     const tracker = fake.tracker();
@@ -222,7 +332,7 @@ describe("a served queue's cost in tracker requests", () => {
     await tick(tracker, cache, 2);
     const mark = fake.count();
     await tick(tracker, cache, 16);
-    expect(fake.requests.slice(mark)).toContain("TrackerQueue");
+    expect(fake.requests.slice(mark)).toContain("TrackerNativeQueue");
     expect(fake.requests.slice(mark)).not.toContain("TrackerChanges");
   });
 
@@ -254,19 +364,63 @@ describe("a served queue's cost in tracker requests", () => {
     expect((await run(2)).requests).toBeLessThanOrEqual(3);
   });
 
-  it("reads a queue per configuration when repositories map the tracker differently", async () => {
+  it("shares each operation across three state and facet configurations and projects each independently", async () => {
     const fake = queue();
+    for (const row of fake.issues.values()) row.labels.push("effort");
+    const configured = (size: string, backlog: string) => {
+      const facets = defaultFacets("linear");
+      facets.size = {
+        facet: "size",
+        store: "label",
+        why: "configured",
+        values: [size],
+        labels: [[size, ["effort"]]],
+        field: null,
+        map: null,
+      };
+      return linearTracker({
+        team: "ENG",
+        transport: fake.transport,
+        states: { ...parseTrackerConfig({}).states, backlog },
+        facets,
+      });
+    };
+    const trackers = [
+      configured("small", "Backlog"),
+      configured("medium", "Queued"),
+      configured("large", "Later"),
+    ];
     const cache = memoryCache();
-    const views: ServedViews = new Map();
-    const a = { ...fake.tracker(), configKey: "a" };
-    const b = { ...fake.tracker(), configKey: "b" };
-    const mark = fake.count();
-    await Promise.all([tick(a, cache, 0, views), tick(b, cache, 0, views)]);
-    const both = fake.count() - mark;
+    const run = async (minutes: number) => {
+      const views: ServedViews = new Map();
+      const mark = fake.count();
+      const readings = await Promise.all(
+        trackers.map((t) => tick(t, cache, minutes, views)),
+      );
+      return { readings, operations: fake.requests.slice(mark) };
+    };
+    const cold = await run(0);
     const alone = queue();
     await tick(alone.tracker(), memoryCache(), 0);
-    expect(both).toBeGreaterThan(alone.count());
-    expect(views.size).toBe(2);
+    expect(cold.operations.length).toBe(alone.count());
+    expect(
+      cold.operations.filter((op) => op === "TrackerAssignmentHistory"),
+    ).toHaveLength(50);
+    for (const [i, tracker] of trackers.entries()) {
+      const isolated = await tick(tracker, memoryCache(), 0);
+      expect(cold.readings[i]).toEqual(isolated);
+      expect(cold.readings[i]?.wanted[0]?.queueIssue?.size).toBe(
+        ["small", "medium", "large"][i] ?? "",
+      );
+    }
+    expect((await run(2)).operations).toEqual(["TrackerChanges"]);
+    const full = await run(16);
+    expect(full.operations).toEqual([
+      "TrackerNativeQueue",
+      "TrackerNativeQueue",
+      "TrackerQueueByKey",
+      "TrackerQueueByKey",
+    ]);
   });
 
   it("asks for every working state, a separately named pr_open included", async () => {
@@ -286,7 +440,8 @@ describe("a served queue's cost in tracker requests", () => {
         );
       },
     };
-    await tick(tracker, memoryCache(), 0);
+    const { dispatchSource: _native, ...legacy } = tracker;
+    await tick(legacy, memoryCache(), 0);
     expect(asked[0]).toContain("pr_open");
     expect(asked[0]).toContain("in_progress");
   });
@@ -299,6 +454,7 @@ describe("a served queue's cost in tracker requests", () => {
     };
     const limited: Tracker = {
       ...fake.tracker(),
+      dispatchSource: { ...nativeSource(fake.tracker()), queue: refuse },
       assignedIssues: refuse,
       assignedBy: refuse,
       queueIssues: refuse,
@@ -331,8 +487,11 @@ describe("a served queue's cost in tracker requests", () => {
     const reset = T0 + 30 * 60_000;
     const limited: Tracker = {
       ...fake.tracker(),
-      queueIssues: async () => {
-        throw new TrackerRateLimited("linear", reset, "RATELIMITED");
+      dispatchSource: {
+        ...nativeSource(fake.tracker()),
+        queue: async () => {
+          throw new TrackerRateLimited("linear", reset, "RATELIMITED");
+        },
       },
     };
     const read = await readPickups(

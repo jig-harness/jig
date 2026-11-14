@@ -302,7 +302,7 @@ export function gitHubAttachments(client: Client): TrackerAttachments {
     });
   }
   const missing = (message: string) =>
-    new GitHubApiError(message, { notFound: true });
+    new GitHubApiError(message, { code: "not-found" });
   async function one(key: string, id: string, signal?: AbortSignal) {
     const all = await held(key, signal);
     const a = attachmentOf(

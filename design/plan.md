@@ -242,10 +242,9 @@ or, where only a person can act, raised once for its cause.
 ### 55. Outbound calls: one governed transport for every system Jig calls
 
 Jig's code calls a forge, the issue trackers and the reflection stores,
-and each integration handles their limits and outages on its own: one
-shared budget that only the tracker adapters feed, a separate
-classification of failures in each transport, retries in some, and no
-record of what an operation costs. On a dispatch host that showed as a
+and each integration handles their limits on its own: one shared budget
+that only the tracker adapters feed, and no record of what an operation
+costs. On a dispatch host that showed as a
 tracker credential held at its hourly allowance by one unbounded nested
 list, a repository the forge could not answer a full page of and so was
 never read, and ticks that exited 1 for refusals that clear by waiting.
@@ -257,17 +256,14 @@ request per step:
 
 - **A page that shrinks**: a paged read asks again for half the page when
   the system runs out of time, and keeps the size that read.
-- **Failure classes and one retry**: every transport returns one of a
-  closed set of classes, reads are retried with one backoff, and the tick
-  and the passes wait out a class that clears by waiting.
 - **The cost ledger and its reports**: requests, cost and time per
   operation and caller; a line per system in the tick report, a
   `jig budget` command, and one need when a quota is about to run out.
 - **GitHub in the budget record**: its hourly and secondary limits beside
   the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,
-  identical reads in a run sent once, one queue reading per tracker team
-  and credential, reads by key in one request.
+  identical reads in a run sent once and reads by key in one request,
+  through the shared library that the existing queue snapshots adopt.
 - **Gates and a review lens**: no call leaves by another door than a
   transport, no query selects a list without a page size or passes its
   declared cost ceiling, and a change to an integration is reviewed
@@ -790,10 +786,11 @@ and their meanings from the code's own tables, with a data file per chapter
 and JSON Schemas for the shapes outside readers parse, held to the code by
 its `--check` in the generated-file inventory; the skills' restatements
 turned into links, or kept as held restatements the gate checks; and the
-chapters rendered on the site. Built in steps, one pull request each: the
-generator, its gate and the exit-code chapter first, then the other stable
-chapters, their schemas, their restatements as links, the provisional
-chapters, and the site's pages.
+chapters rendered on the site. Built in steps, one pull request each;
+built so far: the generator, its gate and the chapter on the drive's end
+states and exit codes ([plugin/protocol/](../plugin/protocol/README.md)).
+Open, in order: the other stable chapters, their schemas, their
+restatements as links, the provisional chapters, and the site's pages.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the

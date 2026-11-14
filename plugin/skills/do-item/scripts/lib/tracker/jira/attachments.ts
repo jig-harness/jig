@@ -54,7 +54,7 @@ export function jiraAttachments(transport: JiraTransport): TrackerAttachments {
     );
   }
   const missing = (message: string) =>
-    new JiraApiError(message, { status: 404, notFound: true });
+    new JiraApiError(message, { status: 404 });
 
   return {
     listAttachments: list,
@@ -63,7 +63,7 @@ export function jiraAttachments(transport: JiraTransport): TrackerAttachments {
       const form = new FormData();
       form.append(
         "file",
-        new Blob([file.bytes], { type: file.contentType }),
+        new Blob([new Uint8Array(file.bytes)], { type: file.contentType }),
         file.filename,
       );
       let answer: unknown;

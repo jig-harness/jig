@@ -35,7 +35,7 @@ import type {
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { batchItemsOf } from "../queue-batch.ts";
-import { admittedVendor } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
 import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
@@ -241,7 +241,7 @@ async function launchOne(
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     passTimeoutSec: deadlineSec(ctx),
-    codexBypass: state.codexOptIn.on,
+    ...codexLaunchFields(state.codexOptIn),
     headless: true,
     ...served,
     ...(batch === undefined ? {} : { batchItems: batch }),

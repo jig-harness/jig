@@ -184,7 +184,7 @@ describe("one query per repository", () => {
     ]);
     const receipt = JSON.parse(r.stdout) as TickReceipt;
     expect(forgeDetail(receipt)).toBe(
-      "the pull requests cannot be read: gh pr list exited 1: gh: HTTP 502; the repository query did not read either: gh api graphql exited 1: gh: HTTP 502",
+      "the pull requests cannot be read: gh pr list exited 1: gh: HTTP 422; the repository query did not read either: gh api graphql exited 1: gh: HTTP 422",
     );
   });
 });
