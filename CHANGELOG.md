@@ -394,6 +394,26 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.238.5] - 2026-11-14
+
+### Added
+
+- Dispatcher regression coverage verifies that a live driver prevents a second pass from starting on the same ledger facts.
+
+### Fixed
+
+- On Jira, with type kept in the issue types (`issue_tracker.facets.type`
+  `store: native`), changing an issue's type to an issue type of another
+  workflow failed with Jira's bare `400 issuetype: The issue type selected is
+  invalid`. The adapter now reads the issue's edit screen first and, when it lists
+  the issue type choices without the new one, refuses the change before
+  anything is written, naming the facet, both issue types
+  and the remedies: move the issue in Jira, or keep type in labels or a
+  field.
+  When the edit screen omits the issue type choice list (or has no fields), the change still goes to
+  Jira, and its 400 on `issuetype` is reported with the same explanation; an
+  empty offered list refuses every target.
+
 ## [0.238.4] - 2026-11-14
 
 ### Fixed
@@ -8369,7 +8389,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.5...HEAD
+[0.238.5]: https://github.com/jig-harness/jig/compare/v0.238.4...v0.238.5
 [0.238.4]: https://github.com/jig-harness/jig/compare/v0.238.3...v0.238.4
 [0.238.3]: https://github.com/jig-harness/jig/compare/v0.238.2...v0.238.3
 [0.238.2]: https://github.com/jig-harness/jig/compare/v0.238.1...v0.238.2
