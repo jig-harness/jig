@@ -1,6 +1,7 @@
 import { writeState } from "./state-rows.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import { advisoryKey } from "../scripts/lib/driver/advisory-ci.ts";
+import type { CheckRun } from "../scripts/lib/status/evidence.ts";
 /** Exercise final-CI dispositions with the real policy reader and durable park writer. */
 import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -82,6 +83,70 @@ async function child(f: ReturnType<typeof setup>, source: string) {
   expectSpawnExit(r, 0);
   return r;
 }
+const minuteAt = (minute: number) => `2026-11-13T09:0${minute}:00Z`;
+/** One workflow run of `workflow-runs.json`, in check suite `id`. */
+function run(
+  id: number,
+  conclusion: string | null,
+  minute: number,
+  o: { status?: string; workflowId?: number; attempt?: number } = {},
+) {
+  const at = minuteAt(minute);
+  return {
+    id,
+    workflow_id: o.workflowId ?? 1,
+    status: o.status ?? "completed",
+    conclusion,
+    check_suite_id: id,
+    created_at: at,
+    run_started_at: at,
+    run_attempt: o.attempt ?? 1,
+  };
+}
+function writeRuns(
+  f: ReturnType<typeof setup>,
+  runs: ReturnType<typeof run>[],
+) {
+  writeFileSync(
+    join(f.dir, "workflow-runs.json"),
+    JSON.stringify({ workflow_runs: runs }),
+  );
+}
+/** One GitHub Actions check run on the head. */
+function check(
+  name: string,
+  id: number,
+  conclusion: string | null,
+  minute: number,
+  status = "completed",
+): CheckRun {
+  return {
+    name,
+    id,
+    status,
+    conclusion,
+    app: "github-actions",
+    title: "",
+    started: minuteAt(minute),
+  };
+}
+/** The CI report for `checks`, each placed in check suite `id` when `suites`. */
+async function report(
+  f: ReturnType<typeof setup>,
+  checks: CheckRun[],
+  suites = false,
+) {
+  const runs = suites ? checks.map((c) => ({ ...c, suiteId: c.id })) : checks;
+  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,${JSON.stringify(runs)},false,"999")));`;
+  return JSON.parse((await child(f, source)).stdout);
+}
+async function releaseHold(f: ReturnType<typeof setup>) {
+  const path = join(f.dir, "pr-view.json");
+  const view = await Bun.file(path).json();
+  view.labels = [];
+  writeFileSync(path, JSON.stringify(view));
+}
+const evidence = join(SCRIPTS, "lib/status/evidence.ts");
 const convergence = join(SCRIPTS, "lib/driver/convergence-ci.ts");
 const heldModule = join(SCRIPTS, "lib/held-checks.ts");
 const storeModule = join(SCRIPTS, "lib/driver/rearm.ts");
@@ -97,9 +162,7 @@ test("held M13 and named checks wait without CI repair, release restores failure
   );
   expect(r.stdout).toContain('"custom sentinel","gate"');
   expect(r.stdout).toContain('"result":"continue","repairs":0');
-  const view = await Bun.file(join(f.dir, "pr-view.json")).json();
-  view.labels = [];
-  writeFileSync(join(f.dir, "pr-view.json"), JSON.stringify(view));
+  await releaseHold(f);
   const released = await child(
     f,
     `import {liveHeldChecks} from ${JSON.stringify(heldModule)}; import {evaluateFinalCi} from ${JSON.stringify(convergence)};console.log(JSON.stringify(await liveHeldChecks("999")));${evaluate(["gate", "custom sentinel"], "failing: gate, custom sentinel")}`,
@@ -195,235 +258,104 @@ test("a recorded advisory waiver stops without repair or certification", async (
 
 test("the CI report marks held failures and restores their repair provenance on release", async () => {
   const f = setup();
-  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=["gate","custom sentinel"].map((name,i)=>({name,id:i+1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z"}));console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
-  const held = JSON.parse((await child(f, source)).stdout);
+  const checks = [
+    check("gate", 1, "failure", 0),
+    check("custom sentinel", 2, "failure", 0),
+  ];
+  const held = await report(f, checks);
   expect(held.ci).toBe("held: custom sentinel, gate");
   expect(held.failingCheckNames).toEqual([]);
-  const path = join(f.dir, "pr-view.json");
-  const view = await Bun.file(path).json();
-  view.labels = [];
-  writeFileSync(path, JSON.stringify(view));
-  const released = JSON.parse((await child(f, source)).stdout);
+  await releaseHold(f);
+  const released = await report(f, checks);
   expect(released.ci).toBe("failing: custom sentinel, gate");
   expect(released.failingCheckRunNames).toEqual(["custom sentinel", "gate"]);
 });
 
 test("a held selected failure does not resurrect failures or hide cancellation", async () => {
   const f = setup();
-  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z"},{name:"gate",id:2,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z"}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
-  const held = JSON.parse((await child(f, source)).stdout);
+  const first = check("gate", 1, "failure", 0);
+  const held = await report(f, [first, check("gate", 2, "failure", 1)]);
   expect(held.ci).toBe("held: gate");
   expect(held.failingCheckNames).toEqual([]);
-  const cancelled = JSON.parse(
-    (
-      await child(
-        f,
-        source.replace(
-          'conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z"}',
-          'conclusion:"cancelled",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z"}',
-        ),
-      )
-    ).stdout,
-  );
+  const cancelled = await report(f, [first, check("gate", 2, "cancelled", 1)]);
   expect(cancelled.ci).toBe("cancelled: gate");
 });
 
 test("a held selected failure keeps superseded pending and cancelled attempts out of the verdict", async () => {
   const f = setup();
-  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"in_progress",conclusion:null,app:"github-actions",title:"",started:"2026-11-13T09:00:00Z"},{name:"gate",id:2,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z"}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
-  const pending = JSON.parse((await child(f, source)).stdout);
+  const latest = check("gate", 2, "failure", 1);
+  const pending = await report(f, [
+    check("gate", 1, null, 0, "in_progress"),
+    latest,
+  ]);
   expect(pending.ci).toBe("held: gate");
   expect(pending.failingCheckNames).toEqual([]);
-  const cancelled = JSON.parse(
-    (
-      await child(
-        f,
-        source.replace(
-          'status:"in_progress",conclusion:null',
-          'status:"completed",conclusion:"cancelled"',
-        ),
-      )
-    ).stdout,
-  );
+  const cancelled = await report(f, [check("gate", 1, "cancelled", 0), latest]);
   expect(cancelled.ci).toBe("held: gate");
   expect(cancelled.failingCheckNames).toEqual([]);
 });
 
 test("a held failure retains cross-name replacement evidence in its later check", async () => {
   const f = setup();
-  writeFileSync(
-    join(f.dir, "workflow-runs.json"),
-    JSON.stringify({
-      workflow_runs: [
-        {
-          id: 1,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "cancelled",
-          check_suite_id: 1,
-          created_at: "2026-11-13T09:00:00Z",
-          run_started_at: "2026-11-13T09:00:00Z",
-          run_attempt: 1,
-        },
-        {
-          id: 2,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "failure",
-          check_suite_id: 2,
-          created_at: "2026-11-13T09:01:00Z",
-          run_started_at: "2026-11-13T09:01:00Z",
-          run_attempt: 1,
-        },
-      ],
-    }),
-  );
-  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"test",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z",suiteId:1},{name:"gate",id:2,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z",suiteId:2}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
-  const report = JSON.parse((await child(f, source)).stdout);
-  expect(report.ci).toBe("held: gate");
-  expect(report.failingCheckNames).toEqual([]);
+  writeRuns(f, [run(1, "cancelled", 0), run(2, "failure", 1)]);
+  const checks = [
+    check("test", 1, "failure", 0),
+    check("gate", 2, "failure", 1),
+  ];
+  const ci = await report(f, checks, true);
+  expect(ci.ci).toBe("held: gate");
+  expect(ci.failingCheckNames).toEqual([]);
 });
 
 test("a held failure retains a passing cross-name replacement witness", async () => {
   const f = setup();
-  writeFileSync(
-    join(f.dir, "workflow-runs.json"),
-    JSON.stringify({
-      workflow_runs: [
-        {
-          id: 1,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "failure",
-          check_suite_id: 1,
-          created_at: "2026-11-13T09:00:00Z",
-          run_started_at: "2026-11-13T09:00:00Z",
-          run_attempt: 1,
-        },
-        {
-          id: 2,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "cancelled",
-          check_suite_id: 2,
-          created_at: "2026-11-13T09:01:00Z",
-          run_started_at: "2026-11-13T09:01:00Z",
-          run_attempt: 1,
-        },
-        {
-          id: 3,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "success",
-          check_suite_id: 3,
-          created_at: "2026-11-13T09:02:00Z",
-          run_started_at: "2026-11-13T09:02:00Z",
-          run_attempt: 1,
-        },
-        {
-          id: 4,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "skipped",
-          check_suite_id: 4,
-          created_at: "2026-11-13T09:03:00Z",
-          run_started_at: "2026-11-13T09:03:00Z",
-          run_attempt: 1,
-        },
-      ],
-    }),
-  );
-  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z",suiteId:1},{name:"gate",id:2,status:"completed",conclusion:"cancelled",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z",suiteId:2},{name:"test",id:3,status:"completed",conclusion:"success",app:"github-actions",title:"",started:"2026-11-13T09:02:00Z",suiteId:3},{name:"test",id:4,status:"completed",conclusion:"skipped",app:"github-actions",title:"",started:"2026-11-13T09:03:00Z",suiteId:4}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
-  const report = JSON.parse((await child(f, source)).stdout);
-  expect(report.ci).toBe("held: gate");
-  expect(report.failingCheckNames).toEqual([]);
+  writeRuns(f, [
+    run(1, "failure", 0),
+    run(2, "cancelled", 1),
+    run(3, "success", 2),
+    run(4, "skipped", 3),
+  ]);
+  const checks = [
+    check("gate", 1, "failure", 0),
+    check("gate", 2, "cancelled", 1),
+    check("test", 3, "success", 2),
+    check("test", 4, "skipped", 3),
+  ];
+  const ci = await report(f, checks, true);
+  expect(ci.ci).toBe("held: gate");
+  expect(ci.failingCheckNames).toEqual([]);
 });
 
 test("a later held failure in another group still replaces a cancelled run between held failures", async () => {
   const f = setup();
-  writeFileSync(
-    join(f.dir, "workflow-runs.json"),
-    JSON.stringify({
-      workflow_runs: [
-        {
-          id: 1,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "failure",
-          check_suite_id: 1,
-          created_at: "2026-11-13T09:01:00Z",
-          run_started_at: "2026-11-13T09:01:00Z",
-          run_attempt: 1,
-        },
-        {
-          id: 2,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "cancelled",
-          check_suite_id: 2,
-          created_at: "2026-11-13T09:02:00Z",
-          run_started_at: "2026-11-13T09:02:00Z",
-          run_attempt: 1,
-        },
-        {
-          id: 3,
-          workflow_id: 1,
-          status: "completed",
-          conclusion: "failure",
-          check_suite_id: 3,
-          created_at: "2026-11-13T09:03:00Z",
-          run_started_at: "2026-11-13T09:03:00Z",
-          run_attempt: 1,
-        },
-      ],
-    }),
-  );
-  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z",suiteId:1},{name:"gate",id:2,status:"completed",conclusion:"cancelled",app:"github-actions",title:"",started:"2026-11-13T09:02:00Z",suiteId:2},{name:"custom sentinel",id:3,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:03:00Z",suiteId:3}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
-  const report = JSON.parse((await child(f, source)).stdout);
-  expect(report.ci).toBe("held: custom sentinel, gate");
-  expect(report.failingCheckNames).toEqual([]);
+  writeRuns(f, [
+    run(1, "failure", 1),
+    run(2, "cancelled", 2),
+    run(3, "failure", 3),
+  ]);
+  const checks = [
+    check("gate", 1, "failure", 1),
+    check("gate", 2, "cancelled", 2),
+    check("custom sentinel", 3, "failure", 3),
+  ];
+  const ci = await report(f, checks, true);
+  expect(ci.ci).toBe("held: custom sentinel, gate");
+  expect(ci.failingCheckNames).toEqual([]);
 });
 
 test("a held failure leaves an independently rerunning suite pending", async () => {
   const f = setup();
-  writeFileSync(
-    join(f.dir, "workflow-runs.json"),
-    JSON.stringify({
-      workflow_runs: [
-        {
-          id: 1,
-          workflow_id: 1,
-          status: "in_progress",
-          conclusion: null,
-          check_suite_id: 1,
-          created_at: "2026-11-13T09:00:00Z",
-          run_started_at: "2026-11-13T09:00:00Z",
-          run_attempt: 2,
-        },
-        {
-          id: 2,
-          workflow_id: 2,
-          status: "completed",
-          conclusion: "failure",
-          check_suite_id: 2,
-          created_at: "2026-11-13T09:01:00Z",
-          run_started_at: "2026-11-13T09:01:00Z",
-          run_attempt: 1,
-        },
-      ],
-    }),
-  );
-  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z",suiteId:1},{name:"gate",id:2,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z",suiteId:2}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
-  const report = JSON.parse((await child(f, source)).stdout);
-  expect(report.ci).toBe("pending: gate");
-  expect(report.failingCheckNames).toEqual([]);
+  writeRuns(f, [
+    run(1, null, 0, { status: "in_progress", workflowId: 1, attempt: 2 }),
+    run(2, "failure", 1, { workflowId: 2 }),
+  ]);
+  const checks = [
+    check("gate", 1, "failure", 0),
+    check("gate", 2, "failure", 1),
+  ];
+  const ci = await report(f, checks, true);
+  expect(ci.ci).toBe("pending: gate");
+  expect(ci.failingCheckNames).toEqual([]);
 });
 
 test("mixed failure provenance excludes advisory-only runs from the repair channel", async () => {
