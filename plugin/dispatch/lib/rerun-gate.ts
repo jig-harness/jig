@@ -6,10 +6,13 @@
  * when it ends, so the run read is the tick before this one; a host with no
  * receipt yet has failed nothing.
  *
- * While the check fails the follow-up is held as it stands: its marker is not
- * released, nothing is run again, and no failed follow-up is notified. What a
- * person sees is the host's own need, the `ticks-failing` or
- * `repository-failing` notice of the cause (`failure-notices.ts`).
+ * While the check fails, every death of this host's follow-ups that is not
+ * itself a run again, whatever its age, and every unwritten result is held as
+ * it stands: its marker is not released, nothing is run again, and no failed
+ * follow-up is notified. What a person sees is the host's own need, the
+ * `ticks-failing` or `repository-failing` notice of the cause
+ * (`failure-notices.ts`). Once the check passes, a death's age window, the
+ * session lease, applies again: a plain death older than it goes to a person.
  */
 import { lastRunCheck } from "../../runtime/last-run.ts";
 import { lastTick, stateRoot } from "../receipts.ts";

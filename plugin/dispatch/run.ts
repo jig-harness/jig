@@ -132,7 +132,7 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
-import { newerStateRefusal } from "./lib/state.ts";
+import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
@@ -631,8 +631,9 @@ async function finishRun(
     });
   } catch (error) {
     // A pass's end the database refused is the host's fault: the evidence outside it lets the tick tell that from a pass that failed.
-    if (!isDrive(record))
-      writeUnwritten(stateRoot(), id, record.token, "exit", failureText(error));
+    const why = stateDbFailure(error);
+    if (!isDrive(record) && why !== null)
+      writeUnwritten(stateRoot(), id, record.token, "exit", why);
     throw error;
   }
   await endSharedClaim(id);

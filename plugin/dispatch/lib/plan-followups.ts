@@ -19,7 +19,8 @@
  * | the same, stale, a claim on it released before | notified to a person, never released twice |
  * | this host's, its outcome done | quiet: done |
  * | this host's, its launch record still holding | running |
- * | this host's, its pass died with no result and no question within the session lease, or could not record its result or exit on this host at any age (whatever it said), not itself a run again, launched while `failures.rerun_died` was not `0` | running: while the host's health check passes, the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget; while it fails, held as it stands, the host's own need the one a person sees |
+ * | this host's, its pass died with no result and no question, or could not record its result or exit on this host (whatever it said), not itself a run again, launched while `failures.rerun_died` was not `0`, while the host's health check fails | running: held as it stands, whatever its age, with no notice and no release; the host's own need is the one a person sees |
+ * | the same, while the host's health check passes: a death within the session lease, or an unwritten result at any age | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
  * | this host's, its outcome failed on a question tagged with a routine class, or failed before passes tagged their questions, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once with the class's standing answer (every class's, for one that failed before), within the same recovery budget (`routine-reruns.ts`) |
  * | this host's, its outcome failed on an untagged question or none, its run again failed, died or could not record its result, a death older than the session lease, one launched under `failures.rerun_died: 0`, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one (never one from a pass whose result could not be written: that question is the host's fault), never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
@@ -33,12 +34,15 @@
  *
  * A death or an unwritten result is the host's fault, so its run again
  * waits for the host's health check (`rerun-gate.ts`), released and
- * launched only by a tick whose previous tick passed it. A death's own age
- * limit, the session lease, still runs while the host fails: past it, the
- * session may have been settled by a person, and nothing tells it from an
- * abandoned one. A pass the host's database failed is not that case: its
- * result or its exit could not be written, so the host kept evidence of it
- * (`unwritten-result.ts`), and that run again has no age limit.
+ * launched only by a tick whose previous tick passed it. While the check
+ * fails, every death of this host's follow-ups that is not itself a run
+ * again is held as it stands, whatever its age: no notice, no release. Once
+ * it passes, a death's own age limit, the session lease, applies again: a
+ * death older than it goes to a person, since the session may have been
+ * settled by one and nothing tells it from an abandoned one. A pass the
+ * host's database failed is not that case: its result or its exit could not
+ * be written, so the host kept evidence of it (`unwritten-result.ts`), and
+ * that run again has no age limit.
  *
  * A marker is a claim, not a completion; a person settles a failed or
  * held follow-up by deleting its marker (wanted again) or, for a manual
@@ -323,7 +327,11 @@ function planTickMarker(
       reason:
         held === null
           ? `launch record ${id}'s pass ${released.what}: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`
-          : `launch record ${id}'s pass ${released.what}: held while ${held}; once it passes, the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
+          : `launch record ${id}'s pass ${released.what}: held while ${held}; once it passes, ${
+              found !== undefined && retriedDeath(found, input.nowMs)
+                ? `the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`
+                : "a death older than the session lease goes to a person"
+            }`,
       evidence: { record: id, marker: marker.id },
     });
     return;
@@ -357,7 +365,10 @@ function releaseWhy(
   found: ReadRecord | undefined,
   ended: "done" | "failed" | null,
 ): { what: string; fault: boolean } | null {
-  if (found !== undefined && retriedDeath(found, input.nowMs))
+  if (
+    found !== undefined &&
+    (retriedDeath(found, input.nowMs) || heldDeath(input, found))
+  )
     return { what: faultOf(found), fault: true };
   if (ended !== "failed") return null;
   const owed = routineRerun(input.outcomes.get(pr), input.launches);
@@ -367,6 +378,20 @@ function releaseWhy(
         fault: false,
       }
     : null;
+}
+
+/**
+ * A death, of any age, that the failing health check holds: one that would
+ * be run again were it recent, so it waits for the check rather than going
+ * to a person while the host's own need stands.
+ */
+function heldDeath(input: FollowupInput, r: ReadRecord): boolean {
+  return (
+    input.rerunsHeld !== null &&
+    r.record.rerunDied !== 0 &&
+    diedWithoutResult(r) &&
+    !isRerun(r.record)
+  );
 }
 
 /** What the host's fault did to a follow-up's pass, in words: its result or exit was not written, or it died. */

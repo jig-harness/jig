@@ -3,15 +3,17 @@
  * `jig dispatch result` whose write the state database refused (a schema out
  * of step with its version, a locked or broken file), or the wrapper that
  * could not record the stage's exit. It is a file outside the database,
- * `<dispatch>/unwritten/<record>.json`, so it survives the fault it records,
+ * `<dispatch>/unwritten/<record>.<token digest>.json`, so it survives the
+ * fault it records,
  * and the tick reads it with the record once the database reads again
  * (`readLaunches`), as the record's `unwritten`.
  *
- * The file holds the SHA-256 of the record's token, which the writer was
- * handed and cannot check while the database refuses it: the tick reads the
- * evidence only when that digest is the record's own, so no other process
- * can make a record owe a run again. The first file written stands; it goes
- * when its record is pruned.
+ * The file is named, and holds, the SHA-256 of the record's token, which the
+ * writer was handed and cannot check while the database refuses it: the tick
+ * reads only the file of the record's own digest, so no other process can
+ * make a record owe a run again, nor keep the genuine pass's evidence out
+ * with a file of its own. The first file of a digest stands; every file of a
+ * record goes when the record is pruned.
  *
  * What the tick does with it: a follow-up whose record has no result and
  * this evidence is run again once (`session-startup.ts`), and neither a
@@ -22,6 +24,7 @@ import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -35,12 +38,13 @@ import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
 /** What was not written: the pass's result, or the stage's exit. */
 export type UnwrittenWhat = "result" | "exit";
 
-function unwrittenPath(root: string, id: string): string {
-  return join(root, "unwritten", `${id}.json`);
-}
-
 function digest(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+/** The evidence file of record `id` under the token whose digest is `hash`. */
+function unwrittenPath(root: string, id: string, hash: string): string {
+  return join(root, "unwritten", `${id}.${hash}.json`);
 }
 
 /**
@@ -56,7 +60,8 @@ export function writeUnwritten(
   why: string,
 ): boolean {
   if (!LAUNCH_RECORD_ID.test(id)) return false;
-  const path = unwrittenPath(root, id);
+  const hash = digest(token);
+  const path = unwrittenPath(root, id, hash);
   if (existsSync(path)) return true;
   try {
     mkdirSync(join(root, "unwritten"), { recursive: true, mode: 0o700 });
@@ -64,7 +69,7 @@ export function writeUnwritten(
     const body = {
       version: 1,
       record: id,
-      token: digest(token),
+      token: hash,
       what,
       at: new Date().toISOString(),
       why: why.replace(/\s+/g, " ").trim().slice(0, 500),
@@ -88,13 +93,14 @@ export function unwrittenOf(
   id: string,
   token: string,
 ): { unwritten?: string } {
-  const path = unwrittenPath(root, id);
+  const hash = digest(token);
+  const path = unwrittenPath(root, id, hash);
   if (!existsSync(path)) return {};
   try {
     const value: unknown = JSON.parse(readFileSync(path, "utf8"));
     return isMapping(value) &&
       value.record === id &&
-      value.token === digest(token) &&
+      value.token === hash &&
       typeof value.at === "string"
       ? { unwritten: value.at }
       : {};
@@ -104,9 +110,19 @@ export function unwrittenOf(
   }
 }
 
-/** Remove the evidence of records that were pruned. */
+/** Remove every evidence file of the records that were pruned, best effort: a file left behind is read by nothing, since its record is gone. */
 export function removeUnwritten(root: string, ids: readonly string[]): void {
-  for (const id of ids)
-    if (LAUNCH_RECORD_ID.test(id))
-      rmSync(unwrittenPath(root, id), { force: true });
+  const pruned = new Set(ids);
+  if (pruned.size === 0) return;
+  const dir = join(root, "unwritten");
+  try {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      const id = name.split(".")[0] ?? "";
+      if (pruned.has(id) && LAUNCH_RECORD_ID.test(id))
+        rmSync(join(dir, name), { force: true });
+    }
+  } catch (error) {
+    swallow(error, "the evidence of a pruned record could not be removed");
+  }
 }

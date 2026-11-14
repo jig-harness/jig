@@ -152,7 +152,7 @@ export const DISPATCHER: readonly RecordKind[] = [
   dispatchFile(
     "dispatch-unwritten-end",
     "dispatch/lib/unwritten-result.ts",
-    `${DISPATCH_DIR}unwritten/<record>.json`,
+    `${DISPATCH_DIR}unwritten/<record>.<token digest>.json`,
     1,
   ),
   dispatchFile(

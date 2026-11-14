@@ -662,7 +662,8 @@ death is notified. So is a pass whose result or exit this host could not
 write (`jig dispatch result` exits `4` when the dispatcher's database refuses
 it, and keeps the evidence outside the database), whatever the pass said and
 however long ago, and never with the question it asked. Both runs again wait
-for the host's health check (`jig doctor dispatch`'s last run) to pass, and
+for the host's health check (`jig doctor dispatch`'s last run) to pass;
+while it fails, a death is held whatever its age and nothing is notified.
 `failures.rerun_died: 0` turns them off
 ([CONFIGURATION.md](CONFIGURATION.md#the-machines-dispatch-file)). A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries

@@ -421,8 +421,11 @@ guards keep one stage from starting twice:
   whatever it said and with no age limit, and the question it asked is never
   a person's. Both wait for the host's health check: the tick releases the
   marker, and starts the run again, only while the dispatcher's last run
-  passed (`jig doctor dispatch`'s `dispatch:last-run`), and holds the
-  follow-up quietly while it fails; `failures.rerun_died: 0` turns both off.
+  passed (`jig doctor dispatch`'s `dispatch:last-run`). While it fails,
+  every such follow-up that is not itself a run again is held quietly,
+  whatever its age, with nothing released or notified; once it passes, the
+  session lease applies again, and a plain death older than it goes to a
+  person. `failures.rerun_died: 0` turns both off.
   Only the death whose marker a tick released this way makes the next
   follow-up a run again; one a person asks for by deleting a failed marker is a new
   follow-up. A pass that ended failed on a **routine question** (see

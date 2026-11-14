@@ -13,8 +13,11 @@ release: minor
   person; the wrapper keeps the same evidence when it cannot record the
   stage's exit. Both runs again, a death's and an unwritten result's, wait
   for the host's health check to pass (`jig doctor dispatch`'s last run):
-  while it fails the follow-up is held with nothing notified, and the host's
+  while it fails, every such follow-up that is not itself a run again is
+  held, whatever its age, with nothing released or notified, and the host's
   own `ticks-failing` or `repository-failing` notice is what a person sees.
+  Once it passes, a death's 6-hour window applies again, and a plain death
+  older than it goes to a person.
   It stays one run again per follow-up, counted against the pull request's
   recovery budget
   ([CONFIGURATION.md](../plugin/CONFIGURATION.md#the-machines-dispatch-file)).

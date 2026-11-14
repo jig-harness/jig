@@ -11,6 +11,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -68,8 +69,13 @@ const markers = (w: World) =>
     ) as Comment[]
   ).filter((c) => c.body.startsWith(MARKER));
 const launches = (r: TickReceipt) => r.repos[0]?.launches ?? [];
-const evidence = (w: World, id: string) =>
-  join(dispatchState(w), "unwritten", `${id}.json`);
+/** Whether the evidence of record `id`'s unwritten end was kept. */
+const evidenceKept = (w: World, id: string) => {
+  const dir = join(dispatchState(w), "unwritten");
+  return (
+    existsSync(dir) && readdirSync(dir).some((n) => n.startsWith(`${id}.`))
+  );
+};
 
 const ASKED =
   "Question: should the dispatcher's state database schema be repaired?";
@@ -94,7 +100,7 @@ async function refused(w: World): Promise<string> {
   expect(result.stderr).toContain(
     "ask no person about the dispatcher's database or host",
   );
-  expect(existsSync(evidence(w, id))).toBe(true);
+  expect(evidenceKept(w, id)).toBe(true);
   writeFileSync(join(w.dir, "claude-said"), `${ASKED}\n`);
   writeFileSync(join(w.dir, "claude-exit"), "1");
   await waitFor("the exit", () => exitWritten(w, id));

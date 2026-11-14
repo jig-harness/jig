@@ -226,6 +226,34 @@ describe("a follow-up whose result write failed", () => {
   });
 });
 
+describe("a death older than the session lease", () => {
+  const OLD = "20261113T010000Z-dddddddd";
+  const old = (): ReadRecord => ({
+    record: followup(OLD),
+    state: DIED,
+    result: null,
+  });
+
+  it("is held while the host's health check fails: no failed follow-up, nothing released", async () => {
+    const plan = planned(merged([marker(OLD)]), [old()], { rerunsHeld: HELD });
+    expect(notified(plan)).toEqual([]);
+    expect(plan.running).toEqual([
+      expect.objectContaining({
+        reason: expect.stringContaining(`held while ${HELD}`),
+      }),
+    ]);
+    expect(await released([old()], HELD)).toEqual([]);
+  });
+
+  it("goes to a person once the check passes", () => {
+    const plan = planned(merged([marker(OLD)]), [old()]);
+    expect(plan.running).toEqual([]);
+    expect(notified(plan)).toEqual([
+      expect.objectContaining({ cause: "followup-failed" }),
+    ]);
+  });
+});
+
 describe("a run again", () => {
   const rerun = (fields: Partial<LaunchRecord> = {}) =>
     followup(RERUN, {
@@ -309,38 +337,43 @@ describe("failures.rerun_died: 0", () => {
   });
 });
 
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0))
+    rmSync(root, { recursive: true, force: true });
+});
+
+/** The records whose marker settlement releases, with the gate `rerunsHeld`. */
+async function released(
+  records: ReadRecord[],
+  rerunsHeld: string | null,
+): Promise<string[]> {
+  const root = mkdtempSync(join(tmpdir(), "jig-host-fault-"));
+  roots.push(root);
+  const ids: string[] = [];
+  await settleRetryableFollowups(
+    {
+      records: {} as SharedRecords,
+      slug: SLUG,
+      host: "host-a",
+      root,
+      rerunsHeld,
+    },
+    records,
+    new Date(NOW).toISOString(),
+    undefined,
+    async (_ctx, record) => {
+      ids.push(record.record.id);
+      return [];
+    },
+  );
+  return ids;
+}
+
 describe("the settlement that releases a marker", () => {
-  const roots: string[] = [];
-  afterEach(() => {
-    for (const root of roots.splice(0))
-      rmSync(root, { recursive: true, force: true });
-  });
-
-  async function settled(rerunsHeld: string | null): Promise<string[]> {
-    const root = mkdtempSync(join(tmpdir(), "jig-host-fault-"));
-    roots.push(root);
-    const ids: string[] = [];
-    await settleRetryableFollowups(
-      {
-        records: {} as SharedRecords,
-        slug: SLUG,
-        host: "host-a",
-        root,
-        rerunsHeld,
-      },
-      [unwritten(followup(FIRST))],
-      new Date(NOW).toISOString(),
-      undefined,
-      async (_ctx, record) => {
-        ids.push(record.record.id);
-        return [];
-      },
-    );
-    return ids;
-  }
-
   it("releases an unwritten result's marker while the host's health check passes, and not while it fails", async () => {
-    expect(await settled(null)).toEqual([FIRST]);
-    expect(await settled(HELD)).toEqual([]);
+    const records = [unwritten(followup(FIRST))];
+    expect(await released(records, null)).toEqual([FIRST]);
+    expect(await released(records, HELD)).toEqual([]);
   });
 });

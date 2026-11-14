@@ -42,7 +42,7 @@
  * past this plugin's version was additive, and refused, with its version
  * named, when it needs a newer reader (the shared module's minimum reader).
  */
-import type { Database } from "bun:sqlite";
+import { type Database, SQLiteError } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -440,6 +440,33 @@ export function newerStateRefusal(error: unknown): string | null {
     : null;
 }
 
+/**
+ * A database whose migration history or source state this plugin refuses:
+ * the cause of the usage exit `stateDb` refuses it with, beside
+ * `StateVersionError`, so a command tells the database's refusal from any
+ * other.
+ */
+class StateRefusedError extends JigError<"migration-history" | "source-state"> {
+  override name = "StateRefusedError";
+}
+
+/**
+ * Why the state database failed this process, when `error` is the
+ * database's own failure: SQLite's error, a schema version this plugin
+ * cannot read, a migration history or source it refuses, or a file it could
+ * not open; `null` for any other error, a code defect among them.
+ */
+export function stateDbFailure(error: unknown): string | null {
+  if (error instanceof SQLiteError) return error.message;
+  if (!(error instanceof ExitError || error instanceof Defect)) return null;
+  const { cause } = error;
+  return cause instanceof StateVersionError ||
+    cause instanceof StateRefusedError ||
+    cause instanceof SQLiteError
+    ? error.message
+    : null;
+}
+
 /** The database file under a state directory. */
 export function statePath(root = stateRoot()): string {
   return join(root, STATE_FILE);
@@ -459,7 +486,9 @@ export function stateDb(root = stateRoot()): Database {
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
   if (code === "migration-history" || code === "source-state")
-    throw new ExitError(USAGE_EXIT, reason, { cause });
+    throw new ExitError(USAGE_EXIT, reason, {
+      cause: new StateRefusedError(code, reason, { cause }),
+    });
   if (code === "newer-schema")
     throw new ExitError(USAGE_EXIT, reason, {
       cause: new StateVersionError(path, schemaVersion(path) ?? 0, reason),
