@@ -151,9 +151,8 @@ After this amendment merges, `design-brief-builder` prepares the external
 checkable sentence, scenario, layer inventory, human boundary, destination
 table and the source documents at a named commit. It includes the page
 table, the existing tokens and components, the parser migration contract
-below, and the reference site the person supplies with the brief. That
-reference illustrates simplicity; its content and visual identity are not
-Jig's copy or implementation requirements.
+below. The brief goes to the design session without an outside reference
+site; the settled message and prototype rubric guide its simplicity.
 
 The brief asks the designer how to present the settled message, not whether
 the factory comes first. It leaves layout, illustration and interaction
@@ -588,7 +587,7 @@ amendment and the later work. After the amendment merges, file the brief,
 design round and visitor-page work under that epic, in this order:
 
 1. **Prepare the brief.** Run `design-brief-builder` from this message and
-   the source checkout. The person supplies the reference site. The brief
+   the source checkout, without an outside reference site. The brief
    receives its fresh-context critique before it leaves for the design
    session, as [design review](README.md#review-before-building) requires.
 2. **Run the external design round.** The person takes the brief to Claude
