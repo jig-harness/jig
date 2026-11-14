@@ -55,7 +55,9 @@
  * `drive.pass_args`, read here in the workspace as `drive.ts` reads them for
  * a drive's pass, and a Codex pass the bypass only when the record says the
  * tick admitted it on a host that opted in, with the `drive.codex_pass_args`
- * the record keeps; the wrapper adds no permission of its own. The wrapper stops the pass at the deadline the record names,
+ * the record keeps; the wrapper adds no permission of its own. The pass
+ * runs with background tasks off (`NO_BACKGROUND_TASKS`), as a drive's
+ * passes do: it has no next turn to receive their results. The wrapper stops the pass at the deadline the record names,
  * passes its output through and keeps a bounded diagnostic tail. Its last
  * `Question:` line is also kept unless the pass recorded `done`:
  * that is where a pass that needs a person states its question.
@@ -94,18 +96,25 @@
  * permission settings do not read; 3 the record was already claimed, so nothing
  * started.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { runStage, type Ran, type RunOptions } from "./lib/run-stage.ts";
+import { driverCleanupUncertain } from "./lib/stage-cleanup.ts";
+import { spawnSupervisor } from "./lib/spawn-supervisor.ts";
+import {
+  readStageClaim,
+  registerStageProcess,
+  uncertainStage,
+} from "./lib/launch-supervision.ts";
 import { resolve } from "node:path";
-import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
-import { QuestionTail } from "./lib/question-tail.ts";
 import { passOutput } from "./lib/pass-output.ts";
-import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
 import { captureIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
-import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
+import {
+  NO_BACKGROUND_TASKS,
+  passCommand,
+} from "../skills/drive-pr/scripts/lib/pass-command.ts";
 import {
   DRIVE_EXIT,
   driveExitClosesTab,
@@ -134,15 +143,14 @@ import {
   followupPassArgv,
   pickupPassArgv,
   stewardPassArgv,
-  QUESTION_PREFIX,
   sessionArgv,
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
 import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
-import { writeWall } from "./lib/walls.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
+import { writeWall } from "./lib/walls.ts";
 import { failedStartup } from "./lib/session-startup.ts";
 import {
   currentIso,
@@ -153,7 +161,6 @@ import {
 } from "../shared/time.ts";
 
 const CLAIMED = 3;
-const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
 
@@ -206,224 +213,6 @@ function driveScript(): string {
 
 /** How much of a drive's usage message its exit keeps. */
 const USAGE_CHARS = 600;
-/** How much of a follow-up pass's last `Question:` line its exit keeps. */
-const QUESTION_CHARS = 1000;
-/** How long a pass stopped at its deadline has to end before it is killed. */
-const STOP_GRACE_MS = 10_000;
-/** How long the wrapper waits, once the stage exited, for the rest of its output and for its descendants to end. */
-const DRAIN_MS = 2000;
-
-interface Ran {
-  started?: number;
-  exited?: number;
-  output?: string;
-  /** The end of the stage's error output, where the wrapper kept it. */
-  errors?: string;
-  /** Per-stream reconstruction for startup notices whose chunks interleave. */
-  startupOutput?: string;
-  code: number | null;
-  signal: string | null;
-  /** The stage's last `Question:` line, where the wrapper kept it. */
-  said?: string;
-  /** Windows only: the pass's tree could not be shown to have ended, so no exit is published. */
-  unconfirmed?: true;
-}
-
-/** How the wrapper runs a stage: whether it keeps its last question, or only the end of its error output, and the deadline it enforces itself (seconds, `0` for none). */
-interface RunOptions {
-  keepOutput: boolean;
-  keepErrors?: boolean;
-  deadlineSec: number;
-}
-
-const DEFAULT_RUN_OPTIONS: RunOptions = { keepOutput: false, deadlineSec: 0 };
-
-/** Whether a process group still has a member. */
-function groupAlive(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/** Kill what is left of a pass's group and wait, briefly, for it to end. */
-async function endGroup(
-  pid: number | undefined,
-  signalTree: (name: NodeJS.Signals) => void,
-): Promise<void> {
-  if (pid === undefined || !groupAlive(pid)) return;
-  signalTree("SIGKILL");
-  const gone = currentMs() + DRAIN_MS;
-  while (groupAlive(pid) && currentMs() < gone) await Bun.sleep(20);
-}
-
-/** The timers that stop a pass at its deadline: a signal, then a kill after the grace. */
-function armDeadline(
-  deadlineSec: number,
-  signalTree: (name: NodeJS.Signals) => void,
-  endTree: () => Promise<void>,
-): ReturnType<typeof setTimeout>[] {
-  const timers: ReturnType<typeof setTimeout>[] = [];
-  if (deadlineSec <= 0) return timers;
-  timers.push(
-    setTimeout(() => {
-      console.error(
-        `jig dispatch run: the pass ran past its ${deadlineSec}s deadline; stopping it`,
-      );
-      signalTree("SIGTERM");
-      timers.push(
-        setTimeout(() => {
-          signalTree("SIGKILL");
-          void endTree();
-        }, STOP_GRACE_MS),
-      );
-    }, deadlineSec * 1000),
-  );
-  return timers;
-}
-
-/** Wait, briefly, for the last of a pass's output; a pipe a surviving descendant holds open is let go. */
-async function drainOutput(
-  child: ChildProcess,
-  drained: () => boolean,
-): Promise<void> {
-  const until = currentMs() + DRAIN_MS;
-  while (!drained() && currentMs() < until) await Bun.sleep(20);
-  if (!drained()) releasePipe(child);
-}
-
-/** Let go of a pass's output pipe that a surviving descendant holds open. */
-function releasePipe(child: ChildProcess): void {
-  child.stdout?.removeAllListeners("data");
-  child.stdout?.destroy();
-  child.stderr?.removeAllListeners("data");
-  child.stderr?.destroy();
-}
-
-function runStage(
-  argv: string[],
-  cwd: string,
-  env: Record<string, string>,
-  options: RunOptions = DEFAULT_RUN_OPTIONS,
-): Promise<Ran> {
-  return new Promise((settle) => {
-    const started = currentMs();
-    let output = "";
-    let stdout = "";
-    let stderr = "";
-    const stdoutDecoder = new StringDecoder("utf8");
-    const stderrDecoder = new StringDecoder("utf8");
-    // A pass under a deadline leads its own process group, so the deadline reaches what the agent started too.
-    const grouped = options.deadlineSec > 0 && process.platform !== "win32";
-    // Windows has no process group to signal; its tree is walked and ended by identity.
-    const treed = options.deadlineSec > 0 && process.platform === "win32";
-    const child = spawn(argv[0] as string, argv.slice(1), {
-      cwd,
-      env,
-      detached: grouped,
-      stdio: options.keepOutput
-        ? ["inherit", "pipe", "pipe"]
-        : options.keepErrors === true
-          ? ["inherit", "inherit", "pipe"]
-          : "inherit",
-    });
-    const watch = treed
-      ? watchWindowsTree(
-          child.pid,
-          () => child.exitCode === null && child.signalCode === null,
-        )
-      : NO_WATCH;
-    let treeEnded = true;
-    const endWindowsTree = async () => {
-      treeEnded = await watch.end();
-    };
-    const signalTree = (name: NodeJS.Signals) => {
-      if (grouped && child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, name);
-          return;
-        } catch (error) {
-          swallow(error, "the pass's group is gone or unsignalable");
-        }
-      }
-      child.kill(name);
-    };
-    const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
-    let drained = !options.keepOutput;
-    child.stdout?.on("data", (chunk: Buffer) => {
-      const decoded = stdoutDecoder.write(chunk);
-      stdout = (stdout + decoded).slice(-8192);
-      output = (output + decoded).slice(-8192);
-      if (!process.stdout.write(chunk)) {
-        child.stdout?.pause();
-        process.stdout.once("drain", () => child.stdout?.resume());
-      }
-      tail.write(chunk);
-    });
-    child.stdout?.on("end", () => {
-      const decoded = stdoutDecoder.end();
-      stdout = (stdout + decoded).slice(-8192);
-      output = (output + decoded).slice(-8192);
-      drained = true;
-    });
-    let stderrDrained = child.stderr === null;
-    child.stderr?.on("data", (chunk: Buffer) => {
-      const decoded = stderrDecoder.write(chunk);
-      stderr = (stderr + decoded).slice(-8192);
-      output = (output + decoded).slice(-8192);
-      if (!process.stderr.write(chunk)) {
-        child.stderr?.pause();
-        process.stderr.once("drain", () => child.stderr?.resume());
-      }
-    });
-    child.stderr?.on("end", () => {
-      const decoded = stderrDecoder.end();
-      stderr = (stderr + decoded).slice(-8192);
-      output = (output + decoded).slice(-8192);
-      stderrDrained = true;
-    });
-    const forward = (name: NodeJS.Signals) => signalTree(name);
-    for (const name of FORWARDED) process.on(name, forward);
-    const timers = armDeadline(options.deadlineSec, signalTree, () =>
-      endWindowsTree(),
-    );
-    let ended = false;
-    const done = async (code: number | null, signal: string | null) => {
-      if (ended) return;
-      ended = true;
-      const exited = currentMs();
-      for (const timer of timers) clearTimeout(timer);
-      watch.stopSampling();
-      // What the agent started can outlive it; the exit is published once the group has ended.
-      if (grouped) await endGroup(child.pid, signalTree);
-      await endWindowsTree();
-      for (const name of FORWARDED) process.off(name, forward);
-      await drainOutput(child, () => drained && stderrDrained);
-      tail.end();
-      settle({
-        code,
-        signal,
-        started,
-        exited,
-        output,
-        startupOutput: `${stdout}\n${stderr}`,
-        ...(child.stderr === null ? {} : { errors: stderr }),
-        ...(!treeEnded ? { unconfirmed: true as const } : {}),
-        ...(options.keepOutput && tail.question !== ""
-          ? { said: tail.question }
-          : {}),
-      });
-    };
-    child.on("error", (error) => {
-      console.error(`jig dispatch run: ${error.message}`);
-      void done(127, null);
-    });
-    child.on("exit", (code, signal) => void done(code, signal));
-  });
-}
-
 /** The reset in the drive state's quota park, read under the same trusted startup as the drive: the state script runs in the consumer's workspace. */
 async function parkedReset(pr: number): Promise<string | null> {
   const done = await run(
@@ -606,7 +395,13 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(`jig dispatch run: ${identity.failure.reason}; not starting`);
     return 2;
   }
-  const claim = { ...identity.value, claimedAt: currentIso() };
+  const claim = {
+    ...identity.value,
+    claimedAt: currentIso(),
+    ...(!isInteractive(record)
+      ? { supervision: { supervisor: null, child: null } }
+      : {}),
+  };
   if (!claimRecord(id, claim)) {
     console.error(
       `jig dispatch run: ${id} is already claimed; nothing started`,
@@ -615,6 +410,21 @@ async function wrap(id: string, token: string): Promise<number> {
     return CLAIMED;
   }
   process.chdir(record.workspace.path);
+  if (!isInteractive(record)) {
+    const code = await spawnSupervisor(id, token);
+    if (readEnded(id)?.state.kind === "ended")
+      await closeTabIfDone(record, code);
+    return code;
+  }
+  return executeStage(id, record);
+}
+
+async function executeStage(
+  id: string,
+  record: LaunchRecord,
+  owner?: RunOptions["owner"],
+): Promise<number> {
+  if (record.workspace === null) return 2;
   let argv: string[];
   try {
     argv = stageArgv(record);
@@ -629,13 +439,53 @@ async function wrap(id: string, token: string): Promise<number> {
     record.workspace.path,
     // The tab's own command is this wrapper; the drive it runs is not. What
     // it starts is a session the line started, named by its launch record.
+    // A pass of its own starts no background task, as a drive's passes do.
     {
       ...withoutRunTabMarker(passEnvironment(process.env, record)),
+      ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
+      JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
     },
-    runOptions(record),
+    { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );
   return finishRun(id, record, ran);
+}
+
+/** A separate process owns the stage and its exit, surviving wrapper death to stop it. */
+async function supervise(id: string, token: string): Promise<number> {
+  const record = readRecord(id);
+  const wrapper = readStageClaim(id, token);
+  if (
+    record === null ||
+    record.token !== token ||
+    record.workspace === null ||
+    !wrapper?.supervision
+  )
+    return 2;
+  const identity = await captureIdentity();
+  if (!identity.ok) {
+    console.error(identity.failure.reason);
+    return 2;
+  }
+  const registered = registerStageProcess(
+    id,
+    token,
+    "supervisor",
+    identity.value,
+    wrapper,
+  );
+  if (!registered.ok) {
+    swallow(registered.failure.cause, registered.failure.reason);
+    console.error(registered.failure.reason);
+    return 3;
+  }
+  process.chdir(record.workspace.path);
+  return executeStage(id, record, {
+    id,
+    token,
+    wrapper,
+    supervisor: identity.value,
+  });
 }
 
 /** Startup evidence is checked only when the session left no result or question. */
@@ -683,8 +533,9 @@ async function finishRun(
   ran: Ran,
 ): Promise<number> {
   const { code, signal } = ran;
-  if (ran.unconfirmed) {
-    // The pass's processes may still run, so no exit is published. The wrapper then exits, and a record whose wrapper is gone no longer holds its slot: the limit design/dark-factory-dispatch.md records for a Windows tree.
+  if (ran.unconfirmed || (await driverCleanupUncertain(record, ran))) {
+    uncertainStage(id);
+    // Unconfirmed cleanup keeps the account slot until reconciliation or clearance.
     console.error(
       "jig dispatch run: the pass's process tree could not be shown to have ended; no exit is recorded",
     );
@@ -693,10 +544,10 @@ async function finishRun(
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
+  const startup = startupOf(record, ran);
+  const startupWallUnrecorded =
+    startup !== undefined && !recordStartupWall(record, startup);
   try {
-    const startup = startupOf(record, ran);
-    const startupWallUnrecorded =
-      startup !== undefined && !recordStartupWall(record, startup);
     recordExit(id, {
       at: currentIso(),
       code,
@@ -709,7 +560,6 @@ async function finishRun(
       ...usageOf(record, ran),
     });
   } catch (error) {
-    // A pass's end the database refused is the host's fault: the evidence outside it lets the tick tell that from a pass that failed.
     const why = stateDbFailure(error);
     if (!isDrive(record) && why !== null)
       writeUnwritten(stateRoot(), id, record.token, "exit", why);
@@ -717,7 +567,7 @@ async function finishRun(
   }
   await endSharedClaim(id);
   await labelFollowup(id);
-  await closeTabIfDone(record, code);
+  if (isInteractive(record)) await closeTabIfDone(record, code);
   return code ?? 1;
 }
 
@@ -814,6 +664,8 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
 
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
+  if (argv[0] === "supervise" && argv.length === 3)
+    return supervise(argv[1] as string, argv[2] as string);
   if (argv[0] === "identity" && argv.length === 2) {
     console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
     return 0;

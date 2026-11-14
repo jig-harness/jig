@@ -39,6 +39,13 @@ import {
 } from "../../../../../../shared/outbound/github.ts";
 import { guarded } from "../../../../../../shared/outbound/hold.ts";
 import { retryRead } from "../../../../../../shared/outbound/retry.ts";
+import { credentialKey } from "../../../../../../shared/outbound/budget.ts";
+import { operationName } from "../../../../../../shared/outbound/ledger.ts";
+import { githubCost } from "../../../../../../shared/outbound/gh-ledger.ts";
+import {
+  recordAttempt,
+  type Attempt,
+} from "../../../../../../shared/outbound/record-attempt.ts";
 import { pager, postGraphQL, runClient } from "../graphql.ts";
 import { currentMs } from "../../../../../../shared/time.ts";
 
@@ -405,7 +412,9 @@ async function postOnce(
   token: string,
   payload: { query: string; variables: Record<string, unknown> },
   bound: AbortSignal,
+  observation: Attempt,
 ): Promise<Answer> {
+  observation.requests = 1;
   const began = currentMs();
   let res: Response;
   try {
@@ -432,6 +441,7 @@ async function postOnce(
   }
   if (cancelled(bound)) return abortedError(bound, true);
   const body = parsedOrNull(text);
+  observation.cost = githubCost(body);
   const failure = gitHubHttpFailure(
     res.status,
     res.headers,
@@ -454,7 +464,30 @@ export function httpTransport(
     );
   return (query, variables, signal, idempotent = false) =>
     call(
-      (bound) => postOnce(fetchImpl, url, token, { query, variables }, bound),
+      (bound) => {
+        const observation: Attempt = {
+          system: GITHUB,
+          credential: credentialKey(GITHUB, token),
+          operation: operationName(query),
+          requests: 0,
+          cost: null,
+          unit: "points",
+          estimated: false,
+        };
+        return recordAttempt(
+          observation,
+          () =>
+            postOnce(
+              fetchImpl,
+              url,
+              token,
+              { query, variables },
+              bound,
+              observation,
+            ),
+          (answer) => failureOfAnswer(answer)?.code ?? null,
+        );
+      },
       signal,
       idempotent,
       `${GITHUB}:${new URL(url).host}`,
