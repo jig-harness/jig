@@ -510,6 +510,7 @@ describe("the accounting of runs whose answers say little of the balance", () =>
         remaining: 2500,
         resetAt: reset,
         readAt: 1_000_000,
+        pending: [1_000_000],
       },
     }));
     governor.observe(
@@ -530,6 +531,65 @@ describe("the accounting of runs whose answers say little of the balance", () =>
       1_000_000 + 1,
     );
     expect(store.read(KEY)?.requests.remaining).toBe(2501);
+  });
+
+  it("keeps the reservations made after a delayed snapshot's request, whatever the stored balance", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 2503, resetAt: reset, readAt: now },
+    }));
+    now += 10;
+    governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    // Sent at 1_000_005, after spending outside Jig; both reservations postdate it.
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 2501, resetAt: reset },
+      },
+      1_000_005,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(2499);
+  });
+
+  it("gives back an unsent request the snapshot did not count, even after an overlapping snapshot", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
+    }));
+    now += 10;
+    const a = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 20;
+    const b = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 4000, resetAt: reset },
+      },
+      now - 15,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(3999);
+    governor.release?.(KEY, "requests", a);
+    expect(store.read(KEY)?.requests.remaining).toBe(3999);
+    governor.release?.(KEY, "requests", b);
+    expect(store.read(KEY)?.requests.remaining).toBe(4000);
   });
 
   it("gives nothing back for a request a later snapshot already settled", () => {
@@ -614,6 +674,30 @@ describe("the accounting of runs whose answers say little of the balance", () =>
     const forge = client(() => ok(""));
     await forge.run(["api", "--silent", "-H", "If-None-Match: x", "repos/o/r"]);
     expect(store.read(KEY)?.requests.remaining).toBe(3999);
+  });
+
+  it("reserves a conditional request with its own --include when the output is not captured", () => {
+    const store = memoryBudgetStore();
+    setForgeGovernor(
+      budgetGovernor(store, { clock: () => 1_000_000, share: () => null }),
+    );
+    store.update(KEY, record);
+    ghGovernance(["api", "-i", "-H", "If-None-Match: x", "repos/o/r"], {
+      env: ENV,
+      captured: false,
+    })?.admit();
+    expect(store.read(KEY)?.requests.remaining).toBe(3999);
+  });
+
+  it("keys a cloud or local tenancy host by GH_TOKEN, like github.com", () => {
+    const a = githubCredential({ GH_HOST: "team.ghe.com", GH_TOKEN: "one" });
+    const b = githubCredential({ GH_HOST: "team.ghe.com", GH_TOKEN: "two" });
+    expect(a).not.toBe(b);
+    expect(
+      githubCredential({ GH_HOST: "x.github.localhost", GH_TOKEN: "one" }),
+    ).not.toBe(
+      githubCredential({ GH_HOST: "x.github.localhost", GH_TOKEN: "two" }),
+    );
   });
 
   it("keys Enterprise credentials by the Enterprise token the client uses", () => {

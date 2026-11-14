@@ -68,7 +68,19 @@ export interface BudgetWindow {
    * a request admitted before it is already settled in that balance.
    */
   snapshotSentAt?: number | null;
+  /**
+   * The times of the reservations the last reading does not count, oldest
+   * first: a snapshot sent at `t` has them all but those made at or after
+   * `t` in its balance. Absent: none recorded.
+   */
+  pending?: number[];
 }
+
+/** How many unsettled reservations a window remembers. */
+const PENDING_CAP = 256;
+
+const withPending = (w: BudgetWindow, at: number): number[] =>
+  [...(w.pending ?? []), at].slice(-PENDING_CAP);
 
 /** What the machine knows of one credential's budget. */
 export interface BudgetRecord {
@@ -208,6 +220,7 @@ function validWindow(w: unknown): w is BudgetWindow {
     answeredAt,
     estimated,
     snapshotSentAt,
+    pending,
   } = w as Record<string, unknown>;
   return (
     orNull(limit, (n) => n >= 0) &&
@@ -217,6 +230,9 @@ function validWindow(w: unknown): w is BudgetWindow {
     (readAt === undefined || orNull(readAt, (n) => n >= 0)) &&
     (answeredAt === undefined || orNull(answeredAt, (n) => n >= 0)) &&
     (snapshotSentAt === undefined || orNull(snapshotSentAt, (n) => n >= 0)) &&
+    (pending === undefined ||
+      (Array.isArray(pending) &&
+        pending.every((t) => typeof t === "number" && Number.isFinite(t)))) &&
     (estimated === undefined || typeof estimated === "boolean")
   );
 }
@@ -365,6 +381,8 @@ function merged(
     ...(prev.snapshotSentAt == null
       ? {}
       : { snapshotSentAt: prev.snapshotSentAt }),
+    // An ordinary answer settles no reservation of its own.
+    ...(prev.pending === undefined ? {} : { pending: prev.pending }),
   };
   const count = next.remaining;
   // A guessed reset yields to an answer that reports the current window,
@@ -563,12 +581,18 @@ function reserved(
       readAt: now,
       answeredAt: w.answeredAt ?? null,
       estimated: true,
+      pending: [now],
     });
   }
   // The balance as it stands, capped at the limit, from now on: a
   // refill that came while the window was full is not credit.
   const held = holds(w, record.observedAt, now) ?? w.remaining;
-  return withWindow(record, name, { ...w, remaining: held - 1, readAt: now });
+  return withWindow(record, name, {
+    ...w,
+    remaining: held - 1,
+    readAt: now,
+    pending: withPending(w, now),
+  });
 }
 
 /** The record with its window `name` replaced. */
@@ -651,21 +675,21 @@ function snapshotOf(
   )
     return prev;
   const since = sentAt ?? now;
-  const read = { ...next, readAt: now, answeredAt: now };
-  if (
-    prev.estimated !== true &&
-    sameResetWindow(prev, next) &&
-    prev.readAt != null &&
-    prev.readAt >= since &&
-    prev.remaining !== null &&
-    next.remaining !== null
-  )
-    return {
-      ...read,
-      remaining: Math.min(prev.remaining, next.remaining),
-      snapshotSentAt: Math.max(prev.snapshotSentAt ?? since, since),
-    };
-  return { ...read, snapshotSentAt: since };
+  // An older snapshot than the one the record holds says less than it does.
+  if (prev.snapshotSentAt != null && since < prev.snapshotSentAt) return prev;
+  // What the snapshot cannot count: the reservations made since its request
+  // was sent. Those made before it are in its balance, and settled.
+  const pending = (prev.pending ?? []).filter((t) => t >= since);
+  const read: BudgetWindow = {
+    ...next,
+    readAt: now,
+    answeredAt: now,
+    snapshotSentAt: since,
+    pending,
+  };
+  return next.remaining === null
+    ? read
+    : { ...read, remaining: next.remaining - pending.length };
 }
 
 /** A governor over `store`; `clock` and `share` are for tests. */
@@ -764,16 +788,21 @@ export function budgetGovernor(
           w.resetAt === null ||
           w.resetAt <= now ||
           w.resetAt <= sentAt ||
-          // A snapshot sent after the reservation counts what GitHub charged:
-          // an unsent request is not in it, so there is nothing to give back.
-          (w.snapshotSentAt != null && w.snapshotSentAt >= sentAt)
+          // A reservation a snapshot already settled is not pending: an unsent
+          // request is not in what GitHub charged, so nothing is given back.
+          (w.pending !== undefined && !w.pending.includes(sentAt))
         )
           return null;
+        const pending = w.pending?.filter((t) => t !== sentAt);
         const remaining =
           w.limit === null
             ? w.remaining + 1
             : Math.min(w.limit, w.remaining + 1);
-        return withWindow(record, name, { ...w, remaining });
+        return withWindow(record, name, {
+          ...w,
+          remaining,
+          ...(pending === undefined ? {} : { pending }),
+        });
       });
     },
   };

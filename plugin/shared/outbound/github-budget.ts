@@ -131,9 +131,15 @@ export function githubCredential(
   env: Record<string, string | undefined> = process.env,
 ): string {
   const host = env.GH_HOST?.trim() ?? "";
-  // The client reads the Enterprise variables for a host other than
-  // github.com, and the others for github.com.
-  const enterprise = host !== "" && host.toLowerCase() !== "github.com";
+  // The client reads the Enterprise variables for an Enterprise Server host,
+  // and the others for github.com and its cloud and local tenancies.
+  const name = host.toLowerCase();
+  const enterprise =
+    host !== "" &&
+    name !== "github.com" &&
+    !name.endsWith(".ghe.com") &&
+    !name.endsWith(".github.localhost") &&
+    name !== "github.localhost";
   const token = enterprise
     ? env.GH_ENTERPRISE_TOKEN?.trim() || env.GITHUB_ENTERPRISE_TOKEN?.trim()
     : env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim();
@@ -510,7 +516,11 @@ export function ghGovernance(
   const key = githubCredential(opts.env ?? process.env);
   const gov = governor();
   const { argv, strip } = withHeaders(args, opts.captured);
-  const admitted = admission(limits, args, strip || askedHeaders(args));
+  const admitted = admission(
+    limits,
+    args,
+    strip || (opts.captured && askedHeaders(args)),
+  );
   return {
     argv,
     admit() {
