@@ -15,7 +15,7 @@ import { cacheForTracker } from "./tracker-cache.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import type {
   Assigner,
   IssueRelation,

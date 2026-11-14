@@ -10,7 +10,7 @@ import {
   memoryBudgetStore,
   sqliteBudgetStore,
   TrackerRateLimited,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import {
   cliTransport,
   httpTransport,

@@ -88,6 +88,7 @@ const CAUSE_ACTS: Readonly<Record<string, NeedAct>> = {
   "nudge-unanswered": "Reply",
   "assigner-cannot-write": "Do",
   "tracker-unreachable": "Authorize",
+  "low-quota": "Investigate",
 };
 
 /**

@@ -35,6 +35,7 @@ import { issueService } from "../../shared/tracker-product.ts";
 import { resolve } from "node:path";
 import { actOfNeed } from "../../shared/acts.ts";
 import { swallow } from "../../shared/errors.ts";
+import { callerForChild } from "../../shared/outbound/ledger.ts";
 import { run } from "../../shared/proc.ts";
 import { admittedVendor, passEnvironment } from "./accounts.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
@@ -293,6 +294,9 @@ async function spawnTrackerProbe(
     vendor: admittedVendor(account),
     configDir: account.configDir,
   });
+  // AsyncLocalStorage does not cross the process boundary. This child opens
+  // the tracker on behalf of the tick, so retain that tick's attribution.
+  env.JIG_OUTBOUND_CALLER = callerForChild();
   try {
     const done = await run(command, {
       timeoutSec,

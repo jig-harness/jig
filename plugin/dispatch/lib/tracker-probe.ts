@@ -10,8 +10,8 @@
  * credential (`answerKind`).
  */
 import { isMapping } from "../../shared/config-layers.ts";
+import { isRateLimited } from "../../shared/outbound/budget.ts";
 import { issueService } from "../../shared/tracker-product.ts";
-import { isRateLimited } from "../../shared/tracker-budget.ts";
 import { TrackerConfigError } from "../../skills/do-item/scripts/lib/tracker/config-error.ts";
 import {
   openTracker,

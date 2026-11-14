@@ -7,7 +7,7 @@
  * again.
  */
 import { readClaimMarker } from "../../../skills/do-item/scripts/lib/claim-marker.ts";
-import { isRateLimited } from "../../../shared/tracker-budget.ts";
+import { isRateLimited } from "../../../shared/outbound/budget.ts";
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { PickupReads } from "../pickup-reads.ts";
 import { failureText } from "../text.ts";
