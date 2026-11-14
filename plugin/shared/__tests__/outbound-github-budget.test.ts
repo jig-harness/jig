@@ -12,6 +12,7 @@ import {
 import {
   apiRoute,
   forgeAnswerOf,
+  ghGovernance,
   githubCredential,
   limitsOf,
   setForgeGovernor,
@@ -328,8 +329,9 @@ describe("what the record keeps of answers GitHub did not charge or that came in
 
   it("reserves nothing for a conditional request, and lets a rate_limit answer replace the balance", async () => {
     const store = memoryBudgetStore();
+    let now = 1_000_000;
     setForgeGovernor(
-      budgetGovernor(store, { clock: () => 1_000_000, share: () => null }),
+      budgetGovernor(store, { clock: () => now, share: () => null }),
     );
     store.update(KEY, () => record(4000));
     const forge = client((argv) =>
@@ -348,6 +350,7 @@ describe("what the record keeps of answers GitHub did not charge or that came in
     expect(store.read(KEY)?.requests.remaining).toBe(4000);
     await forge.run(["api", "repos/o/r"]);
     expect(store.read(KEY)?.requests.remaining).toBe(3999);
+    now += 1000;
     await forge.run(["api", "rate_limit"]);
     expect(store.read(KEY)?.requests.remaining).toBe(4100);
   });
@@ -455,4 +458,166 @@ it("keeps the stored window when a rate_limit snapshot comes from a window that 
     requests: { limit: 5000, remaining: 12, resetAt: 900_000 },
   });
   expect(store.read(KEY)?.requests.remaining).toBe(4990);
+});
+
+describe("the accounting of runs whose answers say little of the balance", () => {
+  const reset = 2_000_000;
+  const record = (): BudgetRecord => ({
+    requests: { limit: 5000, remaining: 4000, resetAt: reset },
+    complexity: { limit: 5000, remaining: 4900, resetAt: reset },
+    limitedUntil: null,
+    why: null,
+    observedAt: 1_000_000,
+  });
+
+  it("reserves a point of the GraphQL balance for a command that shows no headers", async () => {
+    const store = memoryBudgetStore();
+    setForgeGovernor(
+      budgetGovernor(store, { clock: () => 1_000_000, share: () => null }),
+    );
+    store.update(KEY, record);
+    const forge = client(() => ok("{}"));
+    await forge.run(["pr", "view", "1"]);
+    await forge.run(["pr", "view", "2"]);
+    expect(store.read(KEY)?.complexity.remaining).toBe(4898);
+    expect(store.read(KEY)?.requests.remaining).toBe(4000);
+  });
+
+  it("keeps reserving requests after the window it knew has reset, until an answer names the next", async () => {
+    const store = memoryBudgetStore();
+    let now = 3_000_000;
+    setForgeGovernor(
+      budgetGovernor(store, { clock: () => now, share: () => null }),
+    );
+    store.update(KEY, record);
+    const forge = client(() => ok(""));
+    await forge.run(["api", "--silent", "repos/o/r"]);
+    now += 1000;
+    await forge.run(["api", "--silent", "repos/o/r"]);
+    const window = store.read(KEY)?.requests;
+    expect(window?.remaining).toBe(4998);
+    expect(window?.resetAt).toBe(3_000_000 + 3_600_000);
+    expect(window?.estimated).toBe(true);
+  });
+
+  it("keeps spending recorded after a snapshot's request was sent", () => {
+    const store = memoryBudgetStore();
+    const governor = budgetGovernor(store, { clock: () => 1_000_000 });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: {
+        limit: 5000,
+        remaining: 2500,
+        resetAt: reset,
+        readAt: 1_000_000,
+      },
+    }));
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 2501, resetAt: reset },
+      },
+      999_000,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(2500);
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 2501, resetAt: reset },
+      },
+      1_000_000 + 1,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(2501);
+  });
+
+  it("gives nothing back for a request a later snapshot already settled", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, record);
+    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 4001, resetAt: reset },
+      },
+      now,
+    );
+    now += 10;
+    governor.release?.(KEY, "requests", sentAt);
+    expect(store.read(KEY)?.requests.remaining).toBe(4001);
+  });
+});
+
+describe("what a refusal holds and what its caller is told", () => {
+  const now = 1_000_000;
+  const spent = () =>
+    new Headers({
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-remaining": "0",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-reset": String((now + 600_000) / 1000),
+    });
+  const refused = (text: string, headers: Headers) =>
+    forgeAnswerOf(
+      ["api", "repos/o/r"],
+      headers,
+      "{}",
+      ghRunFailure({ code: 1, stderr: text, timedOut: false }),
+      now,
+      text,
+    );
+
+  it("holds only the window of a primary refusal, and the credential for a secondary one with the same headers", () => {
+    const primary = refused("gh: API rate limit exceeded (HTTP 403)", spent());
+    expect(primary.limitedUntil).toBeUndefined();
+    expect(primary.unnamedRefusal).toBeUndefined();
+    const secondary = refused(
+      "gh: You have exceeded a secondary rate limit (HTTP 403)",
+      spent(),
+    );
+    expect(secondary.unnamedRefusal).toBeDefined();
+  });
+
+  it("holds the credential when the resource reported has no window an admission checks", () => {
+    const headers = spent();
+    headers.set("x-ratelimit-resource", "code_search");
+    const answer = refused("gh: API rate limit exceeded (HTTP 403)", headers);
+    expect(answer.limitedUntil).toBe(now + 600_000);
+  });
+
+  it("tells the caller of a refusal how long the record holds the credential", async () => {
+    setForgeGovernor(
+      budgetGovernor(memoryBudgetStore(), { share: () => null }),
+    );
+    const forge = client(() => ({
+      code: 1,
+      stdout: `${headers({ "Retry-After": 120 }, "403 Forbidden")}{}`,
+      stderr: "gh: You have exceeded a secondary rate limit (HTTP 403)\n",
+      timedOut: false,
+    }));
+    const answered = await forge.run(["api", "repos/o/r/pulls"]);
+    const until = ghRunFailure(answered)?.until ?? 0;
+    expect(until).toBeGreaterThan(currentMs() + 100_000);
+    expect(until).toBeLessThanOrEqual(currentMs() + 121_000);
+  });
+
+  it("reads JIG_FORGE_BUDGET from the environment the run is given", () => {
+    expect(
+      ghGovernance(["api", "user"], {
+        env: { ...ENV, JIG_FORGE_BUDGET: "off" },
+        captured: true,
+      }),
+    ).toBeNull();
+    expect(
+      ghGovernance(["api", "user"], { env: { ...ENV }, captured: true }),
+    ).not.toBeNull();
+  });
 });

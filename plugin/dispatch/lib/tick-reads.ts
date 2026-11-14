@@ -12,7 +12,7 @@
  * the forge cannot answer fifty at a time is not asked that way every tick.
  * The budget is read once, as the tick starts, from the machine's budget
  * record (`shared/outbound/github-budget.ts`), which every process's forge
- * calls keep current; only a record no answer has updated in the last
+ * calls keep current; only a record whose core window no answer has reported in the last
  * minute is refreshed first, by one read of the `rate_limit` endpoint. It
  * decides whether the optional reads run (`lowBudget`), and every
  * repository's report says what was left then.
@@ -118,9 +118,12 @@ export function recordedBudget(
   now: number,
   balances: ReturnType<typeof githubBalances>,
 ): SharedBudget | null {
-  if (balances === null || now - balances.observedAt > FRESH_RECORD_MS)
-    return null;
+  if (balances === null) return null;
   const core: BudgetWindow = balances.core;
+  // The core window's own last report: spending that other windows' answers
+  // or reservations recorded does not make the balance current.
+  if (core.answeredAt == null || now - core.answeredAt > FRESH_RECORD_MS)
+    return null;
   if (core.remaining === null || core.limit === null || core.resetAt === null)
     return null;
   const reset = core.resetAt <= now;

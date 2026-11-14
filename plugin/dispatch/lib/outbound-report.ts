@@ -147,13 +147,18 @@ function hourShare(row: LedgerRow, now: number): number {
     : Math.max(0, end - Math.max(row.hour, now - HOUR)) / duration;
 }
 
+/** A GitHub row that spends a limit of its own, not the core requests: GraphQL points, or a REST search. */
+function spendsOtherWindow(row: LedgerRow): boolean {
+  return row.unit === "points" || /^[A-Z]+ \/search(\/|$)/.test(row.operation);
+}
+
 /**
  * Spending in a quota's own unit, never inferred from missing complexity
  * headers. A GitHub GraphQL request spends points, not the core requests.
  */
 function quotaCost(row: LedgerRow, window: "requests" | "complexity"): number {
   if (window === "requests")
-    return row.system === "github" && row.unit === "points" ? 0 : row.requests;
+    return row.system === "github" && spendsOtherWindow(row) ? 0 : row.requests;
   return row.unit === "points" ? row.cost : 0;
 }
 

@@ -26,8 +26,10 @@
  *   (a conditional request) keeps no reservation.
  *
  * The other subcommands (`gh pr view`, `gh issue list`) show no headers:
- * the balance they spend is read from the `rate_limit` endpoint, which the
- * tick asks at most once, and from their refusals' text.
+ * each reserves a point of the GraphQL balance, the least a query costs, so
+ * the share still moves toward its floor, and the balance they spend is read
+ * from the `rate_limit` endpoint, which the tick asks at most once, and from
+ * their refusals' text. A refusal's caller is told the wait the record holds.
  *
  * `JIG_FORGE_BUDGET=off` leaves every run ungoverned: nothing is admitted,
  * observed or added to the command line. The test suites set it, so a
@@ -66,6 +68,8 @@ interface LimitProfile {
   refill: "whole";
   /** The record's window it is kept under. */
   window: string;
+  /** How long one window of it lasts. */
+  periodMs: number;
 }
 
 /**
@@ -77,9 +81,24 @@ const GITHUB_PROFILE = {
   system: "github",
   owner: "credential",
   limits: {
-    core: { unit: "requests", refill: "whole", window: "requests" },
-    graphql: { unit: "points", refill: "whole", window: "complexity" },
-    search: { unit: "requests", refill: "whole", window: "search" },
+    core: {
+      unit: "requests",
+      refill: "whole",
+      window: "requests",
+      periodMs: 3_600_000,
+    },
+    graphql: {
+      unit: "points",
+      refill: "whole",
+      window: "complexity",
+      periodMs: 3_600_000,
+    },
+    search: {
+      unit: "requests",
+      refill: "whole",
+      window: "search",
+      periodMs: 60_000,
+    },
   } satisfies Record<GitHubLimit, LimitProfile>,
   /**
    * A refusal: 403 or 429 (or a GraphQL `RATE_LIMITED` error) with no
@@ -191,19 +210,30 @@ function conditional(args: readonly string[]): boolean {
   );
 }
 
-/** What the run is admitted against: the windows of the limits it spends, reserving one request of a REST limit unless it is conditional. */
+/**
+ * What the run is admitted against: the windows of the limits it spends.
+ * It reserves one request of a REST limit unless it is conditional, and one
+ * point of the GraphQL balance for a run whose answer may not report its
+ * cost: a query costs at least a point, so the share still moves toward its
+ * floor when no answer says the balance.
+ */
 function admission(
   limits: readonly GitHubLimit[],
   args: readonly string[],
 ): AdmitOptions {
   const windows = limits.map((l) => GITHUB_PROFILE.limits[l].window);
-  const reserve =
-    limits.length === 1 &&
-    GITHUB_PROFILE.limits[limits[0] as GitHubLimit].unit === "requests" &&
-    !conditional(args)
-      ? (windows[0] ?? null)
-      : null;
-  return { windows, reserve };
+  const only = limits.length === 1 ? limits[0] : undefined;
+  const spent: GitHubLimit | null =
+    only !== undefined && GITHUB_PROFILE.limits[only].unit === "requests"
+      ? conditional(args)
+        ? null
+        : only
+      : limits.includes("graphql")
+        ? "graphql"
+        : null;
+  if (spent === null) return { windows, reserve: null };
+  const profile = GITHUB_PROFILE.limits[spent];
+  return { windows, reserve: profile.window, rollMs: profile.periodMs };
 }
 
 const INCLUDE = new Set(["-i", "--include"]);
@@ -363,19 +393,30 @@ function refusal(
   headers: Headers | null,
   failure: OutboundFailure,
   now: number,
+  secondary: boolean,
 ): void {
   answer.why = `GitHub refused the credential: ${failure.reason}`;
+  const resource = headers?.get("x-ratelimit-resource")?.trim().toLowerCase();
+  const unwaited =
+    headers === null || retryAfterMs(headers, () => now) === null;
+  // A primary limit the profile keeps a window for is held by that window.
+  // A secondary refusal can carry the same zero balance, and holds the
+  // credential whatever the headers say of one resource.
   if (
-    headers !== null &&
-    retryAfterMs(headers, () => now) === null &&
+    !secondary &&
+    unwaited &&
     namedWait(headers, now) !== null &&
-    headers.get("x-ratelimit-resource") !== null
+    resource !== undefined &&
+    resource in GITHUB_PROFILE.limits
   )
     return;
-  const until = namedWait(headers, now);
+  const until = secondary && unwaited ? null : namedWait(headers, now);
   if (until !== null) answer.limitedUntil = until;
   else answer.unnamedRefusal = { ...GITHUB_PROFILE.secondary };
 }
+
+/** A refusal's text that names GitHub's secondary limit. */
+const SECONDARY = /secondary rate|abuse detection/i;
 
 /** What one run's answer says of the credential's limits. */
 export function forgeAnswerOf(
@@ -384,6 +425,7 @@ export function forgeAnswerOf(
   body: string,
   failure: OutboundFailure | null,
   now: number,
+  refusedText = "",
 ): BudgetAnswer {
   const answer: BudgetAnswer = {};
   if (headers !== null) fromHeaders(answer, headers);
@@ -392,7 +434,14 @@ export function forgeAnswerOf(
     fromRateLimit(answer, value);
     answer.snapshot = true;
   } else fromGraphQL(answer, value);
-  if (failure?.code === "rate-limited") refusal(answer, headers, failure, now);
+  if (failure?.code === "rate-limited")
+    refusal(
+      answer,
+      headers,
+      failure,
+      now,
+      SECONDARY.test(`${refusedText}\n${body}`),
+    );
   return answer;
 }
 
@@ -448,7 +497,7 @@ export function ghGovernance(
   opts: { env?: Record<string, string | undefined>; captured: boolean },
 ): GhGovernance | null {
   const limits = limitsOf(args);
-  if (limits === null || !forgeBudgetOn()) return null;
+  if (limits === null || !forgeBudgetOn(opts.env ?? process.env)) return null;
   const key = githubCredential(opts.env ?? process.env);
   const gov = governor();
   const { argv, strip } = withHeaders(args, opts.captured);
@@ -480,18 +529,20 @@ export function ghGovernance(
       const { headers, body } = splitHeaders(stdout);
       // A store that cannot take the answer governs nothing (`budget.ts`);
       // anything else that throws here is a defect, and stops the call.
+      const failure = ghRunFailure(result, tookMs);
+      const now = currentMs();
       gov.observe(
         key,
-        forgeAnswerOf(
-          args,
-          headers,
-          body,
-          ghRunFailure(result, tookMs),
-          currentMs(),
-        ),
+        forgeAnswerOf(args, headers, body, failure, now, result.stderr ?? ""),
         sentAt,
       );
-      return strip && headers !== null ? { ...result, stdout: body } : result;
+      const answered =
+        strip && headers !== null ? { ...result, stdout: body } : result;
+      if (failure?.code !== "rate-limited") return answered;
+      // The caller waits as long as the record now holds the credential, or
+      // for the reset of the window the refusal spent; not the generic wait.
+      const until = gov.heldUntil?.(key) ?? namedWait(headers, now);
+      return until === null ? answered : { ...answered, limitedUntil: until };
     },
   };
 }

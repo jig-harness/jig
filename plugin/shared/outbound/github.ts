@@ -34,6 +34,8 @@ export interface GhRun {
   bufferExceeded?: boolean;
   /** The failure a held run answers: read as it was met, never from its text. */
   held?: OutboundFailure;
+  /** When a rate limit this run met clears, as the budget record holds it; epoch milliseconds. */
+  limitedUntil?: number;
 }
 
 /** GitHub refused the credential for a rate limit, primary or secondary. */
@@ -100,7 +102,7 @@ export function ghRunFailure(
   const code = classOfText(r.stderr, tookMs);
   return outboundFailure(code, reason, {
     ...(code === "rate-limited"
-      ? { until: now() + FORGE_FALLBACK_LIMIT_MS }
+      ? { until: r.limitedUntil ?? now() + FORGE_FALLBACK_LIMIT_MS }
       : {}),
     ...(code === "unreachable" && !NOT_SENT.test(r.stderr)
       ? { sent: true }

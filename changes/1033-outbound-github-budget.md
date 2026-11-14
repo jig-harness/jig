@@ -16,8 +16,8 @@ release: minor
   to fifteen; nothing is sent before that. The dispatcher's tick keeps to its
   share of GitHub's core, GraphQL and search windows as it does of a
   tracker's. The tick reads the forge's budget, and `load.forge_floor`'s
-  gauge, from the record, asking `rate_limit` only when no answer updated
-  the record in the last minute, and its `outbound github` report line
+  gauge, from the record, asking `rate_limit` only when no answer reported
+  the core window in the last minute, and its `outbound github` report line
   names the core and GraphQL balances
   ([configuration reference](../plugin/CONFIGURATION.md)).
 - `JIG_FORGE_BUDGET=off` leaves the forge's calls out of the budget record.

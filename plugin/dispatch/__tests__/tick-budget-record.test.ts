@@ -1,10 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { recordedBudget } from "../lib/tick-reads.ts";
 
-const window = (remaining: number | null, resetAt: number) => ({
+const window = (
+  remaining: number | null,
+  resetAt: number,
+  answeredAt: number | null = 10_000_000 - 30_000,
+) => ({
   limit: 5000,
   remaining,
   resetAt,
+  answeredAt,
 });
 
 describe("the tick's forge budget from the machine's record", () => {
@@ -42,8 +47,16 @@ describe("the tick's forge budget from the machine's record", () => {
     expect(
       recordedBudget(now, {
         ...fresh,
-        core: window(2600, now + 600_000),
+        core: window(2600, now + 600_000, now - 61_000),
         observedAt: now - 61_000,
+      }),
+    ).toBeNull();
+    // Another window's answer keeps the record fresh, not the core balance.
+    expect(
+      recordedBudget(now, {
+        ...fresh,
+        core: window(2600, now + 600_000, now - 61_000),
+        observedAt: now - 1_000,
       }),
     ).toBeNull();
     expect(

@@ -272,21 +272,33 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
     // (`too-costly`, which the paged reader answers with a smaller page) from
     // a fault it answered at once (which holds the forge).
     let tookMs = 0;
+    // A run the budget refuses never left the machine: it says nothing of the
+    // forge, so the hold does not read it as an answer.
+    const refusedHere = new WeakSet<object>();
+    const refuseHere = (failure: OutboundFailure): T => {
+      const refused = refuse(failure);
+      refusedHere.add(refused);
+      return refused;
+    };
     return recordGhAttempt(args, opts, () =>
-      governedRun(args, opts, refuse, (argv) =>
-        guarded(
-          GITHUB,
-          async () => {
+      guarded(
+        GITHUB,
+        // Admission and the answer's record sit inside the hold, so a call
+        // queued behind the probe is admitted after the probe's answer is
+        // recorded.
+        () =>
+          governedRun(args, opts, refuseHere, async (argv) => {
             const began = currentMs();
             try {
               return await run(argv, { ...opts, timeoutSec: deadline });
             } finally {
               tookMs = currentMs() - began;
             }
-          },
-          (r) => ghRunFailure(r, tookMs),
-          refuse,
-        ),
+          }),
+        (r) => ghRunFailure(r, tookMs),
+        refuse,
+        undefined,
+        (r) => refusedHere.has(r),
       ),
     );
   });

@@ -52,6 +52,22 @@ export interface BudgetWindow {
    * `observedAt`.
    */
   readAt?: number | null;
+  /**
+   * When an answer last reported this window's balance, epoch milliseconds;
+   * a reservation does not move it. Absent: never reported.
+   */
+  answeredAt?: number | null;
+  /**
+   * The window's reset is a guess, rolled forward by a reservation after
+   * the last reported reset passed; the next answer that reports the
+   * window replaces it.
+   */
+  estimated?: boolean;
+  /**
+   * The send time of the snapshot that last replaced this window's balance:
+   * a request admitted before it is already settled in that balance.
+   */
+  snapshotSentAt?: number | null;
 }
 
 /** What the machine knows of one credential's budget. */
@@ -105,6 +121,12 @@ export interface AdmitOptions {
   windows?: readonly string[];
   /** `null` reserves nothing: what the request costs is known only from its answer. */
   reserve?: string | null;
+  /**
+   * How long the reserved window lasts, for a window that resets whole: a
+   * reservation after its reset starts the next window of that length,
+   * instead of reserving nothing.
+   */
+  rollMs?: number;
 }
 
 /** No request may leave for the credential before `resetAt`. */
@@ -177,16 +199,25 @@ const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
 
 function validWindow(w: unknown): w is BudgetWindow {
   if (typeof w !== "object" || w === null) return false;
-  const { limit, remaining, resetAt, refillMs, readAt } = w as Record<
-    string,
-    unknown
-  >;
+  const {
+    limit,
+    remaining,
+    resetAt,
+    refillMs,
+    readAt,
+    answeredAt,
+    estimated,
+    snapshotSentAt,
+  } = w as Record<string, unknown>;
   return (
     orNull(limit, (n) => n >= 0) &&
     orNull(remaining, () => true) &&
     orNull(resetAt, (n) => n >= 0) &&
     (refillMs === undefined || orNull(refillMs, (n) => n > 0)) &&
-    (readAt === undefined || orNull(readAt, (n) => n >= 0))
+    (readAt === undefined || orNull(readAt, (n) => n >= 0)) &&
+    (answeredAt === undefined || orNull(answeredAt, (n) => n >= 0)) &&
+    (snapshotSentAt === undefined || orNull(snapshotSentAt, (n) => n >= 0)) &&
+    (estimated === undefined || typeof estimated === "boolean")
   );
 }
 
@@ -295,6 +326,8 @@ export interface BudgetGovernor {
    * it answers: what was recorded since is not in the answer.
    */
   observe(key: string, answer: BudgetAnswer, sentAt?: number): void;
+  /** Until when the credential is held after the answers recorded so far, epoch milliseconds; `null` when it is not. */
+  heldUntil?(key: string): number | null;
   /**
    * Give back the request `admit` reserved in window `name` at `sentAt`,
    * for a request that was never sent or that the system did not charge.
@@ -323,8 +356,10 @@ function merged(
   sentAt: number | undefined,
 ): BudgetWindow {
   if (next === undefined) return prev;
-  const read = { ...next, readAt: now };
+  const read = { ...next, readAt: now, answeredAt: now };
   const count = next.remaining;
+  // A guessed reset yields to any answer that reports the window.
+  if (prev.estimated === true && count !== null) return read;
   if (count === null) return olderWindow(prev, next) ? prev : read;
   if (sameResetWindow(prev, next) && prev.remaining !== null)
     return { ...read, remaining: Math.min(prev.remaining, count) };
@@ -497,16 +532,24 @@ function reserved(
   record: BudgetRecord,
   now: number,
   name: string | null = "requests",
+  rollMs?: number,
 ): BudgetRecord | null {
   const w = name === null ? undefined : windowOf(record, name);
-  if (
-    name === null ||
-    w === undefined ||
-    w.remaining === null ||
-    w.resetAt === null ||
-    w.resetAt <= now
-  )
-    return null;
+  if (name === null || w === undefined || w.remaining === null) return null;
+  if (w.resetAt === null) return null;
+  if (w.resetAt <= now) {
+    // The reported window is over and no answer has said the next one: a
+    // reservation starts it, so the share can still bind.
+    if (rollMs === undefined || w.limit === null || w.limit < 1) return null;
+    return withWindow(record, name, {
+      limit: w.limit,
+      remaining: w.limit - 1,
+      resetAt: now + rollMs,
+      readAt: now,
+      answeredAt: w.answeredAt ?? null,
+      estimated: true,
+    });
+  }
   // The balance as it stands, capped at the limit, from now on: a
   // refill that came while the window was full is not credit.
   const held = holds(w, record.observedAt, now) ?? w.remaining;
@@ -573,15 +616,42 @@ function holdOf(
   return { until: null, strikes: fresh ? 0 : strikes };
 }
 
-/** The windows a snapshot answer reports, taken as they are: it charges nothing and counts every caller's spending. */
+/**
+ * The windows a snapshot answer reports, taken as they are: it charges
+ * nothing and counts every caller's spending up to the time its request was
+ * sent. Spending recorded since (`readAt` at or after `sentAt`) is not in
+ * it, so within one window the lower count stands.
+ */
 function snapshotOf(
   prev: BudgetWindow,
   next: BudgetWindow | undefined,
   now: number,
+  sentAt: number | undefined,
 ): BudgetWindow {
   // A snapshot delayed across a reset says nothing of the window since.
-  if (next === undefined || olderWindow(prev, next)) return prev;
-  return { ...next, readAt: now };
+  if (
+    next === undefined ||
+    (prev.estimated !== true && olderWindow(prev, next))
+  )
+    return prev;
+  const since = sentAt ?? now;
+  const read = { ...next, readAt: now, answeredAt: now };
+  if (
+    prev.estimated !== true &&
+    sameResetWindow(prev, next) &&
+    prev.readAt != null &&
+    prev.readAt >= since &&
+    prev.remaining !== null &&
+    next.remaining !== null
+  )
+    return {
+      ...read,
+      remaining: Math.min(prev.remaining, next.remaining),
+      ...(prev.snapshotSentAt == null
+        ? {}
+        : { snapshotSentAt: prev.snapshotSentAt }),
+    };
+  return { ...read, snapshotSentAt: since };
 }
 
 /** A governor over `store`; `clock` and `share` are for tests. */
@@ -614,6 +684,7 @@ export function budgetGovernor(
           record,
           now,
           opts.reserve === undefined ? "requests" : opts.reserve,
+          opts.rollMs,
         );
       });
       if (out.refusal !== null) throw out.refusal;
@@ -634,11 +705,14 @@ export function budgetGovernor(
         const hold = holdOf(answer, base, now, sentAt);
         const windows =
           answer.snapshot === true && answer.windows !== undefined
-            ? { ...base.windows, ...stamped(base.windows, answer.windows, now) }
+            ? {
+                ...base.windows,
+                ...stamped(base.windows, answer.windows, now, sentAt),
+              }
             : mergedWindows(base.windows, answer.windows, now, sentAt);
         const take = (prev: BudgetWindow, next: BudgetWindow | undefined) =>
           answer.snapshot === true
-            ? snapshotOf(prev, next, now)
+            ? snapshotOf(prev, next, now, sentAt)
             : merged(prev, next, now, sentAt);
         return {
           requests: take(base.requests, answer.requests),
@@ -659,6 +733,12 @@ export function budgetGovernor(
         };
       });
     },
+    heldUntil(key) {
+      const record = store.read(key);
+      return record?.limitedUntil != null && record.limitedUntil > clock()
+        ? record.limitedUntil
+        : null;
+    },
     release(key, name, sentAt) {
       const now = clock();
       store.update(key, (record) => {
@@ -669,7 +749,10 @@ export function budgetGovernor(
           w.remaining === null ||
           w.resetAt === null ||
           w.resetAt <= now ||
-          w.resetAt <= sentAt
+          w.resetAt <= sentAt ||
+          // A snapshot sent after the reservation counts what GitHub charged:
+          // an unsent request is not in it, so there is nothing to give back.
+          (w.snapshotSentAt != null && w.snapshotSentAt >= sentAt)
         )
           return null;
         const remaining =
@@ -687,11 +770,12 @@ function stamped(
   prev: Record<string, BudgetWindow> | undefined,
   windows: Record<string, BudgetWindow>,
   now: number,
+  sentAt: number | undefined,
 ): Record<string, BudgetWindow> {
   return Object.fromEntries(
     Object.entries(windows).map(([name, w]) => [
       name,
-      snapshotOf(prev?.[name] ?? EMPTY, w, now),
+      snapshotOf(prev?.[name] ?? EMPTY, w, now, sentAt),
     ]),
   );
 }
