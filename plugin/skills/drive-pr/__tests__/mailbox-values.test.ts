@@ -66,19 +66,33 @@ const WRONG: Record<string, unknown> = {
   boolean: "true",
 };
 
-/** The properties a parser reads off a record, whatever it returns. */
+/** A field no table lists, planted on every probe so a read of it shows. */
+const UNLISTED = "zz_unlisted_field";
+
+/**
+ * The properties a parser reads off a record, whatever it returns: property
+ * gets and existence checks (`in`), on the shape plus one field no table
+ * lists, so a branch that reads an undocumented optional field is entered.
+ */
 function readFields(
   parse: (v: unknown) => object | null,
   shape: Record<string, unknown>,
 ): Set<string> {
   const read = new Set<string>();
   parse(
-    new Proxy(shape, {
-      get(target, key, receiver) {
-        if (typeof key === "string") read.add(key);
-        return Reflect.get(target, key, receiver);
+    new Proxy(
+      { ...shape, [UNLISTED]: "x" },
+      {
+        get(target, key, receiver) {
+          if (typeof key === "string") read.add(key);
+          return Reflect.get(target, key, receiver);
+        },
+        has(target, key) {
+          if (typeof key === "string") read.add(key);
+          return Reflect.has(target, key);
+        },
       },
-    }),
+    ),
   );
   return read;
 }
@@ -102,6 +116,10 @@ function holdsTo(
       const reads = new Set(shapes.flatMap((s) => [...readFields(parse, s)]));
       const listed = Object.keys(fields);
       expect([...reads].filter((f) => !listed.includes(f))).toEqual([]);
+      for (const s of shapes)
+        expect(
+          Object.keys(parse({ ...s, [UNLISTED]: "x" }) ?? {}),
+        ).not.toContain(UNLISTED);
       expect(carriedBy(fields, kind).filter((f) => !reads.has(f))).toEqual([]);
     });
     test(`${kind}: the parser refuses a line without a field the table says it always carries`, () => {

@@ -20,11 +20,11 @@ export interface MailboxValue {
 export const MESSAGE_KINDS = {
   note: {
     meaning:
-      "Context for the drive's passes, which they may read (`mailbox.ts check`) and acknowledge; it never controls the drive. A note that lacks a field a note always carries is dropped with a warning; a line that is not valid JSON, or a note that carries `command`, `target` or `generation`, is read as a malformed directive and holds the drive's pushes.",
+      "Context for the drive's passes, which they may read (`mailbox.ts check`) and acknowledge; it never controls the drive. A note that lacks a field a note always carries is dropped with a warning; a line that is not valid JSON, or a note that carries `command`, `target` or `generation`, is read as a malformed directive and holds the drive's pushes. `mailbox.ts repair` removes the interrupted line; a note that parses but carries a directive field stays until a person edits or removes it.",
   },
   directive: {
     meaning:
-      "A command the drive enforces mechanically, named in its `command` field. A directive line that does not parse holds the drive's pushes and ends the driver at its next checkpoint with exit 1, as an unreadable inbox does, and a re-armed drive ends again until a person repairs the file (`mailbox.ts repair`).",
+      "A command the drive enforces mechanically, named in its `command` field. A directive line that does not parse holds the drive's pushes and ends the driver at its next checkpoint with exit 1, as an unreadable inbox does, and a re-armed drive ends again until a person repairs the file: `mailbox.ts repair` removes a line that is not valid JSON, while valid JSON of the wrong shape needs a person to correct or remove it.",
   },
 } as const satisfies Readonly<Record<string, MailboxValue>>;
 
