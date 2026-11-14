@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -16,9 +22,12 @@ import {
   CI_INFRA_PERSISTED_EXIT,
   CI_REPAIR_SPENT_EXIT,
 } from "../scripts/lib/driver/settings.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { realGitForShell } from "./round-plan-fixtures.ts";
 import {
   type CheckRunFixture,
   DORMANT_ARM,
+  gitCleanEnv,
   REVIEWER_RUN,
   scratchClean,
   useDrivePrSuite,
@@ -86,6 +95,77 @@ function noHoldOverlay(dir: string, retry = true): string {
   return overlay;
 }
 
+/**
+ * A copy of the scratch clone whose `origin` is a local repository holding the
+ * base `develop` and the default branch `main`, so the driver reads a base
+ * policy before it retries a check; a `git` stub answers the forge URL that
+ * the pull request's repository check expects.
+ */
+function policyReadableTree(
+  dir: string,
+  retry: boolean,
+): { tree: string; bin: string } {
+  const tree = join(dir, "tree");
+  cpSync(scratchClean.dir, tree, { recursive: true });
+  const git = (cwd: string, ...args: string[]) => {
+    const r = Bun.spawnSync(["git", ...args], {
+      cwd,
+      env: gitCleanEnv(),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(
+      {
+        exitCode: r.exitCode,
+        stdout: r.stdout.toString(),
+        stderr: r.stderr.toString(),
+      },
+      0,
+      `git ${args.join(" ")}`,
+    );
+  };
+  const remote = join(dir, "remote", "example-org", "example-repo.git");
+  mkdirSync(remote, { recursive: true });
+  git(remote, "init", "-q", "--bare");
+  if (retry) git(tree, "push", "-q", remote, "HEAD:refs/heads/develop");
+  else {
+    // The setting is read from the base branch, so the base commit carries it.
+    git(tree, "checkout", "-q", "-b", "base-policy");
+    mkdirSync(join(tree, ".config"), { recursive: true });
+    writeFileSync(
+      join(tree, ".config", "jig.yaml"),
+      "ci:\n  rerun_failed_once: false\n",
+    );
+    git(tree, "add", ".config/jig.yaml");
+    git(tree, "commit", "-qm", "base policy", "--no-verify");
+    git(tree, "push", "-q", remote, "HEAD:refs/heads/develop");
+    git(tree, "checkout", "-q", "--detach", "HEAD~1");
+    git(tree, "branch", "-q", "-D", "base-policy");
+  }
+  git(tree, "push", "-q", remote, "HEAD:refs/heads/main");
+  git(tree, "remote", "add", "origin", remote);
+  git(tree, "fetch", "-q", "origin");
+  git(
+    tree,
+    "symbolic-ref",
+    "refs/remotes/origin/HEAD",
+    "refs/remotes/origin/main",
+  );
+  const bin = join(dir, "git-bin");
+  mkdirSync(bin, { recursive: true });
+  writeFakeProgram(
+    join(bin, "git"),
+    `#!/usr/bin/env sh
+if [ "\${*#*remote get-url }" = "origin" ]; then
+  echo https://github.com/example-org/example-repo.git
+  exit 0
+fi
+exec "${realGitForShell()}" "$@"
+`,
+  );
+  return { tree, bin };
+}
+
 /** Drive a converged head whose two code-scanning checks failed in run 41, with that run's log. */
 async function driveFailedScan(
   log: string,
@@ -134,12 +214,16 @@ async function driveFailedScan(
     writeFileSync(join(dir, "rerun-still-failing"), "");
   if (opts.delayed === true)
     writeFileSync(join(dir, "retry-witness-sequence"), "");
+  const { tree, bin } = policyReadableTree(dir, opts.retry !== false);
   const r = await runDriveIn(
     dir,
     stateDir,
     ["--keep-draft", "--no-head-sync", "--", ...PASS_RUNS],
-    undefined,
-    { env: { JIG_OVERLAY: noHoldOverlay(dir, opts.retry), ...opts.env } },
+    tree,
+    {
+      env: { JIG_OVERLAY: noHoldOverlay(dir, opts.retry), ...opts.env },
+      extraBinDir: bin,
+    },
   );
   const reruns = existsSync(join(dir, "reruns.log"))
     ? readFileSync(join(dir, "reruns.log"), "utf8").trim().split("\n")
