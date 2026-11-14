@@ -170,7 +170,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
-| `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes (`DRIVE_PR_CI_REPAIR_ROUNDS`) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
+| `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes per head and failing check (`DRIVE_PR_CI_REPAIR_ROUNDS`) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
 | `CI_INFRA_PERSISTED` | 23 | The review converged, and every failing check on the head failed on the infrastructure (a lost runner, or a setup step's network failure, with no code diagnostic) through the drive's re-runs and head moves (`DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each). No CI-repair pass was spent and nothing in the code needs repair. Under `jig dispatch` the dispatcher re-drives it after a backoff that doubles with each consecutive such stop, and tells a person once the stops outlast its re-drives |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
@@ -292,15 +292,29 @@ non-reviewer CI verdict to be green before it writes the PR-global
 `verifiedSha` or exits 0.
 
 **A red verdict there is a repair round, not a stop**. Up to
-`DRIVE_PR_CI_REPAIR_ROUNDS` times (default 2), the driver dispatches a
+`DRIVE_PR_CI_REPAIR_ROUNDS` times per head and failing check (default 2), the driver dispatches a
 `ci-repair` pass (§ 0) and re-gates from the top afterwards, because a repair
 that pushed moved the head and staled every piece of evidence gathered under
 the old one — the reviewer's stamp included. Only a verdict naming failing
 checks positively (`failing: …`) spends budget: `cancelled:`, `unknown:` and an
 unreadable report are absences of evidence, not evidence of failure, and a
 CI-repair pass handed neither a run nor a check name has nothing to work from.
-Once the budget is spent — or on the first red if it is `0` — the drive takes
-the original exit-`1` stop and hands the red CI back for repair.
+Before charging a repair, the driver retries each failed workflow's failed
+jobs once per head and check (`ci.rerun_failed_once`, default `true`). A
+shared workflow cannot repeat a check already retried on that head. The
+forge confirms the run completed on the unchanged head and that the pull
+request remains open without the CI hold. A held event, unreadable workflow
+provenance or a commit status gets no automatic retry. Infrastructure
+failures keep their separate recovery path below. The driver log and ledger
+record the workflow retry or the charged repair with its head and check names.
+After an accepted retry, the driver waits for a newer completed run attempt,
+then gathers CI evidence again. An unchanged or unreadable attempt cannot
+spend a repair or certify convergence. The wait uses
+`DRIVE_PR_FINAL_CI_WITNESS_POLLS` (180 polls when that setting is `0`) and
+stops with exit `1` if no completed replacement appears.
+Once each failing check's repair budget is spent, the drive stops with
+`21` (`CI_REPAIR_SPENT`). With repairs disabled (`0`), it stops with `1`
+after any enabled retry. A different check or head has a fresh repair budget.
 
 **Held and advisory failures spend no automatic repair pass.** While the live
 CI hold label is present, a held-head check in M13's shape, or named in
@@ -1638,8 +1652,10 @@ have taken anyway, which is the honest outcome, and burns no further budget.
 
 The budgets are `DRIVE_PR_CI_REPAIR_ROUNDS` (default 2) and
 `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1), both in-memory per driver
-process and both disabled by `0`, which stops on the first red CI or
-conflict without a repair pass. A spent CI-repair budget stops with exit
+process and both disabled by `0`, which stops without a repair pass.
+CI repair counts belong to each head and failing check, and conflict repair
+counts belong to the driver. `ci.rerun_failed_once: false` independently
+disables the failed-check retry. A spent CI-repair budget stops with exit
 `21` (`CI_REPAIR_SPENT`). A failure of the infrastructure spends neither: it is
 re-run, and stops `23` (`CI_INFRA_PERSISTED`) past its own bounds. See
 § Terminal states.
