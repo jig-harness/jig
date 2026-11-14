@@ -197,7 +197,7 @@ alone, which only shows what is there now. So the check also reads the
 chapter's data file (below) as the integration branch holds it, from the
 merge base with that branch, and compares: a value or a field that the base
 has and the new data file lacks, a value whose meaning changed to another
-value's, a field whose type changed, or a field that is new and required or
+value's or a value added with the meaning of one the change withdraws, a field whose type changed, or a field that is new and required or
 that changed from optional to required or is new and identifies a value, a
 listed value whose other published field changed (a withdrawal to a tombstone
 excepted), fails the check unless the chapter's

@@ -365,17 +365,25 @@ const withdrawalMay = (field: string, spec: FieldSpec, v: DataValue) =>
 
 /**
  * A value the base lists whose meaning changed to that of another value
- * still listed. A value the base does not list is added, and may share a
- * meaning, as the markers of one record kind do; a value whose own identity
- * is gone is reported gone, not here.
+ * still listed, and a value added with the meaning of one this change
+ * withdraws to a tombstone, which renames it. Any other added value may
+ * share a meaning, as the markers of one record kind do; a value whose own
+ * identity is gone is reported gone, not here.
  */
 function meaningProblems(view: ValueView): string[] {
   const out: string[] = [];
+  const withdrawnNow = (other: string, w: DataValue) =>
+    w.kind !== TOMBSTONE && view.after.get(other)?.kind === TOMBSTONE;
   for (const [k, v] of view.after) {
     const self = view.before.get(k);
-    if (self === undefined || self.meaning === v.meaning) continue;
+    if (self !== undefined && self.meaning === v.meaning) continue;
     for (const [other, w] of view.before)
-      if (other !== k && view.after.has(other) && w.meaning === v.meaning)
+      if (
+        other !== k &&
+        view.after.has(other) &&
+        w.meaning === v.meaning &&
+        (self !== undefined || withdrawnNow(other, w))
+      )
         out.push(
           `the value ${view.show(v)} now carries the meaning the base gives ${view.show(w)}`,
         );

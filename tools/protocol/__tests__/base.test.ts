@@ -130,6 +130,40 @@ describe("the comparison with the integration branch", () => {
     expect(check(root, [shared]).problems).toEqual([]);
   });
 
+  test("fails a value added with the meaning of a value the change withdraws, which renames it", () => {
+    const kinded = {
+      ...FIELDS,
+      kind: {
+        type: "string" as const,
+        nullable: false,
+        required: true,
+        identifies: false,
+        description: "Its kind.",
+      },
+    };
+    const base = fixtureChapter({
+      fields: kinded,
+      values: VALUES.map((v) => ({ ...v, kind: "state" })),
+    });
+    const renamed = fixtureChapter({
+      fields: kinded,
+      values: [
+        { ...VALUES[0], kind: "tombstone" },
+        { ...VALUES[1], kind: "state" },
+        {
+          name: "GAMMA",
+          code: 3,
+          meaning: "the first thing happened",
+          kind: "state",
+        },
+      ] as never,
+    });
+    const root = scratchRepo([base], [renamed]);
+    expect(check(root, [renamed]).problems).toEqual([
+      'plugin/protocol/data/fixture.json: the value name "GAMMA", code 3 now carries the meaning the base gives name "ALPHA", code 1',
+    ]);
+  });
+
   test("passes a meaning reworded in place", () => {
     const reworded = fixtureChapter({
       values: [
