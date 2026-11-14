@@ -618,11 +618,16 @@ async function answersOf(
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const deliveries = await channel.deliver(batch, {
-        timeLeftMs,
-        signal: controller.signal,
+      const expired = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`delivery did not finish within ${timeoutMs}ms`));
+        }, timeoutMs);
       });
+      const deliveries = await Promise.race([
+        channel.deliver(batch, { timeLeftMs, signal: controller.signal }),
+        expired,
+      ]);
       if (controller.signal.aborted)
         return lostAnswers(
           channel,

@@ -420,7 +420,7 @@ export function orcaCard(
     name: ORCA_CARD,
     written,
     unreachable: () => (sessions.ok ? null : sessions.reason),
-    async deliver(due) {
+    async deliver(due, time) {
       if (!sessions.ok)
         return due.map((c) => answer(c, "waits", null, sessions.reason));
       const context = {
@@ -436,6 +436,15 @@ export function orcaCard(
       const target = await destination(context);
       if (typeof target === "string")
         return due.map((c) => answer(c, "waits", null, target));
+      if (time.signal.aborted)
+        return due.map((c) =>
+          answer(
+            c,
+            "waits",
+            null,
+            "the delivery time was spent before the write",
+          ),
+        );
       const out = await sendTo(
         context,
         target,
