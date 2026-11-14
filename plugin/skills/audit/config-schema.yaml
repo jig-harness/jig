@@ -602,7 +602,7 @@ fields:
     default: true
     repository_only: true
     read_by: [drive-pr]
-    since: next
+    since: 0.237.1
   ci.hold_sentinels:
     type: list
     items: string

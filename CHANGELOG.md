@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.237.1] - 2026-11-14
+
+### Fixed
+
+- A drive retries failed workflow jobs once before spending a CI-repair pass. Repair allowances now belong to each head and failing check, so an earlier failure cannot exhaust another check's budget. Set `ci.rerun_failed_once: false` to disable the retry independently of repairs. Infrastructure failures keep their existing recovery path. **Consumer action:** none.
+
 ## [0.237.0] - 2026-11-14
 
 ### Added
@@ -8298,7 +8304,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.237.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.237.1...HEAD
+[0.237.1]: https://github.com/jig-harness/jig/compare/v0.237.0...v0.237.1
 [0.237.0]: https://github.com/jig-harness/jig/compare/v0.236.2...v0.237.0
 [0.236.2]: https://github.com/jig-harness/jig/compare/v0.236.1...v0.236.2
 [0.236.1]: https://github.com/jig-harness/jig/compare/v0.236.0...v0.236.1
