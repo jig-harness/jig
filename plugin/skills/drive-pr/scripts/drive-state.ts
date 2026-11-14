@@ -194,6 +194,7 @@
  */
 
 import { writeFileSync } from "node:fs";
+import { claimAdvisoryRepair } from "./lib/state/advisory-repair.ts";
 import {
   ciHoldTransitions,
   completedRequiredCi,
@@ -372,6 +373,7 @@ function usage(): void {
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
   record-decision [PR]              a decision the agent took, JSON on stdin
+  claim-advisory-repair [PR]        charge one answered fix receipt, {key,resolvedAt} on stdin
   reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
   record-event [PR]                 a self-restart or re-arm, JSON on stdin
   rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
@@ -726,6 +728,7 @@ const STDIN_COMMANDS = new Map<
   ],
   ["seed-ledger", seedLedgerCommand],
   ["record-decision", decisions.recordDecision],
+  ["claim-advisory-repair", claimAdvisoryRepair],
   ["reverse-decision", decisions.reverseDecision],
   ["record-event", recordEvent],
   ["rule", recordRuling],
@@ -799,6 +802,7 @@ async function main(): Promise<number> {
     "park",
     "unpark",
     "record-decision",
+    "claim-advisory-repair",
     "reverse-decision",
     "record-event",
     "rule",

@@ -2705,12 +2705,12 @@ make, use the entry's term instead.
   source, by the *tick*'s own rule, by a *steward* record, by a person's
   answer to a framed decision, or by a person alone
   ([the classes](design/need-classes.md)).
-- **Advisory check** — a planned CI configuration for a check whose failure
-  a repair pass cannot fix by itself, such as a scanner's quality gate. When
-  every failing check is advisory and `reviewer-posture` is a configured
-  person-decision class, the planned drive behavior stops as that decision
-  rather than spending repair passes (`ci.advisory_checks`). Not the same as
-  an *advisory gate*, which never blocks
+- **Advisory check** — a CI configuration for a check whose failure a repair
+  pass cannot fix by itself, such as a scanner's quality gate. When every
+  failing check is advisory and `reviewer-posture` is a configured
+  person-decision class, the drive stops for that decision rather than
+  spending repair passes (`ci.advisory_checks`). Not the same as an *advisory
+  gate*, which never blocks
   ([the implementation plan](design/need-classes.md#ci-repair-spent-or-a-ci-verdict-misread)).
 - **Rescue branch** — a planned local branch the *dispatcher* would keep a
   worktree's unpushed commits on before detaching that worktree, so freeing

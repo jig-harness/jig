@@ -15,7 +15,7 @@
  * keeps the newest `RESOLVED_PARKS_KEPT`; optional in a stored state and a
  * ledger, where an older file reads as none.
  */
-import { isRecord } from "../../../../../shared/guards.ts";
+import { isRecord, isString as isText } from "../../../../../shared/guards.ts";
 import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
 import { redact } from "../../../../../shared/redact.ts";
 import type { PendingAnswer } from "./pass-handoff.ts";
@@ -45,6 +45,8 @@ export interface ResolutionReceipt {
   answeredAt?: string;
   /** When the re-arm unparked it. */
   resolvedAt: string;
+  /** A bounded advisory repair was claimed before its pass started. */
+  repairStartedAt?: string;
 }
 
 /** What the re-arm hands `unpark --stdin` for each item: the verdict it read. */
@@ -54,7 +56,6 @@ export interface ConsumedVerdict {
   answers: PendingAnswer[];
 }
 
-const isText = (v: unknown): v is string => typeof v === "string";
 const isTime = (v: unknown): v is string =>
   isText(v) && Number.isFinite(Date.parse(v));
 
@@ -107,6 +108,7 @@ const RECEIPT_FIELDS = {
   answers: (v: unknown) => Array.isArray(v) && v.every(isReceiptAnswer),
   answeredAt: optional(isTime),
   resolvedAt: isTime,
+  repairStartedAt: optional(isTime),
 };
 
 export function isResolutionReceipt(v: unknown): v is ResolutionReceipt {
