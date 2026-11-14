@@ -394,6 +394,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.237.2] - 2026-11-14
+
+### Fixed
+
+- `jig dispatch` opening an Orca workspace on this machine now runs the
+  repository's create hook under the same supervisor the workspace tools use:
+  the hook leads a process group of its own, and a hook that fails or
+  outlives its limit is ended with every process it started before its claim
+  is given back. Before, a failed hook's children (a dependency install, say)
+  could keep changing the worktree while the next open ran the hook again.
+  **Consumer action:** none.
+
 ## [0.237.1] - 2026-11-14
 
 ### Fixed
@@ -8304,7 +8316,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.237.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.237.2...HEAD
+[0.237.2]: https://github.com/jig-harness/jig/compare/v0.237.1...v0.237.2
 [0.237.1]: https://github.com/jig-harness/jig/compare/v0.237.0...v0.237.1
 [0.237.0]: https://github.com/jig-harness/jig/compare/v0.236.2...v0.237.0
 [0.236.2]: https://github.com/jig-harness/jig/compare/v0.236.1...v0.236.2
