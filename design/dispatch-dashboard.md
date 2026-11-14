@@ -343,9 +343,10 @@ pull request #891 introduces and
 [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md), the
 person's browser sends an act straight to the forge or tracker with the
 person's own token, never through the host, and an act is trusted as
-`jig send` from the person's terminal is. Their one prerequisite is that
-pull request, not item 40; item 40 only gives a class that needs proof its
-proof.
+`jig send` from the person's terminal is. Item 40 is no prerequisite of
+them: that pull request is, and the overview's physical-device probes must
+pass before any action code is built; item 40 only gives a class that
+needs proof its proof.
 
 **If item 40 never settles**, the dashboard's server never writes. Stage 3 still builds its
 steps 2 and 3, not step 1: the runner, `plan` and the chat, which explains
