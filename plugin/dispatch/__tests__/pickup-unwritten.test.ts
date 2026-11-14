@@ -10,7 +10,7 @@ import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { classifyEnded } from "../lib/log.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
 import { parseMs } from "../../shared/time.ts";
-import type { DispatchSection, WantedItem } from "../lib/types.ts";
+import type { ClaimedItem, DispatchSection, WantedItem } from "../lib/types.ts";
 
 const QUESTION = "should the dispatcher's schema be repaired?";
 const ASKED = `Question: ${QUESTION}`;
@@ -50,12 +50,16 @@ const ITEM: WantedItem = {
   assignedBy: "writer",
 };
 
-function plan(read: ReadRecord, rerunsHeld: string | null = null) {
+function plan(
+  read: ReadRecord,
+  rerunsHeld: string | null = null,
+  claimed: ClaimedItem[] = [],
+) {
   return planPickups({
     slug: "example-org/example-repo",
     section: { stalledAfterMs: 3_600_000 } as DispatchSection,
     pickups: [ITEM],
-    claimed: [],
+    claimed,
     sessions: { ok: true, source: "test", workspaces: [] },
     launches: [read],
     idleSince: new Map(),
@@ -64,12 +68,16 @@ function plan(read: ReadRecord, rerunsHeld: string | null = null) {
   });
 }
 
-function planMany(reads: ReadRecord[], rerunsHeld: string | null = null) {
+function planMany(
+  reads: ReadRecord[],
+  rerunsHeld: string | null = null,
+  claimed: ClaimedItem[] = [],
+) {
   return planPickups({
     slug: "example-org/example-repo",
     section: { stalledAfterMs: 3_600_000 } as DispatchSection,
     pickups: [ITEM],
-    claimed: [],
+    claimed,
     sessions: { ok: true, source: "test", workspaces: [] },
     launches: reads,
     idleSince: new Map(),
@@ -79,6 +87,12 @@ function planMany(reads: ReadRecord[], rerunsHeld: string | null = null) {
 }
 
 describe("a pickup whose result the host could not write", () => {
+  const CLAIMED: ClaimedItem = {
+    key: "#12",
+    title: "task",
+    state: "In Progress",
+  };
+
   it("never raises the question its pass stopped on, where a pass that wrote nothing on its own asks it", () => {
     expect(plan(stopped(false)).actions).toContainEqual(
       expect.objectContaining({
@@ -97,7 +111,7 @@ describe("a pickup whose result the host could not write", () => {
   });
 
   it("raises nothing while the host's health check fails, its own need standing for it", () => {
-    const held = plan(stopped(true), "the last tick exited 1");
+    const held = plan(stopped(true), "the last tick exited 1", [CLAIMED]);
     expect(held.actions.filter((a) => a.stage === "notify")).toEqual([]);
     expect(held.quiet).toContainEqual(
       expect.objectContaining({ target: "#12", class: "pickup-ended" }),
@@ -119,7 +133,9 @@ describe("a pickup whose result the host could not write", () => {
     const older = stopped(true);
     const newer = stopped(false);
     newer.record = { ...newer.record, createdAt: "2026-11-14T11:30:00.000Z" };
-    const planned = planMany([older, newer], "the last tick exited 1");
+    const planned = planMany([older, newer], "the last tick exited 1", [
+      CLAIMED,
+    ]);
     expect(planned.actions).toContainEqual(
       expect.objectContaining({ cause: "pickup-question", target: "#12" }),
     );
