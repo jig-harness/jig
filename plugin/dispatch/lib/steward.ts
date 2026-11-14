@@ -471,13 +471,14 @@ export function judgedResumes(
   repo: string,
   root = stateRoot(),
 ): ReadonlySet<string> {
+  const digests = new Map<string, ReturnType<typeof readStewardDigest>>();
   return new Set(
     stewardRecords(repo, root).flatMap((r) =>
       r.applied &&
       r.effect !== null &&
       r.effect !== STEWARD_REFUSED_OPEN &&
       r.value.kind === "resume" &&
-      !namedOutsideDigest(r, root)
+      !namedOutsideDigest(r, root, digests)
         ? [r.value.record]
         : [],
     ),
@@ -485,9 +486,18 @@ export function judgedResumes(
 }
 
 /** An earlier steward settled a resume naming a pass outside its own digest as refused: that pass stays offered. */
-function namedOutsideDigest(r: KeptStewardRecord, root: string): boolean {
+function namedOutsideDigest(
+  r: KeptStewardRecord,
+  root: string,
+  digests: Map<string, ReturnType<typeof readStewardDigest>>,
+): boolean {
   if (r.effect !== STEWARD_REFUSED) return false;
-  const digest = readStewardDigest(r.run, root);
+  // One run's refusals share one digest: read and parse it once per call.
+  let digest = digests.get(r.run);
+  if (digest === undefined) {
+    digest = readStewardDigest(r.run, root);
+    digests.set(r.run, digest);
+  }
   return digest.ok && !recordBelongsToDigest(r.value, digest.value);
 }
 
