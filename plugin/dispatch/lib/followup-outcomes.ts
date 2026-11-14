@@ -28,6 +28,7 @@ import { routineClassOf, routineQuestion } from "./routine-questions.ts";
 import { questionOf } from "./session.ts";
 import { stateDb } from "./state.ts";
 import { isRerun, retryableFollowup } from "./session-startup.ts";
+import { currentIso, parseMs } from "../../shared/time.ts";
 
 export interface FollowupOutcome {
   /** The repository's `owner/name`. */
@@ -153,8 +154,8 @@ function supersedes(
   written: FollowupOutcome,
   record: { id: string; createdAt: string },
 ): boolean {
-  const a = Date.parse(written.created);
-  const b = Date.parse(record.createdAt);
+  const a = parseMs(written.created);
+  const b = parseMs(record.createdAt);
   if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return a > b;
   return written.record > record.id;
 }
@@ -195,7 +196,7 @@ export function settleFollowups(
       pr: record.pr,
       record: record.id,
       outcome,
-      at: new Date().toISOString(),
+      at: currentIso(),
       created: record.createdAt,
       ...asked,
     };

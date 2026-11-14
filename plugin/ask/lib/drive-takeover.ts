@@ -20,6 +20,7 @@ import { stallThresholdMs } from "../../skills/drive-pr/scripts/lib/doctor.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import type { SharedClaim } from "../../shared/records/shared.ts";
 import type { PullDoc } from "./forge.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /**
  * Why no dispatcher takes the drive over: a takeover that already ended on
@@ -36,7 +37,7 @@ export function takeoverSettled(
 ): string | null {
   const classified = classifyLedger(
     ledger,
-    Date.now(),
+    currentMs(),
     stallThresholdMs(),
     park,
     {

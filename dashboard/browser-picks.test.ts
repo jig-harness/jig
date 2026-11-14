@@ -522,6 +522,8 @@ describe("picking answers on a card", () => {
         await shows(page, ".pQueue");
         await resetClipboard(page);
         // The palette lists the card; the next read no longer holds it.
+        const needsCount = page.locator('.views [data-view="needs"] .badge');
+        const beforeRefresh = await needsCount.textContent();
         await page.keyboard.press("Control+k");
         await page.route("**/state?*", async (route) => {
           const response = await route.fetch();
@@ -534,6 +536,10 @@ describe("picking answers on a card", () => {
         const read = page.waitForResponse((r) => r.url().includes("/state?"));
         await page.evaluate(() => window.dispatchEvent(new Event("focus")));
         await read;
+        await until(
+          "the refreshed needs count is drawn",
+          async () => (await needsCount.textContent()) !== beforeRefresh,
+        );
         await page.keyboard.type("answers #1300");
         await page.keyboard.press("Enter");
         await until("the page said nothing was copied", async () =>

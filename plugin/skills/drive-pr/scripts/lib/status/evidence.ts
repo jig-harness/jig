@@ -6,6 +6,7 @@
  */
 
 import { parseReviewRound } from "../../summary-findings.ts";
+import { liveHeldChecks } from "../held-checks.ts";
 import { suiteIdOf } from "../ci-hold.ts";
 import {
   isReviewerLogin,
@@ -386,6 +387,7 @@ export function reviewerRun(runs: CheckRun[]): CheckRun | null {
 }
 
 interface CheckReading {
+  selected: CheckRun[];
   failing: CheckRun[];
   pending: CheckRun[];
   /** Nothing is known about these: see `lib/status/workflow-runs.ts`. */
@@ -404,6 +406,7 @@ interface CheckReading {
 function readChecks(
   runs: CheckRun[],
   workflowRuns: readonly WorkflowRun[] | null,
+  suppressedIds: ReadonlySet<number> = new Set(),
 ): CheckReading {
   const own = runs.filter((r) => !isReviewerCheck(r));
   const counted = withoutSuperseded(own, workflowRuns);
@@ -445,15 +448,23 @@ function readChecks(
       ? evidence
       : lastRan;
   });
+  // Suppression happens only after this reading has established replacement
+  // and rerun evidence. Removing a held failure from `runs` first can make a
+  // second reduction resurrect its predecessors, or hide an independent
+  // outstanding rerun that the original reduction retained.
+  const visible = reading.filter((run) => !suppressedIds.has(run.id));
   return {
-    failing: reading.filter(failing),
+    selected: visible,
+    failing: visible.filter(failing),
     pending: [
       ...new Set([
-        ...reading.filter(pending),
-        ...unreplacedRerunJobs(counted, workflowRuns),
+        ...visible.filter(pending),
+        ...unreplacedRerunJobs(counted, workflowRuns).filter(
+          (run) => !suppressedIds.has(run.id),
+        ),
       ]),
     ],
-    cancelled: reading.filter(absent),
+    cancelled: visible.filter(absent),
   };
 }
 
@@ -483,6 +494,7 @@ export function ciVerdictOf(
   runsUnreadable: boolean,
   head: string,
   workflowRuns: readonly WorkflowRun[] | null = null,
+  suppressedIds: ReadonlySet<number> = new Set(),
 ): string {
   if (runsUnreadable) {
     // An empty stand-in for an unread set is not evidence of a clean one — the
@@ -490,7 +502,7 @@ export function ciVerdictOf(
     // PR_CONFLICTING, never to manufacture a green verdict from a failed query.
     return `unknown: could not read check-runs for ${head}`;
   }
-  const reading = readChecks(runs, workflowRuns);
+  const reading = readChecks(runs, workflowRuns, suppressedIds);
   const namesOf = (list: CheckRun[]) => list.map((r) => r.name).join(", ");
   const failingChecks = namesOf(reading.failing);
   const pendingChecks = namesOf(reading.pending);
@@ -547,9 +559,12 @@ export function failingCheckRunNames(
   runs: CheckRun[],
   runsUnreadable: boolean,
   workflowRuns: readonly WorkflowRun[] | null = null,
+  suppressedIds: ReadonlySet<number> = new Set(),
 ): string[] | null {
   if (runsUnreadable) return null;
-  return readChecks(runs, workflowRuns).failing.map((r) => r.name);
+  return readChecks(runs, workflowRuns, suppressedIds).failing.map(
+    (r) => r.name,
+  );
 }
 
 /**
@@ -560,8 +575,12 @@ export function failingCheckRunNames(
 export function failingRunsOf(
   runs: CheckRun[],
   workflowRuns: readonly WorkflowRun[] | null,
+  suppressedIds: ReadonlySet<number> = new Set(),
 ): FailedRun[] | null {
-  return failedRunsOf(readChecks(runs, workflowRuns).failing, workflowRuns);
+  return failedRunsOf(
+    readChecks(runs, workflowRuns, suppressedIds).failing,
+    workflowRuns,
+  );
 }
 
 /**
@@ -629,10 +648,12 @@ export function failingNames(
   statuses: CommitStatus[] | null,
   runsUnreadable: boolean,
   workflowRuns: readonly WorkflowRun[] | null = null,
+  suppressedIds: ReadonlySet<number> = new Set(),
 ): string[] | null {
   if (runsUnreadable || statuses === null) return null;
   const failingChecks =
-    failingCheckRunNames(runs, runsUnreadable, workflowRuns) ?? [];
+    failingCheckRunNames(runs, runsUnreadable, workflowRuns, suppressedIds) ??
+    [];
   const failingStatuses = failingStatusNames(statuses) ?? [];
   return [...failingChecks, ...failingStatuses];
 }
@@ -688,24 +709,76 @@ export async function ciReportFor(
   head: string,
   runs: CheckRun[],
   runsUnreadable: boolean,
+  pr?: string,
 ): Promise<CiReport> {
   const statuses = await commitStatusesFor(owner, repo, head);
   const workflowRuns = await workflowRunsBehind(owner, repo, head, runs);
+  const held = pr === undefined ? [] : await liveHeldChecks(pr);
+  const reduced = readChecks(runs, workflowRuns);
+  const heldRuns = reduced.failing.filter((r) => held.includes(r.name));
+  // The held check is suppressed from the already-reduced reading only, so its
+  // predecessors stay superseded and unrelated pending reruns stay visible.
+  const heldIds = new Set(heldRuns.map((run) => run.id));
+  const preservedVerdict = ciVerdictOf(
+    runs,
+    statuses,
+    runsUnreadable,
+    head,
+    workflowRuns,
+    heldIds,
+  );
+  // A later attempt in the held run's own group still answers the hold. It is
+  // read separately and used only when the preserved reading found no
+  // independent evidence.
+  const heldThrough = new Map(
+    heldRuns.map((run) => [JSON.stringify([run.app, run.name]), run.id]),
+  );
+  const retainedIds = new Set(
+    withoutSuperseded(
+      runs.filter((run) => !isReviewerCheck(run)),
+      workflowRuns,
+    ).map((run) => run.id),
+  );
+  // Every unreplaced witness is retained: a newer skipped check cannot replace
+  // a passing one's workflow evidence, and re-reducing only selected runs would
+  // resurrect an older cancelled held failure. A held group keeps only what
+  // follows its held failure, so a later cancellation or rerun still answers
+  // the hold while a run another held failure replaced stays gone.
+  const laterRuns = runs.filter((run) => {
+    const through = heldThrough.get(JSON.stringify([run.app, run.name]));
+    return (
+      retainedIds.has(run.id) && (through === undefined || run.id > through)
+    );
+  });
+  const laterVerdict = ciVerdictOf(
+    laterRuns,
+    statuses,
+    runsUnreadable,
+    head,
+    workflowRuns,
+  );
+  const verdict =
+    preservedVerdict === "green" ? laterVerdict : preservedVerdict;
   return {
-    ci: ciVerdictOf(runs, statuses, runsUnreadable, head, workflowRuns),
+    ci:
+      heldRuns.length > 0 && verdict === "green"
+        ? `held: ${heldRuns.map((r) => r.name).join(", ")}`
+        : verdict,
     failingCheckNames: failingNames(
       runs,
       statuses,
       runsUnreadable,
       workflowRuns,
+      heldIds,
     ),
     failingCheckRunNames: failingCheckRunNames(
       runs,
       runsUnreadable,
       workflowRuns,
+      heldIds,
     ),
     failingStatusNames: failingStatusNames(statuses),
-    failingRuns: failingRunsOf(runs, workflowRuns),
+    failingRuns: failingRunsOf(runs, workflowRuns, heldIds),
     failingStatuses: failingStatusesOf(statuses),
   };
 }

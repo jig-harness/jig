@@ -227,7 +227,34 @@ describe("GitHub facets: a repository that names no store", () => {
       ["LA_0_medium"],
     ]);
   });
+
+  it("refuses a priority label among the labels a change adds or removes", async () => {
+    const { t, calls } = gitHub(() => ({ ok: true }), {
+      taxonomy: JIG_TAXONOMY,
+    });
+    for (const patch of [
+      { addLabels: ["priority: high"] },
+      { removeLabels: ["priority: high"] },
+    ])
+      await expect(t.updateIssue("#5", patch)).rejects.toThrow(
+        "'priority: high' stand for a workflow state or a priority; use transition or priority instead",
+      );
+    expect(calls).toEqual([]);
+  });
 });
+
+/** Issue #5 carries `labels` the repository's facet stores have since taken over. */
+function withLeftoverLabels(labels: string[]) {
+  return gitHub((c) => {
+    if (c.op === "TrackerIssue")
+      return oneIssue(
+        issueNode({ number: 5, labels, extra: { subIssues: conn([]) } }),
+      );
+    if (c.op === "TrackerLabels") return repoLabels(...[...labels].sort());
+    if (c.op === "TrackerFacetStores") return STORES;
+    return { ok: true };
+  }, NAMED);
+}
 
 describe("GitHub facets: the issue type and issue fields as named stores", () => {
   it("files a Bug with Priority High and Effort small, and none of them as a label", async () => {
@@ -376,6 +403,48 @@ describe("GitHub facets: the issue type and issue fields as named stores", () =>
         { fieldName: "Priority", operation: "CLEAR" },
       ],
     });
+  });
+
+  it("takes a leftover priority label off, and refuses putting one on", async () => {
+    const { t, calls } = withLeftoverLabels(["priority: high", "bug"]);
+    await t.updateIssue("#5", { removeLabels: ["priority: high"] });
+    expect(writes(calls)).toEqual(["TrackerRemoveLabels"]);
+    expect(calls.at(-1)?.variables.labelIds).toEqual(["LA_1_priority: high"]);
+    const added = t.updateIssue("#5", { addLabels: ["Priority: High"] });
+    await expect(added).rejects.toBeInstanceOf(TrackerRequestError);
+    await expect(added).rejects.toThrow(
+      "'Priority: High' stand for a priority, which acme/app keeps in the field 'Priority'",
+    );
+    await expect(
+      t.createIssue({
+        title: "x",
+        description: "",
+        labels: ["priority: high"],
+      }),
+    ).rejects.toThrow("keeps in the field 'Priority'");
+    expect(writes(calls)).toEqual(["TrackerRemoveLabels"]);
+  });
+
+  it("refuses a retired type or size label to add, and takes one off", async () => {
+    const { t, calls } = withLeftoverLabels(["bug", "small"]);
+    const typed = t.updateIssue("#5", { addLabels: ["Bug"] });
+    await expect(typed).rejects.toBeInstanceOf(TrackerRequestError);
+    await expect(typed).rejects.toThrow(
+      "the label 'Bug' stands for the type bug, which this repository keeps in its type, not in labels",
+    );
+    await expect(t.updateIssue("#5", { addLabels: ["small"] })).rejects.toThrow(
+      "the label 'small' stands for the size small, which this repository keeps in the field 'Effort', not in labels",
+    );
+    await expect(
+      t.createIssue({ title: "x", description: "", labels: ["docs"] }),
+    ).rejects.toThrow("stands for the type docs");
+    expect(writes(calls)).toEqual([]);
+    await t.updateIssue("#5", { removeLabels: ["bug", "small"] });
+    expect(writes(calls)).toEqual(["TrackerRemoveLabels"]);
+    expect(calls.at(-1)?.variables.labelIds).toEqual([
+      "LA_0_bug",
+      "LA_1_small",
+    ]);
   });
 
   it("refuses a value that names nothing in the store before writing", async () => {

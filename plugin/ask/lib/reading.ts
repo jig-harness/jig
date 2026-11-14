@@ -5,6 +5,7 @@
  * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)): the field
  * it would have filled says nothing, and `sources` says why.
  */
+import { currentMs } from "../../shared/time.ts";
 import type { SourceRead, Sources } from "./answer.ts";
 
 /** How long the whole answer may take; past it, no source starts and the answer prints with what it has. */
@@ -26,7 +27,7 @@ export interface Reading {
 
 export function reading(
   deadlineMs = ANSWER_DEADLINE_MS,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): Reading {
   const until = now() + deadlineMs;
   const records = new Map<string, SourceRead>();

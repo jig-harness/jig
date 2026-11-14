@@ -82,7 +82,7 @@ import {
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { trackerProbeable } from "./lib/tracker-probe.ts";
-import { facetFindings, reachTracker } from "./lib/tracker-fit.ts";
+import { trackerFindings, reachTracker } from "./lib/tracker-fit.ts";
 import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { fileFindings } from "./lib/automation-fit.ts";
@@ -92,6 +92,7 @@ import {
   titlePatternFindings,
 } from "./lib/trunk-fit.ts";
 import { policyFindings } from "./lib/pr-policy-fit.ts";
+import { ciPolicyFindings } from "./lib/ci-policy-fit.ts";
 import { reviewerEvidenceRule, reviewerFindings } from "./lib/reviewer-fit.ts";
 import {
   configuredAt,
@@ -540,19 +541,7 @@ function derivations(config: Config, schema: Schema, root: string): Finding[] {
 
 /** Rules that tie two fields together, which a per-field check cannot see. */
 function crossFieldRules(config: Config): Finding[] {
-  const findings: Finding[] = [];
-  const hold = at(config, "ci.hold_label");
-  const ciChecks = at(config, "ci.required_checks");
-  if (
-    typeof hold === "string" &&
-    !(Array.isArray(ciChecks) && ciChecks.length > 0)
-  )
-    findings.push({
-      id: "rule:ci.hold_label",
-      severity: "error",
-      message:
-        "ci.hold_label needs a nonempty ci.required_checks: the drive certifies a held head only against declared checks",
-    });
+  const findings: Finding[] = ciPolicyFindings(config);
   const pattern = at(config, "review.job_pattern");
   const reviewChecks = at(config, "review.required_checks");
   if (typeof pattern === "string" && pattern !== "") {
@@ -1021,7 +1010,7 @@ async function trackerCheck(
     if (!trackerProbeable(trackerConfig)) return [];
     const tracker = openTracker(trackerConfig, root);
     await reachTracker(tracker);
-    return await facetFindings(tracker);
+    return await trackerFindings(tracker);
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     return [
@@ -2227,7 +2216,7 @@ export async function configFit(opts: {
   report.profile_facts = profileFacts(
     opts.root,
     files,
-    new Date(),
+    Temporal.Now.instant(),
     auditRecord(opts.recordPath)?.profile,
   );
   Object.assign(report.facts, profileFactLines(report.profile_facts));

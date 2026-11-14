@@ -26,7 +26,7 @@ import {
 } from "../scripts/lib/doctor.ts";
 import { gatherWorktreeLeftovers } from "../scripts/lib/worktree-leftovers.ts";
 
-const NOW = new Date("2026-09-12T12:00:00.000Z");
+const NOW = Temporal.Instant.from("2026-09-12T12:00:00.000Z");
 const TREE = "/tmp/gone-worktree";
 
 /** A stale lock whose holder is gone and whose tree is confirmed missing. */

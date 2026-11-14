@@ -38,6 +38,7 @@ import { swallow } from "../../../../../../shared/errors.ts";
 import { renameWithRetry } from "../../../../../../shared/rename-with-retry.ts";
 import type { Facet, FacetDetection, FacetStoreKind } from "../port.ts";
 import { fold, PRIORITY_NAMES } from "./values.ts";
+import { currentMs } from "../../../../../../shared/time.ts";
 
 /** What detection read for one facet. */
 export interface Evidence {
@@ -285,7 +286,7 @@ function writeOwnerOnly(dir: string, file: string, text: string): void {
  */
 export function fileDetectionCache(
   dir: string | null,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): DetectionCache {
   const fileOf = (key: string) =>
     dir === null ? null : join(dir, `${key.slice(0, 40)}.json`);

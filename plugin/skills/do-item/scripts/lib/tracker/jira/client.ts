@@ -11,7 +11,7 @@
  * on as ISO 8601 in UTC.
  */
 
-import { cancellableRequest } from "../cancellation.ts";
+import { dispatchTransport } from "./dispatch-transport.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
@@ -32,6 +32,7 @@ import {
   optStr,
   parseIssue,
   record,
+  stateInputOf,
   str,
 } from "./read.ts";
 
@@ -92,6 +93,7 @@ export interface IssueTypeMeta {
 }
 
 export interface Client {
+  shareReads(reads: Map<string, Promise<unknown>>): void;
   readonly project: string;
   readonly site: string;
   readonly model: JiraModel;
@@ -112,6 +114,12 @@ export interface Client {
     signal?: AbortSignal,
     fields?: ReadonlyArray<string>,
   ): Promise<JiraIssue[]>;
+  /**
+   * How many issues a JQL query selects that the model reads as open, from
+   * each issue's status, type and resolution alone: no field or facet is
+   * resolved and no issue parsed. An unreadable status throws.
+   */
+  countOpen(jql: string, where: string, signal?: AbortSignal): Promise<number>;
   /** The issue's children: its sub-tasks, or an Epic's issues. */
   children(
     key: string,
@@ -126,11 +134,15 @@ export interface Client {
   version(name: string, signal?: AbortSignal): Promise<string>;
   /** A priority by its name; its id. */
   priority(name: string, signal?: AbortSignal): Promise<string>;
+  /** Every priority the site has. */
+  priorities(signal?: AbortSignal): Promise<PriorityMeta[]>;
   /**
    * Each relation's configured link types, each resolved to exactly one of
    * the site's, the type a new link gets first.
    */
-  linkTypes(): Promise<Record<LinkedRelation, RelationLink[]>>;
+  linkTypes(
+    signal?: AbortSignal,
+  ): Promise<Record<LinkedRelation, RelationLink[]>>;
   /** The project's issue types, with their hierarchy level. */
   issueTypes(signal?: AbortSignal): Promise<IssueTypeMeta[]>;
   /**
@@ -177,6 +189,12 @@ export interface Client {
   trusted(user: Record<string, unknown> | null): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
+}
+
+/** One priority of the site. */
+export interface PriorityMeta {
+  id: string;
+  name: string;
 }
 
 /** A screen's fields by id, each with the values it allows (`null`: no list). */
@@ -406,8 +424,7 @@ function sharedRead<T>(run: (signal: AbortSignal) => Promise<T>) {
 
 export function jiraClient(opts: ClientOptions): Client {
   const { project, site, model, settings } = opts;
-  const transport: JiraTransport = (request, signal) =>
-    cancellableRequest(signal, () => opts.transport(request, signal));
+  const { transport, shareReads } = dispatchTransport(opts.transport);
   const get: Get = (path, query, signal) =>
     transport(
       {
@@ -451,9 +468,49 @@ export function jiraClient(opts: ClientOptions): Client {
     string,
     (signal?: AbortSignal) => Promise<FieldMeta>
   >();
+  let searchRefused = false;
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
+
+  /**
+   * The site's priorities, through `priority/search`. A token the gateway
+   * refuses there (a scoped API token or an OAuth access token without the
+   * scope that search wants) reads the same list from `GET priority`, and
+   * this client asks the search no more: a refused request would renew the
+   * credential and be sent again each time.
+   */
+  async function readPriorities(signal?: AbortSignal): Promise<PriorityMeta[]> {
+    const named = (p: Record<string, unknown>) => ({
+      id: String(p.id),
+      name: str(p.name, "priority.name"),
+    });
+    if (!searchRefused)
+      try {
+        const values = await offsetPages(
+          transport,
+          { method: "GET", path: "priority/search" },
+          {
+            items: "values",
+            idOf: (p) => p.id,
+            where: "priorities",
+            ...(signal === undefined ? {} : { signal }),
+          },
+        );
+        return values.map(named);
+      } catch (err) {
+        if (
+          !(err instanceof JiraApiError) ||
+          ![401, 403].includes(err.status ?? 0)
+        )
+          throw err;
+        searchRefused = true;
+      }
+    const raw = await get("priority", undefined, signal);
+    if (!Array.isArray(raw))
+      throw new JiraApiError("priorities: expected a list");
+    return raw.map((p, i) => named(record(p, `priorities[${i}]`)));
+  }
 
   /** The credential's own profile, read once. */
   function myself(): Promise<Record<string, unknown>> {
@@ -540,6 +597,7 @@ export function jiraClient(opts: ClientOptions): Client {
   }
 
   const client: Client = {
+    shareReads,
     project,
     site,
     model,
@@ -608,6 +666,27 @@ export function jiraClient(opts: ClientOptions): Client {
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
         parseIssue(i, site, extra, facet),
       );
+    },
+
+    async countOpen(jql, where, signal) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
+      const read = await searchPages(
+        transport,
+        jql,
+        ["status", "issuetype", "resolution"],
+        where,
+        signal,
+      );
+      return read.filter(
+        (i) =>
+          !["completed", "canceled", "duplicate"].includes(
+            model.read(stateInputOf(i)).state.type,
+          ),
+      ).length;
     },
 
     children(key, open = false, signal) {
@@ -698,26 +777,18 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     async priority(name, signal) {
-      const values = await offsetPages(
-        transport,
-        { method: "GET", path: "priority/search" },
-        {
-          items: "values",
-          idOf: (p) => p.id,
-          where: "priorities",
-          ...(signal === undefined ? {} : { signal }),
-        },
-      );
-      const priorities = values.map((p) => ({
-        id: String(p.id),
-        name: str(p.name, "priority.name"),
-      }));
+      const priorities = await readPriorities(signal);
       return onlyNamed(priorities, name, "priorities").id;
     },
 
-    linkTypes() {
+    priorities: readPriorities,
+
+    linkTypes(signal) {
       links ??= (async () => {
-        const raw = record(await get("issueLinkType"), "issueLinkType");
+        const raw = record(
+          await get("issueLinkType", undefined, signal),
+          "issueLinkType",
+        );
         if (!Array.isArray(raw.issueLinkTypes))
           throw new JiraApiError("issueLinkType: issueLinkTypes missing");
         const all = raw.issueLinkTypes.map((t, i) => {
@@ -746,7 +817,7 @@ export function jiraClient(opts: ClientOptions): Client {
       links.catch(() => {
         links = undefined;
       });
-      return links;
+      return signal === undefined ? links : until(links, signal);
     },
 
     issueTypes(signal) {

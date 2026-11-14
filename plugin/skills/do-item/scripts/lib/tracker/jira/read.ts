@@ -8,8 +8,9 @@
 import { isRecord } from "../../../../../../shared/guards.ts";
 import type { Facet } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
-import type { JiraStatus } from "./model.ts";
+import type { JiraStatus, StateInput } from "./model.ts";
 import { JiraApiError } from "./transport.ts";
+import { isoFromMs, parseMs } from "../../../../../../shared/time.ts";
 
 // ── Shape helpers ──────────────────────────────────────────────────────────
 
@@ -31,9 +32,9 @@ export function optStr(v: unknown, where: string): string | null {
 /** A Jira timestamp (`2026-10-31T12:34:56.000+0000`) as ISO 8601 in UTC. */
 export function iso(v: unknown, where: string): string {
   const s = str(v, where).replace(/([+-]\d\d)(\d\d)$/, "$1:$2");
-  const ms = Date.parse(s);
+  const ms = parseMs(s);
   if (!Number.isFinite(ms)) throw new JiraApiError(`${where}: not a timestamp`);
-  return new Date(ms).toISOString();
+  return isoFromMs(ms);
 }
 
 function optIso(v: unknown, where: string): string | null {
@@ -86,6 +87,8 @@ export interface JiraIssue {
   resolutionDate: string | null;
   categoryChangedAt: string | null;
   priority: string | null;
+  /** Jira's own labels, before field values are presented as labels. */
+  jiraLabels: string[];
   labels: string[];
   issueType: { name: string; subtask: boolean; level: number } | null;
   parent: { key: string; title: string } | null;
@@ -113,6 +116,19 @@ export function statusOf(v: unknown, where: string): JiraStatus {
     id: String(s.id ?? ""),
     name: str(s.name, `${where}.name`),
     category,
+  };
+}
+
+/** What the model needs to read an issue's state: its status, issue type and resolution, read as `parseIssue` reads them. */
+export function stateInputOf(v: unknown): StateInput {
+  const raw = record(v, "issue");
+  const key = str(raw.key, "issue.key");
+  const at = (field: string) => `issue ${key}.${field}`;
+  const f = record(raw.fields, at("fields"));
+  return {
+    status: statusOf(f.status, at("status")),
+    issueType: issueTypeOf(f.issuetype),
+    resolution: nameOf(f.resolution, at("resolution")),
   };
 }
 
@@ -269,6 +285,7 @@ export function parseIssue(
   const key = str(raw.key, "issue.key");
   const at = (field: string) => `issue ${key}.${field}`;
   const f = record(raw.fields, at("fields"));
+  const jiraLabels = labelsOf(f.labels, at("labels"));
   return {
     id: String(raw.id ?? ""),
     key,
@@ -283,12 +300,8 @@ export function parseIssue(
       at("statuscategorychangedate"),
     ),
     priority: nameOf(f.priority, at("priority")),
-    labels: [
-      ...new Set([
-        ...labelsOf(f.labels, at("labels")),
-        ...fieldLabelsOf(f, fieldLabels, at),
-      ]),
-    ],
+    jiraLabels,
+    labels: [...new Set([...jiraLabels, ...fieldLabelsOf(f, fieldLabels, at)])],
     issueType: issueTypeOf(f.issuetype),
     parent: parentOf(f.parent, at("parent")),
     assignee: userOf(f.assignee, at("assignee")),

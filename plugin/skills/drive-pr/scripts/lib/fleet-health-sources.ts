@@ -40,6 +40,7 @@ export type Gh = typeof realGhCall;
 
 import type { Repo } from "./sample.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 // ── GitHub ─────────────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ function parseRestPr(raw: unknown, i: number): PrListing {
     throw new Error(`${at}: body is not a string`);
   }
   const parses = (v: unknown): v is string =>
-    typeof v === "string" && Number.isFinite(Date.parse(v));
+    typeof v === "string" && Number.isFinite(parseMs(v));
   // `keep` and the window filters compare these as instants: an unparseable
   // value would be dropped or misordered with no gap recorded.
   if (!parses(p.created_at) || !parses(p.updated_at)) {
@@ -141,8 +142,8 @@ export async function listCandidatePrs(
   limit: number,
   ghCall: Gh = realGhCall,
 ): Promise<Candidates> {
-  const sinceIso = new Date(win.sinceMs).toISOString();
-  const untilIso = new Date(win.untilMs).toISOString();
+  const sinceIso = isoFromMs(win.sinceMs);
+  const untilIso = isoFromMs(win.untilMs);
   // Keyed by number: the list is paged by position while it is being written to,
   // so a PR created or updated mid-walk shifts every later row down by one and
   // the last row of one page reappears as the first of the next. A duplicate here

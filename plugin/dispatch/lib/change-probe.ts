@@ -37,6 +37,7 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { releaseHolder, takeHolder } from "../../shared/wake.ts";
 import { stateRoot } from "../receipts.ts";
 import type { MachineConfig } from "./machine-config.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** How far before the last probe a probe's window starts. */
 export const PROBE_OVERLAP_MS = 10 * 60_000;
@@ -120,12 +121,15 @@ function stringMap(value: unknown): Record<string, string> | null {
     : null;
 }
 
-/** Whether `value` is a time a date can hold, in epoch milliseconds. */
+/** The furthest from the epoch a moment can be, in milliseconds: 10^8 days. */
+const LAST_TIME_MS = 8.64e15;
+
+/** Whether `value` is a time a moment can hold, in epoch milliseconds. */
 function isTime(value: unknown): value is number {
   return (
     typeof value === "number" &&
     Number.isFinite(value) &&
-    Number.isFinite(new Date(value).getTime())
+    Math.abs(value) <= LAST_TIME_MS
   );
 }
 
@@ -194,7 +198,7 @@ function windowStart(previous: ProbeState | null, now: number): number {
 
 /** An ISO time to the second, as the forge's search takes it. */
 export function searchTime(ms: number): string {
-  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return isoFromMs(ms).replace(/\.\d{3}Z$/, "Z");
 }
 
 type Changes = Map<string, string[]>;
@@ -223,12 +227,12 @@ function updatedSince(
   changes: Changes,
 ): Record<string, string> {
   const floor = now - PROBE_OVERLAP_MS;
-  const kept = Object.entries(seen).filter(([, at]) => Date.parse(at) >= floor);
+  const kept = Object.entries(seen).filter(([, at]) => parseMs(at) >= floor);
   const updated: Record<string, string> = Object.fromEntries(kept);
   for (const pr of read) {
     const key = `${pr.slug}#${pr.number}`;
-    const at = Date.parse(pr.updatedAt);
-    const before = seen[key] === undefined ? null : Date.parse(seen[key]);
+    const at = parseMs(pr.updatedAt);
+    const before = seen[key] === undefined ? null : parseMs(seen[key]);
     if (before !== null && at <= before) continue;
     note(changes, pr.slug, `#${pr.number} updated ${pr.updatedAt}`);
     if (at >= floor) updated[key] = pr.updatedAt;

@@ -15,11 +15,12 @@
  * keeps the newest `RESOLVED_PARKS_KEPT`; optional in a stored state and a
  * ledger, where an older file reads as none.
  */
-import { isRecord } from "../../../../../shared/guards.ts";
+import { isRecord, isString as isText } from "../../../../../shared/guards.ts";
 import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
 import { redact } from "../../../../../shared/redact.ts";
 import type { PendingAnswer } from "./pass-handoff.ts";
 import type { ParkedItem } from "./park-frame.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 /** How many receipts the state and the ledger keep, the newest last. */
 export const RESOLVED_PARKS_KEPT = 10;
@@ -45,6 +46,8 @@ export interface ResolutionReceipt {
   answeredAt?: string;
   /** When the re-arm unparked it. */
   resolvedAt: string;
+  /** A bounded advisory repair was claimed before its pass started. */
+  repairStartedAt?: string;
 }
 
 /** What the re-arm hands `unpark --stdin` for each item: the verdict it read. */
@@ -54,9 +57,8 @@ export interface ConsumedVerdict {
   answers: PendingAnswer[];
 }
 
-const isText = (v: unknown): v is string => typeof v === "string";
 const isTime = (v: unknown): v is string =>
-  isText(v) && Number.isFinite(Date.parse(v));
+  isText(v) && Number.isFinite(parseMs(v));
 
 const optional =
   (check: (v: unknown) => boolean) =>
@@ -107,6 +109,7 @@ const RECEIPT_FIELDS = {
   answers: (v: unknown) => Array.isArray(v) && v.every(isReceiptAnswer),
   answeredAt: optional(isTime),
   resolvedAt: isTime,
+  repairStartedAt: optional(isTime),
 };
 
 export function isResolutionReceipt(v: unknown): v is ResolutionReceipt {
@@ -170,7 +173,7 @@ export function receiptsFor(
     const answers = verdict.answers.map(withoutBody);
     const answeredAt = answers
       .map((a) => a.at)
-      .sort((a, b) => Date.parse(a) - Date.parse(b))
+      .sort((a, b) => parseMs(a) - parseMs(b))
       .at(-1);
     return [
       {

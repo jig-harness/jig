@@ -159,6 +159,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.114.0
+  dispatch.stalled_scope:
+    type: enum
+    values: [claimed, assigned]
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.225.0
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"
@@ -530,6 +536,15 @@ fields:
     since: 0.109.0
     read_by: [drive-pr, do-item, dispatch]
     user_only: true
+  drive.codex_pass_args:
+    type: list
+    items:
+      type: string
+      pattern: "^(?!(?:--|-|--model|--image|--dangerously-bypass-approvals-and-sandbox|--yolo)$)(?!--model=|--image=|--config=model=|-c=?model=|-m|-i)\\S+$"
+    default: []
+    since: 0.232.0
+    read_by: [drive-pr, do-item, dispatch]
+    user_only: true
   drive.codex_bypass:
     type: boolean
     default: false
@@ -582,6 +597,22 @@ fields:
   ci.hold_label:
     type: string
     read_by: [drive-pr]
+  ci.hold_sentinels:
+    type: list
+    items: string
+    distinct: true
+    default: []
+    repository_only: true
+    read_by: [drive-pr]
+    since: 0.233.0
+  ci.advisory_checks:
+    type: list
+    items: string
+    distinct: true
+    default: []
+    repository_only: true
+    read_by: [drive-pr]
+    since: 0.233.0
   ci.log_command:
     type: command
     read_by: [fix-ci]
@@ -1303,6 +1334,13 @@ fields:
     read_by: [changelog]
     repository_only: true
     since: 0.44.0
+  changelog.release.rerun_failed_gates:
+    type: integer
+    min: 0
+    default: 1
+    read_by: [changelog]
+    repository_only: true
+    since: 0.227.2
   changelog.consumer_actions:
     type: boolean
     default: false

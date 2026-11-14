@@ -21,6 +21,7 @@ import {
   hookPath,
   superviseHook,
 } from "../shared/worktree-hooks.ts";
+import { currentMs } from "../shared/time.ts";
 
 /** The longest parking a worktree's reflection findings may take: a few git calls. */
 export const PARK_TIMEOUT_MS = 3 * 60_000;
@@ -111,7 +112,7 @@ export function localSteps(
   log: (line: string) => void,
 ): RemovalSteps {
   const left = (ms: number): number =>
-    Math.max(0, Math.min(ms, deadline - Date.now()));
+    Math.max(0, Math.min(ms, deadline - currentMs()));
   return {
     hook: (worktree) => hookPath(worktree, "remove"),
     runHook: (worktree, hook) => {
@@ -121,7 +122,7 @@ export function localSteps(
       return failure === null ? ok(undefined) : failed("hook-failed", failure);
     },
     park: (worktree) =>
-      parkFindings(worktree, Date.now() + left(PARK_TIMEOUT_MS), log),
+      parkFindings(worktree, currentMs() + left(PARK_TIMEOUT_MS), log),
   };
 }
 

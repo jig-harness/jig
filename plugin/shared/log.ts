@@ -11,6 +11,7 @@
  * or a caller can change them for one run.
  */
 import { basename, extname } from "node:path";
+import { currentIso } from "./time.ts";
 
 export type Level = "error" | "warn" | "info" | "debug";
 export type Fields = Readonly<Record<string, unknown>>;
@@ -128,7 +129,7 @@ function format(level: Level, message: string, fields?: Fields): string {
     // Fields first, so none can overwrite the fixed keys.
     return toJson({
       ...extra,
-      time: new Date().toISOString(),
+      time: currentIso(),
       level,
       script,
       message,

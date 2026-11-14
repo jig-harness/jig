@@ -1,5 +1,6 @@
 /**
- * One tick, in two phases. The observe phase reads every repository at once
+ * One tick, in two phases. The observe phase opens every repository first,
+ * reads shared tracker queues, then derives every repository's work at once
  * (the dispatch section from the default branch, the tracker, the forge's
  * pull requests and their drive ledgers, the runtime's sessions), each
  * repository under its observe lock and every read through one bounded pool
@@ -82,11 +83,13 @@ import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
+import { prepareTrackers } from "./lib/tick-trackers.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
 import { dropRepeatedLabelNeeds } from "./lib/sources/served-repo.ts";
+import { dropRepeatedScopeFailures } from "./lib/sources/scope-failures.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
@@ -108,7 +111,8 @@ import {
   actTurn,
   defectReport,
   type Observed,
-  observeTurn,
+  openTurn,
+  observeOpenedTurn,
   startTurn,
 } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
@@ -119,11 +123,23 @@ import {
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
-import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
+import {
+  type ScheduledUpgrade,
+  takeScheduledUpgrade,
+} from "../runtime/upgrade-record.ts";
+import { ExitError } from "../shared/cli.ts";
+import { swallow } from "../shared/errors.ts";
+import {
+  heldSystems,
+  holdUnanswered,
+  stopHolding,
+} from "../shared/outbound/hold.ts";
+import { join } from "node:path";
 import {
   type Lock,
   newRunId,
   pruneReceipts,
+  stateRoot,
   type TickPhase,
   type TickReceipt,
   takeObserveLock,
@@ -131,6 +147,7 @@ import {
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
+import { currentIso, currentMs, isoOf } from "../shared/time.ts";
 
 export type { TickOptions } from "./lib/tick-context.ts";
 
@@ -175,20 +192,25 @@ function upgradeField(): Pick<TickReceipt, "upgrade"> {
 }
 
 /** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
+/** Where the systems a tick held outlive it, for the next tick's probe (`shared/outbound/hold.ts`). */
+const UNANSWERED_FILE = "unanswered.json";
+
 async function startTick(options: TickOptions): Promise<StartedTick> {
   // The deadline counts from here, so the startup read below spends it too.
-  const startedMs = Date.now();
-  const now = options.now ?? new Date();
+  const startedMs = currentMs();
+  const now = options.now ?? Temporal.Now.instant();
   const machine = options.machine ?? null;
   // The tick's tracker reads keep to their share of each credential's budget.
   setDispatcherShare(machine?.trackerShare ?? DEFAULT_DISPATCHER_SHARE);
+  // A system that does not answer is not asked again in this tick, and the next tick probes it once first.
+  holdUnanswered(join(stateRoot(), UNANSWERED_FILE));
   const runtime = options.runtime ?? defaultRuntime(machine);
   const read = await readLaunches();
   const receipt: TickReceipt = {
     version: 1,
     runId: newRunId(now),
-    startedAt: now.toISOString(),
-    finishedAt: now.toISOString(),
+    startedAt: isoOf(now),
+    finishedAt: isoOf(now),
     completed: false,
     apply: false,
     exitStatus: 0,
@@ -199,7 +221,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
   const context: TickContext = {
     options,
     runtime,
-    nowMs: now.getTime(),
+    nowMs: now.epochMilliseconds,
     startedMs,
     launches: read.records,
     apply: null,
@@ -235,7 +257,10 @@ async function observeAll(
   // A repository named twice is read once.
   // Checkouts of one repository in this tick share the repository's lock: the first holds it.
   const claimed = new Set<string>();
-  // Every observation is awaited, taking its lock included, before any lock is given up.
+  const prepared: Array<
+    Extract<Awaited<ReturnType<typeof openTurn>>, { turn: unknown }>
+  > = [];
+  // Every configuration is awaited, taking its lock included, before tracker reads begin.
   await Promise.all(
     [...new Set(context.options.repos)].map(async (path) => {
       const turn = startTurn(path);
@@ -256,7 +281,7 @@ async function observeAll(
             for (const held of own) held.release();
           },
         });
-        const observed = await observeTurn(turn, context, (slug) => {
+        const observed = await openTurn(turn, context, (slug) => {
           if (claimed.has(slug)) return null;
           const repository = takeRepositoryLock(slug);
           if ("heldBy" in repository) return repository.heldBy;
@@ -267,9 +292,26 @@ async function observeAll(
         if ("busy" in observed) {
           out.busy.set(path, observed.busy);
           give();
-        } else out.observed.set(path, observed);
+        } else if ("turn" in observed) prepared.push(observed);
+        else out.observed.set(path, observed);
       } catch (error) {
         out.observed.set(path, { report: defectReport(turn, error) });
+      }
+    }),
+  );
+  await prepareTrackers(
+    prepared.map(({ opened }) => opened),
+    context,
+  );
+  await Promise.all(
+    prepared.map(async (opened) => {
+      try {
+        const observed = await observeOpenedTurn(opened, context);
+        if (!("busy" in observed)) out.observed.set(opened.turn.path, observed);
+      } catch (error) {
+        out.observed.set(opened.turn.path, {
+          report: defectReport(opened.turn, error),
+        });
       }
     }),
   );
@@ -281,10 +323,10 @@ async function waitForActLock(
   waitMs: number,
   context: TickContext,
 ): Promise<Lock> {
-  const deadline = Date.now() + waitMs;
+  const deadline = currentMs() + waitMs;
   for (;;) {
     const lock = takeTickLock();
-    if (!("heldBy" in lock) || Date.now() >= deadline) return lock;
+    if (!("heldBy" in lock) || currentMs() >= deadline) return lock;
     // Another tick acts meanwhile, one of an earlier version perhaps, which takes no observe lock.
     context.actWaited = true;
     await Bun.sleep(ACT_LOCK_POLL_MS);
@@ -379,13 +421,13 @@ async function actAll(
   const { apply, options } = context;
   const order = options.repos;
   const acted: string[] = [];
-  dropRepeatedLabelNeeds(
-    [...new Set(order)].flatMap((path) => {
-      const observed = observe.observed.get(path);
-      if (observed === undefined) return [];
-      return ["report" in observed ? observed.report : observed.opened.report];
-    }),
-  );
+  const reports = [...new Set(order)].flatMap((path) => {
+    const observed = observe.observed.get(path);
+    if (observed === undefined) return [];
+    return ["report" in observed ? observed.report : observed.opened.report];
+  });
+  dropRepeatedScopeFailures(reports);
+  dropRepeatedLabelNeeds(reports);
   for (const path of new Set(order)) {
     const observed = observe.observed.get(path);
     if (observed === undefined) continue;
@@ -438,7 +480,7 @@ async function routeReflection(
   );
   const reflection = await routeRecurrences(ordered, {
     apply: apply !== null,
-    nowMs: Date.now(),
+    nowMs: currentMs(),
     timeLeftMs: apply === null ? null : timeLeftMs(apply),
   });
   if (reflection !== null) receipt.reflection = reflection;
@@ -487,10 +529,16 @@ async function closeTick(
   await routeReflection(receipt, context);
   receipt.exitStatus =
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
+  const held = [...heldSystems()].map(([system, f]) => ({
+    system,
+    class: f.code,
+    reason: f.reason,
+  }));
+  if (held.length > 0) receipt.unanswered = held;
   // A defect the start kept on the receipt stays: the tick ran, but not whole.
   receipt.completed = receipt.defect === undefined;
   settleFailures(receipt, context);
-  receipt.finishedAt = new Date().toISOString();
+  receipt.finishedAt = currentIso();
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
@@ -520,12 +568,12 @@ function heldReceipt(started: StartedTick, heldBy: string): void {
   const { options } = started.context;
   const { upgrade } = started.receipt;
   if (upgrade === undefined) return;
-  const now = options.now ?? new Date();
+  const now = options.now ?? Temporal.Now.instant();
   writeReceipt({
     version: 1,
     runId: newRunId(now),
-    startedAt: now.toISOString(),
-    finishedAt: new Date().toISOString(),
+    startedAt: isoOf(now),
+    finishedAt: currentIso(),
     completed: false,
     apply: options.apply === true,
     exitStatus: 3,
@@ -549,7 +597,7 @@ function lineOfHeldTick(
   receipt.apply = context.options.apply === true;
   receipt.lockHeldBy = heldBy;
   receipt.busy = [...observe.busy].map(([path, heldBy]) => ({ path, heldBy }));
-  receipt.finishedAt = new Date().toISOString();
+  receipt.finishedAt = currentIso();
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
     machine: context.options.machine ?? null,
@@ -577,7 +625,7 @@ async function actAndClose(
     receipt.defect = defectOf(timer.current ?? "close", error);
     receipt.completed = false;
     receipt.exitStatus = 1;
-    receipt.finishedAt = new Date().toISOString();
+    receipt.finishedAt = currentIso();
     logDefect("the tick", receipt.defect, error);
     settleFailures(receipt, context);
     receipt.phasesMs = { ...timer.ms };
@@ -587,8 +635,42 @@ async function actAndClose(
   }
   receipt.phasesMs = { ...timer.ms };
   const path = writeReceipt(receipt);
-  pruneReceipts(Date.now(), undefined, context.options.machine?.receiptsDays);
+  pruneReceipts(currentMs(), undefined, context.options.machine?.receiptsDays);
   return { receipt, path };
+}
+
+/**
+ * The receipt of a tick a throw stopped before its act phase (a state
+ * database refused at the start, a lock that could not be taken), so `jig
+ * status` and `jig doctor` read the failure rather than the tick before it.
+ * Best effort: the throw it records is what the tick reports.
+ */
+function abortedReceipt(
+  options: TickOptions,
+  at: Temporal.Instant,
+  phase: TickPhase,
+  error: unknown,
+  upgrade?: ScheduledUpgrade,
+): void {
+  try {
+    writeReceipt({
+      version: 1,
+      runId: newRunId(at),
+      startedAt: isoOf(at),
+      finishedAt: currentIso(),
+      completed: false,
+      apply: options.apply === true,
+      exitStatus: error instanceof ExitError ? error.code : 1,
+      ...(upgrade === undefined ? upgradeField() : { upgrade }),
+      defect: defectOf(phase, error),
+      repos: [],
+    });
+    // A timer that fails every tick would otherwise never prune; the receipt
+    // just written is the newest, so the latest failure survives.
+    pruneReceipts(currentMs(), undefined, options.machine?.receiptsDays);
+  } catch (unwritten) {
+    swallow(unwritten, "the receipt of a tick a throw stopped");
+  }
 }
 
 export async function runTick(options: TickOptions): Promise<TickResult> {
@@ -602,7 +684,38 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     )
       delete process.env[key];
   const timer = new PhaseTimer<TickPhase>();
+  const at = options.now ?? Temporal.Now.instant();
+  // The act phase writes its own receipt, a defect's included.
+  const tick: { acting: boolean; upgrade?: ScheduledUpgrade } = {
+    acting: false,
+  };
+  try {
+    return await lockedTick(options, timer, tick);
+  } catch (error) {
+    if (!tick.acting)
+      abortedReceipt(
+        options,
+        at,
+        timer.current ?? "start",
+        error,
+        tick.upgrade,
+      );
+    throw error;
+  } finally {
+    stopHolding();
+  }
+}
+
+/** The tick under its observe and act locks: every repository read, then acted on and closed. */
+async function lockedTick(
+  options: TickOptions,
+  timer: PhaseTimer<TickPhase>,
+  tick: { acting: boolean; upgrade?: ScheduledUpgrade },
+): Promise<TickResult> {
   const started = await timer.time("start", () => startTick(options));
+  // The scheduled upgrade is taken once, so a throw after this carries it.
+  if (started.receipt.upgrade !== undefined)
+    tick.upgrade = started.receipt.upgrade;
   const locks = new Map<string, Held>();
   try {
     const observe = await timer.time("observe", () =>
@@ -634,6 +747,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       heldReceipt(started, act.heldBy);
       return { held: act.heldBy };
     }
+    tick.acting = true;
     try {
       return await actAndClose(started, observe, locks, timer);
     } finally {

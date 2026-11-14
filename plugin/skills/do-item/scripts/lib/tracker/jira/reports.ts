@@ -28,8 +28,9 @@ import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
+import { dispatchSource } from "./dispatch-source.ts";
 import type { JiraFacetStores } from "./facets.ts";
-import { type JiraIssue, record } from "./read.ts";
+import { type JiraIssue, parseIssue, stateInputOf, record } from "./read.ts";
 import {
   fieldOfLabel,
   inProject,
@@ -72,6 +73,8 @@ type ReportOps = Pick<
   | "assignedIssues"
   | "unassignedIssues"
   | "openPopulation"
+  | "poolScopeCounts"
+  | "dispatchSource"
 >;
 
 /** The ancestors the attribution walk reads; a further one fails the read. */
@@ -261,6 +264,31 @@ export function reportOperations(
     return !["completed", "canceled", "duplicate"].includes(read.state.type);
   }
 
+  function poolOf(issue: JiraIssue, hasOpenChildren: boolean): CorePoolIssue {
+    const { state } = model.read(issue);
+    return {
+      identifier: issue.key,
+      nativeType: nativeTypeOf(issue),
+      title: issue.title,
+      url: issue.url,
+      priority: model.priorityOf(issue.priority),
+      createdAt: issue.createdAt,
+      updatedAt: issue.updatedAt,
+      state: { ...state, id: issue.status.id },
+      assignee:
+        issue.assignee === null
+          ? null
+          : {
+              id: issue.assignee.accountId,
+              name: issue.assignee.displayName,
+            },
+      labels: issue.labels,
+      hasOpenChildren,
+      ...stores.read(issue),
+      truncated: [],
+    };
+  }
+
   async function pools(
     issues: JiraIssue[],
     signal?: AbortSignal,
@@ -269,30 +297,7 @@ export function reportOperations(
       issues.map((i) => i.key),
       signal,
     );
-    return issues.map((issue) => {
-      const { state } = model.read(issue);
-      return {
-        identifier: issue.key,
-        nativeType: nativeTypeOf(issue),
-        title: issue.title,
-        url: issue.url,
-        priority: model.priorityOf(issue.priority),
-        createdAt: issue.createdAt,
-        updatedAt: issue.updatedAt,
-        state: { ...state, id: issue.status.id },
-        assignee:
-          issue.assignee === null
-            ? null
-            : {
-                id: issue.assignee.accountId,
-                name: issue.assignee.displayName,
-              },
-        labels: issue.labels,
-        hasOpenChildren: parents.has(issue.key),
-        ...stores.read(issue),
-        truncated: [],
-      };
-    });
+    return issues.map((issue) => poolOf(issue, parents.has(issue.key)));
   }
 
   /**
@@ -371,6 +376,23 @@ export function reportOperations(
     );
   }
   return {
+    dispatchSource: dispatchSource(client, async (raw, children, signal) => {
+      const issue = parseIssue(
+        raw,
+        client.site,
+        await client.fieldLabels(signal),
+        await client.facetFields(signal),
+      );
+      return poolOf(
+        issue,
+        children.some(
+          (child) =>
+            !["completed", "canceled", "duplicate"].includes(
+              model.read(stateInputOf(child)).state.type,
+            ),
+        ),
+      );
+    }),
     async issuesByKeys(keys) {
       const own = keys.filter((k) => ownKey.test(k));
       const found = await byKeys(own, true);
@@ -553,6 +575,27 @@ export function reportOperations(
     async openChildren(key) {
       requireOwnKey(key);
       return pools(await client.children(key, true));
+    },
+
+    async poolScopeCounts(signal) {
+      await client.authenticate(signal);
+      const clause = await client.poolScope(signal);
+      async function count(...clauses: string[]): Promise<number> {
+        if (signal?.aborted === true) throw abortedError(signal);
+        return client.countOpen(
+          inProject(project, open, ...clauses),
+          `open issues of ${project}`,
+          signal,
+        );
+      }
+      const total = await count();
+      const pool = clause === null ? total : await count(clause);
+      return {
+        project: total,
+        pool,
+        scoped: clause !== null,
+        approximate: false,
+      };
     },
 
     async openPopulation(signal) {

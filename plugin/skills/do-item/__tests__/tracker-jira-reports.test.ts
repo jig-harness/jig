@@ -260,7 +260,6 @@ describe("Jira adapter: comments with trust", () => {
         "GET issue/ENG-1/comment": comments(comment("1", "a", MEMBER)),
         "GET user/assignable/search": new JiraApiError("HTTP 503", {
           status: 503,
-          unavailable: true,
         }),
       }),
     );
@@ -503,7 +502,6 @@ describe("Jira adapter: candidate pools", () => {
         }),
         "GET issue/ENG-4": new JiraApiError("404", {
           status: 404,
-          notFound: true,
         }),
       }),
     );
@@ -628,7 +626,7 @@ describe("Jira adapter: assignments", () => {
       "GET user": (c: Call) =>
         c.query.accountId === FACTORY.accountId
           ? FACTORY
-          : new JiraApiError("404", { status: 404, notFound: true }),
+          : new JiraApiError("404", { status: 404 }),
       "POST search/jql": byJql(
         [/parent in/, page()],
         [
@@ -728,7 +726,7 @@ describe("Jira adapter: assignments", () => {
           { accountId: "5b10ac8d82e05b22cc7d4e01", displayName: "Sam" },
           { accountId: "5b10ac8d82e05b22cc7d4e02", displayName: "sam" },
         ],
-        "GET user": new JiraApiError("404", { status: 404, notFound: true }),
+        "GET user": new JiraApiError("404", { status: 404 }),
       }),
     );
     await expect(t.assignedIssues("Sam", ["todo"])).rejects.toThrow(
@@ -802,6 +800,7 @@ describe("Jira adapter: assignments", () => {
       states: ["todo"],
       followupCommand: null,
       stalledAfterMs: 1_800_000,
+      stalledScope: "claimed" as const,
       blockedAfterMs: 1_800_000,
       driveRoundsFlat: 3,
       pickupWithinMs: 7_200_000,

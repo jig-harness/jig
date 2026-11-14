@@ -13,6 +13,12 @@
  * tick that exits 0, clears its row; a tick that exits 0 also quiets the
  * wake-up rows of the other repositories it read whole. Only a tick with `--apply` and a
  * machine file counts: a person's report changes nothing there.
+ *
+ * A repository whose every failed read is of a class that clears by
+ * waiting does not fail the tick while it is under its threshold
+ * (`read-failures.ts`): a rate limit before its reset is neither counted
+ * nor cleared, and any other such class fails the tick only once its row
+ * reaches `failures.notify_after`.
  */
 import { resolve } from "node:path";
 import { swallow } from "../../shared/errors.ts";
@@ -33,6 +39,7 @@ import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
 import { aboutTargets } from "./line.ts";
 import { hasEnded } from "./log.ts";
+import { eraseStewardOutput } from "./steward.ts";
 import { pruneLaunches, type ReadRecord } from "./launches.ts";
 import type { readDrives } from "./sources/ledgers.ts";
 import { allRecords, type TickContext } from "./tick-context.ts";
@@ -44,6 +51,14 @@ import {
   takeRepositoryLock,
 } from "../receipts.ts";
 import type { RepoReport } from "./types.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
+import { repoFailure, tickFailure } from "./tick-failure.ts";
+import {
+  onlyRateLimited,
+  toldAtOnce,
+  waitingFailures,
+  waitsOut,
+} from "./read-failures.ts";
 
 /** The ended rows of this repository's records that ended, read beside its ledgers. */
 export async function logRepo(
@@ -70,7 +85,7 @@ export async function logRepo(
             return null;
           },
         ),
-      nowIso: new Date(context.nowMs).toISOString(),
+      nowIso: isoFromMs(context.nowMs),
       about: aboutTargets(
         slug,
         context.lineInputs.get(report.path),
@@ -161,7 +176,7 @@ export async function settleOutcomes(
       all: records,
       drives: null,
       merged: async () => null,
-      nowIso: new Date(context.nowMs).toISOString(),
+      nowIso: isoFromMs(context.nowMs),
     });
   } finally {
     exclusive.release();
@@ -179,59 +194,51 @@ export async function settleOutcomes(
     days ?? 30,
     context.apply?.root,
   );
+  const waits = waitsOutOf(context);
+  eraseStewardOutput(context.nowMs, days ?? 30, context.apply?.root);
   return (
     unlogged.length > 0 ||
     receipt.repos.some(
       (r) =>
-        r.refused !== null ||
-        (r.stageDefects?.length ?? 0) > 0 ||
-        r.records.some((x) => !x.ok) ||
-        // An individual claim, ledger or marker that did not read fails the turn as repoFailure says.
-        r.unplaced.some(
-          (u) => u.readFailed === true || u.target === "the outcome log",
-        ),
+        (r.refused !== null ||
+          (r.stageDefects?.length ?? 0) > 0 ||
+          r.records.some((x) => !x.ok) ||
+          // An individual claim, ledger or marker that did not read fails the turn as repoFailure says.
+          r.unplaced.some(
+            (u) => u.readFailed === true || u.target === "the outcome log",
+          )) &&
+        !waits(r),
     )
   );
 }
 
-/** Why a repository's turn failed this tick; `null` when it was read whole. */
-function repoFailure(report: RepoReport): string | null {
-  if (report.refused !== null) return report.refused;
-  const defect = report.stageDefects?.[0];
-  if (defect !== undefined) return defect.reason;
-  const unread = report.records.find((r) => !r.ok);
-  if (unread !== undefined)
-    return `the ${unread.record} record (${unread.source}) did not read: ${unread.detail}`;
-  // An individual comment listing or ledger that failed leaves the aggregate forge record ok.
-  const failed = report.unplaced.find((u) => u.readFailed === true);
-  return failed === undefined
-    ? null
-    : `${failed.target} did not read: ${failed.reason}`;
-}
-
-/** Why the tick exits 1, in one sentence. */
-function tickFailure(receipt: TickReceipt): string {
-  if (receipt.defect !== undefined) return receipt.defect.reason;
-  if (receipt.applyWithheld !== undefined)
-    return `--apply was withheld: ${receipt.applyWithheld}`;
-  const failing = receipt.repos.flatMap((r) => {
-    const why = repoFailure(r);
-    return why === null ? [] : [`${r.slug ?? r.path}: ${why}`];
-  });
-  if (failing.length > 0)
-    return `${failing.length === 1 ? "a repository's turn failed" : `${failing.length} repositories' turns failed`}, ${failing[0]}${failing.length > 1 ? ` (and ${failing.length - 1} more)` : ""}`;
-  const unlogged =
-    receipt.unloggedOutcomes?.[0] ??
-    receipt.repos
-      .flatMap((r) => r.unplaced)
-      .find((u) => u.target === "the outcome log")?.reason;
-  if (unlogged !== undefined)
-    return `the outcome log was not written: ${unlogged}`;
-  if (receipt.logCopyFailed !== undefined)
-    return `the outcome log's copy was not written: ${receipt.logCopyFailed}`;
-  if (receipt.lineFailed !== undefined)
-    return `the dashboard line was not written: ${receipt.lineFailed}`;
-  return "the tick exited 1 with no cause on its receipt";
+/**
+ * Whether a repository's failed turn waits out this tick: counted against
+ * its row in the failure ledger with `--apply` and a machine file, and as
+ * a first failure in a person's report, which counts nothing.
+ */
+function waitsOutOf(context: TickContext): (r: RepoReport) => boolean {
+  const { machine, apply } = context.options;
+  const settings = failureSettings(machine);
+  const counted = apply === true && machine != null;
+  let rows: Map<string, number> | null = null;
+  const prior = (path: string): number => {
+    if (!counted) return 0;
+    if (rows === null) {
+      rows = new Map();
+      try {
+        for (const row of readFailures(
+          undefined,
+          context.apply?.root ?? stateRoot(),
+        ))
+          if (row.kind === "repository") rows.set(row.repo, row.count);
+      } catch (error) {
+        swallow(error, "an unread ledger counts the failure as the first");
+      }
+    }
+    return rows.get(resolve(path)) ?? 0;
+  };
+  return (r) => waitsOut(r, prior(r.path), settings, context.nowMs);
 }
 
 /**
@@ -300,11 +307,15 @@ export function settleFailures(
   context.failuresSettled = true;
   const root = context.apply?.root ?? stateRoot();
   const settings = failureSettings(machine);
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   try {
     for (const r of receipt.repos) {
       const path = resolve(r.path);
       const why = repoFailure(r);
+      const waiting = waitingFailures(r);
+      // A rate limit before its reset is not a failure: its row stands as it is.
+      if (why !== null && waiting !== null && onlyRateLimited(waiting, nowMs))
+        continue;
       if (why === null) clearFailure(path, "repository", root);
       else
         recordFailure(
@@ -318,6 +329,7 @@ export function settleFailures(
           nowMs,
           settings,
           root,
+          toldAtOnce(r),
         );
     }
     const pending = settleTick(receipt, context, root, nowMs, false);
@@ -374,7 +386,7 @@ function quietWakeUps(
   root: string,
   nowMs: number,
 ): void {
-  const at = new Date(nowMs).toISOString();
+  const at = isoFromMs(nowMs);
   const rows = readFailures(undefined, root);
   const release = stateDb(root).query("DELETE FROM notices WHERE key = ?");
   for (const r of receipt.repos) {
@@ -427,7 +439,7 @@ export function finalizeTickFailure(
   if (context.failuresSettled !== true) return;
   if (context.tickSettledExit === receipt.exitStatus) return;
   const root = context.apply?.root ?? stateRoot();
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   try {
     settleTick(receipt, context, root, nowMs, true);
     reportFailures(receipt, root, failureSettings(options.machine), nowMs);

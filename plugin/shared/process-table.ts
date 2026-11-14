@@ -1,6 +1,7 @@
 /** One bounded, platform-native snapshot for identity and descendant checks. */
 import { spawn } from "node:child_process";
 import { swallow } from "./errors.ts";
+import { parseMs } from "./time.ts";
 import { fixtureObserver } from "./fixture-observer.ts";
 
 export interface ProcessRow {
@@ -13,6 +14,38 @@ export interface ProcessRow {
   /** Windows has no POSIX zombies and uses R for an extant process. */
   stat: string;
   args: string;
+}
+
+const LSTART_TEXT =
+  /^\w{3} (\w{3}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/;
+const MONTHS = "JanFebMarAprMayJunJulAugSepOctNovDec";
+
+/**
+ * A row's `start` in milliseconds since the epoch: `ps`'s
+ * `Www Mon DD HH:MM:SS YYYY`, a wall clock read in `timeZone` (by default the
+ * machine's, which `ps` wrote it in), or Windows's ISO time as it is; `NaN`
+ * for any other text.
+ */
+export function processStartMs(
+  text: string,
+  timeZone: string = Temporal.Now.timeZoneId(),
+): number {
+  const m = LSTART_TEXT.exec(text.trim());
+  if (m === null) return parseMs(text);
+  const month = MONTHS.indexOf(m[1] ?? "") / 3 + 1;
+  if (!Number.isInteger(month) || month < 1) return Number.NaN;
+  const [day, hour, minute, second, year] = [m[2], m[3], m[4], m[5], m[6]].map(
+    Number,
+  ) as [number, number, number, number, number];
+  try {
+    return Temporal.ZonedDateTime.from(
+      { year, month, day, hour, minute, second, timeZone },
+      { overflow: "reject" },
+    ).epochMilliseconds;
+  } catch (error) {
+    if (error instanceof RangeError) return Number.NaN;
+    throw error;
+  }
 }
 
 export function parsePosixProcessTable(output: string): ProcessRow[] | null {

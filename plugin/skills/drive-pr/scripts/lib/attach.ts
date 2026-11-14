@@ -69,6 +69,7 @@ import {
   resolveFenceContext,
 } from "./state/lease.ts";
 import { openStore, resolveStateDir, worktreeLockName } from "./state/store.ts";
+import { currentIso } from "../../../../shared/time.ts";
 
 /**
  * The remote the drive fetches from and pushes to for the clone at `root`:
@@ -821,7 +822,7 @@ async function recordState(
         worktree: tree,
         detached: record.detached,
         created,
-        at: new Date().toISOString(),
+        at: currentIso(),
       },
     };
   });

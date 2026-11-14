@@ -29,6 +29,7 @@ import type { RuntimeReceipt, Workspace } from "../runtime/port.ts";
 import { stateDb } from "../state.ts";
 import type { RepoReport, RetireOutcome } from "../types.ts";
 import { type ApplyState, enforcedDeadlineMs, outOfTime } from "./launch.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /** What the retire step reads from the tick's notifications. */
 export interface RetireInput {
@@ -179,7 +180,7 @@ export async function retireNotices(
     state.startedAt === undefined
       ? state.machine.runtimeTimeoutMs
       : enforcedDeadlineMs(state.machine) -
-        (Date.now() - state.startedAt) -
+        (currentMs() - state.startedAt) -
         state.machine.runtimeTimeoutMs;
   const held = await retirementCheckoutVeto(w.path, remaining);
   if (held !== null) {

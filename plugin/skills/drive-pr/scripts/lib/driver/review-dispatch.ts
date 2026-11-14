@@ -46,12 +46,12 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
       prepared: PreparedSpawn | null;
       baseEnv: NodeJS.ProcessEnv;
       passDeadlineSec: number;
-      passStartedAt: Date;
+      passStartedAt: Temporal.Instant;
       preexistingSessions: ReadonlySet<string>;
       preexistingSnapshot: QuotaSnapshot;
     }
 > {
-  const passStartedAt = new Date();
+  const passStartedAt = Temporal.Now.instant();
   // Progress, not merely a claim heartbeat. `startHeartbeat`'s
   // timer refreshes the CLAIM on a schedule independent of anything
   // happening in this round, so a driver that hit a quota wall, exhausted

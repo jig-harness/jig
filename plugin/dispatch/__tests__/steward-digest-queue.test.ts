@@ -2,7 +2,12 @@ import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applySteward, stewardQueue } from "../lib/actions/steward.ts";
+import {
+  applySteward,
+  stewardQueue,
+  stewardPasses,
+} from "../lib/actions/steward.ts";
+import type { ReadRecord } from "../lib/launches.ts";
 import {
   readRoomMs,
   settleMs,
@@ -31,6 +36,47 @@ function issue(key: string): PoolIssue {
     truncated: [],
   };
 }
+
+test("the digest's historical passes keep output only for actual questions, bounded and token-redacted", () => {
+  const records = [
+    {
+      record: {
+        id: "quiet",
+        repo: "example/repo",
+        item: "#7",
+        action: "pickup",
+        token: "old-token",
+      },
+      state: { kind: "ended", exit: { context: "ordinary pass output" } },
+    },
+    {
+      record: {
+        id: "question",
+        repo: "example/repo",
+        pr: 8,
+        action: "followup",
+        token: "old-token",
+      },
+      state: {
+        kind: "ended",
+        exit: {
+          said: "Question: Which option for old-token?",
+          context: `${"x".repeat(9000)}\nQuestion: Which option for old-token?`,
+        },
+      },
+    },
+  ] as unknown as ReadRecord[];
+  const passes = stewardPasses(records, "example/repo");
+  expect(passes[0]).toMatchObject({
+    record: "quiet",
+    question: null,
+    said: null,
+  });
+  expect(passes[1]?.question).toBe("Which option for [launch token]?");
+  expect(passes[1]?.said?.length).toBeLessThanOrEqual(8000);
+  expect(passes[1]?.said).toContain("[launch token]");
+  expect(JSON.stringify(passes)).not.toContain("old-token");
+});
 function item(key: string, observed: boolean): WantedItem {
   return {
     key,
@@ -188,6 +234,10 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
   });
 
   test("the read room reserves an identity check for every account admission may try", () => {
+    // A frozen clock, so only the account-dependent reserve moves the room.
+    const clock = spyOn(Temporal.Now, "instant").mockImplementation(() =>
+      Temporal.Instant.fromEpochMilliseconds(1_000_000),
+    );
     const roomWith = (accounts: number): number | null =>
       readRoomMs({
         machine: {
@@ -198,10 +248,8 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
           repositories: [],
           accounts: Array.from({ length: accounts }, () => ({})),
         },
-        startedAt: Date.now(),
+        startedAt: 1_000_000,
       } as unknown as ApplyState);
-    // A frozen clock, so only the account-dependent reserve moves the room.
-    const clock = spyOn(Date, "now").mockImplementation(() => 1_000_000);
     try {
       const one = roomWith(1) ?? Number.NaN;
       const three = roomWith(3) ?? Number.NaN;

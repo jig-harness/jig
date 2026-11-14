@@ -113,17 +113,26 @@
  * cannot take), 1 the operation failed (the reason on stderr), a label,
  * project or issue that does not resolve to exactly one included; for
  * `claim`, 3 refused and 4 stood down; for `attach` and `fetch-attachment`,
- * 3 refused; 5 the tracker's rate limit for this
- * credential is spent, with the time it resets on stderr
- * (`RATE-LIMITED until <time>`): the request it names was not sent or was
- * refused. A claim refused part way may have written its first step; the
- * dispatcher's stall check then reports the item as claimed with no
- * session.
+ * 3 refused. A call to the tracker that failed exits with its failure class
+ * (`shared/outbound/failure.ts`, `EXIT_OF_CLASS`), the reason on stderr
+ * after the class: 5 `rate-limited`, the credential's rate limit spent, with
+ * the time it resets on stderr (`RATE-LIMITED until <time>`): the request it
+ * names was not sent or was refused; 6 `unreachable`, no answer (stderr
+ * adds "the request may have been applied" when it left); 7 `too-costly`;
+ * 8 `server-fault`; 9 `unauthorized`; 10 `not-found`; 11 `invalid`. 5, 6,
+ * 7 and 8 clear by waiting. A claim refused part way may have written its
+ * first step; the dispatcher's stall check then reports the item as claimed
+ * with no session.
  */
 
 import { jiraStateMaps } from "./lib/tracker/jira/state-maps.ts";
 import { readFile } from "node:fs/promises";
 import { isRateLimited } from "../../../shared/tracker-budget.ts";
+import {
+  type FailureClass,
+  failureOf,
+  OutboundError,
+} from "../../../shared/outbound/failure.ts";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
@@ -168,6 +177,7 @@ import {
   TrackerRequestError,
 } from "./lib/tracker/port.ts";
 import { labelsAsConfig } from "../../../shared/tracker-labels.ts";
+import { currentMs, isoFromMs } from "../../../shared/time.ts";
 
 const USAGE = `usage:
   tracker.ts children <issue-key>
@@ -800,21 +810,47 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
   return { args, flags: new Set(flags) };
 }
 
-/** The exit code of an operation the tracker's rate limit stopped. */
-const RATE_LIMITED_EXIT = 5;
+/** The exit code of an operation a failed call to the tracker stopped, by its failure class. */
+export const EXIT_OF_CLASS: Readonly<Record<FailureClass, number>> = {
+  "rate-limited": 5,
+  unreachable: 6,
+  "too-costly": 7,
+  "server-fault": 8,
+  unauthorized: 9,
+  "not-found": 10,
+  invalid: 11,
+};
+
+/** The exit code and the error line of a failure: by its class when a call to the tracker failed, else 1. */
+export function failureExit(error: unknown): { code: number; line: string } {
+  const failure =
+    isRateLimited(error) || error instanceof OutboundError
+      ? failureOf(error)
+      : null;
+  if (failure?.code === "rate-limited")
+    return {
+      code: EXIT_OF_CLASS["rate-limited"],
+      line: `RATE-LIMITED until ${isoFromMs(failure.until ?? currentMs())}: ${failure.reason}`,
+    };
+  if (failure !== null) {
+    const lost =
+      failure.sent === true ? " (the request may have been applied)" : "";
+    return {
+      code: EXIT_OF_CLASS[failure.code],
+      line: `${failure.code.toUpperCase()}: ${failure.reason}${lost}`,
+    };
+  }
+  return {
+    code: 1,
+    line: `ERROR: ${error instanceof Error ? error.message : String(error)}`,
+  };
+}
 
 function reportFailure(error: unknown): number {
   if (isUsage(error)) return usage(error.message);
-  if (isRateLimited(error)) {
-    console.error(
-      `RATE-LIMITED until ${new Date(error.resetAt).toISOString()}: ${error.message}`,
-    );
-    return RATE_LIMITED_EXIT;
-  }
-  console.error(
-    `ERROR: ${error instanceof Error ? error.message : String(error)}`,
-  );
-  return 1;
+  const { code, line } = failureExit(error);
+  console.error(line);
+  return code;
 }
 
 /** Normalize valued claim options before generic positional/flag validation. */

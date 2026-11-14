@@ -17,7 +17,7 @@ import {
 import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
-import type { AdoptRule, DispatchSection } from "./types.ts";
+import type { AdoptRule, DispatchSection, StalledScope } from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
 /** `stalled_after` and `blocked_after`'s default. */
@@ -40,6 +40,7 @@ const KEYS = [
   "states",
   "followup_command",
   "stalled_after",
+  "stalled_scope",
   "blocked_after",
   "drive_rounds_flat",
   "pickup_within",
@@ -330,10 +331,20 @@ type Timings = Omit<
   | "pickupDeadlineMs"
 >;
 
+/** `stalled_scope`: `claimed` unless the section says `assigned`. */
+function stalledScope(value: unknown): Checked<StalledScope> {
+  if (value === undefined || value === null) return ok("claimed");
+  return value === "claimed" || value === "assigned"
+    ? ok(value)
+    : invalid("dispatch.stalled_scope must be claimed or assigned");
+}
+
 /** The section's waits and expectations, and where and how often notices go. */
 function timings(section: Record<string, unknown>): Checked<Timings> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
   if (!stalledAfterMs.ok) return stalledAfterMs;
+  const scope = stalledScope(section.stalled_scope);
+  if (!scope.ok) return scope;
   const blockedAfterMs = wait(section.blocked_after, "blocked_after");
   if (!blockedAfterMs.ok) return blockedAfterMs;
   const driveRoundsFlat = rounds(section.drive_rounds_flat);
@@ -372,6 +383,7 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   if (!renotifyAfterMs.ok) return renotifyAfterMs;
   return ok({
     stalledAfterMs: stalledAfterMs.value,
+    stalledScope: scope.value,
     blockedAfterMs: blockedAfterMs.value,
     driveRoundsFlat: driveRoundsFlat.value,
     pickupWithinMs: pickupWithinMs.value,

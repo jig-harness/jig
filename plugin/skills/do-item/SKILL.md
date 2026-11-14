@@ -59,14 +59,14 @@ implement, open a pull request or arm a drive.
 
 1. For an issue key, fetch the issue with `scripts/get_issue.ts` as in
    [Step 1](#step-1-fetch-the-issue), and write the returned JSON to
-   `.context/scout-input.json`. Stop if the fetch fails. For `--text`, write
+   `.context/scratch/scout-input.json`. Stop if the fetch fails. For `--text`, write
    JSON with the task verbatim as `title` and `description`, and `labels: []`,
    to that file; do not read or write the tracker. Free text routes through
    the configured title keywords or default agent, since it has no labels.
 2. Run the same routing used by a pickup:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scout-input.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scratch/scout-input.json
    ```
 
    Report the recommended agent and scouts. Stop on a non-zero exit. If the
@@ -85,12 +85,13 @@ implement, open a pull request or arm a drive.
    bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD
    ```
 
-   Write `.context/scout-findings.md` with the first line exactly
+   Write `.context/scratch/scout-findings.md` with the first line exactly
    `## Scout Findings (<hash>)`, substituting that hash, followed by the
    collected findings. Print the complete findings for both forms. For an
    issue key, also post that file through the tracker comment operation as in
    [Step 4a item 3](#step-4a-standard-start-no-sub-issues). Report a failed
-   post and retain the file. For free text, the printed findings are the
+   post and move the file to `.context/scout-findings.md`, out of
+   `.context/scratch/`, so that `jig gc` keeps it until it is posted. For free text, the printed findings are the
    result; no tracker comment is posted. A later pickup's Step 2 selects an
    issue's comment under the existing hash and freshness rules.
 
@@ -274,6 +275,25 @@ form is the row of this table it belongs to, and on Jira its script form.
 | Attach a file, replacing older ones of its name or title | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" attach "<KEY>" --input attachment.json` (exit `3`: the tracker cannot hold the file, nothing written) | The script form | The script form: GitHub Issues has no file upload, and the script carries a text file in a marked comment or links a hosted copy |
 | List or fetch attachments | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" attachments "<KEY>"`; `… fetch-attachment "<KEY>" <id> --out <file>` | The script form | The script form |
 | File a new issue | The consumer's `issue_tracker.file_command` | — | — |
+
+A `tracker.ts` operation that a failed call to the tracker stopped exits
+with the call's [failure class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+its reason on stderr after the class's name (`UNREACHABLE: …`); any other
+failure exits `1`, and `2`, `3` and `4` keep the meanings each operation
+gives them:
+
+| Exit | Class | What to do |
+|------|-------|------------|
+| `5` | `rate-limited`; stderr `RATE-LIMITED until <time>` | Stop and report the time; a dispatched pass records `waits` ([Dispatched passes](#dispatched-passes)) |
+| `6` | `unreachable`: no answer; "the request may have been applied" when it left | Run it again later; after a write, read the item first |
+| `7` | `too-costly`: the tracker ran out of time on the request | Run it again later, or ask for less |
+| `8` | `server-fault`: the tracker answered with a fault of its own | Run it again later |
+| `9` | `unauthorized`: the credential is missing, expired or refused | Fix the credential ([Error handling](#error-handling)) |
+| `10` | `not-found`: the item does not exist or is not visible | Check the key |
+| `11` | `invalid`: the tracker refused the request as malformed | Report it: the request is the defect |
+
+A read the tracker did not answer, or answered with a fault, was already
+sent once more inside the call; a write never is.
 
 An issue key is `ENG-123` on Linear and Jira, where `issue_tracker.team`
 names the prefix, and `#123` on GitHub Issues, an issue of the configured repository;
@@ -796,12 +816,12 @@ implementation. Skip this check for issues about the repository's own code.
    with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
    while a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
-   tracker text, so write it alone to `.context/workspace-title.md` with the
+   tracker text, so write it alone to `.context/scratch/workspace-title.md` with the
    file editor and pass the file, never the title inside the command; quote
    the key, since a GitHub key (`#123`) starts a shell comment unquoted:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/workspace-title.md
+   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/scratch/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -1285,7 +1305,8 @@ implementation. Skip this check for issues about the repository's own code.
       tool this session runs in: Claude Code's (`claude --model <model> -p
       "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
       on the standard tier of `routing.models.codex`, overridden by `--pass-model`, with its bypass
-      only on a host that set `drive.codex_bypass`). A Codex session
+      only on a host that set `drive.codex_bypass` and the host's
+      `drive.codex_pass_args` before its prompt). A Codex session
       that cannot open a tab gets `spawn`. In any other
       agent tool the script answers `print`. Do not guess one for another
       agent tool.
@@ -1402,10 +1423,10 @@ implementation. Skip this check for issues about the repository's own code.
         launch it again, and report the drive's terminal outcome afterward.
 
       Once armed, name the workspace for the driving stage (same rules as at
-      pickup, with `.context/workspace-title.md` still holding the title):
+      pickup, with `.context/scratch/workspace-title.md` still holding the title):
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/workspace-title.md --pr <PR>
+      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/scratch/workspace-title.md --pr <PR>
       ```
 
       Post the prepared tracker comment with the arm outcome and the
@@ -1844,7 +1865,8 @@ the factory identity, or an unassigned one from the repository's ready pool
 followed by the line
 `route: rules`, with nobody at the keyboard and nobody to answer while it
 runs. Its prompt says so, and names the `jig dispatch result` commands that
-record how it ended. In such a pass:
+record how it ended and the `jig dispatch report` command for its closing
+report. In such a pass:
 
 - **The route reaches the implementer, not this session**: forward it as
   [Step 4a item 1](#step-4a-standard-start-no-sub-issues) says.
@@ -1900,6 +1922,15 @@ record how it ended. In such a pass:
   default), after which the wrapper stops it: open the pull request and arm
   its drive as soon as the work allows, and record the result before
   anything long-running that follows.
+- **Write the closing report last.** Record the result as soon as the
+  pull request's drive is armed and go on; when the pass is done, write
+  its closing report, a `closing-report/v1` record of the shape the prompt
+  gives (what the run concluded, the next step and who takes it, the
+  question and its framed decision when a person must decide, why it fell
+  short when it did, and references as evidence, never contents), to a
+  file, and record it with the `jig dispatch report` command the prompt
+  names. When the command refuses the report, fix what it names and run it
+  again; the last report it takes stands, and it never changes the result.
 
 ## Error handling
 
@@ -1907,6 +1938,7 @@ record how it ended. In such a pass:
 |-------|----------|
 | Issue not found | Check the key against the tracker's form ([Tracker operations](#tracker-operations)); list the tracker's issues (Linear: `linear issue list --team <issue_tracker.team>`; GitHub Issues: `gh issue list` on the configured repository) |
 | Tracker unreachable on one transport | Use the other transport recorded in Step 1 |
+| A tracker script exits `6` to `11` | The failure class names the cause ([Tracker operations](#tracker-operations)); `6`, `7` and `8` clear by waiting |
 | Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client; GitHub Issues: sign in with `gh auth login`, and add the `project` scope with `gh auth refresh` when the states are on a board; Jira: `JIRA_BEARER_TOKEN`, `JIRA_TOKEN_COMMAND`, or `JIRA_EMAIL` and `JIRA_API_TOKEN`, an error naming `JIRA_TOKEN_COMMAND` meaning that command failed), or use the harness's native integration |
 
 ## Scripts reference

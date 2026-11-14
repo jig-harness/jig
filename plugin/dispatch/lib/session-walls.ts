@@ -31,6 +31,7 @@ import { type SessionsReport, WAITING_STATES } from "./runtime/port.ts";
 import { stateDb } from "./state.ts";
 import { failureText } from "./text.ts";
 import { type Wall, writeWall } from "./walls.ts";
+import { currentIso, isoFromMs, parseMs } from "../../shared/time.ts";
 
 const RUN_TS = resolve(import.meta.dir, "../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
@@ -115,7 +116,7 @@ export async function observeWalls(
       failures.push(`launch record ${r.record.id}: ${found}`);
       // Without a successful read this tick cannot say the wall is still the
       // session's last record, so no earlier reading may authorize a nudge.
-      wentOn(r, new Date().toISOString(), root);
+      wentOn(r, currentIso(), root);
       continue;
     }
     keepEpisode(r, found, root);
@@ -173,9 +174,7 @@ function accountWallOf(record: LaunchRecord, found: ProbedWall): Wall {
     configDir: record.configDir,
     resetAt: known
       ? (found.resetAt as string)
-      : new Date(
-          Date.parse(found.observedAt) + record.wallBackoffMs,
-        ).toISOString(),
+      : isoFromMs(parseMs(found.observedAt) + record.wallBackoffMs),
     source: known
       ? `interactive session ${record.id}: ${found.evidence}`
       : `interactive session ${record.id}: no reset resolved; wall_backoff from ${found.observedAt}`,
@@ -188,7 +187,7 @@ function keepEpisode(
   found: ProbedWall | null,
   root?: string,
 ): void {
-  const readAt = new Date().toISOString();
+  const readAt = currentIso();
   if (found === null) {
     wentOn(r, readAt, root);
     return;

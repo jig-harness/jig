@@ -9,12 +9,11 @@
  */
 import { decisionDigest } from "../../shared/decisions/digest.ts";
 import {
-  checkParkedDecision,
   DECISION_BYTE_LIMIT,
   isParkedDecision,
   type ParkedDecision,
 } from "../../shared/decisions/park.ts";
-import { STATION_CLASSES } from "../../shared/decisions/station.ts";
+import { framedDecisionProblems } from "../../shared/decisions/framed.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -52,19 +51,7 @@ export function framedResultOf(
       `the decision is not JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  const declared =
-    isMapping(value) && typeof value.class === "string" ? value.class : "";
-  if (declared.trim() === "")
-    return failed(
-      "invalid",
-      "$.class: name the registry class the decision falls in (scope, human-decision, release, destructive, …)",
-    );
-  if (Object.values(STATION_CLASSES).includes(declared))
-    return failed(
-      "invalid",
-      `$.class: ${declared} is the dispatcher's own framing; use the registry class the decision falls in (scope, human-decision, release, destructive, …)`,
-    );
-  const problems = checkParkedDecision(value, declared);
+  const problems = framedDecisionProblems(value);
   if (problems.length > 0 || !isParkedDecision(value))
     return failed("invalid", problems.join("; "));
   return ok({ decision: value, digest: decisionDigest(value), at });

@@ -70,6 +70,7 @@ import {
 import { stateDb } from "./state.ts";
 import { stewardRecurrences } from "./steward-recurring.ts";
 import { failureText } from "./text.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 
 /** One repository as the tick read it, for its route. */
 export interface RepoReflection {
@@ -199,7 +200,7 @@ function findingText(
   if (r.stage === "steward")
     return {
       title: `The steward re-armed ${r.class} ${r.rows} times in a week on ${r.repo}`,
-      description: `The owner host's steward records show ${r.rows} executed recoveries of class ${r.class} in the rolling week ending ${new Date(nowMs).toISOString()}. Each record keeps its evidence and reason in the steward records.`,
+      description: `The owner host's steward records show ${r.rows} executed recoveries of class ${r.class} in the rolling week ending ${isoFromMs(nowMs)}. Each record keeps its evidence and reason in the steward records.`,
       suggested_fix:
         "Review these recoveries and propose a guarded dispatcher rule for this transient cause, so the next occurrence needs no steward judgment. Keep the recovery budget and human stop and park guards.",
     };
@@ -235,7 +236,7 @@ function findingEvent(
     v: 1,
     type: "finding",
     id: findingId(repository, r, week),
-    at: nowAt(new Date(nowMs)),
+    at: nowAt(Temporal.Instant.fromEpochMilliseconds(nowMs)),
     session: sessionBlock(import.meta.dir),
     change: { repository, branch: null, pull_request: null, issue: null },
     kind: "error",
@@ -273,7 +274,7 @@ interface RepoRun {
 function secondsLeft(run: RepoRun): number {
   return run.deadline === null
     ? run.settings.timeoutSec
-    : Math.floor((run.deadline - Date.now()) / 1000);
+    : Math.floor((run.deadline - currentMs()) / 1000);
 }
 
 const failure = (
@@ -488,7 +489,7 @@ export async function routeRecurrences(
   // One absolute deadline for every repository: they run in turn, so each
   // gets what the ones before it left, not the tick's whole allowance again.
   const deadline =
-    options.timeLeftMs == null ? null : Date.now() + options.timeLeftMs;
+    options.timeLeftMs == null ? null : currentMs() + options.timeLeftMs;
   for (const repo of repos)
     await routeRepo(db, repo, options, report, deadline);
   const empty = Object.values(report).every((list) => list.length === 0);

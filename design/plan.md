@@ -21,7 +21,8 @@ Now is the line that runs with nobody watching: a team's pull requests
 driven to merge-ready while a person keeps every decision that is theirs.
 First what keeps an unattended pass from getting past a person, then what
 keeps the line from stranding work, then one place to see and steer it,
-then Orca, the dispatcher's first session runtime.
+then what a dispatched run leaves behind and where it runs, then Orca, the
+dispatcher's first session runtime.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -186,22 +187,16 @@ by a person's answer to a framed decision, or by a person alone. It builds
 on item 46's framed needs and answers. What it will build, one pull request
 per issue in the design's order:
 
-- **CI repair.** The drive reads a held-head check as held
-  (`ci.hold_sentinels` naming the ones M13's shape misses) and parks once
-  under `reviewer-posture` when only advisory checks fail
-  (`ci.advisory_checks`); the repair passes become `drive.ci_repair_rounds`.
+- **CI repair.** The repair passes become `drive.ci_repair_rounds`.
 - **Host faults.** One host need per cause (`failures.group`); a
   follow-up's run again also covers a failed result write and waits for the
   host's health check (`failures.rerun_died`); a tracker credential probe
   per account with one host need (`preflight`); missing dispatch labels
   created by the tick; a repository's CI checking what the tick reads from
   it.
-- **Pickups.** A stall counted only for an item a launch or claim marker
-  took (`dispatch.stalled_scope`); an item moved to `pr_open` when an open
-  pull request on its launch's branch names it; a stalled pickup's unpushed
+- **Pickups.** A stalled pickup's unpushed
   work relaunched once in its own tree to push and record
-  (`dispatch.stalled_relaunch`); an epic never taken as a pickup; a
-  held-then-released item re-queued.
+  (`dispatch.stalled_relaunch`); an epic never taken as a pickup.
 - **The steward.** First its digest's missing facts and its no-result rate;
   then, under
   [ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md),
@@ -240,6 +235,43 @@ need; an untagged release raises one need, not one per merge; a credential
 failure on one account raises one host need and holds that account's
 tracker stages; and every need that reached a person that week was framed,
 or, where only a person can act, raised once for its cause.
+
+### 55. Outbound calls: one governed transport for every system Jig calls
+
+Jig's code calls a forge, the issue trackers and the reflection stores,
+and each integration handles their limits on its own: one shared budget
+that only the tracker adapters feed, and no record of what an operation
+costs. On a dispatch host that showed as a
+tracker credential held at its hourly allowance by one unbounded nested
+list, a repository the forge could not answer a full page of and so was
+never read, and ticks that exited 1 for refusals that clear by waiting.
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md) sets the
+rule, and [design/outbound-calls.md](outbound-calls.md) has each system's
+limits, the shared library (`plugin/shared/outbound/`), the failure classes
+with their policies and the build order. What it will build, one pull
+request per step:
+
+- **The cost ledger and its reports**: requests, cost and time per
+  operation and caller; a line per system in the tick report, a
+  `jig budget` command, and one need when a quota is about to run out.
+- **GitHub in the budget record**: its hourly and secondary limits beside
+  the trackers', every forge call admitted against them.
+- **Reuse**: answers cached by update time or the system's validator,
+  identical reads in a run sent once and reads by key in one request,
+  through the shared library that the existing queue snapshots adopt.
+- **Gates and a review lens**: no call leaves by another door than a
+  transport, no query selects a list without a page size or passes its
+  declared cost ceiling, and a change to an integration is reviewed
+  against the obligations.
+
+Done when, on a dispatch host over a week: no tick exits 1 and no person
+is asked for a refusal that clears by waiting; `jig budget` names the
+operations that spent each quota, and their totals match the budget
+record's spending once its refills and window resets are set aside, with
+spending by other users of the credential shown apart; a repository whose pull requests the forge cannot answer
+fifty at a time is read on every tick; a steady tick with nothing changed
+sends one tracker request per team; and both gates run in
+`bun run gates`, their counts of calls that predate the rule only falling.
 
 ### 36. The dispatch board: what is driven and what is ready to merge
 
@@ -530,6 +562,50 @@ when the operator chat proposes and never sends and, once item 40 has
 settled, a commit from the dashboard writes only as the person, after proof that
 they are present and a dry run that still matches.
 
+### 51. What a dispatched session leaves and where it runs
+
+A dispatched run's conclusion is lost: the wrapper keeps only its last
+`Question:` line, so why a run died or stalled is found only in the
+terminal tab it left. A run that parks or fails keeps that tab, and nothing
+closes it once its pull request merges. And the dispatcher runs nothing
+without Orca. [design/dispatched-sessions.md](dispatched-sessions.md) has
+how it works. What it will build, one pull request per step in the design's
+order, after `jig gc`'s fixes (#990, #991):
+
+- **The closing report.** Every dispatched run ends with a
+  `closing-report/v1` record, written by the agent that did the work through
+  `jig dispatch report`: what it concluded, its question for a person, the
+  next step it suggests, and a cause when it fell short. A drive's comes
+  from `drive.ts` at its stop, built on its passes' round reports. It is
+  kept on the launch record and the outcome log, and shown on the dashboard
+  and by `jig ask`.
+- **The steward's `cause` record** for a run that left no report, read from
+  an excerpt of its transcript, whose copy is kept only for such runs and
+  until seven days after the cause is applied, and at the latest until the
+  receipts retention ends.
+- **Tabs close on every exit**, a park and a failure included, once the
+  report and the cause record hold what a tab showed; the tick ends what a
+  run whose wrapper died left (`endRun`).
+- **The process runtime.** A second session runtime, chosen in the host's
+  machine file (`runtime: process`), that opens plain git worktrees under
+  `jig gc`'s shared admission, starts each run as a unit or job of the
+  host's service manager with an environment built from a list and bound to
+  its account as today, launches a pickup's first drive itself, and lets a
+  person follow or take over a run (`jig dispatch attach`).
+- **The default changes** to the process runtime after a week's run on a
+  dispatching host, as the
+  [ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)
+  amendment states; Orca stays an option.
+
+Done when, on a host running the dispatcher, every run of a week ended with
+a closing report or a recorded cause shown on the dashboard, no run's tab
+outlived its run, and the same week on `runtime: process` meets the
+design's proof: runs went on after the tick that started them ended, no
+pass outlived its launch record, every launch billed its admitted account,
+every pickup's first drive ran through the runtime, every worktree whose
+pull request merged was collected or kept with a reason, and a person
+attached to a run and took one over without Orca.
+
 ### 34. Jig in the Orca ecosystem
 
 Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
@@ -579,7 +655,8 @@ processes the repository.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, the hub for a team on several hosts, work that
+second team adopt Jig, the hub for a team on several hosts, the Protocol
+that readers outside the skills can trust, the line in a team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
 measurement. Last come the developer machine and its runtimes, and the runs
 a person owes.
@@ -684,6 +761,79 @@ From the second stage a stopped hub also suspends the owner duties a host
 cannot do without its lease, the one exception to a host working as it does
 today.
 
+### 53. The Jig Protocol: chapters generated from the code and held to it by a gate
+
+Jig's parts, and programs outside its skills (the dispatch dashboard's page,
+the Orca plugin, the planned hub, a repository's follow-up command, a second
+agent harness), agree on contracts: a drive's end states and exit codes, the
+records Jig writes, the labels and comment markers it reads, the commands a
+repository supplies. Each is defined once in code and restated by hand in
+several documents, which drift wherever no test ties them to the code.
+[design/protocol.md](protocol.md) has how it works and
+[ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md)
+the decision. What it will build: the [Jig Protocol](../GLOSSARY.md), a
+kind of document in `plugin/protocol/`, one chapter per contract, each
+stable or provisional (naming the plan item that still moves it); a
+generator, `tools/protocol/generate.ts`, that writes each chapter's values
+and their meanings from the code's own tables, with a data file per chapter
+and JSON Schemas for the shapes outside readers parse, held to the code by
+its `--check` in the generated-file inventory; the skills' restatements
+turned into links, or kept as held restatements the gate checks; and the
+chapters rendered on the site. Built in steps, one pull request each;
+built so far: the generator, its gate and the chapter on the drive's end
+states and exit codes ([plugin/protocol/](../plugin/protocol/README.md)).
+Open, in order: the other stable chapters, their schemas, their
+restatements as links, the provisional chapters, and the site's pages.
+
+Done when every stable and provisional chapter of the design is generated
+and gated, the site renders the chapters, and the
+documents programs outside the skills are pointed to link to the chapters
+instead of restating them, and a change that makes a chapter disagree with
+the code fails `bun run gates`.
+
+### 54. The line in a team's chat
+
+The dispatcher tells a person what needs them on an Orca workspace card,
+and the dashboard shows it to whoever opens it, so a team that works in a
+chat tool learns that a pull request is ready to merge, or that a decision
+waits on it, only when someone looks; answering, asking where work stands
+or starting an item needs a terminal. [design/chat.md](chat.md) has how it
+works and
+[ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)
+the decision. What it will build, Slack first, other chat tools behind the
+same seams: notification channels, a port the tick sends each cause
+through, with today's Orca card as one channel and a suppression record
+per channel, notices staying an owner duty of the host; a Slack channel
+that posts ready to merge with its link and merge command, each framed
+decision with its options and copy lines, each stop only a person settles
+and the host's faults, in one thread per piece of work whose top message
+shows the board's column and whose replies are edited when their cause is
+settled anywhere, with channels, mentions, direct messages, quiet hours
+that hold mentions, and a daily digest; a chat bridge over Socket Mode
+that checks the chat user's workspace, mapping and write permission and
+turns a click on an option, an Answer in words form or a `/jig` command
+(`ask`, `needs`, `status`, `pickup`, `drive`, `hold`, `release`, and on a
+host `pause`, `resume`, `stop`) into one request through `jig send`'s
+writers, run as `jig chat serve` on a host that is not enrolled, posting
+under the host's credential, or inside the hub, posting under the bridge's
+own forge app identity that a repository lists and naming the person each
+chat user linked with `/jig link`; buttons under structured answers'
+guarded pick, none for the attested classes until item 40 accepts the
+hub's bridge as proof; and the Slack app's manifest, `jig chat setup` and
+`jig chat doctor`. Merging from the chat and a drive's mailbox through the
+hub are left out. One pull request per step, in the design's order; the
+hub's placement waits on the hub's first stage and the cross-host commands
+on its third (item 49).
+
+Done when, on a host with Slack configured, a parked drive posts its
+decision into its pull request's thread, a click on an option re-arms the
+drive with that choice and edits the reply to answered, an answer typed on
+the pull request instead edits the reply the same way, the pull request
+becoming ready posts one reply and moves the thread's top message to ready
+to merge, and `/jig ask` on the pull request answers with `jig ask`'s card;
+and, through a hub, an answer clicked in the chat is read by the host's
+re-arm as the linked person's.
+
 ### 26. `init`: setting a repository up for Jig
 
 A repository adopts Jig by hand today: read the configuration reference,
@@ -775,7 +925,34 @@ how it works and what is left. Done when:
   state, in both themes;
 - search works on a phone, and the plugin page shows one agent's steps at a
   time;
-- the home and adoption pages show an audit sheet of Jig's own audit.
+- the adoption page shows an audit sheet of Jig's own audit, with a direct
+  link from the home page.
+
+### 52. Present Jig as a software factory, told in three layers
+
+A reader should learn in one screen what Jig does for a team and who
+merges. [The website design](website.md#the-message-a-software-factory-first)
+sets the message: the factory comes first; what runs by itself, what a team
+gets and what it is built from order the site. The home page tells one
+work-item loop, with a direct path to the audit for a team adopting one
+module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)
+holds this work.
+
+After the message design merges, file and prepare the design brief, then
+run an external Claude Design round. The person supplies the reference
+site with the brief and accepts the returned design. Only then change
+README.md, FACTORY.md, FEATURES.md and the site together, including their
+parsers and tests. The design names what moves down a level and the
+Protocol's page routes; its generation and rendering belong to the
+[Protocol design issue](https://github.com/jig-harness/jig/issues/1016).
+The unrelated [website sync-record fix](https://github.com/jig-harness/jig/issues/989)
+remains separate.
+
+Done when the accepted design is built, every capability is placed in one
+layer and marked shipped or planned, the home page tells one loop from
+work item to merge-ready pull request with a person merging, the audit is
+one step away, and the site and parser gates pass. Unattended-operation
+claims stay in On the roadmap until item 33's live-host checks are recorded.
 
 ### 38. One look for Jig's pages
 
@@ -910,7 +1087,7 @@ which were met. [design/spec-link.md](spec-link.md) has how it works, on
 the [spec ecosystems research note](spec-ecosystems-research.md): a
 read-only resolver with one adapter per layout (the item's own body first,
 then the common repository layouts by convention, then the tracker's
-attachments once the interface has them) that returns requirements,
+attachments) that returns requirements,
 acceptance criteria and tasks with their ids; the result handed to the
 implementing agent and the reviewer; a pull-request section accounting for
 every criterion as met with an evidence record (item 28), deferred to a
@@ -931,8 +1108,8 @@ What it will build, one pull request per step:
   still on, reading its script and policy from the base branch rather than
   the head, with a workflow template and the setup that makes it required.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
-- **The tracker source**, once the tracker interface has attachments
-  (item 12).
+- **The tracker source**: the documents and attachments the tracker
+  interface lists on the item.
 - **A verification section**: the commands a work item lists under
   `Verification`, fenced blocks included, handed to the implementer and
   recorded as evidence records the pull request's acceptance section cites.

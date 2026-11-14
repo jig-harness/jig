@@ -33,6 +33,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { currentMs } from "../plugin/shared/time.ts";
 
 /** A finished run: how it ended, and where its output is. */
 export interface Spool {
@@ -94,7 +95,7 @@ const SYSTEM: GroupIo = {
     process.stderr.write(line);
   },
   reapMs: 2_000,
-  now: () => Date.now(),
+  now: () => currentMs(),
   sleep: (ms) => Bun.sleep(ms),
 };
 
@@ -185,7 +186,7 @@ export async function spooledRun(
       interrupted ??= name;
       signal(name);
       if (escalation) return;
-      deadline = Date.now() + graceMs;
+      deadline = currentMs() + graceMs;
       escalation = setTimeout(() => signal("SIGKILL"), graceMs);
     };
     for (const name of CANCELS) process.on(name, forward);

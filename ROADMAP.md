@@ -12,7 +12,7 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 First comes what lets a team's pull requests reach merge-ready with nobody
 watching. An agent working alone cannot get past a person, the dispatcher
 leaves no work stranded, and a person sees and steers the work from one
-place.
+place. Every run the dispatcher starts says what it concluded.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -65,6 +65,17 @@ the [steward](GLOSSARY.md) settles what needs reading, where a host allows
 it. What reaches a person arrives as a decision with options, answered in a
 word. A host fault arrives once, saying what to fix. Decisions that are a
 person's stay a person's.
+
+### 55. Staying inside the limits of the systems Jig calls
+
+The systems Jig calls limit their callers. A forge counts requests an hour,
+a tracker charges each query a cost, and each ends a request that takes too
+long. Every agent and timer on a machine shares one login's allowance. Jig
+gets one way to make these calls. It reuses an answer it holds, asks a
+budget the whole machine shares, and keeps each request small enough to be
+answered. It records what every operation costs, so a team sees what spends
+an allowance. When a system refuses a call for a time, the dispatcher
+waits, and no person is asked.
 
 ### 36. The dispatch board: what is driven and what is ready to merge
 
@@ -147,6 +158,18 @@ it. The first stage puts each pull request's status on the dispatch
 dashboard a team already runs. A person decides on the rest once that stage
 is in use.
 
+### 51. What a dispatched session leaves and where it runs
+
+A run the dispatcher starts ends with a short closing report. The agent that
+did the work writes it: what it concluded, its question for a person, and
+the next step it suggests. The dashboard and `jig ask` show the report, so a
+run's terminal tab closes however the run ended. A run that leaves no report
+gets its cause recorded from its transcript. A second session runtime runs
+each pass as a plain process. A host then dispatches with no desktop app and
+no terminal kept open, and a person can still follow a run or take it over.
+That runtime becomes the default once it has run on a dispatching host, and
+Orca stays supported.
+
 ### 34. Jig in the Orca ecosystem
 
 [Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
@@ -165,8 +188,9 @@ from Orca's command line once Orca offers it. The plugin is Orca-bound.
 ## Next
 
 Next comes delegated merge, once an agent cannot push or merge by any other
-path. Then come what lets a second team adopt Jig, one control plane for a
-team on several machines, work that arrives complete, and reviews that
+path. Then come what lets a second team adopt Jig: one control plane for a
+team on several machines and one trusted statement of what Jig writes. The
+line comes to a team's chat with the control plane. Then come work that arrives complete, and reviews that
 catch what checks cannot. Last come the practices
 the modules and skills lack, measurement, the developer machine and its
 runtimes, and the runs that wait on a person.
@@ -211,6 +235,35 @@ runs on a machine the team chooses and needs no cloud service. Nothing
 requires it: a host that does not enroll, or whose hub is down, dispatches
 on its own as it does today.
 
+### 53. The Jig Protocol: one trusted statement of each contract
+
+A program that reads what Jig writes (an exit code, a label, a record, a
+comment marker) gets one chapter per contract to read it from: the
+[Jig Protocol](GLOSSARY.md). Each chapter's values are generated from Jig's
+own code and checked against it on every change, so a chapter cannot fall
+out of date. Each says whether its contract is stable or still moving.
+The shapes a program parses come with JSON Schemas, so a dashboard, a
+workspace app or another agent harness can read Jig's records without
+reading its code.
+
+### 54. The line in a team's chat
+
+The dispatcher posts to the team's chat. Slack comes first, and other chat
+tools fit behind the same seams. A pull request ready to merge arrives with
+its link, a decision with its options, and each stop only a person can
+settle. Each piece of work gets one thread, kept current when the work
+moves on or a person answers elsewhere, and a digest arrives once a day.
+
+A team that also runs the [chat bridge](GLOSSARY.md) answers a decision
+with a click. Its `/jig` commands ask where an item or a pull request
+stands and what waits on a person, and tell the line to pick an item up,
+hold or stop. The bridge connects out to the chat and opens no route
+into any machine. On the [hub](GLOSSARY.md) it posts under an identity of
+its own that names the person who clicked. Where the hub runs on a machine
+that runs no pass, an answer from the chat is never mistaken for an
+agent's. On a machine that does run passes, the two look alike. Merging stays a person's act on the
+forge.
+
 ### 26. `init`: setting a repository up for Jig
 
 One command in a fresh clone that derives the values the repository already
@@ -238,6 +291,15 @@ An audit at the end of a greenfield kickoff that checks the chosen
 and the audit results a team marks as wrong reaching the
 [reflection store](plugin/skills/reflect/README.md), so the audit learns
 from them.
+
+### 52. Present Jig as a software factory, told in three layers
+
+The home page will say what Jig does for a team through one work-item
+loop: an agent builds the change and works through review. A person merges.
+The rest of the site will explain what runs by itself, what a team gets
+and what it is built from. Each capability will say whether it ships or is
+planned. A design round comes before the pages change. The audit stays one
+step from home for a team that adopts one module at a time.
 
 ### 38. One look for Jig's pages
 

@@ -48,6 +48,7 @@ import {
   lockHeartbeatMs,
   type PathLock,
 } from "./lock.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 
 /** For a caller with no lease of its own to take: refuse while another tree drives `pr`. */
 export async function assertNoForeignDriveNow(
@@ -189,7 +190,7 @@ export async function claimLease(
       seen !== null &&
       isMine(seen, session, actor) &&
       seen.holder === holder &&
-      Date.now() - Date.parse(seen.lastSeen) < renewAfterMs()
+      currentMs() - parseMs(seen.lastSeen) < renewAfterMs()
     ) {
       return seen;
     }
@@ -199,7 +200,7 @@ export async function claimLease(
         (isRecycledPid(seen, session, actor) || !leaseAlive(seen)));
     const quietPastMargin =
       seen !== null &&
-      Date.now() - Date.parse(seen.lastSeen) > leaseFreshMarginMs();
+      currentMs() - parseMs(seen.lastSeen) > leaseFreshMarginMs();
     return await withLeaseLocks(mintsNewGeneration || quietPastMargin);
 
     async function withLeaseLocks(holdState: boolean): Promise<Lease> {
@@ -238,7 +239,7 @@ export async function claimLease(
         (held === null ||
           (!mine &&
             (!leaseAlive(held) || isRecycledPid(held, session, actor))) ||
-          Date.now() - Date.parse(held.lastSeen) > leaseFreshMarginMs())
+          currentMs() - parseMs(held.lastSeen) > leaseFreshMarginMs())
       )
         return "retry";
       if (held !== null && !mine) reportPrTakeover(held, session, actor, pr);

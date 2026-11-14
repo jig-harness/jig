@@ -29,6 +29,7 @@ import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import { epicTypesOfLabel } from "../../../../../../shared/tracker-labels.ts";
 import type { Client, IssueListing } from "./client.ts";
+import { dispatchSource } from "./dispatch-source.ts";
 import { STATE_TYPES } from "./model.ts";
 import {
   ancestorFields,
@@ -45,6 +46,7 @@ import {
 } from "./read.ts";
 import { GitHubApiError } from "./transport.ts";
 import type { CommentNode } from "./tracker.ts";
+import { isoFromMs } from "../../../../../../shared/time.ts";
 
 type ReportOps = Pick<
   CoreTracker,
@@ -62,6 +64,7 @@ type ReportOps = Pick<
   | "unassignedIssues"
   | "openPopulation"
   | "facetReport"
+  | "dispatchSource"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -324,6 +327,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   }
 
   return {
+    dispatchSource: dispatchSource(client, (raw, signal) =>
+      pool(parseIssue(raw, ctx), raw, signal),
+    ),
     async issuesByKeys(keys) {
       const out = new Map<string, IssueFact>();
       const numbers = [
@@ -384,7 +390,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       const listing = {
         ...(starts.length === 0
           ? {}
-          : { since: new Date(Math.min(...starts)).toISOString() }),
+          : { since: isoFromMs(Math.min(...starts)) }),
         ...(query.completedIn === undefined
           ? {}
           : { states: ["CLOSED" as const] }),
@@ -436,7 +442,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
 
     async commentsContaining(query) {
       const issues = await labelled(query.issueLabel, {
-        since: new Date(query.createdIn.sinceMs).toISOString(),
+        since: isoFromMs(query.createdIn.sinceMs),
       });
       const out: FoundComment[] = [];
       for (const { issue } of issues)

@@ -153,6 +153,14 @@ can (`do_item.claim_marker`, below): set it wherever more than one host
 picks up from one queue. The dispatcher's double-claim watch stays as the
 backstop.
 
+When a call to the tracker fails, the tracker scripts say how: each
+[failure class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) has its own exit code, from `5` for
+a spent rate limit (with the time it resets) to `11` for a request the
+tracker refused as malformed, listed in the skill's
+[tracker operations](SKILL.md#tracker-operations). A read the tracker did
+not answer is sent once more before the script gives up; a write is never
+sent twice.
+
 ### The repository's own start rules
 
 A team whose items carry their own start rules (the item names this
@@ -255,8 +263,9 @@ A Claude Code round uses `drive.pass_model`
 and the extra arguments in `drive.pass_args` (none unless this host's
 [user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass) sets them).
 A Codex round uses `routing.models.codex.standard` (by default `terra`,
-given as `gpt-5.6-terra`), and carries its bypass only
-on a host that set `drive.codex_bypass`; it does not read
+given as `gpt-5.6-terra`), carries its bypass only
+on a host that set `drive.codex_bypass`, and carries the extra arguments in
+`drive.codex_pass_args` before its prompt; it does not read
 `drive.pass_model` or `drive.pass_args`. For either runtime, `--pass-model`
 overrides the model for one drive, resolving a complexity tier through that
 runtime's row of `routing.models` (see [drive-pr](../drive-pr/README.md)).
@@ -300,7 +309,9 @@ A team whose board shows stopped work as blocked can name an optional
 labels on (`dispatch.labels.enabled`), a drive that stops with only parked
 work left moves each item its pull request links to `blocked`, with a
 comment naming each park's class and reason; on Jira it also writes the
-fields `issue_tracker.jira.blocked_fields` names. Once the park is answered
+fields `issue_tracker.jira.blocked_fields` names, sending those the
+transition's screen carries with the move, so a transition that requires
+one accepts it. Once the park is answered
 and the drive runs again, the item returns to the state it left. This
 skill never moves an item into or out of `blocked`, and its claim refuses
 an item there. The [configuration reference](../../CONFIGURATION.md#issue_tracker)

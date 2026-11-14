@@ -18,6 +18,7 @@ import { dirname, join, resolve } from "node:path";
 import { load } from "js-yaml";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { spawnSync } from "../../plugin/shared/guarded-git-spawn.ts";
+import { currentIso } from "../../plugin/shared/time.ts";
 import {
   artifactTree,
   ChannelError,
@@ -48,9 +49,8 @@ import {
 } from "./channel.ts";
 
 const root = resolve(import.meta.dirname, "../..");
-const HOUR = 3_600_000;
-const t0 = new Date("2026-06-01T00:00:00Z");
-const at = (hours: number) => new Date(t0.getTime() + hours * HOUR);
+const t0 = Temporal.Instant.from("2026-06-01T00:00:00Z");
+const at = (hours: number) => t0.add({ hours });
 
 function tag(version: string, madeAt = t0, onMain = true): Tag {
   return { version, commit: "a".repeat(40), madeAt, onMain };
@@ -58,7 +58,7 @@ function tag(version: string, madeAt = t0, onMain = true): Tag {
 
 function entry(
   version: string,
-  date: Date,
+  date: Temporal.Instant,
   action: ChannelCommit["action"] = "latest",
   withdrawn: string[] = [],
 ): ChannelCommit {
@@ -347,7 +347,7 @@ const github: Pick<Sources, "gates" | "regressions"> = {
 /** Run a channel command; return its exit code and the outputs it wrote. */
 function channel(
   argv: string[],
-  now = new Date(Date.now() + 100 * HOUR),
+  now = Temporal.Now.instant().add({ hours: 100 }),
 ): { status: number; outputs: Record<string, string> } {
   const outputs: Record<string, string> = {};
   const status = run(
@@ -470,7 +470,7 @@ test.skipIf(process.platform === "win32")(
       changed: "false",
     });
 
-    release("0.1.1", new Date().toISOString());
+    release("0.1.1", currentIso());
     const second = promoteAndPush(["latest"], "latest-2");
     expect(sh(origin, ["rev-parse", "latest^"])).toBe(first);
     expect(
@@ -478,7 +478,7 @@ test.skipIf(process.platform === "win32")(
     ).toHaveLength(1);
 
     // 0.1.1 reached latest just now: it has not soaked yet.
-    expect(channel(["check", "0.1.1"], new Date()).status).toBe(3);
+    expect(channel(["check", "0.1.1"], Temporal.Now.instant()).status).toBe(3);
     // 0.1.0 was tagged before latest existed; stable's first commit.
     promoteAndPush(["promote", "0.1.0"], "stable-1");
     expect(sh(origin, ["rev-list", "--count", "stable"])).toBe("1");
@@ -545,7 +545,7 @@ test.skipIf(process.platform === "win32")(
   "the push job checks the record later runs read against the request and the tags",
   () => {
     // Stable carries the rollback to 0.1.0 the test above pushed.
-    release("0.1.2", new Date().toISOString());
+    release("0.1.2", currentIso());
     promoteAndPush(["latest"], "latest-3");
     promoteAndPush(["promote", "0.1.2"], "stable-4");
     const refusals: [string, Forgery, Request][] = [

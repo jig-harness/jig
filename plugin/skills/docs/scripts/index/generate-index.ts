@@ -52,9 +52,9 @@ function documents(directory: string, exclude: string[]): string[] {
     .map((file) => relative(directory, file).split(sep).join("/"));
 }
 
-/** A value as one table cell: whitespace, line breaks included, collapsed and `|` escaped. */
+/** A value as one table cell: whitespace, line breaks included, collapsed; `\` and `|` escaped. */
 const cell = (text: string) =>
-  text.replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
+  text.replace(/\s+/g, " ").trim().replace(/[\\|]/g, "\\$&");
 
 /** What the generated index carries beyond the listing; none of it is set by default. */
 export interface IndexOptions extends Partial<IndexSettings> {

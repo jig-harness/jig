@@ -65,13 +65,23 @@ export function redact(text: string): string {
   }
 }
 
-/** Redact string values without changing keys, booleans or array shape. */
-export function redactStrings<T>(value: T): T {
-  if (typeof value === "string") return redact(value) as T;
-  if (Array.isArray(value)) return value.map(redactStrings) as T;
+/**
+ * Redact string values without changing keys, booleans or array shape; `also`
+ * runs on each redacted string, for a record that masks more than this does.
+ */
+export function redactStrings<T>(
+  value: T,
+  also: (text: string) => string = (text) => text,
+): T {
+  if (typeof value === "string") return also(redact(value)) as T;
+  if (Array.isArray(value))
+    return value.map((v: unknown) => redactStrings(v, also)) as T;
   if (value !== null && typeof value === "object")
     return Object.fromEntries(
-      Object.entries(value).map(([key, field]) => [key, redactStrings(field)]),
+      Object.entries(value).map(([key, field]) => [
+        key,
+        redactStrings(field, also),
+      ]),
     ) as T;
   return value;
 }

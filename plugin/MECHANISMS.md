@@ -153,7 +153,7 @@ development and shipped as a version.
 | [Steering a drive](#steering-a-running-drive-the-mailbox-and-the-ci-hold) | `skills/drive-pr/scripts/mailbox.ts`, `skills/drive-pr/scripts/ci-hold.ts` | the session that armed the drive; a person | `guarded-push.ts`'s exit 17; the drive's exit 18, 19 or 1 | the sender resumes the directive; a person removes a leftover label |
 | [Review threads](#review-threads-and-the-arbiter) | `skills/resolve-review-comments/scripts/` | drive pass; the arbiter | the pass (non-zero exit), then `drive.ts` | the next pass, or a person on a park |
 | [Review and lenses](#review-and-lenses) | `skills/review/scripts/` | review's semantic tier and lens reviewers | the reviewing session (exit 2) | the session, or the repository's lens owner |
-| [Tracker and forge](#the-tracker-and-the-forge) | `skills/do-item/scripts/tracker.ts` and its adapters; `gh` under deadlines | every skill that files, reads or claims | the calling session (exit 1 or 2); the tick's report | a person (credentials); a Jig change (an adapter) |
+| [Tracker and forge](#the-tracker-and-the-forge) | `skills/do-item/scripts/tracker.ts` and its adapters; `gh` under deadlines | every skill that files, reads or claims | the calling session (exit 1 or 2, or the failure class's own, 5 to 11); the tick's report | a person (credentials); a Jig change (an adapter) |
 | [Pickup](#pickup-claim-routing-pull-request-plan-intent-chain) | `do-item`'s claim, routing, pull-request plan and intent chain scripts | the `do-item` session; its implementer | the `do-item` session | the session stops and says why; a person |
 | [Conflicts and CI repair](#conflicts-and-ci-repair) | `skills/resolve-conflicts/scripts/`, `skills/fix-ci/scripts/` | the drive's repair rounds; a person's session | the check before the merge concludes; CI | the pass or session repairing |
 | [Changelog and release](#the-changelog-and-the-release) | `skills/changelog/scripts/`, the release workflow | implementer writes the note; the pass keeps it true | the changelog check; the release run; the follow-up | the session that wrote the note; a person for the release |
@@ -306,7 +306,8 @@ development and shipped as a version.
   terminal, and writes the account's wall on a usage-limit
   stop (`QUOTA_PARKED`, exit 16); for a follow-up it starts the account's agent as a
   headless pass on the follow-up command, with the host's `drive.pass_args`
-  and under the pass deadline; for a pickup it starts the account's agent
+  (a Codex account's: `drive.codex_bypass` and `drive.codex_pass_args`, as
+  the launch record keeps them) and under the pass deadline; for a pickup it starts the account's agent
   as a headless pass on `/jig:do-item <key>` (or `work-batch` for a served
   batch), keeping its served-person claim context. It records the exit
   every way, with the last question of a follow-up pass that stopped short
@@ -402,13 +403,22 @@ development and shipped as a version.
 - **Reasoned.** A dispatched interactive session records how it ended with
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another
-  record's token, a drive pass's record and a second answer. Nothing
+  record's token, a drive pass's record and a second answer. Its closing
+  report, the last act of a pickup's, a follow-up's or the steward's
+  pass, goes through `jig dispatch report <record> <token> <file>`
+  (`dispatch/report-command.ts`), which redacts and checks it
+  (`shared/closing-report.ts`) and keeps the last one that passes beside
+  the result, never touching it. Nothing
   else reasoned writes these records. A completed pickup names its pull
   request with `--pr <number>`, or `--none "<reason>"` when none was needed;
   a pickup the tracker's rate limit stopped before it claimed the item
   records `waits --until <time>`, and the tick starts it again after that
   time; after the claim the pass waits within its deadline or records
-  `failed`.
+  `failed`. A follow-up pass that meets the forge's or a tracker's rate
+  limit records `waits --until <time>` too: its marker stays until then,
+  the tick releases it after the reset and a later tick starts the
+  follow-up again, and the third wait in a row is notified
+  (`dispatch/lib/followup-waits.ts`).
   A pickup whose claim the repository's start rules refused records
   `failed --refused <updated-at> --reason <reason>`: the tick holds the item, showing
   the reason, until its `updatedAt` moves past that time. A batch pickup adds
@@ -699,9 +709,18 @@ development and shipped as a version.
   (`skills/file-issue/scripts/validate-labels.ts`) and asks a person first
   unless the autonomy level says otherwise
   (`skills/file-issue/scripts/confirm-step.ts`).
-- **If it fails.** The calling session sees exit 1 or 2 and stops; the tick
-  reports a record it could not read. A person fixes credentials or
-  configuration; a missing adapter is a Jig change.
+  Every transport and every `ghCall` reports a failed call as one of the
+  closed [failure classes](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  (`shared/outbound/failure.ts`, the `gh` runs read once in
+  `shared/outbound/github.ts`); a tracker read the system did not answer is
+  sent once more within its deadline (`shared/outbound/retry.ts`), and in a
+  tick a system that did not answer is asked nothing more until the next
+  tick's probe (`shared/outbound/hold.ts`).
+- **If it fails.** The calling session sees exit 1 or 2, or `tracker.ts`'s
+  exit for the failure class (5 to 11), and stops; the tick reports a record
+  it could not read with the call's class, and does not fail for a class
+  that clears by waiting until the failure ledger's count. A person fixes
+  credentials or configuration; a missing adapter is a Jig change.
 
 ### Pickup: claim, routing, pull-request plan, intent chain
 
@@ -798,7 +817,9 @@ development and shipped as a version.
 
 - **Deterministic.** The plugin registers an
   [agent-runtime hook](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-  (`hooks/hooks.json`): the turn-budget guard (`hooks/turn-budget-guard.ts`),
+  (`hooks/hooks.json` for Claude Code; for Codex, an entry `jig upgrade`
+  writes into the Codex home): the turn-budget guard
+  (`hooks/turn-budget-guard.ts`),
   which counts a session's turns before every tool call and, near the
   runtime's cap, hands the agent a wrap-up instruction. It reads local files
   only and lets the call through whenever it cannot count. A repository's

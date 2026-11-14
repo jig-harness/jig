@@ -9,6 +9,10 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+- **Preflight** — a small check that runs before a stage starts, to prove a
+  condition the stage needs. For example, the dispatcher checks whether an
+  account can reach a tracker before launching work that must use it.
+
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.
@@ -573,6 +577,24 @@ make, use the entry's term instead.
 
 ## Process
 
+- **Topic coordination** — the stage before pickup where a person brings
+  several linked ideas without a single work item, and `/jig:orchestrate`
+  turns them into recorded decisions, a reviewed plan and started issues.
+  Its coordinating session stays with the person and delegates investigation,
+  plan maintenance and filing. It does no implementation. Unlike an
+  *operator*, it shapes work before the line; unlike a *steward*, it does
+  not inspect the dispatcher's stopped work or propose recoveries.
+- **Track** — one related strand of a loosely bounded topic, investigated
+  separately during *topic coordination* before the person decides how the
+  strands fit together.
+- **Survey** — a read-only investigation of one *track* in a fresh session,
+  with a bounded return, opened-file evidence, existing positions quoted,
+  evidence against the idea and uncertainty made explicit.
+- **Plan keeper** — the separate session maintaining the reviewed plan
+  during *topic coordination*. It receives answers, issue numbers and
+  demotions from the coordinating session, keeping plan-tool mechanics out
+  of the person's discussion.
+
 - **Cause fingerprint** — a stable identity for one cause of a scheduled
   failure, built from the check or prerequisite, its scope and a normalized
   failure signature. It excludes changing details such as run IDs and times,
@@ -942,6 +964,18 @@ make, use the entry's term instead.
   worktree sees them, so nothing another worktree, or a person not working
   in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+  Throwaway working files go under `.context/scratch/`, and a working
+  directory that nothing needs once the work is finished carries a
+  `CACHEDIR.TAG` file; `jig gc` keeps anything else under `.context/` until
+  it is preserved, except a drive's handoff file (`pr-drive-<PR>.md`), which
+  it sets aside whole without archiving, so keep nothing there you need.
+- **Cache directory tag** — a file named `CACHEDIR.TAG`, starting with a
+  fixed signature line, that a tool leaves in a directory it can rebuild or
+  no longer needs, so backup tools and collectors can tell that directory
+  from content that may be the only copy of something. Jig's scripts tag
+  their working directories under `.context/` this way, and `jig gc` sets a
+  tagged directory aside where any other ignored content keeps a worktree
+  ([the collector's rule](plugin/gc/README.md#ignored-content)).
 - **Collection kind** — one class of resource a machine's garbage collector
   knows how to judge and remove (worktrees, scratch directories, container
   volumes, merged branches, tool state, registered processes), shipped with
@@ -1873,6 +1907,25 @@ make, use the entry's term instead.
   that the registry does not hold. Review keeps arbitrary file-backed
   records and dynamically assembled names in the inventory
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Jig Protocol** — the one statement of each contract Jig's parts and the
+  programs outside its skills share (a drive's exit codes, the records Jig
+  writes, the labels and comment markers it reads, the commands a repository
+  supplies), one *Protocol chapter* per contract in `plugin/protocol/`. Its
+  values are generated from the code and a gate fails the build when a
+  chapter and the code disagree; only the meaning of each value and the
+  chapter's prose are written by hand
+  ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
+  (a spec is what a work item links).
+- **Protocol chapter** — one contract's part of the *Jig Protocol*: a status
+  line with its own version, prose written by hand, and generated sections
+  listing every value with its meaning. A **stable** chapter only grows
+  within one version: a withdrawn value stays listed as a tombstone and is
+  never reused, and a change that breaks this raises the version. A **provisional** chapter names the plan item that still moves it,
+  and becomes stable when that item is finished.
+- **Held restatement** — a copy of a contract's values that stays in a skill
+  or a document, where an agent acts on the value in the middle of a step,
+  and that the chapter's gate checks against the code. Every other
+  restatement of a contract is a link to its *Protocol chapter*.
 - **Launch guard record** — the files `jig gc` and Jig's plugin for Orca
   leave each other under `~/.local/state/jig/orca-guard/`: gc's admission
   for a worktree it is removing, the plugin's marker for each agent launch
@@ -1995,6 +2048,10 @@ make, use the entry's term instead.
 - **Maskable icon** — an app icon drawn to fill a full square, with its mark
   kept near the middle, so a launcher that crops icons to its own shape (a
   circle, a rounded square) does not cut the mark off.
+- **Forced colours** — an operating system's high-contrast mode, in which
+  the browser replaces a page's colours with a few system colours the
+  person chose. A page that tells things apart only by colour loses the
+  difference there, so it keeps shapes and borders that still show.
 - **Service worker** — a script a browser starts on demand, apart from the
   page itself, to handle events such as requests when the network is gone;
   the browser stops it whenever it has nothing to handle. The
@@ -2130,6 +2187,51 @@ make, use the entry's term instead.
   them under "What still assumes Linear". Adapters for Linear, GitHub
   Issues and Jira are built; an adapter for a plan file kept in the
   repository is planned ([ROADMAP.md](ROADMAP.md) item 12).
+- **Governed transport** — the one module through which Jig's code calls
+  one outside system: a *forge*, an issue tracker, a reflection store. It
+  reuses an answer it holds before it sends, asks the machine's *budget
+  record*, bounds what one call can cost (a deadline, a page size on every
+  list), adds the call to the *cost ledger* and fails as one of the
+  *failure classes*. No other code sends to that system, and every
+  transport is built from one shared library
+  ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
+  tracker adapters' transports keep the budget and the deadline, and they
+  and the forge's `gh` calls fail as the failure classes; a tracker read
+  is sent once more after a failure that may clear, a forge call is not;
+  the rest is planned ([ROADMAP.md](ROADMAP.md) item 55).
+- **Budget record** — what a machine knows of one credential's limits at an
+  outside system: for each limit its size, what is left and how it refills,
+  and until when the system refuses the credential. Every process on the
+  machine shares the record, so the *dispatcher*'s *ticks*, the sessions it
+  starts and a person's skills spend one allowance knowingly. A *governed
+  transport* asks it before each request and tells it what each answer
+  said; the dispatcher's own reads keep to a share of each limit
+  (`tracker_share`,
+  [configuration reference](plugin/CONFIGURATION.md)).
+- **Cost ledger** — the record of what Jig's calls to outside systems
+  cost: for each hour, system, credential, named operation and caller, the
+  requests sent, the cost in the system's own unit (a tracker's complexity
+  points, a forge's query points) and the time taken. It answers "what
+  spent this quota" without probing the system. Planned
+  ([ROADMAP.md](ROADMAP.md) item 55).
+- **Failure class** — one of the closed set of ways a call to an outside
+  system fails: rate limited (with the time it clears), unreachable, too
+  costly, server fault, unauthorized, not found, invalid. Each class has
+  one policy: whether the call is retried, what its reader shows meanwhile,
+  and when a person is told. It names what went wrong outside Jig; the
+  *failure channel* is how a failure travels inside it.
+- **Transport profile** — what a *governed transport* declares of its
+  system's limits: which exist, how each refills, how an answer reports
+  them, what a refusal looks like and who owns the quota. It holds no
+  number the system reports; those are read from each answer. Planned
+  ([ROADMAP.md](ROADMAP.md) item 55).
+- **Cost ceiling** — the most a query may cost in total, declared beside
+  the query with its unit: objects (the sum over its paths of the nested
+  page sizes' product) or, where the system's formula can be computed from
+  the query text, the system's own cost unit. What one request can cost an
+  outside system is then bounded when the query is written, and a gate can
+  check it.
+  Planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
@@ -2210,7 +2312,8 @@ make, use the entry's term instead.
   workspace, launch a session on a subscription account, notify a person.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
-  *workspace runtime* becomes another by implementing the same methods.
+  *workspace runtime* becomes another by implementing the same methods. The
+  planned *process runtime* implements them with no workspace app at all.
 - **Program status** — the state a program reports to its own terminal
   through [OSC (Operating System Command) 7501](https://www.superlogical.com/rex/docs/build/program-status):
   `idle`, `working`, `blocked`, `done` or `error`. A blocked report can say
@@ -2223,6 +2326,23 @@ make, use the entry's term instead.
   The *dispatcher* can start a follow-up this way on its chosen account
   even when the *session runtime* cannot bind a new interactive session to
   that account.
+- **Closing report** — the short record of what a run the *dispatcher*
+  started concluded: its question for a person if it has one, the next step
+  it suggests, and a cause when it fell short: a `closing-report/v1`
+  record that holds conclusions, never output. A pickup's, a follow-up's or
+  the *steward*'s *headless pass* writes it as its last act through
+  `jig dispatch report`, which keeps it on the launch record and its fields
+  on the run's row of the outcome log; for a drive, whose last pass cannot
+  know it is last, the driver writes it when the drive stops. The *steward*
+  reads a run's transcript only when the run left no report. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
+  [ROADMAP.md](ROADMAP.md) item 51.
+- **Process runtime** — a *session runtime* that runs a *headless pass* as
+  a plain managed process in a git worktree Jig opens itself, with no
+  terminal and no desktop app; a host chooses it in its machine dispatch
+  file. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-process-runtime),
+  [ROADMAP.md](ROADMAP.md) item 51.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
@@ -2233,9 +2353,14 @@ make, use the entry's term instead.
 - **Stalled pickup** — an item the *factory identity* or a pickup for a
   *served person* claimed (in its
   in-progress state) that has had no running session for longer than the
-  repository's `dispatch.stalled_after`. The *dispatcher* reports it and
+  repository's `dispatch.stalled_after`. The identity's item counts when a
+  launch of this host or a claim marker took it, or always under
+  `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it.
+  a claimed item, so a person settles it. An item whose pickup already
+  opened its pull request is finished work, not a stall: when an open pull
+  request from the branch of the dispatcher's launch of it links it, the
+  dispatcher moves it to its `pr_open` state.
 - **Double claim** — an item more than one running session works on at
   once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts
@@ -2307,6 +2432,14 @@ make, use the entry's term instead.
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
   [design/control-plane.md](design/control-plane.md).
+- **Notification channel** — one way the *dispatcher*'s notices reach a
+  person: a workspace card in Orca, a team's chat. The tick sends each
+  notice through every channel a machine enables and keeps a record per
+  channel of what was delivered ([design/chat.md](design/chat.md)).
+- **Chat bridge** — the one process that turns a person's click or command
+  in a team's chat into one `jig send` request. It runs inside the *hub* or
+  on a host that is not enrolled, connects out to the chat tool and listens
+  on no socket ([design/chat.md](design/chat.md)).
 - **Device grant** — how a host enrolls in a *hub*: the host prints a short
   code, a person who administers the hub approves it, and the host receives a
   credential of its own, bound to the repositories and queues that person
@@ -2576,12 +2709,12 @@ make, use the entry's term instead.
   source, by the *tick*'s own rule, by a *steward* record, by a person's
   answer to a framed decision, or by a person alone
   ([the classes](design/need-classes.md)).
-- **Advisory check** — a planned CI configuration for a check whose failure
-  a repair pass cannot fix by itself, such as a scanner's quality gate. When
-  every failing check is advisory and `reviewer-posture` is a configured
-  person-decision class, the planned drive behavior stops as that decision
-  rather than spending repair passes (`ci.advisory_checks`). Not the same as
-  an *advisory gate*, which never blocks
+- **Advisory check** — a CI configuration for a check whose failure a repair
+  pass cannot fix by itself, such as a scanner's quality gate. When every
+  failing check is advisory and `reviewer-posture` is a configured
+  person-decision class, the drive stops for that decision rather than
+  spending repair passes (`ci.advisory_checks`). Not the same as an *advisory
+  gate*, which never blocks
   ([the implementation plan](design/need-classes.md#ci-repair-spent-or-a-ci-verdict-misread)).
 - **Rescue branch** — a planned local branch the *dispatcher* would keep a
   worktree's unpushed commits on before detaching that worktree, so freeing
@@ -2771,6 +2904,12 @@ make, use the entry's term instead.
   alive; one submitted to Orca stays until the removal is known to have
   settled, since the owner dying or the call failing does not say whether
   Orca finished.
+- **Temporal** — the platform's date and time API, which Jig's code uses
+  instead of `Date`: an `Instant` is a moment, a `ZonedDateTime` a moment
+  on a named calendar, a `PlainDate` a day, a `Duration` a length, all
+  immutable. Jig's helpers write a moment as an ISO 8601 string in UTC to
+  the millisecond
+  ([ADR-0018](docs/adr/ADR-0018-time-is-temporal.md)).
 
 ## External precondition
 

@@ -29,13 +29,24 @@
  *   nor closed.
  * - `refused`: the forge refused a write (a label that does not exist, no
  *   permission).
+ *
+ * A failure a failed `gh` call caused carries that call's failure class
+ * (`shared/outbound/failure.ts`, `outboundOf`), so the tick tells a forge
+ * that will answer after a wait from one that refused the read.
  */
 import { isRecord } from "../../shared/guards.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { checksFail } from "./automation.ts";
+import {
+  type CausedFailure,
+  failedBy,
+  type OutboundFailure,
+} from "../../shared/outbound/failure.ts";
+import { ghRunFailure } from "../../shared/outbound/github.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
 const PR_LIMIT = 1000;
@@ -45,25 +56,43 @@ function unreadable(reason: string): Outcome<never, "unreadable"> {
   return failed("unreadable", reason);
 }
 
-/** What `gh` printed, or why it did not answer under `code`. */
-async function gh<Code extends string>(
+/** What `gh` printed; or why it did not answer, with the call's failure class. */
+async function ghAnswer(
   args: string[],
-  code: Code,
   cwd?: string,
   timeoutSec?: number,
-): Promise<Outcome<string, Code>> {
+): Promise<
+  | { ok: true; value: string }
+  | { ok: false; reason: string; outbound: OutboundFailure }
+> {
+  const began = currentMs();
   const r = await ghCall(args, {
     stderr: "pipe",
     env: ghRepoEnv(),
     ...(cwd === undefined ? {} : { cwd }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
   });
-  if (r.code === 0) return ok(r.stdout);
+  const outbound = ghRunFailure(r, currentMs() - began);
+  if (outbound === null) return ok(r.stdout);
   const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-  return failed(
-    code,
-    `gh ${args.slice(0, 2).join(" ")} exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-  );
+  return {
+    ok: false,
+    reason: `gh ${args.slice(0, 2).join(" ")} exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
+    outbound,
+  };
+}
+
+/** What `gh` printed, or why it did not answer under `code`, carrying the call's failure class. */
+async function gh<Code extends string>(
+  args: string[],
+  code: Code,
+  cwd?: string,
+  timeoutSec?: number,
+): Promise<
+  { ok: true; value: string } | { ok: false; failure: CausedFailure<Code> }
+> {
+  const answer = await ghAnswer(args, cwd, timeoutSec);
+  return answer.ok ? answer : failedBy(code, answer.outbound, answer.reason);
 }
 
 function parsed(text: string, what: string): Outcome<unknown, "unreadable"> {
@@ -142,10 +171,13 @@ export async function defaultBranchFile(
     ],
     { stderr: "pipe", env: ghRepoEnv() },
   );
-  if (r.code !== 0) {
-    if (/HTTP 404/.test(r.stderr)) return ok(null);
+  const outbound = ghRunFailure(r);
+  if (outbound !== null) {
+    if (outbound.code === "not-found") return ok(null);
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    return unreadable(
+    return failedBy(
+      "unreadable",
+      outbound,
       `${where} could not be read (gh exited ${r.code}${tail === "" ? "" : `: ${tail}`})`,
     );
   }
@@ -252,6 +284,9 @@ const NO_LABELS: LabelRead = { labels: false };
 /** The fields every listing reads. */
 const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
 
+/** The checks on each pull request's head: the field of a listing that costs the forge the most. */
+const CHECKS = "statusCheckRollup";
+
 /** What an open pull request adds: its head commit, its base branch, its mergeability, and what the adoption rule reads (its author, whether it is a draft, its last update, its checks). */
 const OPEN_FIELDS = [
   "headRefOid",
@@ -260,7 +295,7 @@ const OPEN_FIELDS = [
   "author",
   "isDraft",
   "updatedAt",
-  "statusCheckRollup",
+  CHECKS,
 ];
 
 /** A pull request's author as the listing gives it (`{ login, is_bot }`); nothing when it does not read. */
@@ -332,6 +367,12 @@ function listedPr(
   });
 }
 
+/**
+ * One listing of `slug`'s pull requests. A listing the forge ran out of
+ * time on is asked once more without the checks, which cost it the most
+ * (a hundred results to a pull request): each pull request then reads with
+ * its checks unknown, as one whose checks did not read.
+ */
 async function listPrs(
   slug: string,
   extra: string[],
@@ -341,8 +382,8 @@ async function listPrs(
   if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
   if (read.labels) fields.push("labels", "body");
-  const listing = await ghJson(
-    [
+  const ask = (asked: readonly string[]) =>
+    ghAnswer([
       "pr",
       "list",
       "--repo",
@@ -352,10 +393,17 @@ async function listPrs(
       "--limit",
       String(PR_LIMIT),
       "--json",
-      fields.join(","),
-    ],
-    "the pull request listing",
-  );
+      asked.join(","),
+    ]);
+  let answer = await ask(fields);
+  if (
+    !answer.ok &&
+    answer.outbound.code === "too-costly" &&
+    fields.includes(CHECKS)
+  )
+    answer = await ask(fields.filter((f) => f !== CHECKS));
+  if (!answer.ok) return failedBy("unreadable", answer.outbound, answer.reason);
+  const listing = parsed(answer.value, "the pull request listing");
   if (!listing.ok) return listing;
   const out = listing.value;
   if (!Array.isArray(out))
@@ -512,12 +560,12 @@ export async function mergedSince(
   if (!listing.ok) return listing;
   const listed = listing.value;
   for (const p of listed)
-    if (p.mergedAt === undefined || !Number.isFinite(Date.parse(p.mergedAt)))
+    if (p.mergedAt === undefined || !Number.isFinite(parseMs(p.mergedAt)))
       return unreadable(
         `merged pull request #${p.number} has no valid merge time`,
       );
   const merged = listed
-    .filter((p) => Date.parse(p.mergedAt as string) >= Date.parse(since))
+    .filter((p) => parseMs(p.mergedAt as string) >= parseMs(since))
     .map((p) => ({
       number: p.number,
       url: p.url,
