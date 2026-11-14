@@ -542,7 +542,7 @@ fields:
       type: string
       pattern: "^(?!(?:--|-|--model|--image|--dangerously-bypass-approvals-and-sandbox|--yolo)$)(?!--model=|--image=|--config=model=|-c=?model=|-m|-i)\\S+$"
     default: []
-    since: next
+    since: 0.232.0
     read_by: [drive-pr, do-item, dispatch]
     user_only: true
   drive.codex_bypass:
