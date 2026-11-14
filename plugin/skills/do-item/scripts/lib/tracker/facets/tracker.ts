@@ -254,6 +254,42 @@ export function withFacets(
     }
   }
 
+  /**
+   * Refuse a retired label of a type or size kept outside labels among the
+   * labels a write adds: it would put back a label the store no longer
+   * reads, beside the value the store holds. Taking one off stays allowed.
+   * Jira's adapter refuses its native-type fallback labels and a label
+   * behind a `field_labels` prefix itself, so only its field stores are
+   * checked here, and not for those labels.
+   */
+  function refuseRetiredLabels(labels: ReadonlyArray<string>): void {
+    for (const f of LABEL_FACETS) {
+      const slot = facets[f];
+      if (!usable(slot) || slot.store === "label") continue;
+      if (facets.adapter === "jira" && slot.store !== "field") continue;
+      const retired = labelCodec({
+        ...slot,
+        store: "label",
+        labels: slot.retired ?? [],
+      });
+      const refused = slot.refusedPrefixes ?? [];
+      const owned = labels.find(
+        (l) =>
+          retired.owns(l) &&
+          fold(l) !== fold(facets.epic) &&
+          !refused.some((p) => l.startsWith(p)),
+      );
+      if (owned === undefined) continue;
+      const value = retired.read([owned]) as string;
+      const where =
+        slot.field === null ? `its ${f}` : `the field '${slot.field}'`;
+      throw new TrackerRequestError(
+        "invalid",
+        `the label '${owned}' stands for the ${f} ${value}, which this repository keeps in ${where}, not in labels; give it as the issue's ${f} (${f}: ${value})`,
+      );
+    }
+  }
+
   /** Refuse removing the label of the value a patch sets its facet to. */
   function refuseEditContradiction(
     codec: LabelCodec,
@@ -276,6 +312,7 @@ export function withFacets(
   /** `issue` as the core receives it: label-kept facets turned into labels. */
   function forCore(issue: NewIssue): NewIssue {
     refuseFacetLabels(issue.labels, "to file");
+    refuseRetiredLabels(issue.labels);
     const out: NewIssue = { ...issue, labels: [...issue.labels] };
     const add = (label: string) => {
       if (!out.labels.some((l) => fold(l) === fold(label)))
@@ -371,6 +408,7 @@ export function withFacets(
   ) {
     signal?.throwIfAborted();
     refuseFacetLabels(patch.addLabels ?? [], "to add");
+    refuseRetiredLabels(patch.addLabels ?? []);
     const labels = await facetLabels(key, patch, signal);
     const out: IssuePatch = { ...patch };
     forwardRestores(out, codecs);

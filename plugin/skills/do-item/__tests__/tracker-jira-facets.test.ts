@@ -271,6 +271,16 @@ describe("Jira: type in the issue types and size in a custom field", () => {
     );
     expect(calls).toEqual([]);
   });
+
+  it("refuses a size label among a new issue's labels where the size field keeps no field_labels", async () => {
+    const { t, calls } = jira(routes(SITE), STORES);
+    await expect(
+      t.createIssue({ title: "T", description: "", labels: ["small"] }),
+    ).rejects.toThrow(
+      "the label 'small' stands for the size small, which this repository keeps in the field 'Size', not in labels",
+    );
+    expect(calls).toEqual([]);
+  });
 });
 
 describe("Jira: reading a type kept in the issue types", () => {
@@ -831,6 +841,14 @@ describe("Jira: issue_tracker.jira.field_labels as a facet's field", () => {
     ).rejects.toThrow(
       "label 'size:M' is the value of the Jira field 'Size', which keeps the size; give it as the issue's size, not as a label",
     );
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it("refuses a label the adapter does not, such as another case of the prefix", async () => {
+    const { t, calls } = jira(routes(SITE), OVERLAY);
+    await expect(
+      t.createIssue({ title: "T", description: "", labels: ["Size:M"] }),
+    ).rejects.toThrow("stands for the size size:M");
     expect(writes(calls)).toEqual([]);
   });
 
