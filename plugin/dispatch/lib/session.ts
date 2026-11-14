@@ -393,6 +393,7 @@ export function stewardPassArgv(
     `Steward launch: ${record.id}`,
     `Launch token: ${record.token}`,
     "Read only the token-bound digest and submit the skill's closed records. The dispatcher applies them on the next tick; launch nothing and make no repository, tracker or configuration changes yourself.",
+    'Finish only after submit succeeds with {"submitted":true}, including an empty array when no record is justified. If read or submit fails, report that failure explicitly; never describe the pass as submitted without its confirmation.',
   ].join("\n");
   return headlessArgv(record, passArgs, prompt, true);
 }
