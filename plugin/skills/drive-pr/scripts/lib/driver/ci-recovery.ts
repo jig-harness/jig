@@ -66,12 +66,22 @@ export async function cancelledRunRecovery(
   head: string,
   failing: FailingChecks,
 ): Promise<number | "continue" | null> {
-  if (!finalVerdict.startsWith("failing:") || stale || context.dryRun)
-    return null;
+  if (!finalVerdict.startsWith("failing:") || stale) return null;
   if (!onlyInCancelledRuns(failing)) return null;
+  if (context.dryRun) {
+    console.error(
+      `(dry-run) would recover '${finalVerdict}' as a cancellation: it failed only in cancelled runs, so no CI-repair pass`,
+    );
+    return 1;
+  }
   const recovery = await recoverCancelledOnHead(context.pr, head);
   if (recovery === "parked") return 8;
-  if (recovery === "unknown") return 1;
+  if (recovery === "unknown") {
+    console.error(
+      `review converged; '${finalVerdict}' failed only in cancelled runs, and their recovery could not establish the head's state; stopping`,
+    );
+    return 1;
+  }
   if (recovery === "none") return null;
   console.error(
     `review converged; '${finalVerdict}' failed only in cancelled runs, so it is recovered as a cancellation, not repaired`,
