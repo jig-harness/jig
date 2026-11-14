@@ -83,12 +83,26 @@ function present(ctx: Context, path: string, commit: string): boolean {
   );
 }
 
-/** Whether `a` is an ancestor of (or equal to) `b`, as the workspace's git reads them. */
-function ancestor(ctx: Context, path: string, a: string, b: string): boolean {
-  return (
-    ctx.run(["git", "-C", path, "merge-base", "--is-ancestor", a, b]).status ===
-    0
-  );
+/** Whether `a` is an ancestor of `b`, or why Git could not establish that relationship. */
+function ancestor(
+  ctx: Context,
+  path: string,
+  a: string,
+  b: string,
+): { yes: boolean } | { why: string } {
+  const read = ctx.run([
+    "git",
+    "-C",
+    path,
+    "merge-base",
+    "--is-ancestor",
+    a,
+    b,
+  ]);
+  if (read.status === 0 || read.status === 1) return { yes: read.status === 0 };
+  return {
+    why: `cannot compare ancestry in ${path} (exit ${read.status}): ${output(read)}`,
+  };
 }
 
 /** Why the workspace's commit is off the head's line of history; `null` when it is on it. */
@@ -117,8 +131,14 @@ function offHistory(
     if (fetched.status !== 0 || !present(ctx, path, head))
       return `the pull request head ${head} cannot be fetched into ${path} to compare with its commit ${at} (exit ${fetched.status}): ${output(fetched) || "the head commit is absent after the fetch"}`;
   }
-  if (ancestor(ctx, path, head, at) || ancestor(ctx, path, at, head))
-    return null;
+  for (const [a, b] of [
+    [head, at],
+    [at, head],
+  ] as const) {
+    const read = ancestor(ctx, path, a, b);
+    if ("why" in read) return read.why;
+    if (read.yes) return null;
+  }
   return `${path} is at ${at}, which is neither the pull request head ${head} nor on its history; reconcile the checkout, or remove it, before driving it`;
 }
 
@@ -129,10 +149,17 @@ export async function proveWorkspace(
   workspace: string,
   pr: number,
   branch: string,
+  repository: string,
 ): Promise<string | null> {
   const clones = otherClone(ctx, clone, workspace);
   if (clones !== null) return clones;
-  const head = await resolvePullRequestHead(ctx, workspace, pr, branch);
+  const head = await resolvePullRequestHead(
+    ctx,
+    workspace,
+    pr,
+    branch,
+    repository,
+  );
   if (!head.ok) return head.failure.reason;
   return offHistory(ctx, workspace, head.value, branch);
 }
@@ -148,6 +175,7 @@ export async function verifyPullRequestWorkspace(
   pr: number,
   branch: string,
   timeoutMs: number,
+  repository: string,
 ): Promise<string | null> {
   const lines: string[] = [];
   const ctx = withLimit(
@@ -155,7 +183,7 @@ export async function verifyPullRequestWorkspace(
     timeoutMs,
   );
   try {
-    return await proveWorkspace(ctx, clone, workspace, pr, branch);
+    return await proveWorkspace(ctx, clone, workspace, pr, branch, repository);
   } catch (error) {
     return [failureText(error), ...lines.slice(-3)].join("; ");
   }

@@ -421,6 +421,7 @@ export function orcaRuntime(
           timeoutMs ?? deadlines.workspaceTimeoutMs,
           deadlines.workspaceTimeoutMs,
         ),
+        repo.slug,
       ),
     async launch(workspace, stage, _account, key) {
       if (stage.kind === "interactive" && !binding.ok)

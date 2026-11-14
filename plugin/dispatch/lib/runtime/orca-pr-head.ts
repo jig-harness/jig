@@ -122,8 +122,9 @@ export async function resolvePullRequestHead(
   clone: string,
   pr: number,
   branch: string,
+  repository?: string,
 ): Promise<Proof<string>> {
-  const result = await readHead(ctx, clone, pr, branch);
+  const result = await readHead(ctx, clone, pr, branch, repository);
   return result.ok ? result : refuse(`PR #${pr}: ${result.failure.reason}`);
 }
 
@@ -132,6 +133,7 @@ async function readHead(
   clone: string,
   pr: number,
   branch: string,
+  repository?: string,
 ): Promise<Proof<string>> {
   const read = ctx.run(
     [
@@ -139,6 +141,7 @@ async function readHead(
       "pr",
       "view",
       String(pr),
+      ...(repository === undefined ? [] : ["--repo", repository]),
       "--json",
       "state,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner,url",
     ],
@@ -150,6 +153,10 @@ async function readHead(
     );
   const head = parseHead(read.stdout, branch);
   if (!head.ok) return head;
+  if (repository !== undefined && head.value.repo !== repository.toLowerCase())
+    return refuse(
+      `its head repository is not the expected repository ${repository}`,
+    );
   const origin = await requireOrigin(ctx, clone, head.value);
   if (!origin.ok) return origin;
   const remote = ctx.run([

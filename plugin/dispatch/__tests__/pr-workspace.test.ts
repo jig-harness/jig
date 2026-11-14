@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
   existsSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -71,7 +72,7 @@ function repos(): { origin: string; clone: string; ws: string; head: string } {
 }
 
 /** Real git, with the forge's answer for PR #7 at origin's `BRANCH` and origin's address shown as `url`. */
-function context(origin: string, url = FORGE): Context {
+function context(origin: string, url = FORGE, movedHead = false): Context {
   return {
     stateDir: "/state",
     log() {
@@ -91,7 +92,7 @@ function context(origin: string, url = FORGE): Context {
             headRefOid: git("-C", origin, "rev-parse", BRANCH),
             isCrossRepository: false,
             headRepositoryOwner: { login: "example-org" },
-            headRepository: { name: "example-repo" },
+            headRepository: { name: movedHead ? "other-repo" : "example-repo" },
             url: "https://github.com/example-org/example-repo/pull/7",
           }),
         };
@@ -105,7 +106,14 @@ function context(origin: string, url = FORGE): Context {
 }
 
 const prove = (r: ReturnType<typeof repos>, url?: string, ws = r.ws) =>
-  proveWorkspace(context(r.origin, url), r.clone, ws, 7, BRANCH);
+  proveWorkspace(
+    context(r.origin, url),
+    r.clone,
+    ws,
+    7,
+    BRANCH,
+    "example-org/example-repo",
+  );
 
 describe("a workspace's proof against its pull request's head", () => {
   it("proves a checkout of the clone at the head", async () => {
@@ -162,6 +170,41 @@ describe("a workspace's proof against its pull request's head", () => {
     );
   });
 
+  it("refuses a changed origin even when its own same-numbered pull request and branch agree", async () => {
+    const r = repos();
+    expect(
+      await proveWorkspace(
+        context(r.origin, ELSEWHERE, true),
+        r.clone,
+        r.ws,
+        7,
+        BRANCH,
+        "example-org/example-repo",
+      ),
+    ).not.toBeNull();
+  });
+
+  it("reports a failed ancestry read instead of treating it as another history", async () => {
+    const r = repos();
+    git("-C", r.ws, "checkout", "-q", "--detach", "HEAD~1");
+    const ctx = context(r.origin);
+    const run = ctx.run;
+    ctx.run = (argv, options) =>
+      argv.includes("merge-base")
+        ? { status: 128, stdout: "", stderr: "cannot read commit graph" }
+        : run(argv, options);
+    expect(
+      await proveWorkspace(
+        ctx,
+        r.clone,
+        r.ws,
+        7,
+        BRANCH,
+        "example-org/example-repo",
+      ),
+    ).toContain("cannot read commit graph");
+  });
+
   it("refuses a checkout of another clone", async () => {
     const r = repos();
     const stranger = join(r.clone, "..", "stranger");
@@ -174,7 +217,7 @@ describe("a workspace's proof against its pull request's head", () => {
   it("refuses a folder that is no checkout at all, and creates nothing in it", async () => {
     const r = repos();
     const plain = join(r.clone, "..", "plain");
-    Bun.spawnSync(["mkdir", plain]);
+    mkdirSync(plain);
     expect(await prove(r, undefined, plain)).toContain(
       `cannot read the git common directory of ${plain}`,
     );
