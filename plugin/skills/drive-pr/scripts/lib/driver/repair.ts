@@ -37,6 +37,7 @@ export function passEnv(
 ): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.CLAUDECODE;
+  env.JIG_OUTBOUND_CALLER = `pass:drive:${task?.task ?? "review"}:${env.JIG_LAUNCH ?? "manual"}`;
   // A headless pass has no next turn to receive a background task's result.
   Object.assign(env, NO_BACKGROUND_TASKS);
   // DELETED UNCONDITIONALLY FIRST, then set only for a repair pass. An

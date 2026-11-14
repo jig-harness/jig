@@ -138,6 +138,11 @@ export function reviewerSelection(
   if (jobPatternRaw === "") return null;
   let jobPattern: RegExp;
   try {
+    // A regular expression by contract, so it is compiled as written, never
+    // escaped: the operator's own `--job-pattern` argument, or
+    // `review.job_pattern` from the repository's configuration
+    // (CONFIGURATION.md). It only selects which check runs a round waits on,
+    // in the operator's own process.
     jobPattern = new RegExp(jobPatternRaw);
   } catch (e) {
     throw new Error(

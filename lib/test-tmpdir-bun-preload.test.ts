@@ -241,3 +241,64 @@ it("a child with a fake home leaves no Bun transpiler cache in it", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("keeps default outbound accounting inside the test scope without writing the child's home", () => {
+  const fixture = mkdtempSync(join(outerScope.root, "ledger-fixture."));
+  const home = join(fixture, "home");
+  const systemTmp = join(fixture, "tmp");
+  mkdirSync(home);
+  mkdirSync(systemTmp);
+  const ledger = join(import.meta.dir, "../plugin/shared/outbound/ledger.ts");
+  const budget = join(import.meta.dir, "../plugin/shared/outbound/budget.ts");
+  const nested = `
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { recordCall, ledgerReport, setDefaultLedgerPath } from ${JSON.stringify(ledger)};
+import { budgetPath } from ${JSON.stringify(budget)};
+setDefaultLedgerPath(join(tmpdir(),"outbound-child.sqlite"));
+recordCall({system:"github",credential:"test-key",operation:"ChildRead",cost:1,durationMs:1});
+if(ledgerReport().rows.length!==1 || existsSync(budgetPath())) process.exit(1);
+`;
+  writeFileSync(
+    join(fixture, "bunfig.toml"),
+    `[test]\npreload = [${JSON.stringify(PRELOAD_PATH)}]\n`,
+  );
+  writeFileSync(
+    join(fixture, "probe.test.ts"),
+    `
+import { test, expect } from "bun:test";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { recordCall, ledgerReport } from ${JSON.stringify(ledger)};
+import { budgetPath } from ${JSON.stringify(budget)};
+import { expectSpawnExit } from ${JSON.stringify(join(import.meta.dir, "test-helpers/expect-spawn-exit.ts"))};
+test("ledger isolation", () => {
+  recordCall({system:"linear",credential:"test-key",operation:"Read",cost:1,durationMs:1});
+  expect(ledgerReport().rows).toHaveLength(1);
+  expect(existsSync(join(tmpdir(), "outbound-budget.sqlite"))).toBe(true);
+  expect(existsSync(budgetPath())).toBe(false);
+  const nested = Bun.spawnSync([process.execPath,"-e",${JSON.stringify(nested)}],{
+    env:{...process.env},stdout:"pipe",stderr:"pipe"
+  });
+  expectSpawnExit(nested,0);
+  expect(existsSync(budgetPath())).toBe(false);
+});
+`,
+  );
+  const child = Bun.spawnSync([process.execPath, "test", "probe.test.ts"], {
+    cwd: fixture,
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      TMPDIR: systemTmp,
+      TMP: systemTmp,
+      TEMP: systemTmp,
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(child, 0);
+});

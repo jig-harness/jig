@@ -1,7 +1,7 @@
 /** Native issue readings shared by every checkout that files into this repository. */
 import { createHash } from "node:crypto";
 import { isRecord } from "../../../../../../shared/guards.ts";
-import { credentialKey } from "../../../../../../shared/tracker-budget.ts";
+import { credentialKey } from "../../../../../../shared/outbound/budget.ts";
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import type { FacetReadOptions, DispatchRawIssue } from "../port.ts";
