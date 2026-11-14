@@ -342,7 +342,9 @@ kept for 7 days. From them the tick reads:
   and anyone else's (a person's run, another tool's).
 - **Still to arrive**: each pickup or drive pass in flight that has not yet
   made its kind's runs per pass since its launch, counted by the runs it
-  still has to make. Follow-ups and the steward do not run the test stage.
+  still has to make. A pass whose workspace holds or waits on the lock now
+  is counted at the lock, not here. Follow-ups and the steward do not run
+  the test stage.
 
 **The measure.** A new pass reaches the lock after its kind's time to
 validation, `T`. Until then the lock can work only on the runs at the lock
@@ -491,3 +493,9 @@ One pull request each, in this order.
 - **Overlap across repositories.** Files collide only within one
   repository. Two repositories' passes still share a host's validation
   capacity when they share its lock, and the gauge counts them both.
+
+## Review
+
+Reviewed on 2026-11-14 at commit 11c00b4d8 by a reviewer with fresh
+context (a subagent that did not write the design), against the issue's
+decisions, the ADRs it names and the dispatcher's code.
