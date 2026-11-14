@@ -1,5 +1,6 @@
 /** Optional CI telemetry stays separate from the control events older readers validate. */
 import { isRecord } from "../../../../../shared/guards.ts";
+import { redact } from "../../../../../shared/redact.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
@@ -15,7 +16,7 @@ const DETAIL_LIMIT = 1024;
 
 /** Apply the shared bound after any transformation of telemetry detail. */
 export function boundedCiDetail(detail: string): string {
-  return detail.slice(0, DETAIL_LIMIT);
+  return redact(detail).slice(0, DETAIL_LIMIT);
 }
 
 function isCiAction(v: unknown): v is CiAction {

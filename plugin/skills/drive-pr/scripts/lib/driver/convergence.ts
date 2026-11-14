@@ -14,6 +14,7 @@ import {
   requiredFailureMayBeStale,
   evaluateFinalCi,
 } from "./convergence-ci.ts";
+import { pendingRetryDisposition } from "./ci-recovery.ts";
 
 export async function runConvergencePhase(
   context: DriveRoundContext,
@@ -38,6 +39,11 @@ export async function runConvergencePhase(
     return releaseAndReadFinalCiResult;
   const { finalStatus, finalStatusRes, finalVerdict, finalCi, finalCiSignals } =
     releaseAndReadFinalCiResult;
+  // A requested retry is authoritative even while an unrelated workflow keeps
+  // the aggregate verdict pending. Check it before that ordinary pending path
+  // can return, so its bounded witness always advances.
+  const pendingRetry = await pendingRetryDisposition(context, reviewedHead);
+  if (pendingRetry !== null) return pendingRetry;
   const checkFinalCiStatusResult = await checkFinalCiStatus(
     finalStatus,
     reviewedHead,

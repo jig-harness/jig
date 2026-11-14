@@ -6,7 +6,7 @@ import {
 } from "./infra-recovery.ts";
 import { attemptsFor, retryFailedChecks } from "./ci-attempts.ts";
 import { retryWitness } from "./ci-retry-wait.ts";
-import { rerunFailedOnceSetting } from "./ci-attempts-config.ts";
+import { reviewedRerunFailedOnceSetting } from "./ci-attempts-config.ts";
 import { failedCheckForge } from "./ci-retry-forge.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { sleep } from "../cli.ts";
@@ -41,7 +41,7 @@ export async function beforeRepairRecovery(
   if (!finalVerdict.startsWith("failing:") || stale) return null;
   const infra = await recoverInfrastructureFailure(context, head, failing);
   if (infra !== null) return infra;
-  const enabled = rerunFailedOnceSetting();
+  const enabled = reviewedRerunFailedOnceSetting();
   if (!enabled.ok) {
     console.error(enabled.failure.reason);
     return 1;
@@ -59,6 +59,12 @@ export async function beforeRepairRecovery(
     failedCheckForge,
     (detail) => recordCiAttempt(context.pr, "rerun", detail),
   );
+  if (retried === "indeterminate") {
+    console.error(
+      "The failed-check retry was not acknowledged; CI remains indeterminate rather than starting a repair.",
+    );
+    return 1;
+  }
   if (!retried) return null;
   await sleep(UNLABEL_SETTLE_SECONDS);
   return "continue";

@@ -108,4 +108,22 @@ describe("additive CI telemetry", () => {
     expect(ledger.ciActions?.[0]?.detail.length).toBeLessThanOrEqual(1024);
     expect(ledger.ciActions?.[0]?.detail).not.toContain("a@b.zz");
   });
+
+  it("redacts before bounding so a suffix cannot leak as an identifier fragment", async () => {
+    let state = freshState(999);
+    const store = {
+      update: async (transform: (s: DriveState) => DriveState) => {
+        state = transform(state);
+      },
+    } as StateStore;
+    await recordEvent(
+      store,
+      JSON.stringify({
+        kind: "ci",
+        cause: `rerun: ${" ".repeat(1018)}alice@example.com`,
+      }),
+    );
+    expect(state.ciActions?.[0]?.detail).not.toContain("alice@");
+    expect(state.ciActions?.[0]?.detail.length).toBe(1024);
+  });
 });

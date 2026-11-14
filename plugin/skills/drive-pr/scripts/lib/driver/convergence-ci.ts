@@ -416,7 +416,7 @@ async function repairConvergedCi(
     context.ciRepairBudget,
   );
   failing = selection.failing;
-  if (selection.names.length === 0) return CI_REPAIR_SPENT_EXIT;
+  if (selection.names.length === 0) return selection.exhaustedExit;
   finalVerdict = `failing: ${selection.names.join(", ")}`;
   const failingNames = finalVerdict.slice("failing:".length).trim();
   if (context.dryRun || context.agent.length === 0) {

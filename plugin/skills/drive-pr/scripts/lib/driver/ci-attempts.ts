@@ -2,6 +2,7 @@
 import type { FailingChecks } from "./infra-recovery.ts";
 import { failedRunsField, failedStatusesField } from "./failed-runs.ts";
 import type { FailedRun } from "../status/workflow-runs.ts";
+import { CI_REPAIR_SPENT_EXIT } from "./settings.ts";
 
 export interface CiAttempts {
   repairs: Map<string, number>;
@@ -66,7 +67,12 @@ export function repairSelection(
             names.includes(s.context),
           ),
         };
-  return { names, used, failing: selected };
+  return {
+    names,
+    used,
+    failing: selected,
+    exhaustedExit: budget === 0 ? 1 : CI_REPAIR_SPENT_EXIT,
+  };
 }
 
 /** Charge only after a repair pass actually dispatched. */
@@ -92,7 +98,13 @@ export interface RetryForge {
     pr: string,
     head: string,
     run: number,
-  ): Promise<{ ok: boolean; detail: string; attempt?: number }>;
+  ): Promise<{
+    ok: boolean;
+    /** A mutation may have reached the forge despite no acknowledgement. */
+    indeterminate?: boolean;
+    detail: string;
+    attempt?: number;
+  }>;
   observe(
     head: string,
     run: number,
@@ -107,7 +119,7 @@ export async function retryFailedChecks(
   state: CiAttempts,
   forge: RetryForge,
   record: (detail: string) => Promise<void>,
-): Promise<boolean> {
+): Promise<boolean | "indeterminate"> {
   const names = failing.checkRunNames;
   if (names === null || failing.statusNames === null || names.length === 0)
     return false;
@@ -130,6 +142,12 @@ export async function retryFailedChecks(
     if (jobs.some((name) => state.retries.has(key(head, name)))) continue;
     for (const name of jobs) state.retries.add(key(head, name));
     const answer = await forge.retry(pr, head, run.id);
+    if (!answer.ok && answer.indeterminate) {
+      const detail = `Retry of run ${run.id} on head ${head} is indeterminate: ${answer.detail}.`;
+      console.error(`  ${detail}`);
+      await record(detail);
+      return "indeterminate";
+    }
     if (answer.ok)
       state.pending.set(key(head, String(run.id)), {
         head,

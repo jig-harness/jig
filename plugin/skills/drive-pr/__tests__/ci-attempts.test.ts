@@ -143,6 +143,20 @@ describe("failed-check attempts", () => {
     expect(calls).toEqual([41]);
   });
 
+  it("stops an indeterminate retry before a repair can be dispatched", async () => {
+    const state = attemptState();
+    const { forge } = forgeOf();
+    forge.retry = async () => ({
+      ok: false,
+      indeterminate: true,
+      detail: "acknowledgement timed out",
+    });
+    expect(
+      await retryFailedChecks("9", HEAD, failing(), state, forge, record),
+    ).toBe("indeterminate");
+    expect(repairSelection(HEAD, failing(), state, 2).used).toBe(0);
+  });
+
   it("defaults retries on and provides an independent off switch", () => {
     expect(rerunFailedOnceSetting({})).toEqual({ ok: true, value: true });
     expect(

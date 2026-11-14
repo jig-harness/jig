@@ -102,6 +102,9 @@ export const failedCheckForge: RetryForge = {
       const retry = await ghCall(["run", "rerun", String(id), "--failed"]);
       return {
         ok: retry.code === 0,
+        // A transport/process failure after issuing the mutation is not proof
+        // GitHub refused it; the caller must reconcile rather than repair.
+        ...(retry.code === 0 ? {} : { indeterminate: true }),
         detail: retry.stderr.trim() || `forge exit ${retry.code}`,
         attempt: run.value.attempt,
       };
@@ -112,6 +115,7 @@ export const failedCheckForge: RetryForge = {
       );
       return {
         ok: false,
+        indeterminate: true,
         detail: "the mutation authority or head witness is unreadable",
       };
     } finally {
