@@ -539,6 +539,53 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     };
   }
 
+  /** The create screen of each issue type among `names` the project has. */
+  async function createScreens(names: string[], signal?: AbortSignal) {
+    const all = await client.issueTypes(signal);
+    const types: IssueTypeMeta[] = [];
+    for (const n of names) {
+      const t = all.find((x) => same(x.name, n));
+      if (t !== undefined && !types.includes(t)) types.push(t);
+    }
+    const screens: { t: IssueTypeMeta; screen: FieldMeta }[] = [];
+    for (const t of types) {
+      refuseStopped(signal);
+      screens.push({ t, screen: await client.createMeta(t.id, signal) });
+    }
+    return screens;
+  }
+
+  /** The health where a create screen offers fewer options than the store's values; it stops only the filing of its type. */
+  async function restrictedHealth(
+    s: ResolvedFacet,
+    screens: { t: IssueTypeMeta; screen: FieldMeta }[],
+    signal?: AbortSignal,
+  ) {
+    const restricted = new Map<string, string>();
+    for (const { t, screen } of screens)
+      for (const v of s.values) {
+        refuseStopped(signal);
+        const what = `the create screen of ${t.name} in ${project}`;
+        try {
+          await encode(s, v, async () => ({ screen, what }), signal);
+        } catch (err) {
+          if (!(err instanceof TrackerRequestError) || isUnavailable(err))
+            throw err;
+          if (!restricted.has(t.name)) restricted.set(t.name, err.message);
+        }
+      }
+    if (restricted.size === 0) return null;
+    return {
+      status: "failed" as const,
+      unavailable: false,
+      error: [...restricted.values()][0]?.slice(0, 300) ?? "",
+      fails: `filing ${listed(
+        [...restricted.keys()].map((n) => `${article(n)} ${n}`),
+        "or",
+      )} fails`,
+    };
+  }
+
   /**
    * A field store's health: its field on the create screen of each issue
    * type Jig files, and each value an option there. An epic type is asked no
@@ -555,17 +602,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     ].filter(
       (n) => s.facet !== "size" || !facets.epicTypes.some((e) => same(e, n)),
     );
-    const all = await client.issueTypes(signal);
-    const types: IssueTypeMeta[] = [];
-    for (const n of names) {
-      const t = all.find((x) => same(x.name, n));
-      if (t !== undefined && !types.includes(t)) types.push(t);
-    }
-    const screens: { t: IssueTypeMeta; screen: FieldMeta }[] = [];
-    for (const t of types) {
-      refuseStopped(signal);
-      screens.push({ t, screen: await client.createMeta(t.id, signal) });
-    }
+    const screens = await createScreens(names, signal);
     // A mapping no screen can satisfy blocks every write, so it is judged first
     // and fails the whole store whatever the screens lack.
     for (const v of s.values) {
@@ -580,33 +617,9 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         lacking.map((x) => x.t.name),
         project,
       );
-    // A screen that offers fewer options stops only the filing of its type.
-    const restricted = new Map<string, string>();
-    for (const { t, screen } of screens)
-      for (const v of s.values) {
-        refuseStopped(signal);
-        const what = `the create screen of ${t.name} in ${project}`;
-        try {
-          await encode(s, v, async () => ({ screen, what }), signal);
-        } catch (err) {
-          if (!(err instanceof TrackerRequestError) || isUnavailable(err))
-            throw err;
-          if (!restricted.has(t.name)) restricted.set(t.name, err.message);
-        }
-      }
-    if (restricted.size > 0) {
-      const names = [...restricted.keys()];
-      return {
-        status: "failed" as const,
-        unavailable: false,
-        error: [...restricted.values()][0]?.slice(0, 300) ?? "",
-        fails: `filing ${listed(
-          names.map((n) => `${article(n)} ${n}`),
-          "or",
-        )} fails`,
-      };
-    }
-    return { status: "ok" as const };
+    return (
+      (await restrictedHealth(s, screens, signal)) ?? { status: "ok" as const }
+    );
   }
 
   async function health(s: ResolvedFacet, signal?: AbortSignal) {
