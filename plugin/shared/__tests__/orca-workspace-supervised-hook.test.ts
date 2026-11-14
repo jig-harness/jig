@@ -76,7 +76,7 @@ function worktreeWithHook(script: string): {
   };
 }
 
-const quiet = (): Context => localContext(() => {});
+const quiet = (): Context => localContext(() => undefined);
 
 describe("the plugin's local Orca hook runner", () => {
   test("a failed create hook's children are ended before its claim is given back", () => {
