@@ -77,9 +77,14 @@ Its workflow, which moves unchanged:
    starts from a stale picture. Between that read and the last write the
    tracker port offers no transaction, so the guarantee covers what the epic
    held at the read: `apply` writes in a fixed order (relations, then
-   priorities, then closures, the epic's description last), checks the
-   epic's version before each write and stops at the first mismatch, and it
-   reports what it wrote and what is left. A run stopped halfway is
+   priorities, then closures, the epic's description last), and before each
+   write revalidates what that write touches against the approved snapshot:
+   the epic's version, and the target issue and the relation as read. An
+   issue's own `updatedAt` is optional on the tracker port and no aggregate
+   epic version covers a child's change, so a target whose evidence is
+   missing or has moved stops the run: it fails closed rather than writing
+   over a stale closure, priority or relation. It stops at the first
+   mismatch and reports what it wrote and what is left. A run stopped halfway is
    recovered by running the planner again, whose proposal reads the tracker
    as it now is. The approval is a digest, a hash of the rows
    the person saw: when the epic or the plan has moved since, the digest no
@@ -275,7 +280,11 @@ one:
   are in the applied part of the changeset; the pending rows (a priority or
   an edge) are left out of the plan and the renderer entirely, and the parked
   digest approves the complete resulting state, so no partial state is ever
-  rendered.
+  rendered. A child with a pending edge or priority row is held as a human
+  gate from the moment it is placed, whatever the assessment found, and the
+  hold is removed only when the approved resulting plan is applied: leaving
+  the edge out of the rendered plan must never make the child eligible
+  before the approval, since nothing else blocks it.
 
 Who runs the planner: a person, with `/jig:plan-epic <epic>`, or a
 dispatched pickup of an issue assigned to the factory identity whose work
