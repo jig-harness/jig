@@ -24,6 +24,7 @@ import {
 } from "../steward-evidence.ts";
 import {
   backlogHash,
+  forgetStewardRun,
   keepStewardRun,
   STEWARD_DEADLINE_SEC,
   stewardBudgetSpent,
@@ -199,7 +200,11 @@ export async function applySteward(
     mark: named.mark,
   };
   keepStewardRun(id, digest, currentMs(), state.root);
-  report.launches.push(await startRecord(state, record, slots));
+  const launch = await startRecord(state, record, slots);
+  report.launches.push(launch);
+  // A launch that left no record behind started no pass, so nobody judged its members.
+  if (!state.records.some((r) => r.record.id === id))
+    forgetStewardRun(id, state.root);
   report.steward = {
     status: `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
     hash,

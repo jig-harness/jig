@@ -146,7 +146,11 @@ export function memberKey(member: BacklogMember): string {
 /** The trigger's hash: the judgment backlog's members alone, whatever else the line did. */
 export function backlogHash(members: readonly BacklogMember[]): string {
   return createHash("sha256")
-    .update(JSON.stringify(members.map(memberKey).toSorted()))
+    .update(
+      JSON.stringify(
+        members.map(memberKey).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+      ),
+    )
     .digest("hex");
 }
 
@@ -278,6 +282,10 @@ export function keepStewardRun(
       at,
       JSON.stringify(digest),
     );
+}
+/** Take back a run whose pass never started, so its backlog members stay unjudged. */
+export function forgetStewardRun(id: string, root = stateRoot()): void {
+  stateDb(root).query("DELETE FROM steward_runs WHERE id = ?").run(id);
 }
 /**
  * Erase the output-bearing fields (each target's last-pass tail and each

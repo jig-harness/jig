@@ -13,6 +13,7 @@ import type { ReadRecord } from "../lib/launches.ts";
 import type { StationContext } from "../lib/line-station.ts";
 import { closeStateDb } from "../lib/state.ts";
 import {
+  forgetStewardRun,
   keepStewardRun,
   recordBelongsToDigest,
   type StewardDigest,
@@ -219,6 +220,14 @@ describe("the steward's trigger", () => {
       status: "the host's hourly steward budget is spent",
       trigger: "budget",
     });
+  });
+
+  test("a run taken back leaves its members unjudged", () => {
+    const root = freshRoot();
+    const seen = stalled("#12", "2026-11-14T08:00:00Z");
+    keepStewardRun("reserved", digest(REPO, [seen]), Date.now(), root);
+    forgetStewardRun("reserved", root);
+    expect(judgedMembers(REPO, root).size).toBe(0);
   });
 
   test("a member is judged once any of the repository's passes saw it", () => {
