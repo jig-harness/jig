@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.238.4] - 2026-11-14
+
+### Fixed
+
+- A follow-up held back by the tick deadline or another admission check now names what it waits on in the dispatcher receipt and dashboard queue, alongside its specific reason. **Consumer action:** none.
+
 ## [0.238.3] - 2026-11-14
 
 ### Fixed
@@ -8363,7 +8369,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.4...HEAD
+[0.238.4]: https://github.com/jig-harness/jig/compare/v0.238.3...v0.238.4
 [0.238.3]: https://github.com/jig-harness/jig/compare/v0.238.2...v0.238.3
 [0.238.2]: https://github.com/jig-harness/jig/compare/v0.238.1...v0.238.2
 [0.238.1]: https://github.com/jig-harness/jig/compare/v0.238.0...v0.238.1
