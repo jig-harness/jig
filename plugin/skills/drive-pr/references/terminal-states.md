@@ -971,8 +971,14 @@ be inspected, so the doctor reads that holder `DEAD`, as it does one with a
 clean tree, and
 the takeover is admitted as the plain arm's lock recovery is; an existing tree
 that is unregistered or cannot be inspected stays `UNKNOWN` and is refused. Every other holder is
-refused with exit `11`, naming the verdict; an empty lock is exit `2`, since
-there is nothing to take over. Once the takeover holds the locks it appends a
+refused with exit `11`, naming the verdict. With an empty lock the drive
+ledger decides: another clone's driver past the lease window is taken over by
+a claim; this tree's own driver that the ledger still names `running` is
+admitted as `DEAD` (it released its locks as it ended without writing its
+stop, and what it left is this tree's, settled as any re-arm settles it);
+this clone's driver in another tree is exit `2`, naming that tree, whose
+leftovers it holds; and a ledger that names no running driver is exit `2`,
+since there is nothing to take over. Once the takeover holds the locks it appends a
 record to the drive state's `takeovers` (from which actor and hashed account,
 to which, the verdict, the round, and `vanishedTree`, the tree that no longer
 existed; the first pass's notice directs it to inspect branch refs and
@@ -995,8 +1001,10 @@ When no driver of this clone holds the drive, `--take-over` reads the ledger:
 it is admitted (verdict `STALE`) only when the ledger names a running driver
 in another clone whose heartbeat is older than the lease window, the doctor's
 stall threshold (`stallThresholdMs`, the same floor that keeps an honest long
-round from reading `WEDGED`); a fresher heartbeat refuses with exit `11`, and
-no running driver elsewhere is exit `2`. Once it holds its locks the taker
+round from reading `WEDGED`); a fresher heartbeat refuses with exit `11`.
+With no running driver elsewhere, a ledger naming this tree's own driver
+running is a `DEAD` takeover, and this clone's driver in another tree, or no
+running driver at all, is exit `2`. Once it holds its locks the taker
 re-reads the ledger (a heartbeat that moved since refuses with `11`) and
 posts an append-only claim, `<!-- drive-pr-takeover-claim -->` with its tree,
 clone, the ledger generation it read and the time, and reads the claims
