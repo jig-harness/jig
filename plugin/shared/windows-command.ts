@@ -283,7 +283,20 @@ export function windowsCommand(
   };
 }
 
-/** Preserve argv on POSIX and native Windows binaries; adapt batch shims once. */
+/**
+ * Preserve argv on POSIX and native Windows binaries; adapt batch shims once.
+ *
+ * No shell reads the argv on POSIX or for a native Windows image: it reaches
+ * the child as separate arguments. cmd.exe reads it in two cases only. A
+ * `.cmd` or `.bat` launcher, which Windows can start only through cmd.exe,
+ * gets its resolved path and every argument caret-escaped (`escapeMeta`,
+ * `batchArgument`, one more layer for an npm shim's `%*`), and a line break
+ * or an unrecognized argument-forwarding wrapper is refused. A
+ * `cmd.exe /s /c <line>` argv is a command the repository configured as a
+ * shell command, run as written by contract. The tests in
+ * `__tests__/windows-command.test.ts` hold both, a batch file whose own path
+ * holds `&`, `%PATH%`, `!` and `^` among them.
+ */
 export function spawnCommand(
   argv: string[],
   options: SpawnOptions,

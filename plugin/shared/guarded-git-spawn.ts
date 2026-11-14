@@ -86,6 +86,16 @@ function requireSafeEnv(env: SpawnSyncOptions["env"] | undefined): void {
     );
 }
 
+/**
+ * Both wrappers hand `command` and `args` to the child as an argument vector:
+ * neither sets `shell` nor joins the arguments into one command line, so a
+ * path or argument holding shell syntax reaches the child as written. A shell
+ * reads the arguments only when a caller names one as the command
+ * (`bash -c …`, as the tests do), and then it reads that caller's own text.
+ * A data-flow scanner that follows `command` back to every caller merges those
+ * shell callers with the rest and reports every caller's paths as shell input;
+ * the argv tests in `__tests__/guarded-git-spawn.test.ts` hold that they are not.
+ */
 export function spawnSync(
   command: string,
   args?: readonly string[],
