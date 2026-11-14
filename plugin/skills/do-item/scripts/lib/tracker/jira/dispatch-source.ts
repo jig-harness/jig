@@ -3,6 +3,7 @@ import { credentialKey } from "../../../../../../shared/tracker-budget.ts";
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import type { DispatchRawIssue } from "../port.ts";
+import { demandOf } from "../dispatch-source.ts";
 import type { Client } from "./client.ts";
 import { jiraAuthorization, resolveJiraCredential } from "./credential.ts";
 import { inProject, keyList, quote, ORDER } from "./jql.ts";
@@ -23,7 +24,7 @@ export function dispatchSource(
   )
     .flatMap((state) => client.model.stateNames(state))
     .map((name) => `queue-state:${name}`);
-  let demanded = new Set(requirements);
+  const demand = demandOf(requirements);
   async function search(
     jql: string,
     fields: readonly string[] = ["*all"],
@@ -76,11 +77,9 @@ export function dispatchSource(
   }
   return {
     requirements,
-    configure(union) {
-      demanded = new Set([...demanded, ...union]);
-    },
+    configure: (union) => demand.configure(union),
     get shape() {
-      return JSON.stringify([...demanded].sort((a, b) => a.localeCompare(b)));
+      return demand.shape;
     },
     shareReads: (reads) => client.shareReads(reads),
     async credential(options) {
@@ -97,7 +96,7 @@ export function dispatchSource(
       const signal = readSignal(options);
       refuseStopped(signal);
       const account = await client.accountId(identity, signal);
-      const names = [...demanded]
+      const names = [...demand.selectors]
         .filter((name) => name.startsWith("queue-state:"))
         .map((name) => quote(name.slice(12)));
       if (names.length === 0) return [];

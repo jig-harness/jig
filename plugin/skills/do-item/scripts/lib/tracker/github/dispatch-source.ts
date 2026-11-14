@@ -5,6 +5,7 @@ import { credentialKey } from "../../../../../../shared/tracker-budget.ts";
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import type { FacetReadOptions, DispatchRawIssue } from "../port.ts";
+import { demandOf } from "../dispatch-source.ts";
 import type { Client } from "./client.ts";
 import { issueFields, onePage, record, str } from "./read.ts";
 import { credentialToken, GitHubApiError, pageAll } from "./transport.ts";
@@ -79,8 +80,8 @@ export function dispatchSource(
       ? []
       : [`board:${client.ctx.board.statusField}`]),
   ];
-  let demanded = new Set(requirements);
-  const fields = () => fieldsOf(demanded);
+  const demand = demandOf(requirements);
+  const fields = () => fieldsOf(demand.selectors);
   const wrap = async (
     value: unknown,
     signal?: AbortSignal,
@@ -174,11 +175,9 @@ export function dispatchSource(
   return {
     requirements,
     shareReads: (reads) => client.shareReads(reads),
-    configure(union) {
-      demanded = new Set([...demanded, ...union]);
-    },
+    configure: (union) => demand.configure(union),
     get shape() {
-      return JSON.stringify([...demanded].sort((a, b) => a.localeCompare(b)));
+      return demand.shape;
     },
     async credential(options) {
       const signal = readSignal(options);
@@ -193,7 +192,7 @@ export function dispatchSource(
       const nodes = await pageAll(
         client.transport,
         `query TrackerDispatchQueue($owner: String!, $name: String!, $identity: String!, $after: String) {
-        repository(owner: $owner, name: $name) { issues(first: 100, after: $after, states: [OPEN${demanded.has("queue-closed") ? ", CLOSED" : ""}], filterBy: {assignee: $identity}) {
+        repository(owner: $owner, name: $name) { issues(first: 100, after: $after, states: [OPEN${demand.selectors.has("queue-closed") ? ", CLOSED" : ""}], filterBy: {assignee: $identity}) {
           pageInfo { hasNextPage endCursor } nodes { ${fields()} }
         } }
       }`,

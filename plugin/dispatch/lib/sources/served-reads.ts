@@ -602,14 +602,7 @@ async function openView(
     if (options.bound !== undefined) p.bound = options.bound;
   } catch (error) {
     if (isRateLimited(error)) return offlineView(tracker, kept, error);
-    return assemble(tracker, {
-      source: "offline",
-      snapshot: kept,
-      stale: new Set(),
-      since: kept?.since ?? "",
-      limited: null,
-      unavailable: failureText(error),
-    });
+    return unavailableView(tracker, kept, error);
   }
   if (p.source === "kept" || p.source === "unchanged")
     return assemble(tracker, p, undefined, save, options.nowMs);
@@ -618,15 +611,24 @@ async function openView(
     return assemble(tracker, p, queue, save, options.nowMs);
   } catch (error) {
     if (isRateLimited(error)) return offlineView(tracker, kept, error);
-    return assemble(tracker, {
-      source: "offline",
-      snapshot: kept,
-      stale: new Set(),
-      since: kept?.since ?? "",
-      limited: null,
-      unavailable: failureText(error),
-    });
+    return unavailableView(tracker, kept, error);
   }
+}
+
+/** The view of a queue whose read failed for a reason other than a rate limit. */
+function unavailableView(
+  tracker: Tracker,
+  kept: Snapshot | null,
+  error: unknown,
+): ServedView {
+  return assemble(tracker, {
+    source: "offline",
+    snapshot: kept,
+    stale: new Set(),
+    since: kept?.since ?? "",
+    limited: null,
+    unavailable: failureText(error),
+  });
 }
 
 /** The tick's view for `tracker` and `identity`, opened once and shared. */

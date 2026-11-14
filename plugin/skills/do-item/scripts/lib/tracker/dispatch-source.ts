@@ -26,6 +26,29 @@ export function nativeQueueRequirements(
   return [...new Set([...names, ...(closed ? ["queue-closed"] : [])])];
 }
 
+/** The selectors the repositories sharing one scope demand, growing as each configures. */
+export interface Demand {
+  readonly selectors: ReadonlySet<string>;
+  configure(union: readonly string[]): void;
+  readonly shape: string;
+}
+
+/** Start from `requirements`; `configure` widens the set and `shape` names it stably. */
+export function demandOf(requirements: readonly string[]): Demand {
+  let selectors: ReadonlySet<string> = new Set(requirements);
+  return {
+    get selectors() {
+      return selectors;
+    },
+    configure(union) {
+      selectors = new Set([...selectors, ...union]);
+    },
+    get shape() {
+      return JSON.stringify([...selectors].sort((a, b) => a.localeCompare(b)));
+    },
+  };
+}
+
 /** A native tracker row retained before a repository interprets states and facets. */
 export interface DispatchRawIssue {
   identifier: string;

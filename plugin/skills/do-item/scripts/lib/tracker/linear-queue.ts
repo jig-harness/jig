@@ -15,6 +15,7 @@
  *   were updated after a time.
  */
 
+import { demandOf } from "./dispatch-source.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import type {
   CoreQueueIssue,
@@ -305,7 +306,7 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
     .map((state) => states[state as CanonicalState])
     .filter((name): name is string => name != null)
     .map((name) => `queue-state:${name}`);
-  let demanded = new Set(requirements);
+  const demand = demandOf(requirements);
   const rawQuery = queueQuery("estimate").replace(
     "query TrackerQueue(",
     "query TrackerNativeQueue(",
@@ -332,11 +333,9 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
     dispatchSource: {
       persistent: dispatchPersistent(transport),
       requirements,
-      configure(union) {
-        demanded = new Set([...demanded, ...union]);
-      },
+      configure: (union) => demand.configure(union),
       get shape() {
-        return JSON.stringify([...demanded].sort((a, b) => a.localeCompare(b)));
+        return demand.shape;
       },
       credential: async (options?: FacetReadOptions) => {
         const signal = readSignal(options);
@@ -359,7 +358,7 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
                 {
                   state: {
                     name: {
-                      in: [...demanded]
+                      in: [...demand.selectors]
                         .filter((name) => name.startsWith("queue-state:"))
                         .map((name) => name.slice(12)),
                     },

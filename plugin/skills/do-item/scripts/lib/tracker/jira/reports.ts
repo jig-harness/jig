@@ -264,6 +264,31 @@ export function reportOperations(
     return !["completed", "canceled", "duplicate"].includes(read.state.type);
   }
 
+  function poolOf(issue: JiraIssue, hasOpenChildren: boolean): CorePoolIssue {
+    const { state } = model.read(issue);
+    return {
+      identifier: issue.key,
+      nativeType: nativeTypeOf(issue),
+      title: issue.title,
+      url: issue.url,
+      priority: model.priorityOf(issue.priority),
+      createdAt: issue.createdAt,
+      updatedAt: issue.updatedAt,
+      state: { ...state, id: issue.status.id },
+      assignee:
+        issue.assignee === null
+          ? null
+          : {
+              id: issue.assignee.accountId,
+              name: issue.assignee.displayName,
+            },
+      labels: issue.labels,
+      hasOpenChildren,
+      ...stores.read(issue),
+      truncated: [],
+    };
+  }
+
   async function pools(
     issues: JiraIssue[],
     signal?: AbortSignal,
@@ -272,30 +297,7 @@ export function reportOperations(
       issues.map((i) => i.key),
       signal,
     );
-    return issues.map((issue) => {
-      const { state } = model.read(issue);
-      return {
-        identifier: issue.key,
-        nativeType: nativeTypeOf(issue),
-        title: issue.title,
-        url: issue.url,
-        priority: model.priorityOf(issue.priority),
-        createdAt: issue.createdAt,
-        updatedAt: issue.updatedAt,
-        state: { ...state, id: issue.status.id },
-        assignee:
-          issue.assignee === null
-            ? null
-            : {
-                id: issue.assignee.accountId,
-                name: issue.assignee.displayName,
-              },
-        labels: issue.labels,
-        hasOpenChildren: parents.has(issue.key),
-        ...stores.read(issue),
-        truncated: [],
-      };
-    });
+    return issues.map((issue) => poolOf(issue, parents.has(issue.key)));
   }
 
   /**
@@ -381,33 +383,15 @@ export function reportOperations(
         await client.fieldLabels(signal),
         await client.facetFields(signal),
       );
-      const { state } = model.read(issue);
-      return {
-        identifier: issue.key,
-        nativeType: nativeTypeOf(issue),
-        title: issue.title,
-        url: issue.url,
-        priority: model.priorityOf(issue.priority),
-        createdAt: issue.createdAt,
-        updatedAt: issue.updatedAt,
-        state: { ...state, id: issue.status.id },
-        assignee:
-          issue.assignee === null
-            ? null
-            : {
-                id: issue.assignee.accountId,
-                name: issue.assignee.displayName,
-              },
-        labels: issue.labels,
-        hasOpenChildren: children.some(
+      return poolOf(
+        issue,
+        children.some(
           (child) =>
             !["completed", "canceled", "duplicate"].includes(
               model.read(stateInputOf(child)).state.type,
             ),
         ),
-        ...stores.read(issue),
-        truncated: [],
-      };
+      );
     }),
     async issuesByKeys(keys) {
       const own = keys.filter((k) => ownKey.test(k));
