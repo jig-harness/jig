@@ -1893,7 +1893,8 @@ and no sticky comment:
 
 | The check run on the head | The gate |
 |---|---|
-| absent, or not completed | `AWAITING_REVIEWER` |
+| absent, CodeRabbit's current issue comment from `coderabbitai[bot]` has its `skip review by coderabbit.ai` marker or `Draft PR not reviewed` heading | a draft skip: on a draft, converge on its own work, mark Ready and wait for the review; on a Ready PR, `AWAITING_REVIEWER` |
+| absent with no recognized comment skip, or not completed | `AWAITING_REVIEWER` |
 | completed, its title `Review paused…` | `REVIEW_SKIPPED` (exit `22`), the reason naming the pause and quoting the title |
 | completed, its title `Review skipped: draft pull request`, on a draft | no wait: the draft converges on its own threads, findings and CI (`reviewedShaSource: "draft-skip"`), and `drive.ts` marks it Ready, which summons the review, and waits for it |
 | the same draft skip, on a pull request already Ready | `AWAITING_REVIEWER`: the skip predates the Ready mark |

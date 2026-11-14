@@ -173,7 +173,10 @@ it has nothing new to say about. A run titled `Review paused…` or `Review
 skipped…` stops the drive with `REVIEW_SKIPPED` (`22`), naming which, except
 a draft skip, which on a draft converges on its own work (the drive marks it
 Ready and waits for the review that summons) and on a Ready PR waits for the
-review. The findings such a reviewer puts only in its review's body
+review. When no check run exists, CodeRabbit's current issue comment from
+`coderabbitai[bot]` also attests a draft skip: its `skip review by coderabbit.ai`
+marker or `Draft PR not reviewed` heading. An old skip comment on a Ready PR
+never attests a review. The findings such a reviewer puts only in its review's body
 (CodeRabbit's outside-diff, nitpick, duplicate and follow-up comments) are summary-only
 findings, answered like a sticky's, for a reviewer whose built-in profile
 names a body format (today CodeRabbit); another review-object reviewer's
@@ -540,6 +543,10 @@ in any tree other than the session's own, the location overrides
 clone, a driver's exported state directory. Placing another clone's PR from inside a drive
 whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
 arm it from a session outside the drive.
+
+Running `mark-ready.ts` by hand releases the session leases it acquired after a
+confirmed successful transition, so you can start a drive in the same tree
+immediately. Calls from a running drive keep its leases.
 
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. `--take-over` and `--window-reopened` pick a stopped drive up ([below](#picking-up-a-stopped-drive)). Starting it twice **in the same clone** is safe — see exit `11`. The lock lives in the drive's database, keyed by this clone, so it covers this clone and its linked worktrees and nothing further. Another clone — another machine, a CI checkout — is held off by the [drive ledger](#where-its-state-lives) instead: while the ledger names a running driver in another clone, an arm is refused with exit `13`.
 

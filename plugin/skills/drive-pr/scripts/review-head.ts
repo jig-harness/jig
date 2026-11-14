@@ -17,6 +17,7 @@ import {
   judgeReviewObject,
   latestReviewBy,
 } from "./lib/status/review-object.ts";
+import { commentDraftSkip } from "./lib/status/comment-draft-skip.ts";
 import { resolveMarkerSha } from "./lib/status/reviewed-sha.ts";
 
 // 0 witnessed; 4 waiting for this head; 1 unreadable, or a review that will
@@ -69,7 +70,11 @@ async function byReviewObject(
   ]);
   if (runs === null || draft.code !== 0) return 1;
   const run = reviewerRun(runs);
-  if (run === null) return 4;
+  if (run === null) {
+    const skip = await commentDraftSkip(owner, name, pr, reviewerApp());
+    if (skip === null) return 1;
+    return skip && draft.stdout.trim() === "true" ? 0 : 4;
+  }
   const latest =
     run.status === "completed"
       ? await latestReviewBy(owner, name, pr, `${reviewerApp()}[bot]`)

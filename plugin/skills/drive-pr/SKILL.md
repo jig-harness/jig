@@ -112,8 +112,9 @@ rather than waiting:
   "Review skipped / Draft detected"), and a CI-hosted reviewer job commonly
   skips drafts too (`!…pull_request.draft`). Where such a bot is the
   reviewer that decides convergence (`review.reviewer_evidence:
-  review_object`, CodeRabbit's profile), its draft skip is no wait: the draft
-  converges on its own work, and the drive marks it Ready and waits for that
+  review_object`, CodeRabbit's profile), its draft skip is no wait: a skip
+  check run, or CodeRabbit's current skip comment when no check run exists,
+  lets the draft converge on its own work, and the drive marks it Ready and waits for that
   review.
 
 So a draft is driven exactly like a Ready PR, and **after the first completed
@@ -3155,6 +3156,11 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --round N --reason "round N
 `--round N` applies `pull_requests.mark_ready`: before the configured round,
 or when the repository marks Ready only at convergence or never, it prints
 `not-due` and does nothing.
+
+A standalone successful transition gives back the session leases it acquired, so
+a drive can start immediately in that tree. A call inside a running drive keeps
+its driver's leases; a claim held by another caller and an unconfirmed remote
+transition retain their existing protection.
 
 When it prints `marked`, move the Orca workspace card to the review stage with
 the pull request linked, as `drive.ts` does itself; outside Orca it does
