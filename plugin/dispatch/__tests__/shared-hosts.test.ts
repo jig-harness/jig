@@ -116,6 +116,18 @@ function host(
   const rows = opts.prs.map((pr, i) => {
     const path = join(w.root, `ws-${name}-${pr.number}`);
     mkdirSync(path, { recursive: true });
+    // A listed stage workspace is a checkout on each dispatching host.
+    const initialized = Bun.spawnSync(["git", "init", "-q", path], {
+      env: w.env,
+    });
+    expectSpawnExit(
+      {
+        exitCode: initialized.exitCode,
+        stdout: initialized.stdout.toString(),
+        stderr: initialized.stderr.toString(),
+      },
+      0,
+    );
     return {
       worktreeId: `repo-1::${path}`,
       repoId: "repo-1",

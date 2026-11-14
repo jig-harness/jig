@@ -176,6 +176,27 @@ describe("openDatabase", () => {
     closeDatabase(path);
   });
 
+  it("uses a requested nonblocking timeout before migrating a held connection", () => {
+    const path = fresh();
+    expect(openDatabase({ path, migrations: [V1] }).ok).toBe(true);
+    const lock = raw(path);
+    try {
+      lock.exec("BEGIN IMMEDIATE");
+      const began = performance.now();
+      const wider = openDatabase({
+        path,
+        migrations: [V1, V2_ADDITIVE],
+        busyMs: 0,
+      });
+      expect(performance.now() - began).toBeLessThan(1_000);
+      expect(wider.ok).toBe(false);
+    } finally {
+      lock.exec("ROLLBACK");
+      lock.close();
+      closeDatabase(path);
+    }
+  });
+
   it("reopens a database whose file was replaced, under another instance", () => {
     const path = fresh();
     const first = openDatabase({ path, migrations: [V1] });

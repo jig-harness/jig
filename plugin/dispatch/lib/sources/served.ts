@@ -17,7 +17,7 @@ import { scopeFailureRow } from "./scope-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import { servedParentHold } from "./served-parents.ts";
 import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import {
