@@ -1360,7 +1360,8 @@ a probe run then reads nothing, and the next install removes its timer.
 dispatcher timer was installed before the probe existed gets the probe's at
 its next `jig install dispatch --yes`. `jig install dispatch
 --repo <path>` also lists the [state labels](#the-dispatcher) that
-repository turns on and lacks, and creates them with `--yes`, as
+repository turns on and lacks, and those whose description an earlier
+release wrote, and creates or updates them with `--yes`, as
 `jig dispatch labels` does with no job installed. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
 and is the one form that sets an interval other than the machine file's.

@@ -290,7 +290,7 @@ const labels = command(
     }),
   }),
   {
-    brief: message`Create the pull request state labels a repository turns on, once.`,
+    brief: message`Create the pull request state labels a repository turns on, or update their descriptions.`,
     description: message`For a repository whose dispatch.labels (read from its default branch) is on, lists the state and command labels it lacks, with its manual-operations label and automation, and those whose description an earlier release wrote; --yes creates or updates them (the description only, never the color) and lists, with the command that does each, those the signed-in account may not create or edit. Installs no job: drives and follow-ups write the labels without the dispatcher.`,
   },
 );

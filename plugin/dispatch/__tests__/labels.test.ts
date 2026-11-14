@@ -454,7 +454,7 @@ describe("jig install dispatch --repo", () => {
     expect(described(ghCalls(w))).toEqual([]);
   }, 60_000);
 
-  it("lists a label whose description changed, updates it with --yes and keeps its color, and lists for a person one the account may not edit", async () => {
+  it("lists a label whose description changed beside a missing one, updates it with --yes and keeps its color, and lists for a person one the account may not edit", async () => {
     const w = fixture(ON);
     const stale = current("jig:stale");
     // Installed by an earlier release, and recolored by a person since.
@@ -468,7 +468,7 @@ describe("jig install dispatch --repo", () => {
     );
     writeFileSync(
       labelsFile(w),
-      JSON.stringify([earlier, ...others, "manual-ops", "automation"]),
+      JSON.stringify([earlier, ...others, "manual-ops"]),
     );
 
     const preview = await labelsPart(w);
@@ -478,12 +478,17 @@ describe("jig install dispatch --repo", () => {
     );
     expect(preview.stdout).toContain(`  jig:stale: ${stale.description}`);
     expect(preview.stdout).not.toContain("jig:driving:");
-    expect(preview.stdout).not.toContain("do not exist yet");
+    // A label still missing is listed beside it.
+    expect(preview.stdout).toContain(
+      "these dispatch labels do not exist yet; repeat with --yes to create them:",
+    );
+    expect(preview.stdout).toContain("  automation: ");
     expect(described(ghCalls(w, true))).toEqual([]);
 
     writeFileSync(join(w.dir, "label-describe-fail"), "");
     const refused = await labelsPart(w, "--yes");
     expectSpawnExit(refused, 1);
+    expect(refused.stdout).toContain(`${SLUG}: created automation`);
     expect(refused.stdout).toContain(
       `gh label edit 'jig:stale' --repo ${SLUG} --description '${stale.description}'`,
     );
@@ -504,7 +509,9 @@ describe("jig install dispatch --repo", () => {
 
     const again = await labelsPart(w, "--yes");
     expectSpawnExit(again, 0);
-    expect(again.stdout).toContain("exists");
+    expect(again.stdout).toContain(
+      "every dispatch label under 'jig:' exists and says what this release means by it",
+    );
     expect(described(ghCalls(w))).toEqual([]);
   }, 60_000);
 
