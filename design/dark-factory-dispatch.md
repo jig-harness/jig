@@ -1844,7 +1844,15 @@ A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
 into one message, and when the target is still marked unread from an
 earlier notification it appends the new causes to that comment rather than
-overwriting it. Each cause's text carries its key (the facts its
+overwriting it. One comment holds at most 16,000 characters, so a comment
+that is exactly what the dispatcher wrote gives up the entries whose causes
+are settled (no cause the tick names carries the key, and no suppression
+record that still stands does: the test that retires an unread notices
+workspace) to make room for the new ones; an entry whose cause still stands
+is never dropped. A cause that still finds no room waits, and the failure
+ledger counts it as a failed delivery, so past `failures.notify_after`
+ticks a person is told through whatever destination still delivers (see
+Failures). Each cause's text carries its key (the facts its
 suppression record is keyed by). A cause counts as sent, and its
 suppression record is written, only once the runtime's receipt shows the
 comment carrying its key, so a cause never delivered is never suppressed.

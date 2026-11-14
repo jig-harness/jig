@@ -427,6 +427,10 @@ function needsOf(
               at: at ?? null,
               outcome: notification.outcome,
               workspace: notification.workspace,
+              ...(notification.outcome === "waits" ||
+              notification.outcome === "lost"
+                ? { detail: notification.detail }
+                : {}),
             },
       workspaces:
         action.cause === "double-claim"

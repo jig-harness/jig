@@ -33,15 +33,21 @@
  * - **One comment per workspace.** The causes for one workspace in a tick
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
- *   rather than replacing what a person has not read.
+ *   rather than replacing what a person has not read. A comment that is
+ *   exactly what the dispatcher wrote gives up the entries whose causes are
+ *   settled (the test that retires an unread notices workspace: no cause
+ *   this tick names, no record that still stands) to make room; an entry
+ *   whose cause stands is never dropped. A cause that still finds no room
+ *   waits, counted as a failed delivery.
  * - **One event row per cause.** A cause's event row goes into the outcome
  *   log (`log.ts`) in the same transaction as its suppression record, timed
  *   at that record and keyed by the same facts; a cause about a stage this
  *   machine launched has its ended row instead.
  *
- * - **Backed off while it keeps failing.** A cause whose delivery was lost
- *   is counted in the failure ledger (`failures.ts`) under `notice <key>`:
- *   until its next try it is reported waiting, and past
+ * - **Backed off while it keeps failing.** A cause whose delivery was lost,
+ *   or that found no room in the destination's comment, is counted in the
+ *   failure ledger (`failures.ts`) under `notice <key>`: until its next try
+ *   it is reported waiting, and past
  *   `failures.notify_after` lost deliveries in a row it is notified as
  *   failing, through whatever destination still delivers.
  *
@@ -63,17 +69,14 @@ import {
   type OutcomeClass,
 } from "../log.ts";
 import { type ActionBook, readFailures } from "../failures.ts";
-import {
-  HOST_NOTICE,
-  hostNoticeKeys,
-  isFailureCause,
-} from "../failure-notices.ts";
+import { hostNoticeKeys, isFailureCause } from "../failure-notices.ts";
 import { holderRecordStands } from "../holder-notices.ts";
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
   MAX_COMMENT,
   NOTICES_BRANCH,
   NOTICES_NAME,
+  type NotifyTarget,
   type RuntimeReceipt,
   type SessionsReport,
   type Workspace,
@@ -101,6 +104,13 @@ import {
   pruneComments,
   recordComment,
 } from "./notices-content.ts";
+import {
+  readHostSuppressions,
+  readSuppressions,
+  retirementRecords,
+  settledEntries,
+  type Suppression,
+} from "./notice-records.ts";
 import { retireNotices } from "./retire-notices.ts";
 import {
   currentIso,
@@ -112,67 +122,6 @@ import {
 /** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =
   /(driven|picked up) by jig dispatch$|^jig dispatch notices$/;
-
-interface Suppression {
-  repo: string;
-  target: string;
-  key: string;
-  /** When it was first sent. */
-  at: string;
-  /** When it was last sent: `at`, or its latest repeat. */
-  sentAt: string;
-  workspace: string;
-  /** Set for a cause notified once for the life of its key: the cause going away does not release it. */
-  lasting: boolean;
-}
-
-/** The suppression records of `repo`, by key. */
-function readSuppressions(
-  repo: string,
-  root: string,
-): Map<string, Suppression> {
-  return suppressionsWhere("repo = ?", [repo], root);
-}
-
-/**
- * The suppression records of the host's own failures at any repository, by
- * key, the latest send of a key standing: the destination of such a notice
- * can move, its identity and suppression do not.
- */
-function readHostSuppressions(root: string): Map<string, Suppression> {
-  return suppressionsWhere("key LIKE ?", [`${HOST_NOTICE} %`], root);
-}
-
-function suppressionsWhere(
-  where: string,
-  params: string[],
-  root: string,
-): Map<string, Suppression> {
-  const rows = stateDb(root)
-    .query(
-      `SELECT repo, key, target, workspace, at, sent_at, lasting FROM notices WHERE ${where} ORDER BY COALESCE(sent_at, at)`,
-    )
-    .all(...params) as Array<
-    Omit<Suppression, "lasting" | "sentAt"> & {
-      lasting: number;
-      sent_at: string | null;
-    }
-  >;
-  return new Map(
-    rows.map((r) => [
-      r.key,
-      {
-        repo: r.repo,
-        key: r.key,
-        target: r.target,
-        workspace: r.workspace,
-        at: r.at,
-        sentAt: r.sent_at ?? r.at,
-        lasting: r.lasting === 1,
-      },
-    ]),
-  );
-}
 
 /**
  * Write a cause's suppression record, and its event row with it in one
@@ -405,12 +354,14 @@ async function noticesWorkspace(
   return noticesBlocked(read) ?? read;
 }
 
-/** The causes that fit one comment after the unread text, which is kept whole; one that does not fit waits until it is read, and a later one that fits still goes. */
+/** The causes that fit one comment after the unread text, which is kept whole but for its `settled` entries; one that does not fit waits until there is room, and a later one that fits still goes. */
 export function fitting(
   workspace: Workspace,
   causes: Cause[],
   preserveRead = false,
+  settled: readonly string[] = [],
 ): { send: Cause[]; later: Cause[] } {
+  const gone = new Set(settled);
   const send: Cause[] = [];
   const later: Cause[] = [];
   for (const c of causes) {
@@ -418,6 +369,7 @@ export function fitting(
       { comment: workspace.comment, unread: workspace.unread !== false },
       messageFor([...send, c]),
       preserveRead,
+      gone,
     );
     if (next !== null && next.length > MAX_COMMENT) {
       later.push(c);
@@ -438,13 +390,10 @@ async function deliver(
   state: ApplyState,
   workspace: Workspace,
   message: string,
-  dispatcherOnly: boolean,
-  replaceReadComment?: string,
-  prepareComment?: (
-    before: string,
-    projected: string,
-    unread: boolean,
-  ) => boolean,
+  policy: Pick<
+    NotifyTarget,
+    "dispatcherOnly" | "replaceReadComment" | "settled" | "prepareComment"
+  >,
 ): Promise<RuntimeReceipt> {
   try {
     return await state.runtime.notify(
@@ -452,9 +401,7 @@ async function deliver(
         id: workspace.id,
         path: workspace.path,
         branch: workspace.branch,
-        dispatcherOnly,
-        ...(prepareComment === undefined ? {} : { prepareComment }),
-        ...(replaceReadComment === undefined ? {} : { replaceReadComment }),
+        ...policy,
       },
       message,
     );
@@ -525,15 +472,30 @@ function delivered(
   );
 }
 
+/**
+ * Why a cause waits for room: the unread comment, less the entries whose
+ * causes are settled, leaves too little. It counts as a failed delivery.
+ */
+const NO_ROOM =
+  "the comment is full: its unread entries still stand, or a person added to it; read the unread notices or shorten personal additions so a later tick can deliver it";
+
+/** What `sendTo` reads beyond the workspace and its causes. */
+interface SendContext {
+  root: string;
+  repo: string;
+  /** The destination is a person's workspace `notices_branch` names. */
+  dispatcherOnly: boolean;
+  /** The keys of a comment's entries whose causes are settled. */
+  settledOf: (comment: string) => readonly string[];
+}
+
 /** One workspace's causes, joined into one message and sent. */
 async function sendTo(
   state: ApplyState,
   workspace: Workspace,
   causes: Cause[],
   suppress: (cause: Cause, workspace: string) => void,
-  root: string,
-  repo: string,
-  dispatcherOnly: boolean,
+  { root, repo, dispatcherOnly, settledOf }: SendContext,
 ): Promise<NotifyOutcome[]> {
   // Reconcile an interrupted delivery even when every cause is already present.
   const owned = ownsComment(workspace, root);
@@ -543,33 +505,26 @@ async function sendTo(
   if (late !== null)
     return [...out, ...fresh.map((c) => outcomeFor(c, "waits", null, late))];
   const preserveRead = dispatcherOnly && !owned;
-  const { send, later } = fitting(workspace, fresh, preserveRead);
-  out.push(
-    ...later.map((c) =>
-      outcomeFor(
-        c,
-        "waits",
-        null,
-        "the comment is full: read unread notices or shorten personal additions so a later tick can deliver it",
-      ),
-    ),
-  );
+  // Only a comment known to be the dispatcher's alone gives up its settled entries.
+  const settled = owned ? settledOf(workspace.comment) : [];
+  const { send, later } = fitting(workspace, fresh, preserveRead, settled);
+  out.push(...later.map((c) => outcomeFor(c, "waits", null, NO_ROOM)));
   if (send.length === 0) return out;
   const message = messageFor(send);
-  const receipt = await deliver(
-    state,
-    workspace,
-    message,
+  const receipt = await deliver(state, workspace, message, {
     dispatcherOnly,
-    owned ? workspace.comment : undefined,
-    (before, projected, unread) => {
+    ...(owned ? { replaceReadComment: workspace.comment } : {}),
+    ...(settled.length === 0
+      ? {}
+      : { settled: { comment: workspace.comment, keys: settled } }),
+    prepareComment: (before, projected, unread) => {
       const known =
         ownsComment({ ...workspace, comment: before }, root) ||
         (!dispatcherOnly && !unread);
       if (known) intendComment(workspace, projected, root, repo);
       return known;
     },
-  );
+  });
   if (
     receipt.ok &&
     receipt.ownedComment === true &&
@@ -634,14 +589,14 @@ function prune(
   });
 }
 
-/** The due causes at the repository's destination, each naming where its stage ran; `null`, every cause reported waiting, when it cannot be reached. */
+/** The due causes at the repository's destination, each naming where its stage ran, and whether the tick opened it; `null`, every cause reported waiting, when it cannot be reached. */
 async function atDestination(
   state: ApplyState,
   repo: RepoTarget,
   due: Cause[],
   sessions: { workspaces: Workspace[]; report: RepoReport },
   branch: string | null,
-): Promise<{ workspace: Workspace; causes: Cause[] } | null> {
+): Promise<{ workspace: Workspace; causes: Cause[]; opened: boolean } | null> {
   // The listing before the destination is opened: the notices workspace is no cause's own.
   const listed = [...sessions.workspaces];
   const target = await destination(state, repo, sessions, branch);
@@ -655,6 +610,7 @@ async function atDestination(
   return {
     workspace: target,
     causes: due.map((c) => located(c, listed, target)),
+    opened: !listed.some((w) => w.path === target.path),
   };
 }
 
@@ -751,8 +707,8 @@ function deliveryOf(c: Cause): {
 
 /**
  * Count each delivery the tick attempted in the failure ledger: a lost one
- * fails, a sent or already-carried one succeeds; one that waited for its
- * destination was not attempted.
+ * or one the destination had no room for fails, a sent or already-carried
+ * one succeeds; one that waited for another reason was not attempted.
  */
 function countDeliveries(
   book: ActionBook,
@@ -763,7 +719,8 @@ function countDeliveries(
   for (const o of outcomes) {
     const c = byKey.get(o.key);
     if (c === undefined) continue;
-    if (o.outcome === "lost") book.ran(deliveryOf(c), o.detail);
+    if (o.outcome === "lost" || (o.outcome === "waits" && o.detail === NO_ROOM))
+      book.ran(deliveryOf(c), o.detail);
     else if (o.outcome === "sent" || o.outcome === "already")
       book.ran(deliveryOf(c), null);
   }
@@ -847,14 +804,6 @@ function earlierSend(
   );
 }
 
-/** The suppression records that keep an unread notices workspace: the repository's own and the host failures' at any repository, which can be told here. */
-function retirementRecords(repo: string, root: string): Suppression[] {
-  const records = readSuppressions(repo, root);
-  for (const [key, record] of readHostSuppressions(root))
-    if (!records.has(key)) records.set(key, record);
-  return [...records.values()];
-}
-
 /** `--apply` for one repository's notifications, then its notices workspace. */
 export async function applyNotices(
   state: ApplyState,
@@ -888,7 +837,7 @@ export async function applyNotices(
   });
 }
 
-/** The tick's notifications, sent; the workspaces it wrote or opened. */
+/** The tick's notifications, sent; the workspaces it opened, or wrote a comment to. */
 async function sendNotices(
   state: ApplyState,
   repo: RepoTarget,
@@ -905,7 +854,8 @@ async function sendNotices(
   wantedDeliveries(settings.book, report, planned);
   // The plan named a failing action's notice before the act phase found the action no longer wanted.
   const causes = planned.filter((c) => failureStands(settings.book, c));
-  prune(report, standingKeys(causes, root), sent, root);
+  const standing = standingKeys(causes, root);
+  prune(report, standing, sent, root);
   const nowMs = currentMs();
   const all: Cause[] = [];
   for (const c of causes) {
@@ -978,13 +928,27 @@ async function sendNotices(
       group.workspace,
       group.causes,
       suppressed,
-      root,
-      repo.slug,
-      settings.branch !== null,
+      {
+        root,
+        repo: repo.slug,
+        dispatcherOnly: settings.branch !== null,
+        settledOf: (comment) =>
+          settledEntries(
+            comment,
+            report,
+            standing,
+            retirementRecords(repo.slug, root),
+          ),
+      },
     );
     report.notifications.push(...outcomes);
     if (settings.book != null) countDeliveries(settings.book, batch, outcomes);
-    written.add(group.workspace.path);
+    // A lost answer may have written the comment; a cause that waited wrote nothing.
+    if (
+      group.opened ||
+      outcomes.some((o) => o.outcome === "sent" || o.outcome === "lost")
+    )
+      written.add(group.workspace.path);
   };
   // The notices go first: a delivery that recovers here clears its row before the failure notice about it is decided.
   await deliver(due.filter((c) => !isFailureCause(c.cause)));

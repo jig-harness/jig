@@ -14,7 +14,8 @@
  *   whole, no cause this tick names is in its comment, and no suppression
  *   record that names it remains (`prune` keeps a record whose target the
  *   tick could not place or read).
- * - **Never a person's.** A workspace written this tick, or holding a
+ * - **Never a person's.** A workspace this tick opened or wrote a comment
+ *   to (one whose every cause waited was not written), or holding a
  *   comment that is not the dispatcher's, an agent, a terminal the runtime
  *   cannot read, changes git reports or a commit no remote branch holds, is
  *   left in place, the last four reported as refused.
@@ -39,7 +40,7 @@ export interface RetireInput {
   workspace: Workspace | null;
   /** Whether its complete comment is known dispatcher-only content. */
   takesComment: boolean;
-  /** The workspaces this tick wrote or opened. */
+  /** The workspaces this tick opened, or wrote a comment to. */
   written: ReadonlySet<string>;
   /** The keys of every cause this tick names. */
   causes: readonly string[];

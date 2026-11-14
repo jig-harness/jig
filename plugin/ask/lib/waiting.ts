@@ -53,6 +53,8 @@ export interface WaitingEntry {
   title: string | null;
   /** Recorded stage and parked questions, verbatim; older parks use their recorded lines. */
   questions: string[];
+  /** Why its notice has not reached a person this tick (held for room in the comment, lost, its destination unreachable); `null` otherwise. */
+  notice: string | null;
 }
 
 /** What `--waiting` answers. */
@@ -91,6 +93,7 @@ function entryOf(need: LineNeed): WaitingEntry | null {
       url: need.url,
       title: need.title,
       questions: [],
+      notice: need.notified?.detail ?? null,
     };
   }
   const station = stationOf(need);
@@ -121,6 +124,7 @@ function entryOf(need: LineNeed): WaitingEntry | null {
           : d.lines.join("\n"),
       ),
     ].filter((q) => q.length > 0),
+    notice: need.notified?.detail ?? null,
   };
 }
 

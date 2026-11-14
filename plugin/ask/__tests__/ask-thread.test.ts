@@ -574,6 +574,39 @@ describe("jig ask --waiting", () => {
     expect(text.stdout).not.toContain("\u001b");
   });
 
+  it("says why a need's notice has not reached a person", async () => {
+    const w = world();
+    const held = "the comment is full";
+    writeLine(
+      {
+        ...LINE,
+        needs: LINE.needs.map((n, i) =>
+          i === 0
+            ? {
+                ...n,
+                notified: {
+                  at: null,
+                  outcome: "waits",
+                  workspace: null,
+                  detail: held,
+                },
+              }
+            : n,
+        ),
+      },
+      "{}",
+      w.state,
+    );
+    const r = await w.ask(["--waiting", "--json"], w.away);
+    expectSpawnExit(r, 0);
+    expect(
+      (JSON.parse(r.stdout) as WaitingAnswer).waiting.map((e) => e.notice),
+    ).toEqual([held, null]);
+    const text = await w.ask(["--waiting"], w.away);
+    expectSpawnExit(text, 0);
+    expect(text.stdout).toContain(`notice not delivered: ${held}`);
+  });
+
   it("filters waiting entries by the named person's login, without forge calls", async () => {
     const w = world();
     writeLine(

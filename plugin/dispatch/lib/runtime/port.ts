@@ -115,6 +115,12 @@ export interface NotifyTarget {
   dispatcherOnly?: boolean;
   /** Exact dispatcher-owned read comment that may be replaced; rechecked under the lock. */
   replaceReadComment?: string;
+  /**
+   * The entries of an unread comment whose causes are settled, by key, and
+   * the exact dispatcher-only comment they were found in: an unread comment
+   * still exactly `comment` under the lock gives them up to make room.
+   */
+  settled?: { comment: string; keys: readonly string[] };
   /** Persist the actual locked projection before writing; return whether it is dispatcher-only. */
   prepareComment?: (
     before: string,

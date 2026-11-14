@@ -11,7 +11,9 @@
  * and the read-back hold the card's comment lock, shared with the skills'
  * board helper; a lock not taken in time sends nothing, and the receipt says
  * so (not lost: nothing was written). The dispatched marks the comment holds
- * stay in the one written (`keepMarks`).
+ * stay in the one written (`keepMarks`). An unread comment still exactly the
+ * dispatcher-only one the sender read gives up the entries the sender names
+ * settled, so a standing cause has the room they took.
  */
 import { isRecord } from "../../../shared/guards.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
@@ -194,6 +196,12 @@ async function notifyUnlocked(
     message,
     target.dispatcherOnly === true &&
       card.comment !== target.replaceReadComment,
+    // Only the exact comment the sender found its settled entries in gives them up.
+    new Set(
+      target.settled !== undefined && card.comment === target.settled.comment
+        ? target.settled.keys
+        : [],
+    ),
   );
   let ownedComment = false;
   if (merge !== null) {
