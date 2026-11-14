@@ -34,7 +34,7 @@ export function maskCredentials(text: string, mark: string): string {
     )
     .replace(
       new RegExp(
-        `\\b(${SECRET_KEY})\\s*[=:]\\s*(?!(?:<redacted>|\\[(?:redacted|launch token)\\])(?!\\S))\\S+`,
+        `\\b(${SECRET_KEY})\\s*[=:]\\s*(?!(?:<redacted>|\\[(?:redacted|launch token)\\])(?!\\S))(?:\\[[^\\]\\n]*\\]?|\\S+)`,
         "gi",
       ),
       (_, key: string) => `${key}=${mark}`,
