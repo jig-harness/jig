@@ -386,10 +386,18 @@ provisional with links to its plan items on the roadmap), the prose, and the
 generated tables, with an anchor per value so a page can link to one exit
 code or one label. The index page renders as the Protocol's landing page.
 The data files and schemas are published as they are, at addresses that
-keep the chapter's name and version. The route and the page table's row are
-the message design's to place
-([#1018](https://github.com/jig-harness/jig/issues/1018)), which owns
-`design/website.md`; this design hands them to it.
+keep the chapter's name and version. The agreed routes are `/protocol/` for the index and
+`/protocol/<chapter>/` for each chapter, built from `plugin/protocol/` with
+the chapter's existing filename stem as its slug. The agreement is shared
+with [the website design](website.md#page-types).
+
+The site's data address is `/protocol/<chapter>/v<version>/data.json`.
+Schemas are published unchanged at
+`/protocol/<chapter>/v<version>/schemas/<filename>.json`; their `$id` names
+the chapter and its version as path segments (`v<version>` or `<version>`).
+An ambiguous or unmatched chapter/version fails the build. Only the current
+version's files exist in this source tree; publishing a new chapter version
+does not supply an archive of earlier versions.
 
 ## Build order
 
@@ -419,7 +427,6 @@ Each step is one pull request, shippable alone.
    the skills reads it. The Addresses chapter exports the list of stations
    from `shared/address.ts` and folds in the operator test's restatements of
    the verbs.
-8. **The site's pages**, once the message design has placed their route.
 
 ## Left out
 
@@ -432,8 +439,6 @@ Each step is one pull request, shippable alone.
   types from the schemas; Jig does not.
 - **Chapters for contracts no outside reader reads.** A shape inside one
   skill stays documented with that skill.
-- **The site's route and the page table's row.** The message design places
-  them.
 - **What a dispatched session leaves behind**
   ([#1017](https://github.com/jig-harness/jig/issues/1017)). A later
   provisional chapter may cover its closing report once that design defines
