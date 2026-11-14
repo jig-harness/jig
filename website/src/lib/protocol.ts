@@ -66,12 +66,15 @@ export function schemaResource(
   )
     throw new Defect(`Protocol schema ${file} needs a $id`);
   const segments = new URL(schema.$id, SITE_ORIGIN).pathname.split("/");
-  const matches = chapters.filter(
-    (chapter) =>
-      segments.includes(chapter.chapter) &&
-      (segments.includes(`v${chapter.version}`) ||
-        segments.includes(String(chapter.version))),
-  );
+  const matches = chapters.filter((chapter) => {
+    const version = String(chapter.version);
+    return segments.some(
+      (segment, index) =>
+        segment === chapter.chapter &&
+        (segments[index + 1] === version ||
+          segments[index + 1] === `v${version}`),
+    );
+  });
   const chapter = matches.length === 1 ? matches[0] : undefined;
   if (!chapter)
     throw new Defect(

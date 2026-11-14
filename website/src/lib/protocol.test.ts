@@ -34,6 +34,13 @@ test("schema ids place the unchanged schema at its chapter and version", () => {
       { chapter: "mailbox", version: 2 },
     ]),
   ).toThrow();
+  expect(() =>
+    schemaResource(
+      '{"$id":"https://example.com/mailbox/v3/definitions/2/message.json"}',
+      "message.json",
+      [{ chapter: "mailbox", version: 2 }],
+    ),
+  ).toThrow();
 });
 
 test("a chapter's source data link points to its versioned site resource", () => {

@@ -72,6 +72,7 @@ export function protocolResources(): { route: string; text: string }[] {
   if (!existsSync(dir)) return data;
   const schemas = readdirSync(dir)
     .filter((file) => file.endsWith(".json"))
+    .sort()
     .map((file) => {
       const resource = schemaResource(
         read(`plugin/protocol/schemas/${file}`),
