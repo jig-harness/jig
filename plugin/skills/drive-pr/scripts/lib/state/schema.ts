@@ -43,6 +43,7 @@ import { type ParkedItem, isParkedItem } from "./park-frame.ts";
 export { type ParkedItem, isParkedItem } from "./park-frame.ts";
 import type { UnattendedDecision } from "./decisions.ts";
 import type { DriveEvent } from "./events.ts";
+import type { CiAction } from "./ci-actions.ts";
 import type { ArbiterRuling } from "./rulings.ts";
 import type { RecordedLadderVerdict } from "./ladder-verdict-model.ts";
 import { hasUsableOptionalFields } from "./optional-fields.ts";
@@ -398,6 +399,8 @@ export interface DriveState {
   decisions?: UnattendedDecision[];
   /** The drive's self-restarts and re-arms, oldest first (`events.ts`). */
   events?: DriveEvent[];
+  /** Additive CI telemetry; older readers can omit it without changing control state. */
+  ciActions?: CiAction[];
   /** The review arbiter's ruling per thread (`rulings.ts`). */
   rulings?: ArbiterRuling[];
   ladderVerdicts?: RecordedLadderVerdict[];

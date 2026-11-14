@@ -270,7 +270,7 @@ describe("the size cut", () => {
     expect(cut.ledger.resolvedParks?.length).toBeLessThan(4);
   });
 
-  it("drops held outcomes first, then the narrative, never a parked decision", () => {
+  it("drops optional telemetry, then held outcomes and the narrative, never a parked decision", () => {
     const full = sizeOf(bulky());
     const noOutcomes = sizeOf({
       ...bulky(),
@@ -279,13 +279,14 @@ describe("the size cut", () => {
     });
     const first = renderLedger(bulky(), full - 1);
     if ("error" in first) throw new Error(first.error);
-    expect(first.ledger.cut).toEqual(["held items' outcomes"]);
+    expect(first.ledger.cut).toEqual(["CI telemetry", "held items' outcomes"]);
     expect(first.ledger.held.every((h) => h.outcome === undefined)).toBe(true);
     expect(first.ledger.narrative).toHaveLength(20);
 
     const second = renderLedger(bulky(), noOutcomes - 1);
     if ("error" in second) throw new Error(second.error);
     expect(second.ledger.cut).toEqual([
+      "CI telemetry",
       "held items' outcomes",
       "the narrative",
     ]);

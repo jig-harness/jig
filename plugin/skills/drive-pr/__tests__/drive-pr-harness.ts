@@ -1,3 +1,4 @@
+import { RUN_FORGE_FIXTURE } from "./drive-pr-run-forge.ts";
 import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import {
@@ -1005,7 +1006,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
     'pr ready') allowed=' --repo --undo ' ; shift 2 ;;
     'pr edit') allowed=' --repo --add-label --remove-label --body-file --title ' ; shift 2 ;;
     'repo view') allowed=' --json -q --jq ' ; shift 2 ; requires_json=1 ;;
-    'run view') allowed=' --log-failed --repo ' ; shift 2 ;;
+    'run view') allowed=' --log-failed --repo --json ' ; shift 2 ;;
     'run rerun') allowed=' --failed --repo ' ; shift 2 ;;
     *)
       if [[ "$1" == api ]]; then
@@ -1076,7 +1077,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
     case "$command:$json_fields" in
       'pr view:number'|'repo view:owner,name'|'repo view:owner,name,url')
         [[ "$has_positional" -eq 0 ]] || { echo "gh: unexpected selector: $selector" >&2; exit 2; } ;;
-      'run view:'|'run rerun:')
+      'run view:'|'run view:headSha,status,attempt'|'run rerun:')
         [[ "$has_positional" -eq 1 && "$selector" =~ ^[0-9]+$ ]] || { echo "gh: expected a run id, got: $selector" >&2; exit 2; } ;;
       *)
         [[ "$has_positional" -eq 1 && "$selector" == 999 ]] || { echo "gh: expected PR selector 999, got: $selector" >&2; exit 2; } ;;
@@ -1889,27 +1890,7 @@ if [ "\${1:-}" = "api" ] && [ "\${2:-}" = "user" ]; then
   exit 0
 fi
 
-# \`gh run view <id> --log-failed\` answers from \`run-<id>.log\`, failing
-# without one, as for a run whose log cannot be read. \`gh run rerun <id>\`
-# records the id in \`reruns.log\`; with \`rerun-refused\` it is refused the
-# way the forge refuses a run it does not re-run, and otherwise the re-run
-# passes: every failed check on the head reads successful.
-if [ "\${1:-}" = "run" ] && [ "\${2:-}" = "view" ]; then
-  log="$F/run-\${3:-}.log"
-  [ -f "$log" ] || { echo "gh-stub: no log for run \${3:-}" >&2; exit 1; }
-  cat "$log"; exit 0
-fi
-if [ "\${1:-}" = "run" ] && [ "\${2:-}" = "rerun" ]; then
-  printf '%s\\n' "\${3:-}" >> "$F/reruns.log"
-  if [ -f "$F/rerun-refused" ]; then
-    echo "run \${3:-} cannot be rerun; This workflow run cannot be retried" >&2
-    exit 1
-  fi
-  jq '(.check_runs[] | select(.conclusion == "failure")) |= (.conclusion = "success")' "$F/check-runs.json" > "$F/check-runs.json.tmp"
-  mv "$F/check-runs.json.tmp" "$F/check-runs.json"
-  exit 0
-fi
-
+${RUN_FORGE_FIXTURE}
 case "\${1:-}" in
   pr)   emit "$F/pr-view.json"; exit 0 ;;
   repo) emit "$F/repo-view.json"; exit 0 ;;

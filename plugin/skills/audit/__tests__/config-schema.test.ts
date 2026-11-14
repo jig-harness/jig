@@ -421,6 +421,7 @@ describe("the reading skills", () => {
       "drive.codex_bypass": DEFAULT_CODEX_BYPASS,
       "ci.hold_sentinels": specialCiSettings({}).holdSentinels,
       "ci.advisory_checks": specialCiSettings({}).advisoryChecks,
+      "ci.rerun_failed_once": true,
       "drive.codex_pass_args": DEFAULT_CODEX_PASS_ARGS,
       "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "do_item.post_merge_state": DEFAULT_POST_MERGE.state,

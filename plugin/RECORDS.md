@@ -26,6 +26,13 @@ Contents: [the registry and the envelope](#the-registry-and-the-envelope) ·
 
 ## The registry and the envelope
 
+The drive state and drive ledger carry optional `ciActions` telemetry beside
+their control fields: the last 10 retries or charged repairs, with time,
+round, action and at most 1,024 characters of detail each. The driver log
+keeps the full detail. Older readers ignore this top-level field and may
+omit it when they write. It never changes the control-event vocabulary or
+the record version.
+
 Every record below is registered in the
 [records registry](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 (`shared/records/registry.ts`) under the name in its first column, with its

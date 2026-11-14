@@ -124,7 +124,7 @@ Command-line flags, where a script has them, override all three.
   `repository.base_branch`, `issue_tracker.team`, `issue_tracker.jira.site`,
   `issue_tracker.jira.api_base`, `review.repo_slug`,
   `review.repo_label`, `ci.required_checks`, `ci.hold_sentinels`,
-  `ci.advisory_checks`, `ci.log_command`, `docs.root`, `docs.schema`,
+  `ci.advisory_checks`, `ci.rerun_failed_once`, `ci.log_command`, `docs.root`, `docs.schema`,
   `autonomy.max_level`, `autonomy.park_classes`, every `changelog`,
   `code_stats` and `specs` field describe one repository. Set in the user file
   they would apply to every repository on the machine, so the user file
@@ -533,6 +533,7 @@ it. Until then, opt in only to take part in that measurement.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
+| `ci.rerun_failed_once` | boolean | `true` | drive-pr | Before charging a CI-repair pass, retry a failing code check's failed workflow jobs once per head and check name. A second failure on that head uses the repair budget, which also belongs to each head and check. `false` disables this retry independently of `DRIVE_PR_CI_REPAIR_ROUNDS=0`, which disables repairs. The forge must confirm an open, unheld pull request and a completed run on the same head. Held events, unreadable provenance and commit statuses are not retried. Infrastructure failures retain their separate recovery bounds and exit `23`. Counts live in the driver process; a new drive receives fresh allowances. The user file cannot set it |
 | `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the protection and rulesets of the pull request's base, and of the branch its stack lands on; for changelog, of the integration branch | drive-pr, changelog | drive-pr: checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set. changelog (`tag.ts`, `status.ts`): checks that must pass on a releasing commit before its version is tagged, `[]` tagging without any, read from the integration branch's `.config/jig.yaml` only, never from a person's file or the environment. Set, it wins over the branch's rules for both. Unset, and with no check the integration branch's rules require, tagging fails closed: no required checks known. Name only checks that run on the integration branch: one that runs only on pull requests never reports there, and its versions would wait for their tag forever |
 | `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md); the workflow side is [M13's CI hold](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold) |
 | `ci.hold_sentinels` | list of distinct check names | `[]` | drive-pr | Additional held-head checks whose failure means CI is held while `ci.hold_label` is present. The drive also recognises M13's held-head check shape. Held failures spend no repair pass; after the label is removed, the checks are judged normally. Read from the pull request's base branch; only the repository's file sets it |
@@ -1900,6 +1901,7 @@ ci:
   hold_label: ci:hold
   hold_sentinels: []
   advisory_checks: []
+  rerun_failed_once: true
   log_command: bun scripts/ci-log.ts       # {context, target_url} on stdin; prints the failed log, exit 3 when it is gone
   repair_skill: ci-support                 # the skill a CI-repair pass loads
 issue_tracker:

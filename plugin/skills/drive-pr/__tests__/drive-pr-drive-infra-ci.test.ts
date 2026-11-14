@@ -67,7 +67,7 @@ const failed = (name: string): CheckRunFixture => ({
 });
 
 /** The consumer configuration of a repository with required checks and no hold. */
-function noHoldOverlay(dir: string): string {
+function noHoldOverlay(dir: string, retry = true): string {
   const overlay = join(dir, "no-hold.yaml");
   writeFileSync(
     overlay,
@@ -78,6 +78,7 @@ function noHoldOverlay(dir: string): string {
       '  bots: ["review-bot[bot]"]',
       "  reviewer_app: example-review",
       "ci:",
+      `  rerun_failed_once: ${retry}`,
       "  required_checks: [code-quality-and-build, tests, Schema gate]",
       "",
     ].join("\n"),
@@ -88,7 +89,13 @@ function noHoldOverlay(dir: string): string {
 /** Drive a converged head whose two code-scanning checks failed in run 41, with that run's log. */
 async function driveFailedScan(
   log: string,
-  opts: { refused?: boolean; env?: Record<string, string> } = {},
+  opts: {
+    refused?: boolean;
+    persistent?: boolean;
+    delayed?: boolean;
+    retry?: boolean;
+    env?: Record<string, string>;
+  } = {},
 ) {
   const { dir, stateDir } = writeFixture(
     {
@@ -123,12 +130,16 @@ async function driveFailedScan(
   );
   writeFileSync(join(dir, "run-41.log"), log);
   if (opts.refused === true) writeFileSync(join(dir, "rerun-refused"), "");
+  if (opts.persistent === true)
+    writeFileSync(join(dir, "rerun-still-failing"), "");
+  if (opts.delayed === true)
+    writeFileSync(join(dir, "retry-witness-sequence"), "");
   const r = await runDriveIn(
     dir,
     stateDir,
     ["--keep-draft", "--no-head-sync", "--", ...PASS_RUNS],
     undefined,
-    { env: { JIG_OVERLAY: noHoldOverlay(dir), ...opts.env } },
+    { env: { JIG_OVERLAY: noHoldOverlay(dir, opts.retry), ...opts.env } },
   );
   const reruns = existsSync(join(dir, "reruns.log"))
     ? readFileSync(join(dir, "reruns.log"), "utf8").trim().split("\n")
@@ -174,15 +185,47 @@ describe.skipIf(skipLongDriveFixture)(
       expectNoRepairPass(r.stderr);
     });
 
-    it("still spends a repair pass on a failing check whose log prints a code error", async () => {
+    it("retries a code check once without spending a repair pass when it passes", async () => {
       const r = await driveFailedScan(CODE_ERROR, {
+        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+      });
+      exits(r, 0);
+      expect(r.reruns).toEqual(["41"]);
+      expect(r.stderr).toContain("retry 1/1, no repair pass spent");
+      expectNoRepairPass(r.stderr);
+    });
+
+    it("spends a repair pass after the same code check fails its one retry", async () => {
+      const r = await driveFailedScan(CODE_ERROR, {
+        persistent: true,
+        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+      });
+      exits(r, CI_REPAIR_SPENT_EXIT);
+      expect(r.reruns).toEqual(["41"]);
+      expect(r.stderr).toContain("Not an infrastructure failure");
+      expect(r.stderr).toContain("Running CI-repair pass 1/1");
+      expect(r.stderr).toContain("TASK=ci-repair RUNS=[41]");
+    });
+
+    it("waits for a newer completed retry even when the aggregate already reads green", async () => {
+      const r = await driveFailedScan(CODE_ERROR, {
+        delayed: true,
+        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+      });
+      exits(r, 0);
+      expect(r.reruns).toEqual(["41"]);
+      expect(r.stderr).toContain("Waiting for retry of run 41");
+      expectNoRepairPass(r.stderr);
+    });
+
+    it("can disable the code-check retry independently of repairs", async () => {
+      const r = await driveFailedScan(CODE_ERROR, {
+        retry: false,
         env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
       });
       exits(r, CI_REPAIR_SPENT_EXIT);
       expect(r.reruns).toEqual([]);
-      expect(r.stderr).toContain("Not an infrastructure failure");
       expect(r.stderr).toContain("Running CI-repair pass 1/1");
-      expect(r.stderr).toContain("TASK=ci-repair RUNS=[41]");
     });
   },
 );
