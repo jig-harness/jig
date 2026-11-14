@@ -181,6 +181,8 @@ describe("checkClosingReport", () => {
       "commit:XYZ",
       "path:/etc/passwd",
       "path:../outside",
+      "path:C:\\x",
+      "run:not-an-address",
       "path:a/../../b",
       "the whole log",
       "item:",
@@ -192,6 +194,33 @@ describe("checkClosingReport", () => {
 });
 
 describe("closingReportOf", () => {
+  it("masks the exact launch token and bracketed secret values", () => {
+    const token = "0123456789abcdef0123456789abcdef";
+    const read = closingReportOf(
+      JSON.stringify({
+        ...BASE,
+        concluded: `Used ${token} to record it; password=[hunter2] was set.`,
+      }),
+      token,
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.value.concluded).not.toContain(token);
+    expect(read.value.concluded).not.toContain("hunter2");
+  });
+
+  it("refuses a decision over its own byte limit and a null decision", () => {
+    const big = { ...DECISION, alreadyDone: "x".repeat(9000) };
+    const over = closingReportOf(
+      JSON.stringify({ ...BASE, question: QUESTION, decision: big }),
+    );
+    expect(over.ok).toBe(false);
+    const none = closingReportOf(
+      JSON.stringify({ ...BASE, question: QUESTION, decision: null }),
+    );
+    expect(none.ok).toBe(false);
+  });
+
   it("redacts emails and account identifiers before the check", () => {
     const read = closingReportOf(
       JSON.stringify({

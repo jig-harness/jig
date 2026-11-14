@@ -16,7 +16,10 @@
  * Exit codes: 0 recorded; 2 usage, no such record, a token that is not the
  * record's, a drive's record, or a report the check refuses.
  */
-import { closingReportOf } from "../shared/closing-report.ts";
+import {
+  closingReportOf,
+  REPORT_BYTE_LIMIT,
+} from "../shared/closing-report.ts";
 import { recordReport } from "./lib/closing-report-store.ts";
 import { isDrive, isRecordId, readRecord } from "./lib/launches.ts";
 import { sameToken } from "./result.ts";
@@ -42,7 +45,7 @@ function reportMain(
     );
     return 2;
   }
-  const report = closingReportOf(text);
+  const report = closingReportOf(text, token);
   if (!report.ok) {
     console.error(
       `${NAME}: the report was not recorded: ${report.failure.reason}`,
@@ -67,6 +70,30 @@ function reportMain(
   return 0;
 }
 
+/** The first `max` bytes `stream` yields, or fewer when it ends first; the rest is never read. */
+async function readUpTo(
+  stream: ReadableStream<Uint8Array>,
+  max: number,
+): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (size < max) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    size += value.length;
+  }
+  await reader.cancel().catch(() => undefined);
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    all.set(chunk, at);
+    at += chunk.length;
+  }
+  return all.subarray(0, max);
+}
+
 /** `<record> <token> <file|->`: the report's text read, then recorded. */
 export async function reportFileMain(
   id: string,
@@ -75,7 +102,22 @@ export async function reportFileMain(
 ): Promise<number> {
   let text: string;
   try {
-    text = file === "-" ? await Bun.stdin.text() : await Bun.file(file).text();
+    // At most one byte past the limit is read: enough to refuse, never more.
+    const head =
+      file === "-"
+        ? await readUpTo(Bun.stdin.stream(), REPORT_BYTE_LIMIT + 1)
+        : new Uint8Array(
+            await Bun.file(file)
+              .slice(0, REPORT_BYTE_LIMIT + 1)
+              .arrayBuffer(),
+          );
+    if (head.length > REPORT_BYTE_LIMIT) {
+      console.error(
+        `${NAME}: the report was not recorded: the report is over ${REPORT_BYTE_LIMIT} bytes; shorten its text`,
+      );
+      return 2;
+    }
+    text = new TextDecoder().decode(head);
   } catch (error) {
     console.error(
       `${NAME}: the report could not be read from ${file === "-" ? "standard input" : file}: ${error instanceof Error ? error.message : String(error)}`,

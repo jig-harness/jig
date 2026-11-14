@@ -68,7 +68,7 @@ export const EVIDENCE_MAX = 10;
 /** The longest one evidence reference may be: a reference, never contents. */
 const REFERENCE_MAX = 300;
 /** The largest report the command reads: its fields at their limits, and a decision at its own. */
-const REPORT_BYTE_LIMIT = DECISION_BYTE_LIMIT + 8192;
+export const REPORT_BYTE_LIMIT = DECISION_BYTE_LIMIT + 8192;
 
 export interface SuggestedNext {
   step: string;
@@ -95,9 +95,9 @@ const EVIDENCE_FORMS: ReadonlyArray<[string, RegExp]> = [
   // A path inside the repository: relative, with no `..` step out of it.
   [
     "path:<path in the repository>",
-    /^path:(?![/\\])(?!(?:\S*[/\\])?\.\.(?:[/\\]|$))\S+$/,
+    /^path:(?![/\\])(?![A-Za-z]:)(?!(?:\S*[/\\])?\.\.(?:[/\\]|$))\S+$/,
   ],
-  ["run:<CI run address>", /^run:\S+$/],
+  ["run:<CI run address>", /^run:https:\/\/[^\s()<>\\]+$/],
 ];
 
 /** The forms, as a refusal and a prompt name them. */
@@ -153,8 +153,13 @@ function checkQuestionLine(c: Checker, q: unknown): void {
 /** A decision is checked as a framed one, and asks the report's question. */
 function checkDecision(c: Checker, decision: unknown, question: unknown): void {
   const problems = framedDecisionProblems(decision);
+  if (
+    new TextEncoder().encode(JSON.stringify(decision)).length >
+    DECISION_BYTE_LIMIT
+  )
+    problems.push(`$ must be at most ${DECISION_BYTE_LIMIT} bytes`);
   for (const p of problems) c.problems.push(p.replace(/^\$/, "$.decision"));
-  const call = (decision as { call?: { question?: unknown } }).call;
+  const call = (decision as { call?: { question?: unknown } } | null)?.call;
   if (problems.length === 0 && call?.question !== question)
     c.fail("$.question", "must be the decision's call.question");
 }
@@ -211,6 +216,7 @@ export function checkClosingReport(value: unknown): string[] {
  */
 export function closingReportOf(
   text: string,
+  token = "",
 ): Outcome<ClosingReport, "invalid"> {
   if (new TextEncoder().encode(text).length > REPORT_BYTE_LIMIT)
     return failed(
@@ -227,7 +233,10 @@ export function closingReportOf(
     );
   }
   const value = redactStrings(parsed, (text) =>
-    maskCredentials(text, "<redacted>"),
+    maskCredentials(
+      token === "" ? text : text.split(token).join("<redacted>"),
+      "<redacted>",
+    ),
   );
   const problems = checkClosingReport(value);
   return problems.length > 0
