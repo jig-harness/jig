@@ -25,6 +25,15 @@ export class HerdrError extends JigError<"workspace-step-failed"> {
   }
 }
 
+/**
+ * A failed hook's process group could not be confirmed ended, so it may still
+ * be changing the worktree: the claim that excludes another run stays, with
+ * the record of the group, until the group is ended or gone.
+ */
+export class UnendedGroupError extends HerdrError {
+  override name = "UnendedGroupError";
+}
+
 export interface RunResult {
   status: number;
   stdout: string;

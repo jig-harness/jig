@@ -117,3 +117,21 @@ export function dataOf(chapter: Chapter): DataFile {
  */
 export const dataText = (data: DataFile): string =>
   `${JSON.stringify(data, null, 2)}\n`;
+
+/** One value of a chapter, with the table of `file` it comes from. */
+export interface TableRow {
+  readonly table: string;
+  readonly value: DataValue;
+}
+
+/** A chapter's values and the entries it takes, from rows each naming its table and carrying a `name`. */
+export function fromRows(
+  file: string,
+  rows: () => readonly TableRow[],
+): Pick<Chapter, "values" | "takes"> {
+  return {
+    values: () => rows().map((r) => r.value),
+    takes: () =>
+      rows().map((r) => `${file}#${r.table}.${String(r.value.name)}`),
+  };
+}

@@ -531,7 +531,8 @@ listed issue with [Plan](#plan-an-existing-issue).
 
 Exit `0`: it ran (read every line: what it lists is the result, and a
 report without `--yes` may still name a store problem). Exit `1`: a store
-that fails closed or a facet with no store kept it from reading anything;
+that fails closed (not one that only cannot file some issue types) or a
+facet with no store kept it from reading anything;
 with `--yes`, more than half of the issues that must carry a facet lacking
 it kept it from moving any (a store that stopped answering, not a pile of
 bad filings, so report it rather than move them by hand); a read failed;

@@ -399,7 +399,10 @@ development and shipped as a version.
   the failure ledger (`dispatch/lib/failures.ts`): an action backs off
   from its second failure in a row, and a row at `failures.notify_after`
   failures is notified once, then on the same cadence; a success or the
-  action leaving the plan removes it.
+  action leaving the plan removes it. A repository's turn and the tick's
+  rows are notified once per cause their reasons name, every scope that
+  cause fails in the one notice (`failures.group`,
+  `dispatch/lib/failure-groups.ts`).
 - **Reasoned.** A dispatched interactive session records how it ended with
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another

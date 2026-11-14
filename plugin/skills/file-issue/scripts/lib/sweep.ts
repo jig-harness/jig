@@ -145,13 +145,17 @@ export function sweepComment(issue: IncompleteIssue, move = true): string {
     : `${sweepMarker(issue)}\nThe weekly issue-fields sweep found this issue incomplete and left it where it is.${lacks}${retired}`;
 }
 
-/** Why the stores the tracker reported keep the sweep from moving anything, or `null`. */
+/**
+ * Why the stores the tracker reported keep the sweep from moving anything,
+ * or `null`. A failure that stops only filing some issue types (its
+ * `fails`) leaves the sweep's changes to existing issues alone.
+ */
 function storeProblems(stores: FacetStores): string | null {
   const problems: string[] = [];
   for (const f of stores.facets) {
     if (f.problem !== undefined)
       problems.push(`${f.facet}: ${f.problem}`.slice(0, 300));
-    else if (f.health?.status === "failed")
+    else if (f.health?.status === "failed" && f.health.fails === undefined)
       problems.push(`${f.facet}: ${f.health.error}`.slice(0, 300));
     else if (f.detection?.status === "failed")
       problems.push(

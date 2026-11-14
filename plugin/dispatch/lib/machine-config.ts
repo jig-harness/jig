@@ -34,6 +34,7 @@
  *   backoff_max: 1h
  *   notify_after: 3
  *   rerun_died: 1      # 0 runs no follow-up again after a death or an unwritten result
+ *   group: cause            # or scope: one notice per failing scope
  * dashboard:
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
@@ -61,7 +62,11 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { DEFAULT_DISPATCHER_SHARE } from "../../shared/outbound/budget.ts";
 import { load } from "../../shared/yaml.ts";
 import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
-import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
+import {
+  FAILURE_DEFAULTS,
+  type FailureGrouping,
+  type FailureSettings,
+} from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
@@ -202,7 +207,13 @@ const TOP_KEYS = [
   "preflight",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
-const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after", "rerun_died"];
+const FAILURES_KEYS = [
+  "backoff",
+  "backoff_max",
+  "notify_after",
+  "rerun_died",
+  "group",
+];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -824,12 +835,23 @@ function failures(value: unknown): Checked<FailureSettings> {
     return invalid("failures.rerun_died must be 0 or 1");
   if (backoffMaxMs.value < backoffMs.value)
     return invalid("failures.backoff_max must be at least failures.backoff");
+  const group = failureGrouping(value.group);
+  if (!group.ok) return group;
   return ok({
     backoffMs: backoffMs.value,
     backoffMaxMs: backoffMaxMs.value,
     notifyAfter: notifyAfter.value,
     rerunDied,
+    group: group.value,
   });
+}
+
+/** `failures.group`: `cause` when absent. */
+function failureGrouping(value: unknown): Checked<FailureGrouping> {
+  if (value === undefined || value === null) return ok("cause");
+  return value === "cause" || value === "scope"
+    ? ok(value)
+    : invalid(`failures.group must be cause or scope: ${String(value)}`);
 }
 
 /** The machine file's `failures` settings, the defaults where it has none. */

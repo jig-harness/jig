@@ -95,7 +95,12 @@ export interface FailureSettings {
   notifyAfter: number;
   /** `failures.rerun_died`: the runs again a follow-up whose pass died or could not record its result is owed, `0` or `1`. */
   rerunDied: number;
+  /** `failures.group`: this host's own failing rows told one notice per cause (`cause`, also when absent) or one per scope (`scope`). */
+  group?: FailureGrouping;
 }
+
+/** How this host's own failing rows are told: one notice per cause, or one per scope. */
+export type FailureGrouping = "cause" | "scope";
 
 /**
  * The defaults. A single failure waits for nothing, since most are a
@@ -112,6 +117,7 @@ export const FAILURE_DEFAULTS: FailureSettings = {
   backoffMaxMs: 60 * 60_000,
   notifyAfter: 3,
   rerunDied: 1,
+  group: "cause",
 };
 
 /** The longest reason a row keeps. */
