@@ -1,5 +1,5 @@
 import { ItemTitle, RepoLink } from "./pr.tsx";
-import { Work } from "./work.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * The log's rows. TanStack Table holds the columns and which rows are open;
  * TanStack Virtual keeps only what is near the window in the document, measuring
@@ -54,11 +54,12 @@ const columns = helper.columns([
     id: "target",
     cell: ({ row }) => (
       <span className="cell-tgt">
-        <Work
+        <WorkLead
           repo={row.original.repo}
           target={row.original.target}
           url={row.original.url}
           title={row.original.title}
+          links={row.original.links}
         />
         <RepoLink repo={row.original.repo} url={row.original.url} />
         <StageChip
@@ -100,6 +101,13 @@ function RowBody({ view }: { view: RowView }) {
         />
       </div>
       <Evidence rows={view.evidence} />
+      {view.target === "" || view.repo === "host" ? null : (
+        <LinkedDetail
+          repo={view.repo}
+          target={view.target}
+          links={view.links}
+        />
+      )}
       {view.noLink === null ? null : (
         <div className="goto">
           <span className="noLink">{view.noLink}</span>

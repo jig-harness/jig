@@ -46,30 +46,73 @@ function onOwnSpace(area: Element, target: EventTarget): boolean {
 
 type Point = { x: number; y: number };
 
-/** Whether the pointer moved past a tap's slop between press and release. */
-function moved(from: Point | null, to: Point): boolean {
-  return (
-    from !== null && Math.hypot(to.x - from.x, to.y - from.y) > TAP_SLOP_PX
-  );
+/** Where a pointer or mouse event happened. */
+function point(event: { clientX: number; clientY: number }): Point {
+  return { x: event.clientX, y: event.clientY };
+}
+
+/** Whether the pointer is farther from where it was pressed than a tap's slop. */
+function beyondSlop(from: Point, to: Point): boolean {
+  return Math.hypot(to.x - from.x, to.y - from.y) > TAP_SLOP_PX;
+}
+
+/** What one press-to-release gesture has done so far. */
+interface Gesture {
+  from: Point | null;
+  dragged: boolean;
+  /** Whether the click before this one toggled. */
+  toggled: boolean;
+}
+
+/** Ends the gesture at `to`: whether the pointer left the tap's slop at any point of it. */
+function wasDrag(gesture: Gesture, to: Point): boolean {
+  const { from, dragged } = gesture;
+  gesture.from = null;
+  gesture.dragged = false;
+  return dragged || (from !== null && beyondSlop(from, to));
+}
+
+/** Whether a click is a later one of a double or triple click, which selects text: the first click's toggle is undone, so the card keeps its state. */
+function repeatedClick(
+  gesture: Gesture,
+  detail: number,
+  toggle: () => void,
+): boolean {
+  const first = gesture.toggled;
+  gesture.toggled = false;
+  if (detail <= 1) return false;
+  if (detail === 2 && first) toggle();
+  return true;
 }
 
 /** The handlers that let a whole area toggle, the area's own controls aside. */
 export function useTapToggle(toggle: (() => void) | null) {
-  const pressed = useRef<Point | null>(null);
+  const gesture = useRef<Gesture>({
+    from: null,
+    dragged: false,
+    toggled: false,
+  });
   return {
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
-      pressed.current = { x: event.clientX, y: event.clientY };
+      gesture.current.from = { x: event.clientX, y: event.clientY };
+      gesture.current.dragged = false;
+    },
+    onPointerMove: (event: PointerEvent<HTMLElement>) => {
+      const { from } = gesture.current;
+      if (from !== null && beyondSlop(from, point(event)))
+        gesture.current.dragged = true;
     },
     onPointerCancel: () => {
-      pressed.current = null;
+      gesture.current.from = null;
+      gesture.current.dragged = false;
     },
     onClick: (event: MouseEvent<HTMLElement>) => {
-      const from = pressed.current;
-      pressed.current = null;
+      const drag = wasDrag(gesture.current, point(event));
       if (toggle === null || event.defaultPrevented) return;
+      if (repeatedClick(gesture.current, event.detail, toggle)) return;
       const area = event.currentTarget;
-      if (!onOwnSpace(area, event.target) || selectingIn(area)) return;
-      if (moved(from, { x: event.clientX, y: event.clientY })) return;
+      if (!onOwnSpace(area, event.target) || selectingIn(area) || drag) return;
+      gesture.current.toggled = true;
       toggle();
     },
   };

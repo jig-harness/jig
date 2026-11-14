@@ -243,6 +243,23 @@ describe("the card with gutter", () => {
         ).not.toBe("");
         expect(await expanded(card)).toBe("false");
 
+        // A selection made without leaving the tap's slop still holds it shut.
+        await page.mouse.click(1, 1);
+        await page.mouse.move(title.x + 4, title.y + title.height / 2);
+        await page.mouse.down();
+        await page.evaluate(() => {
+          const node = document.querySelector(".itemTitle");
+          if (node === null) throw new Error("the title is shown");
+          window.getSelection()?.selectAllChildren(node);
+        });
+        await page.mouse.up();
+        expect(await expanded(card)).toBe("false");
+
+        // A double-click selects a word and leaves the card as it was.
+        await page.mouse.click(1, 1);
+        await page.mouse.dblclick(title.x + 4, title.y + title.height / 2);
+        expect(await expanded(card)).toBe("false");
+
         await page.mouse.click(1, 1);
         await card.focus();
         await page.keyboard.press("o");

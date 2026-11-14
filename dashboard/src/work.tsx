@@ -130,7 +130,9 @@ function StandingBody({ standing }: { standing: Standing }) {
 }
 
 /** The popover's list of linked work: each with its icon and link. */
-function LinkedLine({ linked }: { linked: LinkedWork }) {
+function LinkedLine({ repo, linked }: { repo: string; linked: LinkedWork }) {
+  const { line } = useContext(StandingSource);
+  const forges = forgesFor(line);
   return (
     <>
       <p className="sm wLinked">
@@ -138,23 +140,28 @@ function LinkedLine({ linked }: { linked: LinkedWork }) {
       </p>
       {linked.state === "some" ? (
         <ul className="wLinkedList">
-          {linked.all.map((ref) => (
-            <li key={ref.target}>
-              <Glyph of={ref.pr ? FORGE_ICONS.open : WORK_KIND_ICONS.issue} />{" "}
-              {ref.url === null ? (
-                <span className="m">{ref.target}</span>
-              ) : (
-                <a
-                  className="m"
-                  href={ref.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  {ref.target}
-                </a>
-              )}
-            </li>
-          ))}
+          {linked.all.map((ref) => {
+            const url =
+              ref.url ??
+              (forges === null ? null : derivedLink(repo, ref.target, forges));
+            return (
+              <li key={ref.target}>
+                <Glyph of={ref.pr ? FORGE_ICONS.open : WORK_KIND_ICONS.issue} />{" "}
+                {url === null ? (
+                  <span className="m">{ref.target}</span>
+                ) : (
+                  <a
+                    className="m"
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    {ref.target}
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </>
@@ -226,7 +233,9 @@ function Identity({ shape }: { shape: Shape }) {
             </div>
           ))}
         </dl>
-        {shape.linked === null ? null : <LinkedLine linked={shape.linked} />}
+        {shape.linked === null ? null : (
+          <LinkedLine repo={shape.repo} linked={shape.linked} />
+        )}
         <p className="wTools">
           {shape.url === null ? (
             <span className="mut">{shape.noLinkWords}</span>
@@ -273,7 +282,7 @@ function prShape(
     kind: `${where.name === null ? "Pull request" : `${where.name} pull request`}, ${word}`,
     icon: FORGE_ICONS[forge],
     tone: `st-${forge.replace(" ", "-")}`,
-    name: `${props.target}: ${standing?.label ?? word}`,
+    name: `${props.target}: ${word}${standing === null ? "" : `, ${standing.label}`}`,
     facts: [
       { k: "standing", v: word },
       { k: "number", v: `#${props.pr}` },
@@ -360,7 +369,7 @@ function Item(props: WorkProps & { lead: boolean }) {
 const HOST_REPO = "host";
 
 /** A card's lead identity: the pull request or item the card is about; an account as plain text, and no target as nothing. */
-export function Work(props: WorkProps) {
+function Work(props: WorkProps) {
   if (props.target === "" || props.repo === HOST_REPO)
     return props.target === "" ? null : (
       <span className="tgt">{props.target}</span>

@@ -5,7 +5,10 @@
  * the same repository's tracker (`shared/item-links.ts`). A record written
  * before the dispatcher kept links reads the same way.
  */
-import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import type {
+  LineLinks,
+  LineSnapshot,
+} from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import {
   type ItemBases,
   itemBases,
@@ -23,6 +26,8 @@ export interface Forges {
   titles: Map<string, string>;
   /** The tracker each repository's configuration names, as the line holds it. */
   trackers: Map<string, Tracker>;
+  /** The work each target is linked to as the line holds it, by `<repo> <target>`. */
+  links: Map<string, LineLinks>;
 }
 
 const PULL_URL = /^(.*\/)([^/]+\/[^/]+)\/pull\/\d+$/;
@@ -32,6 +37,7 @@ interface Linked {
   target: string;
   url: string | null;
   title: string | null;
+  links?: LineLinks | undefined;
 }
 
 /** Every target the line names, with its repository, link and title. */
@@ -55,6 +61,7 @@ export function forgesOf(line: LineSnapshot | null): Forges {
     items: new Map(),
     titles: new Map(),
     trackers: new Map(),
+    links: new Map(),
   };
   if (line === null) return forges;
   for (const r of line.repos)
@@ -70,6 +77,9 @@ export function forgesOf(line: LineSnapshot | null): Forges {
   for (const x of linked)
     if (x.title !== null && !forges.titles.has(`${x.repo} ${x.target}`))
       forges.titles.set(`${x.repo} ${x.target}`, x.title);
+  for (const x of linked)
+    if (x.links !== undefined && !forges.links.has(`${x.repo} ${x.target}`))
+      forges.links.set(`${x.repo} ${x.target}`, x.links);
   return forges;
 }
 
