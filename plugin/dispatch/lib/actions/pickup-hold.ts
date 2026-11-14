@@ -198,6 +198,20 @@ function stoppedHold(
 }
 
 /**
+ * The question an ended pickup left for a person, or `null`: none after
+ * `done` or a rate-limit wait, else the pass's trailing question, or for a
+ * failed pass the question of its framed decision. Question planning and
+ * the release of unclaimed members read this one policy.
+ */
+export function endedQuestion(r: ReadRecord): string | null {
+  if (r.result === "done" || r.result === "waits") return null;
+  return (
+    questionOf(r.state) ??
+    (r.result === "failed" ? (r.framed?.decision.call.question ?? null) : null)
+  );
+}
+
+/**
  * Whether `item` is a member an ended batch pickup never claimed while it
  * claimed a sibling: the pass worked its claimed members, so this one is
  * no longer its. A record that claimed none, or that only a legacy
@@ -208,11 +222,8 @@ function leftUnclaimed(r: ReadRecord, item: string): boolean {
   const { record } = r;
   const members = record.batchItems?.map((i) => i.key) ?? [];
   const claimed = record.claimedItems ?? [];
-  const asked =
-    questionOf(r.state) !== null ||
-    (r.result === "failed" && r.framed !== undefined);
   return (
-    !asked &&
+    endedQuestion(r) === null &&
     members.length > 1 &&
     claimed.some((key) => members.includes(key)) &&
     !claimed.includes(item)

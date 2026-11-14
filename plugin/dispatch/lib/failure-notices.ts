@@ -23,7 +23,7 @@
  * their cause (`failure-groups.ts`): one notice per cause, naming every
  * scope it fails and since when, so one fault is not told once for each
  * repository and tick scope it touches. `failures.group: scope` tells each
- * row on its own. Either way each row backs off and clears as its own.
+ * row on its own. Either way each row counts and clears as its own.
  */
 import { resolve } from "node:path";
 import { stateRoot } from "../receipts.ts";
@@ -163,7 +163,7 @@ function groupCause(cause: RowCause, members: readonly FailureRow[]): Action {
     notice: failingNotice(HOST_NOTICE, groupIdentity(cause), [
       `This host's own turns have been failing since ${since}, all with one cause: ${words}. Each scope it fails:`,
       ...scopes.map((s) => `- ${s}`),
-      `Each scope backs off and clears on its own; this notice retires once none of them fails for this cause. ${RECEIPT}`,
+      `Each scope counts and clears on its own; this notice retires once none of them fails for this cause. ${RECEIPT}`,
     ]),
   };
 }

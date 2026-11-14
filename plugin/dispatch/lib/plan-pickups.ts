@@ -37,6 +37,7 @@ import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
   endedHow,
+  endedQuestion,
   holdingRecords,
   pickupClaimed,
   type PickupHold,
@@ -51,7 +52,6 @@ import {
 } from "./launches.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
-import { questionOf } from "./session.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
@@ -457,18 +457,8 @@ function questionAsked(
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
-  if (
-    latest === undefined ||
-    latest.result === "done" ||
-    latest.result === "waits"
-  )
-    return null;
-  // A pass that framed its decision asks its question there, whether or not it also ended on a question line.
-  const question =
-    questionOf(latest.state) ??
-    (latest.result === "failed"
-      ? (latest.framed?.decision.call.question ?? null)
-      : null);
+  if (latest === undefined) return null;
+  const question = endedQuestion(latest);
   if (question === null) return null;
   const { record } = latest;
   const reason = `the pickup stopped on a question for a person: ${question}`;

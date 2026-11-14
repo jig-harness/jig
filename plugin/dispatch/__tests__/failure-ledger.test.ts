@@ -248,11 +248,17 @@ describe("jig dispatch tells a person about a repository whose turn keeps failin
     const w = fixture(CONFIG);
     w.setPrs("open", [openPr(7, "feature/7")]);
     writeFileSync(join(w.dir, "prs-open-fail"), "");
-    for (const _ of [1, 2, 3]) expect(failing(await tick(w, 1))).toEqual([]);
+    const hostNotices = (r: TickReceipt) =>
+      (repo(r)?.notifications ?? []).filter((n) =>
+        ["host-failing", "repository-failing", "ticks-failing"].includes(
+          n.cause,
+        ),
+      );
+    // Below the threshold nothing is delivered, grouped or not.
+    for (const _ of [1, 2, 3])
+      expect(hostNotices(await tick(w, 1))).toEqual([]);
     const told = await tick(w, 1);
-    const host = (repo(told)?.notifications ?? []).filter((n) =>
-      ["host-failing", "repository-failing", "ticks-failing"].includes(n.cause),
-    );
+    const host = hostNotices(told);
     expect(host).toMatchObject([{ cause: "host-failing", outcome: "sent" }]);
     const key = host[0]?.key ?? "";
     expect(key).toBe("host forge failing");
