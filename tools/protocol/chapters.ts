@@ -13,7 +13,9 @@
  */
 import type { Chapter, Withdrawn } from "./chapter.ts";
 import { DRIVE_EXITS } from "./chapters/drive-exits.ts";
+import { MAILBOX } from "./chapters/mailbox.ts";
+import { PR_LABELS } from "./chapters/pr-labels.ts";
 
-export const CHAPTERS: readonly Chapter[] = [DRIVE_EXITS];
+export const CHAPTERS: readonly Chapter[] = [DRIVE_EXITS, MAILBOX, PR_LABELS];
 
 export const WITHDRAWN: readonly Withdrawn[] = [];

@@ -34,6 +34,8 @@ any language. These files describe the plugin release they ship in.
 | Chapter | What it covers | Version | Status | Data file |
 | --- | --- | --- | --- | --- |
 | [Drive end states and exit codes](drive-exits.md) | How a drive, or one round of it, ended: each state and the exit code `drive-status.ts` and `drive.ts` report it with. | 1 | stable | [data/drive-exits.json](data/drive-exits.json) |
+| [The drive mailbox](mailbox.md) | What a person or a tool may tell a running drive, and how the drive answers: the messages, directives and acknowledgements in a working tree's mailbox files. | 1 | stable | [data/mailbox.json](data/mailbox.json) |
+| [Pull-request labels Jig writes and reads](pr-labels.md) | The labels that show where a pull request's drive or follow-up stands, and the labels a person adds to tell the dispatcher what to do with it. | 1 | stable | [data/pr-labels.json](data/pr-labels.json) |
 
 <!-- /protocol:generated -->
 
