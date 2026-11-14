@@ -164,6 +164,20 @@ describe("the comparison with the integration branch", () => {
     const withdrawn = withBehaviour(null, "tombstone");
     const second = scratchRepo([base], [withdrawn]);
     expect(check(second, [withdrawn]).problems).toEqual([]);
+
+    // A tombstone label does not authorise publishing a new active exit.
+    const relabelled = withBehaviour(24, "tombstone");
+    const third = scratchRepo([base], [relabelled]);
+    expect(check(third, [relabelled]).problems).toEqual([
+      'plugin/protocol/data/fixture.json: the value name "ALPHA", code 1 changed its exit from 0 to 24',
+    ]);
+
+    // A value the base already withdrew keeps every field it had.
+    const revived = withBehaviour(5, "tombstone");
+    const fourth = scratchRepo([withdrawn], [revived]);
+    expect(check(fourth, [revived]).problems).toEqual([
+      'plugin/protocol/data/fixture.json: the value name "ALPHA", code 1 changed its exit from null to 5',
+    ]);
   });
 
   test("fails a field that is new and identifies a value, which would let two values share the base's identity", () => {

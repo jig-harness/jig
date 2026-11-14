@@ -326,27 +326,42 @@ function identityProblems(view: ValueView): string[] {
 
 /**
  * Every other published field of a value still listed is what a reader
- * branches on: changing one the base gave it is a break, except a withdrawal
- * to a tombstone.
+ * branches on: changing one the base gave it is a break. A withdrawal to a
+ * tombstone is the one exception, and only as a withdrawal: the value was
+ * not a tombstone in the base, and each field it changes is its `kind` or
+ * is emptied to null (a withdrawn value asserts nothing a reader branches
+ * on). A value the base already withdrew keeps every field it had.
  */
 function behaviourProblems(view: ValueView): string[] {
   const out: string[] = [];
   for (const [k, v] of view.after) {
     const self = view.before.get(k);
-    if (self === undefined || v.kind === TOMBSTONE) continue;
-    for (const [field, spec] of Object.entries(view.base.fields))
-      if (
-        !spec.identifies &&
-        field !== "meaning" &&
-        self[field] !== undefined &&
-        self[field] !== (v[field] ?? null)
-      )
-        out.push(
-          `the value ${view.show(v)} changed its ${field} from ${JSON.stringify(self[field])} to ${JSON.stringify(v[field] ?? null)}`,
-        );
+    if (self === undefined) continue;
+    const withdrawing = v.kind === TOMBSTONE && self.kind !== TOMBSTONE;
+    for (const [field, spec] of changedFields(view.base, self, v)) {
+      if (withdrawing && withdrawalMay(field, spec, v)) continue;
+      out.push(
+        `the value ${view.show(v)} changed its ${field} from ${JSON.stringify(self[field])} to ${JSON.stringify(v[field] ?? null)}`,
+      );
+    }
   }
   return out;
 }
+
+/** The published, non-identifying fields of a value that differ from the base's. */
+function changedFields(base: DataFile, self: DataValue, v: DataValue) {
+  return Object.entries(base.fields).filter(
+    ([field, spec]) =>
+      !spec.identifies &&
+      field !== "meaning" &&
+      self[field] !== undefined &&
+      self[field] !== (v[field] ?? null),
+  );
+}
+
+/** What a withdrawal may change: the `kind`, or a nullable field emptied to null. */
+const withdrawalMay = (field: string, spec: FieldSpec, v: DataValue) =>
+  field === "kind" || (spec.nullable && (v[field] ?? null) === null);
 
 /** The meaning of a value still listed, taken by another. */
 function meaningProblems(view: ValueView): string[] {
