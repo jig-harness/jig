@@ -268,11 +268,11 @@ export const TRACKER: RecordKind[] = [
     medium: "tracker",
     owner: "skills/do-item/scripts/lib/claim-marker.ts",
     at: "a comment on an item a claim started, where `do_item.claim_marker` is set",
-    markers: ["jig-claim", "jig-claim-data"],
+    markers: ["jig-claim", "jig-claim-data", "jig-claim-outcome"],
     version: 1,
     key: CLAIM_MARKER_KEY,
     meaning:
-      "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins.",
+      "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing.",
   },
   {
     name: "tracker-related",

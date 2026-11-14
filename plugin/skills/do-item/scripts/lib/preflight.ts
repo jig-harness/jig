@@ -29,11 +29,18 @@ import {
 import type { ClaimResult } from "./claim.ts";
 import { doItemSection } from "./overlay.ts";
 
-/** The variable that bounds the command, in seconds. */
-export const PREFLIGHT_TIMEOUT_ENV = "JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC";
-export const DEFAULT_PREFLIGHT_TIMEOUT_SEC = 60;
-/** The exit code that refuses with a reason on standard output. */
-export const PREFLIGHT_REFUSAL_EXIT = 3;
+import {
+  DEFAULT_PREFLIGHT_TIMEOUT_SEC,
+  PREFLIGHT_REFUSAL_EXIT,
+  PREFLIGHT_TIMEOUT_ENV,
+} from "../../../../shared/repo-commands.ts";
+
+// The command's deadline and refusal exit live in the table of repository commands.
+export {
+  DEFAULT_PREFLIGHT_TIMEOUT_SEC,
+  PREFLIGHT_REFUSAL_EXIT,
+  PREFLIGHT_TIMEOUT_ENV,
+};
 const FIELD = "do_item.preflight_command";
 
 /** The `do_item` section holds a preflight setting that is not a command. */

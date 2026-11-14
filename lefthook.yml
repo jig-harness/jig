@@ -26,6 +26,9 @@ pre-commit:
       glob:
         - "tools/protocol/**"
         - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
+        - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
+        - "plugin/shared/pr-labels/projection.ts"
+        - "plugin/shared/repo-commands.ts"
         - "plugin/shared/records/registry*.ts"
         - "plugin/shared/records/not-records.ts"
         - "plugin/shared/records/envelope.ts"

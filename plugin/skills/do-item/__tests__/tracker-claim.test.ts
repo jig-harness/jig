@@ -20,6 +20,7 @@ import { type ClaimTracker, claimIssue } from "../scripts/lib/claim.ts";
 import {
   claimMarkerBody,
   readClaimMarker,
+  readClaimOutcome,
 } from "../scripts/lib/claim-marker.ts";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 import {
@@ -553,12 +554,18 @@ describe("tracker.ts claim", () => {
     expect(
       readClaimMarker((comment as string).slice("TrackerComment ".length)),
     ).toMatchObject({ session: "session-1", claimant: "factory" });
-    // The marker comes first, then the claim's own writes.
-    expect(out.writes).toEqual([
+    // The marker comes first, then the claim's own writes, then its outcome.
+    expect(out.writes.slice(0, 3)).toEqual([
       comment as string,
       "TrackerAssign",
       "TrackerAddLabels",
     ]);
+    expect(out.writes).toHaveLength(4);
+    expect(
+      readClaimOutcome(
+        (out.writes[3] as string).slice("TrackerComment ".length),
+      ),
+    ).toMatchObject({ outcome: "claimed" });
   });
 
   it("refuses with exit 3, writing nothing to the item, when another claim's marker is earlier", async () => {
@@ -587,11 +594,17 @@ describe("tracker.ts claim", () => {
       why: "marker",
     });
     expect(out.stderr).toContain("another claim's marker on #5 is earlier");
-    // Its own marker posted, then withdrawn; the item untouched.
+    // Its own marker posted, its release recorded, then the marker withdrawn; the item untouched.
     expect(out.writes.map((w) => w.split(" ")[0])).toEqual([
+      "TrackerComment",
       "TrackerComment",
       "TrackerDeleteComment",
     ]);
+    expect(
+      readClaimOutcome(
+        (out.writes[1] as string).slice("TrackerComment ".length),
+      ),
+    ).toMatchObject({ outcome: "released" });
   });
 
   it("refuses with exit 3, writing nothing, when its marker cannot be posted", async () => {
