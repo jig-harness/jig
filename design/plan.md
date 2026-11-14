@@ -1399,7 +1399,8 @@ per step:
   Validate its weekly job through the installed command before starting
   the later kinds. Worktree collection stays disabled until this
   integration, except for a worktree Orca manages, which `jig gc` collects
-  through Orca.
+  through Orca, and a worktree an agent tool makes under the clone's
+  `.claude/worktrees/`, which it collects with git.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
