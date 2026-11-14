@@ -119,7 +119,14 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
     );
   };
   forge("MERGED");
-  writeFakeProgram(join(bin, "lsof"), "#!/bin/sh\nexit 1\n");
+  /** The fake `lsof`, finding no holder after writing `warnings` to standard error. */
+  const lsof = (warnings = ""): void => {
+    writeFakeProgram(
+      join(bin, "lsof"),
+      `#!/bin/sh\ncat >&2 <<'WARNINGS'\n${warnings}WARNINGS\nexit 1\n`,
+    );
+  };
+  lsof();
   const machine = {
     repositories: [
       {
@@ -139,7 +146,7 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
     join(state, "marking-since"),
     `${new Date(Date.now() - 30 * DAY_MS).toISOString()}\n`,
   );
-  return { root, repo, tree, env, command, forge };
+  return { root, repo, tree, env, command, forge, lsof };
 }
 
 /** Every entry of the worktree and its git directory, eight days old. */
@@ -289,6 +296,24 @@ describe.skipIf(
     );
     expect(existsSync(join(ahead.tree, "more.txt"))).toBe(true);
   }, 120_000);
+
+  test("an lsof warning about a mount outside the tree leaves it proven idle; one about the tree's own mount keeps it unverified", () => {
+    const f = setup();
+    idle(f);
+    const warning = (mount: string) =>
+      `lsof: WARNING: can't stat() fuse.portal file system ${mount}\n      Output information may be incomplete.\n`;
+    f.lsof(
+      `${warning("/run/user/1000/doc")}${warning("/run/docker/netns/default")}`,
+    );
+    expect(line(gc(f, []))).toMatchObject({ outcome: "would-collect" });
+    f.lsof(`${warning("/run/user/1000/doc")}${warning(f.root)}`);
+    expect(line(gc(f, []))).toMatchObject({
+      outcome: "unverified",
+      reason: expect.stringContaining(
+        "process holders could not be enumerated",
+      ),
+    });
+  }, 60_000);
 
   test("one the idle guard has not passed is kept", () => {
     const f = setup();

@@ -11,7 +11,7 @@ import { delimiter, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { gcGit, gitEnvironment } from "../git.ts";
-import { ancestry } from "../kinds/worktree-git.ts";
+import { ancestry, onlyUnrelatedMountWarnings } from "../kinds/worktree-git.ts";
 import {
   classifyIgnored,
   detachedSource,
@@ -590,4 +590,37 @@ test("the deadline expiring mid-traversal stops the walk of a collapsed director
     ok: true,
     value: { rebuildable: ["website/"] },
   });
+});
+
+test("lsof's warnings set aside only mounts that neither hold the worktree nor lie inside it", () => {
+  const tree = ["/home/dev/trees/app", "/data/trees/app"];
+  const warning = (mount: string) =>
+    `lsof: WARNING: can't stat() fuse.portal file system ${mount}\n      Output information may be incomplete.\n`;
+  const unrelated = (stderr: string) =>
+    onlyUnrelatedMountWarnings(stderr, tree);
+  expect(unrelated(warning("/run/user/1000/doc"))).toBe(true);
+  expect(
+    unrelated(
+      "lsof: WARNING: can't stat() nsfs file system /run/docker/netns/default\r\n",
+    ),
+  ).toBe(true);
+  expect(unrelated(warning("/home/dev/trees/application"))).toBe(true);
+  // The worktree's own mount, as given or as resolved, or a mount inside it.
+  expect(unrelated(warning("/home/dev"))).toBe(false);
+  expect(unrelated(warning("/"))).toBe(false);
+  expect(unrelated(warning("/data/trees/app"))).toBe(false);
+  expect(unrelated(warning("/home/dev/trees/app/node_modules/.cache"))).toBe(
+    false,
+  );
+  // A name lsof escaped, a stray continuation line, any other line.
+  expect(unrelated(warning("/run/user/1000/my\\040doc"))).toBe(false);
+  expect(unrelated("      Output information may be incomplete.\n")).toBe(
+    false,
+  );
+  expect(
+    unrelated(
+      `${warning("/run/user/1000/doc")}lsof: WARNING: can't stat(/home/dev/trees/app): Permission denied\n`,
+    ),
+  ).toBe(false);
+  expect(unrelated("lsof: no pwd entry for UID 1001\n")).toBe(false);
 });
