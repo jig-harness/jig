@@ -104,7 +104,11 @@ function keptPosition(
   file: string | undefined,
   move: boolean,
 ):
-  | { from: { after: string | null }; save: (report: SweepReport) => void }
+  | {
+      path: string;
+      from: { after: string | null };
+      save: (report: SweepReport) => string | null;
+    }
   | undefined {
   if (file === undefined) return undefined;
   if (move) {
@@ -117,16 +121,24 @@ function keptPosition(
   const read = readPosition(path);
   if (read.warning !== null) console.error(`warning: ${read.warning}`);
   return {
+    path,
     from: { after: read.after },
+    // The failure to save, so the report still prints.
     save: (report) => {
       // Only a run that read and could write moves the position.
       if (
-        report.position !== null &&
-        report.apply &&
-        report.read &&
-        report.storeProblem === null
+        report.position === null ||
+        !report.apply ||
+        !report.read ||
+        report.storeProblem !== null
       )
+        return null;
+      try {
         writePosition(path, report.position.next);
+        return null;
+      } catch (err) {
+        return `the read position ${path} could not be saved (${(err as Error).message}); the next run starts from the position it read`;
+      }
     },
   };
 }
@@ -144,7 +156,30 @@ async function check(argv: string[]): Promise<number> {
   });
   const overlay = readOverlay();
   const settings = sweepSettings(overlay);
-  const position = keptPosition(values.position, settings.move);
+  if (values.position === undefined || settings.move)
+    return checkRun(values, overlay, settings, values.position);
+  // Two runs sharing a position file would overwrite each other's progress.
+  const path = resolve(values.position);
+  const locked = await withFileLock(
+    path,
+    () => checkRun(values, overlay, settings, path),
+    { root: dirname(path), name: "sweep-position", waitMs: 0 },
+  );
+  if (locked === null)
+    return fail(
+      1,
+      "another run holds this read position; wait for it to finish",
+    );
+  return locked.value;
+}
+
+async function checkRun(
+  values: { yes?: boolean; json?: boolean; "retired-from"?: string },
+  overlay: ReturnType<typeof readOverlay>,
+  settings: ReturnType<typeof sweepSettings>,
+  positionFile: string | undefined,
+): Promise<number> {
+  const position = keptPosition(positionFile, settings.move);
   const config = trackerConfigFrom(overlay);
   const root = consumerRoot();
   const tracker = openTracker(config, root);
@@ -164,8 +199,12 @@ async function check(argv: string[]): Promise<number> {
     progress: (line) => console.error(line),
     ...(position === undefined ? {} : { position: position.from }),
   });
-  position?.save(report);
+  const saveFailure = position?.save(report) ?? null;
   print(values.json === true, report, sweepLines(report));
+  if (saveFailure !== null) {
+    console.error(`check-fields: ${saveFailure}`);
+    return 1;
+  }
   if (report.stopped !== null) return 1;
   // A store problem fails a run asked to move, or one that could read nothing.
   if (report.storeProblem !== null && (report.apply || !report.read)) return 1;

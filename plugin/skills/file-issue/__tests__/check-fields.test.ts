@@ -18,6 +18,8 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
+import { withFileLock } from "../../../shared/file-lock.ts";
+
 const script = join(import.meta.dir, "..", "scripts", "check-fields.ts");
 const scratch = mkdtempSync(join(tmpdir(), "check-fields-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -127,5 +129,20 @@ describe("check-fields.ts", () => {
     expect(
       readFileSync(join(scratch, `repo-${n - 1}`, "record.json"), "utf8"),
     ).toBe('{"kind":"something-else"}\n');
+  });
+
+  test("refuses a second run on a read position another run holds", async () => {
+    const position = join(scratch, `repo-${n}`, "position.json");
+    const held = await withFileLock(
+      position,
+      () =>
+        run(
+          ["check", "--yes", "--position", "position.json"],
+          1,
+          "file_issue:\n  sweep:\n    move: false\n",
+        ),
+      { root: join(scratch, `repo-${n}`), name: "sweep-position" },
+    );
+    expect(held?.value).toContain("another run holds this read position");
   });
 });

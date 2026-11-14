@@ -495,14 +495,14 @@ today and any later one alike. Records are not filed through
 record store that moves onto the interface gets an operation of its own,
 so `createIssue` offers no way around the check.
 
-| Path                            | Today                                                                          | With this built                                                                                                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `file-issue`                    | writes through `tracker.ts create`; type and size as labels, priority optional | the same command, checked inside the write; priority required                                                                                                       |
-| `tracker.ts create` (`do-item`) | checks shape                                                                   | checked inside the write, the missing facet named                                                                                                                   |
+| Path                            | Today                                                                          | With this built                                                                                                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `file-issue`                    | writes through `tracker.ts create`; type and size as labels, priority optional | the same command, checked inside the write; priority required                                                                                                                                                                                            |
+| `tracker.ts create` (`do-item`) | checks shape                                                                   | checked inside the write, the missing facet named                                                                                                                                                                                                        |
 | `file-deferred.ts`              | the follow-up label only                                                       | checked inside the write; the type from the finding, the priority from the [severity mapping](../GLOSSARY.md) M9 names, the size `small` unless the entry names one; each other required group's label from the catalog areas covering the thread's file |
-| `report-bug.ts`                 | `gh issue create` with the `bug` label                                         | sets the Bug issue type where the account may set types; priority and size from triage                                                                              |
-| The issue forms                 | a label                                                                        | `type: Bug` on the bug form, `type: Feature` on the change form; priority and size from triage                                                                      |
-| An agent by hand                | whatever it sets                                                               | reported by the pools on their next read, and moved by the weekly sweep                                                                                             |
+| `report-bug.ts`                 | `gh issue create` with the `bug` label                                         | sets the Bug issue type where the account may set types; priority and size from triage                                                                                                                                                                   |
+| The issue forms                 | a label                                                                        | `type: Bug` on the bug form, `type: Feature` on the change form; priority and size from triage                                                                                                                                                           |
+| An agent by hand                | whatever it sets                                                               | reported by the pools on their next read, and moved by the weekly sweep                                                                                                                                                                                  |
 
 `file-deferred.ts` takes the type from the finding as the
 [deferral protocol](../plugin/skills/resolve-review-comments/references/deferral-protocol.md#labels)
@@ -580,8 +580,11 @@ position comes round to it: within as many runs as the population holds
 capped reads, or as it holds budgets of 50 comments where the budget, not
 the read, ends the runs. An issue whose comment is always refused (a locked
 issue) stops every run at the same place until a person settles it, so the
-run's report of the refused write is the cue. A file that is missing or unreadable starts the read
-from the first issue, with a warning: the position only saves work. Moving
+run's report of the refused write is the cue. A file that is missing starts the read from the first issue, and so does
+one that is unreadable, with a warning: the position only saves work. A
+run holds a lock on the file from reading it to saving it, and a second
+run on the same file is refused meanwhile. A save that fails is reported
+after the sweep's own report, and the run exits `1`. Moving
 keeps no position, since a moved issue leaves the population.
 
 Its bounds:
