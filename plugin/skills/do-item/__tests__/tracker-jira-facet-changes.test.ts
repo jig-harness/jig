@@ -117,7 +117,11 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
         },
         "PUT issue/ENG-1": new JiraApiError("bad request", {
           status: 400,
-          errors: { issuetype: "The issue type selected is invalid." },
+          errorMessages: ["Fix the summary too."],
+          errors: {
+            issuetype: "The issue type selected is invalid.",
+            customfield_10050: "Size is required.",
+          },
         }),
       }),
       STORES,
@@ -126,10 +130,13 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
       .updateIssue("ENG-1", { type: "feature" })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TrackerRequestError);
-    expect((err as Error).message).toContain(
-      "Jira refused the issue type change of ENG-1 (issuetype: The issue type selected is invalid.)",
-    );
-    expect((err as Error).message).toContain("move ENG-1");
+    const message = (err as Error).message;
+    // Jira's own answer is kept whole, beside the type change's context.
+    expect(message).toContain("bad request");
+    expect(message).toContain("move ENG-1");
+    expect(message).toContain("for type feature");
+    expect(message).toContain("from Task to");
+    expect(message).toContain("may not have listed");
   });
 
   it("names every cause, not only the credential, when the edit screen lists no field at all", async () => {

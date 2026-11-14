@@ -621,18 +621,17 @@ export function jiraTracker(client: Client): Tracker {
       try {
         await transport({ method: "PUT", path: path(issue.key), body }, signal);
       } catch (error) {
-        // An edit screen that omits the issue type proves nothing, so a
-        // change across workflows reaches Jira, which answers it with a bare
-        // 400 on `issuetype`: say what it means.
+        // Jira answers a type change across workflows with a bare 400 on
+        // `issuetype`: keep its whole answer and add what that means.
         if (
-          fields.issuetype !== undefined &&
+          facet.typeMove !== undefined &&
           error instanceof JiraApiError &&
           error.status === 400 &&
           error.errors.issuetype !== undefined
         )
           throw new TrackerRequestError(
             "unresolved",
-            `Jira refused the issue type change of ${issue.key} (issuetype: ${error.errors.issuetype}): Jira changes an issue type by an edit only between issue types of one workflow and field configuration, and the edit screen did not list the issue type choices to check beforehand; move ${issue.key} to the new issue type in Jira, or keep type in labels or a field (store: label or store: field)`,
+            `${error.message}; Jira refused changing ${issue.key} from ${issue.issueType?.name ?? "its issue type"} to ${facet.typeMove.to} for type ${facet.typeMove.value}: Jira changes an issue type by an edit only between issue types of one workflow and field configuration, and the edit screen may not have listed the issue type choices to check beforehand; move ${issue.key} to ${facet.typeMove.to} in Jira, or keep type in labels or a field (store: label or store: field)`,
           );
         throw error;
       }

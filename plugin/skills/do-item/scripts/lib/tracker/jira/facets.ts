@@ -179,6 +179,8 @@ export interface FacetWrite {
   fields: Record<string, unknown>;
   add: string[];
   remove: string[];
+  /** The type value set through the issue type, and the issue type it moves to. */
+  typeMove?: { value: string; to: string };
 }
 
 /** What the Jira adapter reads and writes of the facets it keeps itself. */
@@ -508,6 +510,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         fields: { issuetype: { id: typed.id } },
         add: [],
         remove: carried,
+        typeMove: { value, to: typed.name },
       };
     }
     const change = codec.change(carried, value);
@@ -519,7 +522,11 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       `type ${value} is kept in the label '${codec.labelOf(value)}' on the issue type ${base.name}`,
       editScreen,
     );
-    return { fields: { issuetype: { id: base.id } }, ...change };
+    return {
+      fields: { issuetype: { id: base.id } },
+      ...change,
+      typeMove: { value, to: base.name },
+    };
   }
 
   async function health(s: ResolvedFacet, signal?: AbortSignal) {
@@ -690,6 +697,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         Object.assign(out.fields, change.fields);
         out.add.push(...change.add);
         out.remove.push(...change.remove);
+        if (change.typeMove !== undefined) out.typeMove = change.typeMove;
       }
       Object.assign(
         out.fields,
