@@ -88,8 +88,9 @@ own once a repository's ledgers name its converged drives
 ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
 The act phase reads the host's gauges when it builds its apply state, and
 admits each launch within the load factor. And the steward is one more
-stage, launched on the owner host when its digest changed, whose records
-the next tick's plan reads.
+stage, launched on the owner host when its judgment backlog holds work no
+pass has judged ([The steward's trigger](#the-stewards-trigger)), whose
+records the next tick's plan reads.
 
 ```mermaid
 flowchart TD
@@ -1725,6 +1726,37 @@ workspace. Closing them takes a persisted "cleanup uncertain" launch state that
 admission holds until reconciliation or a person's clearance, or ownership at
 creation through a Windows job object; both are separate work, and the first
 waits on the authenticated Windows smoke.
+
+### The steward's trigger
+
+The [steward](../GLOSSARY.md) supplies judgment the tick's rules cannot, so
+it starts on that work alone. Each tick derives one repository's **judgment
+backlog** from what it already read: the items no rule settles and no
+steward pass has judged yet. Its members are
+
+- a stalled pickup or a failed follow-up with no running session;
+- a stopped drive whose class a re-arm could resolve, keyed by its ledger
+  facts, so new facts make a new member;
+- an ended pass that recommends a resume;
+- a queued item missing a priority, type or size;
+- a need with no framing: one neither its pass, its drive's parks nor the
+  tick frames as a decision a person answers in a word.
+
+The trigger reads the backlog only. An empty backlog starts no pass, and
+neither does one whose every member a pass of the repository's latest 20
+already saw. A member no pass has seen starts one on the same tick, with no
+cadence to wait on; the host's budget of three passes in a rolling hour, and
+one pass holding a repository at a time, stay. `steward.every` is still
+read, so a file that sets it keeps loading, and changes nothing.
+
+The digest the pass reads carries the backlog, the unframed needs and,
+beside them, each framed need with the framing it already carries. A `need`
+record may name only a target among the digest's unframed needs; one for
+any other target is refused. A tick that starts no pass says why on its
+receipt and in the line the dashboard reads: the backlog was empty, its
+members were all judged, or the hourly budget was spent.
+
+A person's on-demand start of a pass through `jig send` is not built.
 
 ### What it never does
 

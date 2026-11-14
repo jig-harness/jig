@@ -74,6 +74,8 @@ function fixture(automatic = false, prefix: string | null = "work:") {
       {
         version: 1,
         repo: SLUG,
+        // The pass that judged this stop: the backlog holds nothing new for another.
+        backlog: [{ kind: "rearm", target: "PR #7", facts: factsOf(pr) }],
         drives: [pr],
         needs: [],
         queue: [],

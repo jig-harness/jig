@@ -84,6 +84,24 @@ function sourceOf(
       r.record.id === decision.record &&
       r.record.repo === observation.opened.repo.slug,
   );
+  return resumeSource(old, parkClassesOf(observation.opened.values));
+}
+
+/** The repository's registry classes, which a resume never answers. */
+export function parkClassesOf(values: Record<string, unknown>): unknown {
+  const policy = values.autonomy as { park_classes?: string[] } | undefined;
+  return policy?.park_classes ?? DEFAULT_PARK_CLASSES;
+}
+
+/**
+ * The ended pickup or follow-up a resume could continue: a pass that ended
+ * on a question outside the registry classes and recommended one option,
+ * and that was neither a resume itself nor recorded done; `null` otherwise.
+ */
+export function resumeSource(
+  old: ReadRecord | undefined,
+  parkClasses: unknown,
+): Source | null {
   if (
     old?.state.kind !== "ended" ||
     old.record.stewardResume !== undefined ||
@@ -96,16 +114,9 @@ function sourceOf(
   if (!eligiblePass(old)) return null;
   const question = questionOf(old.state);
   const output = old.state.exit.context ?? old.state.exit.said ?? "";
-  const policy = observation.opened.values.autonomy as
-    | { park_classes?: string[] }
-    | undefined;
   if (
     question === null ||
-    routineRecommendation(
-      question,
-      output,
-      policy?.park_classes ?? DEFAULT_PARK_CLASSES,
-    ) === null
+    routineRecommendation(question, output, parkClasses) === null
   )
     return null;
   return {

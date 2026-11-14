@@ -157,7 +157,10 @@ function stageOfNeed(action: Action & { cause: NeedCause }): LineNeed["stage"] {
     : needStage(action.cause);
 }
 
-function isNeed(action: Action): action is Action & { cause: NeedCause } {
+/** Whether a notify action is a need: one that waits on a person and on nothing else. */
+export function isNeed(
+  action: Action,
+): action is Action & { cause: NeedCause } {
   return (
     action.stage === "notify" &&
     action.cause !== undefined &&
@@ -632,11 +635,24 @@ function repoOf(
         source: r.source,
         detail: r.detail,
       })),
-    notes: report.records
-      .filter((r) => r.ok && r.record === "tracker")
-      .map((r) => r.detail),
+    notes: [
+      ...report.records
+        .filter((r) => r.ok && r.record === "tracker")
+        .map((r) => r.detail),
+      ...stewardNote(report.steward),
+    ],
     ...boardUnread(report),
   };
+}
+
+/** Whether the steward started on the judgment backlog this tick, and if not, why. */
+function stewardNote(steward: RepoReport["steward"]): string[] {
+  if (steward?.trigger === undefined) return [];
+  return [
+    steward.trigger === "started"
+      ? `steward ${steward.status}`
+      : `steward not started: ${steward.status}`,
+  ];
 }
 
 function reasonOf(

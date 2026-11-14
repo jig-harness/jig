@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  backlogHash,
   checkedRecords,
   recordBelongsToDigest,
-  stewardDue,
-  stewardWaits,
   rearmableBySteward,
+  stewardBudgetSpent,
+  type BacklogMember,
 } from "../lib/steward.ts";
 import {
-  digestHash,
   keepStewardRun,
   markStewardEffect,
   submitStewardRecords,
@@ -19,68 +19,32 @@ import { stateDb, closeStateDb } from "../lib/state.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { failed, ok } from "../../shared/outcome.ts";
 
 describe("steward boundaries", () => {
-  test("reordering target evidence leaves the digest hash and collection priority unchanged", () => {
-    const targets: NonNullable<StewardDigest["targets"]> = ["PR #8", "#7"].map(
-      (target) => ({
-        target,
-        workspace: failed("unreadable", "no workspace"),
-        lastPass: null,
-        pullRequests: ok([]),
-        checks: ok([]),
-      }),
-    );
-    const digest: StewardDigest = {
-      version: 1,
-      repo: "example/repo",
-      drives: [],
-      needs: [],
-      queue: [],
-      passes: [],
-      failures: [],
-      load: null,
-      targets,
+  test("the backlog hash reads the members' facts, never their order", () => {
+    const stalled: BacklogMember = {
+      kind: "stalled",
+      target: "#7",
+      facts: "a",
     };
-    expect(digestHash(digest)).toBe(
-      digestHash({ ...digest, targets: [...targets].reverse() }),
+    const rearm: BacklogMember = {
+      kind: "rearm",
+      target: "PR #8",
+      facts: "generation 1, exit 2, heartbeat h",
+    };
+    expect(backlogHash([stalled, rearm])).toBe(backlogHash([rearm, stalled]));
+    expect(backlogHash([{ ...stalled, facts: "b" }, rearm])).not.toBe(
+      backlogHash([stalled, rearm]),
     );
-    expect(digest.targets?.map((row) => row.target)).toEqual(["PR #8", "#7"]);
   });
-  test("cadence and the rolling cap rule a run out before any digest is read", () => {
+  test("the host's rolling hourly budget allows three passes", () => {
     const now = 3_600_000;
-    expect(stewardWaits([], now, 1_200_000)).toBe(false);
-    expect(stewardWaits([{ at: now - 1_000 }], now, 1_200_000)).toBe(true);
-    expect(stewardWaits([{ at: now + 1_000 }], now, 1_200_000)).toBe(true);
-    expect(stewardWaits([{ at: now - 1_300_000 }], now, 1_200_000)).toBe(false);
-    expect(
-      stewardWaits(
-        [0, 1, 2].map((i) => ({ at: now - 1_300_000 - i })),
-        now,
-        1_200_000,
-      ),
-    ).toBe(true);
-  });
-  test("unchanged digest and time and rolling run cap all prevent launches", () => {
-    const now = 3_600_000;
-    expect(
-      stewardDue("a", [{ hash: "a", at: now - 1_300_000 }], now, 1_200_000),
-    ).toBe(false);
-    expect(
-      stewardDue("b", [{ hash: "a", at: now - 1_000 }], now, 1_200_000),
-    ).toBe(false);
-    expect(
-      stewardDue(
-        "b",
-        [0, 1, 2].map((i) => ({ hash: "a", at: now - 1_300_000 - i })),
-        now,
-        1_200_000,
-      ),
-    ).toBe(false);
-    expect(
-      stewardDue("b", [{ hash: "a", at: now - 1_300_000 }], now, 1_200_000),
-    ).toBe(true);
+    const runs = (n: number, ago: number) =>
+      Array.from({ length: n }, (_, i) => ({ at: now - ago - i }));
+    expect(stewardBudgetSpent([], now)).toBe(false);
+    expect(stewardBudgetSpent(runs(2, 1_000), now)).toBe(false);
+    expect(stewardBudgetSpent(runs(3, 1_000), now)).toBe(true);
+    expect(stewardBudgetSpent(runs(3, 3_600_000), now)).toBe(false);
   });
   test("closed records reject arbitrary text, models and malformed payloads", () => {
     expect(
@@ -251,42 +215,5 @@ describe("steward boundaries", () => {
       closeStateDb(root);
       rmSync(root, { recursive: true, force: true });
     }
-  });
-  test("elapsed drive ages and receipt framing do not change the semantic digest", () => {
-    const digest: StewardDigest = {
-      version: 1,
-      repo: "example/repo",
-      drives: [
-        {
-          number: 1,
-          url: "",
-          title: "",
-          head: "head",
-          class: "silent",
-          why: "silent for 4 minutes",
-          evidence: { heartbeatAgeMinutes: 4 },
-        },
-      ],
-      queue: [],
-      needs: [],
-      passes: [],
-      failures: [],
-      load: null,
-    };
-    const later: StewardDigest = {
-      ...digest,
-      drives: digest.drives.map((p) => ({
-        ...p,
-        why: "silent for 24 minutes",
-        evidence: { ...p.evidence, heartbeatAgeMinutes: 24 },
-      })),
-    };
-    expect(digestHash(digest)).toBe(digestHash(later));
-    expect(
-      digestHash({
-        ...later,
-        drives: later.drives.map((p) => ({ ...p, class: "needs-person" })),
-      }),
-    ).not.toBe(digestHash(digest));
   });
 });
