@@ -549,6 +549,55 @@ function legacyPolicy(
     return read.value;
   };
 }
+/** A worktree as the inventory lists it, before any proof. */
+type Listed = { id: string; details: Record<string, unknown> };
+/** A root as git spells a worktree: links resolved and, on Windows, 8.3 short names expanded. */
+function canonicalRoot(root: string): string {
+  try {
+    return realpathSync.native(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return root;
+    throw error;
+  }
+}
+/**
+ * The linked worktrees in a declared root, and those in the agent tool's
+ * directory, marked `runtime: agent-tool`. That directory is derived, not
+ * declared: it sits in the primary checkout git lists first, whatever roots
+ * the clone declares.
+ */
+function selectWorktrees(
+  entries: Listed[],
+  roots: string[],
+  repository: string,
+): Listed[] {
+  const canonical = roots.map(canonicalRoot);
+  const primary = entries[0]?.id ?? repository;
+  const agentRoot = canonicalRoot(join(primary, ...AGENT_TOOL_DIR));
+  return entries.slice(1).filter((entry) => {
+    if (within(entry.id, agentRoot)) {
+      entry.details.runtime = AGENT_TOOL;
+      return true;
+    }
+    return canonical.some((root) => within(entry.id, root));
+  });
+}
+/** Mark each worktree Orca manages `runtime: orca`, with its id and path; the rest `none`, an agent tool's left as it is. */
+function markManaged(
+  selected: Listed[],
+  managed: Map<string, OrcaWorktree>,
+): void {
+  for (const entry of selected) {
+    const row = managed.get(canonicalWorktree(entry.id));
+    if (row === undefined) {
+      if (entry.details.runtime !== AGENT_TOOL) entry.details.runtime = "none";
+      continue;
+    }
+    entry.details.runtime = "orca";
+    entry.details.orca = row.id;
+    entry.details.orcaPath = row.path;
+  }
+}
 export function worktreesKind(
   repository: string,
   roots: string[],
@@ -573,7 +622,7 @@ export function worktreesKind(
         "-z",
       ]);
       if (!output.ok) return output;
-      const entries: { id: string; details: Record<string, unknown> }[] = [];
+      const entries: Listed[] = [];
       for (const block of output.value.split("\0\0").filter(Boolean)) {
         const fields = block.split("\0");
         const path = fields.find((field) => field.startsWith("worktree "));
@@ -593,40 +642,11 @@ export function worktreesKind(
           "malformed",
           "Git worktree inventory was empty or malformed",
         );
-      const canonicalRoot = (root: string): string => {
-        try {
-          // As git spells a worktree: links resolved and, on Windows, 8.3
-          // short names expanded.
-          return realpathSync.native(root);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return root;
-          throw error;
-        }
-      };
-      const canonical = roots.map(canonicalRoot);
-      // Derived, not declared: the agent tool's directory sits in the
-      // primary checkout git lists first, whatever roots the clone declares.
-      const primary = entries[0]?.id ?? repository;
-      const agentRoot = canonicalRoot(join(primary, ...AGENT_TOOL_DIR));
-      const selected = entries.slice(1).filter((entry) => {
-        if (within(entry.id, agentRoot)) {
-          entry.details.runtime = AGENT_TOOL;
-          return true;
-        }
-        return canonical.some((root) => within(entry.id, root));
-      });
+      const selected = selectWorktrees(entries, roots, repository);
       if (orca === undefined || selected.length === 0) return ok(selected);
       const managed = await orcaWorktrees(orca, repository);
       if (!managed.ok) return managed;
-      for (const entry of selected) {
-        const row = managed.value.get(canonicalWorktree(entry.id));
-        if (row === undefined && entry.details.runtime === AGENT_TOOL) continue;
-        entry.details.runtime = row === undefined ? "none" : "orca";
-        if (row !== undefined) {
-          entry.details.orca = row.id;
-          entry.details.orcaPath = row.path;
-        }
-      }
+      markManaged(selected, managed.value);
       return ok(selected);
     },
     prove: async (resource) => {
