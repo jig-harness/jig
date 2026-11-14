@@ -27,7 +27,10 @@ a machine-level command such as the launcher, from the user's home.
 tests its layout. [launcher/](launcher/README.md) wires an issue tracker's "open in
 coding agent" button to a workspace on this machine, through the
 [herdr/](herdr/README.md) and [orca/](orca/README.md) workspace tools, which
-also open and remove worktree workspaces by hand.
+also open and remove worktree workspaces by hand. `protocol/` generates the
+[Jig Protocol](../GLOSSARY.md)'s chapters in `plugin/protocol/` from the
+code's own tables and checks them
+([design/protocol.md](../design/protocol.md)).
 
 ## Runtime choice
 

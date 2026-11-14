@@ -33,8 +33,10 @@
  * `routing.models.codex` (by default `terra`, as `gpt-5.6-terra`), and
  * `--pass-model` overrides it, resolving tiers through the Codex row. It
  * carries `--dangerously-bypass-approvals-and-sandbox` only on a host that set
- * `drive.codex_bypass`, and Codex's own configuration decides otherwise.
- * `--pass-args` remains Claude Code's and is refused for Codex.
+ * `drive.codex_bypass`, and Codex's own configuration decides otherwise. Its
+ * extra arguments are the host's `drive.codex_pass_args`, written before the
+ * prompt. `--pass-args`'s words remain Claude Code's and are refused for
+ * Codex; its empty value means none for either.
  *
  * Prints one JSON object (`ArmReport` in `lib/arm.ts`): `status` says what
  * the caller does next — `armed` (a tab runs the drive and `drives.ts` lists
@@ -47,7 +49,8 @@
  * `DRIVE_PR_ARM_CONFIRM_SEC` (default 45) bounds the wait for a tab's drive.
  *
  * Exit codes: 0 decided (and, for a tab, opened); 1 `tab` could not be
- * honoured, or a setting (`drive.pass_args` among them), the model or the
+ * honoured, or a setting (`drive.pass_args` and `drive.codex_pass_args`
+ * among them), the model or the
  * working tree could not be read, or the configuration names an AI reviewer
  * whose evidence the drive cannot read (`reviewerEvidenceProblem`); 2 usage: a malformed command line prints
  * its usage only, a `--pass-model` that names no model or a `--pass-args`
@@ -82,6 +85,7 @@ import {
 } from "./lib/overlay.ts";
 import {
   chosenPassArgs,
+  configuredCodexPassArgs,
   type PassArgs,
   PassArgsUsageError,
   parsePassArgsFlag,
@@ -328,20 +332,22 @@ function passModel(flag: string | undefined, vendor: AccountVendor): ArmModel {
     : resolveModelValue(flag, "--pass-model");
 }
 
-/** The pass's extra arguments: Claude Code's; a Codex pass takes none, and `--pass-args` is refused for it. */
+/**
+ * The pass's extra arguments: Claude Code's from `--pass-args` or
+ * `drive.pass_args`; a Codex pass's from `drive.codex_pass_args`, with
+ * `--pass-args`'s words refused and its empty value taken as none.
+ */
 function extraPassArgs(
   flag: string | undefined,
   vendor: AccountVendor,
 ): PassArgs {
   if (vendor === "claude") return chosenPassArgs(flag);
-  if (flag !== undefined && parsePassArgsFlag(flag).length > 0)
+  if (flag === undefined) return configuredCodexPassArgs();
+  if (parsePassArgsFlag(flag).length > 0)
     throw new PassArgsUsageError(
-      "--pass-args applies to a Claude Code pass command; a Codex pass takes its documented arguments",
+      "--pass-args applies to a Claude Code pass command; a Codex pass takes the host's drive.codex_pass_args",
     );
-  return {
-    words: [],
-    source: "none; drive.pass_args applies to a Claude Code pass command",
-  };
+  return { words: [], source: "--pass-args" };
 }
 
 /** The live drive on the PR, read from `drives.ts --json` in the tree. */

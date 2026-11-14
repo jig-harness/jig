@@ -373,6 +373,43 @@ areas:
     impliedBy: [shared-lib, toolchain]
     deployTier: none
 
+  protocol:
+    title: "The Jig Protocol: its chapters and their generator"
+    # The chapters ship in the plugin; the generator that writes them from the
+    # code's own tables runs in this repository only. Its chapters are
+    # generated from drive-pr's terminal-state table, and its base comparison
+    # reads change notes through the changelog skill's scripts.
+    category: tooling
+    paths: ["plugin/protocol/**", "tools/protocol/**"]
+    workspace: []
+    impliedBy: [drive-pr, changelog, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+    generated:
+      - outputs:
+          - "plugin/protocol/README.md"
+          - "plugin/protocol/drive-exits.md"
+          - "plugin/protocol/data/drive-exits.json"
+        source:
+          - "tools/protocol/**"
+          - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
+          - "plugin/shared/errors.ts"
+          - "plugin/shared/log.ts"
+          - "plugin/shared/outcome.ts"
+        command: "bun tools/protocol/generate.ts"
+        check: "bun tools/protocol/generate.ts --check"
+        notes: >-
+          Each chapter's prose outside its markers, and the index page's
+          introduction, are written by hand: only the title, the status line
+          and the sections between `<!-- protocol:generated source=… -->` and
+          `<!-- /protocol:generated -->` are derived. The JSON data files
+          carry no generated header, so this entry is their marker. The
+          check also compares each chapter the integration branch holds as
+          stable with its data file at the merge base, so a clone too shallow
+          to hold the merge base fails it until fetched. The source lists
+          every file a chapter's sections import, directly or through the
+          files they import, which tools/protocol/__tests__/sources.test.ts
+          holds to the code.
+
   dashboard:
     title: "The source of the page jig dispatch dashboard serves"
     # Built into plugin/dispatch/dashboard-page/, whose generated-file entry

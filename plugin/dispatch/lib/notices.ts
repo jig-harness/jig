@@ -207,6 +207,8 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
 
 /** A drive stopped on an exit only a person settles, or with no exit at all. */
 export function stopNotice(slug: string, pr: DrivenPr): Notice {
+  if (typeof pr.evidence.usageRefusal === "string")
+    return usageRefusalNotice(slug, pr);
   if (pr.class === "silent")
     return notice(
       `${slug} PR #${pr.number} silent, ledger generation ${generation(pr)}, started ${String(pr.evidence.started ?? "unknown")}`,
@@ -226,6 +228,23 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
     [
       `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
       `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then run \`/jig:drive-pr ${pr.number}\` there to re-arm it, or stop it. Where dispatch labels are enabled, you can instead use \`jig send drive@${slug}#${pr.number} rearm\`.`,
+      pr.url,
+    ],
+  );
+}
+
+/**
+ * A drive launch `drive.ts` refused as a usage error on the ledger facts it
+ * still shows (`settleUsageRefusals`), keyed by its launch record, so it is
+ * sent once: a launch on new facts is a new record.
+ */
+function usageRefusalNotice(slug: string, pr: DrivenPr): Notice {
+  const record = String(pr.evidence.usageRefusal);
+  return notice(
+    `${slug} PR #${pr.number} drive refused its command line, launch record ${record}`,
+    [
+      `PR #${pr.number} (${pr.title}): drive.ts refused the command line launch record ${record} gave it, on the drive ledger as it still is, so the dispatcher does not launch it again until the ledger moves. drive.ts said: ${String(pr.evidence.usageMessage)}`,
+      `Settle what it names, then run \`/jig:drive-pr ${pr.number}\` in the workspace that drove it (named below while it is open) to re-arm it, or stop it.`,
       pr.url,
     ],
   );

@@ -9,15 +9,36 @@
  * instead: a GitHub Enterprise endpoint `gh` is not signed in to, or a local
  * fake (plain `http` is accepted for a loopback address only). Tests of the
  * adapter pass a fake transport.
+ *
+ * A failure is a `GitHubApiError` whose code is its failure class
+ * (`shared/outbound/failure.ts`), read from the answer's status, headers
+ * and GraphQL error types by the library (`shared/outbound/github.ts`). A
+ * request its builder marks as a read is sent once more after `unreachable`
+ * or `server-fault`, inside the call's deadline (`shared/outbound/retry.ts`).
  */
 
-import { retryAfterSeconds, retryRead } from "../read-retry.ts";
 import {
   type RunResult,
   ghCall,
 } from "../../../../../drive-pr/scripts/lib/proc.ts";
+import { unheldForm } from "../../../../../../shared/trace.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
+import {
+  type FailureClass,
+  type OutboundFailure,
+  OutboundError,
+  outboundFailure,
+} from "../../../../../../shared/outbound/failure.ts";
+import {
+  GITHUB,
+  ghRunFailure,
+  gitHubHttpFailure,
+  gitHubLimitReset,
+  graphQLErrorsClass,
+} from "../../../../../../shared/outbound/github.ts";
+import { guarded } from "../../../../../../shared/outbound/hold.ts";
+import { retryRead } from "../../../../../../shared/outbound/retry.ts";
 import { pager, postGraphQL, runClient } from "../graphql.ts";
 
 export const GITHUB_TIMEOUT_MS = 30_000;
@@ -35,77 +56,100 @@ export type GitHubTransport = (
 ) => Promise<unknown>;
 
 /**
- * GitHub answered with an error. `notFound` is set when every error says the
- * thing asked for does not exist (or is not visible), and `data` then holds
- * whatever the rest of the request read; `unavailable` when the request
- * could not be made or answered at all (no credential, the network, a rate
- * limit, a server error), which a caller may report as "try later".
+ * GitHub answered with an error, or could not be asked. Its `code` is the
+ * failure class (`invalid` when none is given). `notFound` is a `not-found`
+ * answer, and `data` then holds whatever the rest of the request read;
+ * `unavailable` a class that clears by waiting (no answer, a rate limit, a
+ * server fault), which a caller may report as "try later".
  */
-export class GitHubApiError extends Error {
+export class GitHubApiError extends OutboundError {
+  override name = "GitHubApiError";
   // Declared fields, not parameter properties: the repository's TypeScript
   // settings allow erasable syntax only.
-  readonly notFound: boolean;
-  readonly unavailable: boolean;
   readonly data: unknown;
-  /** The seconds GitHub's `Retry-After` header asked to wait, when it sent one. */
-  readonly retryAfterSec: number | null;
   constructor(
     message: string,
     opts: {
-      notFound?: boolean;
-      unavailable?: boolean;
+      code?: FailureClass;
       data?: unknown;
-      retryAfterSec?: number | null;
+      until?: number | null;
+      sent?: boolean;
+      retryAfterMs?: number | null;
     } = {},
   ) {
-    super(message);
-    this.notFound = opts.notFound ?? false;
-    this.unavailable = opts.unavailable ?? false;
+    super(opts.code ?? "invalid", message, opts);
     this.data = opts.data ?? null;
-    this.retryAfterSec = opts.retryAfterSec ?? null;
   }
+  get notFound(): boolean {
+    return this.code === "not-found";
+  }
+  get unavailable(): boolean {
+    return this.clearsByWaiting;
+  }
+  /** The seconds GitHub's `Retry-After` header asked to wait, when it sent one. */
+  get retryAfterSec(): number | null {
+    return this.retryAfterMs === null ? null : this.retryAfterMs / 1000;
+  }
+}
+
+/** A failure as the adapter's error. */
+function errorOf(failure: OutboundFailure, data?: unknown): GitHubApiError {
+  return new GitHubApiError(failure.reason, {
+    code: failure.code,
+    data,
+    until: failure.until ?? null,
+    sent: failure.sent ?? false,
+    retryAfterMs: failure.retryAfterMs ?? null,
+  });
 }
 
 function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
   return signal?.aborted === true;
 }
 
-function abortedError(signal: AbortSignal): GitHubApiError {
+/** `sent`: the request had been dispatched, so a write may have landed. */
+function abortedError(signal: AbortSignal, sent = false): GitHubApiError {
   const reason: unknown = signal.reason;
   return new GitHubApiError(
     `GitHub request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,
+    { code: "unreachable", ...(sent ? { sent: true } : {}) },
   );
 }
 
-const UNAVAILABLE_TYPES = new Set(["RATE_LIMITED", "SERVICE_UNAVAILABLE"]);
-
 /**
- * Turn a GraphQL response body into its `data`, or throw. `failure`
- * describes a request that already failed (an error status or exit): what
- * makes it unavailable stays so whatever the body's errors say, since
- * GitHub answers a query timeout with a 502 whose errors carry no type.
+ * Turn a GraphQL response body into its `data`, or throw. `failure` is
+ * that of a request that already failed (an error status or exit): its
+ * class stands whatever the body's errors say, since GitHub answers a
+ * query timeout with a 502 whose errors carry no type.
  */
 export function unwrapResponse(
   body: unknown,
-  failure: { unavailable: boolean; retryAfterSec?: number | null } = {
-    unavailable: false,
-  },
+  failure: OutboundFailure | null = null,
+  headers: Headers | null = null,
 ): unknown {
   if (!isRecord(body))
-    throw new GitHubApiError("GitHub returned a non-object body", failure);
+    throw errorOf(
+      failure ??
+        outboundFailure("invalid", "GitHub returned a non-object body"),
+    );
   if (Array.isArray(body.errors) && body.errors.length > 0) {
     const types = body.errors.map((e) =>
       isRecord(e) && typeof e.type === "string" ? e.type : "",
     );
-    throw new GitHubApiError(
-      `GitHub API errors: ${JSON.stringify(body.errors).slice(0, 500)}`,
-      {
-        notFound: types.every((t) => t === "NOT_FOUND"),
-        unavailable:
-          failure.unavailable || types.some((t) => UNAVAILABLE_TYPES.has(t)),
-        data: body.data,
-        retryAfterSec: failure.retryAfterSec ?? null,
-      },
+    const message = `GitHub API errors: ${JSON.stringify(body.errors).slice(0, 500)}`;
+    const code = failure?.code ?? graphQLErrorsClass(types);
+    // A spent limit named in a successful response still clears at the reset
+    // its headers carry, else after the bounded fallback.
+    const limit =
+      code === "rate-limited" && headers !== null
+        ? gitHubLimitReset(headers)
+        : null;
+    throw errorOf(
+      outboundFailure(code, message, {
+        until: failure?.until ?? limit?.until ?? null,
+        retryAfterMs: failure?.retryAfterMs ?? limit?.retryAfterMs ?? null,
+      }),
+      body.data,
     );
   }
   if (!("data" in body))
@@ -115,63 +159,174 @@ export function unwrapResponse(
   return body.data;
 }
 
-/** Why a finished `gh` run cannot be read as a response, if it cannot. */
-function ghFailure(r: RunResult): GitHubApiError | null {
-  if (r.spawnFailed)
-    return new GitHubApiError(
-      "the GitHub command-line client `gh` could not start: install it and sign in with `gh auth login`",
-      { unavailable: true },
-    );
-  if (r.timedOut)
-    return new GitHubApiError("gh api graphql timed out", {
-      unavailable: true,
-    });
-  if (r.bufferExceeded)
-    return new GitHubApiError(
-      "gh api graphql printed more output than can be held; stopped it",
-    );
-  return null;
-}
-
-/** Signs that `gh` could not reach GitHub or was not allowed to ask. */
-const GH_UNAVAILABLE =
-  /not logged in|auth login|authentication|bad credentials|HTTP 401|HTTP 5\d\d|rate limit|could not resolve host|connection (refused|reset)|timeout/i;
-
-/** The JSON a `gh` run printed, or the reason it printed none. */
-function ghBody(r: RunResult): unknown {
+/** The JSON `text` holds, or `null`. */
+function parsedOrNull(text: string): unknown {
   try {
-    return JSON.parse(r.stdout);
-  } catch {
-    const said = (r.stderr || r.stdout).trim().slice(0, 300);
-    throw new GitHubApiError(
-      `gh api graphql returned no JSON (exit ${r.code}): ${said}`,
-      { unavailable: GH_UNAVAILABLE.test(said) },
-    );
+    return JSON.parse(text);
+  } catch (err) {
+    swallow(err, "an error response's body is not JSON; its status says why");
+    return null;
   }
 }
 
+/** One request's answer: the response body, or the failure it met. */
+type Answer = { body: unknown } | GitHubApiError;
+
+const failureOfAnswer = (answer: Answer): OutboundFailure | null =>
+  answer instanceof GitHubApiError ? answer.failure : null;
+
 /**
- * A failed run is a failure even when its output parses: report the errors
- * it carries, else its exit status.
+ * One call: a read sent once more after a failure that may clear
+ * (`retryRead`), a write once, both inside one `GITHUB_TIMEOUT_MS`
+ * deadline, through the run's hold on GitHub. The data, or the failure
+ * thrown.
  */
-function ghExitFailure(
+async function call(
+  send: (bound: AbortSignal) => Promise<Answer>,
+  signal: AbortSignal | undefined,
+  read: boolean,
+  hold: string | null,
+): Promise<unknown> {
+  if (cancelled(signal)) throw abortedError(signal);
+  const deadline = AbortSignal.timeout(GITHUB_TIMEOUT_MS);
+  const bound =
+    signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
+  const deadlineAt = Date.now() + GITHUB_TIMEOUT_MS;
+  // Once an attempt has begun, a cancellation may have cut a request that
+  // landed: `retryRead` throws the bare reason, which carries no marker.
+  let dispatched = false;
+  const retried = () =>
+    retryRead(
+      () => {
+        dispatched = true;
+        return send(bound);
+      },
+      {
+        read,
+        signal: bound,
+        deadlineAt,
+        failureOf: failureOfAnswer,
+      },
+    ).catch((err: unknown): Answer => {
+      const sent = dispatched || (err instanceof GitHubApiError && err.sent);
+      if (cancelled(signal)) throw abortedError(signal, sent);
+      if (cancelled(bound)) return abortedError(bound, sent);
+      throw err;
+    });
+  // A `gh` run is held where every `gh` call is (`ghCall`); an HTTPS request here, under its endpoint's host.
+  const answer =
+    hold === null
+      ? await retried()
+      : await guarded(
+          hold,
+          retried,
+          failureOfAnswer,
+          (f) => errorOf(f),
+          bound,
+        ).catch((err: unknown): Answer => {
+          // A cancellation that met no request keeps nothing sent; one a
+          // dispatched request met, or that an attempt already marked, keeps that fact.
+          const sent =
+            dispatched || (err instanceof GitHubApiError && err.sent);
+          if (cancelled(signal)) throw abortedError(signal, sent);
+          if (cancelled(bound)) return abortedError(bound, sent);
+          throw err;
+        });
+  if (answer instanceof GitHubApiError) throw answer;
+  return unwrapResponse(answer.body);
+}
+
+/** One `gh api graphql` run's answer, its body read with the status and headers `--include` prints. */
+async function ghOnce(
+  runner: typeof ghCall,
+  payload: { query: string; variables: Record<string, unknown> },
+  bound: AbortSignal,
+  signal: AbortSignal | undefined,
+): Promise<Answer> {
+  const began = Date.now();
+  const r = await runClient(
+    runner,
+    ["api", "graphql", "--include", "--input", "-"],
+    {
+      stdin: JSON.stringify(payload),
+      timeoutMs: GITHUB_TIMEOUT_MS,
+      signal: bound,
+    },
+  );
+  if (cancelled(signal)) return abortedError(signal, true);
+  return ghRunAnswer(r, Date.now() - began);
+}
+
+/** What a finished `gh api graphql` run that took `tookMs` answered. */
+function ghRunAnswer(r: RunResult, tookMs: number): Answer {
+  const run = ghRunFailure(r, tookMs);
+  if (r.spawnFailed || r.timedOut || r.bufferExceeded)
+    return errorOf(run ?? outboundFailure("invalid", "gh api graphql failed"));
+  const parsed = ghHeaders(r.stdout);
+  const body = parsedOrNull(parsed.body);
+  if (r.code !== 0) return ghExitAnswer(r, parsed, body, run, tookMs);
+  if (body === null && parsed.body.trim() !== "")
+    return new GitHubApiError(
+      `gh api graphql returned no JSON (exit 0): ${parsed.body.trim().slice(0, 300)}`,
+    );
+  return answerOf(body, parsed.headers);
+}
+
+/**
+ * A response body as the answer: GraphQL errors in a successful response are
+ * classified here, inside the attempt, so the retry and the hold see them.
+ */
+function answerOf(body: unknown, headers: Headers | null): Answer {
+  return errorsFailure(body, null, headers) ?? { body };
+}
+
+/**
+ * A failed run is a failure even when its output parses: its status when
+ * `--include` printed one, else what `gh` said, names the class, and the
+ * GraphQL errors it carries name it where the status was a success.
+ */
+function ghExitAnswer(
   r: RunResult,
+  parsed: { status: number; headers: Headers; body: string },
   body: unknown,
-  response?: { status: number; headers: Headers },
+  run: OutboundFailure | null,
+  tookMs: number,
 ): GitHubApiError {
-  const unavailable =
-    GH_UNAVAILABLE.test(r.stderr) ||
-    response?.status === 429 ||
-    (response?.status !== undefined && response.status >= 500);
-  const retryAfterSec =
-    response === undefined ? null : retryAfterSeconds(response.headers);
-  if (isRecord(body) && Array.isArray(body.errors))
-    unwrapResponse(body, { unavailable, retryAfterSec });
-  const said = (r.stderr || r.stdout).trim().slice(0, 300);
-  return new GitHubApiError(`gh api graphql exited ${r.code}: ${said}`, {
-    unavailable: unavailable || GH_UNAVAILABLE.test(said),
-    retryAfterSec,
+  const answered = parsed.status !== 200;
+  const failure =
+    (answered
+      ? gitHubHttpFailure(parsed.status, parsed.headers, parsed.body, tookMs)
+      : null) ??
+    run ??
+    outboundFailure("invalid", `gh api graphql exited ${r.code}`);
+  const named = errorsFailure(body, answered ? failure : null, parsed.headers);
+  if (named !== null) return named;
+  const said = (r.stderr || parsed.body).trim().slice(0, 300);
+  return errorOf({
+    ...failure,
+    reason: `gh api graphql exited ${r.code}: ${said}`,
   });
+}
+
+/** The failure the GraphQL errors of a failed answer name, `failure` standing over their types; `null` when it carries none. */
+function errorsFailure(
+  body: unknown,
+  failure: OutboundFailure | null,
+  headers: Headers | null = null,
+): GitHubApiError | null {
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.errors) ||
+    body.errors.length === 0
+  )
+    return null;
+  try {
+    unwrapResponse(body, failure, headers);
+  } catch (err) {
+    if (err instanceof GitHubApiError) return err;
+    throw err;
+  }
+  return null;
 }
 
 /**
@@ -180,39 +335,17 @@ function ghExitFailure(
  * body, so variables keep their types and nothing reaches the command line.
  */
 export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
-  return async (query, variables, signal, idempotent = false) => {
-    const deadline = AbortSignal.timeout(GITHUB_TIMEOUT_MS);
-    const bound =
-      signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
-    const answer = await retryRead(
-      async () => {
-        if (cancelled(bound)) throw abortedError(bound);
-        const r = await runClient(
-          runner,
-          ["api", "graphql", "--include", "--input", "-"],
-          {
-            stdin: JSON.stringify({ query, variables }),
-            timeoutMs: GITHUB_TIMEOUT_MS,
-            signal: bound,
-          },
-        );
-        if (cancelled(signal)) throw abortedError(signal);
-        const failure = ghFailure(r);
-        if (failure !== null) throw failure;
-        const parsed = ghHeaders(r.stdout);
-        return { ...parsed, result: { ...r, stdout: parsed.body } };
-      },
+  // The shared runner is not held per run: the hold lands around the whole
+  // call, after its retry. An injected runner is the caller's own.
+  const unheld = unheldForm(runner);
+  const hold = unheld === undefined ? null : GITHUB;
+  return (query, variables, signal, idempotent = false) =>
+    call(
+      (bound) => ghOnce(unheld ?? runner, { query, variables }, bound, signal),
+      signal,
       idempotent,
-      bound,
+      hold,
     );
-    const body =
-      answer.result.code === 0
-        ? ghBody(answer.result)
-        : parsedOrNull(answer.result.stdout);
-    if (answer.result.code !== 0)
-      throw ghExitFailure(answer.result, body, answer);
-    return unwrapResponse(body);
-  };
 }
 
 /** `gh --include` prints the HTTP status and headers before the JSON body. */
@@ -264,6 +397,50 @@ export function resolveGitHubToken(env = process.env): string | null {
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//;
 
+/** One HTTPS request's answer. */
+async function postOnce(
+  fetchImpl: typeof fetch,
+  url: string,
+  token: string,
+  payload: { query: string; variables: Record<string, unknown> },
+  bound: AbortSignal,
+): Promise<Answer> {
+  const began = Date.now();
+  let res: Response;
+  try {
+    res = await postGraphQL(fetchImpl, url, `bearer ${token}`, payload, {
+      timeoutMs: GITHUB_TIMEOUT_MS,
+      signal: bound,
+    });
+  } catch (err) {
+    if (cancelled(bound)) return abortedError(bound, true);
+    return new GitHubApiError(
+      `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`,
+      { code: "unreachable", sent: true },
+    );
+  }
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (err) {
+    if (cancelled(bound)) return abortedError(bound, true);
+    return new GitHubApiError(
+      `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`,
+      { code: "unreachable", sent: true },
+    );
+  }
+  if (cancelled(bound)) return abortedError(bound, true);
+  const body = parsedOrNull(text);
+  const failure = gitHubHttpFailure(
+    res.status,
+    res.headers,
+    text,
+    Date.now() - began,
+  );
+  if (failure === null) return answerOf(body, res.headers);
+  return errorsFailure(body, failure) ?? errorOf(failure);
+}
+
 /** HTTPS transport to `url` with `token`; each call bounded by `GITHUB_TIMEOUT_MS`. */
 export function httpTransport(
   url: string,
@@ -274,77 +451,13 @@ export function httpTransport(
     throw new GitHubApiError(
       `JIG_GITHUB_GRAPHQL_URL must be an https address, or http on a loopback address (got ${url})`,
     );
-  return async (query, variables, signal, idempotent = false) => {
-    const deadline = AbortSignal.timeout(GITHUB_TIMEOUT_MS);
-    const bound =
-      signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
-    if (cancelled(bound)) throw abortedError(bound);
-    let res: Response;
-    try {
-      res = await retryRead(
-        () =>
-          postGraphQL(
-            fetchImpl,
-            url,
-            `bearer ${token}`,
-            { query, variables },
-            { timeoutMs: GITHUB_TIMEOUT_MS, signal: bound },
-          ),
-        idempotent,
-        bound,
-      );
-    } catch (err) {
-      if (cancelled(signal)) throw abortedError(signal);
-      throw new GitHubApiError(
-        `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`,
-        { unavailable: true },
-      );
-    }
-    const text = await res.text().catch(() => "");
-    if (cancelled(bound)) throw abortedError(bound);
-    const body = parsedOrNull(text);
-    if (!res.ok) throw httpFailure(res, text, body);
-    return unwrapResponse(body);
-  };
-}
-
-/** `text` as JSON, or `null` when it is not JSON. */
-function parsedOrNull(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    swallow(err, "an error response's body is not JSON; its status says why");
-    return null;
-  }
-}
-
-/** Whether an error status means "try later": no credential, a limit, a server error. */
-function statusUnavailable(status: number, text: string): boolean {
-  if (status === 401 || status === 429 || status >= 500) return true;
-  return status === 403 && /rate limit/i.test(text);
-}
-
-/** The seconds a `Retry-After` header asks to wait, or `null`. */
-function retryAfterOf(headers: Headers): number | null {
-  return retryAfterSeconds(headers);
-}
-
-/** What an error status means: whether to try later, and when. */
-function httpFailure(
-  res: Response,
-  text: string,
-  body: unknown,
-): GitHubApiError {
-  const failure = {
-    unavailable: statusUnavailable(res.status, text),
-    retryAfterSec: retryAfterOf(res.headers),
-  };
-  if (isRecord(body) && Array.isArray(body.errors))
-    unwrapResponse(body, failure);
-  return new GitHubApiError(
-    `GitHub API HTTP ${res.status}: ${text.slice(0, 300)}`,
-    failure,
-  );
+  return (query, variables, signal, idempotent = false) =>
+    call(
+      (bound) => postOnce(fetchImpl, url, token, { query, variables }, bound),
+      signal,
+      idempotent,
+      `${GITHUB}:${new URL(url).host}`,
+    );
 }
 
 /**
@@ -358,7 +471,7 @@ export function defaultTransport(env = process.env): GitHubTransport {
   if (token === null)
     throw new GitHubApiError(
       "JIG_GITHUB_GRAPHQL_URL is set, so GH_TOKEN or GITHUB_TOKEN must hold a token for it",
-      { unavailable: true },
+      { code: "unauthorized" },
     );
   return httpTransport(url, token);
 }

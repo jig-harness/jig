@@ -53,6 +53,11 @@ import {
   refusedPassArgs,
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
+import {
+  CODEX_PASS_ARG_PATTERN,
+  codexPassArgsProblem,
+  DEFAULT_CODEX_PASS_ARGS,
+} from "../../drive-pr/scripts/lib/codex-pass-args.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
@@ -416,6 +421,7 @@ describe("the reading skills", () => {
       "drive.codex_bypass": DEFAULT_CODEX_BYPASS,
       "ci.hold_sentinels": specialCiSettings({}).holdSentinels,
       "ci.advisory_checks": specialCiSettings({}).advisoryChecks,
+      "drive.codex_pass_args": DEFAULT_CODEX_PASS_ARGS,
       "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "do_item.post_merge_state": DEFAULT_POST_MERGE.state,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
@@ -532,6 +538,38 @@ describe("the reading skills", () => {
       expect(accepted.every(fits)).toBe(true);
     }
     expect(passArgsProblem("--verbose")).toContain("must be a list of words");
+  });
+
+  test("reject the drive.codex_pass_args words the reading skill refuses wherever they stand, and accept the rest", () => {
+    expect(
+      schema.fields.find((f) => f.path === "drive.codex_pass_args")?.items,
+    ).toEqual({ type: "string", pattern: CODEX_PASS_ARG_PATTERN.source });
+    const fits = (word: string) => CODEX_PASS_ARG_PATTERN.test(word);
+    for (const word of [
+      "--",
+      "-",
+      "--model",
+      "--model=x",
+      "-m",
+      "-mx",
+      "--image",
+      "--image=a.png",
+      "-i",
+      "--config=model=x",
+      "-cmodel=x",
+      "--dangerously-bypass-approvals-and-sandbox",
+    ]) {
+      expect(fits(word)).toBe(false);
+      expect(codexPassArgsProblem([word])).toBeDefined();
+    }
+    for (const accepted of [
+      ["--dangerously-bypass-hook-trust"],
+      ["--sandbox", "workspace-write"],
+      ["-c", "model_reasoning_effort=high"],
+    ]) {
+      expect(accepted.every(fits)).toBe(true);
+      expect(codexPassArgsProblem(accepted)).toBeUndefined();
+    }
   });
 
   test("report a host's own field in a repository's file once, whatever its value", () => {

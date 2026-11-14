@@ -239,10 +239,9 @@ or, where only a person can act, raised once for its cause.
 ### 55. Outbound calls: one governed transport for every system Jig calls
 
 Jig's code calls a forge, the issue trackers and the reflection stores,
-and each integration handles their limits and outages on its own: one
-shared budget that only the tracker adapters feed, a separate
-classification of failures in each transport, retries in some, and no
-record of what an operation costs. On a dispatch host that showed as a
+and each integration handles their limits on its own: one shared budget
+that only the tracker adapters feed, and no record of what an operation
+costs. On a dispatch host that showed as a
 tracker credential held at its hourly allowance by one unbounded nested
 list, a repository the forge could not answer a full page of and so was
 never read, and ticks that exited 1 for refusals that clear by waiting.
@@ -254,17 +253,14 @@ request per step:
 
 - **A page that shrinks**: a paged read asks again for half the page when
   the system runs out of time, and keeps the size that read.
-- **Failure classes and one retry**: every transport returns one of a
-  closed set of classes, reads are retried with one backoff, and the tick
-  and the passes wait out a class that clears by waiting.
 - **The cost ledger and its reports**: requests, cost and time per
   operation and caller; a line per system in the tick report, a
   `jig budget` command, and one need when a quota is about to run out.
 - **GitHub in the budget record**: its hourly and secondary limits beside
   the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,
-  identical reads in a run sent once, one queue reading per tracker team
-  and credential, reads by key in one request.
+  identical reads in a run sent once and reads by key in one request,
+  through the shared library that the existing queue snapshots adopt.
 - **Gates and a review lens**: no call leaves by another door than a
   transport, no query selects a list without a page size or passes its
   declared cost ceiling, and a change to an integration is reviewed
@@ -662,7 +658,7 @@ processes the repository.
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
 second team adopt Jig, the hub for a team on several hosts, the Protocol
-that readers outside the skills can trust, work that
+that readers outside the skills can trust, the line in a team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
 measurement. Last come the developer machine and its runtimes, and the runs
 a person owes.
@@ -785,16 +781,60 @@ and their meanings from the code's own tables, with a data file per chapter
 and JSON Schemas for the shapes outside readers parse, held to the code by
 its `--check` in the generated-file inventory; the skills' restatements
 turned into links, or kept as held restatements the gate checks; and the
-chapters rendered on the site. Built in steps, one pull request each: the
-generator, its gate and the exit-code chapter first, then the other stable
-chapters, their schemas, their restatements as links, the provisional
-chapters, and the site's pages.
+chapters rendered on the site. Built in steps, one pull request each;
+built so far: the generator, its gate and the chapter on the drive's end
+states and exit codes ([plugin/protocol/](../plugin/protocol/README.md)).
+Open, in order: the other stable chapters, their schemas, their
+restatements as links, the provisional chapters, and the site's pages.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the
 documents programs outside the skills are pointed to link to the chapters
 instead of restating them, and a change that makes a chapter disagree with
 the code fails `bun run gates`.
+
+### 54. The line in a team's chat
+
+The dispatcher tells a person what needs them on an Orca workspace card,
+and the dashboard shows it to whoever opens it, so a team that works in a
+chat tool learns that a pull request is ready to merge, or that a decision
+waits on it, only when someone looks; answering, asking where work stands
+or starting an item needs a terminal. [design/chat.md](chat.md) has how it
+works and
+[ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)
+the decision. What it will build, Slack first, other chat tools behind the
+same seams: notification channels, a port the tick sends each cause
+through, with today's Orca card as one channel and a suppression record
+per channel, notices staying an owner duty of the host; a Slack channel
+that posts ready to merge with its link and merge command, each framed
+decision with its options and copy lines, each stop only a person settles
+and the host's faults, in one thread per piece of work whose top message
+shows the board's column and whose replies are edited when their cause is
+settled anywhere, with channels, mentions, direct messages, quiet hours
+that hold mentions, and a daily digest; a chat bridge over Socket Mode
+that checks the chat user's workspace, mapping and write permission and
+turns a click on an option, an Answer in words form or a `/jig` command
+(`ask`, `needs`, `status`, `pickup`, `drive`, `hold`, `release`, and on a
+host `pause`, `resume`, `stop`) into one request through `jig send`'s
+writers, run as `jig chat serve` on a host that is not enrolled, posting
+under the host's credential, or inside the hub, posting under the bridge's
+own forge app identity that a repository lists and naming the person each
+chat user linked with `/jig link`; buttons under structured answers'
+guarded pick, none for the attested classes until item 40 accepts the
+hub's bridge as proof; and the Slack app's manifest, `jig chat setup` and
+`jig chat doctor`. Merging from the chat and a drive's mailbox through the
+hub are left out. One pull request per step, in the design's order; the
+hub's placement waits on the hub's first stage and the cross-host commands
+on its third (item 49).
+
+Done when, on a host with Slack configured, a parked drive posts its
+decision into its pull request's thread, a click on an option re-arms the
+drive with that choice and edits the reply to answered, an answer typed on
+the pull request instead edits the reply the same way, the pull request
+becoming ready posts one reply and moves the thread's top message to ready
+to merge, and `/jig ask` on the pull request answers with `jig ask`'s card;
+and, through a hub, an answer clicked in the chat is read by the host's
+re-arm as the linked person's.
 
 ### 26. `init`: setting a repository up for Jig
 

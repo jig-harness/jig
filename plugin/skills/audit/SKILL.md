@@ -1,6 +1,6 @@
 ---
 name: audit
-description: "Audit a repository against Jig's practice modules: check its Jig configuration, score each module's maturity criteria with file-path evidence against the target profile, compare with the last audit's committed record, and report prioritized recommendations as an HTML audit sheet; records the team's decisions when pasted back. Read-only unless asked to apply a recommendation. Use to see where a repository stands, re-check it for drift, or compare several repositories."
+description: "Audit repositories against Jig's practice modules: check configuration, score maturity against a target profile with file-path evidence, compare the committed audit and recommend priorities in HTML. Record pasted decisions. Read-only unless asked to apply recommendations. Use for standing, drift or comparisons."
 argument-hint: "[apply <ref> ...] | [portfolio <name>=<record> ...] | (paste an audit_feedback block)"
 allowed-tools: "Read Write Edit Grep Glob Agent Bash(bun *) Bash(git *) Bash(gh *)"
 ---
@@ -124,8 +124,9 @@ It judges the repository's file alone: the user file (`~/.jig/jig.yaml`) and
 `JIG__*` variables belong to whoever runs the audit. What they add on this
 machine is reported as facts (`fact:user-layer`, `fact:environment-layer`),
 a user file that sets a field only a repository may set is a warning
-(`fact:user-layer-refused`), and so is one whose `drive.pass_args` or
-`drive.codex_bypass` a drive would stop on (`fact:user-layer-invalid`). A
+(`fact:user-layer-refused`), and so is one whose `drive.pass_args`,
+`drive.codex_pass_args` or `drive.codex_bypass` a drive would stop on
+(`fact:user-layer-invalid`). A
 repository's file that sets a field only the host may is an error, whatever it
 sets it to (`user-only:<field>`). The tracker check is the exception: it probes the
 tracker the skills here select, so it reads all three layers, and layers that

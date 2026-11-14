@@ -1,5 +1,6 @@
 /** Shell-independent argv execution with file input and bounded child lifetime. */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { fail, runMain } from "./cli.ts";
 import { run } from "./proc.ts";
 import { withoutTracePropagation } from "./trace.ts";
@@ -148,8 +149,12 @@ export async function main(argv: string[]): Promise<number> {
     !result.spawnFailed &&
     !result.signal &&
     options.outputExitCodes.has(result.code)
-  )
+  ) {
+    // A procedure names a file in a folder it may not have made yet, such
+    // as `.context/scratch/`.
+    mkdirSync(dirname(output), { recursive: true });
     writeFileSync(output, result.stdout);
+  }
   process.stderr.write(result.stderr);
   return result.code;
 }

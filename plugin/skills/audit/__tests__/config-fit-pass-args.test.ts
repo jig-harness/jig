@@ -39,6 +39,8 @@ test.each([
   ["drive.pass_args", "[]"],
   ["drive.pass_args", "null"],
   ["drive.pass_args", "[--permission-mode]"],
+  ["drive.codex_pass_args", "[--dangerously-bypass-hook-trust]"],
+  ["drive.codex_pass_args", "[]"],
   ["drive.codex_bypass", "true"],
   ["drive.codex_bypass", "false"],
 ])("a repository's file that sets %s to %s is an error", (field, value) => {
@@ -82,6 +84,20 @@ test("a user file a drive would stop on is a warning about this machine", () => 
   );
   expect(bypass?.message).toContain("drive.codex_bypass must be true or false");
 
+  const codex = findings("", "drive:\n  codex_pass_args: [--sandbox]\n").find(
+    (f) => f.id === "fact:user-layer-invalid",
+  );
+  expect(codex?.severity).toBe("warning");
+  expect(codex?.message).toContain(
+    "drive.codex_pass_args cannot end with --sandbox",
+  );
+  const word = findings("", "drive:\n  codex_pass_args: --x\n").find(
+    (f) => f.id === "fact:user-layer-invalid",
+  );
+  expect(word?.message).toContain(
+    "drive.codex_pass_args must be a list of words",
+  );
+
   for (const section of ["[]", "off"]) {
     const shape = findings("", `drive: ${section}\n`).find(
       (f) => f.id === "fact:user-layer-invalid",
@@ -94,11 +110,12 @@ test("a user file a drive would stop on is a warning about this machine", () => 
 test("a user file a drive can use draws no finding but the fact that it adds them", () => {
   const all = findings(
     "",
-    `${USER_FILE("[--permission-mode, bypassPermissions]")}  codex_bypass: true\n`,
+    `${USER_FILE("[--permission-mode, bypassPermissions]")}  codex_bypass: true\n  codex_pass_args: [--dangerously-bypass-hook-trust]\n`,
   );
   expect(all.find((f) => f.id === "fact:user-layer-invalid")).toBeUndefined();
   expect(all.find((f) => f.id.startsWith("user-only:"))).toBeUndefined();
   const added = all.find((f) => f.id === "fact:user-layer");
   expect(added?.message).toContain("drive.pass_args");
   expect(added?.message).toContain("drive.codex_bypass");
+  expect(added?.message).toContain("drive.codex_pass_args");
 });
