@@ -394,6 +394,32 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.236.0] - 2026-11-14
+
+### Added
+
+- `failures.group` in the machine's dispatch file: `cause`, the default,
+  tells this host's own failing turns once per cause (the session runtime,
+  the state database, the configuration, the tracker, the forge, other),
+  naming every repository and tick scope that cause fails, so one host fault
+  is no longer told once for each scope it touches; `scope` keeps one notice
+  per scope. Each scope still counts and clears on its own.
+  **Consumer action:** none.
+
+### Fixed
+
+- A batch pickup that ended after claiming some of its members no longer
+  holds the members it never claimed: they are wanted again at the next
+  tick, whether the pass recorded `done` or `failed`. A pass that ended on a
+  question keeps them until a person answers it.
+- A served epic without an execution plan no longer gives its one-child slot
+  to a child this host's ended pickup record keeps from starting: its next
+  startable child takes the slot, and the epic names the held child and why.
+- An item an ended pickup record holds, with no question and no rule to
+  release it, is now a need for a person, framed with its options (pick it
+  up again, or leave it) and listed by `jig ask --waiting`, rather than a
+  quiet `pickup-ended` line. **Consumer action:** none.
+
 ## [0.235.3] - 2026-11-14
 
 ### Fixed
@@ -8222,7 +8248,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.236.0...HEAD
+[0.236.0]: https://github.com/jig-harness/jig/compare/v0.235.3...v0.236.0
 [0.235.3]: https://github.com/jig-harness/jig/compare/v0.235.2...v0.235.3
 [0.235.2]: https://github.com/jig-harness/jig/compare/v0.235.1...v0.235.2
 [0.235.1]: https://github.com/jig-harness/jig/compare/v0.235.0...v0.235.1
