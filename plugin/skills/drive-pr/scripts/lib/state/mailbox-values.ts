@@ -20,7 +20,7 @@ export interface MailboxValue {
 export const MESSAGE_KINDS = {
   note: {
     meaning:
-      "Context for the drive's passes, which they may read (`mailbox.ts check`) and acknowledge; it never controls the drive, and one that does not parse is dropped with a warning.",
+      "Context for the drive's passes, which they may read (`mailbox.ts check`) and acknowledge; it never controls the drive. A note that lacks a field a note always carries is dropped with a warning; a line that is not valid JSON, or a note that carries `command`, `target` or `generation`, is read as a malformed directive and holds the drive's pushes.",
   },
   directive: {
     meaning:
@@ -150,7 +150,7 @@ export const INBOX_FIELDS = {
     type: "string",
     carriedBy: { note: "always", directive: "always" },
     meaning:
-      "The number of the pull request the message is for, as decimal digits; a drive reads only its own pull request's messages.",
+      "The number of the pull request the message is for, as nonzero decimal digits with no leading zero (`12`, never `012` or `0`); a drive reads only its own pull request's messages, and a directive whose `pr` is not in that form holds the drive's pushes.",
   },
   body: {
     type: "string",

@@ -29,11 +29,13 @@ writer takes, so the simplest correct sender is the mailbox's command line,
 the pull request it is for, and a drive reads only its own pull request's
 lines. A line whose `kind` or `command` is not listed here, or that lacks a
 field its kind always carries, is not a valid message, and a field the
-tables do not list is not read. A note that does not parse is dropped,
-while a directive line that does not parse holds the drive's pushes and
-ends the driver at its next checkpoint, again on every re-arm, until a
-person repairs the file (`mailbox.ts repair`): a command nobody can read is
-not treated as no command. A reader of the outbox ignores a status it does
+tables do not list is not read. A note that lacks a field a note always
+carries is dropped with a warning. A line that is not valid JSON, a note
+that carries `command`, `target` or `generation`, and a directive line that
+does not parse hold the drive's pushes and end the driver at its next
+checkpoint, again on every re-arm, until a person repairs the file
+(`mailbox.ts repair`): a command nobody can read is not treated as no
+command. A reader of the outbox ignores a status it does
 not know.
 
 How the drive enforces each directive, and the commands that send them:
@@ -50,7 +52,7 @@ The kinds of message, in an inbox line's `kind` field:
 
 | Kind | Meaning |
 | --- | --- |
-| `note` | Context for the drive's passes, which they may read (`mailbox.ts check`) and acknowledge; it never controls the drive, and one that does not parse is dropped with a warning. |
+| `note` | Context for the drive's passes, which they may read (`mailbox.ts check`) and acknowledge; it never controls the drive. A note that lacks a field a note always carries is dropped with a warning; a line that is not valid JSON, or a note that carries `command`, `target` or `generation`, is read as a malformed directive and holds the drive's pushes. |
 | `directive` | A command the drive enforces mechanically, named in its `command` field. A directive line that does not parse holds the drive's pushes and ends the driver at its next checkpoint with exit 1, as an unreadable inbox does, and a re-armed drive ends again until a person repairs the file (`mailbox.ts repair`). |
 
 <!-- /protocol:generated -->
@@ -82,7 +84,7 @@ some do; a line of a kind the column does not name never carries it:
 | `ts` | string | note (always), directive (always) | When the message was sent, as an ISO 8601 time. |
 | `kind` | string | note (always), directive (always) | One of the message kinds listed above. |
 | `from` | string | note (always), directive (always) | Who sent it: a person's or a session's name, as the sender gives it. |
-| `pr` | string | note (always), directive (always) | The number of the pull request the message is for, as decimal digits; a drive reads only its own pull request's messages. |
+| `pr` | string | note (always), directive (always) | The number of the pull request the message is for, as nonzero decimal digits with no leading zero (`12`, never `012` or `0`); a drive reads only its own pull request's messages, and a directive whose `pr` is not in that form holds the drive's pushes. |
 | `body` | string | note (always), directive (sometimes) | The note's text, or a directive's reason. |
 | `command` | string | directive (always) | One of the directives listed above. |
 | `target` | string | directive (sometimes) | The directive a `resume` clears; carried by every `resume` and by no other directive. |

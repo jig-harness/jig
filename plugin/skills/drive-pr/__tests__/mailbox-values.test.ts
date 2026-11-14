@@ -59,8 +59,33 @@ function carriedBy(
     .map(([name]) => name);
 }
 
+/** A value of the wrong JSON type for a field's declared type. */
+const WRONG: Record<string, unknown> = {
+  string: 5,
+  integer: "3",
+  boolean: "true",
+};
+
+/** The properties a parser reads off a record, whatever it returns. */
+function readFields(
+  parse: (v: unknown) => object | null,
+  shape: Record<string, unknown>,
+): Set<string> {
+  const read = new Set<string>();
+  parse(
+    new Proxy(shape, {
+      get(target, key, receiver) {
+        if (typeof key === "string") read.add(key);
+        return Reflect.get(target, key, receiver);
+      },
+    }),
+  );
+  return read;
+}
+
 function holdsTo(
-  fields: Parameters<typeof carriedBy>[0],
+  fields: Parameters<typeof carriedBy>[0] &
+    Readonly<Record<string, { type: string }>>,
   lines: Record<string, Record<string, unknown>[]>,
   parse: (v: unknown) => object | null,
 ) {
@@ -73,6 +98,12 @@ function holdsTo(
       const seen = new Set(read.flatMap((r) => Object.keys(r ?? {})));
       expect([...seen].sort()).toEqual(carriedBy(fields, kind).sort());
     });
+    test(`${kind}: the parser reads each field the table lists, and none it does not`, () => {
+      const reads = new Set(shapes.flatMap((s) => [...readFields(parse, s)]));
+      const listed = Object.keys(fields);
+      expect([...reads].filter((f) => !listed.includes(f))).toEqual([]);
+      expect(carriedBy(fields, kind).filter((f) => !reads.has(f))).toEqual([]);
+    });
     test(`${kind}: the parser refuses a line without a field the table says it always carries`, () => {
       for (const field of carriedBy(fields, kind, "always"))
         for (const shape of shapes) {
@@ -82,6 +113,37 @@ function holdsTo(
             read: null,
           });
         }
+    });
+    test(`${kind}: a field the table says it sometimes carries is on some lines and absent on others`, () => {
+      for (const field of carriedBy(fields, kind, "sometimes")) {
+        const present = shapes.filter((s) => field in s);
+        const absent = shapes.filter((s) => !(field in s));
+        expect({ field, present: present.length > 0 }).toEqual({
+          field,
+          present: true,
+        });
+        expect({ field, absent: absent.length > 0 }).toEqual({
+          field,
+          absent: true,
+        });
+      }
+    });
+    test(`${kind}: each field holds the type the table gives it`, () => {
+      for (const field of carriedBy(fields, kind)) {
+        const type = fields[field]?.type ?? "";
+        for (const shape of shapes.filter((s) => field in s)) {
+          const value = shape[field];
+          const holds =
+            type === "integer"
+              ? Number.isInteger(value)
+              : typeof value === type;
+          expect({ field, holds }).toEqual({ field, holds: true });
+          expect({
+            field,
+            read: parse({ ...shape, [field]: WRONG[type] }),
+          }).toEqual({ field, read: null });
+        }
+      }
     });
   }
 }
