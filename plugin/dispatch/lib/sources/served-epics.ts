@@ -1,6 +1,45 @@
 /** An epic's children one at a time unless its plan says otherwise, and why an epic is idle. */
-import type { QueueItem } from "../queue-rank.ts";
+import { PERSON_HOLD, queueHold, type QueueItem } from "../queue-rank.ts";
 import type { Unplaced } from "../types.ts";
+import type {
+  PoolIssue,
+  Tracker,
+} from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import type { ServedPlan } from "./served-plan.ts";
+
+/** A person owns the next step, so this child cannot occupy a plan-less epic's working slot. */
+export function parkedOnPerson(
+  child: PoolIssue,
+  tracker: Pick<Tracker, "stateName">,
+  policy: { hitl?: string; manualOps?: string },
+): boolean {
+  const operations = tracker.stateName("ops_pending", child.nativeType ?? null);
+  return (
+    (operations !== null &&
+      child.state.name.trim().toLowerCase() ===
+        operations.trim().toLowerCase()) ||
+    queueHold({ issue: child, blockers: [], unblocks: 0 }, policy) ===
+      PERSON_HOLD
+  );
+}
+
+/** Why a child waits on its epic's plan, or, with no plan, on an unreadable sibling. */
+export function childPlanHold(
+  selection: ServedPlan,
+  child: string,
+  unread: readonly string[],
+): string | undefined {
+  if (selection.error !== undefined) return selection.error;
+  if (selection.holds[child] !== undefined) return selection.holds[child];
+  if (selection.present)
+    return selection.order.includes(child)
+      ? undefined
+      : "waiting on the epic execution plan";
+  // A child that cannot be read may be the one in progress, so no sibling starts on a guess.
+  return unread.length > 0
+    ? `${unread[0]} cannot be read, so whether a sibling is in progress is unknown`
+    : undefined;
+}
 
 /** The epic an item is a child of when that epic has no execution plan, and its child already in progress. */
 export interface Serial {
@@ -53,6 +92,8 @@ export interface EpicWalk {
   unread: string[];
   /** A child is already in progress: the epic is working, not idle. */
   working: boolean;
+  /** Children whose next step belongs to a person rather than an agent. */
+  parked: string[];
 }
 
 /** An epic none of whose open children can start reports one reason of its own, deepest epics first. */
@@ -83,8 +124,12 @@ export function summarizeEpics(
     const held = all
       .map((c) => unplaced.find((u) => u.target === c))
       .find((u) => u !== undefined);
-    const first = held?.target ?? all[0];
-    const why = held?.reason ?? "not ready to start";
+    const parked = walk.parked[0];
+    const first = parked ?? held?.target ?? all[0];
+    const why =
+      parked === undefined
+        ? (held?.reason ?? "not ready to start")
+        : "waiting on a person";
     unplaced.push({
       target: walk.key,
       record: "tracker",

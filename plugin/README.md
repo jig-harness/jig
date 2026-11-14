@@ -441,8 +441,12 @@ have one assignee, so they assign first and verify the assignment from history;
 when that check finds a concurrent assignee was replaced, they conditionally
 make a best-effort restoration and refuse the pickup. A tracker without either
 operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
-none while a child of it is in progress; an epic none of whose open children
-can start reports one reason.
+none while a started child still needs an agent. A child awaiting a person
+does not occupy that slot: it is in the tracker's `ops_pending` state, or
+carries `hitl`, `hitl:*`, `manual-ops` (including their configured names) or
+`jig:hold`. An epic none of whose open children can start reports one reason,
+naming a child waiting on a person when it has one. An execution plan keeps
+its own ordering rules.
 
 The Queue view names holds: an open blocker reads "waiting on #N" (with
 "picked up first" or why it was left);

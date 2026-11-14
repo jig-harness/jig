@@ -30,6 +30,8 @@ import {
   type PullOrigin,
 } from "./served-pull.ts";
 import {
+  childPlanHold,
+  parkedOnPerson,
   serializeEpics,
   summarizeEpics,
   type EpicWalk,
@@ -495,24 +497,6 @@ async function readChildren(
   return { children, unread };
 }
 
-/** Why a child waits on its epic's plan, or, with no plan, on an unreadable sibling. */
-function childPlanHold(
-  selection: ServedPlan,
-  child: string,
-  unread: readonly string[],
-): string | undefined {
-  if (selection.error !== undefined) return selection.error;
-  if (selection.holds[child] !== undefined) return selection.holds[child];
-  if (selection.present)
-    return selection.order.includes(child)
-      ? undefined
-      : "waiting on the epic execution plan";
-  // A child that cannot be read may be the one in progress, so no sibling starts on a guess.
-  return unread.length > 0
-    ? `${unread[0]} cannot be read, so whether a sibling is in progress is unknown`
-    : undefined;
-}
-
 async function enqueueChildren(
   ctx: WalkContext,
   issue: PoolIssue,
@@ -533,12 +517,22 @@ async function enqueueChildren(
       live,
       options.executionPlanBlock,
     );
-    const busy = children.find((c) => c.state.type === "started");
+    const parked = selection.present
+      ? []
+      : children.filter(
+          (c) =>
+            c.state.type === "started" &&
+            parkedOnPerson(c, ctx.tracker, options),
+        );
+    const busy = children.find(
+      (c) => c.state.type === "started" && !parked.includes(c),
+    );
     ctx.walks.push({
       key: issue.identifier,
       children: children.map((c) => c.identifier),
       unread,
       working: busy !== undefined,
+      parked: parked.map((c) => c.identifier),
     });
     serial = selection.present
       ? undefined
