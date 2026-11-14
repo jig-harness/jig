@@ -138,23 +138,18 @@ import { fileLock } from "./file-lock.ts";
 import { helperExitCode } from "../status/terminal-states.ts";
 import { markDisposable } from "../../../../../shared/disposable-mark.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
+import {
+  DIRECTIVE_COMMANDS,
+  type DirectiveCommand,
+  GATE_NAMES,
+  type GateName,
+  type OutboxStatus,
+} from "./mailbox-values.ts";
 
 export const MAILBOX_DIRNAME = "drive-mailbox";
 
 /** One JSONL line, whole, must fit in a single atomic `write(2)` — see header. */
 export const MAILBOX_LINE_MAX_BYTES = 4096;
-
-export const DIRECTIVE_COMMANDS = [
-  "hold-push",
-  "pause",
-  "stop",
-  "resume",
-] as const;
-export type DirectiveCommand = (typeof DIRECTIVE_COMMANDS)[number];
-
-/** The directive classes `resume` may target — never `resume` itself. */
-export const GATE_NAMES = ["hold-push", "pause", "stop"] as const;
-export type GateName = (typeof GATE_NAMES)[number];
 
 export interface NoteMessage {
   id: string;
@@ -195,7 +190,7 @@ export interface OutboxRecord {
    */
   pr: string;
   /** `ack`: the driver acted on the directive, as driver `generation`. */
-  status: "received" | "done" | "ack";
+  status: OutboxStatus;
   response?: string;
   generation?: number;
 }

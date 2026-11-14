@@ -30,7 +30,7 @@ import {
 import {
   GATE_NAMES,
   type GateName,
-} from "../../skills/drive-pr/scripts/lib/state/mailbox.ts";
+} from "../../skills/drive-pr/scripts/lib/state/mailbox-values.ts";
 
 const VERBS = [
   "assign",

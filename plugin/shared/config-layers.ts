@@ -103,6 +103,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "ci.required_checks",
   "ci.hold_sentinels",
   "ci.advisory_checks",
+  "ci.rerun_failed_once",
   // A command the repository supplies, run as its default branch sets it.
   "ci.log_command",
   // The repository's autonomy ceiling and its human-in-the-loop classes: a

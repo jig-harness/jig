@@ -24,10 +24,10 @@ import { ok, type Outcome } from "../../shared/outcome.ts";
 import {
   appendDirective,
   foldGateState,
-  type GateName,
   type GateState,
   inboxPath,
 } from "../../skills/drive-pr/scripts/lib/state/mailbox.ts";
+import type { GateName } from "../../skills/drive-pr/scripts/lib/state/mailbox-values.ts";
 import { driverMailboxDir } from "../../skills/drive-pr/scripts/lib/state/mailbox-stop.ts";
 import type { Holder } from "../../ask/lib/answer.ts";
 import { type DriveReading, readDrive } from "../../ask/lib/drive.ts";

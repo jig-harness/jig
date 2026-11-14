@@ -29,6 +29,7 @@ import { OVERLAY_RELPATH, isMapping, jigHome } from "./config-layers.ts";
 import { remoteName } from "./consumer.ts";
 import { attempt, failed, ok, type Outcome } from "./outcome.ts";
 import { git, gitIdentityEnv, run } from "./proc.ts";
+import { REPO_COMMAND_MAX_OUTPUT_BYTES } from "./repo-commands.ts";
 import { load } from "./yaml.ts";
 
 /** The tokens a repository's command never sees. */
@@ -44,7 +45,7 @@ export const SCRUBBED_ENV: readonly string[] = [
 ];
 
 /** The most standard output a command may write; more fails the run. */
-const MAX_OUTPUT_BYTES = 64 * 1024;
+const MAX_OUTPUT_BYTES = REPO_COMMAND_MAX_OUTPUT_BYTES;
 /** How long the default branch's fetch may take before its last-fetched copy is read. */
 const FETCH_TIMEOUT_SEC = 30;
 /** How long copying the default branch's files may take. */

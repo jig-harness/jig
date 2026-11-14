@@ -753,8 +753,13 @@ implementation. Skip this check for issues about the repository's own code.
    queue read; never retry without the served-person options. Every
    adapter supports inherited claims. Claims serialize on this host;
    between hosts, only `do_item.claim_marker` arbitrates same-person claims,
-   best effort: a lagging listing can let two claims both win, and a later
-   loss stands the claim down after its writes.
+   best effort: a lagging listing can let two claims both win. A claim that
+   meets an earlier marker after its writes, or no longer finds its own,
+   settles who holds the item from the attempts' recorded outcomes and
+   never undoes its writes: it keeps the claim when its own marker still
+   shows and every earlier attempt recorded a release
+   (`"recovery": "reclaimed"`), and stands down when one recorded its claim
+   (`"held"`) or when the evidence cannot say (`"unresolved"`).
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress`, `pr_open` or `blocked`, or assigned to someone
@@ -768,6 +773,12 @@ implementation. Skip this check for issues about the repository's own code.
    `4` is a stand-down: the claim was written, and reading the issue back
    showed another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
+   stand-down with `"recovery": "unresolved"` leaves the item's current
+   state untouched, which a person may have changed during recovery (moved
+   back to Todo, reassigned or removed), and no worker is known to hold
+   it: report it as a question for a person (in a dispatched pass, a
+   decision record that includes the returned reason, without assuming the
+   claim's writes still stand), never reset the item yourself. A
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
    repository's rules change and the pickup is retried by hand. The
@@ -991,7 +1002,9 @@ implementation. Skip this check for issues about the repository's own code.
    **Pre-PR code review gate (mandatory unless the diff is tiny):**
 
    Run it after the implementing agent finishes and the validation plan
-   passes, **before** `git push` / `gh pr create`. The validation plan is
+   passes, **before** the push that opens the pull request and
+   `gh pr create` (a [dispatched pass](#dispatched-passes) pushes its
+   committed work earlier as well). The validation plan is
    the one the change-area catalog emits for the complete workspace change
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
@@ -1349,7 +1362,13 @@ implementation. Skip this check for issues about the repository's own code.
         background execution; Claude Code uses Bash `run_in_background`,
         Codex uses `exec_command` with a short `yield_time_ms` and retains
         `session_id` for `write_stdin`). If neither tool is exposed, treat
-        this as `print` and name the limitation. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
+        this as `print` and name the limitation. A [dispatched pass](#dispatched-passes)
+        runs with background tasks off, so it cannot spawn: it first reads
+        `drives.ts` for a drive on this pull request (a fallback after a tab
+        whose drive was not listed in time may have one that started
+        since), and when none holds it, treats `spawn` as `print` and
+        follows [Dispatched passes](#dispatched-passes) for the result.
+        Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
         human-memory delay this step removes, and a `hitl` issue cleared
         this run is no reason to withhold it. In Claude Code, pass the Bash call's `timeout`
         of `28800000` (8 hours) with `run_in_background`: in an unattended
@@ -1913,8 +1932,34 @@ report. In such a pass:
   default), after which the wrapper stops it: open the pull request and arm
   its drive as soon as the work allows, and record the result before
   anything long-running that follows.
+- **The pass has no next turn.** A background task or agent still running
+  when its turn ends is lost with it, so run every long step (the
+  implementer, a reviewer, the gates) in the foreground and wait for it in
+  the same turn, and bound every wait on another agent: one that stops
+  without reporting is retried or replaced, or its failure is recorded, and
+  is never waited on until the deadline. A review the skill requires is not
+  discharged by an agent's silence: run it another way, or record that it
+  did not happen. A Claude Code pass runs with background tasks off. Once the
+  branch holds committed work, push it before a long validation step and
+  after each later commit, so a deadline or an interrupted run strands
+  less on the host. Where the repository's instructions require validation
+  before every push, they win and the early push is skipped. Each such push is the push step of
+  [Step 4a](#step-4a-standard-start-no-sub-issues): `commit-prefix.ts`
+  first when `pull_requests.commit_prefix` is set, since a pushed commit is
+  never reworded. A push the repository's pre-push hook refuses is no stop:
+  go on with validation, fix what it found, and push after it. The pull
+  request still opens only after validation and the pre-PR review.
+- **A drive the pass cannot arm is handed off, not dropped.** When the arm
+  script answers `spawn`, the pass cannot start the drive itself and
+  first checks `drives.ts` for one on this pull request. With none, it
+  records `done --pr <number>` as for an armed drive (the work is
+  finished and the pull request is open), and its closing report says the
+  drive is unarmed and carries the unstarted command and the arm
+  script's reason. The dispatcher then drives the pull request only
+  where `dispatch.adopt` is enabled or a person has put the `drive`
+  label on it; the report names that person's next step.
 - **Write the closing report last.** Record the result as soon as the
-  pull request's drive is armed and go on; when the pass is done, write
+  pull request's drive is armed, or handed off as above, and go on; when the pass is done, write
   its closing report, a `closing-report/v1` record of the shape the prompt
   gives (what the run concluded, the next step and who takes it, the
   question and its framed decision when a person must decide, why it fell
