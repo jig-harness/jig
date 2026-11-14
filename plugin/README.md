@@ -484,6 +484,25 @@ that did not answer is asked nothing more in that tick, and the next tick
 sends it one request before it reads on
 ([when an outside system refuses or does not answer](CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer)).
 
+The [cost ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) records outbound attempts per hour,
+system, hashed credential, operation and caller in the same budget database.
+The tick report shows each system's known balance, this tick's spending and
+its costliest operations. `jig budget` shows the last 24 hours grouped by
+operation and caller; use `--hours 1` through `--hours 168` to choose the
+window, or `--json` for its rows and balances. Linear complexity comes from
+`x-complexity`; GitHub query points are recorded where the answer includes
+them. Unknown costs and estimates are marked rather than presented as measured
+points. No query body, token or item content is kept.
+
+A `low-quota` need names the operations spending a quota when the last hour's
+rate would empty it before its refill. It appears once per quota and clears
+when the projection recovers. The rate estimate weights partial hourly buckets
+as if spending were uniform within them. It accounts for continuous refill
+and fixed resets; it cannot measure other applications' use of the credential.
+Ledger writes do not stop calls when storage is unavailable, so a report may
+understate spending. Rows whose hour began more than 7 days ago are removed.
+GitHub admission windows and dashboard quota displays remain planned.
+
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
 it keeps the orchestrator's model and effort and forwards the item's route
@@ -1422,7 +1441,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session`, `assign the item as someone who can write` or `authorize the account's tracker credential`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 

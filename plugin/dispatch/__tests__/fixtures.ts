@@ -14,9 +14,16 @@
  * reaches through `JIG_GITHUB_GRAPHQL_URL`. The tick runs as a child with
  * its own home, so its receipts and lock never touch the real ones.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import {
   conn,
@@ -751,7 +758,27 @@ export function world(): World {
       else write("base-head", sha);
       if (next !== undefined) write("base-head-next", next);
     },
-    setWorkspaces: (rows) =>
+    setWorkspaces: (rows) => {
+      // Listed on-disk stage workspaces are checkouts, as the real runtime requires.
+      for (const row of rows) {
+        if (
+          row.path?.startsWith(root) &&
+          existsSync(row.path) &&
+          !existsSync(join(row.path, ".git"))
+        ) {
+          const initialized = Bun.spawnSync(["git", "init", "-q", row.path], {
+            env,
+          });
+          expectSpawnExit(
+            {
+              exitCode: initialized.exitCode,
+              stdout: initialized.stdout.toString(),
+              stderr: initialized.stderr.toString(),
+            },
+            0,
+          );
+        }
+      }
       write("orca-ps.json", {
         worktrees: rows.map((r, i) => ({
           worktreeId: `repo-1::/ws/${i}`,
@@ -780,7 +807,8 @@ export function world(): World {
         hostScope: { hostIds: ["local"], omittedHostIds: [] },
         totalCount: rows.length,
         truncated: false,
-      }),
+      });
+    },
     setFiles: (pr, files) => write(`files-${pr}.json`, files),
     setRepoFile: (path, text) => {
       mkdirSync(dirname(join(dir, "repo-files", path)), { recursive: true });
