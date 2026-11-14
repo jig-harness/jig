@@ -287,7 +287,8 @@ export function windowsCommand(
  * Preserve argv on POSIX and native Windows binaries; adapt batch shims once.
  *
  * No shell reads the argv on POSIX or for a native Windows image: it reaches
- * the child as separate arguments. cmd.exe reads it in two cases only. A
+ * the child as separate arguments, unless the caller sets `shell` in
+ * `options`, which passes through unchanged. cmd.exe reads it in two cases only. A
  * `.cmd` or `.bat` launcher, which Windows can start only through cmd.exe,
  * gets its resolved path and every argument caret-escaped (`escapeMeta`,
  * `batchArgument`, one more layer for an npm shim's `%*`), and a line break
