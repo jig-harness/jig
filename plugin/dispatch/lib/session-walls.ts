@@ -123,12 +123,9 @@ export async function observeWalls(
     if (cwd === null) continue;
     // A probe is neither started nor awaited past the tick's bound.
     const found = await probeHeldTo(r, cwd, timeoutSec, bound);
-    if (typeof found === "string" || "cut" in (found ?? {})) {
-      const cut = typeof found === "object" && found !== null;
-      failures.push({
-        reason: `launch record ${r.record.id}: ${cut ? (found as Cut).cut : found}`,
-        ...(cut ? { failure: CUT_AT_BOUND } : {}),
-      });
+    const failure = wallFailure(r.record.id, found);
+    if (failure !== null) {
+      failures.push(failure);
       // Without a successful read this tick cannot say the wall is still the
       // session's last record, so no earlier reading may authorize a nudge.
       wentOn(r, currentIso(), root);
@@ -137,6 +134,21 @@ export async function observeWalls(
     keepEpisode(r, found as ProbedWall | null, root);
   }
   return failures;
+}
+
+/** The failure a probe's answer is, or `null` for a wall (or none) it read. */
+function wallFailure(
+  id: string,
+  found: Awaited<ReturnType<typeof probeHeldTo>>,
+): WallFailure | null {
+  if (typeof found === "string")
+    return { reason: `launch record ${id}: ${found}` };
+  if (found !== null && "cut" in found)
+    return {
+      reason: `launch record ${id}: ${found.cut}`,
+      failure: CUT_AT_BOUND,
+    };
+  return null;
 }
 
 /** A wall read that could not be made, and the failure class when the tick's bound ended it. */
