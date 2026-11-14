@@ -132,6 +132,29 @@ describe("served pickups", () => {
     expect(read.read.failure).toMatchObject({ class: "unreachable" });
     expect(read.claimed).toBeNull();
   });
+  it("keeps the record ok for an item no call failed to read, and leaves the claims unknown", async () => {
+    const f = fake();
+    const poolIssue = f.tracker.poolIssue.bind(f.tracker);
+    f.tracker.poolIssue = async (k: string) =>
+      k === "#2"
+        ? { ...issue("#2", ["epic"], null), truncated: ["labels"] }
+        : poolIssue(k);
+    const read = await readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      { people, cache: f.cache, nowMs: 1, headroom: true },
+    );
+    expect(read.read.ok).toBe(true);
+    expect(read.read.failure).toBeUndefined();
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "#2",
+        reason: "the child cannot be read completely",
+      }),
+    );
+    expect(read.claimed).toBeNull();
+  });
   it("carries a tracker namespace through the public reader", async () => {
     const f = fake();
     const read = await readPickups(

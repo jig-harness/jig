@@ -61,6 +61,7 @@ import {
   rankQueue,
   type QueueItem,
 } from "../queue-rank.ts";
+import { readFailureOf } from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
@@ -78,9 +79,9 @@ export interface ServedReading {
   claimed: ClaimedItem[];
   /** The tracker refused the reads for its rate limit: until when, in ISO 8601. */
   limitedUntil?: string;
-  /** A served identity's queue failed to read for another reason: the claims are not known. */
+  /** A served identity's queue, or an item in it, failed to read for another reason: the claims are not known. */
   incomplete?: boolean;
-  /** What each failed read raised, `undefined` for one no call failed, so every class reaches the record. */
+  /** What each read that fails the record raised: a queue's, or an item's a failed call stopped, so every class reaches the record. */
   failures?: unknown[];
 }
 export interface ServedPolicy {
@@ -139,8 +140,10 @@ interface PersonReading {
   unplaced: Unplaced[];
   candidates: Candidate[];
   limited: { error: TrackerRateLimited; view: ServedView | null } | null;
-  /** What failed each read: the scope's cause or the error thrown, `undefined` for a read no call failed. */
+  /** What failed each read that fails the record: the scope's cause or the error thrown. */
   failures: unknown[];
+  /** An item's read failed, so the claims below it are unknown. */
+  partial: boolean;
 }
 
 /** A served item in progress, as the claim dispatch monitors. */
@@ -183,6 +186,7 @@ async function readPerson(
     candidates: [],
     limited: null,
     failures: [],
+    partial: false,
   };
   let view: ServedView | null = null;
   try {
@@ -224,10 +228,11 @@ async function readPerson(
   return got;
 }
 
-/** A failed queue makes the reading incomplete; every cause is kept. */
+/** A failed queue or item read makes the reading incomplete; every cause that fails the record is kept. */
 function noteFailure(out: ServedReading, got: PersonReading): void {
-  if (got.failures.length === 0) return;
-  out.failures = [...(out.failures ?? []), ...got.failures];
+  if (got.failures.length === 0 && !got.partial) return;
+  if (got.failures.length > 0)
+    out.failures = [...(out.failures ?? []), ...got.failures];
   out.incomplete = true;
 }
 
@@ -409,8 +414,10 @@ interface Found {
   unplaced: Unplaced[];
   candidates: Candidate[];
   pending: Pending[];
-  /** What failed each read of this node, `undefined` for a read no call failed: the reading is incomplete. */
+  /** What failed each read of this node that fails the record. */
   failures: unknown[];
+  /** A read of this node failed: the claims below it are unknown. */
+  partial: boolean;
 }
 
 /**
@@ -444,6 +451,7 @@ async function walk(
       all.unplaced.push(...found.unplaced);
       all.candidates.push(...found.candidates);
       all.failures.push(...found.failures);
+      all.partial ||= found.partial;
       if (s.status === "fulfilled") generation.push(...found.pending);
     });
     try {
@@ -495,7 +503,7 @@ async function readChildren(
     }
     if (child === null || child.truncated.length) {
       unread.push(kept.identifier);
-      found.failures.push(error);
+      itemFailed(found, error);
       found.unplaced.push({
         ...itemOf(kept),
         record: "tracker",
@@ -599,7 +607,13 @@ function leavesNode(
 }
 
 function newFound(): Found {
-  return { unplaced: [], candidates: [], pending: [], failures: [] };
+  return {
+    unplaced: [],
+    candidates: [],
+    pending: [],
+    failures: [],
+    partial: false,
+  };
 }
 
 async function visitNode(
@@ -614,7 +628,7 @@ async function visitNode(
   if (ancestor !== undefined && issue.assignee !== null) return found;
   seen.add(issue.identifier);
   if (issue.truncated.length) {
-    found.failures.push(undefined);
+    itemFailed(found, undefined);
     found.unplaced.push({
       ...itemOf(issue),
       record: "tracker",
@@ -639,12 +653,28 @@ function unreadable(
   found: Found,
   cause?: unknown,
 ): void {
-  found.failures.push(cause);
+  itemFailed(found, cause);
   found.unplaced.push({
     ...itemOf(issue),
     record: "tracker",
     reason: `the queue metadata could not be read: ${why}`,
   });
+}
+
+/**
+ * An item's read failed: the claims below it are unknown. Only a failure a
+ * call caused fails the record, with that call's class; one no call caused (an
+ * answer that names no assigner, a read the tracker cut short) is the item's
+ * row alone.
+ */
+function itemFailed(found: Found, cause: unknown): void {
+  found.partial = true;
+  if (
+    cause !== undefined &&
+    readFailureOf({ code: "unreadable", reason: failureText(cause), cause }) !==
+      undefined
+  )
+    found.failures.push(cause);
 }
 
 /** Read what a node needs and place it: held with why, a candidate, or an epic whose children come next. */
@@ -658,13 +688,13 @@ async function placeNode(
   const unplace = unplacer(issue, options.trackerNamespace, found);
   const carried = view.held(issue.identifier)?.relations ?? null;
   const meta = await metadata(tracker, issue, identity, cache, carried, view);
-  // A kept no-assigner answer is reported as the failed read it stands for.
+  // A kept no-assigner answer is reported as the item's unreadable row.
   if (meta.noAssigner !== undefined)
     return void unreadable(issue, meta.noAssigner, found);
   const initialHold = nodeHold(node, meta, identity, options, tracker);
   if (initialHold !== null) {
     // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
-    if (meta.description === null) found.failures.push(undefined);
+    if (meta.description === null) itemFailed(found, undefined);
     return void unplace(initialHold);
   }
   const open = await openBlockers(

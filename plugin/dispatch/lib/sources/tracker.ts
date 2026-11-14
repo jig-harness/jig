@@ -669,19 +669,21 @@ export async function readPickups(
 }
 
 /**
- * The aggregate record with the served lane's reading in it: a served queue
- * that failed to read makes the record not ok, with the failure's class, so
- * settlement treats it as it does the identity's own failed read. The record
- * keeps one failure for the identity's read and every failed served read
- * (`combinedFailure`), so it waits only when every one of them clears by
- * waiting.
+ * The aggregate record with the served lane's reading in it: a served queue,
+ * or an item in it, whose read a failed call stopped makes the record not ok,
+ * with the failure's class, so settlement treats it as it does the identity's
+ * own failed read. An item no call failed to read (an answer that names no
+ * assigner, a read the tracker cut short) is its own unplaced row and leaves
+ * the record ok. The record keeps one failure for the identity's read and
+ * every failed served read (`combinedFailure`), so it waits only when every
+ * one of them clears by waiting.
  */
 function servedRead(
   read: TrackerReading["read"],
   extra: Awaited<ReturnType<typeof readServedPickups>>,
 ): TrackerReading["read"] {
   const detail = `${read.detail}; ${extra.wanted.length} served pickup(s)`;
-  if (extra.incomplete !== true) return { ...read, detail };
+  if ((extra.failures ?? []).length === 0) return { ...read, detail };
   const failure = combinedFailure([
     ...(read.ok ? [] : [read.failure]),
     ...(extra.failures ?? []).map((cause) =>
