@@ -156,6 +156,39 @@ describe("the create hook", () => {
     expect(ctx.lines.join("\n")).toContain("ended without a result");
   });
 
+  test("a failed run's retained claim is taken over once nothing of it runs", () => {
+    const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
+    const state = createState(quiet(), worktree);
+    mkdirSync(state.claim, { recursive: true });
+    writeFileSync(
+      join(state.claim, "owner"),
+      `${hostname()} 99999999 not-its-start\n`,
+    );
+    writeFileSync(
+      state.result,
+      "failed: its process group may still be running\n",
+    );
+    const ctx = quiet();
+    awaitCreateHook(ctx, worktree, 0);
+    expect(readFileSync(join(worktree, ".hook-runs"), "utf8")).toBe("ran\n");
+    expect(readFileSync(state.result, "utf8")).toBe("ok\n");
+  });
+
+  test("a failed run's retained claim whose owner still runs is not taken over", () => {
+    const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
+    const state = createState(quiet(), worktree);
+    mkdirSync(state.claim, { recursive: true });
+    writeFileSync(join(state.claim, "owner"), ownerLine(quiet()));
+    writeFileSync(
+      state.result,
+      "failed: its process group may still be running\n",
+    );
+    expect(() => awaitCreateHook(quiet(), worktree, 0)).toThrow(
+      "its process group may still be running",
+    );
+    expect(existsSync(join(worktree, ".hook-runs"))).toBe(false);
+  });
+
   test("a claim whose owner's process id now names another process is taken over", () => {
     // The owner ended and its id went to a process that runs on.
     const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });

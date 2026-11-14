@@ -310,14 +310,15 @@ export function awaitCreateHook(
   for (;;) {
     const result = readResult(state);
     if (result === "ok") return;
-    if (result !== null)
-      throw new HerdrError(
-        `the worktree's create hook ${result}; fix ${path} and open the workspace again, which runs it again`,
-      );
+    // A failed run whose group could not be ended keeps its claim: once nothing of it is alive, take it over and run the hook again.
     if (takeOverAbandoned(ctx, state)) {
       runClaimed(ctx, worktree, path, state);
       return;
     }
+    if (result !== null)
+      throw new HerdrError(
+        `the worktree's create hook ${result}; fix ${path} and open the workspace again, which runs it again`,
+      );
     if (currentMs() >= deadline)
       throw new HerdrError(
         `the worktree's create hook did not finish within ${HOOK_TIMEOUT_MS / 60_000} minutes; if no process is still running it, remove ${state.claim} and open the workspace again, which runs it again`,

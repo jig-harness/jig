@@ -16,6 +16,7 @@ import type { HookRunner } from "./port.ts";
 import { processAlive, processStart } from "./process-start.ts";
 import {
   budget,
+  cleanupContext,
   type Context,
   HerdrError,
   UnendedGroupError,
@@ -113,12 +114,13 @@ const GROUP_POLL_MS = 50;
  * answers ESRCH. A kill is a request: this returns only once the group is
  * seen gone, within a bounded wait, and throws when it is not, EPERM
  * included, which a live group the caller may not signal answers too.
- * Cleanup keeps processStart's own fixed deadline after the run budget expires,
- * so an expired hook still gets its identity checked before any group signal.
+ * Cleanup runs in the unlimited context (`cleanupContext`), so once the run's
+ * limit has passed an expired hook still gets its identity checked before any
+ * group signal and its group the whole bounded wait to disappear.
  */
 function endGroup(ctx: Context, groupFile: string): void {
   const { group } = recordedRun(groupFile);
-  const cleanup = { ...ctx, budget: (ms: number) => ms };
+  const cleanup = cleanupContext(ctx);
   if (group === undefined || !groupAlive(cleanup, group)) return;
   try {
     process.kill(-group.pid, "SIGKILL");
@@ -132,6 +134,6 @@ function endGroup(ctx: Context, groupFile: string): void {
       throw new HerdrError(
         `process group ${group.pid} still has processes ${GROUP_END_TIMEOUT_MS / 1000} seconds after SIGKILL`,
       );
-    ctx.sleep(GROUP_POLL_MS);
+    cleanup.sleep(GROUP_POLL_MS);
   }
 }
