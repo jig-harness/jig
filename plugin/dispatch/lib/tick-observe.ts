@@ -47,6 +47,7 @@ import {
 import { defaultBranchConfig, repoTarget } from "./forge.ts";
 import type { LabelConfig } from "./labels.ts";
 import type { ReadRecord } from "./launches.ts";
+import { endedPassOver } from "./actions/pickup-hold.ts";
 import { type MachineRepository, machineRepository } from "./machine-config.ts";
 import { previousFollowupSince } from "../receipts.ts";
 import type {
@@ -340,6 +341,7 @@ export async function observeRepo(
                   !s.wallUnrecorded,
               ),
             reads,
+            records,
             opened.tracker,
           ),
         ),
@@ -552,6 +554,7 @@ async function readTracker(
   nowMs: number,
   headroom: boolean,
   reads: Pick<TickReads, "budget" | "servedViews">,
+  records: readonly ReadRecord[],
   preparedTracker?: Tracker,
 ): Promise<Tracked> {
   const tracked: Tracked = {
@@ -604,6 +607,7 @@ async function readTracker(
         people,
         nowMs,
         headroom,
+        passOver: endedPassOver(records, repo.slug, nowMs),
         ...tracked.servedPolicy,
         ...(reads.servedViews === undefined
           ? {}
