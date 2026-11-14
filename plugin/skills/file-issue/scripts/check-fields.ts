@@ -99,6 +99,17 @@ function print(json: boolean, report: unknown, lines: string[]): void {
   console.log(json ? JSON.stringify(report, null, 2) : lines.join("\n"));
 }
 
+/** `file` with symlinks resolved in its directory (and in itself when it exists), so aliases share one lock. */
+function canonicalPath(file: string): string {
+  const path = resolve(file);
+  if (existsSync(path)) return realpathSync(path);
+  mkdirSync(dirname(path), { recursive: true });
+  return resolve(realpathSync(dirname(path)), basename(path));
+}
+
+/** Milliseconds a run waits on a position's lock: long enough to reclaim a dead owner's, short enough to refuse a live one. */
+const POSITION_LOCK_WAIT_MS = 2000;
+
 /** The position `file` keeps for a comment-only sweep, and its save once the run applied; moving keeps none. */
 function keptPosition(
   file: string | undefined,
@@ -117,7 +128,7 @@ function keptPosition(
     );
     return undefined;
   }
-  const path = resolve(file);
+  const path = canonicalPath(file);
   const read = readPosition(path);
   if (read.warning !== null) console.error(`warning: ${read.warning}`);
   return {
@@ -159,11 +170,15 @@ async function check(argv: string[]): Promise<number> {
   if (values.position === undefined || settings.move)
     return checkRun(values, overlay, settings, values.position);
   // Two runs sharing a position file would overwrite each other's progress.
-  const path = resolve(values.position);
+  const path = canonicalPath(values.position);
   const locked = await withFileLock(
     path,
     () => checkRun(values, overlay, settings, path),
-    { root: dirname(path), name: "sweep-position", waitMs: 0 },
+    {
+      root: dirname(path),
+      name: "sweep-position",
+      waitMs: POSITION_LOCK_WAIT_MS,
+    },
   );
   if (locked === null)
     return fail(

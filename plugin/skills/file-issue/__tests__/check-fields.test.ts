@@ -10,15 +10,17 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
-import { withFileLock } from "../../../shared/file-lock.ts";
+import { fileLockPath, withFileLock } from "../../../shared/file-lock.ts";
 
 const script = join(import.meta.dir, "..", "scripts", "check-fields.ts");
 const scratch = mkdtempSync(join(tmpdir(), "check-fields-"));
@@ -142,6 +144,40 @@ describe("check-fields.ts", () => {
           "file_issue:\n  sweep:\n    move: false\n",
         ),
       { root: join(scratch, `repo-${n}`), name: "sweep-position" },
+    );
+    expect(held?.value).toContain("another run holds this read position");
+  });
+
+  test("takes over a read position lock whose owner is gone", async () => {
+    const root = join(scratch, `repo-${n}`);
+    mkdirSync(root, { recursive: true });
+    const dead = Bun.spawn(["true"]);
+    await dead.exited;
+    writeFileSync(
+      fileLockPath(join(root, "position.json"), root, "sweep-position"),
+      `${dead.pid}\nstale-token\n`,
+    );
+    const stderr = await run(
+      ["check", "--yes", "--position", "position.json"],
+      1,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).not.toContain("another run holds this read position");
+  });
+
+  test("refuses a run reaching a held read position through a symlinked directory", async () => {
+    const root = join(scratch, `repo-${n}`);
+    mkdirSync(root, { recursive: true });
+    symlinkSync(root, join(root, "alias"));
+    const held = await withFileLock(
+      join(realpathSync(root), "position.json"),
+      () =>
+        run(
+          ["check", "--yes", "--position", "alias/position.json"],
+          1,
+          "file_issue:\n  sweep:\n    move: false\n",
+        ),
+      { root: realpathSync(root), name: "sweep-position" },
     );
     expect(held?.value).toContain("another run holds this read position");
   });
