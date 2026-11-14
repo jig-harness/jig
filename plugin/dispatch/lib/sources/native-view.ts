@@ -14,6 +14,7 @@ import type { PickupReads } from "../pickup-reads.ts";
 import type { ServedView, ServedViews, HeldIssue } from "./served-reads.ts";
 
 import { isRateLimited } from "../../../shared/outbound/budget.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { failureText } from "../text.ts";
 import { nativeFacts } from "./native-facts.ts";
 import { ended, within } from "./bounded.ts";
@@ -102,7 +103,9 @@ export async function nativeSharedView(
   },
 ): Promise<ServedView> {
   if (ended(options.bound))
-    return Promise.reject(new Error("stopped at the tick’s deadline"));
+    return Promise.reject(
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
   const source = tracker.dispatchSource;
   if (source === undefined)
     return Promise.reject(
@@ -202,7 +205,9 @@ export async function nativeSharedView(
     if (previous !== undefined) return previous;
     const raw = (value as NativePool).nativeRow;
     if (ended(options.bound))
-      return Promise.reject(new Error("stopped at the tick’s deadline"));
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
     const read = source.project(raw, options.bound);
     const issue = await (options.bound === undefined
       ? read

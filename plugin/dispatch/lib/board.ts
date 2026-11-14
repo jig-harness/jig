@@ -107,6 +107,8 @@ export interface BoardInput {
   held: ReadonlySet<number>;
   serialized: Pick<Contention, "held">;
   budget: TickBudget;
+  /** Whether the tick's bound has ended: an abandoned read then starts no further query. */
+  ended?: () => boolean;
 }
 
 /** What the board read reads through, which a test replaces. */
@@ -211,9 +213,12 @@ async function readFacts(
     (n) => first.pulls.get(n)?.mergeable === "UNKNOWN",
   );
   if (unknown) {
-    if (left() <= UNKNOWN_WAIT_MS + 1000) return read;
+    if (left() <= UNKNOWN_WAIT_MS + 1000 || input.ended?.() === true)
+      return read;
     await io.wait(UNKNOWN_WAIT_MS);
   }
+  // The tick's own bound ended while it waited: an abandoned read starts no further query.
+  if (input.ended?.() === true) return read;
   // A second read that fails leaves the first: its moved heads unplaced, its unknown mergeability where it was.
   if (left() <= 0) return read;
   const reread = await io.read(input.slug, retry, left() / 1000);

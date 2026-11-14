@@ -4,6 +4,10 @@ export function waitFor<T>(
   signal: AbortSignal,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
     const stop = () => reject(signal.reason);
     signal.addEventListener("abort", stop, { once: true });
     pending.then(resolve, reject).finally(() => {

@@ -28,7 +28,9 @@ import {
 } from "./launches.ts";
 import { isProbedWall, type ProbedWall } from "./quota-probe.ts";
 import { type SessionsReport, WAITING_STATES } from "./runtime/port.ts";
+import type { ReadFailure } from "./types.ts";
 import {
+  CUT_AT_BOUND,
   ended,
   passedBefore,
   type TickBound,
@@ -103,7 +105,8 @@ function waitingSession(
 /**
  * Read the wall of each of `repo`'s waiting interactive sessions, keeping
  * a waiting episode on its record and the account's wall; returns what
- * could not be read, for the report.
+ * could not be read, for the report: a read the tick's bound ended carries
+ * its `unreachable` class, so the failure ledger counts it.
  */
 export async function observeWalls(
   records: ReadRecord[],
@@ -112,24 +115,39 @@ export async function observeWalls(
   timeoutSec: number,
   root?: string,
   bound?: TickBound,
-): Promise<string[]> {
-  const failures: string[] = [];
+): Promise<WallFailure[]> {
+  const failures: WallFailure[] = [];
   for (const r of records) {
     if (r.record.repo !== repo) continue;
     const cwd = waitingSession(r, sessions);
     if (cwd === null) continue;
     // A probe is neither started nor awaited past the tick's bound.
     const found = await probeHeldTo(r, cwd, timeoutSec, bound);
-    if (typeof found === "string") {
-      failures.push(`launch record ${r.record.id}: ${found}`);
+    if (typeof found === "string" || "cut" in (found ?? {})) {
+      const cut = typeof found === "object" && found !== null;
+      failures.push({
+        reason: `launch record ${r.record.id}: ${cut ? (found as Cut).cut : found}`,
+        ...(cut ? { failure: CUT_AT_BOUND } : {}),
+      });
       // Without a successful read this tick cannot say the wall is still the
       // session's last record, so no earlier reading may authorize a nudge.
       wentOn(r, currentIso(), root);
       continue;
     }
-    keepEpisode(r, found, root);
+    keepEpisode(r, found as ProbedWall | null, root);
   }
   return failures;
+}
+
+/** A wall read that could not be made, and the failure class when the tick's bound ended it. */
+export interface WallFailure {
+  reason: string;
+  failure?: ReadFailure;
+}
+
+/** A read the tick's bound ended, in the words that say which. */
+interface Cut {
+  cut: string;
 }
 
 /** `probe`, or why the tick's bound kept it from reading. */
@@ -138,14 +156,14 @@ async function probeHeldTo(
   cwd: string,
   timeoutSec: number,
   bound: TickBound | undefined,
-): Promise<Awaited<ReturnType<typeof probe>>> {
+): Promise<Awaited<ReturnType<typeof probe>> | Cut> {
   if (bound === undefined) return probe(r, cwd, timeoutSec);
-  if (ended(bound)) return passedBefore("its wall was read");
+  if (ended(bound)) return { cut: passedBefore("its wall was read") };
   try {
     return await within(probe(r, cwd, timeoutSec), bound);
   } catch (error) {
     if (!bound.signal.aborted) throw error;
-    return `the tick's deadline passed during its wall's read`;
+    return { cut: `the tick's deadline passed during its wall's read` };
   }
 }
 

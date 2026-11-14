@@ -66,6 +66,7 @@ import {
   readFailureOfError,
 } from "../read-failures.ts";
 import { failureText } from "../text.ts";
+import { failedBy, outboundFailure } from "../../../shared/outbound/failure.ts";
 import {
   type FacetBound,
   facetGaps,
@@ -344,9 +345,10 @@ async function readAssigned(
     bound !== undefined &&
     (bound.signal.aborted || currentMs() >= bound.deadline)
   )
-    return failed(
+    return failedBy(
       "stopped",
-      "the tick's deadline passed before the read could start",
+      outboundFailure("unreachable", passedBefore("the read could start")),
+      passedBefore("the read could start"),
     );
   try {
     return ok(

@@ -18,6 +18,7 @@ import {
 } from "../contention.ts";
 import { defaultBranchFile, pullRequestFiles } from "../forge.ts";
 import type { ReadRecord } from "../launches.ts";
+import { heldRead, type TickBound } from "./bounded.ts";
 import { settleHolds } from "../serial-holds.ts";
 import type { DrivenPr, RepoReport, RepoTarget } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
@@ -71,6 +72,7 @@ export async function observeContention(
   nowMs: number,
   threads: (pr: number) => Promise<Outcome<number>>,
   skipped: string | null = null,
+  bound?: TickBound,
 ): Promise<Contention> {
   if (!forge.ok) return UNREAD_CONTENTION;
   const merged = new Set(forge.merged.map((m) => m.number));
@@ -93,9 +95,16 @@ export async function observeContention(
     {
       catalog: async (p) => {
         const relative = repositoryPath(p);
-        return relative.ok ? defaultBranchFile(repo, relative.value) : relative;
+        return relative.ok
+          ? heldRead(bound, "the change-area catalog was read", () =>
+              defaultBranchFile(repo, relative.value),
+            )
+          : relative;
       },
-      files: (pr) => pullRequestFiles(repo.slug, pr),
+      files: (pr) =>
+        heldRead(bound, "the pull request's files were read", () =>
+          pullRequestFiles(repo.slug, pr),
+        ),
       threads,
     },
   );

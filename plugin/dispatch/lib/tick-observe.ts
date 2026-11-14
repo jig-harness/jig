@@ -434,7 +434,10 @@ export async function observeRepo(
   const serialized = await timer.time("observe", () =>
     pool.run(async () => {
       const skipped = await optionalSkipped(reads, context.bound);
-      const threads = tickThreadReader(repo.slug);
+      const threads = boundedThreads(
+        tickThreadReader(repo.slug),
+        context.bound,
+      );
       await observeRunning(
         {
           records,
@@ -449,6 +452,9 @@ export async function observeRepo(
         threads,
         context.bound,
       );
+      // The wall probes may have used what was left: the optional reads re-ask.
+      const stillSkipped =
+        skipped ?? (await optionalSkipped(reads, context.bound));
       return observeContention(
         repo,
         values,
@@ -461,7 +467,8 @@ export async function observeRepo(
         records,
         nowMs,
         threads,
-        skipped,
+        stillSkipped,
+        context.bound,
       );
     }),
   );
@@ -481,6 +488,7 @@ export async function observeRepo(
               held,
               serialized,
               budget: reads.budget,
+              ended: () => ended(context.bound),
             }),
           ),
     ),
@@ -517,6 +525,23 @@ export async function observeRepo(
     held,
     board,
     ...(holders === undefined ? {} : { holders }),
+  };
+}
+
+/** `threads`, not started once the tick's bound has ended and given up on when it ends while one runs. */
+function boundedThreads(
+  threads: (pr: number) => Promise<Outcome<number>>,
+  bound: TickBound | undefined,
+): (pr: number) => Promise<Outcome<number>> {
+  if (bound === undefined) return threads;
+  return async (pr) => {
+    if (ended(bound)) return passedRead("the unresolved threads were counted");
+    try {
+      return await within(threads(pr), bound);
+    } catch (error) {
+      if (!bound.signal.aborted) throw error;
+      return cutRead("the unresolved threads were counted");
+    }
   };
 }
 
@@ -609,7 +634,7 @@ async function observeRunning(
   if (launches.sample) await sampleThreads(records, repo.slug, drives, threads);
   observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil((launches.timeoutMs ?? 60_000) / 1000);
-  for (const reason of await observeWalls(
+  for (const { reason, failure } of await observeWalls(
     records,
     repo.slug,
     sessions,
@@ -621,6 +646,7 @@ async function observeRunning(
       target: "a waiting session",
       record: "runtime",
       reason,
+      ...(failure === undefined ? {} : { readFailed: true as const, failure }),
     });
 }
 
