@@ -306,7 +306,8 @@ development and shipped as a version.
   terminal, and writes the account's wall on a usage-limit
   stop (`QUOTA_PARKED`, exit 16); for a follow-up it starts the account's agent as a
   headless pass on the follow-up command, with the host's `drive.pass_args`
-  and under the pass deadline; for a pickup it starts the account's agent
+  (a Codex account's: `drive.codex_bypass` and `drive.codex_pass_args`, as
+  the launch record keeps them) and under the pass deadline; for a pickup it starts the account's agent
   as a headless pass on `/jig:do-item <key>` (or `work-batch` for a served
   batch), keeping its served-person claim context. It records the exit
   every way, with the last question of a follow-up pass that stopped short

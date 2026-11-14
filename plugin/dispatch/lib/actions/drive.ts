@@ -36,7 +36,7 @@ import { idleBlocksStart } from "../automation.ts";
 import { cloneId } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { peekCloneKey } from "../../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
-import { admittedVendor, type Slots } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   type LaunchRecord,
@@ -494,7 +494,7 @@ function driveRecord(
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     passTimeoutSec: state.passDeadlineSec,
-    codexBypass: state.codexOptIn.on,
+    ...codexLaunchFields(state.codexOptIn),
     replaces: action.takeover ?? null,
     facts: action.facts ?? factsOf(pr),
     createdAt: new Date().toISOString(),

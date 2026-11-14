@@ -160,6 +160,7 @@ const HOST_TRUST = "is the host's choice of how far it trusts a drive's passes";
 const USER_ONLY: Readonly<Record<string, string>> = {
   clones: "describes one machine",
   "drive.pass_args": HOST_TRUST,
+  "drive.codex_pass_args": HOST_TRUST,
   "drive.codex_bypass": HOST_TRUST,
 };
 

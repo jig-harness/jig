@@ -536,6 +536,15 @@ fields:
     since: 0.109.0
     read_by: [drive-pr, do-item, dispatch]
     user_only: true
+  drive.codex_pass_args:
+    type: list
+    items:
+      type: string
+      pattern: "^(?!(?:--|-|--model|--image|--dangerously-bypass-approvals-and-sandbox)$)(?!--model=|--image=|--config=model=|-c=?model=|-m|-i)\\S+$"
+    default: []
+    since: next
+    read_by: [drive-pr, do-item, dispatch]
+    user_only: true
   drive.codex_bypass:
     type: boolean
     default: false

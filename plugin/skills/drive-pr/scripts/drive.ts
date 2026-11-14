@@ -23,12 +23,15 @@
  *                    the driver log and `drives.ts` name the model.
  *   --pass-args "W"  extra arguments for a `claude` pass, for this run: one
  *                    value split on whitespace, put before `-p` unless the
- *                    pass command already carries them; empty for none.
- *                    Default: `drive.pass_args`, which only the host's user
- *                    file or one run's environment may set, added only to a
- *                    pass command without arguments of its own
- *                    (`lib/pass-args.ts`); the driver log and `drives.ts`
- *                    name the permission mode the pass runs in.
+ *                    pass command already carries them; empty for none,
+ *                    for a `claude` or a `codex` pass. Default:
+ *                    `drive.pass_args` for a `claude` pass and
+ *                    `drive.codex_pass_args` for a `codex` pass (before its
+ *                    prompt), which only the host's user file or one run's
+ *                    environment may set, added only to a pass command
+ *                    without arguments of its own (`lib/pass-args.ts`); the
+ *                    driver log and `drives.ts` name the permission mode
+ *                    the pass runs in.
  *   --handoff-at V   the context-economy dial: hand off at V% of the pass's
  *                    context rather than degrading. V is a whole percent, or
  *                    `never` for a continuous drive through compaction.

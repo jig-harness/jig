@@ -1,7 +1,7 @@
 /** The owner host schedules an admitted, bounded pass; the pass has no launch authority. */
 import { parseRoutingModels } from "../../../skills/do-item/scripts/lib/routing.ts";
 import { runtimeModel } from "../../../shared/model-families.ts";
-import { admittedVendor } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { factsOf } from "./drive-hold.ts";
 import { readFailures } from "../failures.ts";
 import {
@@ -152,7 +152,7 @@ export async function applySteward(
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     passTimeoutSec: STEWARD_DEADLINE_SEC,
-    codexBypass: state.codexOptIn.on,
+    ...codexLaunchFields(state.codexOptIn),
     replaces: null,
     facts: hash,
     createdAt: new Date().toISOString(),

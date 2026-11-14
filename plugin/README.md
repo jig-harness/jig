@@ -599,7 +599,7 @@ terminal tab running the dispatcher's wrapper, as the account's vendor's
 non-interactive command (`claude -p`, `codex exec`), bound to the admitted
 account through its configuration directory, under the pass deadline, and
 with the host's own permission settings (`drive.pass_args`, and
-`drive.codex_bypass` for a Codex account; see
+`drive.codex_bypass` and `drive.codex_pass_args` for a Codex account; see
 [a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)), never with
 one the dispatcher adds. So it starts on Orca, which cannot yet bind an
 interactive session to an account. A hidden-marker comment on the merged
@@ -2111,11 +2111,12 @@ them together.
   trusted hooks, and a headless `codex exec` cannot ask. Approve the guard once
   per Codex home before the first unattended pass (`/hooks` in an interactive
   session of that home). Where a host cannot, and it vets the hooks that home
-  loads itself, a pass command typed by hand adds `--dangerously-bypass-hook-trust`,
-  which runs the enabled hooks without persisted trust for that one run. Jig's
-  own pass commands do not add it, and `drive.codex_bypass` does not imply it:
-  it skips Codex's review of every hook source, the user's and a repository's
-  among them.
+  loads itself, it sets
+  [`drive.codex_pass_args: [--dangerously-bypass-hook-trust]`](CONFIGURATION.md#a-hosts-opt-in-to-bypass)
+  in its user file, and every Codex pass it arms or the dispatcher launches
+  runs the enabled hooks without persisted trust. `drive.codex_bypass` does
+  not imply it. The flag skips Codex's review of every hook source, the
+  user's and a repository's among them.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a

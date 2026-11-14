@@ -52,7 +52,6 @@ import {
   type RefusedMember,
   waitsOf,
 } from "./pickup-refusal.ts";
-
 export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
@@ -151,8 +150,9 @@ export interface LaunchRecord {
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
   pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
-  /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
+  /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass (a Codex pass carries the bypass only when this is `true`), and the host's `drive.codex_pass_args` read with it, which a Codex pass carries before its prompt (absent for none); the wrapper reads neither setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
+  codexPassArgs?: string[];
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */

@@ -334,7 +334,8 @@ export function sessionArgv(record: LaunchRecord): string[] {
  * runs `claude -p` with the vendor session id the tick minted and the
  * host's `drive.pass_args` (`passArgs`) before `-p`, as a drive's pass
  * gets them; Codex runs `codex exec`, with its bypass only when the tick
- * admitted the record on a host that opted in (`codexBypass`). Neither
+ * admitted the record on a host that opted in (`codexBypass`), then the
+ * host's `drive.codex_pass_args` the record keeps (`codexPassArgs`). Neither
  * gets a permission of the launcher's own.
  */
 export function followupPassArgv(
@@ -357,6 +358,7 @@ function headlessArgv(
       "codex",
       "exec",
       ...(record.codexBypass === true ? [CODEX_BYPASS] : []),
+      ...(record.codexPassArgs ?? []),
       ...route,
       prompt,
     ];

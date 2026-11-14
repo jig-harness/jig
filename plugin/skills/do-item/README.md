@@ -244,8 +244,9 @@ A Claude Code round uses `drive.pass_model`
 and the extra arguments in `drive.pass_args` (none unless this host's
 [user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass) sets them).
 A Codex round uses `routing.models.codex.standard` (by default `terra`,
-given as `gpt-5.6-terra`), and carries its bypass only
-on a host that set `drive.codex_bypass`; it does not read
+given as `gpt-5.6-terra`), carries its bypass only
+on a host that set `drive.codex_bypass`, and carries the extra arguments in
+`drive.codex_pass_args` before its prompt; it does not read
 `drive.pass_model` or `drive.pass_args`. For either runtime, `--pass-model`
 overrides the model for one drive, resolving a complexity tier through that
 runtime's row of `routing.models` (see [drive-pr](../drive-pr/README.md)).
