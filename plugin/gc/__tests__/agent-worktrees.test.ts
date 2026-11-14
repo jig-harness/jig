@@ -25,17 +25,17 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
-import { gitEnvironment } from "../git.ts";
 import { shellQuote } from "../../shared/cli.ts";
 import { dump } from "../../shared/yaml.ts";
 import type { Receipt, ReceiptLine } from "../types.ts";
+import { FIXTURE_REMOTE, setupWorktreeFixture } from "./worktree-fixture.ts";
 
 const script = resolve(import.meta.dir, "../../jig.ts");
-const REMOTE = "fakeforge:acme/app.git";
+const REMOTE = FIXTURE_REMOTE;
 const DAY_MS = 86_400_000;
 
 /** Every fixture root a test made, removed once the file's tests end. */
@@ -47,47 +47,7 @@ afterAll(() => {
 function setup() {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "gc-agent-")));
   made.push(root);
-  const repo = join(root, "repo");
-  const user = join(root, "home");
-  const bin = join(root, "bin");
-  for (const dir of [repo, user, bin, join(root, "forge", "acme")])
-    mkdirSync(dir, { recursive: true });
-  const env: NodeJS.ProcessEnv = {
-    ...gitEnvironment(),
-    HOME: user,
-    USERPROFILE: user,
-    JIG_HOME: join(user, ".jig"),
-    JIG_USER_LAYER: undefined,
-    JIG_CONSUMER_ROOT: undefined,
-    JIG_GC_HEAVY_LOCK: undefined,
-    RESOURCE_LOCK_BYPASS: "1",
-    ORCA_CLI_COMMAND: undefined,
-    ORCA_CLI_BIN_DIR: undefined,
-    PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
-  };
-  const command = (args: string[], cwd = repo): string => {
-    const result = Bun.spawnSync(args, {
-      cwd,
-      env,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 30_000,
-    });
-    expectSpawnExit(result, 0);
-    return result.stdout.toString().trim();
-  };
-  // The fixture remote: SSH to `fakeforge` runs the command in the forge.
-  const ssh = join(bin, "fake-ssh");
-  writeFileSync(
-    ssh,
-    `#!/bin/sh\nfor last; do :; done\ncd ${JSON.stringify(join(root, "forge"))} && exec sh -c "$last"\n`,
-  );
-  chmodSync(ssh, 0o755);
-  command(["git", "init", "--bare", join(root, "forge", "acme", "app.git")]);
-  command(["git", "init", "--initial-branch=main"]);
-  command(["git", "config", "user.email", "test@example.invalid"]);
-  command(["git", "config", "user.name", "Test"]);
-  command(["git", "config", "core.sshCommand", ssh]);
+  const { repo, user, bin, env, command } = setupWorktreeFixture(root);
   // A declared root that does not hold the agent tool's worktrees.
   const declaration = {
     kinds: ["worktrees"],
