@@ -101,10 +101,37 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
   it("refuses, before any write, a type change the edit screen offers no issue type field for", async () => {
     const { err, calls } = await across(undefined, { type: "feature" });
     expect(err).toBeInstanceOf(TrackerRequestError);
+    expect((err as TrackerRequestError).code).toBe("unresolved");
     expect((err as Error).message).toBe(
       "type feature is kept in Jira's issue types as 'Story', but the edit screen of ENG-1 lets its issue type change from Task to no other type: Jira changes an issue type by an edit only between issue types of one workflow and field configuration; move ENG-1 to Story in Jira, or keep type in labels or a field (store: label or store: field)",
     );
     expect(writes(calls)).toEqual([]);
+  });
+
+  it("names the credential, not the workflow, when the edit screen lists no field at all", async () => {
+    const { t, calls } = jira(
+      routes({
+        ...SITE,
+        "GET issue/ENG-1": issue({ key: "ENG-1", type: "Task" }),
+        "GET issue/ENG-1/editmeta": { fields: {} },
+      }),
+      STORES,
+    );
+    const err = await t
+      .updateIssue("ENG-1", { type: "feature" })
+      .catch((e: unknown) => e);
+    expect((err as Error).message).toBe(
+      "type feature is kept in Jira's issue types as 'Story', but the edit screen of ENG-1 lists no field at all, which Jira answers when the credential may not edit the issue; give the credential's account the Edit Issues permission on ENG-1",
+    );
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it("changes the type when the edit screen has the issue type field without listing its choices", async () => {
+    const { err, calls } = await across({}, { type: "feature" });
+    expect(err).toBeUndefined();
+    expect(
+      calls.filter((c) => c.route === "PUT issue/ENG-1").map((c) => c.body),
+    ).toEqual([{ fields: { issuetype: { id: "t2" } } }]);
   });
 
   it("refuses, before any write, a type change to an issue type the edit screen does not offer", async () => {

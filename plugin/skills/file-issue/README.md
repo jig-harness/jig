@@ -279,7 +279,10 @@ A move refuses overlapping source and destination stores, including native
 GitHub priority and the named Priority field, and in-place value-map changes.
 An unmapped nonempty destination must be mapped before copying; it is never
 overwritten as though it were empty. Jira's required native priority cannot
-be retired, so a move from that store is refused before copying.
+be retired, so a move from that store is refused before copying. A move of
+type into Jira's issue types stops at the first issue whose new issue type
+follows another workflow, since Jira changes such a type only by a move in
+Jira: move those issues in Jira first, or keep type in labels or a field.
 
 
 ## A durable issue body

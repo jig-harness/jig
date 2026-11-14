@@ -447,7 +447,14 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     kept: string,
     editScreen: () => Promise<FieldMeta>,
   ) {
-    const offered = (await editScreen()).get("issuetype");
+    const screen = await editScreen();
+    // Jira lists only the fields the caller may edit: none means no permission.
+    if (screen.size === 0)
+      throw new TrackerRequestError(
+        "unresolved",
+        `${kept}, but the edit screen of ${issue.key} lists no field at all, which Jira answers when the credential may not edit the issue; give the credential's account the Edit Issues permission on ${issue.key}`,
+      );
+    const offered = screen.get("issuetype");
     if (offered === null || offered?.some((n) => same(n, target.name))) return;
     const from = issue.issueType?.name ?? "its issue type";
     const others = (offered ?? []).filter(
