@@ -444,15 +444,7 @@ async function collectAgentWorktree(
     process.stderr.write(`${line}\n`);
   };
   const withArchive = (collected: Collected): Collected =>
-    archived === null
-      ? collected
-      : {
-          ...collected,
-          details: {
-            ...(isMapping(collected.details) ? collected.details : {}),
-            archive: archived,
-          },
-        };
+    withArchiveOf(collected, archived);
   let snapshot: { hook: string; dir: string } | null = null;
   try {
     // Read right after the runner's final proof: every check before removal
@@ -485,19 +477,7 @@ async function collectAgentWorktree(
             },
           ),
       },
-      remove: async (worktree) => {
-        const done = await git(
-          repository,
-          ["worktree", "remove", worktree],
-          GIT_REMOVE_TIMEOUT_SEC,
-        );
-        return done.ok
-          ? ok(undefined)
-          : failed(
-              "git-refused",
-              `${done.failure.reason}; a removal cut short leaves the tree partly deleted: inspect it, then run git worktree remove --force on it`,
-            );
-      },
+      remove: (worktree) => gitRemove(repository, worktree),
     });
     if (!removed.ok)
       return withArchive({ outcome: "failed", reason: removed.failure.reason });
@@ -524,6 +504,40 @@ async function collectAgentWorktree(
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
+}
+/** `collected` naming the archive written before removal, when there is one. */
+function withArchiveOf(
+  collected: Collected,
+  archived: Archived | null,
+): Collected {
+  if (archived === null) return collected;
+  return {
+    ...collected,
+    details: {
+      ...(isMapping(collected.details) ? collected.details : {}),
+      archive: archived,
+    },
+  };
+}
+/**
+ * `git worktree remove` without `--force`, under its own deadline: it deletes
+ * the checkout's files, dependency directories included.
+ */
+async function gitRemove(
+  repository: string,
+  worktree: string,
+): Promise<Outcome<undefined>> {
+  const done = await git(
+    repository,
+    ["worktree", "remove", worktree],
+    GIT_REMOVE_TIMEOUT_SEC,
+  );
+  return done.ok
+    ? ok(undefined)
+    : failed(
+        "git-refused",
+        `${done.failure.reason}; a removal cut short leaves the tree partly deleted: inspect it, then run git worktree remove --force on it`,
+      );
 }
 /** Whether the inventory found the worktree in the agent tool's directory. */
 function isAgentTool(resource: Resource): boolean {

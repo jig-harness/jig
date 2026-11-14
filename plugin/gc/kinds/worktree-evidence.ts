@@ -65,13 +65,13 @@ export function localWorktreeVeto(
     };
   return null;
 }
+/** What stands in for session admission, as the evidence says. */
+function coordination(facts: WorktreeEvidence): Coordination {
+  if (facts.coordinated === true) return "runtime";
+  return facts.agentTool === true ? "agent-tool" : null;
+}
 function lifecycle(facts: WorktreeEvidence): Proof {
-  const coordinated: Coordination =
-    facts.coordinated === true
-      ? "runtime"
-      : facts.agentTool === true
-        ? "agent-tool"
-        : null;
+  const coordinated = coordination(facts);
   if (facts.localOnlyCommits === null)
     return unknown("remote commit coverage could not be verified");
   if (!facts.requests?.length)

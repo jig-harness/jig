@@ -373,6 +373,23 @@ async function ignoredContentOf(
     ignored.value.split("\0").filter((entry) => entry !== ""),
   );
 }
+/** Uncommitted changes, index flags that hide them, and an operation in progress. */
+async function trackedState(
+  path: string,
+  admin: string,
+): Promise<
+  Outcome<Pick<WorktreeEvidence, "dirty" | "hiddenIndexChanges" | "operation">>
+> {
+  const flags = await git(path, ["ls-files", "-v", "-z"]);
+  if (!flags.ok) return flags;
+  const status = await git(path, [...CHANGES_STATUS_ARGS]);
+  if (!status.ok) return status;
+  return ok({
+    dirty: !!status.value,
+    hiddenIndexChanges: hidesIndexChanges(flags.value),
+    operation: await operation(admin),
+  });
+}
 /**
  * What the tree itself holds: uncommitted and index-hidden changes, an
  * operation in progress and its ignored content. Forge and history evidence
@@ -383,18 +400,12 @@ async function localEvidence(
   admin: string,
   coordinated: boolean,
 ): Promise<Outcome<WorktreeEvidence>> {
-  const flags = await git(path, ["ls-files", "-v", "-z"]);
-  if (!flags.ok) return flags;
-  const status = await git(path, [...CHANGES_STATUS_ARGS]);
-  if (!status.ok) return status;
-  const changes = hidesIndexChanges(flags.value);
-  const state = await operation(admin);
+  const tracked = await trackedState(path, admin);
+  if (!tracked.ok) return tracked;
   const ignoredContent = await ignoredContentOf(path);
   if (!ignoredContent.ok) return ignoredContent;
   return ok({
-    dirty: !!status.value,
-    hiddenIndexChanges: changes,
-    operation: state,
+    ...tracked.value,
     ignoredContent: ignoredContent.value,
     requests: null,
     localOnlyCommits: null,
@@ -438,7 +449,7 @@ async function historyEvidence(
   return ok(undefined);
 }
 /** A `changed` failure when the tree's commit or branch moved while it was proved. */
-export async function identityUnchanged(
+async function identityUnchanged(
   path: string,
   identity: WorktreeIdentity,
 ): Promise<Outcome<void>> {
@@ -465,14 +476,10 @@ export async function unchangedSinceProof(
 ): Promise<Outcome<undefined, string>> {
   const same = await identityUnchanged(path, identity);
   if (!same.ok) return failed("changed", `kept: ${same.failure.reason}`);
-  const flags = await git(path, ["ls-files", "-v", "-z"]);
-  if (!flags.ok) return flags;
-  const status = await git(path, [...CHANGES_STATUS_ARGS]);
-  if (!status.ok) return status;
+  const tracked = await trackedState(path, identity.admin);
+  if (!tracked.ok) return tracked;
   const veto = localWorktreeVeto({
-    dirty: !!status.value,
-    hiddenIndexChanges: hidesIndexChanges(flags.value),
-    operation: await operation(identity.admin),
+    ...tracked.value,
     ignoredContent: { rebuildable: [], setAside: [], other: [] },
   });
   if (veto !== null)
