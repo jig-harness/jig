@@ -407,6 +407,7 @@ export async function applyNotices(
     causes,
     standing,
     timeLeftMs: () => timeLeftMs(state),
+    deliveryTimeoutMs: state.machine.runtimeTimeoutMs,
   };
   const due = channels.map((channel) => ({
     channel,
@@ -446,6 +447,8 @@ interface SendScope {
   standing: ReadonlySet<string>;
   /** Milliseconds the tick has left; `null` without a deadline. */
   timeLeftMs: () => number | null;
+  /** The longest one channel delivery may take without a tick deadline. */
+  deliveryTimeoutMs: number;
 }
 
 /** The channels whose names hold to the port's rule (`channelNameFault`); another is reported, and nothing goes through it. */
@@ -475,7 +478,17 @@ function dueOn(channel: NotificationChannel<Cause>, scope: SendScope): Cause[] {
   const name = channel.name;
   const due = dueThere(name, scope);
   if (due.length === 0) return due;
-  const why = channel.unreachable();
+  let why: string | null;
+  try {
+    why = channel.unreachable();
+  } catch (error) {
+    why = `its reachability check threw: ${failureText(error)}`;
+    scope.report.unplaced.push({
+      target: `the ${name} notification channel`,
+      record: "runtime",
+      reason: why,
+    });
+  }
   if (why === null) return due;
   for (const c of due)
     scope.report.notifications.push(outcomeFor(name, c, "waits", null, why));
@@ -594,24 +607,76 @@ function answered(
 async function answersOf(
   channel: NotificationChannel<Cause>,
   batch: readonly Cause[],
-  { report, timeLeftMs }: SendScope,
+  { report, timeLeftMs, deliveryTimeoutMs }: SendScope,
 ): Promise<Delivery[]> {
   try {
-    return await channel.deliver(batch, { timeLeftMs });
+    const left = timeLeftMs();
+    const timeoutMs = Math.max(
+      1,
+      Math.min(left ?? deliveryTimeoutMs, deliveryTimeoutMs),
+    );
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let deliveries: Delivery[];
+    try {
+      deliveries = await Promise.race([
+        channel.deliver(batch, { timeLeftMs }),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(
+            () =>
+              reject(
+                new Error(`delivery did not finish within ${timeoutMs}ms`),
+              ),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+    if (!Array.isArray(deliveries) || !deliveries.every(validDelivery))
+      return lostAnswers(
+        channel,
+        batch,
+        report,
+        "returned malformed delivery answers",
+      );
+    return deliveries;
   } catch (error) {
-    const why = failureText(error);
-    report.unplaced.push({
-      target: `the ${channel.name} notification channel`,
-      record: "runtime",
-      reason: `its delivery threw, which a channel never does, and its batch counts as lost: ${why}`,
-    });
-    return batch.map((c) => ({
-      key: c.notice.key,
-      outcome: "lost",
-      place: null,
-      detail: `the ${channel.name} channel failed: ${why}`,
-    }));
+    return lostAnswers(channel, batch, report, failureText(error));
   }
+}
+
+function lostAnswers(
+  channel: NotificationChannel<Cause>,
+  batch: readonly Cause[],
+  report: RepoReport,
+  why: string,
+): Delivery[] {
+  report.unplaced.push({
+    target: `the ${channel.name} notification channel`,
+    record: "runtime",
+    reason: `its delivery failed, and its batch counts as lost: ${why}`,
+  });
+  return batch.map((c) => ({
+    key: c.notice.key,
+    outcome: "lost",
+    place: null,
+    detail: `the ${channel.name} channel failed: ${why}`,
+  }));
+}
+
+function validDelivery(value: unknown): value is Delivery {
+  if (typeof value !== "object" || value === null) return false;
+  const delivery = value as Partial<Delivery>;
+  return (
+    typeof delivery.key === "string" &&
+    (delivery.outcome === "sent" ||
+      delivery.outcome === "already" ||
+      delivery.outcome === "lost" ||
+      delivery.outcome === "waits") &&
+    (typeof delivery.place === "string" || delivery.place === null) &&
+    typeof delivery.detail === "string"
+  );
 }
 
 /** One batch of the tick's notifications on one channel, sent, recorded and counted. */

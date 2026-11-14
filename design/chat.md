@@ -606,9 +606,3 @@ One pull request per step, each shippable alone:
   its app from the manifest.
 - **"Approve all"** from the chat, for the reasons structured answers
   keeps `--all` off one-key copying.
-
-## Review
-
-Critiqued on 2026-11-13 by a reviewer with fresh context (a subagent that
-did not write it), against the draft of this design, its plan item and
-ADR-0022 on top of commit `241bfe1f`.

@@ -277,13 +277,14 @@ describe("a delivery that keeps failing", () => {
 });
 
 describe("the `channel` column", () => {
-  it("reads a record written before it as `orca-card`'s, and an older copy's insert still works", () => {
+  it("reads a record written before channels as `orca-card`'s", () => {
     const root = mkdtempSync(join(tmpdir(), "jig-notices-migrate-"));
     roots.push(root);
     stateDb(root);
     closeStateDb(root);
-    const before = SCHEMA_VERSION - 1;
+    const before = SCHEMA_VERSION - 2;
     const old = new Database(statePath(root));
+    old.run("DROP INDEX notices_channel_key");
     old.run("ALTER TABLE notices DROP COLUMN channel");
     old.run(`PRAGMA user_version = ${before}`);
     old.run("DELETE FROM db_migrations WHERE version > ?", [before]);
@@ -304,14 +305,6 @@ describe("the `channel` column", () => {
       workspace: "/ws",
       sentAt: "2026-11-01T10:00:00.000Z",
     });
-    // A copy one release behind writes as it always did; its row is `orca-card`'s.
-    db.query(
-      `INSERT INTO notices (repo, key, target, workspace, at, lasting)
-       VALUES (?, ?, 'PR #8', '/ws', '2026-11-01T11:00:00.000Z', 0) ON CONFLICT (repo, key) DO NOTHING`,
-    ).run(SLUG, `${SLUG} PR #8 ready at abc`);
-    expect(
-      db.query("SELECT channel FROM notices WHERE key LIKE '%#8%'").get(),
-    ).toEqual({ channel: ORCA_CARD });
   });
 
   it("qualifies the key of a channel other than `orca-card` so no notice key can take its form", () => {
@@ -338,6 +331,24 @@ describe("a channel's answers", () => {
       channel: "fake",
       outcome: "waits",
       detail: "offline",
+    });
+  });
+
+  it("isolates a reachability check that throws", async () => {
+    const h = host();
+    const broken = fakeChannel("broken");
+    broken.unreachable = () => {
+      throw new Error("socket closed");
+    };
+    const fake = fakeChannel();
+    const report = await tick(h, [broken, fake]);
+    expect(broken.calls).toEqual([]);
+    expect(fake.calls).toEqual([[KEY]]);
+    expect(
+      report.notifications.find((n) => n.channel === "broken"),
+    ).toMatchObject({
+      outcome: "waits",
+      detail: "its reachability check threw: socket closed",
     });
   });
 
@@ -407,6 +418,33 @@ describe("a channel's answers", () => {
       outcome: "kept",
       detail: "written this tick",
     });
+  });
+
+  it("counts malformed delivery answers as lost without stopping other channels", async () => {
+    const h = host();
+    const broken = fakeChannel("broken");
+    broken.answers = () => [
+      {
+        key: KEY,
+        outcome: "failed" as DeliveryOutcome,
+        place: null,
+        detail: "bad",
+      },
+    ];
+    const fake = fakeChannel();
+    const report = await tick(h, [broken, fake], true);
+    expect(
+      report.notifications.find((n) => n.channel === "broken"),
+    ).toMatchObject({ outcome: "lost" });
+    expect(fake.calls).toEqual([[KEY]]);
+    expect(report.unplaced).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: "the broken notification channel",
+          reason: expect.stringContaining("malformed"),
+        }),
+      ]),
+    );
   });
 });
 

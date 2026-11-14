@@ -10,8 +10,9 @@ release: minor
   person sees there does not change. Each channel keeps its own record of
   what it sent and backs off on its own, so a notice that one channel loses
   is tried again on that channel alone. The state database's `notices`
-  table gains a `channel` column. Existing rows read as `orca-card`, and a
-  plugin copy one release behind still reads and writes the table.
+  table gains a `channel` column and an index for channel-qualified host
+  notices. Existing rows read as `orca-card`; the migration requires the
+  release that introduces channels before a dispatcher uses that state.
 - A notice about a drive (parked, stopped, ready to merge) now also carries
   structured fields beside its text: the drive's address, the pull
   request's link, the commands its text names, and, for a park, each

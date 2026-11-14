@@ -439,6 +439,11 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE notices ADD COLUMN channel TEXT NOT NULL DEFAULT 'orca-card';",
   },
+  {
+    // Channel-qualified host notices are read by channel and key prefix on every tick.
+    additive: false,
+    sql: "CREATE INDEX notices_channel_key ON notices (channel, key);",
+  },
 ];
 
 /** The schema version this plugin writes. */
