@@ -184,7 +184,6 @@ describe("a row's link", () => {
       "https://tracker.example/acme/issue/ENG-4/add-the-audit-export",
     );
     expect(view.title).toBe("Add the audit export");
-    expect(view.goLabel).toBe("Open ENG-4");
     expect(view.noLink).toBeNull();
   });
 
@@ -212,9 +211,9 @@ describe("a row's link", () => {
     const item = rowView({ ...ENDED, target: "ENG-4" }, ROW_CLOCK, NO_FORGES);
     expect(item.url).toBeNull();
     expect(item.noLink).toBe(
-      "No link was recorded for ENG-4, and the line holds no other link to example-org/api's tracker to work it out from: look ENG-4 up in that tracker.",
+      "No link was recorded for ENG-4, and the line holds no other link to example-org/api's issues to work it out from: look ENG-4 up there.",
     );
-    expect(item.noLink).not.toContain("tracker base");
+    expect(item.noLink).not.toContain("tracker");
   });
 
   it("says nothing of a link for a defect, which names no target", () => {

@@ -1,4 +1,5 @@
-import { ItemTitle, Pr, RepoLink } from "./pr.tsx";
+import { ItemTitle, RepoLink } from "./pr.tsx";
+import { Work } from "./work.tsx";
 /**
  * The log's rows. TanStack Table holds the columns and which rows are open;
  * TanStack Virtual keeps only what is near the window in the document, measuring
@@ -12,7 +13,7 @@ import {
   useTable,
 } from "@tanstack/react-table";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { LogRow } from "../../plugin/dispatch/lib/log.ts";
 import { askLineOf } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
@@ -21,8 +22,8 @@ import { Evidence, StageHint } from "./fold.tsx";
 import { cardAttrs } from "./keys.ts";
 import type { Forges } from "./links.ts";
 import { type RowClock, rowView, type RowView } from "./log-view.ts";
-import { Glyph, StageChip } from "./icon-word.tsx";
-import { CONTROL_ICONS } from "./icons.ts";
+import { Disc, useTapToggle } from "./gutter.tsx";
+import { StageChip } from "./icon-word.tsx";
 import { Mark } from "./marks.tsx";
 import { stageMeaning } from "./status.ts";
 
@@ -53,10 +54,11 @@ const columns = helper.columns([
     id: "target",
     cell: ({ row }) => (
       <span className="cell-tgt">
-        <Pr
+        <Work
           repo={row.original.repo}
           target={row.original.target}
           url={row.original.url}
+          title={row.original.title}
         />
         <RepoLink repo={row.original.repo} url={row.original.url} />
         <StageChip
@@ -98,15 +100,72 @@ function RowBody({ view }: { view: RowView }) {
         />
       </div>
       <Evidence rows={view.evidence} />
-      <div className="goto">
-        {view.url === null ? null : (
-          <a href={view.url} target="_blank" rel="noreferrer noopener">
-            {view.goLabel}
-          </a>
-        )}
-        {view.noLink === null ? null : (
+      {view.noLink === null ? null : (
+        <div className="goto">
           <span className="noLink">{view.noLink}</span>
-        )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One log row as a card on the gutter: the chevron at its left, or a tap anywhere on it that is not a link or a button. */
+function LogRowCard({
+  row,
+  index,
+  offset,
+  measure,
+  cells,
+}: {
+  row: Row<typeof features, RowView>;
+  index: number;
+  offset: number;
+  measure: (element: HTMLElement | null) => void;
+  cells: ReactNode;
+}) {
+  const open = row.getIsExpanded();
+  const toggle = () => row.toggleExpanded();
+  const tap = useTapToggle(toggle);
+  const id = `log-row-${index}`;
+  return (
+    <div
+      className={open ? "row card open opens" : "row card opens"}
+      {...cardAttrs({
+        key: `log ${row.id}`,
+        target: row.original.target,
+        url: row.original.url,
+        commandLabel: "jig ask line",
+        command:
+          row.original.target === ""
+            ? null
+            : askLineOf(
+                row.original.stage,
+                row.original.repo,
+                row.original.target,
+              ),
+      })}
+      data-index={index}
+      ref={measure}
+      style={{ transform: `translateY(${offset}px)` }}
+      {...tap}
+    >
+      <div className="gutter">
+        <Disc
+          open={open}
+          label={`Details for ${row.original.target || row.original.label}`}
+          controls={id}
+          onToggle={toggle}
+          card
+        />
+        {open ? <span className="spine" aria-hidden="true" /> : null}
+      </div>
+      <div className="cbody">
+        <div className="rowSum">{cells}</div>
+        {open ? (
+          <div className="detail" id={id} data-no-toggle="">
+            <RowBody view={row.original} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -172,44 +231,16 @@ export function LogTable({
     index: number,
     start: number,
   ) => (
-    <div
-      className="row"
+    <LogRowCard
       key={row.id}
-      {...cardAttrs({
-        key: `log ${row.id}`,
-        target: row.original.target,
-        url: row.original.url,
-        commandLabel: "jig ask line",
-        command:
-          row.original.target === ""
-            ? null
-            : askLineOf(
-                row.original.stage,
-                row.original.repo,
-                row.original.target,
-              ),
-      })}
-      data-index={index}
-      ref={virtual.measureElement}
-      style={{ transform: `translateY(${Math.round(start - top)}px)` }}
-    >
-      <div className="rowSum">
-        {row.getAllCells().map((cell) => (
-          <table.FlexRender cell={cell} key={cell.id} />
-        ))}
-        <button
-          type="button"
-          className="foldBtn disclosure rowExpand"
-          data-card-toggle=""
-          aria-label={`Details for ${row.original.target}`}
-          aria-expanded={row.getIsExpanded()}
-          onClick={row.getToggleExpandedHandler()}
-        >
-          <Glyph of={CONTROL_ICONS.disclosure} size={16} />
-        </button>
-      </div>
-      {row.getIsExpanded() ? <RowBody view={row.original} /> : null}
-    </div>
+      row={row}
+      index={index}
+      offset={Math.round(start - top)}
+      measure={virtual.measureElement}
+      cells={row
+        .getAllCells()
+        .map((cell) => <table.FlexRender cell={cell} key={cell.id} />)}
+    />
   );
   return (
     <>

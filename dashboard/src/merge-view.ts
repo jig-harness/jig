@@ -4,6 +4,7 @@
  * view shows while merge now holds a pull request.
  */
 import type {
+  LineLinks,
   LineReady,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
@@ -47,6 +48,8 @@ export interface MergeCardView {
   conditions: LineReady["conditions"];
   unblocks: number[];
   age: string;
+  /** The work the line links it to; absent when the line does not say. */
+  links?: LineLinks;
 }
 
 export interface MergeLaneView {
@@ -77,6 +80,7 @@ function cardOf(r: LineReady, nowMs: number): MergeCardView {
     conditions: r.conditions,
     unblocks: r.unblocks,
     age: ago(Date.parse(r.since), nowMs),
+    ...(r.links === undefined ? {} : { links: r.links }),
   };
 }
 

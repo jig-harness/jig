@@ -38,8 +38,6 @@ export interface RowView {
   reason: string;
   evidence: EvidenceRow[];
   url: string | null;
-  /** What its link says: the pull request or the item. */
-  goLabel: string;
   noLink: string | null;
 }
 
@@ -111,11 +109,10 @@ export function rowView(
     reason: r.reason,
     evidence,
     url,
-    goLabel: pr === null ? `Open ${r.target}` : "Open the pull request",
     // A defect is about a stage, not a target, so it has nothing to link.
     noLink:
       url === null && pr === null && r.target !== ""
-        ? noLinkText(r.repo, r.target)
+        ? noLinkText(r.repo, r.target, forges.trackers.get(r.repo))
         : null,
   };
 }

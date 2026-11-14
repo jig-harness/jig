@@ -18,6 +18,7 @@ import {
   need,
   queued,
 } from "./fixture-line.ts";
+import { linkedLine, linkedRows } from "./fixture-linked.ts";
 import { picksNeeds } from "./fixture-picks.ts";
 import { mergingReady, waitingReady } from "./fixture-ready.ts";
 import {
@@ -49,6 +50,7 @@ export const SCENARIOS = [
   "long",
   "picks",
   "partial",
+  "linked",
 ] as const;
 export type ScenarioId = (typeof SCENARIOS)[number];
 
@@ -748,5 +750,19 @@ export function fixture(id: ScenarioId): Fixture {
       };
     case "partial":
       return partialFixture();
+    case "linked":
+      return {
+        now,
+        line: linkedLine(
+          line({
+            sessions: loudSessions(),
+            needs: loudNeeds(),
+            queue: loudQueue(),
+            ready: mergingReady(),
+            load: busyLoad(),
+          }),
+        ),
+        rows: linkedRows(loudRows()),
+      };
   }
 }

@@ -11,6 +11,7 @@ import {
   itemBases,
   itemLinkFrom,
 } from "../../plugin/shared/item-links.ts";
+import { itemWords, type Tracker } from "./tracker-name.ts";
 
 /** What the line's links tell of each repository, and the title each target was read with. */
 export interface Forges {
@@ -20,6 +21,8 @@ export interface Forges {
   items: Map<string, ItemBases>;
   /** Each target's title as the line holds it, by `<repo> <target>`. */
   titles: Map<string, string>;
+  /** The tracker each repository's configuration names, as the line holds it. */
+  trackers: Map<string, Tracker>;
 }
 
 const PULL_URL = /^(.*\/)([^/]+\/[^/]+)\/pull\/\d+$/;
@@ -51,8 +54,11 @@ export function forgesOf(line: LineSnapshot | null): Forges {
     pulls: new Map(),
     items: new Map(),
     titles: new Map(),
+    trackers: new Map(),
   };
   if (line === null) return forges;
+  for (const r of line.repos)
+    if (r.slug !== null) forges.trackers.set(r.slug, r.tracker);
   const linked = linkedOf(line);
   for (const { url } of linked) {
     const found = url === null ? null : PULL_URL.exec(url);
@@ -89,9 +95,18 @@ export function derivedLink(
   return bases === undefined ? null : itemLinkFrom(bases, target);
 }
 
-/** What a card says when neither its record nor the line's other links give a target's link: what is missing, and where to look. */
-export function noLinkText(repo: string, target: string): string {
-  return `No link was recorded for ${target}, and the line holds no other link to ${repo}'s tracker to work it out from: look ${target} up in that tracker.`;
+/** What a card says when neither its record nor the line's other links give a target's link: what is missing, and where to look, by the name of the repository's tracker. */
+export function noLinkText(
+  repo: string,
+  target: string,
+  tracker?: Tracker,
+): string {
+  if (/^PR #\d+$/.test(target))
+    return `No link was recorded for ${target}, and the line holds no other link to ${repo}'s pull requests to work it out from: look ${target} up on its forge.`;
+  const { name, where } = itemWords(tracker);
+  if (name === null)
+    return `No link was recorded for ${target}, and the line holds no other link to ${repo}'s issues to work it out from: look ${target} up there.`;
+  return `No link was recorded for ${target}, and the line holds no other ${name} link of ${repo}'s to work it out from: look ${target} up in ${where}.`;
 }
 
 /** The line with every target whose record holds no link given the one its other links tell. */

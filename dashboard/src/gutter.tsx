@@ -1,0 +1,199 @@
+/**
+ * The card with gutter, the page's one disclosure: a bare chevron in a fixed
+ * left gutter, so it sits in one place on every card of a view whatever the
+ * text after it. A click or tap anywhere else on the card opens and closes it
+ * too, unless it lands on a link, a button or a field, ends a text selection,
+ * or moved on the way (a scroll or a drag). Enter and o reach the same chevron
+ * through `data-card-toggle` (`keys.ts`). A heading that folds what follows it,
+ * such as the load breakdown or the accounts list, uses the same gutter and
+ * chevron (`GutterFold`).
+ */
+import {
+  type FocusEvent,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+  type Ref,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import { Glyph } from "./icon-word.tsx";
+import { CONTROL_ICONS } from "./icons.ts";
+
+/** What takes its own click inside a card: controls, fields, and the opened detail, which a person reads and selects in. */
+const OWN_CLICK =
+  "a, button, input, select, textarea, label, summary, [role='button'], [role='option'], [role='combobox'], [data-no-toggle]";
+
+/** How far a pointer may move between press and release and still count as a tap. */
+const TAP_SLOP_PX = 8;
+
+/** Whether the person has text selected inside `area`. */
+function selectingIn(area: Element): boolean {
+  const selection = window.getSelection();
+  if (selection === null || selection.isCollapsed) return false;
+  if (selection.toString().trim() === "") return false;
+  return (
+    (selection.anchorNode !== null && area.contains(selection.anchorNode)) ||
+    (selection.focusNode !== null && area.contains(selection.focusNode))
+  );
+}
+
+/**
+ * The handlers that let a whole area toggle, the area's own controls aside.
+ * A click from a popup the area opened reaches it through the component tree,
+ * not the document, so only a click on the area's own elements counts.
+ */
+export function useTapToggle(toggle: (() => void) | null) {
+  const pressed = useRef<{ x: number; y: number } | null>(null);
+  return {
+    onPointerDown: (event: PointerEvent<HTMLElement>) => {
+      pressed.current = { x: event.clientX, y: event.clientY };
+    },
+    onPointerCancel: () => {
+      pressed.current = null;
+    },
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      const from = pressed.current;
+      pressed.current = null;
+      if (toggle === null || event.defaultPrevented) return;
+      const area = event.currentTarget;
+      const target = event.target;
+      if (!(target instanceof Element) || !area.contains(target)) return;
+      const own = target.closest(OWN_CLICK);
+      if (own !== null && area.contains(own)) return;
+      if (selectingIn(area)) return;
+      if (
+        from !== null &&
+        Math.hypot(event.clientX - from.x, event.clientY - from.y) > TAP_SLOP_PX
+      )
+        return;
+      toggle();
+    },
+  };
+}
+
+/** The bare chevron: a real button, so a screen reader hears its name and whether it is open, not the card's whole text. */
+export function Disc({
+  open,
+  label,
+  controls,
+  onToggle,
+  card = false,
+}: {
+  open: boolean;
+  label: string;
+  controls: string;
+  onToggle: () => void;
+  /** Whether it opens a card, which Enter and o reach it through. */
+  card?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="disc"
+      data-card-toggle={card ? "" : undefined}
+      aria-expanded={open}
+      aria-controls={controls}
+      aria-label={label}
+      onClick={onToggle}
+    >
+      <Glyph of={CONTROL_ICONS.disclosure} size={16} />
+    </button>
+  );
+}
+
+/** A card: its face always, its detail while open; `detail` null keeps the gutter empty, so its face still lines up. */
+export function GutterCard({
+  className,
+  attrs,
+  label,
+  face,
+  detail,
+  cardRef,
+  onBlur,
+}: {
+  className: string;
+  /** What makes it a card the keys reach (`cardAttrs`). */
+  attrs: Record<string, string>;
+  /** The chevron's name: what opening it shows. */
+  label: string;
+  face: ReactNode;
+  detail: ReactNode | null;
+  cardRef?: Ref<HTMLElement>;
+  onBlur?: (event: FocusEvent<HTMLElement>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const toggle = detail === null ? null : () => setOpen((was) => !was);
+  const tap = useTapToggle(toggle);
+  const shown = open && detail !== null;
+  return (
+    <article
+      className={`card ${className}${shown ? " open" : ""}${toggle === null ? "" : " opens"}`}
+      {...attrs}
+      ref={cardRef}
+      onBlur={onBlur}
+      {...tap}
+    >
+      <div className="gutter">
+        {toggle === null ? null : (
+          <Disc
+            open={shown}
+            label={label}
+            controls={id}
+            onToggle={toggle}
+            card
+          />
+        )}
+        {shown ? <span className="spine" aria-hidden="true" /> : null}
+      </div>
+      <div className="cbody">
+        {face}
+        {shown ? (
+          <div className="detail" id={id} data-no-toggle="">
+            {detail}
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+/** A heading that folds what follows it, on the same gutter as the cards: the chevron, or a tap anywhere on the heading. */
+export function GutterFold({
+  className,
+  label,
+  head,
+  children,
+  defaultOpen = false,
+}: {
+  className?: string;
+  /** The chevron's name. */
+  label: string;
+  head: ReactNode;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const id = useId();
+  const toggle = () => setOpen((was) => !was);
+  const tap = useTapToggle(toggle);
+  return (
+    <div
+      className={`gfold${className === undefined ? "" : ` ${className}`}${open ? " open" : ""}`}
+    >
+      <div className="ghead" {...tap}>
+        <div className="gutter">
+          <Disc open={open} label={label} controls={id} onToggle={toggle} />
+        </div>
+        <div className="gheadBody">{head}</div>
+      </div>
+      {open ? (
+        <div className="gpanel" id={id}>
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}

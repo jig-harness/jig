@@ -4,12 +4,14 @@
  */
 import type {
   LineAccount,
+  LineLinks,
   LineRepo,
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural, span, until } from "./format.ts";
 import { noLinkText } from "./links.ts";
+import { trackerOf } from "./tracker-name.ts";
 import { type Role, roleOf } from "./status.ts";
 
 /** The server's clock and the host's zone. */
@@ -195,6 +197,8 @@ export interface SlotView {
   url: string | null;
   /** What the card says when `url` is null: what is missing and where to look. */
   noLink: string | null;
+  /** The work the line links it to; absent when the line does not say. */
+  links?: LineLinks;
   stage: string;
   role: Role;
   fact: string;
@@ -409,7 +413,11 @@ export function slotView(
     target: s.target,
     title: s.title,
     url: s.url,
-    noLink: s.url === null ? noLinkText(s.repo, s.target) : null,
+    noLink:
+      s.url === null
+        ? noLinkText(s.repo, s.target, trackerOf(line, s.repo))
+        : null,
+    ...(s.links === undefined ? {} : { links: s.links }),
     stage: s.stage,
     role: roleFor(s, kind),
     fact: factOf(s, kind, clockNow, Date.parse(line.startedAt)),
