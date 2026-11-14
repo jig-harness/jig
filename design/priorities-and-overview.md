@@ -209,8 +209,8 @@ The owner host schedules the stage; the `priorities` skill runs the same
 review on demand, so the review needs no skill of its own. A hash of
 priorities revisions, tracker snapshot, ranking output, the revisions of the
 [line](../GLOSSARY.md)'s records (what the dispatcher and the sessions it
-starts record) and the watermark of the [outcome log](../GLOSSARY.md) (a row
-per ended launch and its cause) suppresses unchanged scheduled runs.
+starts record) and the last row read from the [outcome log](../GLOSSARY.md)
+(a row per ended launch and its cause) suppresses unchanged scheduled runs.
 A time bucket in the hash advances when a configured no-movement threshold
 is crossed, even if no item changed. Budget exhaustion leaves a due review
 for the next admissible tick, with a reason, not a failed person decision.
@@ -334,7 +334,9 @@ request to a host. Before sending, a confirmation shows target, action, selected
 exact payload and expected effect. Refresh the target revision and permission
 before confirming; a changed decision or head invalidates the confirmation.
 A lost response is unknown, not failure: re-read for the request id before
-retrying. Idempotency keys use the existing writer's identity where supported.
+retrying. Where the forge or tracker accepts a key that marks a repeated
+request as the same one, so a resend does not write twice, the key is built
+from the existing writer's identity.
 Each call meets the [governed transport](../GLOSSARY.md)'s obligations
 ([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)) as ADR-0023
 applies them to a browser. The page reads the host's published forge and

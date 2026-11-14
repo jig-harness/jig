@@ -703,7 +703,7 @@ rules, timestamps and failure states serve desktop and phone.
 | Merge, Needs you, Running, Queue and History | Read the next act, progress and recent outcomes while away. Repository selection and History's time window are the basic filters; pagination keeps long lists bounded. |
 | An opened Work card and its decisions | Read the status, ask, recommended option, costs, alternatives and evidence. Stage 1 shows one item or pull request; stage 2 adds the joined thread. Expand details with a visible control. |
 | Copy the pinned merge command or an answer line | Carry the proposed act to the person's terminal without executing it. Copy success must be confirmed; when browser clipboard access fails, select the complete text for manual copying. |
-| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server stays read-only; the page's own writes are the acts above. |
+| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server stays read-only; the page's own writes are described below the table. |
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
 The phone excludes operator chat, command palettes and advanced filter
