@@ -581,10 +581,10 @@ export function replayable(
     .map((r) => r.record);
 }
 
-/** A replay blocker keeps the queue lane that explains why it cannot run. */
+/** A replay blocker names the queue lane that explains why it cannot run. */
 export type ReplayBlock = { detail: string; waitsOn: LaneWait };
 
-/** Replay a pending record's launch under its own record and key, unless `blocked` says why not. */
+/** Replay a pending record, preserving its key even when blocked. */
 export async function replay(
   state: ApplyState,
   record: LaunchRecord,
@@ -607,8 +607,6 @@ export async function replay(
         record.account,
         waitsOn,
       ),
-      // A replay remains owned by its original record even when it cannot
-      // start. Consumers project that identity into their held-work queues.
       record: record.id,
     };
   const attempt = await callLaunch(state, record);
