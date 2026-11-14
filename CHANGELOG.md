@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.236.2] - 2026-11-14
+
+### Fixed
+
+- `tracker.ts claim` with `do_item.claim_marker`: a claim that met an earlier claim's marker only after it had assigned and started the item could stand down while the earlier attempt refused too, leaving the item started with nobody working on it. Each attempt now records how it ended in an outcome comment beside its marker (claimed, released or unresolved), and a marker whose attempt released holds nothing. A claim that stands down after its writes never undoes them: it keeps the item when its own marker still shows and every earlier attempt recorded a release (`"recovery": "reclaimed"`), stands down when one recorded its claim (`"held"`), and stands down `"unresolved"`, leaving the item for a person, when the outcomes cannot settle who holds it. Recovery reads for at most 90 seconds, keeps the outcomes it has seen across reads, starts from the earlier markers the read after the write listed, and before it keeps the item checks that its assignee and state are still the claim's. An outcome comment records which attempt ended how and no reason, so a refusal's text never stays on the item.
+
 ## [0.236.1] - 2026-11-14
 
 ### Fixed
@@ -8267,7 +8273,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.236.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.236.2...HEAD
+[0.236.2]: https://github.com/jig-harness/jig/compare/v0.236.1...v0.236.2
 [0.236.1]: https://github.com/jig-harness/jig/compare/v0.236.0...v0.236.1
 [0.236.0]: https://github.com/jig-harness/jig/compare/v0.235.3...v0.236.0
 [0.235.3]: https://github.com/jig-harness/jig/compare/v0.235.2...v0.235.3
