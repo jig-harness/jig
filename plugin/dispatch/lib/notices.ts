@@ -182,10 +182,11 @@ function noticeDecision(park: WaitingPark): NoticeDecision {
 
 /** A drive parked with decisions unanswered: the framed decisions, and how to answer them, and the conflict with its base its re-drive left. */
 export function parkNotice(slug: string, pr: DrivenPr): Notice {
+  const waiting = pr.waiting ?? [];
   return {
     ...parkText(slug, pr),
     ...driveFields(slug, pr),
-    decisions: (pr.waiting ?? []).map(noticeDecision),
+    ...(waiting.length === 0 ? {} : { decisions: waiting.map(noticeDecision) }),
   };
 }
 
@@ -272,7 +273,10 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
     ...stopText(slug, pr),
     ...driveFields(slug, pr, [
       `/jig:drive-pr ${pr.number}`,
-      `jig send ${driveAddress(slug, pr)} rearm`,
+      // The text offers `jig send … rearm` where dispatch labels are enabled, which a drive whose labels were read shows.
+      ...(pr.labels === undefined
+        ? []
+        : [`jig send ${driveAddress(slug, pr)} rearm`]),
     ]),
   };
 }

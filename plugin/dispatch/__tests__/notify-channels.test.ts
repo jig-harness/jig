@@ -18,7 +18,12 @@ import type {
 } from "../../chat/channel.ts";
 import type { ApplyState } from "../lib/actions/launch.ts";
 import { applyNotices, type Cause } from "../lib/actions/notify.ts";
-import { actionBook, FAILURE_DEFAULTS, readFailures } from "../lib/failures.ts";
+import {
+  actionBook,
+  FAILURE_DEFAULTS,
+  readFailures,
+  recordFailure,
+} from "../lib/failures.ts";
 import {
   ORCA_CARD,
   readSuppressions,
@@ -31,7 +36,7 @@ import {
   stateDb,
   statePath,
 } from "../lib/state.ts";
-import type { RepoReport, RepoTarget } from "../lib/types.ts";
+import type { Action, RepoReport, RepoTarget } from "../lib/types.ts";
 
 const SLUG = "example-org/example-repo";
 const KEY = `${SLUG} PR #7 parked, ledger generation 3: finding F1`;
@@ -45,17 +50,25 @@ afterEach(() => {
 });
 
 /** A channel beside `orca-card` whose next answer the test sets. */
-function fakeChannel(): NotificationChannel<Cause> & {
+interface FakeChannel extends NotificationChannel<Cause> {
   next: DeliveryOutcome;
   calls: string[][];
-} {
-  const channel = {
-    name: "fake",
-    next: "sent" as DeliveryOutcome,
-    calls: [] as string[][],
+  timeLeft: Array<number | null>;
+  /** Its answers in place of `next`'s, when set. */
+  answers?: (due: readonly Cause[]) => Delivery[];
+}
+
+function fakeChannel(name = "fake"): FakeChannel {
+  const channel: FakeChannel = {
+    name,
+    next: "sent",
+    calls: [],
+    timeLeft: [],
     unreachable: () => null,
-    async deliver(due: readonly Cause[]): Promise<Delivery[]> {
+    async deliver(due, time): Promise<Delivery[]> {
       channel.calls.push(due.map((c) => c.notice.key));
+      channel.timeLeft.push(time.timeLeftMs());
+      if (channel.answers !== undefined) return channel.answers(due);
       return due.map((c) => ({
         key: c.notice.key,
         outcome: channel.next,
@@ -136,13 +149,15 @@ function parkedReport(repo: RepoTarget): RepoReport {
   };
 }
 
-/** One tick's notifications of the parked pull request, through `orca-card` and `channel`. */
+/** One tick's notifications of the parked pull request and `extra`, through `orca-card` and `channel`. */
 async function tick(
   h: ReturnType<typeof host>,
-  channel: NotificationChannel<Cause>,
+  channel: NotificationChannel<Cause> | NotificationChannel<Cause>[],
   book = false,
+  extra: Action[] = [],
 ): Promise<RepoReport> {
   const report = parkedReport(h.repo);
+  report.actions.push(...extra);
   await applyNotices(
     h.state,
     h.repo,
@@ -152,7 +167,7 @@ async function tick(
       branch: null,
       lingerMs: 3_600_000,
       renotifyAfterMs: 0,
-      channels: [channel],
+      channels: Array.isArray(channel) ? channel : [channel],
       ...(book
         ? {
             book: actionBook(
@@ -305,5 +320,146 @@ describe("the `channel` column", () => {
     expect(recordKey("slack", "host ticks /a failing since x")).toBe(
       "slack:host ticks /a failing since x",
     );
+  });
+});
+
+describe("a channel's answers", () => {
+  it("keeps the receiver when checking whether a channel is reachable", async () => {
+    const h = host();
+    const fake = fakeChannel();
+    fake.unreachable = function () {
+      return this.name === "fake" ? "offline" : null;
+    };
+    const report = await tick(h, fake);
+    expect(fake.calls).toEqual([]);
+    expect(
+      report.notifications.find((n) => n.channel === "fake"),
+    ).toMatchObject({
+      channel: "fake",
+      outcome: "waits",
+      detail: "offline",
+    });
+  });
+
+  it("count a cause it gives no answer for as lost, and report an answer for no due cause", async () => {
+    const h = host();
+    const fake = fakeChannel();
+    fake.answers = () => [
+      {
+        key: `${SLUG} PR #9 ready at abc`,
+        outcome: "sent",
+        place: "#notices",
+        detail: "posted",
+      },
+    ];
+    const report = await tick(h, fake, true);
+    expect(report.notifications[1]).toMatchObject({
+      channel: "fake",
+      key: KEY,
+      outcome: "lost",
+      detail: "the fake channel gave no answer for it",
+    });
+    expect(report.notifications).toHaveLength(2);
+    expect(report.unplaced).toEqual([
+      expect.objectContaining({
+        target: "the fake notification channel",
+        reason: expect.stringContaining(`${SLUG} PR #9 ready at abc`),
+      }),
+    ]);
+    expect(readFailures(SLUG, h.root).map((r) => r.key)).toEqual([
+      `notice fake ${KEY}`,
+    ]);
+    expect(rows(h.root).map((r) => r.channel)).toEqual([ORCA_CARD]);
+  });
+
+  it("are asked for with the time the tick has left", async () => {
+    const h = host();
+    const fake = fakeChannel();
+    await tick(h, fake);
+    expect(fake.timeLeft).toEqual([null]);
+  });
+
+  it("count a batch whose delivery threw as lost on that channel alone, the other channels and the notices workspace still served", async () => {
+    const h = host();
+    const broken = fakeChannel("broken");
+    broken.answers = () => {
+      throw new Error("socket closed");
+    };
+    const fake = fakeChannel();
+    const report = await tick(h, [broken, fake], true);
+    expect(
+      report.notifications.map((n) => [n.channel ?? ORCA_CARD, n.outcome]),
+    ).toEqual([
+      [ORCA_CARD, "sent"],
+      ["broken", "lost"],
+      ["fake", "sent"],
+    ]);
+    expect(report.notifications[1]?.detail).toBe(
+      "the broken channel failed: socket closed",
+    );
+    expect(report.unplaced).toEqual([
+      expect.objectContaining({ target: "the broken notification channel" }),
+    ]);
+    expect(readFailures(SLUG, h.root).map((r) => r.key)).toEqual([
+      `notice broken ${KEY}`,
+    ]);
+    expect(report.noticesWorkspace).toMatchObject({
+      outcome: "kept",
+      detail: "written this tick",
+    });
+  });
+});
+
+describe("a channel's name", () => {
+  it("is refused, reported, when it breaks the rule or repeats another's, and nothing goes through it", async () => {
+    const h = host();
+    const bad = fakeChannel("Slack:west");
+    const twin = fakeChannel(ORCA_CARD);
+    const fake = fakeChannel();
+    const report = await tick(h, [bad, twin, fake]);
+    expect(bad.calls).toEqual([]);
+    expect(twin.calls).toEqual([]);
+    expect(fake.calls).toEqual([[KEY]]);
+    expect(report.unplaced.map((u) => u.reason)).toEqual([
+      expect.stringContaining('"Slack:west"'),
+      expect.stringContaining(
+        `two notification channels are named ${ORCA_CARD}`,
+      ),
+    ]);
+  });
+});
+
+describe("the notices before the failure notices", () => {
+  it("clear a channel's recovered delivery before any channel decides the failure notice about it", async () => {
+    const h = host();
+    const row = `notice fake ${KEY}`;
+    recordFailure(
+      { repo: SLUG, key: row, kind: "notice", target: "PR #7" },
+      "the post was refused",
+      Date.now() - 3_600_000,
+      FAILURE_DEFAULTS,
+      h.root,
+    );
+    const failing = `${SLUG} ${row} failing since x`;
+    const fake = fakeChannel();
+    const report = await tick(h, fake, true, [
+      {
+        stage: "notify",
+        target: "PR #7",
+        cause: "action-failing",
+        reason: "failed 3 times in a row",
+        record: "runtime",
+        evidence: { row },
+        notice: { key: failing, text: `[jig dispatch: ${failing}]` },
+      },
+    ]);
+    expect(
+      report.notifications.map((n) => [n.channel ?? ORCA_CARD, n.key]),
+    ).toEqual([
+      [ORCA_CARD, KEY],
+      ["fake", KEY],
+    ]);
+    expect(h.workspace.comment).not.toContain(failing);
+    expect(readFailures(SLUG, h.root)).toEqual([]);
   });
 });

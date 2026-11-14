@@ -99,6 +99,12 @@ describe("a park's message", () => {
       { key: "T1", question: null, recommendation: null, options: [] },
     ]);
   });
+
+  it("carries no decisions when none waits", () => {
+    expect(parkNotice(SLUG, drive({ waiting: [] }))).not.toHaveProperty(
+      "decisions",
+    );
+  });
 });
 
 describe("a ready message", () => {
@@ -127,15 +133,19 @@ describe("a ready message", () => {
 });
 
 describe("a stop's message", () => {
-  it("names the re-arm commands its text gives", () => {
-    const notice = stopNotice(
-      SLUG,
-      drive({ class: "needs-person" as DrivenPr["class"], waiting: [] }),
-    );
+  const stopped = { class: "needs-person" as DrivenPr["class"], waiting: [] };
+
+  it("names `jig send … rearm` beside the re-arm skill where dispatch labels are enabled", () => {
+    const notice = stopNotice(SLUG, drive({ ...stopped, labels: [] }));
     expect(notice.acts).toEqual([
       "/jig:drive-pr 7",
       `jig send drive@${SLUG}#7 rearm`,
     ]);
     for (const act of notice.acts ?? []) expect(notice.text).toContain(act);
+  });
+
+  it("names the re-arm skill alone where its labels were not read", () => {
+    const notice = stopNotice(SLUG, drive(stopped));
+    expect(notice.acts).toEqual(["/jig:drive-pr 7"]);
   });
 });

@@ -44,8 +44,8 @@ import {
   intendComment,
   ownsComment,
   pruneComments,
+  recordComment,
 } from "../actions/notices-content.ts";
-import { recordComment } from "../actions/notices-content.ts";
 import { retireNotices } from "../actions/retire-notices.ts";
 import { HOST_NOTICE } from "../failure-notices.ts";
 import {

@@ -37,7 +37,11 @@
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
  * through the notification.
  */
-import type { Delivery, NotificationChannel } from "../../../chat/channel.ts";
+import {
+  channelNameFault,
+  type Delivery,
+  type NotificationChannel,
+} from "../../../chat/channel.ts";
 import { stateRoot } from "../../receipts.ts";
 import {
   driveClass,
@@ -72,7 +76,7 @@ import type {
   RepoReport,
   RepoTarget,
 } from "../types.ts";
-import type { ApplyState } from "./launch.ts";
+import { type ApplyState, timeLeftMs } from "./launch.ts";
 
 /** A notification the plan names, with its cause and message; `repeat` once it is sent again after `renotify_after`. */
 export type Cause = NoticeCause;
@@ -110,7 +114,7 @@ function asRepeat(
   return repeated;
 }
 
-/** What the receipt says of one cause on `channel`; `orca-card`'s outcome names no channel, as before there were others. */
+/** What the receipt says of one cause on `channel`; an `orca-card` outcome names no channel, any other's names its channel. */
 function outcomeFor(
   channel: string,
   cause: Cause,
@@ -276,13 +280,9 @@ function deliveryOf(
 function countDeliveries(
   channel: string,
   book: ActionBook,
-  due: readonly Cause[],
-  outcomes: readonly Delivery[],
+  outcomes: ReadonlyArray<{ cause: Cause; answer: Delivery }>,
 ): void {
-  const byKey = new Map(due.map((c) => [c.notice.key, c]));
-  for (const o of outcomes) {
-    const c = byKey.get(o.key);
-    if (c === undefined) continue;
+  for (const { cause: c, answer: o } of outcomes) {
     if (o.outcome === "lost") book.ran(deliveryOf(channel, c), o.detail);
     else if (o.outcome === "sent" || o.outcome === "already")
       book.ran(deliveryOf(channel, c), null);
@@ -382,7 +382,7 @@ export async function applyNotices(
   const root = state.root ?? stateRoot();
   openCard(repo, sessions, root);
   const card = orcaCard(state, repo, report, sessions, settings.branch);
-  const channels = [card, ...(settings.channels ?? [])];
+  const channels = namedChannels([card, ...(settings.channels ?? [])], report);
   const planned = report.actions.filter(isCause);
   wantedDeliveries(
     channels.map((c) => c.name),
@@ -393,8 +393,34 @@ export async function applyNotices(
   // The plan named a failing action's notice before the act phase found the action no longer wanted.
   const causes = planned.filter((c) => failureStands(settings.book, c));
   const standing = standingKeys(causes, root);
-  const scope = { repo, report, root, settings, causes, standing };
-  for (const channel of channels) await sendOn(channel, scope);
+  const scope = {
+    repo,
+    report,
+    root,
+    settings,
+    causes,
+    standing,
+    timeLeftMs: () => timeLeftMs(state),
+  };
+  const due = channels.map((channel) => ({
+    channel,
+    due: dueOn(channel, scope),
+  }));
+  // The notices go first on every channel: a delivery that recovers on any of them clears its row before a failure notice about it is decided.
+  for (const { channel, due: causes } of due)
+    await deliverOn(
+      channel,
+      causes.filter((c) => !isFailureCause(c.cause)),
+      scope,
+    );
+  for (const { channel, due: causes } of due)
+    await deliverOn(
+      channel,
+      causes.filter(
+        (c) => isFailureCause(c.cause) && failureStands(settings.book, c),
+      ),
+      scope,
+    );
   await retireCard(card, state, report, sessions, {
     repo: repo.slug,
     causes: planned.map((c) => c.notice.key),
@@ -412,10 +438,46 @@ interface SendScope {
   causes: readonly Cause[];
   /** Their keys, and the host failures' still standing. */
   standing: ReadonlySet<string>;
+  /** Milliseconds the tick has left; `null` without a deadline. */
+  timeLeftMs: () => number | null;
+}
+
+/** The channels whose names hold to the port's rule (`channelNameFault`); another is reported, and nothing goes through it. */
+function namedChannels(
+  channels: ReadonlyArray<NotificationChannel<Cause>>,
+  report: RepoReport,
+): Array<NotificationChannel<Cause>> {
+  const kept: Array<NotificationChannel<Cause>> = [];
+  for (const channel of channels) {
+    const fault = channelNameFault(
+      channel.name,
+      kept.map((c) => c.name),
+    );
+    if (fault === null) kept.push(channel);
+    else
+      report.unplaced.push({
+        target: "a notification channel",
+        record: "runtime",
+        reason: `${fault}, so nothing was sent through it`,
+      });
+  }
+  return kept;
+}
+
+/** The causes due on `channel` and tried this tick; the rest reported suppressed, backing off, or waiting on a channel that cannot be reached. */
+function dueOn(channel: NotificationChannel<Cause>, scope: SendScope): Cause[] {
+  const name = channel.name;
+  const due = dueThere(name, scope);
+  if (due.length === 0) return due;
+  const why = channel.unreachable();
+  if (why === null) return due;
+  for (const c of due)
+    scope.report.notifications.push(outcomeFor(name, c, "waits", null, why));
+  return [];
 }
 
 /** The causes due on `channel`: new there, or due again; the rest reported suppressed. */
-function dueOn(
+function dueThere(
   channel: string,
   { repo, report, root, settings, causes, standing }: SendScope,
 ): Cause[] {
@@ -482,44 +544,91 @@ function recordSent(
   }
 }
 
-/** The tick's notifications on one channel, sent. */
-async function sendOn(
+/**
+ * Each cause of `batch` with the channel's answer for it, in the channel's
+ * order: a cause it gave no answer for counts as lost, and an answer that
+ * names no cause of the batch, or one already answered, is reported as
+ * the channel's fault.
+ */
+function answered(
+  name: string,
+  batch: readonly Cause[],
+  answers: readonly Delivery[],
+  report: RepoReport,
+): Array<{ cause: Cause; answer: Delivery }> {
+  const byKey = new Map(batch.map((c) => [c.notice.key, c]));
+  const out: Array<{ cause: Cause; answer: Delivery }> = [];
+  for (const answer of answers) {
+    const cause = byKey.get(answer.key);
+    if (cause === undefined) {
+      report.unplaced.push({
+        target: `the ${name} notification channel`,
+        record: "runtime",
+        reason: `it answered for ${answer.key}, which was not due on it or was answered already`,
+      });
+      continue;
+    }
+    byKey.delete(answer.key);
+    out.push({ cause, answer });
+  }
+  for (const cause of byKey.values())
+    out.push({
+      cause,
+      answer: {
+        key: cause.notice.key,
+        outcome: "lost",
+        place: null,
+        detail: `the ${name} channel gave no answer for it`,
+      },
+    });
+  return out;
+}
+
+/** The channel's answers for `batch`; a throw, which the port does not allow, is reported and answers every cause of the batch as lost. */
+async function answersOf(
   channel: NotificationChannel<Cause>,
+  batch: readonly Cause[],
+  { report, timeLeftMs }: SendScope,
+): Promise<Delivery[]> {
+  try {
+    return await channel.deliver(batch, { timeLeftMs });
+  } catch (error) {
+    const why = failureText(error);
+    report.unplaced.push({
+      target: `the ${channel.name} notification channel`,
+      record: "runtime",
+      reason: `its delivery threw, which a channel never does, and its batch counts as lost: ${why}`,
+    });
+    return batch.map((c) => ({
+      key: c.notice.key,
+      outcome: "lost",
+      place: null,
+      detail: `the ${channel.name} channel failed: ${why}`,
+    }));
+  }
+}
+
+/** One batch of the tick's notifications on one channel, sent, recorded and counted. */
+async function deliverOn(
+  channel: NotificationChannel<Cause>,
+  batch: readonly Cause[],
   scope: SendScope,
 ): Promise<void> {
+  if (batch.length === 0) return;
   const { report, settings } = scope;
   const name = channel.name;
-  const due = dueOn(name, scope);
-  if (due.length === 0) return;
-  const unreachable = channel.unreachable();
-  if (unreachable !== null) {
-    for (const c of due)
-      report.notifications.push(
-        outcomeFor(name, c, "waits", null, unreachable),
-      );
-    return;
-  }
-  const deliver = async (batch: Cause[]): Promise<void> => {
-    if (batch.length === 0) return;
-    const byKey = new Map(batch.map((c) => [c.notice.key, c]));
-    const outcomes = await channel.deliver(batch);
-    for (const o of outcomes) {
-      const c = byKey.get(o.key);
-      if (c === undefined) continue;
-      if (o.outcome === "sent" || o.outcome === "already")
-        recordSent(name, c, o.place ?? "", scope);
-      report.notifications.push(
-        outcomeFor(name, c, o.outcome, o.place, o.detail),
-      );
-    }
-    if (settings.book != null)
-      countDeliveries(name, settings.book, batch, outcomes);
-  };
-  // The notices go first: a delivery that recovers here clears its row before the failure notice about it is decided.
-  await deliver(due.filter((c) => !isFailureCause(c.cause)));
-  await deliver(
-    due.filter(
-      (c) => isFailureCause(c.cause) && failureStands(settings.book, c),
-    ),
+  const outcomes = answered(
+    name,
+    batch,
+    await answersOf(channel, batch, scope),
+    report,
   );
+  for (const { cause: c, answer: o } of outcomes) {
+    if (o.outcome === "sent" || o.outcome === "already")
+      recordSent(name, c, o.place ?? "", scope);
+    report.notifications.push(
+      outcomeFor(name, c, o.outcome, o.place, o.detail),
+    );
+  }
+  if (settings.book != null) countDeliveries(name, settings.book, outcomes);
 }

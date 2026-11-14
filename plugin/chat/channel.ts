@@ -19,9 +19,18 @@
  * posts, and the key is in the text, so a read of the destination shows
  * whether the notice arrived.
  *
- * A channel's name is lowercase letters, digits and hyphens. The tick keys
+ * A channel's name is lowercase letters, digits and hyphens, starting with
+ * a letter, and is not another channel's (`channelNameFault`). The tick keys
  * its records and its failure-ledger rows by it, so a name, once released,
- * keeps its meaning.
+ * keeps its meaning; the tick reports a channel whose name breaks the rule
+ * and sends nothing through it.
+ *
+ * A channel answers every failure as a value (ADR-0012): a delivery that
+ * failed is `lost`, one it did not try is `waits`, and it never throws. It
+ * reaches its outside system only through that system's governed transport
+ * (ADR-0021), which bounds each call, and it leaves the tick room to write
+ * its receipt: `deliver` is handed the time the tick has left, and a cause
+ * it has no time for waits.
  */
 
 /** One option of a framed decision, as a notice carries it. */
@@ -58,7 +67,7 @@ export interface NoticeFields {
     /** The pull request's page on the forge. */
     pullRequest?: string;
   };
-  /** The commands that settle it, each as a person copies it. */
+  /** The commands its text names that settle it, each as a person copies it, and each only where the condition the text states for it holds. */
   acts?: string[];
   /** The framed decisions it waits on. */
   decisions?: NoticeDecision[];
@@ -102,6 +111,12 @@ export interface Delivery {
   detail: string;
 }
 
+/** The time a delivery has. */
+export interface DeliveryTime {
+  /** Milliseconds the tick has left before its receipt must be written; `null` when the tick has no deadline. */
+  timeLeftMs(): number | null;
+}
+
 /** One way notices reach a person. */
 export interface NotificationChannel<Due extends DueNotice = DueNotice> {
   /** Its name, which keys its suppression records and failure-ledger rows. */
@@ -109,9 +124,24 @@ export interface NotificationChannel<Due extends DueNotice = DueNotice> {
   /** Why nothing can be delivered this tick, every due cause then waiting; `null` when the channel is tried. */
   unreachable(): string | null;
   /**
-   * Deliver one repository's due causes, and answer for each of them, in
-   * the order the channel settled them. A cause the channel answers nothing
-   * for is not counted as tried.
+   * Deliver one repository's due causes, and answer for each of them once,
+   * in the order the channel settled them. A cause the channel gives no
+   * answer for counts as lost, and an answer that names no due cause is
+   * reported as the channel's fault.
    */
-  deliver(due: readonly Due[]): Promise<Delivery[]>;
+  deliver(due: readonly Due[], time: DeliveryTime): Promise<Delivery[]>;
+}
+
+const CHANNEL_NAME = /^[a-z][a-z0-9-]*$/;
+
+/** Why `name` cannot name a channel beside those `taken`; `null` when it can. */
+export function channelNameFault(
+  name: string,
+  taken: readonly string[],
+): string | null {
+  if (!CHANNEL_NAME.test(name))
+    return `the notification channel name ${JSON.stringify(name)} is not lowercase letters, digits and hyphens starting with a letter`;
+  return taken.includes(name)
+    ? `two notification channels are named ${name}`
+    : null;
 }

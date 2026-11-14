@@ -9,15 +9,15 @@
  * `key` column, so a plugin copy one release behind still reads and writes
  * it. The `key` column holds:
  *
- * - for `orca-card`, the notice's key itself, as every record written
- *   before channels had: such a row's `channel` reads `orca-card`;
+ * - for `orca-card`, the notice's key itself; a row that names no channel
+ *   is `orca-card`'s (the column's default);
  * - for any other channel, the channel's name, a colon, then the notice's
  *   key (`slack:example-org/web PR #7 ready at 1a2b3c`).
  *
  * The two cannot collide: a notice's key starts with a repository's
  * `owner/name` or with `host `, neither of which holds a colon. The failure
- * ledger's key of a delivery is `notice <key>` on `orca-card`, as before
- * channels, and `notice <channel> <key>` on any other.
+ * ledger's key of a delivery is `notice <key>` on `orca-card` and
+ * `notice <channel> <key>` on any other.
  *
  * Releasing a notice's key (a host failure's quiet, `tick-settle.ts`)
  * releases it on every channel.
@@ -85,10 +85,15 @@ export function readHostSuppressions(
 ): Map<string, Suppression> {
   return suppressionsWhere(
     channel,
-    "key LIKE ?",
-    [`${recordKey(channel, `${hostPrefix} `)}%`],
+    "key LIKE ? ESCAPE '\\'",
+    [`${likeLiteral(recordKey(channel, `${hostPrefix} `))}%`],
     root,
   );
+}
+
+/** `text` as a `LIKE` pattern that matches it alone, under `ESCAPE '\'`. */
+function likeLiteral(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 function suppressionsWhere(
