@@ -2,8 +2,8 @@
  * The read position the comment-only sweep keeps between runs
  * (design/tracker-facets.md, "The weekly sweep"): the cursor of the last
  * issue a run handled, which the next run resumes after, or `null` to start
- * from the oldest issue. A scheduled runner keeps the file between runs (on
- * Jig's own workflow, the Actions cache).
+ * from the oldest issue. A scheduled runner keeps the file between runs (a
+ * file on the host, or a CI cache).
  *
  * The file only saves work: a missing one starts from the oldest issue, and
  * so does one that cannot be read, with a warning, since starting again
@@ -34,18 +34,22 @@ export function readPosition(path: string): {
       warning: `the read position ${path} cannot be read (${(err as Error).message}); starting from the oldest issue`,
     };
   }
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(text);
-    if (
-      isRecord(value) &&
-      value.kind === POSITION_KIND &&
-      value.version === POSITION_VERSION &&
-      (value.after === null || typeof value.after === "string")
-    )
-      return { after: value.after, warning: null };
-  } catch {
-    // Read below as a file of another shape.
+    value = JSON.parse(text);
+  } catch (err) {
+    return {
+      after: null,
+      warning: `the read position ${path} is not JSON (${(err as Error).message}); starting from the oldest issue`,
+    };
   }
+  if (
+    isRecord(value) &&
+    value.kind === POSITION_KIND &&
+    value.version === POSITION_VERSION &&
+    (value.after === null || typeof value.after === "string")
+  )
+    return { after: value.after, warning: null };
   return {
     after: null,
     warning: `the read position ${path} is not an ${POSITION_KIND} record of version ${POSITION_VERSION}; starting from the oldest issue`,

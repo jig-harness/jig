@@ -50,4 +50,10 @@ describe("the sweep's read position file", () => {
       expect(read.after).toBeNull();
       expect(read.warning).toContain("starting from the oldest issue");
     });
+
+  it("names the parse error when the file is not JSON", () => {
+    const path = join(scratch, "truncated.json");
+    writeFileSync(path, '{"kind":');
+    expect(readPosition(path).warning).toContain("is not JSON (");
+  });
 });

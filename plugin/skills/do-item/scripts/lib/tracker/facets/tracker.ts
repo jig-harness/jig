@@ -527,7 +527,10 @@ export function withFacets(
         cursor: `${i.createdAt}|${i.identifier}`,
       });
     }
-    listed.sort((a, b) => a.cursor.localeCompare(b.cursor));
+    // Code-unit order, the order `after` and a kept cursor are compared in.
+    listed.sort((a, b) =>
+      a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0,
+    );
     const after = query.after ?? null;
     const from =
       after === null ? listed : listed.filter((i) => i.cursor > after);

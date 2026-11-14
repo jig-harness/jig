@@ -5,7 +5,14 @@
  * credential, so nothing it could reach is a real tracker.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -97,4 +104,28 @@ describe("check-fields.ts", () => {
       const stderr = await run(["check"], 2, section);
       expect(stderr).toContain(says);
     });
+
+  test("keeps no read position when the sweep moves issues", async () => {
+    const stderr = await run(["check", "--position", "position.json"], 1);
+    expect(stderr).toContain(
+      "file_issue.sweep.move is true, so a moved issue leaves the population and no read position is kept",
+    );
+    expect(existsSync(join(scratch, `repo-${n - 1}`, "position.json"))).toBe(
+      false,
+    );
+  });
+
+  test("warns of an unreadable read position, and leaves it when a store problem stops the run", async () => {
+    const stderr = await run(
+      ["check", "--yes", "--position", "record.json"],
+      1,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).toContain(
+      "is not an issue-fields-position record of version 1; starting from the oldest issue",
+    );
+    expect(
+      readFileSync(join(scratch, `repo-${n - 1}`, "record.json"), "utf8"),
+    ).toBe('{"kind":"something-else"}\n');
+  });
 });

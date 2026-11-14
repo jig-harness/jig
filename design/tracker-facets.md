@@ -576,8 +576,11 @@ that cursor. A read that reaches the end of the population goes on from the
 first issue as far as its cap allows, stopping before an issue it read this
 run; when no page is left, the next run starts from the first issue. An
 issue whose missing facets change after its comment is revisited when the
-position comes round to it, which is within as many runs as the population
-holds capped reads. A file that is missing or unreadable starts the read
+position comes round to it: within as many runs as the population holds
+capped reads, or as it holds budgets of 50 comments where the budget, not
+the read, ends the runs. An issue whose comment is always refused (a locked
+issue) stops every run at the same place until a person settles it, so the
+run's report of the refused write is the cue. A file that is missing or unreadable starts the read
 from the first issue, with a warning: the position only saves work. Moving
 keeps no position, since a moved issue leaves the population.
 

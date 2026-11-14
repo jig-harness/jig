@@ -119,7 +119,13 @@ function keptPosition(
   return {
     from: { after: read.after },
     save: (report) => {
-      if (report.position !== null && report.apply)
+      // Only a run that read and could write moves the position.
+      if (
+        report.position !== null &&
+        report.apply &&
+        report.read &&
+        report.storeProblem === null
+      )
         writePosition(path, report.position.next);
     },
   };
