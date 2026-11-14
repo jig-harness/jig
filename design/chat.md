@@ -68,9 +68,9 @@ channel the machine file enables:
 Each channel keeps its own suppression record: the state database's
 `notices` table gains a `channel` column, with today's rows read as
 `orca-card`, so a cause delivered to one channel and lost on the other is
-retried on the other alone. The table keeps its key, so a plugin copy one
-release behind still writes it: an `orca-card` record keeps the notice's
-key, and another channel's qualifies it with the channel's name
+retried on the other alone. The migration requires a reader that understands
+channel-qualified records: an `orca-card` record keeps the notice's key, and
+another channel's qualifies it with the channel's name
 (`plugin/dispatch/lib/notice-records.ts`). The rules of `actions/notify.ts`
 hold per channel: a cause counts as sent only on the channel's receipt,
 repeats on `dispatch.renotify_after` while it stands, and backs off in the

@@ -115,6 +115,8 @@ export interface Delivery {
 export interface DeliveryTime {
   /** Milliseconds the tick has left before its receipt must be written; `null` when the tick has no deadline. */
   timeLeftMs(): number | null;
+  /** Aborts delivery when its bounded operation time is spent. Implementations must stop before a later effect. */
+  readonly signal: AbortSignal;
 }
 
 /** One way notices reach a person. */

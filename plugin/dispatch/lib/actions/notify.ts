@@ -615,32 +615,40 @@ async function answersOf(
       1,
       Math.min(left ?? deliveryTimeoutMs, deliveryTimeoutMs),
     );
+    const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    let deliveries: Delivery[];
     try {
-      deliveries = await Promise.race([
-        channel.deliver(batch, { timeLeftMs }),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(
-            () =>
-              reject(
-                new Error(`delivery did not finish within ${timeoutMs}ms`),
-              ),
-            timeoutMs,
-          );
-        }),
-      ]);
+      timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const deliveries = await channel.deliver(batch, {
+        timeLeftMs,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted)
+        return lostAnswers(
+          channel,
+          batch,
+          report,
+          `delivery did not finish within ${timeoutMs}ms`,
+        );
+      if (!Array.isArray(deliveries))
+        return lostAnswers(
+          channel,
+          batch,
+          report,
+          "returned malformed delivery answers",
+        );
+      const valid = deliveries.filter(validDelivery);
+      if (valid.length !== deliveries.length)
+        report.unplaced.push({
+          target: `the ${channel.name} notification channel`,
+          record: "runtime",
+          reason:
+            "it returned malformed delivery answers; valid answers were retained and missing causes count as lost",
+        });
+      return valid;
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
     }
-    if (!Array.isArray(deliveries) || !deliveries.every(validDelivery))
-      return lostAnswers(
-        channel,
-        batch,
-        report,
-        "returned malformed delivery answers",
-      );
-    return deliveries;
   } catch (error) {
     return lostAnswers(channel, batch, report, failureText(error));
   }
