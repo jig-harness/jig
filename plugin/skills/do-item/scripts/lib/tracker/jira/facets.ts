@@ -435,10 +435,35 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return out;
   }
 
+  /**
+   * Refuses, before anything is written, an issue type the issue's edit
+   * screen does not offer: Jira changes an issue type by an edit only
+   * between issue types of one workflow and field configuration, and
+   * answers any other change with a bare 400 on `issuetype`.
+   */
+  async function refuseUneditableType(
+    issue: JiraIssue,
+    target: IssueTypeMeta,
+    kept: string,
+    editScreen: () => Promise<FieldMeta>,
+  ) {
+    const offered = (await editScreen()).get("issuetype");
+    if (offered === null || offered?.some((n) => same(n, target.name))) return;
+    const from = issue.issueType?.name ?? "its issue type";
+    const others = (offered ?? []).filter(
+      (n) => !same(n, issue.issueType?.name ?? ""),
+    );
+    throw new TrackerRequestError(
+      "unresolved",
+      `${kept}, but the edit screen of ${issue.key} lets its issue type change from ${from} to ${others.length === 0 ? "no other type" : `${others.join(", ")} only`}: Jira changes an issue type by an edit only between issue types of one workflow and field configuration; move ${issue.key} to ${target.name} in Jira, or keep type in labels or a field (store: label or store: field)`,
+    );
+  }
+
   /** What setting the type (or none) on an issue writes, through its issue type or its label. */
   async function typeChange(
     issue: JiraIssue,
     value: string | null,
+    editScreen: () => Promise<FieldMeta>,
     signal?: AbortSignal,
   ): Promise<FacetWrite> {
     const slot = type as ResolvedFacet;
@@ -457,22 +482,31 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     if (t?.subtask === true)
       return { fields: {}, ...codec.change(carried, value) };
     const typed = await issueTypeOf(value, signal);
-    if (typed !== null)
+    if (typed !== null) {
+      if (t !== null && same(t.name, typed.name))
+        return { fields: {}, add: [], remove: carried };
+      await refuseUneditableType(
+        issue,
+        typed,
+        `type ${value} is kept in Jira's issue types as '${typed.name}'`,
+        editScreen,
+      );
       return {
-        fields:
-          t !== null && same(t.name, typed.name)
-            ? {}
-            : { issuetype: { id: typed.id } },
+        fields: { issuetype: { id: typed.id } },
         add: [],
         remove: carried,
       };
+    }
     const change = codec.change(carried, value);
-    return {
-      fields: isFallback(t)
-        ? {}
-        : { issuetype: { id: (await fallbackType(signal)).id } },
-      ...change,
-    };
+    if (isFallback(t)) return { fields: {}, ...change };
+    const base = await fallbackType(signal);
+    await refuseUneditableType(
+      issue,
+      base,
+      `type ${value} is kept in the label '${codec.labelOf(value)}' on the issue type ${base.name}`,
+      editScreen,
+    );
+    return { fields: { issuetype: { id: base.id } }, ...change };
   }
 
   async function health(s: ResolvedFacet, signal?: AbortSignal) {
@@ -622,8 +656,13 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
 
     async update(issue, patch, signal) {
       const out: FacetWrite = { fields: {}, add: [], remove: [] };
+      let edit: Promise<FieldMeta> | undefined;
+      const editScreen = () => {
+        edit ??= client.editMeta(issue.key, signal);
+        return edit;
+      };
       if (type !== null && patch.type !== undefined) {
-        const change = await typeChange(issue, patch.type, signal);
+        const change = await typeChange(issue, patch.type, editScreen, signal);
         const kept = [...issue.labels, ...change.add].filter(
           (l) => !change.remove.some((r) => same(r, l)),
         );
@@ -644,7 +683,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         await fieldWrites(
           patch,
           async () => ({
-            screen: await client.editMeta(issue.key, signal),
+            screen: await editScreen(),
             what: `the edit screen of ${issue.key}`,
           }),
           signal,
