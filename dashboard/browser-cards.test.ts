@@ -445,6 +445,9 @@ describe("the work identity and its linked work", () => {
 });
 
 /** Every string the page shows or names a control by, on the open view. */
+/** The word with its context; a configuration key the page quotes (`issue_tracker.team`) is the setting's own name, not the word. */
+const SAYS_TRACKER = /.{0,40}(?<!issue_)tracker.{0,40}/gi;
+
 function renderedStrings(page: Page): Promise<string[]> {
   return page.evaluate(() => [
     // The text a person sees: no script, style or hidden element's.
@@ -488,7 +491,7 @@ describe("the page's words", () => {
           for (let left = await closed.count(); left > 0; left--)
             await closed.first().click();
           const said = (await renderedStrings(page)).flatMap(
-            (s) => s.match(/.{0,40}tracker.{0,40}/gi) ?? [],
+            (s) => s.match(SAYS_TRACKER) ?? [],
           );
           expect({ view, said }).toEqual({ view, said: [] });
           const identities = page.locator("main .wid:not(.lk) .wtrig");
@@ -498,7 +501,7 @@ describe("the page's words", () => {
             await shows(page, ".pop");
             const popped = (
               (await page.locator(".pop").textContent()) ?? ""
-            ).match(/.{0,40}tracker.{0,40}/i);
+            ).match(SAYS_TRACKER);
             expect({ view, popped }).toEqual({ view, popped: null });
             await page.keyboard.press("Escape");
             await until(

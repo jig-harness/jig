@@ -24,6 +24,7 @@ import { within } from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
 import {
+  LIMITED_REASON,
   limitedRow,
   readServedPickups,
   type ServedPolicy,
@@ -786,8 +787,7 @@ function limitedFactory(
 function onceEach(rows: Unplaced[]): Unplaced[] {
   const limited = new Set<string>();
   return rows.filter((row) => {
-    if (!row.reason.startsWith("the issue service is rate limited until"))
-      return true;
+    if (!row.reason.startsWith(LIMITED_REASON)) return true;
     if (limited.has(row.target)) return false;
     limited.add(row.target);
     return true;

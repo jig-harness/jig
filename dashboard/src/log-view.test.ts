@@ -175,13 +175,13 @@ describe("a row's link", () => {
         stage: "pickup",
         target: "ENG-4",
         title: "Add the audit export",
-        url: "https://tracker.example/acme/issue/ENG-4/add-the-audit-export",
+        url: "https://issues.example/acme/issue/ENG-4/add-the-audit-export",
       },
       ROW_CLOCK,
       NO_FORGES,
     );
     expect(view.url).toBe(
-      "https://tracker.example/acme/issue/ENG-4/add-the-audit-export",
+      "https://issues.example/acme/issue/ENG-4/add-the-audit-export",
     );
     expect(view.title).toBe("Add the audit export");
     expect(view.noLink).toBeNull();
@@ -193,7 +193,7 @@ describe("a row's link", () => {
       ROW_CLOCK,
       forges,
     );
-    expect(view.url).toBe("https://tracker.example/API-91");
+    expect(view.url).toBe("https://issues.example/API-91");
     expect(view.noLink).toBeNull();
   });
 

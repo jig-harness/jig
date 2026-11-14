@@ -107,6 +107,9 @@ const itemOf = (i: PoolIssue) => ({
   url: i.url,
 });
 
+/** How the row a rate-limited tracker leaves begins, which tells it from every other row. */
+export const LIMITED_REASON = "the issue service is rate limited until";
+
 /** The single row a rate-limited tracker leaves on the receipt. */
 export function limitedRow(
   tracker: Pick<Tracker, "adapter" | "team">,
@@ -117,7 +120,7 @@ export function limitedRow(
   const row: Unplaced = {
     target: `${tracker.adapter} ${tracker.team}`,
     record: "tracker",
-    reason: `the issue service is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
+    reason: `${LIMITED_REASON} ${until}: pickups wait for the reset, and no request is sent before it`,
   };
   return view === null ? row : scopeFailureRow(tracker, view, row.reason);
 }

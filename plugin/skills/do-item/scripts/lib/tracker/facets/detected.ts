@@ -220,7 +220,7 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
                     ? Promise.reject(
                         new TrackerRequestError(
                           "invalid",
-                          "the tracker has no native dispatch source",
+                          "the issue service has no native dispatch source",
                         ),
                       )
                     : source.project(raw, options);

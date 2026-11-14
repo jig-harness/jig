@@ -14,7 +14,6 @@ import type {
   LineLinks,
   LineSnapshot,
 } from "../plugin/dispatch/lib/dashboard-contract.ts";
-import type { LogRow } from "../plugin/dispatch/lib/log.ts";
 import { API, INF, MOB, prUrl, WEB } from "./fixture-rows.ts";
 
 /** Where each repository's items live in this scenario. */
@@ -60,41 +59,26 @@ const TRACKERS: Record<string, { adapter: string } | null> = {
   [MOB]: null,
 };
 
-/** Every string of a value with the word rewritten, so the record text holds none. */
-function withoutWord<T>(value: T): T {
-  return JSON.parse(
-    JSON.stringify(value)
-      .replaceAll("tracker.example", "issues.example")
-      .replaceAll("Tracker", "Issues")
-      .replaceAll("tracker", "issues"),
-  );
-}
-
 function linksOf<T extends { repo: string; target: string }>(row: T): T {
   const links = LINKS[`${row.repo} ${row.target}`];
   return links === undefined ? row : { ...row, links };
 }
 
 export function linkedLine(base: LineSnapshot): LineSnapshot {
-  const line = withoutWord(base);
   return {
-    ...line,
-    sessions: line.sessions.map(linksOf),
-    needs: line.needs.map(linksOf),
-    queue: line.queue.map(linksOf),
-    ready: (line.ready ?? []).map((r) => {
+    ...base,
+    sessions: base.sessions.map(linksOf),
+    needs: base.needs.map(linksOf),
+    queue: base.queue.map(linksOf),
+    ready: (base.ready ?? []).map((r) => {
       const links = LINKS[`${r.repo} PR #${r.pr}`];
       return links === undefined ? r : { ...r, links };
     }),
-    repos: line.repos.map((r) => {
+    repos: base.repos.map((r) => {
       const slug = r.slug ?? "";
       return Object.hasOwn(TRACKERS, slug)
         ? { ...r, tracker: TRACKERS[slug] ?? null }
         : r;
     }),
   };
-}
-
-export function linkedRows(rows: LogRow[]): LogRow[] {
-  return withoutWord(rows);
 }

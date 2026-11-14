@@ -148,10 +148,9 @@ and one link out ("Open in Linear", "Open on GitHub"). A pull request's
 icon shows only its standing on the forge (open, draft, merged, closed, or
 dashed while not read); where the dispatcher holds it stays with the card's
 status mark and stage chip. An issue's icon is the same for GitHub Issues,
-Linear and Jira, since the page reads no live state of an issue. Cards
-carry no "Open the pull request" or "Open in the tracker" sentence, since
-the identity links there; a link that goes elsewhere stays on the card and
-says where.
+Linear and Jira, since the page reads no live state of an issue. The
+identity is a card's one link to its pull request or issue; a link that
+goes elsewhere stays on the card and says where.
 
 **Linked work.** From the line's `links` field, a card shows its
 [linked work](../GLOSSARY.md) inline after its identity, behind a link
