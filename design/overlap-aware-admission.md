@@ -38,7 +38,7 @@ reads and rules that order the walk:
 
 ```mermaid
 flowchart TD
-  Q[ranked pickups,<br/>declared holds applied] --> T[sort into tiers, rank order kept inside each]
+  Q[ranked pickups,<br/>declared holds applied] --> T[sort into tiers, rank order kept inside each,<br/>sorted again after each start]
   T --> T1[tier 1: no overlap,<br/>or patience spent]
   T --> T2[tier 2: overlap,<br/>within the overlap bound]
   T --> T3[tier 3: over the overlap bound]
@@ -114,7 +114,9 @@ read them).
   the paths. From a description alone it writes nothing: its labels already
   carry the areas, and the tick derives those itself.
 
-**Which one stands.** While a pickup holds the item (its claim and a
+**Which one stands.** Every footprint record of an item has the item's
+key, so a new record never replaces an older one in place; the reader
+chooses among them. While a pickup holds the item (its claim and a
 running session), that pickup's newest record stands. Otherwise the newest
 record stands, so a prediction made at a later commit replaces the
 `pickup` record an abandoned attempt left. With no record, the tick derives
@@ -200,7 +202,10 @@ P(C, W) = 1 − ∏ over the shared units u of C and W of (1 − rate(u))
 ```
 
 and the overlap cost of `C` is the sum of `P(C, W)` over all work in
-flight, the items this tick has already started included.
+flight, the items this tick has already started included. Each start
+changes the work in flight, so after each one the tick computes the waiting
+candidates' costs and tiers again: two candidates that overlap each other
+never both start as if neither existed.
 
 - **Shared units.** A file in both footprints is one unit, at that file's
   rate. A directory or an area in either footprint that holds a file or
@@ -213,10 +218,13 @@ flight, the items this tick has already started included.
   merged pull requests changed it. A merged pull request is one commit on
   the integration branch's first-parent history (a squash, a rebase merge
   or a merge commit) and the files that commit changed; it met a conflict
-  when the merge replay or a live conflict record names it, as M11's
-  conflict metric counts it
+  when the merge replay or a live conflict record names it, and merged
+  cleanly when the replay reached its head and found none, as M11's
+  conflict metric sorts them
   ([merge-conflicts.md § From measure to change](merge-conflicts.md#from-measure-to-change)).
-  Below 5, the rate is `dispatch.overlap.file_rate` (0.5). A
+  A pull request that is neither is unknown and left out of both counts,
+  so the rate is not pulled down by what was not observed. Below 5
+  observed pull requests, the rate is `dispatch.overlap.file_rate` (0.5). A
   [conflict hotspot](../GLOSSARY.md) therefore weighs more than a file that
   has never conflicted.
 - **An unknown footprint** costs `dispatch.overlap.unknown_cost` (0.5),
@@ -254,12 +262,16 @@ The bound replaces the per-epic width: it applies across all work, inside
 an epic, across epics, across served people, the ready pool and the
 factory identity's own queue, and it weighs only work that shares a file.
 Unlike the width, it holds nothing while a slot is free. When it is built,
-the width key that #1178 adds is removed, and a repository's file that
-still sets it is refused with a message naming `dispatch.overlap` and
-saying that one child at a time is now said with an execution plan's
-dependency edges or a serialized area. The key is not kept as an alias: a
-width counts an epic's children, the bound counts the work on one file, and
-an alias would change what a repository's value means without telling it.
+the width key that #1178 adds is no longer read. The `dispatch` section
+refuses a key it does not know, and that refusal stops the repository's
+dispatch, so the retired key is the one exception: a file that still sets
+it is read without it, and every receipt and `jig dispatch` report names
+it with what replaced it, `dispatch.overlap`, and says that one child at a
+time is now said with an execution plan's dependency edges or a serialized
+area. The step's change note says the same. The key is not kept as an
+alias: a width counts an epic's children, the bound counts the work on one
+file, and an alias would change what a repository's value means without
+telling it.
 
 ### Hard holds stay declared
 
@@ -324,32 +336,39 @@ kept for 7 days. From them the tick reads:
 - **Time to validation**: for each kind, the median time from a pass's
   launch to its first run's request.
 
-**The passes ahead.** A pass in flight is ahead of a new one while it has
-runs still to make: a pickup or a drive pass whose workspace has made fewer
-runs since its launch than its kind's runs per pass. Follow-ups and the
-steward do not run the test stage. The lock's current holders and waiters
-that are no pass of the dispatcher's (a person's run, another tool's) are
-ahead too.
+**The runs ahead.** Two kinds of work are ahead of a new pass:
+
+- **At the lock now**: the runs holding or waiting on it, the dispatcher's
+  and anyone else's (a person's run, another tool's).
+- **Still to arrive**: each pickup or drive pass in flight that has not yet
+  made its kind's runs per pass since its launch, counted by the runs it
+  still has to make. Follow-ups and the steward do not run the test stage.
 
 **The measure.** A new pass reaches the lock after its kind's time to
-validation, `T`. By then the lock has finished `runs at once × T ÷ run
-time` runs of the work ahead. It can then wait at most the **wait window**
-`W`: the shorter of the lock's wait (`LOCK_TIMEOUT`) and the pass deadline
-less `T` and one run time. So the host can take a new pass while the runs
-ahead number at most
+validation, `T`. Until then the lock can work only on the runs at the lock
+now, and clears at most `runs at once × T ÷ run time` of them; the passes
+still implementing give it nothing to do. Once there, the new pass can wait
+at most the **wait window** `W`: the shorter of the lock's wait
+(`LOCK_TIMEOUT`) and the pass deadline less `T` and one run time. So the
+host can take a new pass while
 
 ```text
-validation capacity = runs at once × (T + W) ÷ run time
+runs ahead = runs still to arrive + max(0, runs at the lock now − runs at once × T ÷ run time)
+validation capacity = runs at once × W ÷ run time
+runs ahead + the new pass's own runs ≤ validation capacity
 ```
 
-counting each pass ahead by its runs still to make. For example, with one
-run at a time, runs of 12 minutes, an hour to reach validation and an hour
-to wait, the capacity is 10 runs. The formula is conservative in one way: it
-assumes the work ahead reaches the lock no later than the new pass does.
+For example, with one run at a time, runs of 12 minutes and an hour to
+wait, the capacity is 5 runs: of 10 passes started together, 5 are taken
+and 5 wait for a later tick, where on 2026-11-14 all of them would have
+started and half would have run out their wait. The measure is
+conservative: it assumes every pass ahead reaches the lock no later than
+the new one, and credits the lock with no run of a pass that has not
+arrived yet.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
-`validation`, whose fill is the runs ahead against the capacity, with the
-launch's own runs counted. It is set in the machine file's `load:` section
+`validation`, whose fill is the runs ahead, with the launch's own runs
+counted, against the capacity. It is set in the machine file's `load:` section
 beside the other gauges, since the lock is the host's. It holds only
 pickups and drive passes, as the lock gauge does, and a new pickup keeps
 room for one drive pass after it, as it keeps memory and an account slot
@@ -387,7 +406,7 @@ pickup, its link and its state) and a count. The texts:
 | --- | --- |
 | Overlap | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; first when a slot is free after work that does not overlap, or from 16:40` |
 | The overlap bound | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790); starts when no other work can take a slot` |
-| Validation capacity | `waits on validation capacity: 14 runs are ahead of it, about 2 h 50 min at 1 run at a time of 12 min; capacity 10` |
+| Validation capacity | `waits on validation capacity: 9 runs are ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5` |
 | A serialized area | `held: serialized behind #123 in dispatch` |
 | A conflict edge | `waits on conflict edge #12 → #14: #12's pull request #20 has not merged` |
 
@@ -449,8 +468,8 @@ One pull request each, in this order.
    `validation` gauge in the load factor and its `load.validation` line,
    and the replay of 2026-11-14 as its test.
 9. **Overlap admission.** The tiers order the walk and the per-epic width
-   goes, its key refused with the message above; every document that names
-   the width says what is true after it.
+   goes, its key retired as above; every document that names the width says
+   what is true after it.
 
 ## Left out
 
@@ -462,10 +481,11 @@ One pull request each, in this order.
 - **Reading an unpushed branch** of a running pickup. Its footprint record
   stands for it until its pull request opens; reading every workspace's
   working tree would tie the tick to one host's disk.
-- **Modelling when each pass ahead reaches the lock.** The capacity counts
-  every run ahead as if it were already due; a finer model waits for the
-  samples to show the conservative one holds back work the host could have
-  taken.
+- **Modelling when each pass ahead reaches the lock.** The measure counts
+  every run still to arrive as if it were due when the new pass is; a finer
+  model, one that places each pass's arrival at its launch plus its kind's
+  time to validation, waits for the receipts to show the conservative one
+  holds back work the host could have taken.
 - **Raising the number of suites that may run at once**, the lock's
   waiting order and its holder reporting (#608).
 - **Overlap across repositories.** Files collide only within one

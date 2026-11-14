@@ -2690,11 +2690,12 @@ make, use the entry's term instead.
   work, and like the *overlap cost* only orders: work over the bound still
   starts when nothing else can take a free slot
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-bound)).
-- **Validation capacity** — how many passes a host can take through
-  validation within the time a pass can wait for it: the runs the
-  machine-wide test lock lets through at once, times that wait, divided by
-  how long one run takes. A gauge of the *load factor*, so the *dispatcher*
-  starts no more passes than the host can test in time
+- **Validation capacity** — how many validation runs a host can finish
+  within the time a pass can wait for its turn: the runs the machine-wide
+  test lock lets through at once, times that wait, divided by how long one
+  run takes. The runs still to come from the passes already started count
+  against it. A gauge of the *load factor*, so the *dispatcher* starts no
+  more passes than the host can test in time
   ([overlap-aware admission](design/overlap-aware-admission.md#validation-capacity)).
 - **Served person** — a person a *dispatcher*'s host works for, named with
   their forge logins and tracker identities in the host's own dispatch
