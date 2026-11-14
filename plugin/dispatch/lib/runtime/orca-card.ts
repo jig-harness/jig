@@ -262,6 +262,7 @@ async function write(
   workspace: Workspace,
   message: string,
   dispatcherOnly: boolean,
+  signal: AbortSignal,
   replaceReadComment?: string,
   prepareComment?: (
     before: string,
@@ -276,6 +277,7 @@ async function write(
         path: workspace.path,
         branch: workspace.branch,
         dispatcherOnly,
+        signal,
         ...(prepareComment === undefined ? {} : { prepareComment }),
         ...(replaceReadComment === undefined ? {} : { replaceReadComment }),
       },
@@ -384,6 +386,7 @@ async function sendTo(
     workspace,
     message,
     dispatcherOnly,
+    signal,
     owned ? workspace.comment : undefined,
     (before, projected, unread) => {
       const known =

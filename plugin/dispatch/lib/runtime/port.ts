@@ -113,6 +113,8 @@ export interface NotifyTarget {
   path: string;
   branch?: string;
   dispatcherOnly?: boolean;
+  /** Aborted when the sender gives up: the adapter writes nothing further once it is. */
+  signal?: AbortSignal;
   /** Exact dispatcher-owned read comment that may be replaced; rechecked under the lock. */
   replaceReadComment?: string;
   /** Persist the actual locked projection before writing; return whether it is dispatcher-only. */

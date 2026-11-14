@@ -173,12 +173,12 @@ async function notifyUnlocked(
 ): Promise<RuntimeReceipt> {
   const selector = `path:${target.path}`;
   const spent = (): RuntimeReceipt | null =>
-    remaining() > 0
+    remaining() > 0 && target.signal?.aborted !== true
       ? null
       : {
           ok: false,
           lost: false,
-          detail: `${target.path}: the runtime's deadline passed before the comment was written; nothing written`,
+          detail: `${target.path}: the runtime's deadline passed or the sender gave up before the comment was written; nothing written`,
         };
   let late = spent();
   if (late !== null) return late;

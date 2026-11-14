@@ -34,6 +34,19 @@ describe("notify on Orca", () => {
     expect(waited).toBe(1000);
   });
 
+  test("an aborted sender writes nothing, and no Orca call is made", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const receipt = await orcaNotify(
+      { id: "w1", path: "/ws/app/feat-x", signal: controller.signal },
+      "[jig dispatch: k]\nPR #4 parked",
+      1000,
+      async (_workspace, body) => ({ value: await body() }),
+    );
+    expect(receipt).toMatchObject({ ok: false, lost: false });
+    expect(receipt.detail).toContain("nothing written");
+  });
+
   test("a lock that throws is a lost-nothing receipt, not a throw", async () => {
     const receipt = await orcaNotify(
       { id: "w1", path: "/ws/app/feat-x" },

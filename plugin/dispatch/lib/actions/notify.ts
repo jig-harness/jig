@@ -614,12 +614,13 @@ async function answersOf(
   try {
     const left = timeLeftMs();
     if (left !== null && left <= 0)
-      return lostAnswers(
-        channel,
-        batch,
-        report,
-        "the tick's time budget was already spent",
-      );
+      // Nothing was attempted, so the causes wait: no failure is counted.
+      return batch.map((c) => ({
+        key: c.notice.key,
+        outcome: "waits",
+        place: null,
+        detail: "the tick's time budget was already spent",
+      }));
     const timeoutMs = Math.max(
       1,
       Math.min(left ?? deliveryTimeoutMs, deliveryTimeoutMs),
