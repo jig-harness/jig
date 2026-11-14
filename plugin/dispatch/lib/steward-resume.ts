@@ -123,6 +123,14 @@ function sourceOf(
     | undefined;
   if (
     question === null ||
+    routineRecommendation(question, output, ["escalated"]) === null
+  )
+    return {
+      refused:
+        "the pass's output holds no question with a single recommended option",
+      settled: true,
+    };
+  if (
     routineRecommendation(
       question,
       output,
@@ -131,7 +139,7 @@ function sourceOf(
   )
     return {
       refused:
-        "the pass's output holds no question with a single recommended option outside the human-decision classes",
+        "the pass's question falls in a human-decision class of the autonomy policy",
       settled: false,
     };
   return {

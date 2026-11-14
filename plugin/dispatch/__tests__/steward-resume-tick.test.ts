@@ -27,6 +27,7 @@ import { dispatched } from "../lib/runtime/port.ts";
 import {
   judgedResumes,
   keepStewardRun,
+  readStewardDigest,
   stewardRecords,
   submitStewardRecords,
   STEWARD_RESUME,
@@ -241,13 +242,16 @@ test("a refused duplicate resume never blocks the replay of the lost one", async
   stateDb(dispatchState(w))
     .query("UPDATE launches SET record = ? WHERE id = ?")
     .run(JSON.stringify(record), record.id);
-  expect(
-    submitStewardRecords(
-      "duplicate-run",
-      [{ kind: "resume", record: OLD, reason: "the same pass again" }],
-      dispatchState(w),
-    ).ok,
-  ).toBe(true);
+  const digest = readStewardDigest("source-run", dispatchState(w));
+  expect(digest.ok).toBe(true);
+  if (!digest.ok) return;
+  keepStewardRun("duplicate-run", digest.value, Date.now(), dispatchState(w));
+  const submitted = submitStewardRecords(
+    "duplicate-run",
+    [{ kind: "resume", record: OLD, reason: "the same pass again" }],
+    dispatchState(w),
+  );
+  expect(submitted).toMatchObject({ ok: true, value: "submitted" });
   const retried: boolean[] = [];
   for (let i = 0; i < 2; i += 1)
     retried.push(
@@ -255,6 +259,11 @@ test("a refused duplicate resume never blocks the replay of the lost one", async
         (l) => l.record === record.id && l.outcome === "retried",
       ) ?? false,
     );
+  expect(
+    stewardRecords(SLUG, dispatchState(w)).filter(
+      (r) => r.run === "duplicate-run" && r.effect === "refused",
+    ),
+  ).toHaveLength(1);
   expect(retried).toContain(true);
 }, 90000);
 
@@ -359,7 +368,16 @@ test("a resume whose pass recommended no option is refused once with its reason"
     false,
     "The scope choice needs a person.\nQuestion: Which scope should #12 take?",
   );
-  await refusedOnce(w, "a single recommended option", false);
+  await refusedOnce(w, "a single recommended option");
+}, 60000);
+
+test("a resume refused for the autonomy policy leaves the pass offered", async () => {
+  const { w } = fixture(
+    "pickup",
+    false,
+    "Recommended option: take the narrow scope.\nQuestion: Which scope should #12 take?",
+  );
+  await refusedOnce(w, "human-decision class", false);
 }, 60000);
 
 test("a resume of a pass that framed a decision for a person is refused once", async () => {
