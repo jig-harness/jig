@@ -17,7 +17,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 30;
+const DISPATCH_DB = 31;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const REFLECT = "skills/reflect/scripts/";
@@ -341,12 +341,22 @@ export const DISPATCHER: RecordKind[] = [
   {
     name: "tracker-budget",
     medium: "machine",
-    owner: "shared/tracker-budget.ts",
+    owner: "shared/outbound/schema.ts",
     at: "~/.local/state/jig/tracker/budget.sqlite",
     table: "tracker_budget",
     version: 1,
     meaning:
       "A tracker credential's request budget, shared by every process on the machine: while the tracker refuses the credential, no request is sent until the reset it named, and the dispatcher's reads stop at their share of each window.",
+  },
+  {
+    name: "outbound-cost",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "outbound_cost",
+    version: 1,
+    meaning:
+      "What the calls to outside systems cost, summed per hour, system, credential, operation, caller and unit: the requests, their cost, how long they took and how they failed, kept for 7 days. Each dispatch tick and the budget answer read it to report what calls cost and which quotas are at risk; a call is never refused because the ledger cannot be written.",
   },
   plain(
     "machine",

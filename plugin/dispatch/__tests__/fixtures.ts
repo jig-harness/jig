@@ -14,9 +14,16 @@
  * reaches through `JIG_GITHUB_GRAPHQL_URL`. The tick runs as a child with
  * its own home, so its receipts and lock never touch the real ones.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import {
   conn,
@@ -68,6 +75,9 @@ if (fs.existsSync(F + "/forge-rate-limited")) { process.stderr.write("gh: API ra
 if (fs.existsSync(F + "/forge-unauthorized")) { process.stderr.write("gh: Bad credentials (HTTP 401)\\n"); process.exit(1); }
 if (fs.existsSync(F + "/forge-unreachable")) { process.stderr.write("dial tcp: lookup api.github.com: no such host\\n"); process.exit(1); }
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
+// The repository's labels as labels-repo.json lists them: a name alone is a label with no description.
+const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])
+  .map((l) => (typeof l === "string" ? { name: l, description: "", color: "ededed" } : l));
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchRepository"))) {
   const answer = require(${JSON.stringify(QUERY_FAKE)}).repositoryQuery(F, args, process.cwd());
   if (answer === null) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
@@ -152,7 +162,7 @@ if (args[0] === "pr" && args[1] === "edit") {
   const add = values("--add-label");
   const remove = values("--remove-label");
   if (fs.existsSync(F + "/labels-repo.json")) {
-    const have = JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8"));
+    const have = repoLabels().map((l) => l.name);
     const absent = add.find((l) => !have.includes(l));
     if (absent !== undefined) { process.stderr.write("could not add label: '" + absent + "' not found\\n"); process.exit(1); }
   }
@@ -169,12 +179,24 @@ if (args[0] === "pr" && args[1] === "edit") {
   out("https://github.com/${SLUG}/pull/" + n + "\\n");
 }
 if (args[0] === "label" && args[1] === "list")
-  out((fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : []).map((name) => ({ name })));
+  out(repoLabels().map(({ name, description }) => ({ name, description })));
+const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 if (args[0] === "label" && args[1] === "create") {
   // One label added to labels-repo.json; refused while label-create-fail exists.
   if (fs.existsSync(F + "/label-create-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
-  const have = fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [];
-  have.push(args[2]);
+  const have = repoLabels();
+  have.push({ name: args[2], description: flag("--description") ?? "", color: flag("--color") ?? "ededed" });
+  fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
+  out("");
+}
+if (args[0] === "label" && args[1] === "edit") {
+  // One label of labels-repo.json given what the flags name; refused while label-describe-fail exists.
+  if (fs.existsSync(F + "/label-describe-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
+  const have = repoLabels();
+  const label = have.find((l) => l.name === args[2]);
+  if (label === undefined) { process.stderr.write("gh: label not found (HTTP 404)\\n"); process.exit(1); }
+  if (flag("--description") !== undefined) label.description = flag("--description");
+  if (flag("--color") !== undefined) label.color = flag("--color");
   fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
   out("");
 }
@@ -395,6 +417,7 @@ fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
   cwd: process.cwd(),
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+  backgroundTasksOff: process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ?? null,
 }) + "\\n");
 if (fs.existsSync(F + "/claude-stubborn")) {
   process.on("SIGTERM", () => {});
@@ -751,7 +774,27 @@ export function world(): World {
       else write("base-head", sha);
       if (next !== undefined) write("base-head-next", next);
     },
-    setWorkspaces: (rows) =>
+    setWorkspaces: (rows) => {
+      // Listed on-disk stage workspaces are checkouts, as the real runtime requires.
+      for (const row of rows) {
+        if (
+          row.path?.startsWith(root) &&
+          existsSync(row.path) &&
+          !existsSync(join(row.path, ".git"))
+        ) {
+          const initialized = Bun.spawnSync(["git", "init", "-q", row.path], {
+            env,
+          });
+          expectSpawnExit(
+            {
+              exitCode: initialized.exitCode,
+              stdout: initialized.stdout.toString(),
+              stderr: initialized.stderr.toString(),
+            },
+            0,
+          );
+        }
+      }
       write("orca-ps.json", {
         worktrees: rows.map((r, i) => ({
           worktreeId: `repo-1::/ws/${i}`,
@@ -780,7 +823,8 @@ export function world(): World {
         hostScope: { hostIds: ["local"], omittedHostIds: [] },
         totalCount: rows.length,
         truncated: false,
-      }),
+      });
+    },
     setFiles: (pr, files) => write(`files-${pr}.json`, files),
     setRepoFile: (path, text) => {
       mkdirSync(dirname(join(dir, "repo-files", path)), { recursive: true });

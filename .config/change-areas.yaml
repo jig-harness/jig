@@ -399,6 +399,7 @@ areas:
           - "tools/protocol/**"
           - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
           - "plugin/shared/records/registry*.ts"
+          - "plugin/shared/records/not-records.ts"
           - "plugin/shared/records/envelope.ts"
           - "plugin/shared/records/followup-values.ts"
           - "plugin/shared/records/writer.ts"

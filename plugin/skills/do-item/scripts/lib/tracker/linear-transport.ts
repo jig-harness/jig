@@ -4,7 +4,7 @@
  * `linear` command-line client's `api` subcommand, which holds its own
  * credential.
  *
- * Both go through the machine's request budget (`shared/tracker-budget.ts`)
+ * Both go through the machine's request budget (`shared/outbound/budget.ts`)
  * when given one, as `defaultTransport` does: a request is not sent while the
  * credential is rate limited, and every answer's rate-limit headers update
  * the budget. Linear refuses a spent credential with HTTP 400 or 429 and the
@@ -39,6 +39,11 @@ import {
 } from "../../../../../shared/outbound/failure.ts";
 import { guarded } from "../../../../../shared/outbound/hold.ts";
 import { retryRead } from "../../../../../shared/outbound/retry.ts";
+import { operationName } from "../../../../../shared/outbound/ledger.ts";
+import {
+  recordAttempt,
+  type Attempt,
+} from "../../../../../shared/outbound/record-attempt.ts";
 import {
   type BudgetAnswer,
   type BudgetGovernor,
@@ -47,7 +52,7 @@ import {
   defaultGovernor,
   FALLBACK_LIMIT_MS,
   TrackerRateLimited,
-} from "../../../../../shared/tracker-budget.ts";
+} from "../../../../../shared/outbound/budget.ts";
 import { currentMs } from "../../../../../shared/time.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
@@ -301,8 +306,10 @@ async function postOnce(
   governed: Governed | null,
   payload: { query: string; variables: Record<string, unknown> },
   signal: AbortSignal,
+  observation: Attempt,
 ): Promise<Answer> {
   const sentAt = governed?.governor.admit("linear", governed.key);
+  observation.requests = 1;
   const began = currentMs();
   let res: Response;
   try {
@@ -314,6 +321,7 @@ async function postOnce(
     if (cancelled(signal)) return abortedError(signal, true);
     return unreachable(err);
   }
+  observation.cost = headerNumber(res.headers, "x-complexity");
   let text: string;
   try {
     text = await res.text();
@@ -452,8 +460,30 @@ export function httpTransport(
   return dispatchTagged(
     (query, variables, signal) =>
       call(
-        (bound) =>
-          postOnce(fetchImpl, token, governed, { query, variables }, bound),
+        (bound) => {
+          const observation: Attempt = {
+            system: LINEAR,
+            credential: credentialKey(LINEAR, token),
+            operation: operationName(query),
+            requests: 0,
+            cost: null,
+            unit: "points",
+            estimated: false,
+          };
+          return recordAttempt(
+            observation,
+            () =>
+              postOnce(
+                fetchImpl,
+                token,
+                governed,
+                { query, variables },
+                bound,
+                observation,
+              ),
+            (answer) => failureOfAnswer(answer)?.code ?? null,
+          );
+        },
         query,
         signal,
       ),
@@ -517,8 +547,10 @@ async function cliOnce(
   query: string,
   variables: Record<string, unknown>,
   signal: AbortSignal,
+  observation: Attempt,
 ): Promise<Answer> {
   governed?.governor.admit("linear", governed.key);
+  observation.requests = 1;
   const r = await runCli(
     [bin, "api", query, "--variables-json", JSON.stringify(variables)],
     signal,
@@ -586,7 +618,22 @@ export function cliTransport(
   return dispatchTagged(
     (query, variables, signal) =>
       call(
-        (bound) => cliOnce(bin, governed, query, variables, bound),
+        (bound) => {
+          const observation: Attempt = {
+            system: LINEAR,
+            credential: credentialKey(LINEAR, `cli:${bin}`),
+            operation: operationName(query),
+            requests: 0,
+            cost: null,
+            unit: "points",
+            estimated: false,
+          };
+          return recordAttempt(
+            observation,
+            () => cliOnce(bin, governed, query, variables, bound, observation),
+            (answer) => failureOfAnswer(answer)?.code ?? null,
+          );
+        },
         query,
         signal,
       ),

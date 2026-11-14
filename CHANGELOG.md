@@ -394,6 +394,86 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.235.3] - 2026-11-14
+
+### Fixed
+
+- A dispatched pickup, follow-up or steward pass no longer ends, or runs out
+  its deadline, waiting on a background task or agent. The dispatcher starts
+  each with Claude Code's background tasks off
+  (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`), as the drive's passes already
+  were, and each pass's prompt says to keep long steps in the foreground and
+  bound every wait on another agent. A pickup's prompt also says to push
+  committed work before a long validation step, unless the repository
+  requires validation before every push. That cuts the chance a deadline or
+  an interrupted gates run leaves finished commits on the host only; a push
+  the pre-push hook refuses still waits for validation.
+- A dispatched pickup that cannot arm its pull request's drive (the arm
+  script answers `spawn`, which a pass with background tasks off cannot
+  run) first checks for a drive already listed on it, and otherwise records
+  the pull request as its result and says in its closing report that the
+  drive is unarmed, with the command to run.
+
+## [0.235.2] - 2026-11-14
+
+### Fixed
+
+- `jig install dispatch --repo <path>` and `jig dispatch labels` now list
+  each dispatch label the repository already has whose description is not
+  the one this release gives it, beside the missing ones, and with `--yes`
+  update it (`gh label edit`), so a label whose meaning a release changed no
+  longer keeps an earlier release's text. A label the signed-in account may
+  not edit is listed with the command a person runs. The update sets the
+  description alone: a color a person chose stays, and the marker labels
+  (`manual-ops`, `automation`) keep the repository's own description.
+
+## [0.235.1] - 2026-11-14
+
+### Fixed
+
+- Headless dispatch stages now run under a supervisor that stops the stage
+  when its launch wrapper dies. Durable supervisor and child identities keep
+  the account slot occupied while work survives, while a launch handoff is
+  unresolved, or while cleanup cannot be confirmed. Interrupted drives keep
+  their slots because their detached passes need a separate cleanup witness.
+  The dispatch database upgrades automatically; older plugin copies refuse
+  the upgraded database because they cannot account for these identities. Windows retains its
+  existing limits for observing cooperative process trees.
+
+## [0.235.0] - 2026-11-14
+
+### Added
+
+- Outbound calls now leave hourly cost totals per system, hashed credential,
+  operation and caller in the shared budget database, retained for 7 days.
+  `jig budget` reads spending by operation and caller with JSON output; tick
+  reports show balances, this tick's spending and its costliest operations.
+- A low-quota need names operations whose recent spending would empty a quota
+  before refill, and clears when that projection recovers. Unknown costs and
+  estimates are identified; an unavailable ledger never prevents a call.
+
+## [0.234.2] - 2026-11-14
+
+### Changed
+
+- The shared process launchers in `plugin/shared` document, beside each
+  launch, that by default they pass an argument vector, so no shell reads a
+  path or argument. A caller that sets `shell: true` or names a shell itself
+  (the configured POSIX commands run as `sh -c`, a Windows command as
+  `cmd.exe /c`) opts into that shell's interpretation. On Windows, cmd.exe
+  also reads a `.cmd` or `.bat` launcher, escaped. New tests hold the default
+  for shell syntax in an argument. How a command runs does not change.
+  **Consumer action:** none.
+
+## [0.234.1] - 2026-11-14
+
+### Fixed
+
+- A served epic without an execution plan can start its next child while
+  earlier children await a person in operations-pending or carry a person-hold
+  label. When nothing can start, its Queue summary names a child waiting on
+  a person. **Consumer action:** none.
+
 ## [0.234.0] - 2026-11-14
 
 The plugin's scripts now read the clock, parse timestamps and do calendar
@@ -8142,7 +8222,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.234.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.3...HEAD
+[0.235.3]: https://github.com/jig-harness/jig/compare/v0.235.2...v0.235.3
+[0.235.2]: https://github.com/jig-harness/jig/compare/v0.235.1...v0.235.2
+[0.235.1]: https://github.com/jig-harness/jig/compare/v0.235.0...v0.235.1
+[0.235.0]: https://github.com/jig-harness/jig/compare/v0.234.2...v0.235.0
+[0.234.2]: https://github.com/jig-harness/jig/compare/v0.234.1...v0.234.2
+[0.234.1]: https://github.com/jig-harness/jig/compare/v0.234.0...v0.234.1
 [0.234.0]: https://github.com/jig-harness/jig/compare/v0.233.0...v0.234.0
 [0.233.0]: https://github.com/jig-harness/jig/compare/v0.232.0...v0.233.0
 [0.232.0]: https://github.com/jig-harness/jig/compare/v0.231.0...v0.232.0

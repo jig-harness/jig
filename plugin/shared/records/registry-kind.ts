@@ -38,12 +38,6 @@ export interface RecordKind {
   readonly meaning: string;
 }
 
-/** A hidden-marker literal in the plugin that is not a record, and why. */
-export interface NotARecord {
-  readonly marker: string;
-  readonly why: string;
-}
-
 /** A kind that is only its medium, name, owner, place, version and meaning. */
 export function plain(
   medium: Medium,
