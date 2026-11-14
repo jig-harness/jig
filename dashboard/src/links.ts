@@ -67,20 +67,26 @@ export function forgesOf(line: LineSnapshot | null): Forges {
   for (const r of line.repos)
     if (r.slug !== null) forges.trackers.set(r.slug, r.tracker);
   const linked = linkedOf(line);
+  noteForges(forges, linked);
+  for (const repo of new Set(linked.map((x) => x.repo)))
+    forges.items.set(repo, itemBases(linked.filter((x) => x.repo === repo)));
+  return forges;
+}
+
+/** The pull-request bases, titles and links the targets carry; the first of a target wins. */
+function noteForges(forges: Forges, linked: Linked[]): void {
   for (const { url } of linked) {
     const found = url === null ? null : PULL_URL.exec(url);
     if (found?.[1] !== undefined && found[2] !== undefined)
       forges.pulls.set(found[2], found[1]);
   }
-  for (const repo of new Set(linked.map((x) => x.repo)))
-    forges.items.set(repo, itemBases(linked.filter((x) => x.repo === repo)));
-  for (const x of linked)
-    if (x.title !== null && !forges.titles.has(`${x.repo} ${x.target}`))
-      forges.titles.set(`${x.repo} ${x.target}`, x.title);
-  for (const x of linked)
-    if (x.links !== undefined && !forges.links.has(`${x.repo} ${x.target}`))
-      forges.links.set(`${x.repo} ${x.target}`, x.links);
-  return forges;
+  for (const x of linked) {
+    const key = `${x.repo} ${x.target}`;
+    if (x.title !== null && !forges.titles.has(key))
+      forges.titles.set(key, x.title);
+    if (x.links !== undefined && !forges.links.has(key))
+      forges.links.set(key, x.links);
+  }
 }
 
 function pullLink(repo: string, pr: string, forges: Forges): string | null {
