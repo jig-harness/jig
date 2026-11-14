@@ -119,11 +119,14 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
     );
   };
   forge("MERGED");
-  /** The fake `lsof`, finding no holder after writing `warnings` to standard error. */
-  const lsof = (warnings = ""): void => {
+  /**
+   * The fake `lsof`: it writes `warnings` to standard error, then ends with
+   * `end`, by default finding no holder.
+   */
+  const lsof = (warnings = "", end = "exit 1"): void => {
     writeFakeProgram(
       join(bin, "lsof"),
-      `#!/bin/sh\ncat >&2 <<'WARNINGS'\n${warnings}WARNINGS\nexit 1\n`,
+      `#!/bin/sh\ncat >&2 <<'WARNINGS'\n${warnings}WARNINGS\n${end}\n`,
     );
   };
   lsof();
@@ -313,6 +316,9 @@ describe.skipIf(
         "process holders could not be enumerated",
       ),
     });
+    // Killed after its warnings, it may not have read a process at all.
+    f.lsof(warning("/run/user/1000/doc"), "kill -9 $$");
+    expect(line(gc(f, [])).outcome).toBe("unverified");
   }, 60_000);
 
   test("one the idle guard has not passed is kept", () => {

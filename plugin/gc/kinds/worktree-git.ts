@@ -337,6 +337,7 @@ export async function requestsForCommit(
   }
   return ok(matched);
 }
+
 /** The warning `lsof` prints for each mount it cannot stat, whatever it was asked about. */
 const UNSTATTABLE_MOUNT =
   /^lsof: WARNING: can't stat\(\) \S+ file system (\/.*)$/;
@@ -363,7 +364,7 @@ export function onlyUnrelatedMountWarnings(
   paths: readonly string[],
 ): boolean {
   let afterWarning = false;
-  for (const line of stderr.split("\n").map((one) => one.trimEnd())) {
+  for (const line of stderr.split("\n").map((one) => one.replace(/\r$/, ""))) {
     if (line === "") continue;
     if (afterWarning && line.trim() === INCOMPLETE) {
       afterWarning = false;
@@ -383,6 +384,8 @@ export async function processHolder(path: string): Promise<boolean | null> {
     timeoutSec: 30,
     env: gitEnvironment(),
   });
+  // A killed or cut-off run may have stopped before it read any process.
+  if (result.signal !== undefined || result.bufferExceeded) return null;
   if (result.stderr.trim()) {
     const resolved = attempt("unreadable", "Cannot resolve the worktree", () =>
       realpathSync.native(path),
