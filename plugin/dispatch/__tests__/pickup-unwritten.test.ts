@@ -73,11 +73,12 @@ function planMany(
   rerunsHeld: string | null = null,
   claimed: ClaimedItem[] = [],
   idleSince = new Map<string, number>(),
+  pickups: WantedItem[] = [ITEM],
 ) {
   return planPickups({
     slug: "example-org/example-repo",
     section: { stalledAfterMs: 3_600_000 } as DispatchSection,
-    pickups: [ITEM],
+    pickups,
     claimed,
     sessions: { ok: true, source: "test", workspaces: [] },
     launches: reads,
@@ -151,6 +152,24 @@ describe("a pickup whose result the host could not write", () => {
     );
     expect(planned.quiet).not.toContainEqual(
       expect.objectContaining({ target: "#12", class: "pickup-ended" }),
+    );
+  });
+
+  it("holds an expired claimed pickup whose latest result is unwritten while the host is unhealthy", () => {
+    const planned = planMany(
+      [stopped(true)],
+      "the last tick exited 1",
+      [CLAIMED],
+      new Map([["#12", parseMs("2026-11-14T10:50:00Z")]]),
+      [],
+    );
+    expect(planned.actions).toEqual([]);
+    expect(planned.quiet).toContainEqual(
+      expect.objectContaining({
+        target: "#12",
+        class: "pickup-ended",
+        why: expect.stringContaining("this host could write"),
+      }),
     );
   });
 });
