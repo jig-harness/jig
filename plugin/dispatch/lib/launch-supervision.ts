@@ -66,17 +66,16 @@ export function asClaim(value: unknown): LaunchClaim | null {
   };
 }
 
-/** Preserve a recognizable live wrapper when its supervision handoff is malformed. */
+/** Preserve any recognizable live identity when its supervision handoff is malformed. */
 export function malformedLiveWrapper(
   value: unknown,
   rows: ProcessRow[] | null,
   here: HostIdentity,
 ): LaunchClaim | undefined {
-  if (!isMapping(value) || typeof value.claimedAt !== "string")
-    return undefined;
-  const identity = decodeIdentity(value);
-  if (identity === null) return undefined;
-  const candidates = [identity];
+  if (!isMapping(value)) return undefined;
+  const candidates = [decodeIdentity(value)].filter(
+    (candidate): candidate is ProcessIdentity => candidate !== null,
+  );
   if (isMapping(value.supervision)) {
     candidates.push(
       ...[value.supervision.supervisor, value.supervision.child]
@@ -86,12 +85,16 @@ export function malformedLiveWrapper(
         ),
     );
   }
-  return candidates.some((candidate) => {
+  const live = candidates.find((candidate) => {
     const verdict = judge(candidate, rows, here);
     return verdict.ok && verdict.value.state === "alive";
-  })
-    ? { ...identity, claimedAt: value.claimedAt }
-    : undefined;
+  });
+  return live === undefined
+    ? undefined
+    : {
+        ...live,
+        claimedAt: typeof value.claimedAt === "string" ? value.claimedAt : "",
+      };
 }
 
 /** A known-live wrapper or stage identity, independent of unresolved handoffs. */

@@ -116,6 +116,37 @@ describe("a launch record's claim, judged by the shared process identity", () =>
     expect(asClaim(claim)).toBeNull();
   });
 
+  it("holds a readable child when the wrapper or its handoff metadata is malformed", async () => {
+    const child = await ownClaim();
+    const claim = {
+      ...child,
+      pid: "not-a-pid",
+      claimedAt: 7,
+      supervision: { supervisor: {}, child },
+    };
+    const root = claimedRoot(claim as unknown as LaunchClaim);
+    const { records } = await readLaunches(root);
+    const state = records[0]?.state;
+    expect(state?.kind).toBe("unknown");
+    expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
+    expect(await clearMain(ID, root)).toBe(2);
+  });
+
+  it("reports the surviving child, rather than a dead wrapper, for malformed handoffs", async () => {
+    const child = await ownClaim();
+    const claim = {
+      ...child,
+      pid: 2147483647,
+      supervision: { supervisor: {}, child },
+    };
+    const { records } = await readLaunches(
+      claimedRoot(claim as unknown as LaunchClaim),
+    );
+    const state = records[0]?.state;
+    expect(state?.kind).toBe("unknown");
+    expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
+  });
+
   it("keeps missing cleanup evidence unknown even when every recorded process has died or its pid was reused", async () => {
     const identity = await ownClaim();
     const dead = { ...identity, pid: 2147483647 };
