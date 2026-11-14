@@ -394,6 +394,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.234.1] - 2026-11-14
+
+### Fixed
+
+- A served epic without an execution plan can start its next child while
+  earlier children await a person in operations-pending or carry a person-hold
+  label. When nothing can start, its Queue summary names a child waiting on
+  a person. **Consumer action:** none.
+
 ## [0.234.0] - 2026-11-14
 
 The plugin's scripts now read the clock, parse timestamps and do calendar
@@ -8142,7 +8151,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.234.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.234.1...HEAD
+[0.234.1]: https://github.com/jig-harness/jig/compare/v0.234.0...v0.234.1
 [0.234.0]: https://github.com/jig-harness/jig/compare/v0.233.0...v0.234.0
 [0.233.0]: https://github.com/jig-harness/jig/compare/v0.232.0...v0.233.0
 [0.232.0]: https://github.com/jig-harness/jig/compare/v0.231.0...v0.232.0
