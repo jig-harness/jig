@@ -28,6 +28,8 @@ interface Spec {
   waits?: Record<string, string[]>;
   children?: Record<string, PoolIssue[]>;
   descriptions?: Record<string, string>;
+  /** Items whose relations cannot be read. */
+  failing?: string[];
 }
 
 function world(spec: Spec) {
@@ -56,6 +58,11 @@ function world(spec: Spec) {
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
     openChildren: async (k: string) => spec.children?.[k] ?? [],
     listRelations: async (k: string) => [
+      ...(spec.failing?.includes(k)
+        ? (() => {
+            throw new Error(`relations of ${k} cannot be read`);
+          })()
+        : []),
       ...(spec.waits?.[k] ?? []).map((i) => ({ type: "blocked_by", issue: i })),
       ...Object.entries(spec.waits ?? {})
         .filter(([, on]) => on.includes(k))
@@ -578,6 +585,18 @@ describe("an assigned epic's children", () => {
     expect(wider.wanted.map((i) => i.key)).toEqual(["#2"]);
     expect(reasons(wider)["#4"]).toBe(
       "#1 works at most 2 children at once (dispatch.epic_width): #3 cannot be read and may be under way; starting #2",
+    );
+  });
+
+  it("takes one slot for a child whose relations cannot be read and starts its siblings", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3", "#4", "#5") },
+      failing: ["#3"],
+    }).read({ epicWidth: 3 });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#4"]);
+    expect(reasons(read)["#5"]).toBe(
+      "#1 works at most 3 children at once (dispatch.epic_width): #3 cannot be read and may be under way; starting #2, #4",
     );
   });
 

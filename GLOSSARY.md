@@ -900,8 +900,8 @@ make, use the entry's term instead.
   one sub-issue at a time; the dispatcher starts an epic's ready sub-issues
   in parallel, in the order and parallelism its execution plan sets, or
   without one up to a per-epic width. Jig's `do-item` skill picks up the
-  next sub-issue and records the epic's order in a machine-readable
-  execution plan
+  next sub-issue and follows the epic's order when a machine-readable
+  execution plan is present
   ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
   (an outcome too large for one pull request, and the unit progress is
   reported on), not by how many children it has, and it closes on an

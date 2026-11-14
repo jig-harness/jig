@@ -526,7 +526,10 @@ async function enqueueChildren(
   let serial: Serial | undefined;
   let selection: ServedPlan;
   try {
-    const live = await childStates(ctx, children, meta);
+    const states = await childStates(ctx, children, meta);
+    const live = states.live;
+    for (const key of states.unreadable)
+      if (!unread.includes(key)) unread.push(key);
     selection = servedPlan(
       meta.description ?? "",
       issue.identifier,
@@ -760,9 +763,10 @@ async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
   meta: Metadata,
-): Promise<Record<string, LiveIssue>> {
+): Promise<{ live: Record<string, LiveIssue>; unreadable: string[] }> {
   const { tracker, identity, options, cache, view } = ctx;
   const live: Record<string, LiveIssue> = {};
+  const failed: string[] = [];
   const keys = planKeys(
     meta.description ?? "",
     options.executionPlanBlock,
@@ -785,7 +789,12 @@ async function childStates(
             cache,
             view.held(child.identifier)?.relations ?? null,
             view,
-          ),
+          ).catch((error: unknown) => {
+            // One child's unreadable relations take one slot, not the whole epic.
+            if (isRateLimited(error) || isUnavailable(error)) throw error;
+            failed.push(child.identifier);
+            return null;
+          }),
     ),
   );
   const blockersOf = new Map<string, string[]>();
@@ -811,7 +820,7 @@ async function childStates(
     )
       live[blocker] = { state: other.state.type, blockedBy: [] };
   });
-  return live;
+  return { live, unreadable: failed };
 }
 
 async function freshAuthority(

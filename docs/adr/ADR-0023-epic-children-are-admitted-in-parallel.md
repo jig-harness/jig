@@ -47,15 +47,16 @@ The forces:
   and lets the second through.
 - **Hard holds are declared.** Where an order matters it is written down:
   an execution plan's edges, a change area marked `serialize` in the
-  change-area catalog, a person's hold. A rule that serializes everything
+  change-area catalog (which today holds drives of pull requests, not the
+  start of a pickup), a person's hold. A rule that serializes everything
   else guesses at an order nobody declared.
 
 ## Decision
 
 **Admission is parallel by default.** The dispatcher starts every ready
 child of an epic, within the host's capacity, unless a declared hold says
-otherwise: an execution plan's order, a `serialize` change area, or a
-person's hold.
+otherwise: an execution plan's order, a person's hold, or, for a pull request
+already open, a `serialize` change area.
 
 **Overlap is a cost weighed against waiting, never an absolute.** When
 capacity is free and only overlapping work is ready, that work starts, and a
