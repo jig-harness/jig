@@ -174,6 +174,7 @@ to a human or to a pass.
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
 | Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `DRIVE_PR_CI_REPAIR_ROUNDS` per head and failing check, default 2 | exit `21` (`CI_REPAIR_SPENT`), handing the red CI back for repair; exit `1` when the budget is `0` |
+| The same, every failing check a job of a workflow run that concluded `cancelled` | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms | exit `8`, parked `cancelled-ci` |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | exit `23` (`CI_INFRA_PERSISTED`) |
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | exit `9`, with its `Fix:` command |
 
@@ -1643,7 +1644,9 @@ false "green":
   ran, because a run that skipped everything has looked at nothing. A cancelled
   job stays unknown when the replacing run reports its name as skipped. A
   failed job in a cancelled run still counts as failing, regardless of when it
-  started. A run being re-run owes its unsuccessful jobs' results until it
+  started; when every failing check is such a job, with no failing commit
+  status beside them, the drive takes the same once-per-head recovery before
+  any retry or repair (`lib/driver/ci-recovery.ts`). A run being re-run owes its unsuccessful jobs' results until it
   completes; another run's success never discharges that obligation. With the
   workflow runs unreadable nothing is dropped: a cancelled check stays unknown
   and a failed one fails.

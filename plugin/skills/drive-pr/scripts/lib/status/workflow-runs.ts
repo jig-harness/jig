@@ -66,6 +66,8 @@ export interface FailedRun {
   jobNames?: string[];
   id: number;
   createdAt: string;
+  /** The run's own conclusion; `cancelled` says the run stopped before it finished. */
+  conclusion?: string | null;
 }
 
 function parseWorkflowRun(raw: unknown): WorkflowRun | null {
@@ -358,6 +360,7 @@ export function failedRunsOf(
     .map((run) => ({
       id: run.id,
       createdAt: run.createdAt,
+      conclusion: run.conclusion,
       jobNames: jobs
         .filter((job) => job.suiteId === run.checkSuiteId)
         .map((job) => job.name ?? ""),

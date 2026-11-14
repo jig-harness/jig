@@ -37,6 +37,7 @@ import { driverRuntime } from "./runtime.ts";
 import { attemptsFor, chargeRepair, repairSelection } from "./ci-attempts.ts";
 import {
   beforeRepairRecovery,
+  cancelledRunRecovery,
   pendingRetryDisposition,
 } from "./ci-recovery.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
@@ -669,9 +670,18 @@ export async function evaluateFinalCi(
   // and a `/fix-ci` pass handed neither a run nor a check name has
   // nothing to work from. Those keep today's stop verbatim, below.
   //
-  // A failure every one of whose checks failed on the infrastructure is
-  // re-run first, whatever the repair budget: no code change fixes it, so it
-  // spends no repair pass (`infra-recovery.ts`).
+  // A failure only cancelled runs carry is recovered as a cancellation, and
+  // one every one of whose checks failed on the infrastructure is re-run,
+  // first and whatever the repair budget: no code change fixes either, so
+  // neither spends a repair pass (`ci-recovery.ts`, `infra-recovery.ts`).
+  const cancelled = await cancelledRunRecovery(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+  );
+  if (cancelled !== null) return cancelled;
   const recovered = await beforeRepairRecovery(
     finalVerdict,
     staleRequiredFailure,
