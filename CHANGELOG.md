@@ -394,6 +394,26 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.235.3] - 2026-11-14
+
+### Fixed
+
+- A dispatched pickup, follow-up or steward pass no longer ends, or runs out
+  its deadline, waiting on a background task or agent. The dispatcher starts
+  each with Claude Code's background tasks off
+  (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`), as the drive's passes already
+  were, and each pass's prompt says to keep long steps in the foreground and
+  bound every wait on another agent. A pickup's prompt also says to push
+  committed work before a long validation step, unless the repository
+  requires validation before every push. That cuts the chance a deadline or
+  an interrupted gates run leaves finished commits on the host only; a push
+  the pre-push hook refuses still waits for validation.
+- A dispatched pickup that cannot arm its pull request's drive (the arm
+  script answers `spawn`, which a pass with background tasks off cannot
+  run) first checks for a drive already listed on it, and otherwise records
+  the pull request as its result and says in its closing report that the
+  drive is unarmed, with the command to run.
+
 ## [0.235.2] - 2026-11-14
 
 ### Fixed
@@ -8202,7 +8222,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.3...HEAD
+[0.235.3]: https://github.com/jig-harness/jig/compare/v0.235.2...v0.235.3
 [0.235.2]: https://github.com/jig-harness/jig/compare/v0.235.1...v0.235.2
 [0.235.1]: https://github.com/jig-harness/jig/compare/v0.235.0...v0.235.1
 [0.235.0]: https://github.com/jig-harness/jig/compare/v0.234.2...v0.235.0
