@@ -20,8 +20,7 @@
  *    of another history) is refused, since the drive would run the
  *    repository's configuration from content the pull request does not hold.
  *
- * The proof changes nothing in the workspace: its only write is a fetch of
- * the head branch into origin's remote-tracking ref when the head commit is
+ * The proof only fetches the head branch into origin's remote-tracking ref when its commit is
  * not yet in the clone, so local commits, edits and branches stay as they
  * were, and a refusal leaves the work where it is for a person.
  */
@@ -33,7 +32,8 @@ import {
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
 import { failureText } from "../text.ts";
-import { resolvePullRequestHead } from "./orca-pr-head.ts";
+import { type HeadReader, resolvePullRequestHead } from "./orca-pr-head.ts";
+import { workspaceHeadReader } from "./orca-workspace-head.ts";
 
 /** The canonical git common directory of the checkout at `path`, or why it does not read. */
 function commonDir(
@@ -150,6 +150,7 @@ export async function proveWorkspace(
   pr: number,
   branch: string,
   repository: string,
+  readForge?: HeadReader,
 ): Promise<string | null> {
   const clones = otherClone(ctx, clone, workspace);
   if (clones !== null) return clones;
@@ -159,6 +160,7 @@ export async function proveWorkspace(
     pr,
     branch,
     repository,
+    readForge,
   );
   if (!head.ok) return head.failure.reason;
   return offHistory(ctx, workspace, head.value, branch);
@@ -183,7 +185,15 @@ export async function verifyPullRequestWorkspace(
     timeoutMs,
   );
   try {
-    return await proveWorkspace(ctx, clone, workspace, pr, branch, repository);
+    return await proveWorkspace(
+      ctx,
+      clone,
+      workspace,
+      pr,
+      branch,
+      repository,
+      workspaceHeadReader(ctx),
+    );
   } catch (error) {
     return [failureText(error), ...lines.slice(-3)].join("; ");
   }

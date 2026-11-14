@@ -3,6 +3,8 @@ import { isRecord } from "../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import {
   type Context,
+  type RunOptions,
+  type RunResult,
   HerdrError,
   output,
 } from "../../../shared/orca-workspace/runner.ts";
@@ -16,6 +18,12 @@ interface Head {
   repo: string;
   url: string;
 }
+
+/** An asynchronous forge read; absent on the existing workspace-open path. */
+export type HeadReader = (
+  argv: string[],
+  options: RunOptions,
+) => Promise<RunResult>;
 
 function parseHead(text: string, branch: string): Proof<Head> {
   let meta: unknown;
@@ -123,8 +131,9 @@ export async function resolvePullRequestHead(
   pr: number,
   branch: string,
   repository?: string,
+  readForge?: HeadReader,
 ): Promise<Proof<string>> {
-  const result = await readHead(ctx, clone, pr, branch, repository);
+  const result = await readHead(ctx, clone, pr, branch, repository, readForge);
   return result.ok ? result : refuse(`PR #${pr}: ${result.failure.reason}`);
 }
 
@@ -134,8 +143,11 @@ async function readHead(
   pr: number,
   branch: string,
   repository?: string,
+  readForge?: HeadReader,
 ): Promise<Proof<string>> {
-  const read = ctx.run(
+  const read = await (
+    readForge ?? (async (argv, options) => ctx.run(argv, options))
+  )(
     [
       "gh",
       "pr",

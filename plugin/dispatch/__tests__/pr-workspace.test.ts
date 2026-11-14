@@ -21,6 +21,15 @@ import {
   localRunner,
 } from "../../shared/orca-workspace/runner.ts";
 import { proveWorkspace } from "../lib/runtime/orca-pr-workspace.ts";
+import { workspaceHeadReader } from "../lib/runtime/orca-workspace-head.ts";
+import {
+  guarded,
+  holdUnanswered,
+  stopHolding,
+} from "../../shared/outbound/hold.ts";
+import { outboundFailure } from "../../shared/outbound/failure.ts";
+import { heldRun } from "../../shared/proc.ts";
+import { traceGhRunner } from "../../shared/trace.ts";
 
 const BRANCH = "feature/7";
 const FORGE = "https://github.com/example-org/example-repo.git";
@@ -28,6 +37,7 @@ const ELSEWHERE = "https://github.com/example-org/other-repo.git";
 
 const roots: string[] = [];
 afterEach(() => {
+  stopHolding();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true });
 });
 
@@ -116,6 +126,70 @@ const prove = (r: ReturnType<typeof repos>, url?: string, ws = r.ws) =>
   );
 
 describe("a workspace's proof against its pull request's head", () => {
+  it("sends no verification request to a forge already held in this run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "workspace-held-forge-"));
+    roots.push(root);
+    holdUnanswered(join(root, "holds.json"));
+    await guarded(
+      "github",
+      async () => false,
+      () => outboundFailure("unreachable", "offline"),
+      () => false,
+    );
+    let sent = 0;
+    const send = traceGhRunner(
+      async () => {
+        sent += 1;
+        return heldRun(outboundFailure("invalid", "unexpected request"));
+      },
+      () => 120,
+      {},
+      heldRun,
+    );
+    const read = workspaceHeadReader(context("unused"), send);
+    const result = await read(["gh", "pr", "view", "7"], { cwd: root });
+    expect(sent).toBe(0);
+    expect(result.stderr).toContain("[unreachable]");
+    expect(result.stderr).toContain("not asked again");
+  });
+
+  it("tightens the forge deadline to the workspace remainder and sends nothing below the transport minimum", async () => {
+    const ctx = context("unused");
+    let remaining = 1500;
+    ctx.budget = () => remaining;
+    const deadlines: number[] = [];
+    const read = workspaceHeadReader(ctx, async (_args, options) => {
+      deadlines.push(options?.timeoutSec ?? 0);
+      return { ...heldRun(outboundFailure("invalid", "fixture")), code: 0 };
+    });
+    await read(["gh", "pr", "view", "7"], {});
+    expect(deadlines).toEqual([1.5]);
+    remaining = 500;
+    expect((await read(["gh", "pr", "view", "7"], {})).stderr).toContain(
+      "no forge request sent",
+    );
+    expect(deadlines).toEqual([1.5]);
+  });
+
+  it("uses the supplied asynchronous forge transport instead of the local command runner", async () => {
+    const r = repos();
+    let reads = 0;
+    const why = await proveWorkspace(
+      context(r.origin),
+      r.clone,
+      r.ws,
+      7,
+      BRANCH,
+      "example-org/example-repo",
+      async () => {
+        reads += 1;
+        return { status: 1, stdout: "", stderr: "forge held" };
+      },
+    );
+    expect(reads).toBe(1);
+    expect(why).toContain("forge held");
+  });
+
   it("proves a checkout of the clone at the head", async () => {
     expect(await prove(repos())).toBeNull();
   });
