@@ -394,6 +394,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.235.2] - 2026-11-14
+
+### Fixed
+
+- `jig install dispatch --repo <path>` and `jig dispatch labels` now list
+  each dispatch label the repository already has whose description is not
+  the one this release gives it, beside the missing ones, and with `--yes`
+  update it (`gh label edit`), so a label whose meaning a release changed no
+  longer keeps an earlier release's text. A label the signed-in account may
+  not edit is listed with the command a person runs. The update sets the
+  description alone: a color a person chose stays, and the marker labels
+  (`manual-ops`, `automation`) keep the repository's own description.
+
 ## [0.235.1] - 2026-11-14
 
 ### Fixed
@@ -8189,7 +8202,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.2...HEAD
+[0.235.2]: https://github.com/jig-harness/jig/compare/v0.235.1...v0.235.2
 [0.235.1]: https://github.com/jig-harness/jig/compare/v0.235.0...v0.235.1
 [0.235.0]: https://github.com/jig-harness/jig/compare/v0.234.2...v0.235.0
 [0.234.2]: https://github.com/jig-harness/jig/compare/v0.234.1...v0.234.2
