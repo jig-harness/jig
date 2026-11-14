@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { SITE, SIZE_OPTIONS, STORES } from "./jira-facet-fixtures.ts";
 import { issue, jira, routes, writes } from "./jira-fixtures.ts";
+import { JiraApiError } from "../scripts/lib/tracker/jira/transport.ts";
+import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 
 /** The issue types the edit screen offers an issue of one workflow. */
 const EDIT_TYPES = {
@@ -103,6 +105,31 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
     expect(
       calls.filter((c) => c.route === "PUT issue/ENG-1").map((c) => c.body),
     ).toEqual([{ fields: { issuetype: { id: "t2" } } }]);
+  });
+
+  it("explains Jira's bare 400 on the issue type when the edit screen did not list the choices", async () => {
+    const { t } = jira(
+      routes({
+        ...SITE,
+        "GET issue/ENG-1": issue({ key: "ENG-1", type: "Task" }),
+        "GET issue/ENG-1/editmeta": {
+          fields: { customfield_10050: { allowedValues: SIZE_OPTIONS } },
+        },
+        "PUT issue/ENG-1": new JiraApiError("bad request", {
+          status: 400,
+          errors: { issuetype: "The issue type selected is invalid." },
+        }),
+      }),
+      STORES,
+    );
+    const err = await t
+      .updateIssue("ENG-1", { type: "feature" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TrackerRequestError);
+    expect((err as Error).message).toContain(
+      "Jira refused the issue type change of ENG-1 (issuetype: The issue type selected is invalid.)",
+    );
+    expect((err as Error).message).toContain("move ENG-1");
   });
 
   it("names every cause, not only the credential, when the edit screen lists no field at all", async () => {

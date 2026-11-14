@@ -12,3 +12,5 @@ release: patch
   anything is written, naming the facet, both issue types
   and the remedies: move the issue in Jira, or keep type in labels or a
   field.
+  When the edit screen lists no issue type choices, the change still goes to
+  Jira, and its 400 on `issuetype` is reported with the same explanation.
