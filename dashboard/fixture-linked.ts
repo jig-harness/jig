@@ -5,16 +5,29 @@
  * one with three (two on the face, then "+1 more"), an item linked to a pull
  * request, a row whose links came back empty, and one whose links the tick
  * could not tell. The repositories name Linear, Jira and GitHub Issues, one
- * whose tracker setting does not read and one the line says nothing of.
+ * whose tracker setting does not read and one the line says nothing of, and
+ * a need of the whole host, whose target is an account rather than work.
  *
- * Its record text never uses the word "tracker", so any the page shows is the
- * page's own words.
+ * Its record text is the dispatcher's own, so the page's word check reads
+ * what the dispatcher writes.
  */
 import type {
   LineLinks,
   LineSnapshot,
 } from "../plugin/dispatch/lib/dashboard-contract.ts";
-import { API, INF, MOB, prUrl, WEB } from "./fixture-rows.ts";
+import { need } from "./fixture-line.ts";
+import { API, INF, MOB, prUrl, T, WEB } from "./fixture-rows.ts";
+
+/** A need of the host's, as the preflight writes one for an account that cannot reach a repository's issues. */
+const HOST_NEED = need({
+  cause: "tracker-unreachable",
+  stage: "followup",
+  repo: "host",
+  item: "account a",
+  title: "",
+  since: T(8, 20),
+  reason: `account a cannot reach the issues of ${WEB}, so its followup launches there are held: the keychain is waiting for an approval`,
+});
 
 /** Where each repository's items live in this scenario. */
 const ITEM_BASE: Record<string, string> = {
@@ -68,7 +81,7 @@ export function linkedLine(base: LineSnapshot): LineSnapshot {
   return {
     ...base,
     sessions: base.sessions.map(linksOf),
-    needs: base.needs.map(linksOf),
+    needs: [...base.needs.map(linksOf), HOST_NEED],
     queue: base.queue.map(linksOf),
     ready: (base.ready ?? []).map((r) => {
       const links = LINKS[`${r.repo} PR #${r.pr}`];

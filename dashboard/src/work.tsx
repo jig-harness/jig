@@ -356,8 +356,15 @@ function Item(props: WorkProps & { lead: boolean }) {
   );
 }
 
-/** A card's lead identity: the pull request or item the card is about. */
+/** The repository a need of the whole host names, whose target is an account (`HOST_NEED_REPO` in the dispatcher's preflight). */
+const HOST_REPO = "host";
+
+/** A card's lead identity: the pull request or item the card is about; a target that is neither (an account, or none) as plain text. */
 export function Work(props: WorkProps) {
+  if (props.target === "" || props.repo === HOST_REPO)
+    return props.target === "" ? null : (
+      <span className="tgt">{props.target}</span>
+    );
   const pr = prNumber(props.target);
   return pr === null ? <Item {...props} lead /> : <LeadPr {...props} pr={pr} />;
 }

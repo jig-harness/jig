@@ -126,7 +126,8 @@ History and of the tick strip, is a [card with gutter](../GLOSSARY.md):
 its first column is a gutter of one width holding a bare chevron, so the
 chevron sits at the same place on every card of a view whatever text
 follows it. The chevron is a real button with its open state, which Enter
-and `o` reach on the focused card. A click or tap anywhere else on the card
+and `o` reach on the focused card; the tick strip's rows, which the
+keyboard's card order leaves out, open by their chevron or a tap. A click or tap anywhere else on the card
 opens and closes it too, unless it lands on a link, a button or a field, or
 inside what the card opened; a press that moved on its way (a scroll or a
 drag) or that ends a text selection does not count as one. An open card

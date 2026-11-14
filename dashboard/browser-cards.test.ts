@@ -472,6 +472,34 @@ function renderedStrings(page: Page): Promise<string[]> {
   ]);
 }
 
+describe("a need of the whole host", () => {
+  browserIt(
+    "draws its account as plain text, with no work identity",
+    async () => {
+      const server = await served("linked");
+      const { page, context } = await pageAt(
+        requireBrowser(),
+        server,
+        LAPTOP,
+        "needs",
+      );
+      try {
+        const card = page
+          .locator("main [data-card]")
+          .filter({ hasText: "account a" })
+          .first();
+        expect(await card.locator(".tgt").first().textContent()).toBe(
+          "account a",
+        );
+        expect(await card.locator(".wtrig").count()).toBe(0);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+});
+
 describe("the page's words", () => {
   browserIt(
     "never say tracker on any view, its cards and folds open and an identity's popover shown",
