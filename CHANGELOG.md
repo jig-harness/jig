@@ -394,6 +394,49 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.230.0] - 2026-11-14
+
+The turn-budget guard no longer asks Codex for a new approval with every Jig release.
+
+### Added
+
+- A one-time archive for worktrees made before marking began: right before
+  removing such a worktree, `jig gc` copies its unmarked ignored content into
+  `~/.local/state/jig/gc/archives/`, checks the copy, and names the archive
+  in the receipt. Content larger than the new machine setting
+  `gc.archive_max_bytes` (64 MiB by default, 0 to archive nothing), or a copy
+  that fails, keeps the worktree. The `receipts` kind removes archives past
+  `gc.receipts_days`.
+- **Documented: unattended Codex passes and hook trust.** The Codex notes and the host's opt-in to bypass say that a headless `codex exec` runs only approved hooks, to approve the guard once per Codex home, and that a pass command typed by hand may add `--dangerously-bypass-hook-trust` where the host vets every hook its Codex home loads. Jig's own pass commands do not add it.
+
+### Changed
+
+- Jig's procedures write the files they never need again under
+  `.context/scratch/`, and the drive's mailbox, foreground waits and intent
+  chains tag their directories, so a finished worktree holds only marked
+  working files.
+- **Codex: the turn-budget hook is registered by `jig upgrade`, not shipped by the plugin.** Codex re-reviews a plugin's hooks whenever any file of the plugin changes, and skips them until it is approved again. The Codex plugin now ships none. `jig upgrade` adds one `PreToolUse` entry to `$CODEX_HOME/hooks.json` (`~/.codex` by default) whose command never changes and runs the installed plugin copy's guard, so approving it once with `/hooks` stands across releases. After this release, approve the guard once in each Codex home; until then it does not run there. Run `jig upgrade --codex` with `CODEX_HOME` set to give another home the entry. `jig uninstall --machine --yes` removes it. Claude Code is unchanged.
+
+### Fixed
+
+- `jig gc` no longer keeps every finished worktree because of Jig's own
+  working files and a tool's cache. The `worktrees` kind sets aside ignored
+  content whose writer marked it disposable: a directory holding a
+  `CACHEDIR.TAG` (cache directory tag), `.context/scratch/`, and a drive's
+  handoff. Any
+  other ignored path still keeps the worktree, and the reason names it. The
+  receipt lists each path set aside with its rule (`details.setAside`). See
+  [the collector's rule](plugin/gc/README.md#ignored-content).
+- The steward's digest now includes each target's workspace state, bounded
+  pass output, linked open and merged pull requests and failing-check
+  history on the head and base commits. Unavailable reads remain explicit,
+  and pass output is quoted as untrusted data.
+- Dispatched passes retain output even without a question, and a steward
+  that ends without submitting leaves a cause in the outcome log.
+- The steward's durable digest keeps only a redacted, bounded summary of pass
+  output, and the output fields of a digest are erased once launch retention
+  has passed.
+
 ## [0.229.1] - 2026-11-14
 
 ### Fixed
@@ -7980,7 +8023,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.229.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.230.0...HEAD
+[0.230.0]: https://github.com/jig-harness/jig/compare/v0.229.1...v0.230.0
 [0.229.1]: https://github.com/jig-harness/jig/compare/v0.229.0...v0.229.1
 [0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0
 [0.228.1]: https://github.com/jig-harness/jig/compare/v0.228.0...v0.228.1
