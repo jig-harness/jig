@@ -47,7 +47,7 @@ const starts = `stations ${tapped.slice(0, -1).join(", ")} and ${tapped.at(-1)}`
       <ol class="row five">
         {f.pipeline.map((s) => <StationBox station={s} compact />)}
       </ol>
-      <div class="handoff"><Arrow dir="down" class="handoff-arrow" /><span>an epic of planned work items, one at a time</span></div>
+      <div class="handoff"><Arrow dir="down" class="handoff-arrow" /><span>an epic of planned work items, its ready ones in parallel</span></div>
       <span class="level-name">The line</span>
       <ol class="row seven">
         {f.line.map((s) => <StationBox station={s} compact />)}
