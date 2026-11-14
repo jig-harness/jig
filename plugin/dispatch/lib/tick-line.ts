@@ -40,6 +40,7 @@ import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { insertRow } from "./log.ts";
+import { firstSends } from "./notice-records.ts";
 import {
   type ParkOutcomes,
   parkOutcomes,
@@ -129,16 +130,8 @@ function storedFor(slug: string): RepoStored {
     holds: db
       .query("SELECT pr, area, leader, since FROM holds WHERE repo = ?")
       .all(slug) as HoldSeen[],
-    notified: new Map(
-      (
-        db
-          .query("SELECT key, at FROM notices WHERE repo = ?")
-          .all(slug) as Array<{
-          key: string;
-          at: string;
-        }>
-      ).map((n) => [n.key, n.at]),
-    ),
+    // When each cause was first told, on whichever channel told it first.
+    notified: firstSends(db, slug),
   };
 }
 

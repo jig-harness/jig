@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { type Cause, fitting } from "../lib/actions/notify.ts";
+import type { Cause } from "../lib/actions/notify.ts";
+import { fitting } from "../lib/runtime/orca-card.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
 import { parkNotice } from "../lib/notices.ts";
 import type { DrivenPr } from "../lib/types.ts";

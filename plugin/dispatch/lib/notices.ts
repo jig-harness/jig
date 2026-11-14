@@ -13,10 +13,19 @@
  * pull request's link and where its handoff is; the notify step adds the
  * workspaces the stage ran in, since the message goes to the repository's
  * one destination rather than to them.
+ *
+ * A message about a drive is structured too (`chat/channel.ts`): the
+ * drive's address, the pull request's link, the commands its text names
+ * that settle it and, for a park, each decision with its options, as the
+ * dispatch dashboard shows them (`line-decision.ts`). Its text stays the
+ * same whatever a channel renders.
  */
 import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { createHash } from "node:crypto";
+import type { NoticeDecision, NoticeFields } from "../../chat/channel.ts";
+import { formatAddress } from "../../shared/address.ts";
 import { shellQuote } from "../../shared/cli.ts";
+import { decisionOf } from "./line-decision.ts";
 import type { DrivenPr, Notice, RepoReport, WaitingPark } from "./types.ts";
 
 const TAG = "[jig dispatch: ";
@@ -132,8 +141,56 @@ function recipientLines(pr: DrivenPr): string[] {
   ];
 }
 
+/** A drive's address on the line, `drive@owner/name#<n>`. */
+function driveAddress(slug: string, pr: { number: number }): string {
+  return formatAddress({
+    station: "drive",
+    repo: slug,
+    key: String(pr.number),
+  });
+}
+
+/** What a message about a drive carries beside its text: the drive's address, the pull request's link, and the commands `acts` its text names. */
+function driveFields(
+  slug: string,
+  pr: { number: number; url: string },
+  acts: string[] = [],
+): NoticeFields {
+  return {
+    address: driveAddress(slug, pr),
+    links: { pullRequest: pr.url },
+    ...(acts.length === 0 ? {} : { acts }),
+  };
+}
+
+/** A parked decision as a message carries it: the fields the dashboard shows of it. */
+function noticeDecision(park: WaitingPark): NoticeDecision {
+  const shown = decisionOf(park);
+  return {
+    key: shown.key,
+    ...(shown.digest === undefined ? {} : { digest: shown.digest }),
+    question: shown.question,
+    recommendation: shown.recommendation,
+    options: (shown.options ?? []).map((o) => ({
+      name: o.name,
+      changes: o.changes,
+      costs: o.costs,
+      recommended: o.recommended,
+    })),
+  };
+}
+
 /** A drive parked with decisions unanswered: the framed decisions, and how to answer them, and the conflict with its base its re-drive left. */
 export function parkNotice(slug: string, pr: DrivenPr): Notice {
+  return {
+    ...parkText(slug, pr),
+    ...driveFields(slug, pr),
+    decisions: (pr.waiting ?? []).map(noticeDecision),
+  };
+}
+
+/** A park's key and text. */
+function parkText(slug: string, pr: DrivenPr): Notice {
   const waiting = pr.waiting ?? [];
   const keys = waiting.map((p) => `${p.kind} ${p.key}`).join(", ");
   const disputes = waiting
@@ -208,16 +265,32 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
 /** A drive stopped on an exit only a person settles, or with no exit at all. */
 export function stopNotice(slug: string, pr: DrivenPr): Notice {
   if (pr.class === "silent")
-    return notice(
-      `${slug} PR #${pr.number} silent, ledger generation ${generation(pr)}, started ${String(pr.evidence.started ?? "unknown")}`,
-      [
-        `PR #${pr.number} (${pr.title}): its drive heartbeat expired and its termination cannot be confirmed. ${pr.why}.`,
-        "Inspect the driver and any surviving pass before re-arming it. Read the drive handoff in its workspace.",
-        pr.url,
-      ],
-    );
+    return { ...silentText(slug, pr), ...driveFields(slug, pr) };
   if (typeof pr.evidence.failedRearm === "string")
     return failedRearmNotice(slug, pr);
+  return {
+    ...stopText(slug, pr),
+    ...driveFields(slug, pr, [
+      `/jig:drive-pr ${pr.number}`,
+      `jig send ${driveAddress(slug, pr)} rearm`,
+    ]),
+  };
+}
+
+/** A silent drive's key and text: its heartbeat expired and its end cannot be confirmed. */
+function silentText(slug: string, pr: DrivenPr): Notice {
+  return notice(
+    `${slug} PR #${pr.number} silent, ledger generation ${generation(pr)}, started ${String(pr.evidence.started ?? "unknown")}`,
+    [
+      `PR #${pr.number} (${pr.title}): its drive heartbeat expired and its termination cannot be confirmed. ${pr.why}.`,
+      "Inspect the driver and any surviving pass before re-arming it. Read the drive handoff in its workspace.",
+      pr.url,
+    ],
+  );
+}
+
+/** A stopped drive's key and text. */
+function stopText(slug: string, pr: DrivenPr): Notice {
   const exit = pr.evidence.exit;
   const stop =
     exit === null || exit === undefined ? "with no exit" : `${String(exit)}`;
@@ -251,10 +324,17 @@ function failedRearmNotice(slug: string, pr: DrivenPr): Notice {
           `PR #${pr.number} (${pr.title}) is behind its branch '${pr.head}': the pull request's head is ${prHead}, the branch's head is ${branch}. Each re-arm stops ${String(e.rearmExit)}, as the drive's attach refuses a pull request whose head is not its branch's.`,
           "Close and reopen the pull request: the forge then takes the branch's head, and the next tick re-arms the drive.",
         ];
-  return notice(
-    `${slug} PR #${pr.number} re-arm failed ${String(e.rearmExit)}, ledger generation ${generation(pr)}, PR head ${prHead}, branch head ${branch}`,
-    [...cause, pr.url],
-  );
+  return {
+    ...notice(
+      `${slug} PR #${pr.number} re-arm failed ${String(e.rearmExit)}, ledger generation ${generation(pr)}, PR head ${prHead}, branch head ${branch}`,
+      [...cause, pr.url],
+    ),
+    ...driveFields(
+      slug,
+      pr,
+      prHead === branch ? [`/jig:drive-pr ${pr.number}`] : [],
+    ),
+  };
 }
 
 /**
@@ -278,11 +358,18 @@ export function readyNotice(
     card.lane === "merge-now"
       ? `Ready to merge in ${slug}: PR #${card.number}. Its merge command, pinned to the verified head, is in \`jig ask drive@${slug}#${card.number}\`.`
       : `Ready to merge in ${slug} once approved: PR #${card.number}. An approval is still required${card.requested.length === 0 ? ", and nobody is asked" : ""}; the repository's other protection rules are not read.`;
-  return notice(
-    `${slug} PR #${card.number} ready at ${card.head}`,
-    [line],
-    [card.url],
-  );
+  return {
+    ...notice(
+      `${slug} PR #${card.number} ready at ${card.head}`,
+      [line],
+      [card.url],
+    ),
+    ...driveFields(
+      slug,
+      card,
+      card.lane === "merge-now" ? [`jig ask ${driveAddress(slug, card)}`] : [],
+    ),
+  };
 }
 
 /** A follow-up the tick started that failed, stopped on a question for a person (`question`), or whose record and outcome are gone. */

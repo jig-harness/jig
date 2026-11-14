@@ -8,7 +8,7 @@
  * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result` |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
- * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
+ * | `notices` | repository, notification channel and cause | once per cause and channel, until the cause goes; its first send, and its last, which a repeat is timed from; a channel other than `orca-card` qualifies its key (`notice-records.ts`) |
  * | `notices_content` | workspace | the exact dispatcher-only comment last confirmed, and the intended write awaiting an exact read |
  * | `notices_read` | repository | when the tick first found its notices workspace read, until it is unread again or removed |
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
@@ -411,6 +411,11 @@ export const MIGRATIONS: readonly Migration[] = [
     ALTER TABLE failures ADD COLUMN quiet_at TEXT;
     ALTER TABLE failures ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0;
   `,
+  },
+  {
+    // The notification channel a suppression record is of (`notice-records.ts`). A row an earlier release wrote, or a copy one release behind writes, is `orca-card`'s, the only channel there was; the table's key stays the repository and `key`, which a channel other than `orca-card` qualifies with its name.
+    additive: true,
+    sql: "ALTER TABLE notices ADD COLUMN channel TEXT NOT NULL DEFAULT 'orca-card';",
   },
 ];
 

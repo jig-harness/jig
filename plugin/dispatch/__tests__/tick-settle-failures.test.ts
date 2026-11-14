@@ -16,6 +16,7 @@ import {
 } from "../lib/failures.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 import { hostNoticeKeys } from "../lib/failure-notices.ts";
+import { ORCA_CARD, recordKey } from "../lib/notice-records.ts";
 import { closeStateDb, stateDb } from "../lib/state.ts";
 import type { TickContext } from "../lib/tick-context.ts";
 import { finalizeTickFailure, settleFailures } from "../lib/tick-settle.ts";
@@ -156,6 +157,30 @@ describe("a wake-up's row after a sweep that read its repository", () => {
     finalizeTickFailure(receipt, context);
     const left = db.query("SELECT key FROM notices").all();
     expect(left).toEqual([]);
+  });
+
+  it("releases its notice's suppression on every channel, and no other notice's", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    const [key] = hostNoticeKeys(readFailures(undefined, root));
+    const db = stateDb(root);
+    const insert = db.query(
+      "INSERT INTO notices (repo, key, target, workspace, at, lasting, channel) VALUES (?, ?, 't', 'w', ?, 0, ?)",
+    );
+    const at = new Date().toISOString();
+    insert.run("o/b", key as string, at, ORCA_CARD);
+    insert.run("o/a", recordKey("slack", key as string), at, "slack");
+    insert.run(
+      "o/a",
+      recordKey("slack", "o/a PR #7 ready at abc"),
+      at,
+      "slack",
+    );
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    expect(db.query("SELECT key FROM notices").all()).toEqual([
+      { key: "slack:o/a PR #7 ready at abc" },
+    ]);
   });
 
   it("counts on from its kept count and escalates again when the next wake-up fails", () => {

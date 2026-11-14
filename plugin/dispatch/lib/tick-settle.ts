@@ -28,6 +28,7 @@ import {
 import { failureSettings, type MachineConfig } from "./machine-config.ts";
 import { failureText } from "./text.ts";
 import { hostNoticeKeys } from "./failure-notices.ts";
+import { releaseOnEveryChannel } from "./notice-records.ts";
 import { stateDb } from "./state.ts";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
@@ -337,12 +338,12 @@ function quietWakeUps(
 ): void {
   const at = new Date(nowMs).toISOString();
   const rows = readFailures(undefined, root);
-  const release = stateDb(root).query("DELETE FROM notices WHERE key = ?");
+  const release = releaseOnEveryChannel(stateDb(root));
   for (const r of receipt.repos) {
     const key = `ticks ${resolve(r.path)}`;
     if (key === own || repoFailure(r) !== null) continue;
     quietFailure("", key, at, root);
-    // The notice was told at whichever repository was its destination: its record goes with the quiet, or a failure after it would still be suppressed there.
+    // The notice was told at whichever repository was its destination, on each channel: its records go with the quiet, or a failure after it would still be suppressed there.
     for (const row of rows.filter((w) => w.repo === "" && w.key === key))
       for (const notice of hostNoticeKeys([row])) release.run(notice);
   }
