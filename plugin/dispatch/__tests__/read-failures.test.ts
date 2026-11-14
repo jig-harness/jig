@@ -127,6 +127,11 @@ describe("combinedFailure", () => {
       combinedFailure([{ class: "unreachable" }, { class: "unauthorized" }]),
     ).toEqual({ class: "unauthorized" });
   });
+  it("keeps the refused credential over another failure waiting does not clear", () => {
+    expect(
+      combinedFailure([{ class: "not-found" }, { class: "unauthorized" }]),
+    ).toEqual({ class: "unauthorized" });
+  });
   it("keeps no class when a failed read has none", () => {
     expect(
       combinedFailure([{ class: "unreachable" }, undefined]),

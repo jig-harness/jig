@@ -692,8 +692,12 @@ function servedRead(
           }),
     ),
   ]);
+  // The record's failure is the combined one alone: the read's own is in it.
+  const { failure: _own, ...rest } = read as typeof read & {
+    failure?: ReadFailure;
+  };
   return {
-    ...read,
+    ...rest,
     ok: false,
     detail: `${detail}; a served queue could not be read`,
     ...(failure === undefined ? {} : { failure }),

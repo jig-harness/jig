@@ -55,16 +55,17 @@ export function readFailureOf(failure: Failure): ReadFailure | undefined {
 /**
  * The one failure a record keeps for several failed reads, `undefined` when
  * one of them has no class: a failure waiting does not clear is kept over
- * one that does (so the record is not waited out, and a refused credential
- * is still told at once), and of failures that all clear by waiting, one
+ * one that does (so the record is not waited out), and one told at once (a
+ * refused credential) over another that does not clear, and of failures that all clear by waiting, one
  * that counts in the failure ledger over a rate limit, else the later reset.
  */
 export function combinedFailure(
   failures: readonly (ReadFailure | undefined)[],
 ): ReadFailure | undefined {
   const known = failures.filter((f): f is ReadFailure => f !== undefined);
-  const stuck = known.find((f) => !clearsByWaiting(f.class));
-  if (stuck !== undefined) return stuck;
+  const stuck = known.filter((f) => !clearsByWaiting(f.class));
+  const told = stuck.find((f) => POLICIES[f.class].told === "at-once");
+  if (told ?? stuck[0]) return told ?? stuck[0];
   if (known.length < failures.length) return undefined;
   const counted = known.find((f) => f.class !== "rate-limited");
   if (counted !== undefined) return counted;
