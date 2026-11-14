@@ -21,7 +21,7 @@ import {
   ghRunFailure,
 } from "../../../shared/outbound/github.ts";
 import { heldRun } from "../../../shared/proc.ts";
-import { TrackerRateLimited } from "../../../shared/tracker-budget.ts";
+import { TrackerRateLimited } from "../../../shared/outbound/budget.ts";
 import {
   ghTransport,
   httpTransport as githubHttp,
