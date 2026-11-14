@@ -377,8 +377,10 @@ areas:
     title: "The Jig Protocol: its chapters and their generator"
     # The chapters ship in the plugin; the generator that writes them from the
     # code's own tables runs in this repository only. Its chapters are
-    # generated from drive-pr's terminal-state table, and its base comparison
-    # reads change notes through the changelog skill's scripts.
+    # generated from drive-pr's terminal-state table, the drive mailbox's
+    # tables, the pull-request label projection and the table of commands a
+    # repository supplies, and its base comparison reads change notes through
+    # the changelog skill's scripts.
     category: tooling
     paths: ["plugin/protocol/**", "tools/protocol/**"]
     workspace: []
@@ -389,9 +391,18 @@ areas:
           - "plugin/protocol/README.md"
           - "plugin/protocol/drive-exits.md"
           - "plugin/protocol/data/drive-exits.json"
+          - "plugin/protocol/mailbox.md"
+          - "plugin/protocol/data/mailbox.json"
+          - "plugin/protocol/pr-labels.md"
+          - "plugin/protocol/data/pr-labels.json"
+          - "plugin/protocol/repo-commands.md"
+          - "plugin/protocol/data/repo-commands.json"
         source:
           - "tools/protocol/**"
           - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
+          - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
+          - "plugin/shared/pr-labels/projection.ts"
+          - "plugin/shared/repo-commands.ts"
           - "plugin/shared/errors.ts"
           - "plugin/shared/log.ts"
           - "plugin/shared/outcome.ts"
