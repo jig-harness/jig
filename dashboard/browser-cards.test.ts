@@ -81,10 +81,10 @@ async function emptyPoint(card: Locator): Promise<{ x: number; y: number }> {
   return point;
 }
 
-/** Each card's chevron, left edge, on the view. */
+/** Each card's and tick row's chevron, left edge, on the view. */
 function chevronLefts(page: Page): Promise<number[]> {
   return page.evaluate(() =>
-    [...document.querySelectorAll("main [data-card]")]
+    [...document.querySelectorAll("main [data-card], main .tkRow")]
       .filter((card) => card.getClientRects().length > 0)
       .map(
         (card) =>

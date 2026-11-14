@@ -288,7 +288,8 @@ function withTone(found: Found): Standing {
 /**
  * A pull request's standing on the forge alone, which its icon shows: the
  * forge's own read, else what the tick's board read placed (a Ready card is
- * open) or its follow-up queue (a merged pull request); otherwise not read.
+ * open), its follow-up queue or a follow-up session (a merged pull request);
+ * otherwise not read.
  * Where the dispatcher holds it is the card's status mark and stage chip.
  */
 export function forgeStanding(
@@ -306,6 +307,12 @@ export function forgeStanding(
   if (
     line?.queue.some(
       (q) => q.repo === repo && q.pr === pr && q.source === "merged",
+    )
+  )
+    return "merged";
+  if (
+    line?.sessions.some(
+      (s) => s.repo === repo && s.pr === pr && s.stage === "followup",
     )
   )
     return "merged";
