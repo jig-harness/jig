@@ -289,9 +289,10 @@ so (`details.claim: kept`, and the reason says why). The next collection
 of the worktree takes the admission over from the collector that ended,
 keeping its mark, proves the worktree idle again and calls `orca worktree rm`
 once more; that call's answer releases it, and a refusal before the call
-keeps it. A worktree whose proof finds it in use again is not collected, so
-its receipt line does not name the claim, and the admission stays until a
-person removes it after inspection. A worktree that is gone from the disk and from Orca's list is
+keeps it. A worktree whose proof finds it in use again is not collected, and
+the admission stays until a person removes it after inspection; its receipt
+line names the claim (`details.claim: standing`, with `details.claimNote`
+saying how to inspect it) and the printed report repeats the note. A worktree that is gone from the disk and from Orca's list is
 never collected again, so each run of the worktrees kind also lists, as a
 line of its own with `details.claim: gone`, every admission a collector that
 ended left on a path under the declared roots that is gone from both, and

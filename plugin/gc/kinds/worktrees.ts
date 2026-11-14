@@ -199,17 +199,20 @@ async function orcaInventory(
   }
   return ok([...kept, ...gone, ...unreadable]);
 }
-/** Whether the claim's `path` lies under `root` once its nearest existing parent is resolved. */
+/** Whether the claim's `path` lies under `root` once its nearest existing ancestor is resolved. */
 function underRoot(path: string, root: string): boolean {
-  try {
-    const resolved = join(
-      realpathSync.native(dirname(normalize(path))),
-      basename(normalize(path)),
-    );
-    return within(resolved, root);
-  } catch (error) {
-    swallow(error, "the claim's parent is gone: only its own spelling counts");
-    return false;
+  let ancestor = normalize(path);
+  let suffix = "";
+  for (;;) {
+    try {
+      return within(join(realpathSync.native(ancestor), suffix), root);
+    } catch (error) {
+      swallow(error, "the ancestor is gone: the next one up is tried");
+    }
+    const parent = dirname(ancestor);
+    if (parent === ancestor) return false;
+    suffix = join(basename(ancestor), suffix);
+    ancestor = parent;
   }
 }
 function orcaId(resource: Resource): string | null {

@@ -248,13 +248,19 @@ function runtimeOf(line: ReceiptLine): string {
     typeof line.details.guard === "string" ? `, ${line.details.guard}` : "";
   return ` (${line.details.runtime}${guard})`;
 }
+/** The standing-claim note of a line, so the human report names a claim the proof's refusal does not. */
+function claimNoteOf(line: ReceiptLine): string {
+  return isMapping(line.details) && typeof line.details.claimNote === "string"
+    ? `; ${line.details.claimNote}`
+    : "";
+}
 export function formatReceipt(receipt: Receipt): string {
   const declarations = receipt.kinds.map(
     (kind) =>
       `${kind.name} ${kind.repository ?? "machine"}: declaration ${kind.declaration}`,
   );
   const lines = receipt.resources.flatMap((line) => [
-    `${line.kind} ${line.repository ?? "machine"} ${line.resource}${runtimeOf(line)}: ${line.outcome} — ${line.reason}${line.bytes === undefined ? "" : ` (${line.bytes} bytes)`}`,
+    `${line.kind} ${line.repository ?? "machine"} ${line.resource}${runtimeOf(line)}: ${line.outcome} — ${line.reason}${claimNoteOf(line)}${line.bytes === undefined ? "" : ` (${line.bytes} bytes)`}`,
     ...familyLines(line),
   ]);
   return [

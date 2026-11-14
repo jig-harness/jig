@@ -125,7 +125,10 @@ export async function guardedCollection(
       const refused = kept(noting(early));
       return claimKept() === null
         ? refused
-        : { ...refused, details: { ...details, claim: "kept" } };
+        : {
+            ...refused,
+            details: { ...details, claim: "kept", claimNote: undefined },
+          };
     }
     const done = await body({
       launched: () => {
@@ -146,7 +149,10 @@ export async function guardedCollection(
       details: {
         ...(isMapping(done.details) ? done.details : details),
         guard: observed.label,
-        ...(claimKept() === null ? {} : { claim: "kept" }),
+        // The inventory's standing-claim note no longer holds once the claim
+        // is settled; the merge over the listed details keeps an absent key.
+        claim: claimKept() === null ? undefined : "kept",
+        claimNote: undefined,
       },
     };
   } finally {
@@ -234,7 +240,9 @@ export function proveUnreadable(resource: Resource): Proof {
  */
 export function standingClaims(root = guardRoot()): Map<string, string | null> {
   return new Map(
-    staleAdmissions(root).map(({ path, submitted }) => [path, submitted]),
+    staleAdmissions(root)
+      .filter(({ submitted }) => submitted !== null)
+      .map(({ path, submitted }) => [path, submitted]),
   );
 }
 

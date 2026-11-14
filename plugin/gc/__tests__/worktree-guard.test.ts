@@ -133,7 +133,7 @@ describe("the admission around orca worktree rm", () => {
     expect(atCall).toMatchObject({ submitted: expect.any(String) });
     expect(collected.outcome).toBe(outcome);
     expect(collected.reason).not.toContain("the launch guard claim stays");
-    expect(collected.details).not.toHaveProperty("claim");
+    expect((collected.details as { claim?: string }).claim).toBeUndefined();
     expect(existsSync(file)).toBe(false);
   });
 
