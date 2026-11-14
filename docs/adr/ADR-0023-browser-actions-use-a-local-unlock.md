@@ -71,8 +71,8 @@ obligations cannot be met from the browser as they are on the host.
   that tell a comment a pass posts under the person's login from the
   person's own) lands. A decision class whose answers need that proof (an
   [attested class](../../GLOSSARY.md)) keeps its existing requirements.
-- **Only a pick sends**, and an answer is written by the module `jig send`
-  writes it with.
+- **An answer sends only from a pick**, and is written by the module
+  `jig send` writes it with.
 
 ### What this amends, and why
 
@@ -87,6 +87,13 @@ obligations cannot be met from the browser as they are on the host.
   undone and has no station on its far side to check it, so it stays on a
   desktop, behind its own confirmation, with a token that holds the right
   to merge.
+- **The token's rights.** The record pull request #891 introduces limits
+  the token to Issues and Pull requests. A desktop token that merges also
+  needs the right to write the repository's contents; the settings panel
+  names the rights each act needs and which of them the pasted token holds.
+  A phone's token is created without the right to merge, so a lost phone,
+  or a page that has been tampered with, cannot merge through the forge's
+  API: the page's own refusal is not the only guard.
 - **A confirmation for every act**, not only for a guarded pick. It shows
   the target, the act and exactly what will be sent, and a changed target
   invalidates it, because the wider acts change state that stations read.
@@ -139,7 +146,7 @@ included, as follows:
    has a page size and a declared ceiling. Met.
 5. **Record what it cost.** The page counts the requests each act made and
    shows them with its result. Partly met: see the exception below.
-6. **Fail as a closed class.** Each answer is mapped to the seven
+6. **Fail as a closed class.** Each answer is mapped to the
    [failure classes](../../GLOSSARY.md): no answer is `unreachable` with a
    mark that the request was sent, a limit refusal is `rate-limited` with
    its reset, and the forge's 401, 404, 422 and 5xx are `unauthorized`,
@@ -151,7 +158,7 @@ included, as follows:
    is retried automatically. Met.
 
 **The exception to ADR-0021.** For calls the person's browser makes, and
-for no other caller, three obligations are met as far as a browser can:
+for no other caller, these obligations are met as far as a browser can:
 
 - obligation 1: a system the page acts on has two doors, the host's
   transport and the page's module, because the host accepts no request and

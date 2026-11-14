@@ -703,28 +703,27 @@ rules, timestamps and failure states serve desktop and phone.
 | Merge, Needs you, Running, Queue and History | Read the next act, progress and recent outcomes while away. Repository selection and History's time window are the basic filters; pagination keeps long lists bounded. |
 | An opened Work card and its decisions | Read the status, ask, recommended option, costs, alternatives and evidence. Stage 1 shows one item or pull request; stage 2 adds the joined thread. Expand details with a visible control. |
 | Copy the pinned merge command or an answer line | Carry the proposed act to the person's terminal without executing it. Copy success must be confirmed; when browser clipboard access fails, select the complete text for manual copying. |
-| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard itself remains read-only. |
+| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server stays read-only; the page's own writes are the acts above. |
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
 The phone excludes operator chat, command palettes and advanced filter
 composition: reading and deciding have priority over composing and
 investigating on a small screen. It excludes session chat and steering,
-which need the workspace and its context. Pull request #891 gives the
-phone one write, Send, which answers a parked decision from the phone's own
-browser as the person, over the HTTPS front, under the decision record it
-introduces (ADR-0019 there). This paragraph's amendment applies on top of
-that once it merges. The
+which need the workspace and its context. Once pull request #891 merges,
+the phone has one write, Send, which answers a parked decision from the
+phone's own browser as the person, over the HTTPS front, under the decision
+record that pull request introduces (ADR-0019 there). The
 [priorities and overview design](priorities-and-overview.md#phone-unlock-and-browser-evidence)
 and [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)
-are the separate phone design this contract asked for. They widen the
-phone's writes to every act the desktop page gets except merging, after
-the physical-device probes pass, each with a confirmation of exactly what
-will be sent. The phone keeps its token encrypted at rest under an optional
+are the phone's design and its proof of presence. On top of #891, they
+widen the phone's writes to every act the desktop page gets except merging,
+after the physical-device probes pass, each with a confirmation of exactly
+what will be sent. The phone keeps its token encrypted at rest under an optional
 local unlock, on for a phone by default; with the unlock off, the token is
 kept as #891's record keeps it. On the plain HTTP fallback the phone stays
 read-only. The unlock shows the page that the person is at the device; it
-proves nothing to the forge or the line. Before #399, no surface gains a
-write by this work. Copying text is not
+proves nothing to the forge or the line. Every write is made by the
+person's browser, never by the host. Copying text is not
 sending it. All supported acts have visible buttons or links; no hover or
 keyboard shortcut is required.
 
@@ -923,8 +922,8 @@ its 1.104 command line, not yet with the dashboard.
   scope are returned. Without `fleet` a viewer gets public facts only, as
   above.
 - **It does not unblock writes.** Tailscale says who is looking, not whose
-  forge login writes. Phone access remains read-only; desktop
-  writes still wait for item 40.
+  forge login writes. Every write is the person's browser acting with the
+  person's own token, as ADR-0023 says.
 - **Derived, not declared.** `jig doctor dashboard` reads `tailscale serve status
   --json` and fails on Tailscale Funnel, which publishes to the open
   internet; on `--tcp` mode, which passes the encrypted connection through

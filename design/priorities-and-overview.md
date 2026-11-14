@@ -194,8 +194,8 @@ agent pass that proposes recoveries for stopped work), within the frame
 sets, it proposes; the [tick](../GLOSSARY.md) (one run of the dispatcher)
 or the person acts. It never picks, starts, answers, re-ranks, files,
 changes a priority, or changes configuration. The steward keeps individual
-stopped items. Its open fixes land before this pass is enabled, and all six
-gate build step 2: first its digest and reliability fixes, #953 (the facts
+stopped items. Its open fixes land before this pass is enabled, and each of
+them gates build step 2: first its digest and reliability fixes, #953 (the facts
 its digest lacks, and passes that end without submitting), #924 (start on a
 judgment backlog, not on any change) and #925 (why its resume and re-arm
 proposals are not applied); then its remit fixes, #954 (a settle record for
@@ -342,8 +342,8 @@ tracker balance through the read feed it already gets and sends nothing
 below the share the tick keeps; it obeys a rate-limit refusal until its
 reset and shows that time; it maps each answer to a failure class. A browser
 cannot reserve budget in the host's record or write to its cost ledger, so
-ADR-0023 records a scoped exception to ADR-0021 for those two and for the
-page's own door to each system.
+ADR-0023 records a scoped exception to ADR-0021 for those obligations and
+for the page's own door to each system.
 
 Acts become sendable in this order:
 
