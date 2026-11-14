@@ -394,6 +394,31 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.238.1] - 2026-11-14
+
+### Fixed
+
+- The mechanism map's entry for `jig gc` said every worktree outside Orca is
+  only reported. It now says that the worktrees an agent tool makes under the
+  clone's `.claude/worktrees/` are collected with git, and links the
+  collector's section on them.
+
+## [0.238.0] - 2026-11-14
+
+### Added
+
+- `jig gc`'s `worktrees` kind now finds the worktrees Claude Code's agent
+  tool makes for isolated subagents under the clone's `.claude/worktrees/`,
+  without a `gc.worktree_roots` entry, and collects them with
+  `git worktree remove` once they are clean, idle past the guard, held by no
+  process and covered by a merged or closed pull request (or hold no commit
+  the base lacks). A tree it keeps on a branch names that branch and the
+  `git -C <tree> switch --detach` command that releases it. Before this
+  release those trees were never reported. A confirmed `worktrees` kind now
+  covers that directory without reinstalling, and scheduled runs remove the
+  trees that qualify on the collection day or under disk pressure: run
+  `jig gc --kind worktrees` to see which those are.
+
 ## [0.237.2] - 2026-11-14
 
 ### Fixed
@@ -8316,7 +8341,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.237.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.1...HEAD
+[0.238.1]: https://github.com/jig-harness/jig/compare/v0.238.0...v0.238.1
+[0.238.0]: https://github.com/jig-harness/jig/compare/v0.237.2...v0.238.0
 [0.237.2]: https://github.com/jig-harness/jig/compare/v0.237.1...v0.237.2
 [0.237.1]: https://github.com/jig-harness/jig/compare/v0.237.0...v0.237.1
 [0.237.0]: https://github.com/jig-harness/jig/compare/v0.236.2...v0.237.0
