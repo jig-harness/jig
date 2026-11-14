@@ -394,6 +394,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.236.1] - 2026-11-14
+
+### Fixed
+
+- On Jira, a type or a size kept in a custom field whose field is not on the
+  create screen of the issue type being filed (a Sub-task or a Bug screen
+  without the size field, say) is now refused before anything is written,
+  naming the facet, the field and the issue type, instead of reaching Jira
+  and failing there. A change through an edit screen that lacks the field is
+  refused the same way. The check now covers number, text and labels fields
+  and clearing a value, not only an option's value.
+- The audit's facet-store check on Jira reads the create screens of
+  `issue_tracker.jira.issue_type`, the sub-task type, each issue type a type
+  is kept as and `issue_tracker.jira.pool_issue_types`, and reports each one
+  that lacks a facet's field, naming the issue types whose filing fails. An
+  epic issue type (`issue_tracker.labels.epic_types`) is not checked for a
+  size, which it is never asked. Such a gap does not stop `file-issue`'s
+  weekly sweep, which changes existing issues.
+
 ## [0.236.0] - 2026-11-14
 
 ### Added
@@ -8248,7 +8267,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.236.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.236.1...HEAD
+[0.236.1]: https://github.com/jig-harness/jig/compare/v0.236.0...v0.236.1
 [0.236.0]: https://github.com/jig-harness/jig/compare/v0.235.3...v0.236.0
 [0.235.3]: https://github.com/jig-harness/jig/compare/v0.235.2...v0.235.3
 [0.235.2]: https://github.com/jig-harness/jig/compare/v0.235.1...v0.235.2
