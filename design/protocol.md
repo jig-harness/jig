@@ -156,7 +156,7 @@ free while it is in use.
 | Pull-request labels Jig writes and reads | stable | `shared/pr-labels/` | — |
 | Hidden comment markers on the forge and the tracker | stable | the forge and tracker kinds of `shared/records/registry.ts` except the claims below, `NOT_RECORDS`, and the marker codec in `shared/records/envelope.ts` | — |
 | Commands a repository supplies | stable | `shared/repo-command.ts` and each caller's contract (the preflight's exit `3`, a facet store's JSON) | — |
-| The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and the follow-up outcomes (`dispatch/lib/followup-outcomes.ts`) | — |
+| The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and its runs, outcomes and fields (`shared/records/followup-values.ts`) | — |
 | Addresses and the verbs of `jig ask` and `jig send` | provisional | `shared/address.ts` and `send/` | 39, 42 |
 | Needs and structured answers | provisional | the decision record (`parked-decision/v1`) and the need classes | 46, 50 |
 | Steward records | provisional | the steward's record kinds and their closed fields | 50 |

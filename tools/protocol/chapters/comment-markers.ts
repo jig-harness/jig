@@ -159,13 +159,13 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     description:
       "The record kind's name in the records registry, which an enveloped record's kind field carries; null for a marker that is not a record.",
   },
-  markers: {
+  marker: {
     type: "string",
     nullable: false,
     required: true,
     identifies: true,
     description:
-      "The hidden markers, each as its comment opens after `<!-- `, separated by a comma and a space; what follows a marker is its kind's own.",
+      "One hidden marker, as its comment opens after `<!-- `; what follows it is its kind's own. A kind with several markers has one value for each.",
   },
   medium: {
     type: "string",
@@ -208,21 +208,22 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
   },
 };
 
-function kindValue(k: RecordKind): DataValue {
-  return {
+/** One value for each of the kind's markers, so a marker added to a kind is a value added. */
+function kindValues(k: RecordKind): DataValue[] {
+  return (k.markers ?? []).map((marker) => ({
     name: k.name,
-    markers: (k.markers ?? []).join(MARKER_SEPARATOR),
+    marker,
     medium: k.medium,
     version: k.version,
     key: k.key?.source ?? null,
     writtenBy: writtenBy(k),
     meaning: k.meaning,
-  };
+  }));
 }
 
 const notRecordValue = (r: (typeof NOT_RECORDS)[number]): DataValue => ({
   name: null,
-  markers: r.marker,
+  marker: r.marker,
   medium: null,
   version: null,
   key: null,
@@ -250,7 +251,7 @@ export const COMMENT_MARKERS: Chapter = {
   ],
   fields: FIELDS,
   values: (): DataValue[] => [
-    ...kinds().map(kindValue),
+    ...kinds().flatMap(kindValues),
     ...NOT_RECORDS.map(notRecordValue),
   ],
   takes: () => [

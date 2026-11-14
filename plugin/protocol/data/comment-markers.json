@@ -11,12 +11,12 @@
       "identifies": false,
       "description": "The record kind's name in the records registry, which an enveloped record's kind field carries; null for a marker that is not a record."
     },
-    "markers": {
+    "marker": {
       "type": "string",
       "nullable": false,
       "required": true,
       "identifies": true,
-      "description": "The hidden markers, each as its comment opens after `<!-- `, separated by a comma and a space; what follows a marker is its kind's own."
+      "description": "One hidden marker, as its comment opens after `<!-- `; what follows it is its kind's own. A kind with several markers has one value for each."
     },
     "medium": {
       "type": "string",
@@ -57,7 +57,16 @@
   "values": [
     {
       "name": "drive-ledger",
-      "markers": "drive-pr-ledger, drive-pr-ledger-data",
+      "marker": "drive-pr-ledger",
+      "medium": "forge",
+      "version": 2,
+      "key": "^[1-9]\\d*$",
+      "writtenBy": "Jig",
+      "meaning": "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger."
+    },
+    {
+      "name": "drive-ledger",
+      "marker": "drive-pr-ledger-data",
       "medium": "forge",
       "version": 2,
       "key": "^[1-9]\\d*$",
@@ -66,7 +75,7 @@
     },
     {
       "name": "summary-answer",
-      "markers": "drive-pr-addressed",
+      "marker": "drive-pr-addressed",
       "medium": "forge",
       "version": 0,
       "key": null,
@@ -75,7 +84,25 @@
     },
     {
       "name": "thread-reply",
-      "markers": "triage-thread:leave-open, reply-to-thread:no-outcome, reply-to-thread:provisional",
+      "marker": "triage-thread:leave-open",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A reply on a review thread. Its last-line marker says the thread was answered and is deliberately left unresolved, the reply asks a question and carries no outcome, or its outcome is provisional and a person may reverse it. A marker counts only as the reply's last line, and does not prove who wrote it."
+    },
+    {
+      "name": "thread-reply",
+      "marker": "reply-to-thread:no-outcome",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A reply on a review thread. Its last-line marker says the thread was answered and is deliberately left unresolved, the reply asks a question and carries no outcome, or its outcome is provisional and a person may reverse it. A marker counts only as the reply's last line, and does not prove who wrote it."
+    },
+    {
+      "name": "thread-reply",
+      "marker": "reply-to-thread:provisional",
       "medium": "forge",
       "version": 0,
       "key": null,
@@ -84,7 +111,16 @@
     },
     {
       "name": "deferred-section",
-      "markers": "jig-deferred, deferred-entry",
+      "marker": "jig-deferred",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The findings a pull request deferred, one entry each in its body, which are filed as tracker issues once it merges or closes. A person's text outside the markers is never touched."
+    },
+    {
+      "name": "deferred-section",
+      "marker": "deferred-entry",
       "medium": "forge",
       "version": 0,
       "key": null,
@@ -93,7 +129,7 @@
     },
     {
       "name": "drive-answer",
-      "markers": "jig-send-answer",
+      "marker": "jig-send-answer",
       "medium": "forge",
       "version": 1,
       "key": "^answer:\\S+$",
@@ -102,7 +138,7 @@
     },
     {
       "name": "ai-review-summary",
-      "markers": "ai-code-review",
+      "marker": "ai-code-review",
       "medium": "forge",
       "version": 0,
       "key": null,
@@ -111,7 +147,16 @@
     },
     {
       "name": "ai-review-round",
-      "markers": "ai-review-round, ai-review-backlog",
+      "marker": "ai-review-round",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the repository's AI reviewer",
+      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads, which the drive counts as summary findings to answer."
+    },
+    {
+      "name": "ai-review-round",
+      "marker": "ai-review-backlog",
       "medium": "forge",
       "version": 0,
       "key": null,
@@ -120,7 +165,16 @@
     },
     {
       "name": "coderabbit-comment",
-      "markers": "coderabbit-ai-generated:v1, coderabbit-skip-review-comment-follow-up",
+      "marker": "coderabbit-ai-generated:v1",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "CodeRabbit",
+      "meaning": "A review bot's follow-up on an answered thread that carries no new finding (a confirmation after a push, or an acknowledgement of a reply), which the drive lets pass without an answer."
+    },
+    {
+      "name": "coderabbit-comment",
+      "marker": "coderabbit-skip-review-comment-follow-up",
       "medium": "forge",
       "version": 0,
       "key": null,
@@ -129,7 +183,7 @@
     },
     {
       "name": "coderabbit-review-body",
-      "markers": "cr-comment:v",
+      "marker": "cr-comment:v",
       "medium": "forge",
       "version": 0,
       "key": null,
@@ -138,7 +192,7 @@
     },
     {
       "name": "do-item-pr-association",
-      "markers": "do-item-pr",
+      "marker": "do-item-pr",
       "medium": "tracker",
       "version": 0,
       "key": null,
@@ -147,7 +201,7 @@
     },
     {
       "name": "deferred-batch",
-      "markers": "defer-batch-key",
+      "marker": "defer-batch-key",
       "medium": "tracker",
       "version": 0,
       "key": null,
@@ -156,7 +210,16 @@
     },
     {
       "name": "tracker-claim-marker",
-      "markers": "jig-claim, jig-claim-data",
+      "marker": "jig-claim",
+      "medium": "tracker",
+      "version": 1,
+      "key": "^claim$",
+      "writtenBy": "Jig",
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins."
+    },
+    {
+      "name": "tracker-claim-marker",
+      "marker": "jig-claim-data",
       "medium": "tracker",
       "version": 1,
       "key": "^claim$",
@@ -165,7 +228,16 @@
     },
     {
       "name": "tracker-related",
-      "markers": "jig:related, jig:related-superseded",
+      "marker": "jig:related",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A link from one GitHub issue to another, written as a comment before GitHub had related links: read as a link until the migration converts it to GitHub's own and marks it superseded."
+    },
+    {
+      "name": "tracker-related",
+      "marker": "jig:related-superseded",
       "medium": "tracker",
       "version": 0,
       "key": null,
@@ -174,7 +246,7 @@
     },
     {
       "name": "tracker-attachment",
-      "markers": "jig:attachment",
+      "marker": "jig:attachment",
       "medium": "tracker",
       "version": 0,
       "key": null,
@@ -183,7 +255,7 @@
     },
     {
       "name": "tracker-blocked",
-      "markers": "jig:blocked",
+      "marker": "jig:blocked",
       "medium": "tracker",
       "version": 0,
       "key": null,
@@ -192,16 +264,25 @@
     },
     {
       "name": "issue-fields-sweep",
-      "markers": "jig:issue-fields",
+      "marker": "jig:issue-fields",
       "medium": "tracker",
       "version": 0,
       "key": null,
       "writtenBy": "Jig",
-      "meaning": "That the weekly sweep moved an issue back to triage, naming the facets it lacks and the retired labels it carries; a run that stopped before the move finds it and moves the issue without posting again."
+      "meaning": "That the weekly sweep found an issue incomplete, naming the facets it lacks and the retired labels it carries: it moved the issue back to triage, or, where the repository keeps the sweep from moving issues, left it where it is. A run that stopped before the move finds the comment and moves the issue without posting again; where the sweep does not move issues, a later run passes over an issue that carries it."
     },
     {
       "name": "reflection-github-store",
-      "markers": "jig-reflection-change, jig-reflection-events",
+      "marker": "jig-reflection-change",
+      "medium": "tracker",
+      "version": 1,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The GitHub reflection store: an issue per change, and comments holding the change's events, read only from authors who can write to the repository."
+    },
+    {
+      "name": "reflection-github-store",
+      "marker": "jig-reflection-events",
       "medium": "tracker",
       "version": 1,
       "key": null,
@@ -210,7 +291,7 @@
     },
     {
       "name": "fleet-health-suspicion",
-      "markers": "fleet-health",
+      "marker": "fleet-health",
       "medium": "tracker",
       "version": 0,
       "key": null,
@@ -219,7 +300,7 @@
     },
     {
       "name": "epic-acceptance-verdict",
-      "markers": "epic-acceptance-verdict",
+      "marker": "epic-acceptance-verdict",
       "medium": "tracker",
       "version": 0,
       "key": null,
@@ -228,7 +309,7 @@
     },
     {
       "name": null,
-      "markers": "deferral-ok",
+      "marker": "deferral-ok",
       "medium": null,
       "version": null,
       "key": null,
@@ -237,7 +318,7 @@
     },
     {
       "name": null,
-      "markers": "Generated from",
+      "marker": "Generated from",
       "medium": null,
       "version": null,
       "key": null,
@@ -246,7 +327,7 @@
     },
     {
       "name": null,
-      "markers": "AUTO-GENERATED by generate-index.ts",
+      "marker": "AUTO-GENERATED by generate-index.ts",
       "medium": null,
       "version": null,
       "key": null,

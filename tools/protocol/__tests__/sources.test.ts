@@ -190,8 +190,14 @@ describe("the hidden comment markers", () => {
     expect(rendered.filter((n) => excluded.includes(n))).toEqual([]);
   });
 
-  test("renders a kind only with its markers, and leaves the follow-up claim to its own chapter", () => {
-    for (const v of values) expect(v.markers).not.toBe("");
+  test("renders one value for each marker of a kind, each marker once, and leaves the follow-up claim to its own chapter", () => {
+    for (const v of values) expect(v.marker).not.toBe("");
+    const markers = values.map((v) => v.marker);
+    expect(new Set(markers).size).toBe(markers.length);
+    for (const name of new Set(rendered))
+      expect(
+        values.filter((v) => v.name === name).map((v) => v.marker),
+      ).toEqual(RECORD_KINDS.find((k) => k.name === name)?.markers ?? []);
     expect(excluded).toContain("dispatch-followup");
     expect(FOLLOWUP_CLAIM_CHAPTER.takes()).toContain(
       "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-followup",
@@ -199,7 +205,7 @@ describe("the hidden comment markers", () => {
   });
 
   test("renders every marker that is not a record, and no other value without a kind", () => {
-    expect(values.filter((v) => v.name === null).map((v) => v.markers)).toEqual(
+    expect(values.filter((v) => v.name === null).map((v) => v.marker)).toEqual(
       NOT_RECORDS.map((r) => r.marker),
     );
   });

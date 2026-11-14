@@ -308,11 +308,11 @@ export const TRACKER: RecordKind[] = [
     name: "issue-fields-sweep",
     medium: "tracker",
     owner: "skills/file-issue/scripts/lib/sweep.ts",
-    at: "a comment on an issue the weekly sweep moved back to triage, naming what it lacks",
+    at: "a comment on an issue the weekly sweep found incomplete, naming what it lacks",
     markers: ["jig:issue-fields"],
     version: 0,
     meaning:
-      "That the weekly sweep moved an issue back to triage, naming the facets it lacks and the retired labels it carries; a run that stopped before the move finds it and moves the issue without posting again.",
+      "That the weekly sweep found an issue incomplete, naming the facets it lacks and the retired labels it carries: it moved the issue back to triage, or, where the repository keeps the sweep from moving issues, left it where it is. A run that stopped before the move finds the comment and moves the issue without posting again; where the sweep does not move issues, a later run passes over an issue that carries it.",
   },
   {
     name: "reflection-github-store",

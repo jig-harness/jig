@@ -13,8 +13,9 @@ as well. A drive, the
 [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), the
 review and pickup skills and `jig send` write them; the same parts read them
 back, and so may a dashboard, a board or a repository's own scripts. This
-chapter lists every marker Jig writes or reads on the forge and the tracker,
-with the record it marks and what that record means.
+chapter lists the markers Jig writes or reads on the forge and the tracker,
+with the record each marks and what that record means, except the kinds it
+leaves to other chapters, which its last section names.
 
 Each kind is registered in the
 [records registry](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
@@ -39,8 +40,8 @@ member or collaborator of the repository. A marker anyone else wrote is
 ignored. A reply's last-line marker does not prove who wrote it, and the
 markers of a kind another tool writes are as trustworthy as that tool.
 [RECORDS.md](../RECORDS.md) says, for each kind, whose markers count. A hidden comment
-whose marker this chapter does not list is not one of Jig's records, and
-Jig's readers ignore it.
+whose marker neither this chapter lists nor belongs to a kind its last
+section leaves out is not one of Jig's records, and Jig's readers ignore it.
 
 A kind's version is part of this chapter's promise: a release whose writers
 write a newer version of a listed kind raises this chapter's version.
@@ -74,7 +75,7 @@ Jig only reads.
 | `tracker-related` | tracker | `jig:related`, `jig:related-superseded` | 0 | — | Jig | A link from one GitHub issue to another, written as a comment before GitHub had related links: read as a link until the migration converts it to GitHub's own and marks it superseded. |
 | `tracker-attachment` | tracker | `jig:attachment` | 0 | — | Jig | A file attached to a GitHub issue, its text carried in the comment or a link to a hosted copy. A carried file whose text no longer has the size its marker records reads as changed, never as the file. |
 | `tracker-blocked` | tracker | `jig:blocked` | 0 | — | Jig | That an item was moved to blocked because its pull request's drive stopped, naming the pull request, the stop and the state the item left, so one stop blocks the item once and the item returns only to that state. |
-| `issue-fields-sweep` | tracker | `jig:issue-fields` | 0 | — | Jig | That the weekly sweep moved an issue back to triage, naming the facets it lacks and the retired labels it carries; a run that stopped before the move finds it and moves the issue without posting again. |
+| `issue-fields-sweep` | tracker | `jig:issue-fields` | 0 | — | Jig | That the weekly sweep found an issue incomplete, naming the facets it lacks and the retired labels it carries: it moved the issue back to triage, or, where the repository keeps the sweep from moving issues, left it where it is. A run that stopped before the move finds the comment and moves the issue without posting again; where the sweep does not move issues, a later run passes over an issue that carries it. |
 | `reflection-github-store` | tracker | `jig-reflection-change`, `jig-reflection-events` | 1 | — | Jig | The GitHub reflection store: an issue per change, and comments holding the change's events, read only from authors who can write to the repository. |
 | `fleet-health-suspicion` | tracker | `fleet-health` | 0 | — | Jig | A suspicion the fleet-health sensor raised on an epic, of work that shows ceremony without progress: never a diagnosis, which only a person's comment on the epic makes. |
 | `epic-acceptance-verdict` | tracker | `epic-acceptance-verdict` | 0 | — | a person accepting an epic | A person's verdict on an epic, `ACCEPT`, `ACCEPT-WITH-FOLLOWUPS` or `REJECT`, on the comment's last line. The fleet-health sensor counts an epic accepted when its newest verdict from a trusted author accepts it. |
