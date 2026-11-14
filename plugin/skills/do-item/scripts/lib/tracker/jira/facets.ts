@@ -555,6 +555,27 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return screens;
   }
 
+  /** The first refusal a create screen gives a value of the store, or null when it offers them all. */
+  async function screenRefusal(
+    s: ResolvedFacet,
+    { t, screen }: { t: IssueTypeMeta; screen: FieldMeta },
+    signal?: AbortSignal,
+  ) {
+    let first: string | null = null;
+    for (const v of s.values) {
+      refuseStopped(signal);
+      const what = `the create screen of ${t.name} in ${project}`;
+      try {
+        await encode(s, v, async () => ({ screen, what }), signal);
+      } catch (err) {
+        if (!(err instanceof TrackerRequestError) || isUnavailable(err))
+          throw err;
+        first ??= err.message;
+      }
+    }
+    return first;
+  }
+
   /** The health where a create screen offers fewer options than the store's values; it stops only the filing of its type. */
   async function restrictedHealth(
     s: ResolvedFacet,
@@ -562,18 +583,11 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     signal?: AbortSignal,
   ) {
     const restricted = new Map<string, string>();
-    for (const { t, screen } of screens)
-      for (const v of s.values) {
-        refuseStopped(signal);
-        const what = `the create screen of ${t.name} in ${project}`;
-        try {
-          await encode(s, v, async () => ({ screen, what }), signal);
-        } catch (err) {
-          if (!(err instanceof TrackerRequestError) || isUnavailable(err))
-            throw err;
-          if (!restricted.has(t.name)) restricted.set(t.name, err.message);
-        }
-      }
+    for (const x of screens) {
+      const refusal = await screenRefusal(s, x, signal);
+      if (refusal !== null && !restricted.has(x.t.name))
+        restricted.set(x.t.name, refusal);
+    }
     if (restricted.size === 0) return null;
     return {
       status: "failed" as const,
