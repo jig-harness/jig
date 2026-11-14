@@ -31,6 +31,23 @@ import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 let dir: string;
 
+// Records every directory the code under test opens for reading (its fsync
+// of a directory entry), through a `node:fs` mock `restore()` undoes.
+async function recordDirOpens() {
+  const actualFs = await import("node:fs");
+  const realOpenSync = actualFs.openSync;
+  const realFs = { ...actualFs };
+  const opened = new Set<string>();
+  mock.module("node:fs", () => ({
+    ...realFs,
+    openSync: (path: string, flags: string) => {
+      if (flags === "r") opened.add(path);
+      return realOpenSync(path, flags);
+    },
+  }));
+  return { opened, restore: () => mock.module("node:fs", () => realFs) };
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "drive-pr-mailbox-append-test-"));
 });
@@ -149,17 +166,8 @@ describe("appendLine durability (fsync after append)", () => {
       const nestedMailbox = join(nestedContext, "drive-mailbox");
       expect(existsSync(nestedContext)).toBe(false);
 
-      const actualFs = await import("node:fs");
-      const realOpenSync = actualFs.openSync;
-      const realFs = { ...actualFs };
-      const fsyncedDirs = new Set<string>();
-      mock.module("node:fs", () => ({
-        ...realFs,
-        openSync: (path: string, flags: string) => {
-          if (flags === "r") fsyncedDirs.add(path);
-          return realOpenSync(path, flags);
-        },
-      }));
+      const dirOpens = await recordDirOpens();
+      const fsyncedDirs = dirOpens.opened;
 
       try {
         await appendNote(nestedMailbox, "999", "orchestrator", "hello");
@@ -170,7 +178,7 @@ describe("appendLine durability (fsync after append)", () => {
         expect(fsyncedDirs.has(nestedContext)).toBe(true);
         expect(fsyncedDirs.has(dir)).toBe(true);
       } finally {
-        mock.module("node:fs", () => realFs);
+        dirOpens.restore();
       }
     },
   );
@@ -196,17 +204,8 @@ describe("appendLine durability (fsync after append)", () => {
       const nestedMailbox = join(nestedContext, "drive-mailbox");
       mkdirSync(nestedMailbox, { recursive: true }); // the "concurrent sender" already created it
 
-      const actualFs = await import("node:fs");
-      const realOpenSync = actualFs.openSync;
-      const realFs = { ...actualFs };
-      const fsyncedDirs = new Set<string>();
-      mock.module("node:fs", () => ({
-        ...realFs,
-        openSync: (path: string, flags: string) => {
-          if (flags === "r") fsyncedDirs.add(path);
-          return realOpenSync(path, flags);
-        },
-      }));
+      const dirOpens = await recordDirOpens();
+      const fsyncedDirs = dirOpens.opened;
 
       try {
         await appendNote(nestedMailbox, "999", "orchestrator", "hello");
@@ -214,7 +213,7 @@ describe("appendLine durability (fsync after append)", () => {
         expect(fsyncedDirs.has(nestedContext)).toBe(true);
         expect(fsyncedDirs.has(dir)).toBe(true);
       } finally {
-        mock.module("node:fs", () => realFs);
+        dirOpens.restore();
       }
     },
   );
@@ -239,17 +238,8 @@ describe("appendLine durability (fsync after append)", () => {
       const nestedMailbox = join(level3, "drive-mailbox");
       expect(existsSync(level1)).toBe(false);
 
-      const actualFs = await import("node:fs");
-      const realOpenSync = actualFs.openSync;
-      const realFs = { ...actualFs };
-      const fsyncedDirs = new Set<string>();
-      mock.module("node:fs", () => ({
-        ...realFs,
-        openSync: (path: string, flags: string) => {
-          if (flags === "r") fsyncedDirs.add(path);
-          return realOpenSync(path, flags);
-        },
-      }));
+      const dirOpens = await recordDirOpens();
+      const fsyncedDirs = dirOpens.opened;
 
       try {
         await appendNote(nestedMailbox, "999", "orchestrator", "hello");
@@ -261,7 +251,7 @@ describe("appendLine durability (fsync after append)", () => {
         expect(fsyncedDirs.has(level1)).toBe(true);
         expect(fsyncedDirs.has(dir)).toBe(true);
       } finally {
-        mock.module("node:fs", () => realFs);
+        dirOpens.restore();
       }
     },
   );
