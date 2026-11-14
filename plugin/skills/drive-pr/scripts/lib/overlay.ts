@@ -393,6 +393,19 @@ export function passDeadlineRetriesSetting(): number | undefined {
   return value as number;
 }
 
+/** `drive.ci_repair_rounds`: whole number ≥ 0; `undefined` when not configured. */
+export function ciRepairRoundsSetting(): number | undefined {
+  const value = section("drive").ci_repair_rounds;
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) < 0)
+    throw new DecodeError(
+      configSource("drive.ci_repair_rounds"),
+      "$.drive.ci_repair_rounds",
+      "must be a whole number of at least 0",
+    );
+  return value as number;
+}
+
 /** The model each pass runs on when neither `--pass-model` nor `drive.pass_model` names one: Claude Code's alias for the latest Sonnet. */
 export const DEFAULT_PASS_MODEL = "sonnet";
 

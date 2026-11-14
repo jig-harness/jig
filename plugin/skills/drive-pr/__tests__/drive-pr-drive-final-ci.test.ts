@@ -6,8 +6,9 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
 import type {
   CheckRun as EvidenceCheckRun,
@@ -113,6 +114,47 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("1 of 1 CI-repair pass(es) already run");
     expect(r.stderr).toContain("the budget is spent: exit 21, CI_REPAIR_SPENT");
     expect(r.exitCode).toBe(CI_REPAIR_SPENT_EXIT);
+  });
+
+  /** A converged red head, driven with `drive.ci_repair_rounds: 1` in the configuration. */
+  async function driveWithRepairSetting(env: Record<string, string>) {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      head: scratchClean.head,
+      reviewedSha: scratchClean.head,
+      checkRuns: [REVIEWER_RUN, DORMANT_ARM, FAILING_RUN],
+    });
+    // The suite's own configuration, with the setting added to its section.
+    const overlay = join(dir, "repair-rounds.yaml");
+    const base = readFileSync(
+      join(import.meta.dir, "fixtures", "overlay.yaml"),
+      "utf8",
+    );
+    writeFileSync(
+      overlay,
+      base.replace(/^drive:\n/m, "drive:\n  ci_repair_rounds: 1\n"),
+    );
+    return runDriveIn(
+      dir,
+      stateDir,
+      ["--keep-draft", "--no-head-sync", "--", ...PASS_TASK],
+      undefined,
+      { env: { JIG_OVERLAY: overlay, ...env } },
+    );
+  }
+
+  it("spends the repository's drive.ci_repair_rounds", async () => {
+    const r = await driveWithRepairSetting({});
+    expect(r.stderr).toContain("Running CI-repair pass 1/1");
+    expect(r.stderr).toContain("1 of 1 CI-repair pass(es) already run");
+    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+  });
+
+  it("lets DRIVE_PR_CI_REPAIR_ROUNDS override drive.ci_repair_rounds for one run", async () => {
+    const r = await driveWithRepairSetting(NO_REPAIR);
+    expect(r.stderr).toContain("stopping for /fix-ci");
+    expect(r.stderr).not.toContain("Running CI-repair pass");
+    expectSpawnExit({ ...r, stdout: null }, 1);
   });
 
   it("--dry-run against a converged PR with a red final verdict previews the CI-repair pass", async () => {

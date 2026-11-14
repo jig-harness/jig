@@ -2,6 +2,14 @@
 release: minor
 ---
 
+### Added
+
+- drive-pr: `drive.ci_repair_rounds` (a whole number, `0` or more, default
+  `2`) sets how many CI-repair passes a drive spends per head and failing
+  check, so a repository states its own CI cost rather than taking the
+  host's environment. `DRIVE_PR_CI_REPAIR_ROUNDS` still sets it for one run
+  and wins over the file.
+
 ### Fixed
 
 - drive-pr: an always-run aggregator check that failed only because a job it

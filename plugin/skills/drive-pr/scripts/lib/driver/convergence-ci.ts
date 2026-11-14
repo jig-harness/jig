@@ -445,7 +445,7 @@ async function repairConvergedCi(
     // "Never charge until certain" needs no compensating action at
     // all — this line only has to DISPLAY the attempt number the
     // dispatch below, if it happens, will actually become.
-    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (DRIVE_PR_CI_REPAIR_ROUNDS=${context.ciRepairBudget}; 0 stops here instead).`,
+    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (drive.ci_repair_rounds, or DRIVE_PR_CI_REPAIR_ROUNDS for one run; 0 stops here instead).`,
   );
   // The repair dispatches ahead of the round's own refresh: resolve the
   // policy base again, for a pull request retargeted since.
