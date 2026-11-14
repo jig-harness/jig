@@ -27,7 +27,10 @@ test("the mark gets its count drawn last, and is left alone at zero or when it i
 
 test("the page badge updates, clears, and restores the page when its owner unmounts", async () => {
   const window = new Window();
-  window.document.head.innerHTML = `<link rel="icon" href="${HREF}">`;
+  const icon = window.document.createElement("link");
+  icon.rel = "icon";
+  icon.href = HREF;
+  window.document.head.append(icon);
   window.document.title = "Dispatch";
   const priorDocument = globalThis.document;
   const priorNavigator = globalThis.navigator;
