@@ -269,9 +269,13 @@ count: an area or a directory names no file. Patience does not move a
 tier 3 candidate forward; a slot reaches it only when no candidate of tiers
 1 and 2 can take it. So that it cannot wait forever behind a stream of
 other candidates, a candidate that has waited in tier 3 longer than
-`dispatch.overlap.bound_patience` (24 hours) is ordered as tier 2, ahead of
-the later candidates of that tier, and may start past the bound once a slot
-is free. A value of `0` turns the bound off.
+`dispatch.overlap.bound_patience` (24 hours) is promoted to tier 1, ahead
+of every candidate that has not waited past its own patience or bound
+patience, the longest waiter first, and may start past the bound once a
+slot is free. A stream of new tier 1 work therefore cannot starve it: it
+is served after at most the work already promoted before it. Its overlap
+patience does not apply again; the promotion lasts until it starts or stops
+being wanted. A value of `0` turns the bound off.
 
 The bound replaces the per-epic width: it applies across all work, inside
 an epic, across epics, across served people, the ready pool and the
@@ -300,9 +304,12 @@ before either:
   the area, reported as `held: serialized behind #N in <area>`. A footprint
   reaches the area when a file of it lies in the area, or when a directory
   or an area of it holds, or is held by, a glob of the area: the hold
-  reads the coarse match conservatively. A footprint that is unknown is not
-  a proven non-match: the pickup is not held for it, and the report says
-  `serialized: footprint unknown`.
+  reads the coarse match conservatively. A footprint that is unknown, or only
+  derived from labels that name no area, cannot exclude the area: the
+  pickup is held while another piece of work in flight touches the area,
+  reported as `held: serialized behind #N in <area>, footprint unknown`,
+  as the drives of unplaced pull requests are held today. A footprint
+  record, or the footprint scout, releases it.
 - **A person's hold** (`jig:hold`, `hitl`).
 
 ### Merge evidence for a plan's conflict edges
@@ -454,8 +461,13 @@ in one area. It reaches admission in two ways:
 - **Rates.** A new `--rates` output prints, for each path, how many merged
   pull requests in the window changed it and how many of those met a
   conflict, by the definition above (`merge-conflict-rates/v1`, JSON). It
-  reads git and the live conflict record, as the report does, and sends
-  nothing outside the machine. The tick refreshes the file under the
+  reads git and the live conflict record, as the report does, and takes
+  the merged-pull-request cohort, with each one's files and merge commits,
+  from the forge through its governed transport: one listing of the window,
+  kept by pull request and merge commit, bounded in count, recorded with
+  its cost. A cohort that cannot be read, or a listing cut at its bound,
+  keeps the previous file and says so; a commit mapped to no pull request
+  is unknown, as above. The tick refreshes the file under the
   dispatch state directory at most once a day, after its act phase, so a
   slow replay never delays a launch. A refresh that runs past its deadline
   keeps the previous file, and a missing or stale file leaves every rate at
@@ -485,8 +497,9 @@ One pull request each, in this order.
    read to every open pull request, kept by head commit, bounded and
    recorded through the forge's governed transport. Waits on item 55's
    GitHub budget step.
-5. **Conflict rates.** `history.ts --rates`, the tick's daily refresh of
-   the rates file, and its reader.
+5. **Conflict rates.** `history.ts --rates` with its governed read of the
+   merged-pull-request cohort, the tick's daily refresh of the rates file,
+   and its reader.
 6. **Overlap, reported.** The tick reads footprints, computes each
    candidate's overlap cost, tier and bound, keeps `overlap_waits`, and
    reports the reasons above in the receipt, the dashboard and `jig ask`,
