@@ -470,6 +470,29 @@ describe("a delivery that outlasts its time", () => {
   });
 });
 
+describe("a delivery that settles while it is being cancelled", () => {
+  it("keeps the receipt it returns", async () => {
+    const h = host();
+    h.state.machine.runtimeTimeoutMs = 20;
+    const slow = fakeChannel("slow");
+    slow.deliver = async (due, time) => {
+      await new Promise<void>((resolve) =>
+        time.signal.addEventListener("abort", () => resolve()),
+      );
+      return due.map((c) => ({
+        key: c.notice.key,
+        outcome: "sent" as const,
+        place: "somewhere",
+        detail: "written before it stopped",
+      }));
+    };
+    const report = await tick(h, slow, true);
+    expect(
+      report.notifications.find((n) => n.channel === "slow"),
+    ).toMatchObject({ outcome: "sent" });
+  });
+});
+
 describe("a channel's name", () => {
   it("is refused, reported, when it breaks the rule or repeats another's, and nothing goes through it", async () => {
     const h = host();

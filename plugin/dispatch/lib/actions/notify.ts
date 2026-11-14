@@ -613,6 +613,13 @@ async function answersOf(
 ): Promise<Delivery[]> {
   try {
     const left = timeLeftMs();
+    if (left !== null && left <= 0)
+      return lostAnswers(
+        channel,
+        batch,
+        report,
+        "the tick's time budget was already spent",
+      );
     const timeoutMs = Math.max(
       1,
       Math.min(left ?? deliveryTimeoutMs, deliveryTimeoutMs),
@@ -630,28 +637,33 @@ async function answersOf(
         timeLeftMs,
         signal: controller.signal,
       });
-      const deliveries = await Promise.race([delivery, expired]);
+      let deliveries = await Promise.race([delivery, expired]);
+      let expiredNote: string | undefined;
       if (deliveries === EXPIRED) {
         // The channel stops before its next effect once aborted: wait for it
-        // to quiesce, within one more delivery bound, before the batch is
-        // answered, so no write lands after its outcome is recorded.
+        // to quiesce before the batch is answered, so no write lands after
+        // its outcome is recorded. The wait comes out of the tick's remaining
+        // budget, never past it, and a receipt the channel returns within it
+        // is kept.
+        expiredNote = `delivery did not finish within ${timeoutMs}ms`;
+        const graceMs = Math.max(
+          0,
+          Math.min(timeLeftMs() ?? deliveryTimeoutMs, deliveryTimeoutMs),
+        );
         let grace: ReturnType<typeof setTimeout> | undefined;
-        await Promise.race([
+        const settled = await Promise.race([
           delivery.then(
-            () => undefined,
+            (late) => ({ late }),
             () => undefined,
           ),
-          new Promise((resolve) => {
-            grace = setTimeout(resolve, deliveryTimeoutMs);
+          new Promise<undefined>((resolve) => {
+            grace = setTimeout(() => resolve(undefined), graceMs);
           }),
         ]);
         clearTimeout(grace);
-        return lostAnswers(
-          channel,
-          batch,
-          report,
-          `delivery did not finish within ${timeoutMs}ms`,
-        );
+        if (settled === undefined)
+          return lostAnswers(channel, batch, report, expiredNote);
+        deliveries = settled.late;
       }
       if (!Array.isArray(deliveries))
         return lostAnswers(
@@ -667,6 +679,12 @@ async function answersOf(
           record: "runtime",
           reason:
             "it returned malformed delivery answers; valid answers were retained and missing causes count as lost",
+        });
+      if (expiredNote !== undefined)
+        report.unplaced.push({
+          target: `the ${channel.name} notification channel`,
+          record: "runtime",
+          reason: `${expiredNote}; the answers it settled with during cancellation were retained`,
         });
       return valid;
     } finally {
