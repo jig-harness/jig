@@ -210,6 +210,12 @@ describe("effectivePassArgs", () => {
       effectivePassArgs(other, BYPASS.join(" "), configured),
     ).toThrow(PassArgsUsageError);
     expect(effectivePassArgs(other, "", configured).argv).toEqual(other);
+    const unreadableCodex = (): PassArgs => {
+      throw new Error("drive.codex_pass_args must be a list of words");
+    };
+    expect(
+      effectivePassArgs(other, undefined, unset, unreadableCodex).argv,
+    ).toEqual(other);
   });
 
   it("reads a Codex pass command's permission from its own words", () => {
@@ -246,6 +252,20 @@ describe("effectivePassArgs", () => {
         configured,
       ).permission.mode,
     ).toBe("sandbox read-only");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "--", "-summarize PR 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("inherited");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "--", "--yolo"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("inherited");
     expect(
       effectivePassArgs(
         ["codex", "exec", "/jig:drive-pr 7"],

@@ -243,7 +243,14 @@ test("each Codex home gets its own state directory, and removal in one leaves th
         "-e",
         `const m = await import(${JSON.stringify(script)}); ${call}`,
       ],
-      { env: { ...process.env, HOME: root, CODEX_HOME: codex } },
+      {
+        env: {
+          ...process.env,
+          HOME: root,
+          USERPROFILE: root,
+          CODEX_HOME: codex,
+        },
+      },
     );
     expectSpawnExit(child, 0);
   };
@@ -251,7 +258,9 @@ test("each Codex home gets its own state directory, and removal in one leaves th
   run("m.refreshCodexHook();", homeB);
   const shimDirectory = (codex: string) => {
     const command: string = hooksOf(codex).hooks.PreToolUse[0].hooks[0].command;
-    return dirname(command.replace(/'$/, "").replace(/^.*'/, ""));
+    const match = command.match(/(["'])([^"']+)\1$/);
+    expect(match).not.toBeNull();
+    return dirname(match?.[2] as string);
   };
   const dirA = shimDirectory(homeA);
   const dirB = shimDirectory(homeB);

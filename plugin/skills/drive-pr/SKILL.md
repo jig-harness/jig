@@ -468,7 +468,8 @@ named on the log's `pass args:` line. It has no flag for one run:
 value means none. Another agent tool's pass command ignores both settings,
 and the log says so; `--pass-args`'s words are refused for it too (exit `2`).
 A Codex pass's `permission mode:` is read from its own words:
-`no sandbox, no approvals` with the bypass, `inherited` without it. A
+`no sandbox, no approvals` with the bypass, its selected sandbox mode when it
+sets one, and `inherited` when it sets neither. A
 `drive.pass_args` or `drive.codex_pass_args` that is not a list of words stops
 the drive (exit `1`), naming the field. A list that ends in an option left
 without its value, such as `--permission-mode` or Codex's `--sandbox`, stops
@@ -1298,8 +1299,9 @@ a command handle alone does not prove the drive survives session exit.
 `--pass-model` supports either vendor; `--pass-args`'s words remain Claude
 Code's and are refused for Codex (exit `2`). A Codex pass carries the bypass
 only on a host that set `drive.codex_bypass`, and the host's
-`drive.codex_pass_args` before its prompt; `permissionMode` says `inherited`
-on a host without the bypass. In any other agent tool, do not arm:
+`drive.codex_pass_args` before its prompt; `permissionMode` says the selected
+sandbox mode when present, or `inherited` only when neither it nor the bypass
+is present. In any other agent tool, do not arm:
 `arm-drive.ts` answers `print` with Claude Code's command, so print it, say
 why, and do not substitute a guessed pass command. A person can put their
 own tool's command after the `--` and run it.

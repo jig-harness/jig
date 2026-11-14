@@ -248,7 +248,13 @@ function otherPass(
 ): EffectivePassArgs {
   const name = basename(argv[0] as string);
   refuseFlagWords(name, flag);
-  const set = configured().words.length > 0 || codex().words.length > 0;
+  let codexSet = false;
+  try {
+    codexSet = codex().words.length > 0;
+  } catch {
+    // This pass does not use the Codex-only setting.
+  }
+  const set = configured().words.length > 0 || codexSet;
   return {
     argv: [...argv],
     line: set
@@ -316,30 +322,31 @@ function codexPass(
   );
 }
 
+function sandboxValue(argv: readonly string[], i: number): string | undefined {
+  const word = argv[i] as string;
+  if (word === "--sandbox" || word === "-s") return argv[i + 1];
+  if (word.startsWith("--sandbox=")) return word.slice("--sandbox=".length);
+  if (word.startsWith("-s"))
+    return word.slice(2).replace(/^=/, "") || undefined;
+  return undefined;
+}
+
 /**
  * How a `codex` pass command runs its commands: without a sandbox or
  * approvals (a host that set `drive.codex_bypass`), in the sandbox
  * `--sandbox` names, or as Codex's own configuration decides.
  */
 export function codexPermission(argv: readonly string[]): PermissionMode {
-  if (argv.slice(1).some((word) => word === CODEX_BYPASS || word === "--yolo"))
+  const end = argv.indexOf("--");
+  const words = end === -1 ? argv : argv.slice(0, end);
+  if (words.slice(1).some((w) => w === CODEX_BYPASS || w === "--yolo"))
     return {
       mode: "no sandbox, no approvals",
       source: `the pass command's ${CODEX_BYPASS}`,
     };
-  for (let i = 1; i < argv.length; i++) {
-    const word = argv[i] as string;
-    if ((word === "--sandbox" || word === "-s") && argv[i + 1] !== undefined)
-      return {
-        mode: `sandbox ${argv[i + 1]}`,
-        source: "the pass command's --sandbox",
-      };
-    const value = word.startsWith("--sandbox=")
-      ? word.slice("--sandbox=".length)
-      : word.startsWith("-s") && word !== "-s"
-        ? word.slice(2).replace(/^=/, "")
-        : undefined;
-    if (value !== undefined && value !== "")
+  for (let i = 1; i < words.length; i++) {
+    const value = sandboxValue(words, i);
+    if (value)
       return {
         mode: `sandbox ${value}`,
         source: "the pass command's --sandbox",
