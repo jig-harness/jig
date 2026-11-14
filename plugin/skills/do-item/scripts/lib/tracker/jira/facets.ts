@@ -507,8 +507,10 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
    * screen lists the choices of and does not offer: Jira changes an issue
    * type by an edit only between issue types of one workflow and field
    * configuration, and answers any other change with a bare 400 on
-   * `issuetype`. A screen without an `issuetype` entry proves nothing, since
-   * editmeta is also filtered by screen configuration: that write goes ahead.
+   * `issuetype`. A screen without an `issuetype` entry, or with no field at all,
+   * proves nothing, since editmeta is also filtered by screen configuration
+   * and the caller's permissions: that write goes ahead, and Jira's rejection
+   * is explained afterward.
    */
   async function refuseUneditableType(
     issue: JiraIssue,
@@ -517,13 +519,6 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     editScreen: () => Promise<FieldMeta>,
   ) {
     const screen = await editScreen();
-    // Jira lists only the fields the issue's screens, workflow step and the
-    // caller's permissions allow editing: none has several possible causes.
-    if (screen.size === 0)
-      throw new TrackerRequestError(
-        "unresolved",
-        `${kept}, but the edit screen of ${issue.key} lists no field at all; Jira answers that when the credential may not edit the issue (Edit Issues permission), when the issue's current workflow step is not editable, or when no field is on its edit screen`,
-      );
     const offered = screen.get("issuetype");
     if (
       offered === undefined ||

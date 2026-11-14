@@ -381,6 +381,8 @@ effective map. See the [configuration reference](../../CONFIGURATION.md#issue_tr
 
 Where type is kept in Jira's issue types (`issue_tracker.facets.type`
 `store: native`), an edit changes an issue's type only between issue types of
-one workflow and field configuration. A type change to an issue type the
-issue's edit screen does not offer is refused before anything is written:
-move the issue in Jira, or keep type in labels or a field.
+one workflow and field configuration. When the issue's edit screen
+lists the issue type choices and the new issue type is not among them, the change is
+refused before anything is written: move the issue in Jira, or keep type in
+labels or a field. When the screen lists no choices, Jira decides, and its
+rejection is explained afterward in the same words.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { SITE, SIZE_OPTIONS, STORES } from "./jira-facet-fixtures.ts";
 import { issue, jira, routes, writes } from "./jira-fixtures.ts";
-import { JiraApiError } from "../scripts/lib/tracker/jira/transport.ts";
+import { httpFailure } from "../scripts/lib/tracker/jira/transport.ts";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 
 /** The issue types the edit screen offers an issue of one workflow. */
@@ -115,14 +115,18 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
         "GET issue/ENG-1/editmeta": {
           fields: { customfield_10050: { allowedValues: SIZE_OPTIONS } },
         },
-        "PUT issue/ENG-1": new JiraApiError("bad request", {
-          status: 400,
-          errorMessages: ["Fix the summary too."],
-          errors: {
-            issuetype: "The issue type selected is invalid.",
-            customfield_10050: "Size is required.",
-          },
-        }),
+        "PUT issue/ENG-1": httpFailure(
+          400,
+          new Headers(),
+          JSON.stringify({
+            errorMessages: ["Fix the summary too."],
+            errors: {
+              issuetype: "The issue type selected is invalid.",
+              customfield_10050: "Size is required.",
+            },
+          }),
+          "PUT issue/ENG-1",
+        ),
       }),
       STORES,
     );
@@ -132,29 +136,29 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
     expect(err).toBeInstanceOf(TrackerRequestError);
     const message = (err as Error).message;
     // Jira's own answer is kept whole, beside the type change's context.
-    expect(message).toContain("bad request");
+    expect(message).toContain("Fix the summary too.");
+    expect(message).toContain("issuetype: The issue type selected is invalid.");
+    expect(message).toContain("customfield_10050: Size is required.");
     expect(message).toContain("move ENG-1");
     expect(message).toContain("for type feature");
     expect(message).toContain("from Task to");
     expect(message).toContain("may not have listed");
   });
 
-  it("names every cause, not only the credential, when the edit screen lists no field at all", async () => {
+  it("leaves the write to Jira when the edit screen lists no field at all", async () => {
     const { t, calls } = jira(
       routes({
         ...SITE,
         "GET issue/ENG-1": issue({ key: "ENG-1", type: "Task" }),
         "GET issue/ENG-1/editmeta": { fields: {} },
+        "PUT issue/ENG-1": null,
       }),
       STORES,
     );
-    const err = await t
-      .updateIssue("ENG-1", { type: "feature" })
-      .catch((e: unknown) => e);
-    expect((err as Error).message).toBe(
-      "type feature is kept in Jira's issue types as 'Story', but the edit screen of ENG-1 lists no field at all; Jira answers that when the credential may not edit the issue (Edit Issues permission), when the issue's current workflow step is not editable, or when no field is on its edit screen",
-    );
-    expect(writes(calls)).toEqual([]);
+    await t.updateIssue("ENG-1", { type: "feature" });
+    expect(
+      calls.filter((c) => c.route === "PUT issue/ENG-1").map((c) => c.body),
+    ).toEqual([{ fields: { issuetype: { id: "t2" } } }]);
   });
 
   it("changes the type when the edit screen has the issue type field without listing its choices", async () => {
