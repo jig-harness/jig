@@ -46,8 +46,10 @@ import {
   checkRuns,
   headWatermark,
   readCiState,
+  type HoldReadFailure,
   readHoldTransitions,
   readPrSnapshot,
+  valueOrNull,
   writeCiState,
 } from "./lib/ci-hold-state.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
@@ -86,7 +88,8 @@ function usage(): never {
   );
 }
 
-const snapshot = (pr: string) => readPrSnapshot(pr, policy.holdLabel);
+const snapshot = async (pr: string) =>
+  valueOrNull(await readPrSnapshot(pr, policy.holdLabel));
 
 async function viewer(): Promise<string | null> {
   const result = await ghCall(["api", "user", "-q", ".login"]);
@@ -94,10 +97,13 @@ async function viewer(): Promise<string | null> {
   return login === "" ? null : login;
 }
 
-const transitions = (pr: string) => readHoldTransitions(pr, holdLabel());
+const transitions = async (pr: string) =>
+  valueOrNull(await readHoldTransitions(pr, holdLabel()));
 
-function retryLater(what: string): number {
-  console.error(`ci-hold: cannot read ${what}; retrying later`);
+/** A forge that was not reached is retried later; an answer that does not read stops. */
+function unread(failure: HoldReadFailure): number {
+  if (failure.code === "malformed") fail(1, `ci-hold: ${failure.reason}`);
+  console.error(`ci-hold: ${failure.reason}; retrying later`);
   return 4;
 }
 
@@ -551,13 +557,15 @@ async function release(
   expectedTransition?: string,
 ): Promise<number> {
   let persisted = await readCiState(pr);
-  // Nothing has changed yet: a failed read (a forge timing out) retries later.
-  const live = await snapshot(pr);
-  if (live === null) return retryLater("the PR state");
+  // Nothing has changed yet, so a forge timing out here is retried later.
+  const read = await readPrSnapshot(pr, policy.holdLabel);
+  if (!read.ok) return unread(read.failure);
+  const live = read.value;
   if (live.state !== "OPEN") return 5;
   if (live.head !== head) return 4;
-  const initialTimeline = await transitions(pr);
-  if (initialTimeline === null) return retryLater("the label timeline");
+  const timeline = await readHoldTransitions(pr, holdLabel());
+  if (!timeline.ok) return unread(timeline.failure);
+  const initialTimeline = timeline.value;
   const latest = latestOf(initialTimeline);
   if (
     expectedTransition !== undefined &&

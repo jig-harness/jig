@@ -357,29 +357,36 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(r.stdout.trim()).toBe("removed");
   });
 
-  it("release retries later, saying why, when the PR state cannot be read", async () => {
+  it("release retries later, saying why, when the forge cannot be reached for the PR state", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) =>
       writeFileSync(join(dir, "transient-failure"), ""),
     );
     expectSpawnExit(r, 4);
-    expect(r.stderr).toContain("cannot read the PR state; retrying later");
     expect(r.stderr).toContain("simulated transient network failure");
+    expect(r.stderr).toContain("retrying later");
     expect(ciHoldOf(r.stateDir)).toBeUndefined();
   });
 
-  it("release retries later, saying why, when the label timeline cannot be read", async () => {
+  it("release retries later, saying why, when the forge cannot be reached for the timeline", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) =>
-      writeFileSync(join(dir, "timeline.json"), "not json"),
+      writeFileSync(join(dir, "timeline-unreachable"), ""),
     );
     expectSpawnExit(r, 4);
-    expect(r.stderr).toContain(
-      "cannot read the label timeline; retrying later",
-    );
-    expect(r.stderr).toContain("timeline JSON could not be decoded");
+    expect(r.stderr).toContain("simulated timeline timeout; retrying later");
     const view = readJson<{ labels: { name: string }[] }>(
       join(r.dir, "pr-view.json"),
     );
     expect(view.labels.map((label) => label.name)).toContain("ci:hold");
+  });
+
+  it("release stops, saying why, on a timeline the forge answered that does not read", async () => {
+    // A malformed answer would come back on every retry, so it is no wait.
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "timeline.json"), "not json"),
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("timeline JSON could not be decoded");
+    expect(r.stderr).not.toContain("retrying later");
   });
 
   it("release waits, leaving the adopted label, while no check run is registered yet", async () => {

@@ -17,6 +17,13 @@ import {
   parsePrSnapshot,
 } from "./ci-hold.ts";
 import { readTimeline } from "./pr-timeline.ts";
+import {
+  attempt,
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../../shared/outcome.ts";
 import { fail, isGitSha } from "./cli.ts";
 import { ghCall } from "./proc.ts";
 import type { CiHoldState } from "./state/schema.ts";
@@ -24,11 +31,14 @@ import { openStore } from "./state/store.ts";
 
 type HeldState = Extract<CiHoldState, { phase: "held" }>;
 
-/** The pull request's state, head and hold label, or `null`, saying why, when unreadable. */
+/** A hold read that failed: the forge was not reached, or answered with something unreadable. */
+export type HoldReadFailure = Failure<"unreadable" | "malformed">;
+
+/** The pull request's state, head and hold label. */
 export async function readPrSnapshot(
   pr: string,
   holdLabel: string | null,
-): Promise<PrSnapshot | null> {
+): Promise<Outcome<PrSnapshot, HoldReadFailure["code"]>> {
   const result = await ghCall([
     "pr",
     "view",
@@ -36,31 +46,41 @@ export async function readPrSnapshot(
     "--json",
     "state,headRefOid,labels",
   ]);
-  if (result.code !== 0) {
-    console.error(
-      `ci-hold: gh pr view exited ${result.code}: ${result.stderrTail || result.stderr.trim().slice(-500)}`,
+  if (result.code !== 0)
+    return failed(
+      "unreadable",
+      `gh pr view exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
     );
-    return null;
-  }
-  try {
-    return parsePrSnapshot(JSON.parse(result.stdout) as unknown, holdLabel);
-  } catch (err) {
-    swallow(err, "the pull request view is not a snapshot: read as unreadable");
-    return null;
-  }
+  const decoded = attempt(
+    "malformed",
+    "the pull request view is not JSON",
+    (): unknown => JSON.parse(result.stdout),
+  );
+  if (!decoded.ok) return decoded;
+  const snapshot = parsePrSnapshot(decoded.value, holdLabel);
+  return snapshot === null
+    ? failed("malformed", "the pull request view is not a snapshot")
+    : ok(snapshot);
 }
 
-/** The hold label's transitions on the timeline, or `null`, saying why, when unreadable. */
+/** The hold label's transitions on the timeline. */
 export async function readHoldTransitions(
   pr: string,
   holdLabel: string,
-): Promise<LabelTransition[] | null> {
+): Promise<Outcome<LabelTransition[], HoldReadFailure["code"]>> {
   const events = await readTimeline(pr);
-  if (!events.ok) {
-    console.error(`ci-hold: ${events.failure.reason}`);
-    return null;
-  }
-  return ciHoldTransitions(events.value, holdLabel);
+  if (!events.ok) return events;
+  const transitions = ciHoldTransitions(events.value, holdLabel);
+  return transitions === null
+    ? failed("malformed", `a '${holdLabel}' event on the timeline is malformed`)
+    : ok(transitions);
+}
+
+/** A read's value, or `null` after saying why it failed. */
+export function valueOrNull<T>(read: Outcome<T, string>): T | null {
+  if (read.ok) return read.value;
+  console.error(`ci-hold: ${read.failure.reason}`);
+  return null;
 }
 
 export async function readCiState(pr: string): Promise<CiHoldState | null> {
