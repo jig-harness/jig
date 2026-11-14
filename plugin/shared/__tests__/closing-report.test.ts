@@ -225,6 +225,20 @@ describe("closingReportOf", () => {
     expect(read.value.concluded).toContain("was set");
   });
 
+  it("masks bracketed values with a suffix and under quoted keys", () => {
+    const read = closingReportOf(
+      JSON.stringify({
+        ...BASE,
+        concluded: `password=[prefix]hunter2 set; "password": [correct horse battery staple] set; 'secret': [alpha beta] set`,
+      }),
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    for (const leak of ["hunter2", "horse", "staple", "beta", "prefix"]) {
+      expect(read.value.concluded).not.toContain(leak);
+    }
+  });
+
   it("refuses a decision over its own byte limit and a null decision", () => {
     const big = { ...DECISION, alreadyDone: "x".repeat(9000) };
     const over = closingReportOf(

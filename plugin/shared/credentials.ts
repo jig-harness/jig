@@ -14,12 +14,19 @@ const SECRET_KEY =
 /** A quoted value, either quote, with its escapes. */
 const QUOTED = `(?:"(?:[^"\\\\]|\\\\.|"")*"|'(?:[^'\\\\]|\\\\.|'')*')`;
 
+/**
+ * A bracketed value, whitespace included, and any text run on after its
+ * closing bracket: a password may contain brackets, so the value ends at the
+ * next whitespace, not at the first `]`. An unclosed bracket takes its line.
+ */
+const BRACKETED = "\\[[^\\]\\n]*\\]?[^\\s,}\\]]*";
+
 /** Replace every credential-shaped value in `text` with `mark`. */
 export function maskCredentials(text: string, mark: string): string {
   return text
     .replace(
       new RegExp(
-        `(["'])(${SECRET_KEY})\\1\\s*[:=]\\s*(?:${QUOTED}|[^\\s,}\\]]+)`,
+        `(["'])(${SECRET_KEY})\\1\\s*[:=]\\s*(?:${QUOTED}|${BRACKETED}|[^\\s,}\\]]+)`,
         "gi",
       ),
       (_, q: string, key: string) => `${q}${key}${q}: "${mark}"`,
@@ -34,7 +41,7 @@ export function maskCredentials(text: string, mark: string): string {
     )
     .replace(
       new RegExp(
-        `\\b(${SECRET_KEY})\\s*[=:]\\s*(?!(?:<redacted>|\\[(?:redacted|launch token)\\])(?!\\S))(?:\\[[^\\]\\n]*\\]?|\\S+)`,
+        `\\b(${SECRET_KEY})\\s*[=:]\\s*(?!(?:<redacted>|\\[(?:redacted|launch token)\\])(?!\\S))(?:${BRACKETED}|\\S+)`,
         "gi",
       ),
       (_, key: string) => `${key}=${mark}`,
