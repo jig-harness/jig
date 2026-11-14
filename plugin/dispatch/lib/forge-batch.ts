@@ -52,9 +52,10 @@ import {
   startSize,
 } from "../../shared/outbound/paging.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
-import { failedBy } from "../../shared/outbound/failure.ts";
+import { failedBy, outboundOf } from "../../shared/outbound/failure.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import { checksFail } from "./automation.ts";
+import { ended, passedRead, type TickBound } from "./sources/bounded.ts";
 import type { RepoTarget } from "./types.ts";
 import { currentMs } from "../../shared/time.ts";
 
@@ -208,12 +209,26 @@ async function shrinking(
     }
     return read.outcome;
   }
-  const { code, reason } = read.outcome.failure;
-  return partial(
-    code === "too-costly"
-      ? `${reason}: the forge ran out of time on ${what}${read.size === 1 ? ", asked one at a time" : ""}`
-      : reason,
-  );
+  const failure = read.outcome.failure;
+  const why =
+    failure.code === "too-costly"
+      ? `${failure.reason}: the forge ran out of time on ${what}${read.size === 1 ? ", asked one at a time" : ""}`
+      : failure.reason;
+  // The call's failure class goes on with the read, so its record says how it failed.
+  const carried = outboundOf(failure);
+  return carried === null ? partial(why) : failedBy("unreadable", carried, why);
+}
+
+/** `ask`, not asked once `bound` has ended: each page and each smaller retry keeps to the tick's bound. */
+function heldAsk<A extends unknown[]>(
+  ask: (...args: A) => Promise<Asked<unknown>>,
+  bound: TickBound | undefined,
+  what: string,
+): (...args: A) => Promise<Asked<unknown>> {
+  return bound === undefined
+    ? ask
+    : (...args) =>
+        ended(bound) ? Promise.resolve(passedRead(what)) : ask(...args);
 }
 
 /** Keep the size the next read of `key` starts from, where this one changes it (`sizeToKeep`). */
@@ -534,16 +549,22 @@ function addPage(read: RepositoryRead, answer: unknown): Read<string | null> {
  * The repository of the checkout at `path`, read in one query of as many
  * pages as its open pull requests need, each page as large as the forge
  * answers in time; or why it did not read in full. `sizes` keeps the page
- * size between reads, and `ask` is the forge.
+ * size between reads, `ask` is the forge, and no page is asked once
+ * `bound`, the tick's, has ended.
  */
 export async function readRepository(
   path: string,
   sizes?: PageSizes,
   ask: AskPage = page,
+  bound?: TickBound,
 ): Promise<Outcome<RepositoryRead, "unreadable">> {
   const key = `repository:${path}`;
   const paging = pagingOf(sizes, key);
-  const read = await readPages(path, paging, ask);
+  const read = await readPages(
+    path,
+    paging,
+    heldAsk(ask, bound, "the next page of pull requests was asked"),
+  );
   keepSize(sizes, key, paging, read.ok);
   return read;
 }
@@ -616,17 +637,24 @@ const comments: AskComments = (owner, name, prs) =>
 /**
  * The comments of the pull requests `prs` of `slug`, read at most `PAGE`
  * to a query, as many as the forge answers in time; or why they did not
- * read. `sizes` keeps that number between reads, and `ask` is the forge.
+ * read. `sizes` keeps that number between reads, `ask` is the forge, and
+ * no query is asked once `bound`, the tick's, has ended.
  */
 export async function readComments(
   slug: string,
   prs: readonly number[],
   sizes?: PageSizes,
   ask: AskComments = comments,
+  bound?: TickBound,
 ): Promise<Outcome<CommentsRead, "unreadable">> {
   const key = `comments:${slug}`;
   const paging = pagingOf(sizes, key);
-  const read = await readChunks(slug, prs, paging, ask);
+  const read = await readChunks(
+    slug,
+    prs,
+    paging,
+    heldAsk(ask, bound, "the next pull requests' comments were asked"),
+  );
   keepSize(sizes, key, paging, read.ok);
   return read;
 }

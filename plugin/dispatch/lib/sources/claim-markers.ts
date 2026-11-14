@@ -55,7 +55,8 @@ export async function markClaims(
   const claimed: ClaimedItem[] = [];
   const mark = (item: ClaimedItem, found: boolean) =>
     claimed.push(found ? { ...item, claimMarker: "found" } : item);
-  // A request that failed is a failed read; the tracker's rate limit is a deferral.
+  // A request that failed, or that the tick's bound ended before, is a
+  // failed read; the tracker's rate limit is a deferral.
   const unread = (item: ClaimedItem, why: string, failed: boolean) => {
     claimed.push({ ...item, claimMarker: "unread" });
     unplaced.push({
@@ -73,7 +74,7 @@ export async function markClaims(
     else if (limited)
       unread(item, "the tracker's rate limit stopped an earlier read", false);
     else if (ended(tick))
-      unread(item, passedBefore("its comments were read"), false);
+      unread(item, passedBefore("its comments were read"), true);
     else
       try {
         const asked = marked(tracker, item.key, identity);

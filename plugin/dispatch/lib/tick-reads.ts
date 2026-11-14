@@ -20,8 +20,9 @@
  *
  * In a tick its launcher bounds, the forge reads here keep to the tick's
  * bound (`sources/bounded.ts`): one the bound ended before it left the
- * pool is not started, and answers as a read that failed; a comment listing
- * is given no more time than the bound has left.
+ * pool is not started, and answers as a read that failed; a paged query
+ * asks no page after the bound ends; a comment listing is given no more
+ * time than the bound has left.
  *
  * None of these serves a read just before a launch: those go to the forge
  * and the runtime (`tick-apply.ts`).
@@ -134,10 +135,11 @@ const pageSizes: PageSizes = {
 async function queryRepository(
   path: string,
   comments: TickComments,
+  bound: TickBound | undefined,
 ): Promise<RepositoryOutcome> {
   let read: RepositoryOutcome;
   try {
-    read = await readRepository(path, pageSizes);
+    read = await readRepository(path, pageSizes, undefined, bound);
   } catch (error) {
     return failed("unreadable", failureText(error));
   }
@@ -154,10 +156,11 @@ async function queryComments(
   slug: string,
   prs: readonly number[],
   comments: TickComments,
+  bound: TickBound | undefined,
 ): Promise<CommentsOutcome> {
   let read: CommentsOutcome;
   try {
-    read = await readComments(slug, prs, pageSizes);
+    read = await readComments(slug, prs, pageSizes, undefined, bound);
   } catch (error) {
     return failed("unreadable", failureText(error));
   }
@@ -207,7 +210,7 @@ export function tickReads(
       if (read === undefined) {
         read = reads.run(() =>
           unlessEnded(bound, "the repository's query was read", () =>
-            queryRepository(path, comments),
+            queryRepository(path, comments, bound),
           ),
         );
         repositories.set(path, read);
@@ -217,7 +220,7 @@ export function tickReads(
     pullRequestComments: (slug, prs) =>
       reads.run(() =>
         unlessEnded(bound, "the merged pull requests' comments were read", () =>
-          queryComments(slug, prs, comments),
+          queryComments(slug, prs, comments, bound),
         ),
       ),
     comments,

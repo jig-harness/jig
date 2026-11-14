@@ -10,9 +10,21 @@
  * bound's signal where its transport takes one, and held to it with
  * `within` either way. A tick no launcher bounds has no bound, and its reads
  * run as they always did.
+ *
+ * Either way the read fails as `unreachable`, the class of a deadline that
+ * passed with nothing received
+ * ([ADR-0021](../../../../docs/adr/ADR-0021-outbound-calls-are-governed.md)):
+ * it clears by waiting, and the failure ledger tells a person when it keeps
+ * happening.
  */
 import type { FacetBound } from "./tracker-facets.ts";
-import { failed, type Outcome } from "../../../shared/outcome.ts";
+import type { Outcome } from "../../../shared/outcome.ts";
+import {
+  type CausedFailure,
+  failedBy,
+  OutboundError,
+  outboundFailure,
+} from "../../../shared/outbound/failure.ts";
 import { currentMs } from "../../../shared/time.ts";
 
 /** The tick's own bound: its deadline (epoch milliseconds) and the signal that fires there. */
@@ -35,14 +47,26 @@ export function passedBefore(what: string): string {
   return `the tick's deadline passed before ${what}`;
 }
 
-/** `read`, or a rejection once `bound` has ended it. */
+/** The failed read of what the tick's bound ended before: `unreachable`, saying what was not done. */
+export function passedRead(what: string): {
+  ok: false;
+  failure: CausedFailure<"unreadable">;
+} {
+  const reason = passedBefore(what);
+  return failedBy("unreadable", outboundFailure("unreachable", reason), reason);
+}
+
+/** `read`, or an `unreachable` rejection once `bound` has ended it. */
 export async function within<T>(
   read: Promise<T>,
   bound: FacetBound,
 ): Promise<T> {
   let stop: (() => void) | undefined;
   const stopped = new Promise<never>((_, reject) => {
-    stop = () => reject(new Error("stopped at the tick's deadline"));
+    stop = () =>
+      reject(
+        new OutboundError("unreachable", "stopped at the tick's deadline"),
+      );
     if (bound.signal.aborted) stop();
     else bound.signal.addEventListener("abort", stop, { once: true });
   });
@@ -68,9 +92,7 @@ export function unlessEnded<T>(
   what: string,
   read: () => Promise<Outcome<T, "unreadable">>,
 ): Promise<Outcome<T, "unreadable">> {
-  return ended(bound)
-    ? Promise.resolve(failed("unreadable", passedBefore(what)))
-    : read();
+  return ended(bound) ? Promise.resolve(passedRead(what)) : read();
 }
 
 /** Whether `bound` has ended: its signal fired or its deadline passed. */

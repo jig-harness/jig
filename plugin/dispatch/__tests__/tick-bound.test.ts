@@ -1,11 +1,12 @@
 /**
  * dispatch: one bound for a tick its launcher bounds. Every read of the
- * observe phase keeps to it: the tracker's assigner and claimed-item reads,
- * the runtime's sessions and the forge's listings are given its signal where
- * their transport takes one and held to it either way, a read it ended
- * before it began is not started and goes on the report as a failed read,
- * and the tick still writes its receipt and lets its locks go. A tick no
- * launcher bounds has no bound, and reads as it always did.
+ * observe phase keeps to it: the tracker's assigner, claimed-item and
+ * claim-marker reads and the runtime's sessions are given its signal where
+ * their transport takes one and held to it either way, the forge's listings
+ * and paged queries ask nothing after it ends, a read it cut short goes on
+ * the report as a failed read of class `unreachable`, and the tick still
+ * writes its receipt and lets its locks go. A tick no launcher bounds has no
+ * bound, and reads as it always did.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
@@ -24,9 +25,17 @@ import type {
   SessionRuntime,
   SessionsReport,
 } from "../lib/runtime/port.ts";
-import { boundAt, type TickBound } from "../lib/sources/bounded.ts";
+import { boundAt, passedRead, type TickBound } from "../lib/sources/bounded.ts";
+import { outboundOf } from "../../shared/outbound/failure.ts";
+import { markClaims } from "../lib/sources/claim-markers.ts";
 import { readPickups } from "../lib/sources/tracker.ts";
 import { facetBound } from "../lib/sources/tracker-facets.ts";
+import {
+  type AskComments,
+  type AskPage,
+  readComments,
+  readRepository,
+} from "../lib/forge-batch.ts";
 import { tickComments } from "../lib/tick-comments.ts";
 import {
   deadlineOf,
@@ -147,6 +156,8 @@ describe("the tracker's reads under the tick's bound", () => {
         u.reason.endsWith(`${PASSED} they were read`),
       ),
     ).toBe(true);
+    // Each is a failed read, so the tick reports it rather than exiting clean.
+    expect(reading.unplaced.every((u) => u.readFailed === true)).toBe(true);
   });
 
   it("gives an assigner read the tick's signal and stops it in flight at the deadline", async () => {
@@ -165,6 +176,58 @@ describe("the tracker's reads under the tick's bound", () => {
       "who assigned it cannot be read: stopped at the tick's deadline",
     );
     expect(reasons["#2"]).toContain(`${PASSED} who assigned it was read`);
+    expect(
+      reading.unplaced
+        .filter((u) => u.target === "#1" || u.target === "#2")
+        .map((u) => u.readFailed),
+    ).toEqual([true, true]);
+  });
+
+  it("reads no claim marker once the bound has ended, and stops one in flight, each a failed read", async () => {
+    const asked: string[] = [];
+    const tracker = {
+      adapter: "github",
+      team: SLUG,
+      issueComments: (key: string) => {
+        asked.push(key);
+        return unanswered();
+      },
+    } as unknown as Tracker;
+    const cache = { get: () => null, set: () => undefined };
+    const claimed = ["#1", "#2"].map((key) => ({
+      key,
+      title: key,
+      url: null,
+      state: "In Progress",
+    }));
+    const skipped = await markClaims(
+      tracker,
+      "factory",
+      claimed,
+      cache,
+      spent(),
+    );
+    expect(asked).toEqual([]);
+    expect(skipped.claimed.map((c) => c.claimMarker)).toEqual([
+      "unread",
+      "unread",
+    ]);
+    expect(skipped.unplaced.map((u) => u.readFailed)).toEqual([true, true]);
+    const stopped = await markClaims(
+      tracker,
+      "factory",
+      claimed,
+      cache,
+      endsIn(50),
+    );
+    expect(asked).toEqual(["#1"]);
+    expect(stopped.unplaced.map((u) => [u.target, u.readFailed])).toEqual([
+      ["#1", true],
+      ["#2", true],
+    ]);
+    expect(stopped.unplaced[0]?.reason).toContain(
+      "stopped at the tick's deadline",
+    );
   });
 
   it("reads every assigner and the claimed items with no signal when the tick has no bound", async () => {
@@ -257,17 +320,16 @@ describe("the forge's reads under the tick's bound", () => {
   it("starts no repository query, comment listing or comments query once the bound has ended", async () => {
     const reads = tickReads(runtime, undefined, spent());
     expect(await reads.repository(REPO.path)).toEqual(
-      failed("unreadable", `${PASSED} the repository's query was read`),
+      passedRead("the repository's query was read"),
     );
     expect(await reads.comments.read(SLUG, 7)).toEqual(
-      failed("unreadable", `${PASSED} the comments of #7 were listed`),
+      passedRead("the comments of #7 were listed"),
     );
     expect(await reads.pullRequestComments(SLUG, [7, 8])).toEqual(
-      failed(
-        "unreadable",
-        `${PASSED} the merged pull requests' comments were read`,
-      ),
+      passedRead("the merged pull requests' comments were read"),
     );
+    const read = await reads.repository(REPO.path);
+    expect(read.ok ? null : outboundOf(read.failure)?.code).toBe("unreachable");
   });
 
   /** The forge's part of a tick under `bound`, its repository query answering `query`. */
@@ -312,6 +374,7 @@ describe("the forge's reads under the tick's bound", () => {
         source: `gh ${SLUG}`,
         ok: false,
         detail: `the pull requests cannot be read: ${PASSED} the pull requests were listed; the repository query did not read either: the query failed`,
+        failure: { class: "unreachable" },
       },
     ]);
   });
@@ -349,6 +412,75 @@ describe("the forge's reads under the tick's bound", () => {
     expect(report.records.map((r) => r.detail)).toEqual([
       `the pull requests cannot be read: ${PASSED} the merged pull requests were listed`,
     ]);
+  });
+});
+
+describe("a paged forge query under the tick's bound", () => {
+  /** One page of `size` pull requests after `after`, of a repository with more after it. */
+  const pageOf = (after: string | null, size: number) => {
+    const from = after === null ? 0 : Number(after);
+    return ok({
+      data: {
+        rateLimit: { cost: 1, remaining: 4990 },
+        repository: {
+          nameWithOwner: SLUG,
+          defaultBranchRef: { name: "main", target: { file: null } },
+          pullRequests: {
+            pageInfo: { hasNextPage: true, endCursor: String(from + size) },
+            nodes: Array.from({ length: size }, (_, i) => ({
+              number: from + i + 1,
+              headRefName: `feature/${from + i + 1}`,
+              labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+              comments: { pageInfo: { hasNextPage: false }, nodes: [] },
+            })),
+          },
+        },
+      },
+    });
+  };
+
+  it("asks no page after the bound ends, and fails as unreachable", async () => {
+    const bound = endsIn(60_000);
+    const asked: Array<string | null> = [];
+    const ask: AskPage = async (_path, after, size) => {
+      asked.push(after);
+      // The bound ends while the first page is answered.
+      if (after === null) bound.deadline = Date.now() - 1;
+      return pageOf(after, size);
+    };
+    const read = await readRepository(REPO.path, undefined, ask, bound);
+    expect(asked).toEqual([null]);
+    expect(read).toEqual(
+      passedRead("the next page of pull requests was asked"),
+    );
+    expect(read.ok ? null : outboundOf(read.failure)?.code).toBe("unreachable");
+  });
+
+  it("asks no smaller comments query after the bound ends", async () => {
+    const bound = endsIn(60_000);
+    const asked: number[] = [];
+    const ask: AskComments = async (_owner, _name, prs) => {
+      asked.push(prs.length);
+      bound.deadline = Date.now() - 1;
+      return failed("too-costly", "gh api graphql exited 1: gh: HTTP 504");
+    };
+    const read = await readComments(SLUG, [1, 2, 3, 4], undefined, ask, bound);
+    expect(asked).toEqual([4]);
+    expect(read.ok ? null : outboundOf(read.failure)?.code).toBe("unreachable");
+  });
+
+  it("reads every page when the query has no bound", async () => {
+    let pages = 0;
+    const ask: AskPage = async (_path, after, size) => {
+      pages += 1;
+      const page = pageOf(after, size);
+      if (pages === 3 && page.ok)
+        page.value.data.repository.pullRequests.pageInfo.hasNextPage = false;
+      return page;
+    };
+    const read = await readRepository(REPO.path, undefined, ask);
+    expect(pages).toBe(3);
+    expect(read.ok).toBe(true);
   });
 });
 

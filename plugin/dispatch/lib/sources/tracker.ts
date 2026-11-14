@@ -18,7 +18,8 @@
  * tick's own bound (`bounded.ts`): who assigned each item, the claimed
  * items and their claim markers. An item whose assigner the bound ended
  * before is unplaced with why, and claimed items it ended before are not
- * known, as when their read fails.
+ * known, as when their read fails; each is a failed read, so the tick
+ * reports it.
  */
 import { cacheForTracker } from "./tracker-cache.ts";
 import { sharedView, type ServedView } from "./served-reads.ts";
@@ -94,12 +95,13 @@ async function readClaimed(
   identity: string,
   tick?: FacetBound,
 ): Promise<ClaimedItem[] | Unplaced> {
-  const unread = (why: string): Unplaced => ({
+  const unread = (why: string, late = false): Unplaced => ({
     target: `items in ${workingNames(tracker)}`,
     record: "tracker",
     reason: `the items ${identity} claimed could not be read, so stalls and double claims are not checked: ${why}`,
+    ...(late ? { readFailed: true as const } : {}),
   });
-  if (ended(tick)) return unread(passedBefore("they were read"));
+  if (ended(tick)) return unread(passedBefore("they were read"), true);
   try {
     const issues = await heldTo(
       (signal) =>
@@ -126,7 +128,7 @@ async function readClaimed(
       }));
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    return unread(failureText(error));
+    return unread(failureText(error), ended(tick));
   }
 }
 
@@ -177,6 +179,7 @@ async function byTrustedAssigner(
         url: issue.url,
         record: "tracker",
         reason: `assigned to ${identity} in ${issue.state.name}, but ${passedBefore("who assigned it was read")}`,
+        readFailed: true,
       });
       continue;
     }
@@ -225,6 +228,9 @@ async function readAssigner(
         url: issue.url,
         record: "tracker",
         reason: `who assigned it cannot be read: ${failureText(error)}`,
+        ...(view === undefined && ended(tick)
+          ? { readFailed: true as const }
+          : {}),
       },
     };
   }
