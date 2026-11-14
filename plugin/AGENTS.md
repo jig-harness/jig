@@ -93,7 +93,7 @@ here reaches every repository at once.
   `bun run gates` fails any other throw (`scripts/check-throws.ts`); the
   skill scripts keep their own error handling.
 - **A call to an outside system goes through that system's transport**
-  ([ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md)): the
+  ([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)): the
   tracker adapters for a tracker, the `ghCall` wrappers for the forge, the
   store clients for a reflection store. Every such call has a deadline,
   every list a query selects has a page size, and a read that runs every
@@ -117,7 +117,10 @@ here reaches every repository at once.
   skill, and reading the sibling's `SKILL.md` (`../<name>/SKILL.md`) works in
   any of them. Any other capability names its fallback beside it.
 - **A hook** lives in `hooks/<name>.ts`, is registered in `hooks/hooks.json`
-  through `${CLAUDE_PLUGIN_ROOT}` (the one file both tools read), holds to
+  through `${CLAUDE_PLUGIN_ROOT}` (the file Claude Code reads; the Codex plugin
+  ships an empty `hooks/codex-hooks.json`, and a hook Codex needs is
+  registered in the Codex home by `jig upgrade`, as `runtime/codex-hook.ts`
+  does for the turn-budget guard), holds to
   the rules of M1's rung
   ([core piece 8](../modules/M1-gates-enforcement-ladder/README.md#core-pieces)),
   and has its tests in `hooks/__tests__/`; `tools/plugin/plugin.test.ts`

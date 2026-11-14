@@ -12,7 +12,7 @@
  * stands across releases, while the guard it runs is whichever copy the
  * plugin installed last.
  *
- * Which copy. `jig upgrade` copies this file to `~/.local/state/jig/hooks/`
+ * Which copy. `jig upgrade` copies this file to `~/.local/state/jig/hooks/<home key>/`
  * beside `turn-budget-guard.path`, one line naming the installed copy's guard.
  * The shim runs that guard with the payload on standard input and exits with
  * its status. A pointer that is missing, or names a guard that is gone, exits
@@ -25,6 +25,9 @@ import { dirname, join } from "node:path";
 /** The file beside the shim that names the installed copy's guard. */
 export const POINTER = "turn-budget-guard.path";
 
+/** The startup configuration beside the shim, read in place of a checkout's. */
+export const BUNFIG = "bunfig.toml";
+
 function main(): number {
   const pointer = join(dirname(import.meta.path), POINTER);
   let guard: string;
@@ -36,11 +39,15 @@ function main(): number {
     );
     return 1;
   }
-  const result = Bun.spawnSync([process.execPath, guard], {
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  const config = join(dirname(import.meta.path), BUNFIG);
+  const result = Bun.spawnSync(
+    [process.execPath, "--no-env-file", `--config=${config}`, guard],
+    {
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
   if (result.exitCode === null) {
     console.error(
       `jig turn-budget guard: ${guard} did not run (${result.signalCode ?? "no exit status"}); run \`jig upgrade --codex\``,

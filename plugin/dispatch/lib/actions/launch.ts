@@ -55,11 +55,18 @@ import type {
   BusyHolder,
   LaunchOutcome,
   RepoTarget,
+  Stage,
 } from "../types.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState } from "../load.ts";
+import {
+  checksStage,
+  heldAccounts,
+  heldDetail,
+  type Preflight,
+} from "../preflight.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -101,6 +108,8 @@ export interface ApplyState {
   root?: string;
   /** The host's gauges as this tick read them under the act lock, and what its launches have reserved of them (`load.ts`). */
   load?: LoadState;
+  /** The checks run on an account before a tracker stage launches on it, and their answers this tick (`preflight.ts`). */
+  preflight?: Preflight;
 }
 
 /**
@@ -627,7 +636,64 @@ export async function accountBlocked(
     return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
   const identity = await identityOf(state, slots);
   if ("waits" in identity) return identity.waits;
-  return identity.ok ? null : `identity check: ${identity.reason}`;
+  if (!identity.ok) return `identity check: ${identity.reason}`;
+  const preflight = state.preflight;
+  if (preflight === undefined || !checksStage(preflight, record.action))
+    return null;
+  const late = noPreflightRoom(state);
+  if (late !== null) return late;
+  const held = await heldAccounts(
+    preflight,
+    record.repo,
+    record.action as Stage,
+    [slots.account],
+    Math.ceil(state.machine.runtimeTimeoutMs / 1000),
+  );
+  return held.size === 0 ? null : heldDetail(held);
+}
+
+/** Why the tick has no time left for a preflight probe and its receipt; `null` when it has. */
+function noPreflightRoom(state: ApplyState): string | null {
+  const left = timeLeftMs(state);
+  return left !== null && left < settleMs(state.machine.runtimeTimeoutMs)
+    ? "the tick deadline has no room for the tracker preflight and its receipt; a later tick retries this one"
+    : null;
+}
+
+/**
+ * The accounts the preflight holds a launch of `action` back on, of those
+ * it could be admitted on under its deadline (a pickup's or a steward's
+ * `pickupDeadlineSec`, else the pass deadline), each with its answer; or
+ * the outcome of a launch the tick has no time left to ask for.
+ */
+async function preflightHolds(
+  state: ApplyState,
+  repo: string,
+  action: Action,
+  pickupDeadlineSec: number,
+): Promise<{ held: Map<string, string> } | { outcome: LaunchOutcome }> {
+  const preflight = state.preflight;
+  if (preflight === undefined || !checksStage(preflight, action.stage))
+    return { held: new Map() };
+  const late = noPreflightRoom(state);
+  if (late !== null) return { outcome: waits(action, late) };
+  const deadlineSec =
+    action.stage === "pickup" || action.stage === "steward"
+      ? pickupDeadlineSec
+      : state.passDeadlineSec;
+  const accounts = state.table.map((s) => s.account);
+  const never = new Set(
+    notAdmitted(accounts, deadlineSec, state.codexOptIn).map((n) => n.account),
+  );
+  const held = await heldAccounts(
+    preflight,
+    repo,
+    action.stage,
+    accounts.filter((a) => !never.has(a.name)),
+    Math.ceil(state.machine.runtimeTimeoutMs / 1000),
+    () => noPreflightRoom(state),
+  );
+  return { held };
 }
 
 function admission(
@@ -697,14 +763,18 @@ export async function admitAccount(
   pickupDeadlineSec = 0,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
   refreshWalls(state.table, state.records, Date.now(), state.root);
-  const failed = new Set<string>();
+  const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
+  if ("outcome" in checked) return checked;
+  const { held } = checked;
+  // An account the preflight holds is passed over, as one that fails its identity check is.
+  const failed = new Set<string>(held.keys());
   let refusal: LaunchOutcome | null = null;
   for (;;) {
     const admitted = admission(state, action, failed, pickupDeadlineSec);
     if ("waits" in admitted)
       return {
         outcome: refusal ?? {
-          ...waits(action, admitted.waits),
+          ...waits(action, withHeld(state, held, admitted.waits)),
           // A follow-up says what it waits on: here, the accounts.
           ...(action.stage === "followup" ? { waitsOn: "accounts" } : {}),
         },
@@ -719,6 +789,18 @@ export async function admitAccount(
     if (action.takeover !== undefined) return { outcome: refusal };
     failed.add(name);
   }
+}
+
+/** Why a launch waits on the accounts, the preflight's holds first: the slots alone would describe an account it held as free. */
+function withHeld(
+  state: ApplyState,
+  held: ReadonlyMap<string, string>,
+  why: string,
+): string {
+  if (held.size === 0) return why;
+  return state.table.every((s) => held.has(s.account.name))
+    ? heldDetail(held)
+    : `${heldDetail(held)}; otherwise ${why}`;
 }
 
 /** Opening a workspace can outlast the wall or the login the account was admitted under. */

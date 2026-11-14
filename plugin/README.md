@@ -55,6 +55,7 @@ runs, what it hands over to.
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
 | [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` | Comes before [decide](skills/decide/SKILL.md) and shares its sheet kit; cites the records [adr](skills/adr/SKILL.md) keeps |
+| [orchestrate](skills/orchestrate/README.md) | Turns a large, loosely bounded topic into recorded decisions, a reviewed plan and started issues; one session stays with the person while fresh sessions survey the tracks, keep the plan and file work | `/jig:orchestrate` | Prepares work for [file-issue](skills/file-issue/README.md) and [do-item](skills/do-item/README.md), uses [decide](skills/decide/SKILL.md) and [adr](skills/adr/SKILL.md) for decisions, and reads started work through [operator](skills/operator/SKILL.md) |
 | [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` | Called by [do-item](skills/do-item/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/README.md) when a call is architectural; routes an outcome that clears the bar to [adr](skills/adr/SKILL.md) |
 | [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/jig:adr` | Records what [decide](skills/decide/SKILL.md) rules; its rules are what [review](skills/review/SKILL.md) checks against |
 | [red-team](skills/red-team/README.md) | Reviews a requirements or architecture document adversarially: personas (a critical chief technology officer, a security auditor, a performance engineer, a cost optimizer and, for requirements, more who stand for the people who use and approve it) each read it in fresh context, and one report gives each persona's verdict and every finding with the passage, the risk and the question the author must answer; never edits the document | `/jig:red-team` | Questions the document from the standpoint of the people it affects, before any plan or code, where [review](skills/review/SKILL.md) checks the same document against the repository's standards and decisions: run both, since one does not replace the other; a dilemma a finding raises goes to [decide](skills/decide/SKILL.md), and the revised document gets a [descar](skills/descar/SKILL.md) pass before it is accepted |
@@ -522,6 +523,27 @@ account it bills. On Orca it runs through the headless wrapper used by
 follow-ups, with the admitted account's configuration directory and an
 identity check before launch. An interactive launch remains unavailable
 until the runtime can bind it to an account.
+
+Before a stage that touches the tracker launches (a follow-up, a pickup, or
+the steward's resume of one), the tick asks, headless, whether each account
+it could bill reaches the repository's tracker: it reads the tracker through
+the same port a pass uses, in the repository's checkout and the environment a
+pass on that account runs in, once per tick for each account and tracker
+([preflight](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#preflight) in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+An account the tracker refuses, or whose read gives no answer within the
+probe's deadline (an operating system keychain waiting for an approval, a
+lapsed connection), takes none of those launches that tick: the launch goes
+to another account, or waits, naming each answer. An answer that says
+nothing of the credential holds nothing: a rate limit, a server error or the
+network leave the stage to its own rate-limit and failure handling, and a
+configuration that opens no tracker to the stage's own failure. The line
+shows one need per account for the whole host, `tracker-unreachable`, act
+Authorize, its repository shown as `host`, naming every repository it holds
+and the answer, rather than a failed pass per pull request or item; fixing
+the credential is a person's. The next tick that has a tracker launch to
+start asks again, and once the answer passes the need is gone and the
+launches start. A drive's re-arm or takeover and the steward's own pass are
+never held by it.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
@@ -1351,7 +1373,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session` or `assign the item as someone who can write`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session`, `assign the item as someone who can write` or `authorize the account's tracker credential`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
@@ -2097,7 +2119,7 @@ them together.
   (`.codex-plugin/plugin.json` names an empty hooks file). `jig upgrade`
   registers the guard in `$CODEX_HOME/hooks.json` (`~/.codex` by default)
   instead, as one `PreToolUse` entry whose command never changes: it runs
-  `~/.local/state/jig/hooks/codex-turn-budget-guard.ts`, which runs the guard
+  `~/.local/state/jig/hooks/<home key>/codex-turn-budget-guard.ts` (one directory per Codex home, started with Bun's environment files and checkout configuration off), which runs the guard
   of the installed plugin copy. Codex trusts a hook there by its definition
   alone, so approve it once with `/hooks` and every later release keeps that
   approval. Another Codex home (an account's own) gets the entry when
@@ -2394,7 +2416,7 @@ plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
 plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
-plugin/hooks/hooks.json                  the agent-runtime hooks Claude Code registers (Codex's is `jig upgrade`'s entry, below)
+plugin/hooks/hooks.json                  the agent-runtime hooks both tools register
 plugin/hooks/<name>.ts                   the hook scripts, each tested in hooks/__tests__/
 ```
 
@@ -2424,9 +2446,7 @@ counts the session's agentic turns off the transcript and, within 50 turns of
 the runtime's cap of 1000, hands the agent a wrap-up instruction, so an
 unattended session writes its handoff before the runtime aborts it. It reads
 local files only, lets the call through whenever it cannot count (and says so
-as a hook error), and is off with `JIG_TURN_BUDGET=0`; Claude Code reads the
-registration from the plugin, and in Codex `jig upgrade` registers it in the
-Codex home ([Codex notes](#codex-notes)); its knobs are in
+as a hook error), and is off with `JIG_TURN_BUDGET=0`; its knobs are in
 [CONFIGURATION.md § Environment variables](CONFIGURATION.md#environment-variables)
 and the practice is [M1's rung](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md#core-pieces).
 
