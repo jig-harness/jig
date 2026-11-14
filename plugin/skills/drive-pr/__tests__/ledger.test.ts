@@ -279,20 +279,48 @@ describe("the size cut", () => {
     });
     const first = renderLedger(bulky(), full - 1);
     if ("error" in first) throw new Error(first.error);
-    expect(first.ledger.cut).toEqual(["CI telemetry", "held items' outcomes"]);
+    expect(first.ledger.cut).toEqual(["held items' outcomes"]);
     expect(first.ledger.held.every((h) => h.outcome === undefined)).toBe(true);
     expect(first.ledger.narrative).toHaveLength(20);
 
     const second = renderLedger(bulky(), noOutcomes - 1);
     if ("error" in second) throw new Error(second.error);
     expect(second.ledger.cut).toEqual([
-      "CI telemetry",
       "held items' outcomes",
       "the narrative",
     ]);
     expect(second.ledger.narrative).toEqual([]);
     expect(second.ledger.parked).toEqual(bulky().parked);
     expect(Buffer.byteLength(second.body)).toBeLessThanOrEqual(noOutcomes - 1);
+  });
+
+  it("names the telemetry cut only when telemetry was removed, and keeps it while trimming receipts", () => {
+    const rec = (n: number) => ({
+      key: `PRRT_r${n}`,
+      kind: "thread" as const,
+      reason: "x".repeat(2000),
+      parkedAt: "2026-11-10T09:00:00.000Z",
+      outcome: "answered" as const,
+      answers: [],
+      resolvedAt: "2026-11-10T11:00:00.000Z",
+    });
+    const l = {
+      ...bulky(),
+      ciActions: [
+        {
+          at: "2026-11-10T10:00:00.000Z",
+          round: 1,
+          action: "rerun" as const,
+          detail: "t".repeat(900),
+        },
+      ],
+      resolvedParks: [1, 2, 3, 4].map(rec),
+    };
+    const cut = renderLedger(l, sizeOf({ ...l, ciActions: [] }) - 1500);
+    if ("error" in cut) throw new Error(cut.error);
+    expect(cut.ledger.ciActions).toEqual([]);
+    expect(cut.ledger.cut[0]).toBe("CI telemetry");
+    expect(cut.ledger.cut.length).toBeGreaterThan(1);
   });
 
   it("refuses rather than drop a parked decision", () => {

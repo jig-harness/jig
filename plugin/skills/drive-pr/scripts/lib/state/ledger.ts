@@ -388,16 +388,22 @@ export function renderLedger(
   if (bytes(body) <= limit) return { body, ledger: l };
   // This is optional telemetry. It must not prevent the resumable control
   // record, its decisions, or the visible summary from fitting on the forge.
-  l = { ...l, ciActions: [], cut: [...l.cut, "CI telemetry"] };
-  body = ledgerBody(l, true, writer);
-  if (bytes(body) <= limit) return { body, ledger: l };
+  if ((l.ciActions ?? []).length > 0) {
+    l = { ...l, ciActions: [], cut: [...l.cut, "CI telemetry"] };
+    body = ledgerBody(l, true, writer);
+    if (bytes(body) <= limit) return { body, ledger: l };
+  }
   const receipts = l.resolvedParks ?? [];
+  const cutBeforeReceipts = l.cut;
   // The oldest receipts go first: the newest are the ones no tick has read.
   for (let keep = receipts.length - 1; keep >= 0; keep--) {
     l = {
       ...l,
       resolvedParks: receipts.slice(receipts.length - keep),
-      cut: [keep === 0 ? RESOLVED_PARKS_CUT : OLDER_PARKS_CUT],
+      cut: [
+        ...cutBeforeReceipts,
+        keep === 0 ? RESOLVED_PARKS_CUT : OLDER_PARKS_CUT,
+      ],
     };
     body = ledgerBody(l, true, writer);
     if (bytes(body) <= limit) return { body, ledger: l };

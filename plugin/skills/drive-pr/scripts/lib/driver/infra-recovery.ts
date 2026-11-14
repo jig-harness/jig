@@ -309,7 +309,7 @@ async function rerunAll(
 }
 
 /** How the forge says a run is not one it re-runs, as against a call that failed. */
-const REFUSED =
+export const REFUSED =
   /cannot be (?:retried|re-?run)|not (?:be )?(?:retried|re-?run)|HTTP 40[34]\b/iu;
 
 /** What `moveHead` reads of a command it ran. */

@@ -8,6 +8,7 @@ import {
 } from "../state/lease.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { rerunnableRuns } from "./failed-runs.ts";
+import { REFUSED } from "./infra-recovery.ts";
 import type { RetryForge } from "./ci-attempts.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
@@ -100,12 +101,16 @@ export const failedCheckForge: RetryForge = {
           detail: "the PR closed, its head changed, or CI is held",
         };
       const retry = await ghCall(["run", "rerun", String(id), "--failed"]);
+      const detail = retry.stderr.trim() || `forge exit ${retry.code}`;
       return {
         ok: retry.code === 0,
-        // A transport/process failure after issuing the mutation is not proof
-        // GitHub refused it; the caller must reconcile rather than repair.
-        ...(retry.code === 0 ? {} : { indeterminate: true }),
-        detail: retry.stderr.trim() || `forge exit ${retry.code}`,
+        // A definitive refusal leaves the code failure to the repair pass; any
+        // other failure after issuing the mutation is not proof GitHub refused
+        // it, so the caller must reconcile rather than repair.
+        ...(retry.code === 0 || REFUSED.test(detail)
+          ? {}
+          : { indeterminate: true }),
+        detail,
         attempt: run.value.attempt,
       };
     } catch (err) {

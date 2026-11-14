@@ -9,6 +9,7 @@ import { retryWitness } from "./ci-retry-wait.ts";
 import { reviewedRerunFailedOnceSetting } from "./ci-attempts-config.ts";
 import { failedCheckForge } from "./ci-retry-forge.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
+import { exportPolicyBase } from "./policy-base.ts";
 import { sleep } from "../cli.ts";
 import { FINAL_CI_POLL_SECONDS, UNLABEL_SETTLE_SECONDS } from "./settings.ts";
 
@@ -41,13 +42,20 @@ export async function beforeRepairRecovery(
   if (!finalVerdict.startsWith("failing:") || stale) return null;
   const infra = await recoverInfrastructureFailure(context, head, failing);
   if (infra !== null) return infra;
+  if (context.dryRun || context.agent.length === 0) return null;
+  // A base that moved or a retargeted PR must not leave the previous base's permission in force.
+  const policyBase = await exportPolicyBase(context.pr);
+  if ("error" in policyBase) {
+    // No retry authority without a readable base; the repair path is unaffected.
+    console.error(`CI retry skipped, policy unreadable: ${policyBase.error}`);
+    return null;
+  }
   const enabled = reviewedRerunFailedOnceSetting();
   if (!enabled.ok) {
     console.error(enabled.failure.reason);
     return 1;
   }
-  if (!enabled.value || context.dryRun || context.agent.length === 0)
-    return null;
+  if (!enabled.value) return null;
   const checkpoint = await context.mailboxCheckpoint();
   if (typeof checkpoint === "number") return checkpoint;
   if (checkpoint === "resumed") return "continue";
