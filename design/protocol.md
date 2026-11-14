@@ -23,8 +23,8 @@ the generator, its gate and the chapter on the drive's end states and exit
 codes; the records chapters, on hidden comment markers and on the
 follow-up claim and its result; the chapters on the drive mailbox and on
 the pull-request labels; and the chapter on the commands a repository
-supplies. The steps after them in § Build order are open. The decision
-that a chapter and the code must agree is
+supplies; the site renders the chapters at `/protocol/`. The steps after
+them in § Build order are open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works

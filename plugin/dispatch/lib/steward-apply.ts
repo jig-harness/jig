@@ -14,6 +14,7 @@ import {
   recordBelongsToDigest,
   rearmableBySteward,
   releaseStewardRecord,
+  STEWARD_REFUSED_OPEN,
   stewardRecords,
   type KeptStewardRecord,
   type StewardDigest,
@@ -195,7 +196,11 @@ async function applyOne(
   }
   if (!recordBelongsToDigest(kept.value, digest.value)) {
     if (claimStewardRecord(kept.id, state.root))
-      markStewardEffect(kept.id, "refused", state.root);
+      markStewardEffect(
+        kept.id,
+        kept.value.kind === "resume" ? STEWARD_REFUSED_OPEN : "refused",
+        state.root,
+      );
     observation.opened.report.unplaced.push({
       record: "runtime",
       target: `steward record ${kept.id}`,
