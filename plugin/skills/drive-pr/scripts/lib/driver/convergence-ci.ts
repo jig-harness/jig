@@ -31,12 +31,15 @@ import { ciRepairSkillSetting } from "./../overlay.ts";
 import { type RepairCi, runRepairPass } from "./repair.ts";
 import { announcePolicyBase } from "./policy-base.ts";
 
-import {
-  type FailingChecks,
-  recoverInfrastructureFailure,
-} from "./infra-recovery.ts";
+import type { FailingChecks } from "./infra-recovery.ts";
 
 import { driverRuntime } from "./runtime.ts";
+import { attemptsFor, chargeRepair, repairSelection } from "./ci-attempts.ts";
+import {
+  beforeRepairRecovery,
+  pendingRetryDisposition,
+} from "./ci-recovery.ts";
+import { recordCiAttempt } from "./ci-attempt-record.ts";
 
 export async function releaseAndReadFinalCi(
   context: DriveRoundContext,
@@ -403,7 +406,18 @@ async function repairConvergedCi(
   finalVerdict: string,
   context: DriveRoundContext,
   failing: FailingChecks,
+  head: string,
 ): Promise<number | "continue"> {
+  const attempts = attemptsFor(context);
+  const selection = repairSelection(
+    head,
+    failing,
+    attempts,
+    context.ciRepairBudget,
+  );
+  failing = selection.failing;
+  if (selection.names.length === 0) return CI_REPAIR_SPENT_EXIT;
+  finalVerdict = `failing: ${selection.names.join(", ")}`;
   const failingNames = finalVerdict.slice("failing:".length).trim();
   if (context.dryRun || context.agent.length === 0) {
     console.error(
@@ -427,7 +441,7 @@ async function repairConvergedCi(
     // "Never charge until certain" needs no compensating action at
     // all — this line only has to DISPLAY the attempt number the
     // dispatch below, if it happens, will actually become.
-    `  Running CI-repair pass ${context.ciRepairs + 1}/${context.ciRepairBudget} (DRIVE_PR_CI_REPAIR_ROUNDS=${context.ciRepairBudget}; 0 stops here instead).`,
+    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (DRIVE_PR_CI_REPAIR_ROUNDS=${context.ciRepairBudget}; 0 stops here instead).`,
   );
   // The repair dispatches ahead of the round's own refresh: resolve the
   // policy base again, for a pull request retargeted since.
@@ -458,6 +472,10 @@ async function repairConvergedCi(
   }
   // Confirmed dispatch — NOW commit the charge.
   context.ciRepairs += 1;
+  const charges = chargeRepair(head, failing, attempts);
+  const charged = `head ${head}: ${charges.map((charge) => `${charge}/${context.ciRepairBudget}`).join(", ")}`;
+  console.error(`  Charged CI repair for ${charged}.`);
+  await recordCiAttempt(context.pr, "repair", charged);
   const repairCode = repair.code;
   // Checked before `postPassMailboxExit` — a lock takeover means
   // this driver has already lost authority over the PR, which
@@ -625,13 +643,16 @@ export async function evaluateFinalCi(
   >,
   failing: FailingChecks,
 ): Promise<number | "continue" | null> {
+  const pending = await pendingRetryDisposition(context, reviewedHead);
+  if (pending !== null) return pending;
   const special = await specialCiDisposition(
     finalVerdict,
     staleRequiredFailure,
     context,
     reviewedHead,
     failing,
-    repairConvergedCi,
+    (verdict, ctx, failures) =>
+      repairConvergedCi(verdict, ctx, failures, reviewedHead),
   );
   if (typeof special !== "object") return special;
   ({ finalVerdict, failing } = special);
@@ -651,20 +672,31 @@ export async function evaluateFinalCi(
   // A failure every one of whose checks failed on the infrastructure is
   // re-run first, whatever the repair budget: no code change fixes it, so it
   // spends no repair pass (`infra-recovery.ts`).
-  if (finalVerdict.startsWith("failing:") && !staleRequiredFailure) {
-    const infra = await recoverInfrastructureFailure(
-      context,
-      reviewedHead,
-      failing,
-    );
-    if (infra !== null) return infra;
-  }
+  const recovered = await beforeRepairRecovery(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+  );
+  if (recovered !== null) return recovered;
+  const selection = repairSelection(
+    reviewedHead,
+    failing,
+    attemptsFor(context),
+    context.ciRepairBudget,
+  );
   if (
     finalVerdict.startsWith("failing:") &&
     !staleRequiredFailure &&
-    context.ciRepairs < context.ciRepairBudget
+    selection.names.length > 0
   ) {
-    return await repairConvergedCi(finalVerdict, context, failing);
+    return await repairConvergedCi(
+      finalVerdict,
+      context,
+      failing,
+      reviewedHead,
+    );
   }
   // A `pending:` verdict is never a stop condition: it reaches here
   // only when `finalCi.code === 4` (the branch above let it through
@@ -685,7 +717,7 @@ export async function evaluateFinalCi(
     // person, and a caller reading the exit alone must tell it from a crash.
     if (finalVerdict.startsWith("failing:") && context.ciRepairBudget > 0) {
       console.error(
-        `  (${context.ciRepairs} of ${context.ciRepairBudget} CI-repair pass(es) already run — the budget is spent: exit ${CI_REPAIR_SPENT_EXIT}, CI_REPAIR_SPENT.)`,
+        `  (${selection.used} of ${context.ciRepairBudget} CI-repair pass(es) already run per failing check on head ${reviewedHead} — the budget is spent: exit ${CI_REPAIR_SPENT_EXIT}, CI_REPAIR_SPENT.)`,
       );
       return CI_REPAIR_SPENT_EXIT;
     }

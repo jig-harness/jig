@@ -6,6 +6,7 @@ import type { DriveLock } from "./locks.ts";
 import type { AccountIdentity } from "./../identity.ts";
 
 import type { InfraRecovery } from "./infra-recovery.ts";
+import type { CiAttempts } from "./ci-attempts.ts";
 
 export interface DriveRoundContext {
   /** A requested worktree settlement is pending until a review pass succeeds. */
@@ -23,8 +24,11 @@ export interface DriveRoundContext {
   readyFlippedToDraftBeforeRecord: boolean;
   finalCiWait: FinalCiWait;
   witnessWaits: number;
+  /** Total dispatched repairs for diagnostics; allowances use `ciAttempts`. */
   ciRepairs: number;
   ciRepairBudget: number;
+  /** Retry and repair counts keyed by the exact head and check name. */
+  ciAttempts?: CiAttempts;
   /** Re-runs and head moves spent on infrastructure failures (`infra-recovery.ts`). */
   ciInfra: InfraRecovery;
   dryRun: boolean;

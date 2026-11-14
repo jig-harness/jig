@@ -137,6 +137,7 @@ function dispatchTable(name: string, owner: string, table: string): RecordKind {
 }
 
 const DRIVE_STATE: RecordKind[] = [
+  // Optional ciActions telemetry is a bounded top-level tail, ignored by older readers.
   driveTable("drive-state", `${STATE}store.ts`, "drive_state"),
   driveTable("drive-lock", `${STATE}lock.ts`, "locks"),
   driveTable("drive-pr-lease", `${STATE}lease-admission.ts`, "leases"),
@@ -691,6 +692,7 @@ const TREE: RecordKind[] = [
 ];
 
 const FORGE: RecordKind[] = [
+  // The ledger mirrors optional ciActions without extending the control-event vocabulary.
   {
     name: "drive-ledger",
     medium: "forge",

@@ -360,33 +360,13 @@ export function passTimeoutSeconds(): number {
 // ── Repair rounds ────────────────────────────────────────────────
 
 /**
- * The two stops this loop used to hand back to a human for work it can do
- * itself: a red final-CI verdict, and a conflict with no workable finding.
+ * CI repair allowances belong to each exact head and failing check. Conflict
+ * repair allowances belong to the driver. Both live in memory, so a re-armed
+ * driver starts with fresh allowances without changing stored state. Charge
+ * only a pass that actually dispatched.
  *
- * Both were defended on the same reasoning — "this is not a review round, and
- * a triage pass has nothing to do with it" — which is true of TRIAGE and false
- * of the PASS. The pass is a general agent with `/jig:fix-ci` and
- * `/jig:resolve-conflicts` available to it, and `base-sync.ts`'s exit-9
- * row already documents the conflict procedure *for a pass to follow*. The
- * asymmetry that gave the game away: a conflict WITH findings already comes
- * back `ROUND_READY` and gets merged as part of that round, so the identical
- * work was already being done — just never when it was the only thing left.
- *
- * Measured before the change (98 drives in the nine days after `ci:hold`
- * landed): 57 converged, 19 stopped for `/fix-ci`, 9 stopped on a conflict.
- * Roughly 29% of drives ended on a stop whose fix was a command.
- *
- * BUDGETS ARE IN-MEMORY, and that is deliberate rather than a shortcut. The
- * alternative — a `DriveState` field — is not available at an acceptable
- * price: `isUsableState` refuses any file written before a field existed
- * (there is no optional-and-defaulted tier, by documented design), so adding
- * one stops every in-flight drive on the fleet at its next state read. The
- * precedent is `noopRounds`, whose own streak is in-memory for the same
- * reason and whose reset-on-restart semantics are already documented to
- * operators in the skill's `README.md`. A re-armed drive therefore gets a fresh
- * repair budget, exactly as it gets a fresh stall streak.
- *
- * `0` disables a repair kind, restoring the older stop verbatim.
+ * `0` disables repair passes. Failed-job retries are independently controlled
+ * by `ci.rerun_failed_once` and never charge a repair allowance.
  */
 const CI_REPAIR_ROUNDS_DEFAULT = 2;
 
