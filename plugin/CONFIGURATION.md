@@ -397,6 +397,16 @@ follows but nothing stops it from ignoring. A host that needs a mechanical
 limit puts Claude Code `permissions.deny` rules or hooks in that account's own
 settings, since a pull request can edit the checkout's.
 
+**Hook trust under Codex.** A pass's `codex exec` runs only the hooks Codex
+has been told to trust, and it cannot ask. The turn-budget guard `jig upgrade`
+registers needs one approval per Codex home (`/hooks`), after which it keeps it
+across releases ([Codex notes](README.md#codex-notes)). A host that cannot
+approve and vets every hook source its Codex home loads types its pass command
+by hand with `--dangerously-bypass-hook-trust`, which runs the enabled hooks
+without persisted trust for that one run. It is separate from
+`drive.codex_bypass`, which neither sets nor implies it, and Jig's own pass
+commands do not add it.
+
 **Why a repository's file cannot say.** It is shared by everyone who clones it,
 so it cannot know what a host's account reaches, and a drive reads it from the
 pull request's own checkout, so a pull request could give its own passes bypass

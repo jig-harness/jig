@@ -19,6 +19,7 @@ function jig(...args: string[]) {
       HOME: home,
       USERPROFILE: home,
       JIG_HOME: join(home, ".jig"),
+      CODEX_HOME: join(home, ".codex"),
     },
     stdout: "pipe",
     stderr: "pipe",
