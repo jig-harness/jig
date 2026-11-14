@@ -554,6 +554,82 @@ describe("the accounting of runs whose answers say little of the balance", () =>
     governor.release?.(KEY, "requests", sentAt);
     expect(store.read(KEY)?.requests.remaining).toBe(4001);
   });
+
+  it("keeps a snapshot's settlement through an ordinary answer, so a later release gives nothing back", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, record);
+    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 4001, resetAt: reset },
+      },
+      now,
+    );
+    now += 10;
+    governor.observe(
+      KEY,
+      { requests: { limit: 5000, remaining: 4000, resetAt: reset } },
+      now - 1,
+    );
+    now += 10;
+    governor.release?.(KEY, "requests", sentAt);
+    expect(store.read(KEY)?.requests.remaining).toBe(4000);
+  });
+
+  it("does not let an answer from an ended window replace a guessed reset", async () => {
+    const store = memoryBudgetStore();
+    let now = 3_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, record);
+    governor.admit("GitHub", KEY, {
+      reserve: "requests",
+      rollMs: 3_600_000,
+    });
+    const rolled = store.read(KEY)?.requests;
+    expect(rolled?.estimated).toBe(true);
+    now += 1000;
+    governor.observe(KEY, {
+      requests: { limit: 5000, remaining: 4000, resetAt: reset },
+    });
+    expect(store.read(KEY)?.requests).toEqual(rolled);
+  });
+
+  it("reserves a conditional request whose answer's headers are not read", async () => {
+    const store = memoryBudgetStore();
+    setForgeGovernor(
+      budgetGovernor(store, { clock: () => 1_000_000, share: () => null }),
+    );
+    store.update(KEY, record);
+    const forge = client(() => ok(""));
+    await forge.run(["api", "--silent", "-H", "If-None-Match: x", "repos/o/r"]);
+    expect(store.read(KEY)?.requests.remaining).toBe(3999);
+  });
+
+  it("keys Enterprise credentials by the Enterprise token the client uses", () => {
+    const one = githubCredential({
+      GH_HOST: "ghe.example.com",
+      GH_ENTERPRISE_TOKEN: "one",
+    });
+    const two = githubCredential({
+      GH_HOST: "ghe.example.com",
+      GH_ENTERPRISE_TOKEN: "two",
+    });
+    expect(one).not.toBe(two);
+    expect(
+      githubCredential({ GH_HOST: "ghe.example.com", GH_TOKEN: "x" }),
+    ).not.toBe(githubCredential({ GH_TOKEN: "x" }));
+  });
 });
 
 describe("what a refusal holds and what its caller is told", () => {

@@ -224,11 +224,8 @@ was sent: the caller reads the item again before it writes again.
 
 ## Build order
 
-One pull request per remaining step. GitHub's budget and reuse change the
-same transport files and are built in that order.
+One pull request per remaining step.
 
-- **GitHub in the budget record.** Its profile; the wrapper admits and
-   observes; the tick's own budget read goes.
 - **Reuse.** Move the existing queue snapshots and assignment caches into
    `cache`, `coalesce` and `batch`. The remaining reads adopt the library:
    the deferral script's tracker calls through the adapter, and the nested

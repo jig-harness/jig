@@ -123,14 +123,21 @@ export const GITHUB_WINDOW_NAMES: Readonly<Record<string, GitHubLimit>> = {
 /**
  * The key the credential's record and its ledger rows are kept under: a
  * hash of the token the client sends, or for the client's own stored login,
- * of the host and configuration it reads it from.
+ * of the host and configuration it reads it from. A stored login is opaque:
+ * the same token supplied through the environment keys a separate record, and
+ * a host named only on a command line is not an input here.
  */
 export function githubCredential(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const token = env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim();
-  if (token) return credentialKey("github", token);
   const host = env.GH_HOST?.trim() ?? "";
+  // The client reads the Enterprise variables for a host other than
+  // github.com, and the others for github.com.
+  const enterprise = host !== "" && host.toLowerCase() !== "github.com";
+  const token = enterprise
+    ? env.GH_ENTERPRISE_TOKEN?.trim() || env.GITHUB_ENTERPRISE_TOKEN?.trim()
+    : env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim();
+  if (token) return credentialKey("github", token);
   const config = env.GH_CONFIG_DIR?.trim() ?? "";
   return credentialKey(
     "github",
@@ -201,7 +208,7 @@ export function apiRoute(args: readonly string[]): string {
   return "";
 }
 
-/** A request GitHub answers 304 without charging it, when nothing changed. */
+/** A request GitHub answers 304 without charging it, when nothing changed; a 200 to it is charged like any other. */
 function conditional(args: readonly string[]): boolean {
   return args.some(
     (arg, i) =>
@@ -212,20 +219,22 @@ function conditional(args: readonly string[]): boolean {
 
 /**
  * What the run is admitted against: the windows of the limits it spends.
- * It reserves one request of a REST limit unless it is conditional, and one
- * point of the GraphQL balance for a run whose answer may not report its
- * cost: a query costs at least a point, so the share still moves toward its
- * floor when no answer says the balance.
+ * It reserves one request of a REST limit, except for a conditional request
+ * whose answer's headers are read (`readable`): they say whether it was
+ * charged. It reserves one point of the GraphQL balance for a run whose
+ * answer may not report its cost: a query costs at least a point, so the
+ * share still moves toward its floor when no answer says the balance.
  */
 function admission(
   limits: readonly GitHubLimit[],
   args: readonly string[],
+  readable: boolean,
 ): AdmitOptions {
   const windows = limits.map((l) => GITHUB_PROFILE.limits[l].window);
   const only = limits.length === 1 ? limits[0] : undefined;
   const spent: GitHubLimit | null =
     only !== undefined && GITHUB_PROFILE.limits[only].unit === "requests"
-      ? conditional(args)
+      ? conditional(args) && readable
         ? null
         : only
       : limits.includes("graphql")
@@ -501,7 +510,7 @@ export function ghGovernance(
   const key = githubCredential(opts.env ?? process.env);
   const gov = governor();
   const { argv, strip } = withHeaders(args, opts.captured);
-  const admitted = admission(limits, args);
+  const admitted = admission(limits, args, strip || askedHeaders(args));
   return {
     argv,
     admit() {

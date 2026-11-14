@@ -356,10 +356,25 @@ function merged(
   sentAt: number | undefined,
 ): BudgetWindow {
   if (next === undefined) return prev;
-  const read = { ...next, readAt: now, answeredAt: now };
+  // The settlement watermark of the last snapshot stays: `release` relies on
+  // it to give back nothing a snapshot already credited.
+  const read: BudgetWindow = {
+    ...next,
+    readAt: now,
+    answeredAt: now,
+    ...(prev.snapshotSentAt == null
+      ? {}
+      : { snapshotSentAt: prev.snapshotSentAt }),
+  };
   const count = next.remaining;
-  // A guessed reset yields to any answer that reports the window.
-  if (prev.estimated === true && count !== null) return read;
+  // A guessed reset yields to an answer that reports the current window,
+  // not to one from a window that has already ended.
+  if (
+    prev.estimated === true &&
+    count !== null &&
+    (next.resetAt === null || next.resetAt > now)
+  )
+    return read;
   if (count === null) return olderWindow(prev, next) ? prev : read;
   if (sameResetWindow(prev, next) && prev.remaining !== null)
     return { ...read, remaining: Math.min(prev.remaining, count) };
@@ -631,7 +646,8 @@ function snapshotOf(
   // A snapshot delayed across a reset says nothing of the window since.
   if (
     next === undefined ||
-    (prev.estimated !== true && olderWindow(prev, next))
+    (prev.estimated !== true && olderWindow(prev, next)) ||
+    (prev.estimated === true && next.resetAt !== null && next.resetAt <= now)
   )
     return prev;
   const since = sentAt ?? now;
@@ -647,9 +663,7 @@ function snapshotOf(
     return {
       ...read,
       remaining: Math.min(prev.remaining, next.remaining),
-      ...(prev.snapshotSentAt == null
-        ? {}
-        : { snapshotSentAt: prev.snapshotSentAt }),
+      snapshotSentAt: Math.max(prev.snapshotSentAt ?? since, since),
     };
   return { ...read, snapshotSentAt: since };
 }
