@@ -78,6 +78,15 @@ path that produces the exit, not because none of them name one.
 | `20` | `TAKEN_OVER` | **yes** | `drive.ts` only: another clone took the drive over. At a round boundary, before spawning a pass, or after renewing its ledger heartbeat through a quota sleep or a mailbox pause, the driver read a takeover claim in force on the PR, from another clone, newer than its own position (its own claim, or the position its clone's ledger records), and stopped without another pass, so it never replies beside its successor; it writes no further ledger. A `--take-over` whose own claim lost to a rival's earlier claim on the same ledger generation stops with it too. Nothing to recover here: that clone drives now. Re-arming beside it is refused with exit `13` while the ledger names it running (§ Picking up a stopped drive) |
 | `2` | `UNSUPPORTED_CLI` | **yes** | A `gh` that cannot report every required PR field, including draft state and mergeability. Reported through the JSON contract; an argument error, which precedes any PR to describe, exits without one |
 
+Exit `17` (`PUSH_HELD`) belongs to the same numbering but is no end state of
+`drive-status.ts` or `drive.ts`: `guarded-push.ts` returns it when a mailbox
+`hold-push` directive is in force and nothing was pushed, before the push
+or, through `push-hold-recheck.ts` at the end of the pre-push hook, while
+the hook runs. Resume the hold, then push again (§ The drive mailbox in
+`SKILL.md`). The code is held in
+[`terminal-states.ts`](../scripts/lib/status/terminal-states.ts) so that no
+state or exit is given it.
+
 Infrastructure retry budgets accept integers from 0 through 100; invalid or
 excessive values use the default. A base-sync refusal or unreadable report
 stops recovery without an empty commit. A successful local base merge is
