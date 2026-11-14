@@ -474,8 +474,6 @@ export async function unchangedSinceProof(
   path: string,
   identity: WorktreeIdentity,
 ): Promise<Outcome<undefined, string>> {
-  const same = await identityUnchanged(path, identity);
-  if (!same.ok) return failed("changed", `kept: ${same.failure.reason}`);
   const tracked = await trackedState(path, identity.admin);
   if (!tracked.ok) return tracked;
   const veto = localWorktreeVeto({
@@ -484,6 +482,9 @@ export async function unchangedSinceProof(
   });
   if (veto !== null)
     return failed("changed", `kept after the proof: ${veto.reason}`);
+  // Last, so a commit made while the slow scans above ran is seen.
+  const same = await identityUnchanged(path, identity);
+  if (!same.ok) return failed("changed", `kept: ${same.failure.reason}`);
   return ok(undefined);
 }
 /**
