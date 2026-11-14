@@ -3,19 +3,21 @@
  * timer's install preview.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { jobFiles } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec } from "../install.ts";
 import type { LaunchRecord } from "../lib/launches.ts";
+import { stateDb } from "../lib/state.ts";
 import { wallOf, writeWall } from "../lib/walls.ts";
 import { type World, world } from "./fixtures.ts";
 import {
   account,
   claimed,
   driveRuns,
+  dispatchState,
   earlierRecord,
   machineFile,
 } from "./launch-fixtures.ts";
@@ -34,20 +36,101 @@ afterEach(() => {
   current = null;
 });
 
-async function runWrapper(w: World, args: string[]) {
+async function runWrapper(w: World, args: string[], onStderr?: () => void) {
   const child = Bun.spawn(
     [process.execPath, "--no-env-file", `--config=${BUNFIG}`, RUN_TS, ...args],
     { cwd: w.repo, env: w.env, stdout: "pipe", stderr: "pipe" },
   );
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
+    new Response(
+      child.stderr.pipeThrough(
+        new TransformStream({
+          transform(chunk, controller) {
+            onStderr?.();
+            controller.enqueue(chunk);
+          },
+        }),
+      ),
+    ).text(),
     child.exited,
   ]);
   return { exitCode, stdout, stderr };
 }
 
 describe("the wrapper", () => {
+  it("keeps later stdout after older stderr when the combined output exceeds its bound", async () => {
+    const w = world();
+    current = w;
+    const id = "20261031T080000Z-abcdef14";
+    earlierRecord(w, { id, account: "a", token: "the-token" });
+    writeFileSync(join(w.dir, "drive-stderr"), "old stderr\n".repeat(1000));
+    writeFileSync(join(w.dir, "drive-hold"), "");
+    writeFileSync(
+      join(w.dir, "drive-output"),
+      "newest stdout: digest read failed",
+    );
+    expectSpawnExit(
+      await runWrapper(w, [id, "the-token"], () =>
+        rmSync(join(w.dir, "drive-hold"), { force: true }),
+      ),
+      0,
+    );
+    const row = stateDb(dispatchState(w))
+      .query("SELECT exit FROM launches WHERE id = ?")
+      .get(id) as { exit: string };
+    expect(JSON.parse(row.exit).context).toEndWith(
+      "newest stdout: digest read failed",
+    );
+  });
+
+  it("keeps a CI-stopped drive's output for the steward", async () => {
+    const w = world();
+    current = w;
+    const id = "20261031T080000Z-abcdef13";
+    earlierRecord(w, { id, account: "a", token: "the-token" });
+    writeFileSync(
+      join(w.dir, "drive-output"),
+      "CI-repair passes spent; inspect failing check",
+    );
+    writeFileSync(join(w.dir, "drive-exit"), "21");
+    expectSpawnExit(await runWrapper(w, [id, "the-token"]), 21);
+    const row = stateDb(dispatchState(w))
+      .query("SELECT exit FROM launches WHERE id = ?")
+      .get(id) as { exit: string };
+    expect(JSON.parse(row.exit).context).toContain(
+      "CI-repair passes spent; inspect failing check",
+    );
+  });
+
+  it("retains a steward's output when it exits zero without a question or submission", async () => {
+    const w = world();
+    current = w;
+    const id = "20261031T080000Z-abcdef12";
+    earlierRecord(w, {
+      id,
+      account: "a",
+      token: "the-token",
+      action: "steward",
+      headless: true,
+      pr: null,
+    });
+    writeFileSync(
+      join(w.dir, "claude-said"),
+      "Cannot read digest; token=the-token",
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "0");
+    expectSpawnExit(await runWrapper(w, [id, "the-token"]), 0);
+    const row = stateDb(dispatchState(w))
+      .query("SELECT exit, result FROM launches WHERE id = ?")
+      .get(id) as { exit: string; result: string | null };
+    expect(row.result).toBeNull();
+    const exit = JSON.parse(row.exit);
+    expect(exit.context).toContain("Cannot read digest; token=[launch token]");
+    expect(exit.context.length).toBeLessThanOrEqual(8000);
+    expect(exit.said).toBeUndefined();
+  });
+
   it("refuses a record another wrapper already claimed, and starts nothing", async () => {
     const w = world();
     current = w;

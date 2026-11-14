@@ -2006,7 +2006,12 @@ list of scouts that run before it, not a label to a scout.
 
 **Add `.context/` to `.gitignore`.** A drive keeps working files there, at
 the root of the working tree, and refuses to push or certify a tree with
-untracked files.
+untracked files. The skills write throwaway working files under
+`.context/scratch/`, and a working directory of Jig's that nothing needs once
+the work is finished carries a `CACHEDIR.TAG` file; `jig gc` keeps anything
+else under `.context/` until it is preserved, except a drive's handoff file
+(`pr-drive-<PR>.md`), which it sets aside whole without archiving: keep nothing
+you need in it.
 
 **Continuous integration.** Without configuration a drive waits, on the final
 head, for the checks the base branch's protection requires, and every push

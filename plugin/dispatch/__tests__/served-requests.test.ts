@@ -187,6 +187,107 @@ describe("a served queue's cost in tracker requests", () => {
     );
   });
 
+  it("keeps a history that names no user assignment until the item changes", async () => {
+    for (const history of ["none", "no-user"] as const) {
+      const fake = queue();
+      fake.add({ identifier: "ENG-900", assignee: PERSON, history });
+      const tracker = fake.tracker();
+      const cache = memoryCache();
+      const first = await tick(tracker, cache, 0);
+      const row = first.unplaced.find((u) => u.target === "ENG-900");
+      expect(row?.reason).toContain(
+        history === "none"
+          ? "its history holds no assignment of"
+          : "its assignment was made by no user",
+      );
+      const mark = fake.count();
+      const second = await tick(tracker, cache, 2);
+      expect(fake.requests.slice(mark)).toEqual(["TrackerChanges"]);
+      expect(second.unplaced.find((u) => u.target === "ENG-900")).toEqual(row);
+      expect(second.wanted).toHaveLength(50);
+
+      // The item changes: its history is read again.
+      fake.touch("ENG-900", at(3));
+      const changed = fake.count();
+      await tick(tracker, cache, 4);
+      expect(fake.requests.slice(changed)).toContain(
+        "TrackerAssignmentHistory",
+      );
+    }
+  });
+
+  it("reads neither the children nor the description of an epic no user assigned", async () => {
+    const fake = queue();
+    fake.add({
+      identifier: "ENG-900",
+      assignee: PERSON,
+      labels: ["epic"],
+      history: "none",
+    });
+    fake.add({ identifier: "ENG-901", parent: "ENG-900" });
+    const read = await tick(fake.tracker(), memoryCache(), 0);
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "ENG-900",
+        reason: expect.stringContaining("its history holds no assignment of"),
+      }),
+    );
+    expect(fake.requests).not.toContain("TrackerOpenChildren");
+    expect(fake.requests).not.toContain("TrackerIssue");
+  });
+
+  it("reads a malformed history again on the next tick", async () => {
+    for (const history of ["no-actor", "bad-target"] as const) {
+      const fake = queue();
+      fake.add({ identifier: "ENG-900", assignee: PERSON, history });
+      const tracker = fake.tracker();
+      const cache = memoryCache();
+      await tick(tracker, cache, 0);
+      const mark = fake.count();
+      await tick(tracker, cache, 2);
+      expect(fake.requests.slice(mark)).toContain("TrackerAssignmentHistory");
+    }
+  });
+
+  it("reads a failed history again on the next tick", async () => {
+    const fake = queue();
+    fake.add({ identifier: "ENG-900", assignee: PERSON, history: "fail" });
+    const tracker = fake.tracker();
+    const cache = memoryCache();
+    const first = await tick(tracker, cache, 0);
+    expect(first.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "ENG-900",
+        reason: expect.stringContaining("cannot be read"),
+      }),
+    );
+    const mark = fake.count();
+    await tick(tracker, cache, 2);
+    expect(fake.requests.slice(mark)).toContain("TrackerAssignmentHistory");
+  });
+
+  it("reads a rate-limited history again on the next tick", async () => {
+    const fake = queue();
+    fake.add({ identifier: "ENG-900", assignee: PERSON });
+    const base = fake.tracker();
+    let refuse = true;
+    const tracker: Tracker = {
+      ...base,
+      assignedBy: async (key, assignee) => {
+        if (refuse && key === "ENG-900")
+          throw new TrackerRateLimited("linear", T0 + 60_000, "RATELIMITED");
+        return base.assignedBy(key, assignee);
+      },
+    };
+    const cache = memoryCache();
+    const first = await tick(tracker, cache, 0);
+    expect(first.limitedUntil).toBeDefined();
+    refuse = false;
+    const second = await tick(tracker, cache, 2);
+    expect(second.limitedUntil).toBeUndefined();
+    expect(second.wanted.map((w) => w.key)).toContain("ENG-900");
+  });
+
   it("ignores a change to another team's issue assigned to the same person", async () => {
     const fake = queue();
     const tracker = fake.tracker();

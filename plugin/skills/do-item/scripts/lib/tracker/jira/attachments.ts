@@ -63,7 +63,7 @@ export function jiraAttachments(transport: JiraTransport): TrackerAttachments {
       const form = new FormData();
       form.append(
         "file",
-        new Blob([file.bytes], { type: file.contentType }),
+        new Blob([new Uint8Array(file.bytes)], { type: file.contentType }),
         file.filename,
       );
       let answer: unknown;

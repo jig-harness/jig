@@ -34,6 +34,10 @@ import {
   prCaptureFileName,
 } from "../scripts/lib/state/handoff.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import {
+  CACHEDIR_TAG,
+  CACHEDIR_TAG_SIGNATURE,
+} from "../../../shared/disposable-mark.ts";
 import { exceptOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 let ctx: string;
@@ -441,6 +445,16 @@ describe("captureIntentChain — an item-named branch", () => {
     exceptOnWindows("Windows reports 0o666 for any writable file", () =>
       expect(statSync(pinPath()).mode & 0o777).toBe(0o600),
     );
+  });
+
+  it("tags the chain directory disposable where it writes the pin", () => {
+    snapshot("ENG-7", "The chain of ENG-7.");
+    expect(captureIntentChain(base()).kind).toBe("captured");
+    expect(
+      readFileSync(join(chainDir(), CACHEDIR_TAG), "utf8").startsWith(
+        CACHEDIR_TAG_SIGNATURE,
+      ),
+    ).toBe(true);
   });
 
   it("does not consult .current or the PR body when the branch names the item", () => {

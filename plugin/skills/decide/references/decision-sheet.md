@@ -169,7 +169,7 @@ pick for a ruled call.
 To turn a sheet's call into a drive's JSON park, select the call by its id:
 
 ```bash
-bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/park.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" park .context/decide/<stem>/decision.json --call a
+bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/scratch/park.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" park .context/decide/<stem>/decision.json --call a
 ```
 
 The command writes a checked `parked-decision/v1` document. It uses the call's
