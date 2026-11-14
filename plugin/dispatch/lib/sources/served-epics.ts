@@ -1,4 +1,4 @@
-/** An epic's children one at a time unless its plan says otherwise, and why an epic is idle. */
+/** An epic's children up to its width unless its plan says otherwise, and why an epic is idle. */
 import { PERSON_HOLD, queueHold, type QueueItem } from "../queue-rank.ts";
 import type { Unplaced } from "../types.ts";
 import type {
@@ -9,7 +9,7 @@ import type {
 import { CANONICAL_STATES } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { ServedPlan } from "./served-plan.ts";
 
-/** A person owns the next step, so this child cannot occupy a plan-less epic's working slot. */
+/** A person owns the next step, so this child takes none of a plan-less epic's width. */
 export function parkedOnPerson(
   child: PoolIssue,
   tracker: Pick<Tracker, "stateName">,
@@ -40,11 +40,10 @@ function canonicalStatesFor(
   );
 }
 
-/** Why a child waits on its epic's plan, or, with no plan, on an unreadable sibling. */
+/** Why a child waits on its epic's plan; an epic with no plan holds its children to its width instead. */
 export function childPlanHold(
   selection: ServedPlan,
   child: string,
-  unread: readonly string[],
 ): string | undefined {
   if (selection.error !== undefined) return selection.error;
   if (selection.holds[child] !== undefined) return selection.holds[child];
@@ -52,51 +51,64 @@ export function childPlanHold(
     return selection.order.includes(child)
       ? undefined
       : "waiting on the epic execution plan";
-  // A child that cannot be read may be the one in progress, so no sibling starts on a guess.
-  return unread.length > 0
-    ? `${unread[0]} cannot be read, so whether a sibling is in progress is unknown`
-    : undefined;
+  return undefined;
 }
 
-/** The epic an item is a child of when that epic has no execution plan, and its child already in progress. */
+/** `dispatch.epic_width`'s default: how many children of an epic with no execution plan are under way at once. */
+export const DEFAULT_EPIC_WIDTH = 4;
+
+/** The epic an item is a child of when that epic has no execution plan, and the children that take its width. */
 export interface Serial {
   epic: string;
-  busy?: string | undefined;
-  /** An open child that could not be read: it may be the one in progress. */
-  unread?: string | undefined;
+  /** How many of its children may be under way at once. */
+  width: number;
+  /** Children under way: started, and not waiting on a person. */
+  busy: string[];
+  /** Open children that could not be read: each may be under way, so each takes a slot. */
+  unread: string[];
+  /** The child whose read failed before the epic's children were known: none of them starts. */
+  unknown?: string | undefined;
 }
 
-/** Why a serial item starts nothing now, or null when it may be the epic's one child. */
+/** Why a serial item starts nothing now, or null while its epic has a free slot. */
 function serialHold(
   serial: Serial,
   key: string,
-  leader: ReadonlyMap<string, string>,
+  starting: ReadonlyMap<string, readonly string[]>,
 ): string | null {
-  if (serial.unread !== undefined)
-    return `${serial.unread} cannot be read, so whether a sibling of ${key} is in progress is unknown`;
-  if (serial.busy !== undefined)
-    return `${serial.epic} is working ${serial.busy}; it takes one child at a time`;
-  const first = leader.get(serial.epic);
-  return first === undefined
-    ? null
-    : `waiting on ${first}; ${serial.epic} takes one child at a time`;
+  if (serial.unknown !== undefined)
+    return `${serial.unknown} cannot be read, so whether a sibling of ${key} is in progress is unknown`;
+  const busy = serial.busy.filter((k) => k !== key);
+  const unread = serial.unread.filter((k) => k !== key);
+  const next = starting.get(serial.epic) ?? [];
+  if (busy.length + unread.length + next.length < serial.width) return null;
+  const taken = [
+    ...(busy.length > 0 ? [`working ${busy.join(", ")}`] : []),
+    ...(unread.length > 0
+      ? [`${unread.join(", ")} cannot be read and may be under way`]
+      : []),
+    ...(next.length > 0 ? [`starting ${next.join(", ")}`] : []),
+  ];
+  const children = serial.width === 1 ? "child" : "children";
+  return `${serial.epic} works at most ${serial.width} ${children} at once (dispatch.epic_width): ${taken.join("; ")}`;
 }
 
-/** `ranked` best first: each serial epic keeps its first child, and none while a child is in progress. */
+/** `ranked` best first: each serial epic keeps its best children while its width has room. */
 export function serializeEpics<
   T extends QueueItem & { serial?: Serial | undefined },
 >(ranked: readonly T[], unplaced: Unplaced[]): T[] {
-  const leader = new Map<string, string>();
+  const starting = new Map<string, string[]>();
   const kept: T[] = [];
   for (const item of ranked) {
     const serial = item.serial;
     const key = item.issue.identifier;
-    const why = serial === undefined ? null : serialHold(serial, key, leader);
+    const why = serial === undefined ? null : serialHold(serial, key, starting);
     if (why !== null) {
       unplaced.push({ target: key, record: "tracker", reason: why });
       continue;
     }
-    if (serial !== undefined) leader.set(serial.epic, key);
+    if (serial !== undefined)
+      starting.set(serial.epic, [...(starting.get(serial.epic) ?? []), key]);
     kept.push(item);
   }
   return kept;

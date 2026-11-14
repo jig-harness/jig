@@ -31,6 +31,7 @@ import {
 } from "./served-pull.ts";
 import {
   childPlanHold,
+  DEFAULT_EPIC_WIDTH,
   parkedOnPerson,
   serializeEpics,
   summarizeEpics,
@@ -99,6 +100,8 @@ export interface ServedOptions extends ServedPolicy {
   bound?: import("./tracker-facets.ts").FacetBound;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
+  /** `dispatch.epic_width`: how many children of an epic with no execution plan are under way at once. */
+  epicWidth?: number;
 }
 /** An unplaced row's target, with the title and link the listing returned for it. */
 const itemOf = (i: PoolIssue) => ({
@@ -125,7 +128,7 @@ export function limitedRow(
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
-  /** The one-at-a-time constraint of each child of an epic with no execution plan, whoever reaches the child first. */
+  /** The width constraint of each child of an epic with no execution plan, whoever reaches the child first. */
   serials: Map<string, Serial>;
 }
 
@@ -497,6 +500,10 @@ async function readChildren(
   return { children, unread };
 }
 
+/** The width of an epic with no execution plan: the section's, else the default. */
+const epicWidth = (options: Pick<ServedOptions, "epicWidth">): number =>
+  options.epicWidth ?? DEFAULT_EPIC_WIDTH;
+
 async function enqueueChildren(
   ctx: WalkContext,
   issue: PoolIssue,
@@ -520,26 +527,28 @@ async function enqueueChildren(
     const parked = selection.present
       ? []
       : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
-    const busy = children.find(
-      (c) => c.state.type === "started" && !parked.includes(c),
-    );
+    const busy = children
+      .filter((c) => c.state.type === "started" && !parked.includes(c))
+      .map((c) => c.identifier);
     ctx.walks.push({
       key: issue.identifier,
       children: children.map((c) => c.identifier),
       unread,
-      working: busy !== undefined,
+      working: busy.length > 0,
       parked: parked.map((c) => c.identifier),
     });
     serial = selection.present
       ? undefined
-      : { epic: issue.identifier, busy: busy?.identifier, unread: unread[0] };
+      : { epic: issue.identifier, width: epicWidth(options), busy, unread };
   } catch (error) {
     // Setup failed: no sibling starts on a guess, and a directly assigned child is held too.
     for (const kept of meta.children)
       ctx.serials.set(kept.identifier, {
         epic: issue.identifier,
-        busy: undefined,
-        unread: meta.children[0]?.identifier ?? issue.identifier,
+        width: epicWidth(options),
+        busy: [],
+        unread: [],
+        unknown: meta.children[0]?.identifier ?? issue.identifier,
       });
     throw error;
   }
@@ -553,7 +562,7 @@ async function enqueueChildren(
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
-      planHold: childPlanHold(selection, child.identifier, unread),
+      planHold: childPlanHold(selection, child.identifier),
     });
   }
 }
