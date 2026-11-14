@@ -11,6 +11,7 @@
  * on as ISO 8601 in UTC.
  */
 
+import { waitFor } from "../../../../../../shared/wait-for.ts";
 import { dispatchTransport } from "./dispatch-transport.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
@@ -183,17 +184,9 @@ export interface Client {
    * An aborted `signal` ends the request in flight and the pages not yet read.
    */
   accountId(identity: string, signal?: AbortSignal): Promise<string>;
-  /**
-   * Whether the account can be assigned issues in the project; cached. The
-   * cached lookup is shared and runs on: an aborted `signal` ends only this
-   * caller's wait, and starts no new lookup.
-   */
+  /** Whether the account can be assigned issues in the project (cached, shared: an aborted `signal` ends only this wait); `trusted`: whether a user (a comment author, an assigner) is. */
   assignable(accountId: string, signal?: AbortSignal): Promise<boolean>;
-  /** Whether a user (a comment author, an assigner) is trusted; `signal` bounds this caller's wait as `assignable` does. */
-  trusted(
-    user: Record<string, unknown> | null,
-    signal?: AbortSignal,
-  ): Promise<boolean>;
+  trusted(u: Record<string, unknown> | null, s?: AbortSignal): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
 }
@@ -213,17 +206,6 @@ function allowedOf(meta: unknown): string[] | null {
   return meta.allowedValues.flatMap((v) => {
     const name = isRecord(v) ? (v.value ?? v.name) : v;
     return typeof name === "string" ? [name] : [];
-  });
-}
-
-/** `pending`, or the rejection `signal`'s abort gives; `pending` itself runs on for its other callers. */
-function waitFor<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const stop = () => reject(signal.reason);
-    signal.addEventListener("abort", stop, { once: true });
-    pending.then(resolve, reject).finally(() => {
-      signal.removeEventListener("abort", stop);
-    });
   });
 }
 
