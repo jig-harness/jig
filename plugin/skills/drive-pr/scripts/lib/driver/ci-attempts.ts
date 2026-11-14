@@ -111,6 +111,57 @@ export interface RetryForge {
   ): Promise<{ attempt: number; completed: boolean } | null>;
 }
 
+/** The failed runs whose every job is a named failing check not yet retried on this head. */
+function retryableRuns(
+  failing: FailingChecks,
+  names: readonly string[],
+  head: string,
+  state: CiAttempts,
+): FailedRun[] {
+  return failedRunsField(failing.runs).filter(
+    (run) =>
+      Number.isSafeInteger(run.id) &&
+      run.id > 0 &&
+      Array.isArray(run.jobNames) &&
+      run.jobNames.length > 0 &&
+      run.jobNames.every(
+        (name) => names.includes(name) && !state.retries.has(key(head, name)),
+      ),
+  );
+}
+
+/** Retry one run and record the answer; `indeterminate` when the forge may have acted. */
+async function retryRun(
+  pr: string,
+  head: string,
+  run: FailedRun,
+  jobs: readonly string[],
+  state: CiAttempts,
+  forge: RetryForge,
+  record: (detail: string) => Promise<void>,
+): Promise<boolean | "indeterminate"> {
+  const answer = await forge.retry(pr, head, run.id);
+  if (!answer.ok && answer.indeterminate) {
+    const detail = `Retry of run ${run.id} on head ${head} is indeterminate: ${answer.detail}.`;
+    console.error(`  ${detail}`);
+    await record(detail);
+    return "indeterminate";
+  }
+  if (answer.ok)
+    state.pending.set(key(head, String(run.id)), {
+      head,
+      run: run.id,
+      attempt: answer.attempt ?? 1,
+      polls: 0,
+    });
+  const detail = answer.ok
+    ? `Re-ran failed jobs of run ${run.id} on head ${head} for ${jobs.join(", ")} (retry 1/1, no repair pass spent).`
+    : `Retry of run ${run.id} on head ${head} refused: ${answer.detail}.`;
+  console.error(`  ${detail}`);
+  await record(detail);
+  return answer.ok;
+}
+
 /** Retry each safe workflow once. A shared workflow cannot repeat an already retried check. */
 export async function retryFailedChecks(
   pr: string,
@@ -123,16 +174,7 @@ export async function retryFailedChecks(
   const names = failing.checkRunNames;
   if (names === null || failing.statusNames === null || names.length === 0)
     return false;
-  const runs = failedRunsField(failing.runs).filter(
-    (run) =>
-      Number.isSafeInteger(run.id) &&
-      run.id > 0 &&
-      Array.isArray(run.jobNames) &&
-      run.jobNames.length > 0 &&
-      run.jobNames.every(
-        (name) => names.includes(name) && !state.retries.has(key(head, name)),
-      ),
-  );
+  const runs = retryableRuns(failing, names, head, state);
   const allowed = await forge.rerunnable(pr, runs);
   let retried = false;
   for (const run of runs) {
@@ -141,26 +183,9 @@ export async function retryFailedChecks(
     // Re-check after earlier workflows: duplicated provenance must not retry a check twice.
     if (jobs.some((name) => state.retries.has(key(head, name)))) continue;
     for (const name of jobs) state.retries.add(key(head, name));
-    const answer = await forge.retry(pr, head, run.id);
-    if (!answer.ok && answer.indeterminate) {
-      const detail = `Retry of run ${run.id} on head ${head} is indeterminate: ${answer.detail}.`;
-      console.error(`  ${detail}`);
-      await record(detail);
-      return "indeterminate";
-    }
-    if (answer.ok)
-      state.pending.set(key(head, String(run.id)), {
-        head,
-        run: run.id,
-        attempt: answer.attempt ?? 1,
-        polls: 0,
-      });
-    const detail = answer.ok
-      ? `Re-ran failed jobs of run ${run.id} on head ${head} for ${jobs.join(", ")} (retry 1/1, no repair pass spent).`
-      : `Retry of run ${run.id} on head ${head} refused: ${answer.detail}.`;
-    console.error(`  ${detail}`);
-    await record(detail);
-    retried ||= answer.ok;
+    const result = await retryRun(pr, head, run, jobs, state, forge, record);
+    if (result === "indeterminate") return result;
+    retried ||= result;
   }
   return retried;
 }
