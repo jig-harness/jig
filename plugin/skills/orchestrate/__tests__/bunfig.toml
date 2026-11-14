@@ -1,0 +1,2 @@
+[test]
+preload = ["../../../../lib/test-tmpdir-bun-preload.ts", "../../../../lib/test-jig-config-preload.ts"]

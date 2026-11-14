@@ -148,20 +148,12 @@ left showing after it was answered is the failure this prevents.
 The thread's identity (the channel and the message ids of the top-level
 message and of each reply, keyed by the work's identity and the notice key)
 is a `chat-thread` record in the posting host's state database. Each
-message carries its notice key in a metadata field Slack stores with it,
-and a post is written to the record as pending first, with the time the
-attempt began. A retry after a lost response looks for that key where the
-message would be, and posts only when a complete read finds none, as
-`actions/notify.ts` recognizes a cause already on its destination before
-resending. A parent message is looked for in the channel's history
-(`conversations.history`) and a reply in its parent's thread
-(`conversations.replies`), since the history does not return replies. Each
-read asks for metadata, pages through every message from the pending
-attempt's start to now, and adopts the message found and its id. A read that
-fails, or does not reach the end of that range, is no evidence that the
-message is absent: the retry waits rather than resends. When an
-enrolled host's owner lease moves to another host, the new owner reads the
-thread records back from the hub's copies of the old owner's reports
+message carries its notice key in metadata Slack stores with it, so a retry
+after a lost response finds a message it already posted before it posts
+again, as `actions/notify.ts` recognizes a cause already on its destination;
+a read that cannot tell waits rather than resends. When an enrolled host's
+owner lease moves to another host, the new owner reads the thread records
+back from the hub's copies of the old owner's reports
 ([control-plane.md § Build order](control-plane.md#build-order), its third
 stage) and keeps posting into the same threads; before that stage, the new
 owner starts new threads.
@@ -225,72 +217,34 @@ The **chat bridge** is one resident process. For each interaction it:
 
 A request the send refuses changes nothing: a button whose decision was
 reframed since it was posted fails the digest check, and the bridge
-replies with the new framing's options. An interaction is run once. The
-bridge keeps each id with its request and its state: `pending`, `running`
-or `done`. Processing is exclusive: the bridge moves an id from `pending`
-to `running` in one atomic update that takes a lease, and a second delivery
-of an id that is `running` under a live lease waits for it and reports its
-result. The worker renews the lease while it runs and checks, immediately before
-each effect, that it still holds it under the token it took; a worker that
-finds the lease lost stops without making the effect. A lease is longer than
-the deadline of every call the request makes, and an expired lease is
-reclaimed only after a further margin of one such deadline, which makes an
-overlap of two workers rare. It cannot make it impossible: a worker paused
-between its check and its remote write can still resume after recovery, and
-the forge and the tracker enforce no lease token. So no effect relies on
-the lease alone, and the design states what that leaves. A repeat of the
-same command is harmless only when nothing intervened: a label is set to a
-state, so a second write changes nothing unless another interaction changed
-the label in between; an assignment the tracker refuses to make twice changes
-nothing the second time; and the comment or record carrying the request id
-is read as one, the earliest per id, whoever wrote it. A stale write that
-lands after a different, later interaction is not made harmless: a worker
-paused past its lease can restore a label a person has since released, and
-the tracker's assign replaces assignees without a condition, so such a
-worker can overwrite a person who took the item after the worker's last
-read. The bridge cannot close that window, because neither system accepts
-a conditional write; the lease, its renewal and the reclaim margin make it
-rare, not impossible. After each effect the worker checks its lease again,
-and one found lost, or an effect made after the lease's end, is recorded
-as overlapped, which tells the person who ran the command that the result
-may have been overtaken. The guarantee is therefore: an interaction is
-never lost, and a repeat of its command changes nothing only while nothing
-intervened; duplicate effects remain possible, as when a hold is applied,
-released by another interaction, and applied again by the resumed worker.
-It is not that a stale worker never overtakes a later command. A tracker that
-offers a conditional assignment replaces the preflight read with it. A
-lease that expires without the id reaching `done` marks the
-processing abandoned, and the id returns to `pending` for recovery. The
-record of an interaction that is not `done` is kept until it is, and the
-bridge scans for such records at start and on a timer, so an acknowledged
-interaction is never lost to a crash or a missing redelivery; a `done`
-record is kept for an hour. A write has up to two effects, the change on
-the forge or the tracker (a comment, a label, an assignment) and the
-`chat-request` or `drive-answer` record naming the request id beside it. The
-record of the interaction lists them before either is made, and recovery
-checks each against its destination: an effect found, carrying the request
-id, is complete; one missing is made, and only that one. A label has no
-request id, so its witness is the forge's label history: the missing label
-is made only when that history, readable in full, shows no change to the
-label by anyone since the interaction was admitted. A change by another
-actor, such as a release after a hold, means the command is superseded, and
-the id completes as superseded without the label. Every person linked to the
-bridge acts under its one forge identity, so a change under that identity
-cannot be told from the interrupted command's own or from a later command
-the bridge ran. When the label already stands as the command leaves it, the
-effect is complete; when it does not and the history holds any change under
-that identity since admission, the case is ambiguous. A history that cannot
-be read in full is ambiguous too, and recovery then refuses and leaves the
-id for a person rather than replay a command the line may have moved past. An assignment the
-bridge identity already made, which the tracker would refuse to make twice
-(`assign` refuses an item whose assignee is not null), is completed by
-writing the missing `chat-request` record, never retried. When every effect
-is complete the id is marked `done` and its result reported. So a write
-accepted by the forge and lost from the bridge's memory is never written
-twice, and an admitted interaction is never lost. The bridge
-keeps no other state, starts no session and is read
-by nothing the line runs. Stopping it removes the buttons and the
-commands, and the line goes on.
+replies with the new framing's options.
+
+The bridge holds these guarantees; the mechanism behind them is designed
+with the bridge itself, in step 4 of the build order:
+
+- **An acknowledged interaction is never lost.** It is recorded before it is
+  acknowledged, kept until it is done, and taken up again after a crash or
+  a delivery Slack does not repeat.
+- **Duplicate deliveries are suppressed when recovery can prove an effect
+  already happened.** A repeated delivery, or a recovery after a crash,
+  makes only the effects not yet made when the interaction's request id is
+  recorded on the change itself where it can (a comment) or beside it in a
+  `chat-request` or `drive-answer` record. A label carries no id: one whose
+  state recovery cannot confirm is left for a person, never written again.
+  This prevents duplicate deliveries; it does not guarantee exactly-once
+  effects when a stale worker writes after a later command intervenes.
+- **A stale click is refused.** The digest and the park's occurrence are
+  checked immediately before the write.
+- **What it cannot promise.** The forge and the tracker accept no
+  conditional write, so a worker that stalls past its turn can still land
+  its write after a later command: restore a label a person has since
+  released, or replace an assignment. The mechanism makes this rare and
+  records it when it happens, so the person who ran the command learns
+  that its result may have been overtaken; it cannot make it impossible.
+
+The bridge keeps no other state, starts no session and is read by nothing
+the line runs. Stopping it removes the buttons and the commands, and the
+line goes on.
 
 ### Placements
 
@@ -468,8 +422,9 @@ configuration names and only for a repository it routes to that channel.
 - **Limits.** Every call to the chat keeps the chat's own limits (Slack
   allows about one message a second per channel), has a deadline, and
   backs off under the failure ledger, through the governed outbound
-  transport once the outbound-calls rule
-  ([#1026](https://github.com/jig-harness/jig/pull/1026)) gives Jig one.
+  transport
+  ([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md),
+  [outbound-calls.md](outbound-calls.md)).
 
 ### Configuration
 
@@ -523,8 +478,8 @@ Each is registered in `plugin/shared/records/registry.ts` and listed in
   keyed by the work's identity (with its aliases) and the notice key, and
   reported to the hub where the host is enrolled;
 - `chat-handled`, on the bridge's machine: the interactions it admitted,
-  each with its id, its request, its state (`pending`, `running` with its
-  lease, or `done`) and its listed effects; kept until `done`, then an hour;
+  each with its id, its request, its state and the effects it lists; kept
+  until done, then an hour;
 - `chat-link`, on the hub: a chat user and the forge login they linked;
 - `chat-request`, on the forge or the tracker beside the write it explains:
   the verb, the chat user, the linked login, the request id, the time;
@@ -590,7 +545,10 @@ One pull request per step, each shippable alone:
 4. **The bridge on a host.** `jig chat serve`, its installation, the
    workspace, membership and permission checks, buttons with the guarded
    pick, the Answer in words form, the `chat-request` and `chat-handled`
-   records. Done when a click on a parked decision's option re-arms the
+   records, and the mechanism that holds the bridge's guarantees
+   (admission before acknowledgement, exclusive processing, recovery
+   against each effect's destination), designed in this step's pull
+   request. Done when a click on a parked decision's option re-arms the
    drive with that choice, a click on a reframed decision is refused with
    the new options, and an interaction delivered twice posts one answer.
 5. **Commands on a host.** `/jig ask`, `/jig needs`, `/jig status`, then
