@@ -334,8 +334,12 @@ function delivered(
   receipt: RuntimeReceipt,
   cause: Cause,
   workspace: string,
+  signal: AbortSignal,
 ): Delivery {
   const why = notArrived(receipt, cause);
+  // A cancelled delivery that wrote nothing was never attempted: wait, no failure.
+  if (why !== null && !receipt.ok && receipt.lost !== true && signal.aborted)
+    return answer(cause, "waits", null, why);
   if (why !== null) return answer(cause, "lost", workspace, why);
   const detail = receipt.ok ? receipt.detail : "";
   return answer(
@@ -406,7 +410,7 @@ async function sendTo(
     workspace.comment = receipt.comment;
     workspace.unread = receipt.unread ?? null;
   }
-  for (const c of send) out.push(delivered(receipt, c, workspace.path));
+  for (const c of send) out.push(delivered(receipt, c, workspace.path, signal));
   return out;
 }
 
