@@ -91,7 +91,7 @@ export function byCause(
 
 /** The earliest first failure of `rows`; `""` for none. */
 export function earliest(rows: readonly FailureRow[]): string {
-  return rows.map((r) => r.firstAt).sort()[0] ?? "";
+  return rows.map((r) => r.firstAt).sort((a, b) => a.localeCompare(b))[0] ?? "";
 }
 
 /** The standing host rows: those a quiet has not settled. */
