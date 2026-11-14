@@ -127,7 +127,7 @@ export function recordBelongsToDigest(
 }
 
 /** The steward passes the host starts in a rolling hour, across its repositories. */
-export const STEWARD_HOURLY_BUDGET = 3;
+const STEWARD_HOURLY_BUDGET = 3;
 
 /** Whether the host's passes in the rolling hour before `now` spent its budget. */
 export function stewardBudgetSpent(

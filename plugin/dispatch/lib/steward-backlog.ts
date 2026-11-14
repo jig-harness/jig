@@ -72,7 +72,7 @@ function needFacts(action: Action): string {
 }
 
 /** The framing a need already carries: its drive's open parks, else the decision its pass or the tick framed. */
-export function framingOf(
+function framingOf(
   action: NeedAction,
   input: Pick<BacklogInput, "drives" | "station">,
 ): FramedNeed | null {

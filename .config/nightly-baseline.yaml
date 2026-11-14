@@ -149,7 +149,7 @@ groups:
         - "the continue nudge > nudges a session waiting after its account's wall reopened exactly once across three ticks"
       plugin/dispatch/__tests__/steward-tick.test.ts:
         - "steward tick integration > a transient recovery waits for an account, then launches once and spends the shared recovery budget"
-        - "steward tick integration > owner schedules a complex-model pass under a 15 minute deadline, and unchanged input never schedules another"
+        - "steward tick integration > owner schedules a complex-model pass under a 15 minute deadline, and an unchanged backlog never schedules another"
         - "steward tick integration > records submitted by a pass wait until a later tick, and a forged human-stop rearm is consumed without launching"
       plugin/dispatch/__tests__/throughput.test.ts:
         - "fills available capacity and still opens notices: {\"slots\":1,\"starts\":1,\"reason\":\"no account has a free slot\"}"
