@@ -191,6 +191,18 @@ export function unstartedBoard(
   );
 }
 
+/** Whether the wait for an uncomputed mergeability was made: not when too little time is left or the tick's bound has ended, before or during it. */
+async function waitedForCompute(
+  input: BoardInput,
+  io: BoardIo,
+  left: () => number,
+): Promise<boolean> {
+  if (left() <= UNKNOWN_WAIT_MS + 1000 || input.ended?.() === true)
+    return false;
+  await io.wait(UNKNOWN_WAIT_MS);
+  return input.ended?.() !== true;
+}
+
 /** Read the board's facts, then once more those whose head moved or whose mergeability is not computed yet, within the deadline. */
 async function readFacts(
   input: BoardInput,
@@ -212,15 +224,9 @@ async function readFacts(
   const unknown = retry.some(
     (n) => first.pulls.get(n)?.mergeable === "UNKNOWN",
   );
-  if (unknown) {
-    if (left() <= UNKNOWN_WAIT_MS + 1000 || input.ended?.() === true)
-      return read;
-    await io.wait(UNKNOWN_WAIT_MS);
-  }
-  // The tick's own bound ended while it waited: an abandoned read starts no further query.
-  if (input.ended?.() === true) return read;
+  if (unknown && !(await waitedForCompute(input, io, left))) return read;
   // A second read that fails leaves the first: its moved heads unplaced, its unknown mergeability where it was.
-  if (left() <= 0) return read;
+  if (left() <= 0 || input.ended?.() === true) return read;
   const reread = await io.read(input.slug, retry, left() / 1000);
   if (!reread.ok) {
     for (const n of retry)
