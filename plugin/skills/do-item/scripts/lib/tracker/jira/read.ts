@@ -86,6 +86,8 @@ export interface JiraIssue {
   resolutionDate: string | null;
   categoryChangedAt: string | null;
   priority: string | null;
+  /** Jira's own labels, before field values are presented as labels. */
+  jiraLabels: string[];
   labels: string[];
   issueType: { name: string; subtask: boolean; level: number } | null;
   parent: { key: string; title: string } | null;
@@ -282,6 +284,7 @@ export function parseIssue(
   const key = str(raw.key, "issue.key");
   const at = (field: string) => `issue ${key}.${field}`;
   const f = record(raw.fields, at("fields"));
+  const jiraLabels = labelsOf(f.labels, at("labels"));
   return {
     id: String(raw.id ?? ""),
     key,
@@ -296,12 +299,8 @@ export function parseIssue(
       at("statuscategorychangedate"),
     ),
     priority: nameOf(f.priority, at("priority")),
-    labels: [
-      ...new Set([
-        ...labelsOf(f.labels, at("labels")),
-        ...fieldLabelsOf(f, fieldLabels, at),
-      ]),
-    ],
+    jiraLabels,
+    labels: [...new Set([...jiraLabels, ...fieldLabelsOf(f, fieldLabels, at)])],
     issueType: issueTypeOf(f.issuetype),
     parent: parentOf(f.parent, at("parent")),
     assignee: userOf(f.assignee, at("assignee")),
