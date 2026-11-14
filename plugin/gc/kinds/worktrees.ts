@@ -743,6 +743,19 @@ function markManaged(
     entry.details.orcaPath = row.path;
   }
 }
+/** The proof of a claim resource (an admission with no worktree to prove), or null for a worktree. */
+function proveClaim(
+  orca: string,
+  resource: Resource,
+  repository: string,
+): Proof | Promise<Proof> | null {
+  if (isUnreadableClaim(resource)) return proveUnreadable(resource);
+  if (!isGoneClaim(resource)) return null;
+  return proveGone(resource, async () => {
+    const managed = await orcaWorktrees(orca, repository);
+    return managed.ok ? ok(listedIn(managed.value)) : managed;
+  });
+}
 export function worktreesKind(
   repository: string,
   roots: string[],
@@ -799,13 +812,9 @@ export function worktreesKind(
       );
     },
     prove: async (resource) => {
-      if (orca !== undefined && isUnreadableClaim(resource))
-        return proveUnreadable(resource);
-      if (orca !== undefined && isGoneClaim(resource))
-        return proveGone(resource, async () => {
-          const managed = await orcaWorktrees(orca, repository);
-          return managed.ok ? ok(listedIn(managed.value)) : managed;
-        });
+      const claim =
+        orca === undefined ? null : proveClaim(orca, resource, repository);
+      if (claim !== null) return claim;
       if (isMapping(resource.details) && resource.details.locked === true)
         return withHeldBranch(resource, {
           state: "live",
