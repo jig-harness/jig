@@ -116,6 +116,7 @@ function host(
   );
   const rows = opts.prs.map((pr, i) => {
     const path = join(w.root, `ws-${name}-${pr.number}`);
+    // A listed stage workspace is a checkout of the clone on each dispatching host.
     checkoutOn(w.repo, path, pr.head, w.env);
     return {
       worktreeId: `repo-1::${path}`,

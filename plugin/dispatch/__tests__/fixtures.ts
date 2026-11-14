@@ -23,8 +23,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
-import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import {
   conn,
   issueNode,
@@ -826,6 +826,7 @@ export function world(): World {
       if (next !== undefined) write("base-head-next", next);
     },
     setWorkspaces: (rows) => {
+      // Listed on-disk stage workspaces are checkouts of the clone, as the real runtime requires.
       for (const r of rows)
         if (r.path?.startsWith(root) && r.checkout !== false)
           checkoutOn(forge.repo, r.path, r.branch, env);

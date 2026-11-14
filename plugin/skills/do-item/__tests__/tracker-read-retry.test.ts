@@ -20,7 +20,7 @@ import {
   type BudgetGovernor,
   budgetGovernor,
   memoryBudgetStore,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import {
   ghTransport,
   httpTransport as githubHttp,
