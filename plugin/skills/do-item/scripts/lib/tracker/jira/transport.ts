@@ -35,6 +35,11 @@ import {
   statusClass,
 } from "../../../../../../shared/outbound/failure.ts";
 import { guarded } from "../../../../../../shared/outbound/hold.ts";
+import { restOperation } from "../../../../../../shared/outbound/gh-ledger.ts";
+import {
+  recordAttempt,
+  type Attempt,
+} from "../../../../../../shared/outbound/record-attempt.ts";
 import {
   discardBody,
   retryRead,
@@ -45,7 +50,7 @@ import {
   defaultGovernor,
   FALLBACK_LIMIT_MS,
   TrackerRateLimited,
-} from "../../../../../../shared/tracker-budget.ts";
+} from "../../../../../../shared/outbound/budget.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import type { Outcome } from "../../../../../../shared/outcome.ts";
@@ -470,48 +475,67 @@ function leasedSender(
   bound: AbortSignal,
   fetchImpl: typeof fetch,
   governor: BudgetGovernor | undefined,
-): () => Promise<Response> {
+): () => Promise<Read> {
   const what = `${request.method} ${request.path}`;
   const url = requestUrl(base, request);
   const keyOf = (header: string) => credentialKey("jira", `${base} ${header}`);
   let header = headerOf(lease.header, bound);
-  let key = keyOf(header);
-  return async () => {
-    governor?.admit("jira", key);
-    let res = await send(
-      fetchImpl,
-      url,
-      requestInit(request, header, bound),
-      bound,
-      what,
+  const once = (): Promise<Read> => {
+    const key = keyOf(header);
+    const observation: Attempt = {
+      system: "jira",
+      credential: key,
+      operation: restOperation(request.method, request.path),
+      requests: 0,
+      cost: null,
+      unit: "requests",
+      estimated: false,
+    };
+    const began = currentMs();
+    return recordAttempt(
+      observation,
+      async () => {
+        governor?.admit("jira", key);
+        observation.requests = 1;
+        observation.cost = 1;
+        const res = await send(
+          fetchImpl,
+          url,
+          requestInit(request, header, bound),
+          bound,
+          what,
+        );
+        const refused = observeLimit(res, key, what, governor);
+        if (refused !== null) {
+          void discardBody(res, bound);
+          throw refused;
+        }
+        if (request.bytes === true && res.ok)
+          return { res, bytes: await fileBytes(res, bound, what) };
+        const text = await bodyText(res, bound, what);
+        return res.ok
+          ? { res, text, data: answerBody(text, res.status, what) }
+          : { res, text };
+      },
+      (answer) =>
+        responseFailure(answer.res, currentMs() - began)?.code ?? null,
     );
-    if (res.status === 401) {
+  };
+  return async () => {
+    let answer = await once();
+    if (answer.res.status === 401) {
       const renewed = await lease.renew(bound);
       if (renewed !== null) {
         try {
-          await bodyText(res, bound, what);
           header = headerOf(renewed, bound);
-          key = keyOf(header);
-          governor?.admit("jira", key);
-          res = await send(
-            fetchImpl,
-            url,
-            requestInit(request, header, bound),
-            bound,
-            what,
-          );
-          if (res.status === 401) lease.refuseRenewal();
+          answer = await once();
+          if (answer.res.status === 401) lease.refuseRenewal();
         } finally {
           lease.settleRenewal();
         }
       }
     }
-    const refused = observeLimit(res, key, what, governor);
-    if (refused !== null) {
-      void discardBody(res, bound);
-      throw refused;
-    }
-    return res;
+    return answer;
   };
 }
 
@@ -568,14 +592,9 @@ export function httpTransport(
     const timed = async (): Promise<Read> => {
       const began = currentMs();
       dispatched = true;
-      const response = await sender();
+      const answer = await sender();
       tookMs = currentMs() - began;
-      if (request.bytes === true && response.ok)
-        return { res: response, bytes: await fileBytes(response, bound, what) };
-      const text = await bodyText(response, bound, what);
-      return response.ok
-        ? { res: response, text, data: answerBody(text, response.status, what) }
-        : { res: response, text };
+      return answer;
     };
     const failureOf = (answer: Read) => responseFailure(answer.res, tookMs);
     const read = await guarded(

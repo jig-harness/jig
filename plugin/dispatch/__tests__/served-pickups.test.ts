@@ -10,7 +10,7 @@ import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-
 import { rankQueue } from "../lib/queue-rank.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
 import { issue } from "./served-fixtures.ts";
-import { TrackerRateLimited } from "../../shared/tracker-budget.ts";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
 const people = [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }];
 function fake() {
   const store = new Map<string, unknown>();

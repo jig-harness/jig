@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { resolveWindowsCommand, windowsCommand } from "../windows-command.ts";
+import {
+  resolveWindowsCommand,
+  spawnCommand,
+  windowsCommand,
+} from "../windows-command.ts";
 import { run } from "../proc.ts";
 import { run as driveRun } from "../../skills/drive-pr/scripts/lib/proc.ts";
 
@@ -342,6 +346,41 @@ describe("Windows command launch", () => {
       command: "cmd.exe",
       args: ["/c", line],
     });
+  });
+
+  // On POSIX, and for a native image on Windows, no shell reads the argv.
+  test("a native executable receives each argument as written, without a shell", async () => {
+    const values = [
+      "two words",
+      "x; echo INJECTED",
+      "$(echo INJECTED)",
+      "`echo INJECTED`",
+      "a && b || c > d",
+      "$HOME",
+      "%PATH%",
+    ];
+    const child = spawnCommand(
+      [
+        process.execPath,
+        "-e",
+        "console.log(JSON.stringify(process.argv.slice(1)))",
+        ...values,
+      ],
+      { env: process.env, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const exitCode = await new Promise<number | null>((resolve) =>
+      child.on("close", resolve),
+    );
+    expectSpawnExit({ exitCode, stdout, stderr }, 0);
+    expect(JSON.parse(stdout)).toEqual(values);
   });
 
   test("batch line breaks are refused rather than interpreted as commands", () => {

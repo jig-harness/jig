@@ -23,10 +23,10 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { swallow } from "./errors.ts";
-import { JigError } from "./outcome.ts";
-import { inTransaction, type Migration, openDatabase } from "./records/db.ts";
-import { currentMs, isoFromMs } from "./time.ts";
+import { swallow } from "../errors.ts";
+import { JigError } from "../outcome.ts";
+import { inTransaction, openDatabase } from "../records/db.ts";
+import { currentMs, isoFromMs } from "../time.ts";
 
 /** How long a credential stays limited when the refusal named no reset. */
 export const FALLBACK_LIMIT_MS = 15 * 60_000;
@@ -134,12 +134,7 @@ export function memoryBudgetStore(): BudgetStore {
   };
 }
 
-const MIGRATIONS: readonly Migration[] = [
-  {
-    additive: false,
-    sql: "CREATE TABLE tracker_budget (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
-  },
-];
+import { BUDGET_MIGRATIONS } from "./schema.ts";
 
 /** The machine's budget database: `~/.local/state/jig/tracker/budget.sqlite`. */
 export function budgetPath(home = homedir()): string {
@@ -178,7 +173,7 @@ function validRecord(value: unknown): value is BudgetRecord {
   );
 }
 
-function parseRecord(text: string): BudgetRecord | null {
+export function parseRecord(text: string): BudgetRecord | null {
   try {
     const value: unknown = JSON.parse(text);
     return validRecord(value) ? value : null;
@@ -193,7 +188,7 @@ export function sqliteBudgetStore(path = budgetPath()): BudgetStore {
   let db: Database | null | undefined;
   const open = (): Database | null => {
     if (db !== undefined) return db;
-    const opened = openDatabase({ path, migrations: MIGRATIONS });
+    const opened = openDatabase({ path, migrations: BUDGET_MIGRATIONS });
     if (!opened.ok) swallow(opened.failure, "the tracker budget store");
     db = opened.ok ? opened.value : null;
     return db;
