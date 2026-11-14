@@ -773,10 +773,12 @@ implementation. Skip this check for issues about the repository's own code.
    `4` is a stand-down: the claim was written, and reading the issue back
    showed another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
-   stand-down with `"recovery": "unresolved"` leaves the item assigned and
-   started with no worker known to hold it: report it as a question for a
-   person (in a dispatched pass, a decision record), never reset the item
-   yourself. A
+   stand-down with `"recovery": "unresolved"` leaves the item's current
+   state untouched, which a person may have changed during recovery (moved
+   back to Todo, reassigned or removed), and no worker is known to hold
+   it: report it as a question for a person (in a dispatched pass, a
+   decision record that includes the returned reason, without assuming the
+   claim's writes still stand), never reset the item yourself. A
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
    repository's rules change and the pickup is retried by hand. The
