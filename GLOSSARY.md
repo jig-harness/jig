@@ -891,11 +891,10 @@ make, use the entry's term instead.
   `has-migration`, `api-change`, `dpa-relevant` (personal data covered by a
   data-processing agreement) and `manual-ops`. A fired flag sends a call to a human instead of an agent
   ([decide](plugin/skills/decide/SKILL.md)) and widens the review a change gets.
-- **Epic** — an issue whose sub-issues are worked one at a time, each as its
-  own pull request, while the epic itself tracks the whole. Jig's
-  `do-item` skill picks up the next sub-issue and records the epic's order in
-  a machine-readable execution plan
-  ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
+- **Epic** — an issue whose sub-issues are each worked as their own pull
+  request, while the epic itself tracks the whole. Jig's `do-item` skill
+  picks up the next sub-issue in the order the epic's *execution plan*
+  gives, when it has one ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
   (an outcome too large for one pull request, and the unit progress is
   reported on), not by how many children it has, and it closes on an
   *acceptance verdict*, never on a count of open children
@@ -913,10 +912,11 @@ make, use the entry's term instead.
   unparented and moved to the standing destination for its kind.
 - **Execution plan** — the order of an *epic*'s children, kept on the epic
   as a section with a machine-readable block (`execution-plan-v1`): each
-  child's precedence band, its lane (a group of related children, which
-  orders nothing), its human gates, and the edges between children with
-  their reasons. The pickup and the dispatcher read it; the *epic planner*
-  writes it ([design](design/epic-planner.md)).
+  child's precedence band (its depth in the order), its lane (a group of
+  related children, which orders nothing), whether it waits on a person,
+  and the edges between children with their reasons. The pickup and the
+  dispatcher read it; the *epic planner* writes it
+  ([design](design/epic-planner.md)).
 - **Epic planner** — the skill that writes and keeps an *epic*'s *execution
   plan*: it records each real dependency as a native tracker relation,
   renders the plan, applies the mechanical changes on its own and asks a

@@ -191,9 +191,12 @@ edits approved. What it will build, one pull request per step:
   and Jira.
 - **The planner moves in** as `/jig:plan-epic`, with its tests, and the
   consumer's copy is deleted in the same rollout.
-- **Footprints and relation statements**: each step's expected paths,
-  written where overlap-aware admission keeps them, and the statements a
-  view renders.
+- **Filing hands its epic to the planner**: `/jig:file-issue`'s split ends
+  with a plan run on the epic.
+- **Relation statements**: the holds and order a view renders, computed by
+  the planner.
+- **Footprints**: each step's expected paths, written where overlap-aware
+  admission keeps them.
 - **Keeping a plan current**: a changed epic re-planned with the same split,
   and a dispatched pass's approval asked as one parked decision.
 - **The doctrine**: M6 states an acceptance stage, a plan's claims checked
@@ -201,8 +204,9 @@ edits approved. What it will build, one pull request per step:
   invariant, with templates, the block's schema and audit criteria.
 
 Done when one real epic is planned and then picked up on the plugin on
-GitHub Issues and on Linear, with every dependency a native relation and
-its children started in parallel where nothing orders them; a child added
+GitHub Issues and on Linear, the Jira adapter's recorded answers pass the
+same tests, every dependency is a native relation, and
+its children start in parallel where nothing orders them; a child added
 after the plan is either added by the next run or reported, never left
 waiting unseen; the consumer's copy is gone; and a re-audit of Jig scores
 M6's new criteria.

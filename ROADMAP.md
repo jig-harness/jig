@@ -57,12 +57,12 @@ with others through the same interface.
 
 An epic's children run side by side only when the epic carries an execution
 plan, and today nothing writes one. `/jig:plan-epic` reads an epic and its
-children through the tracker interface, on GitHub Issues, Linear and Jira,
-records each real dependency as the tracker's own relation, and writes the
-plan the pickup and the dispatcher read. Run again, it keeps the plan
-current: mechanical changes apply on their own, and changes that need
-judgment wait for one approval. The feature delivery module gains an
-acceptance stage and the execution plan as a stated practice.
+children on GitHub Issues, Linear or Jira. It records each real dependency
+as the tracker's own relation, and writes the plan the pickup and the
+dispatcher read. Run again, it keeps the plan current: mechanical changes
+apply on their own, and changes that need judgment wait for one approval.
+The feature delivery module gains an acceptance stage and the execution
+plan as a stated practice.
 
 ### 50. What the line hands a person: each class of need settled at its source
 
@@ -424,8 +424,8 @@ alerts will.
 
 ### 17. Corrected designs for the existing modules
 
-Practices working repositories validated, added to the modules that exist:
-watchdogs for what is deployed (M10, M11), a skill that runs M7's
+Practices working repositories validated, added to the modules that exist.
+They are watchdogs for what is deployed (M10, M11), a skill that runs M7's
 post-merge stage in any repository, and a generator for the model roster
 (M0).
 
