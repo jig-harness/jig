@@ -83,3 +83,29 @@ describe("a pass's closing report", () => {
     );
   });
 });
+
+describe("a pass's background work", () => {
+  for (const [name, argv] of [
+    ["pickup", pickupPassArgv(record, [])],
+    ["follow-up", followupPassArgv({ ...record, action: "followup" }, [])],
+    [
+      "steward",
+      stewardPassArgv(
+        { ...record, action: "steward", item: null, pr: null },
+        [],
+      ),
+    ],
+  ] as const) {
+    it(`${name}: keeps long steps in the foreground and bounds a wait on another agent`, () => {
+      const prompt = argv.at(-1) ?? "";
+      expect(prompt).toContain("This pass has no next turn");
+      expect(prompt).toContain("in the foreground");
+      expect(prompt).toContain("bound the wait");
+    });
+  }
+
+  it("pickup: pushes committed work before a long validation step", () => {
+    const prompt = pickupPassArgv(record, []).at(-1) ?? "";
+    expect(prompt).toContain("push the branch before a long validation step");
+  });
+});
