@@ -53,6 +53,7 @@ import type { TickReceipt } from "../receipts.ts";
 import type { ClaimedItem, DrivenPr, WantedItem } from "./types.ts";
 import { type PrLinkText, workLinks } from "./work-links.ts";
 import type { IssueKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** Copy the outcome log's new rows into its month files; false, with the reason on the receipt, when the copy failed. */
 export function copyLog(receipt: TickReceipt): boolean {
@@ -365,7 +366,7 @@ function writeKept(
           accounts: accountsOf(
             machine,
             records,
-            Date.parse(receipt.finishedAt),
+            parseMs(receipt.finishedAt),
             tick.codexOptIn,
           ),
           lastAccount: lastAccount(records),

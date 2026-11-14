@@ -13,7 +13,9 @@ const page = (date: string, body = "Body.", owner = "docs") =>
 describe("utcToday", () => {
   test("is the UTC date, not the local one", () => {
     // 23:30 at UTC-5 on the 1st is already the 2nd in UTC.
-    expect(utcToday(new Date("2026-03-01T23:30:00-05:00"))).toBe("2026-03-02");
+    expect(utcToday(Temporal.Instant.from("2026-03-01T23:30:00-05:00"))).toBe(
+      "2026-03-02",
+    );
   });
 });
 

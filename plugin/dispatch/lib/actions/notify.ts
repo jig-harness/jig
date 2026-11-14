@@ -102,6 +102,12 @@ import {
   recordComment,
 } from "./notices-content.ts";
 import { retireNotices } from "./retire-notices.ts";
+import {
+  currentIso,
+  currentMs,
+  isoFromMs,
+  parseMs,
+} from "../../../shared/time.ts";
 
 /** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =
@@ -281,7 +287,7 @@ function asRepeat(
   nowMs: number,
 ): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
-  const again = `Sent again: this still waits on a person as of ${new Date(nowMs).toISOString()}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
+  const again = `Sent again: this still waits on a person as of ${isoFromMs(nowMs)}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
   const repeated = {
     ...cause,
     repeat: true as const,
@@ -817,7 +823,7 @@ function dueAgain(
   nowMs: number,
 ): boolean {
   if (everyMs <= 0 || record.lasting) return false;
-  const last = Date.parse(record.sentAt);
+  const last = parseMs(record.sentAt);
   return Number.isFinite(last) && nowMs - last >= everyMs;
 }
 
@@ -877,7 +883,7 @@ export async function applyNotices(
     causes: causes.map((c) => c.notice.key),
     records: retirementRecords(repo.slug, root),
     lingerMs,
-    nowMs: Date.now(),
+    nowMs: currentMs(),
     root,
   });
 }
@@ -900,7 +906,7 @@ async function sendNotices(
   // The plan named a failing action's notice before the act phase found the action no longer wanted.
   const causes = planned.filter((c) => failureStands(settings.book, c));
   prune(report, standingKeys(causes, root), sent, root);
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   const all: Cause[] = [];
   for (const c of causes) {
     const earlier = earlierSend(c, sent, hostSent);
@@ -927,7 +933,7 @@ async function sendNotices(
     return new Set();
   }
   const suppressed = (c: Cause, workspace: string) => {
-    const at = new Date().toISOString();
+    const at = currentIso();
     try {
       suppress(
         {

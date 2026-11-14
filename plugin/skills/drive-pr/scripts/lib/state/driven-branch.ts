@@ -13,6 +13,7 @@
  * field appears. A value that is present must be well-formed.
  */
 import { isRefName } from "../../../../../shared/driven-tree.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 export interface DrivenBranch {
   /** The pull request's head branch, the only branch the drive pushes to. */
@@ -46,6 +47,6 @@ export function isDrivenBranch(v: unknown): v is DrivenBranch {
     typeof d.detached === "boolean" &&
     typeof d.created === "boolean" &&
     typeof d.at === "string" &&
-    Number.isFinite(Date.parse(d.at))
+    Number.isFinite(parseMs(d.at))
   );
 }

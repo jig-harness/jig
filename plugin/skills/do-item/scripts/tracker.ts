@@ -173,6 +173,7 @@ import {
   TrackerRequestError,
 } from "./lib/tracker/port.ts";
 import { labelsAsConfig } from "../../../shared/tracker-labels.ts";
+import { currentMs, isoFromMs } from "../../../shared/time.ts";
 
 const USAGE = `usage:
   tracker.ts children <issue-key>
@@ -825,7 +826,7 @@ export function failureExit(error: unknown): { code: number; line: string } {
   if (failure?.code === "rate-limited")
     return {
       code: EXIT_OF_CLASS["rate-limited"],
-      line: `RATE-LIMITED until ${new Date(failure.until ?? Date.now()).toISOString()}: ${failure.reason}`,
+      line: `RATE-LIMITED until ${isoFromMs(failure.until ?? currentMs())}: ${failure.reason}`,
     };
   if (failure !== null) {
     const lost =

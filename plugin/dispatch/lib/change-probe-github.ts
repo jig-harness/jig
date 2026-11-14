@@ -40,6 +40,7 @@ import type {
 } from "./change-probe.ts";
 import { repoTarget } from "./forge.ts";
 import { issueUpdates } from "./change-probe-issues.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** Results per page, GitHub's largest. */
 const PAGE = 100;
@@ -217,9 +218,7 @@ export function changedPr(node: unknown): ChangedPr | null {
     typeof updatedAt !== "string"
   )
     return null;
-  return Number.isNaN(Date.parse(updatedAt))
-    ? null
-    : { slug, number, updatedAt };
+  return Number.isNaN(parseMs(updatedAt)) ? null : { slug, number, updatedAt };
 }
 
 /** An open pull request's head and checks, or `null` for a node that is not one. */

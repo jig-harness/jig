@@ -51,6 +51,7 @@ import {
   parseResetClause,
   RESET_CLAUSE_RE,
 } from "./wallclock.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 
 // The measured notice (this file's header comment) is a SELF-CONTAINED text
 // block — the phrase, then the reset clause, and nothing else. Every earlier
@@ -100,7 +101,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
   let scanned = 0;
   let truncated = false;
   let budgetExhausted = false;
-  const deadlineAt = Date.now() + maxCandidateScanMs();
+  const deadlineAt = currentMs() + maxCandidateScanMs();
   // root/project/session/subagents/file is the deepest supported layout.
   // Every directory entry shares the aggregate count and time budgets.
   const MAX_DIRECTORY_DEPTH = 3;
@@ -111,7 +112,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
           scanned,
           MAX_CANDIDATE_FILES_SCANNED,
           deadlineAt,
-          Date.now(),
+          currentMs(),
         )
       ) {
         truncated = true;
@@ -613,7 +614,7 @@ export const claudeAdapter: QuotaAdapter = {
         if (!belongsToWorktree(record.cwd, opts.cwd)) continue;
         const ts =
           typeof record.timestamp === "string"
-            ? Date.parse(record.timestamp)
+            ? parseMs(record.timestamp)
             : Number.NaN;
         if (!Number.isFinite(ts) || ts < sinceFloorMs || ts > untilMs) continue;
         // The exact, authoritative binding when we have one: every record
@@ -669,12 +670,15 @@ export const claudeAdapter: QuotaAdapter = {
         // anchored end to end) — see that comment for why a partial match at
         // any position kept leaving a fresh bypass, one position after another.
         let isSession = false;
-        let reset: { at: Date; zone: string } | null = null;
+        let reset: { at: Temporal.Instant; zone: string } | null = null;
         let sessionBlock = "";
         for (const block of blocks) {
           if (SESSION_LIMIT_NOTICE_RE.test(block)) {
             isSession = true;
-            reset = parseResetClause(block, new Date(ts));
+            reset = parseResetClause(
+              block,
+              Temporal.Instant.fromEpochMilliseconds(ts),
+            );
             sessionBlock = block;
             break;
           }
@@ -712,7 +716,7 @@ export const claudeAdapter: QuotaAdapter = {
           // instant for a window whose LENGTH we do not know — and length is
           // what decides sleepability. Report the block, withhold the reset.
           resetAt: isSession && reset !== null ? reset.at : null,
-          observedAt: new Date(ts),
+          observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
           evidence:
             recognised.length > 0
               ? recognised.join(" · ")

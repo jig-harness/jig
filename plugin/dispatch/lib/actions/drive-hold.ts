@@ -59,6 +59,7 @@ import {
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { settledWhy, settlesWithPerson } from "../redrive-settle.ts";
 import type { DrivenPr } from "../types.ts";
+import { parseMs } from "../../../shared/time.ts";
 
 export type DriveHold =
   | { kind: "none" }
@@ -113,9 +114,9 @@ function startedDriver(r: ReadRecord, started: string | null): boolean {
   if (s.kind !== "alive" && s.kind !== "ended") return false;
   if (s.process === null || refusalOf(r) !== null || started === null)
     return false;
-  const claimed = Date.parse(s.process.claimedAt);
-  const run = Date.parse(started);
-  const end = s.kind === "ended" ? Date.parse(s.exit.at) : Infinity;
+  const claimed = parseMs(s.process.claimedAt);
+  const run = parseMs(started);
+  const end = s.kind === "ended" ? parseMs(s.exit.at) : Infinity;
   return (
     Number.isFinite(claimed) &&
     Number.isFinite(run) &&

@@ -30,6 +30,7 @@ import { targetOf } from "./launches.ts";
 import { stuckNotice } from "./notices.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { Action } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** A pending record's launch is retried once, under its own key. */
 const MAX_ATTEMPTS = 2;
@@ -73,7 +74,7 @@ function unclaimedWhy(
   at: string,
   clock: UnclaimedClock,
 ): string | null {
-  const sentMs = Date.parse(at);
+  const sentMs = parseMs(at);
   if (!Number.isFinite(sentMs)) return null;
   if (clock.nowMs - sentMs < clock.unclaimedAfterMs) return null;
   const held = holding(clock.sessions, joinedTo(record));

@@ -188,11 +188,11 @@ function runOptions(args: Collection): Options {
 }
 export function scheduledCollection(
   machine: { collect_day: number; min_free_bytes: number },
-  now = new Date(),
+  today = Temporal.Now.plainDateISO(),
   freeBytes?: number,
 ): boolean {
   return (
-    now.getDay() === machine.collect_day ||
+    today.dayOfWeek % 7 === machine.collect_day ||
     (machine.min_free_bytes > 0 &&
       freeBytes !== undefined &&
       freeBytes < machine.min_free_bytes)
@@ -257,7 +257,7 @@ function applySchedule(options: Options): Failure | null {
   const stat = statfsSync(process.env.HOME ?? process.cwd());
   options.collect = scheduledCollection(
     configuration.value.machine,
-    new Date(),
+    Temporal.Now.plainDateISO(),
     stat.bavail * stat.bsize,
   );
   return null;

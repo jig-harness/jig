@@ -205,7 +205,7 @@ describe("the last release run, through gh", () => {
     `2026-01-01T00:${String(minute).padStart(2, "0")}:00Z`;
   /** GitHub through `gh`, on the day after the runs `at` creates. */
   const github = (root: string, gh: Gh) =>
-    githubAt(root, gh, () => new Date("2026-01-02T00:00:00Z"));
+    githubAt(root, gh, () => Temporal.Instant.from("2026-01-02T00:00:00Z"));
 
   test("is the newest run of the release workflow on the branch", () => {
     const seen: string[][] = [];
@@ -296,7 +296,7 @@ describe("the last release run, through gh", () => {
     const old = githubAt(
       "/x",
       answering({ 1: runs }, [{ id: 1, name: "changelog" }]),
-      () => new Date("2026-06-01T00:00:00Z"),
+      () => Temporal.Instant.from("2026-06-01T00:00:00Z"),
     ).lastReleaseRun("main");
     expect(old.state).toBe("failure");
   });

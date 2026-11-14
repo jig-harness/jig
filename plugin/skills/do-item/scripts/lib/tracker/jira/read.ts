@@ -10,6 +10,7 @@ import type { Facet } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
 import type { JiraStatus, StateInput } from "./model.ts";
 import { JiraApiError } from "./transport.ts";
+import { isoFromMs, parseMs } from "../../../../../../shared/time.ts";
 
 // ── Shape helpers ──────────────────────────────────────────────────────────
 
@@ -31,9 +32,9 @@ export function optStr(v: unknown, where: string): string | null {
 /** A Jira timestamp (`2026-10-31T12:34:56.000+0000`) as ISO 8601 in UTC. */
 export function iso(v: unknown, where: string): string {
   const s = str(v, where).replace(/([+-]\d\d)(\d\d)$/, "$1:$2");
-  const ms = Date.parse(s);
+  const ms = parseMs(s);
   if (!Number.isFinite(ms)) throw new JiraApiError(`${where}: not a timestamp`);
-  return new Date(ms).toISOString();
+  return isoFromMs(ms);
 }
 
 function optIso(v: unknown, where: string): string | null {

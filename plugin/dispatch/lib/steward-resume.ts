@@ -50,6 +50,7 @@ import {
 import type { RepoObservation } from "./tick-observe.ts";
 import type { Action } from "./types.ts";
 import { failureText } from "./text.ts";
+import { currentIso, currentMs } from "../../shared/time.ts";
 
 interface Source {
   record: LaunchRecord & {
@@ -346,7 +347,7 @@ async function available(
       source.record.repo,
       source.record.pr,
       records,
-      Date.now(),
+      currentMs(),
     ) === null
   );
 }
@@ -428,7 +429,7 @@ function resumeRecord(
   slots: import("./accounts.ts").Slots,
 ): LaunchRecord {
   const vendor = admittedVendor(slots.account);
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const record: LaunchRecord = {
     ...source.record,
     id,
@@ -436,7 +437,7 @@ function resumeRecord(
     account: slots.account.name,
     vendor,
     configDir: slots.account.configDir,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     facts: `${RECOVERY_FACTS}steward resume ${source.record.id}`,
     attempts: [],
     agentId: null,

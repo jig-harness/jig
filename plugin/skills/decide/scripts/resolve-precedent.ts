@@ -981,7 +981,7 @@ export interface ResolveOptions {
    * The instant this search happened, passed in rather than read: the report
    * embeds the date as evidence, so a caller has to be able to pin it.
    */
-  now: Date;
+  now: Temporal.Instant;
   corpus?: Corpus;
 }
 
@@ -1043,7 +1043,7 @@ export function resolvePrecedent(opts: ResolveOptions): PrecedentReport {
       corpus.glossary,
       corpus.glossaryFile,
     ),
-    searchedAt: opts.now.toISOString().slice(0, 10),
+    searchedAt: opts.now.toZonedDateTimeISO("UTC").toPlainDate().toString(),
   };
 }
 
@@ -1198,7 +1198,11 @@ export function parseArgs(argv: string[], cwd: string): CliArgs {
   return { query, top, json, repoRoot };
 }
 
-export function main(argv: string[], cwd: string, now: Date): number {
+export function main(
+  argv: string[],
+  cwd: string,
+  now: Temporal.Instant,
+): number {
   let args: CliArgs;
   try {
     args = parseArgs(argv, cwd);
@@ -1236,5 +1240,7 @@ export function main(argv: string[], cwd: string, now: Date): number {
 }
 
 if (import.meta.main) {
-  process.exit(main(process.argv.slice(2), consumerRoot(), new Date()));
+  process.exit(
+    main(process.argv.slice(2), consumerRoot(), Temporal.Now.instant()),
+  );
 }

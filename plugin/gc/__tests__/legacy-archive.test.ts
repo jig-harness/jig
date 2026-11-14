@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { receiptsKind } from "../kinds/receipts.ts";
+import * as time from "../../shared/time.ts";
 import {
   archiveIgnored,
   archivePaths,
@@ -197,7 +198,9 @@ describe("the one-time archive", () => {
     // pass, the third chunk's check is past the deadline. A check once per
     // file would read all five chunks and succeed.
     let calls = 0;
-    const now = spyOn(Date, "now").mockImplementation(() => 1000 * calls++);
+    const now = spyOn(time, "currentMs").mockImplementation(
+      () => 1000 * calls++,
+    );
     try {
       expect(
         fingerprint(root, [".context/big.bin"], 2500, 1 << 20),

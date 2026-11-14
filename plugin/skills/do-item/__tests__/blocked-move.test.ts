@@ -101,7 +101,7 @@ const parked = (over: Partial<BlockedPr> = {}): BlockedPr => ({
   ...over,
 });
 
-const NOW = () => new Date("2026-11-11T09:30:00Z");
+const NOW = () => Temporal.Instant.from("2026-11-11T09:30:00Z");
 
 test("projects a type-specific blocked state and returns through that type's workflow", async () => {
   const config = parseTrackerConfig({

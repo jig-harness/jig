@@ -14,6 +14,7 @@ import { detectQuotaBlock } from "../../skills/drive-pr/scripts/lib/quota/index.
 import { readBoundedTail } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
+import { isoOf, parseMs } from "../../shared/time.ts";
 
 /** What the probe prints: the wall, or `null`. */
 export interface ProbedWall {
@@ -48,7 +49,7 @@ function lastRecord(path: string): Record<string, unknown> | null {
 /** Whether `record` is the wall record itself: a rate-limit error written at the wall's exact instant, in the session. */
 function isWall(
   record: Record<string, unknown> | null,
-  observedAt: Date,
+  observedAt: Temporal.Instant,
   sessionId: string,
 ): boolean {
   if (record === null || record.error !== "rate_limit") return false;
@@ -56,7 +57,7 @@ function isWall(
     return false;
   return (
     typeof record.timestamp === "string" &&
-    Date.parse(record.timestamp) === observedAt.getTime()
+    parseMs(record.timestamp) === observedAt.epochMilliseconds
   );
 }
 
@@ -64,8 +65,8 @@ function isWall(
 export function probeWall(
   sessionId: string,
   cwd: string,
-  since: Date,
-  now: Date,
+  since: Temporal.Instant,
+  now: Temporal.Instant,
 ): ProbedWall | null {
   const block = detectQuotaBlock({
     cwd,
@@ -75,8 +76,8 @@ export function probeWall(
   });
   if (block === null) return null;
   return {
-    observedAt: block.observedAt.toISOString(),
-    resetAt: block.resetAt?.toISOString() ?? null,
+    observedAt: isoOf(block.observedAt),
+    resetAt: block.resetAt === null ? null : isoOf(block.resetAt),
     window: block.window,
     evidence: block.evidence,
     last: isWall(lastRecord(block.source), block.observedAt, sessionId),
@@ -88,10 +89,10 @@ export function isProbedWall(value: unknown): value is ProbedWall {
   return (
     isMapping(value) &&
     typeof value.observedAt === "string" &&
-    Number.isFinite(Date.parse(value.observedAt)) &&
+    Number.isFinite(parseMs(value.observedAt)) &&
     (value.resetAt === null ||
       (typeof value.resetAt === "string" &&
-        Number.isFinite(Date.parse(value.resetAt)))) &&
+        Number.isFinite(parseMs(value.resetAt)))) &&
     typeof value.evidence === "string" &&
     typeof value.last === "boolean"
   );

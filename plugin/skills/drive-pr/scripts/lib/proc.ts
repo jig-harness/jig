@@ -58,6 +58,7 @@ import {
 } from "../../../../shared/proc.ts";
 import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
 import { fail, testPacing } from "./cli.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 // Shared timeout readers and the process-wide cancellation registry serve
 // every helper loaded in this process. The drive transport adds stop handles,
@@ -846,7 +847,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
         // Wait out the grace by watching for the group to go on its own — a
         // pass that exits promptly on SIGTERM should not be made to wait for
         // an escalation it never needed.
-        const deadline = Date.now() + graceMs + STOP_WITNESS_MS;
+        const deadline = currentMs() + graceMs + STOP_WITNESS_MS;
         // Throttled to roughly once a second, independent of the 100ms
         // `groupGone()` poll: the zombie case does not change from one tick
         // to the next, and running `hasLiveGroupMember`'s heavier check
@@ -864,7 +865,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
             clearStopEscalateTimer();
             return true;
           }
-          const now = Date.now();
+          const now = currentMs();
           if (now - lastLiveCheckAt >= LIVE_CHECK_THROTTLE_MS) {
             lastLiveCheckAt = now;
             // A process-table slot still exists for the group, but that
@@ -879,7 +880,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
               return true;
             }
           }
-          if (Date.now() >= deadline) return false;
+          if (currentMs() >= deadline) return false;
           await sleep(STOP_WITNESS_POLL_MS);
         }
       };

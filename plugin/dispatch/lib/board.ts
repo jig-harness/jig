@@ -46,6 +46,7 @@ import { attempt, type Outcome } from "../../shared/outcome.ts";
 import type { TickBudget } from "./tick-reads.ts";
 import { readyNotice } from "./notices.ts";
 import type { Action, DrivenPr } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** How long one repository's board read may take. */
 export const BOARD_DEADLINE_MS = 30_000;
@@ -122,7 +123,7 @@ export interface BoardIo {
 const realIo: BoardIo = {
   read: readMergeFacts,
   wait: (ms) => new Promise((r) => setTimeout(r, ms)),
-  now: () => Date.now(),
+  now: () => currentMs(),
 };
 
 /** A nested string setting of the repository's configuration, `null` when absent or empty. */

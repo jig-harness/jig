@@ -46,6 +46,7 @@ import {
   accountBlocked,
   readRoomMs,
 } from "./launch.ts";
+import { currentIso, currentMs } from "../../../shared/time.ts";
 
 export async function applySteward(
   state: ApplyState,
@@ -85,18 +86,18 @@ export async function applySteward(
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
   if (
-    stewardRuns(null, state.root).filter((r) => r.at > Date.now() - 3_600_000)
+    stewardRuns(null, state.root).filter((r) => r.at > currentMs() - 3_600_000)
       .length >= 3
   )
     return skip("the host's hourly steward budget is spent");
   const runs = stewardRuns(repo.slug, state.root);
-  if (stewardWaits(runs, Date.now(), config.everyMs))
+  if (stewardWaits(runs, currentMs(), config.everyMs))
     return skip("cadence has not elapsed or hourly budget is spent");
   const read = await readDigest(state, observation);
   if (!read.ok) return skip(read.failure.reason);
   const digest = read.value;
   const hash = digestHash(digest);
-  if (!stewardDue(hash, runs, Date.now(), config.everyMs))
+  if (!stewardDue(hash, runs, currentMs(), config.everyMs))
     return skip("input is unchanged since the last pass");
   const action: Action = {
     stage: "steward",
@@ -116,7 +117,7 @@ export async function applySteward(
     return skip(admitted.outcome.detail);
   }
   const { slots } = admitted;
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const named = dispatched("steward", "line", id);
   const openedWorkspace = await openedFor(
     state,
@@ -161,7 +162,7 @@ export async function applySteward(
     ...codexLaunchFields(state.codexOptIn),
     replaces: null,
     facts: hash,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     workspace: openedWorkspace.workspace,
     attempts: [],
     agentId: null,
@@ -174,7 +175,7 @@ export async function applySteward(
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
   };
-  keepStewardRun(id, digest, Date.now(), state.root);
+  keepStewardRun(id, digest, currentMs(), state.root);
   report.launches.push(await startRecord(state, record, slots));
   report.steward = { status: "pass recorded and launch attempted", hash };
 }

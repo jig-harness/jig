@@ -27,6 +27,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { isMapping } from "../shared/config-layers.ts";
+import { currentIso, currentMs, parseMs } from "../shared/time.ts";
 
 /** What the archive of one worktree may hold, at most, unless the machine sets `gc.archive_max_bytes`. */
 export const DEFAULT_ARCHIVE_MAX_BYTES = 64 * 1024 * 1024;
@@ -61,14 +62,14 @@ export function markingSince(root: string): Outcome<number, "unreadable"> {
       try {
         const fd = openSync(path, "wx", 0o600);
         try {
-          writeFileSync(fd, `${new Date().toISOString()}\n`);
+          writeFileSync(fd, `${currentIso()}\n`);
         } finally {
           closeSync(fd);
         }
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
-      return Date.parse(readFileSync(path, "utf8").trim());
+      return parseMs(readFileSync(path, "utf8").trim());
     },
   );
   if (!read.ok) return read;
@@ -108,7 +109,7 @@ export function measure(
 ): Outcome<Measured, "timed-out" | "unreadable"> {
   const total: Measured = { bytes: 0, entries: 0 };
   const visit = (path: string): Outcome<undefined, "timed-out"> => {
-    if (Date.now() > deadline)
+    if (currentMs() > deadline)
       return failed(
         "timed-out",
         "measuring ignored content exceeded its deadline",
@@ -158,7 +159,7 @@ function hashFile(
   let bytes = 0;
   try {
     for (;;) {
-      if (Date.now() > deadline) return "timed-out";
+      if (currentMs() > deadline) return "timed-out";
       const read = readSync(fd, buffer, 0, READ_CHUNK, null);
       if (read === 0) return { hash: hash.digest("hex"), bytes };
       bytes += read;
@@ -190,7 +191,7 @@ export function fingerprint(
   const entries = new Map<string, string>();
   let bytes = 0;
   const visit = (relative: string): "ok" | "timed-out" | "oversized" => {
-    if (Date.now() > deadline) return "timed-out";
+    if (currentMs() > deadline) return "timed-out";
     const path = join(root, relative);
     const stat = lstatSync(path);
     if (stat.isSymbolicLink()) {
@@ -273,12 +274,12 @@ export function archiveIgnored(
     bytes: before.value.bytes,
     entries: before.value.entries.size,
   };
-  const now = new Date();
+  const now = currentIso();
   const path = join(
     policy.root,
     ARCHIVES,
-    now.toISOString().slice(0, 10),
-    `${now.toISOString().replace(/:/g, "-")}-${basename(worktree)}-${randomUUID().slice(0, 8)}`,
+    now.slice(0, 10),
+    `${now.replace(/:/g, "-")}-${basename(worktree)}-${randomUUID().slice(0, 8)}`,
   );
   const written = attempt(
     "archive-failed",
@@ -314,7 +315,7 @@ export function archiveIgnored(
         () =>
           writeFileSync(
             join(path, MANIFEST),
-            `${JSON.stringify({ version: 1, worktree, createdAt: now.toISOString(), paths, ...totals }, null, 2)}\n`,
+            `${JSON.stringify({ version: 1, worktree, createdAt: now, paths, ...totals }, null, 2)}\n`,
             { mode: 0o600 },
           ),
       )
@@ -434,7 +435,7 @@ export function archivedAt(path: string): number | null {
     );
     if (!isMapping(manifest) || typeof manifest.createdAt !== "string")
       return dayOf(path);
-    const at = Date.parse(manifest.createdAt);
+    const at = parseMs(manifest.createdAt);
     return Number.isFinite(at) ? at : dayOf(path);
   } catch (error) {
     if (error instanceof SyntaxError) return dayOf(path);
@@ -446,7 +447,7 @@ export function archivedAt(path: string): number | null {
 function dayOf(path: string): number | null {
   const day = basename(dirname(path));
   const start = /^\d{4}-\d{2}-\d{2}$/.test(day)
-    ? Date.parse(`${day}T00:00:00.000Z`)
+    ? parseMs(`${day}T00:00:00.000Z`)
     : Number.NaN;
   return Number.isFinite(start) ? start + 86_400_000 : null;
 }

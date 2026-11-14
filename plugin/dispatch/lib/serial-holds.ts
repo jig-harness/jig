@@ -17,6 +17,7 @@ import type { Contention } from "./contention.ts";
 import { insertRow } from "./log.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { failureText, minutesBetween } from "./text.ts";
+import { parseMs } from "../../shared/time.ts";
 
 interface HoldRow {
   pr: number;
@@ -84,7 +85,7 @@ export function settleHolds(
           slug,
           row.pr,
         );
-        const waited = Math.max(0, Date.parse(nowIso) - Date.parse(row.since));
+        const waited = Math.max(0, parseMs(nowIso) - parseMs(row.since));
         insertRow(db, {
           kind: "event",
           key: `hold-ended ${slug} PR #${row.pr} ${row.since}`,
@@ -95,7 +96,7 @@ export function settleHolds(
           event: "hold-ended",
           account: null,
           class: null,
-          reason: `held ${minutesBetween(Date.parse(row.since), Date.parse(nowIso))} min since ${row.since}, last behind #${row.leader} in ${row.area}; ${endedWhy(contention, row.pr)}`,
+          reason: `held ${minutesBetween(parseMs(row.since), parseMs(nowIso))} min since ${row.since}, last behind #${row.leader} in ${row.area}; ${endedWhy(contention, row.pr)}`,
           ...(Number.isFinite(waited) ? { durationMs: waited } : {}),
         });
       }

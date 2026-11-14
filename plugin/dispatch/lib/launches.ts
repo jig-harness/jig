@@ -79,6 +79,7 @@ export { UNARMED_FACTS } from "./launch-keep.ts";
 import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
+import { isoOf, parseMs } from "../../shared/time.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -303,9 +304,10 @@ export function isRecordId(id: string): boolean {
   return ID.test(id);
 }
 
-export function newRecordId(now: Date): string {
-  const stamp = now
-    .toISOString()
+export function newRecordId(
+  now: Temporal.Instant = Temporal.Now.instant(),
+): string {
+  const stamp = isoOf(now)
     .replace(/[-:]/g, "")
     .replace(/\.\d+Z$/, "Z");
   return `${stamp}-${crypto.randomUUID().slice(0, 8)}`;
@@ -395,7 +397,7 @@ export function isLaunchRecord(value: unknown): value is LaunchRecord {
     (value.vendor === "claude" || value.vendor === "codex") &&
     typeof value.wallBackoffMs === "number" &&
     (value.replaces === null || typeof value.replaces === "string") &&
-    Number.isFinite(Date.parse(value.createdAt as string)) &&
+    Number.isFinite(parseMs(value.createdAt as string)) &&
     isWorkspace(value.workspace) &&
     Array.isArray(value.attempts) &&
     value.attempts.every(isAttempt) &&
@@ -817,8 +819,8 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
 
 /** When an ended or died record finished; `null` for one still holding its stage. */
 function finishedAt(record: LaunchRecord, state: LaunchState): number | null {
-  if (state.kind === "ended") return Date.parse(state.exit.at);
-  return state.kind === "died" ? Date.parse(record.createdAt) : null;
+  if (state.kind === "ended") return parseMs(state.exit.at);
+  return state.kind === "died" ? parseMs(record.createdAt) : null;
 }
 
 /** Remove the rows of ended or died records older than the retention, in one transaction. */

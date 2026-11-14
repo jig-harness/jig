@@ -46,6 +46,7 @@ import {
 } from "./read.ts";
 import { GitHubApiError } from "./transport.ts";
 import type { CommentNode } from "./tracker.ts";
+import { isoFromMs } from "../../../../../../shared/time.ts";
 
 type ReportOps = Pick<
   CoreTracker,
@@ -389,7 +390,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       const listing = {
         ...(starts.length === 0
           ? {}
-          : { since: new Date(Math.min(...starts)).toISOString() }),
+          : { since: isoFromMs(Math.min(...starts)) }),
         ...(query.completedIn === undefined
           ? {}
           : { states: ["CLOSED" as const] }),
@@ -441,7 +442,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
 
     async commentsContaining(query) {
       const issues = await labelled(query.issueLabel, {
-        since: new Date(query.createdIn.sinceMs).toISOString(),
+        since: isoFromMs(query.createdIn.sinceMs),
       });
       const out: FoundComment[] = [];
       for (const { issue } of issues)

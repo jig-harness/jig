@@ -214,7 +214,7 @@ describe("drive-state.ts durability", () => {
     drive.db.run(
       \`INSERT INTO claims (clone, pr, kind, key, token, at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (clone, pr, kind, key) DO NOTHING\`,
-      [drive.clone, ref.pr, ref.kind, ref.key, token, new Date().toISOString()],
+      [drive.clone, ref.pr, ref.kind, ref.key, token, currentIso()],
     ).changes === 1
   );
 }`,

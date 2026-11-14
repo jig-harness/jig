@@ -77,6 +77,7 @@ import type {
   RepoReport,
   RepoTarget,
 } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /**
  * The apply state of a tick run with `--apply` and a machine file; why it was
@@ -440,7 +441,7 @@ async function freshDriveReading(
     repo.slug,
     login,
     [counted.value],
-    Date.now(),
+    currentMs(),
     labels,
     adoption,
   );

@@ -275,7 +275,11 @@ export async function pickUpDrive(
     windowReopened: boolean;
   },
 ): Promise<string> {
-  const quotaCause = quotaRearmCause(state, opts.windowReopened, new Date());
+  const quotaCause = quotaRearmCause(
+    state,
+    opts.windowReopened,
+    Temporal.Now.instant(),
+  );
   if (quotaCause !== null && !opts.dryRun)
     await recordDriveEvent(pr, "rearm", quotaCause);
   const takeover =

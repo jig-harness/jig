@@ -18,6 +18,7 @@ import { readSignal } from "../../../do-item/scripts/lib/tracker/facets/bounds.t
 import type { FacetReadOptions } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { TrackerConfigError } from "../../../do-item/scripts/lib/tracker/config-error.ts";
 import { TrackerRequestError } from "../../../do-item/scripts/lib/tracker/port.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** What pacing reads the time from, and how it waits; tests pass their own. */
 export interface Clock {
@@ -26,7 +27,7 @@ export interface Clock {
 }
 
 export const SYSTEM_CLOCK: Clock = {
-  now: () => Date.now(),
+  now: () => currentMs(),
   sleep: (ms, signal) =>
     sleepMs(ms, undefined, signal === undefined ? {} : { signal }),
 };
@@ -114,7 +115,7 @@ export function pacedWriter(
   } = WRITE_LIMITS,
   bounds?: FacetReadOptions,
 ): Writer {
-  const signal = readSignal(bounds ?? { deadline: Date.now() + 3_600_000 });
+  const signal = readSignal(bounds ?? { deadline: currentMs() + 3_600_000 });
   const recent: number[] = [];
   let attempts = 0;
   /** The `Retry-After` waits this run has honoured. */

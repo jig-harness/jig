@@ -23,6 +23,7 @@ import {
   type GitHubTransport,
   pageAll,
 } from "../../../../do-item/scripts/lib/tracker/github/transport.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 export { GitHubApiError };
 
@@ -130,7 +131,7 @@ export class GitHubClient {
     query: string,
     variables: Record<string, unknown>,
   ): Promise<unknown> {
-    const wait = this.lastWrite + this.intervalMs - Date.now();
+    const wait = this.lastWrite + this.intervalMs - currentMs();
     if (wait > 0) await sleep(wait);
     try {
       return await this.attempt(query, variables, isRateLimited);
@@ -147,7 +148,7 @@ export class GitHubClient {
         );
       throw error;
     } finally {
-      this.lastWrite = Date.now();
+      this.lastWrite = currentMs();
     }
   }
 
