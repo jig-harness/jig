@@ -1,23 +1,67 @@
 /**
  * The CI hold's durable record and the reads that establish it: the drive
- * state's `ciHold` field, the check runs on a head, and the adoption of a
- * live hold label the drive holds no record of.
+ * state's `ciHold` field, the pull request's label and its timeline, the
+ * check runs on a head, and the adoption of a live hold label the drive holds
+ * no record of.
  */
 
 import { swallow } from "../../../../shared/errors.ts";
 import {
   type CheckRunLite,
   checkRunWatermark,
+  ciHoldTransitions,
   type LabelTransition,
   parseCheckRuns,
   ownsHeldTransition,
+  type PrSnapshot,
+  parsePrSnapshot,
 } from "./ci-hold.ts";
+import { readTimeline } from "./pr-timeline.ts";
 import { fail, isGitSha } from "./cli.ts";
 import { ghCall } from "./proc.ts";
 import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
 
 type HeldState = Extract<CiHoldState, { phase: "held" }>;
+
+/** The pull request's state, head and hold label, or `null`, saying why, when unreadable. */
+export async function readPrSnapshot(
+  pr: string,
+  holdLabel: string | null,
+): Promise<PrSnapshot | null> {
+  const result = await ghCall([
+    "pr",
+    "view",
+    pr,
+    "--json",
+    "state,headRefOid,labels",
+  ]);
+  if (result.code !== 0) {
+    console.error(
+      `ci-hold: gh pr view exited ${result.code}: ${result.stderrTail || result.stderr.trim().slice(-500)}`,
+    );
+    return null;
+  }
+  try {
+    return parsePrSnapshot(JSON.parse(result.stdout) as unknown, holdLabel);
+  } catch (err) {
+    swallow(err, "the pull request view is not a snapshot: read as unreadable");
+    return null;
+  }
+}
+
+/** The hold label's transitions on the timeline, or `null`, saying why, when unreadable. */
+export async function readHoldTransitions(
+  pr: string,
+  holdLabel: string,
+): Promise<LabelTransition[] | null> {
+  const events = await readTimeline(pr);
+  if (!events.ok) {
+    console.error(`ci-hold: ${events.failure.reason}`);
+    return null;
+  }
+  return ciHoldTransitions(events.value, holdLabel);
+}
 
 export async function readCiState(pr: string): Promise<CiHoldState | null> {
   return (await openStore(pr)).read().state.ciHold;

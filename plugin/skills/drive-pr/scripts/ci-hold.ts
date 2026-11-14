@@ -23,21 +23,17 @@ import { recoverCancelledOnHead } from "./lib/cancelled-recovery-live.ts";
 
 import {
   checkRunWatermark,
-  ciHoldTransitions,
   completedHoldPrecondition,
   completedRequiredCi,
   type LabelTransition,
   mutationProven,
   ownsHeldTransition,
-  type PrSnapshot,
-  parsePrSnapshot,
   reportsConflict,
   requiredCiStartedAt,
   requirementsWithoutRun,
 } from "./lib/ci-hold.ts";
 import { type CiPolicy, ciPolicy, holdLabelPolicy } from "./lib/ci-policy.ts";
 import { fail, isDigits, isGitSha, runMain } from "./lib/cli.ts";
-import { timelineEvents } from "./lib/pr-timeline.ts";
 import { ghCall, git, gitCallTimeoutSeconds, resolvePr } from "./lib/proc.ts";
 import {
   assertRemoteMutationAllowed,
@@ -50,6 +46,8 @@ import {
   checkRuns,
   headWatermark,
   readCiState,
+  readHoldTransitions,
+  readPrSnapshot,
   writeCiState,
 } from "./lib/ci-hold-state.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
@@ -88,24 +86,7 @@ function usage(): never {
   );
 }
 
-async function snapshot(pr: string): Promise<PrSnapshot | null> {
-  const result = await ghCall([
-    "pr",
-    "view",
-    pr,
-    "--json",
-    "state,headRefOid,labels",
-  ]);
-  if (result.code !== 0) return null;
-  try {
-    return parsePrSnapshot(
-      JSON.parse(result.stdout) as unknown,
-      policy.holdLabel,
-    );
-  } catch {
-    return null;
-  }
-}
+const snapshot = (pr: string) => readPrSnapshot(pr, policy.holdLabel);
 
 async function viewer(): Promise<string | null> {
   const result = await ghCall(["api", "user", "-q", ".login"]);
@@ -113,9 +94,11 @@ async function viewer(): Promise<string | null> {
   return login === "" ? null : login;
 }
 
-async function transitions(pr: string): Promise<LabelTransition[] | null> {
-  const events = await timelineEvents(pr);
-  return events === null ? null : ciHoldTransitions(events, holdLabel());
+const transitions = (pr: string) => readHoldTransitions(pr, holdLabel());
+
+function retryLater(what: string): number {
+  console.error(`ci-hold: cannot read ${what}; retrying later`);
+  return 4;
 }
 
 const latestOf = (values: readonly LabelTransition[]): LabelTransition | null =>
@@ -568,13 +551,13 @@ async function release(
   expectedTransition?: string,
 ): Promise<number> {
   let persisted = await readCiState(pr);
+  // Nothing has changed yet: a failed read (a forge timing out) retries later.
   const live = await snapshot(pr);
-  if (live === null) fail(1, "ci-hold: cannot read the PR state");
+  if (live === null) return retryLater("the PR state");
   if (live.state !== "OPEN") return 5;
   if (live.head !== head) return 4;
   const initialTimeline = await transitions(pr);
-  if (initialTimeline === null)
-    fail(1, "ci-hold: cannot read the label timeline");
+  if (initialTimeline === null) return retryLater("the label timeline");
   const latest = latestOf(initialTimeline);
   if (
     expectedTransition !== undefined &&

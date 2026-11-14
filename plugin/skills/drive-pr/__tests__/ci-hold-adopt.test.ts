@@ -270,6 +270,7 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     checkRuns?: unknown,
     expectedTransition?: string,
     absent = false,
+    prepare?: (fixtureDir: string) => void,
   ) => {
     const repo = scratchWithOrigin();
     const { dir, stateDir } = writeFixture(
@@ -289,6 +290,7 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     if (checkRuns !== undefined) {
       writeFileSync(join(dir, "check-runs.json"), JSON.stringify(checkRuns));
     }
+    prepare?.(dir);
     const proc = Bun.spawn(
       scriptArgv(
         join(SCRIPTS, "ci-hold.ts"),
@@ -353,6 +355,31 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     const r = await runRelease(undefined, "LE_1");
     expectSpawnExit(r, 0);
     expect(r.stdout.trim()).toBe("removed");
+  });
+
+  it("release retries later, saying why, when the PR state cannot be read", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "transient-failure"), ""),
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("cannot read the PR state; retrying later");
+    expect(r.stderr).toContain("simulated transient network failure");
+    expect(ciHoldOf(r.stateDir)).toBeUndefined();
+  });
+
+  it("release retries later, saying why, when the label timeline cannot be read", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "timeline.json"), "not json"),
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain(
+      "cannot read the label timeline; retrying later",
+    );
+    expect(r.stderr).toContain("timeline JSON could not be decoded");
+    const view = readJson<{ labels: { name: string }[] }>(
+      join(r.dir, "pr-view.json"),
+    );
+    expect(view.labels.map((label) => label.name)).toContain("ci:hold");
   });
 
   it("release waits, leaving the adopted label, while no check run is registered yet", async () => {

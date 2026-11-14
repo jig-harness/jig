@@ -66,14 +66,17 @@ export async function releaseAndReadFinalCi(
   // persisted labelled timeline-event id before removing anything, and
   // adopts a live label it holds no record of, then removes it.
   const finalCiSignals = await context.finalCiWait.prime();
+  // Captured, then written through the console, so the driver log keeps
+  // why a release failed: an inherited stream reaches the terminal only.
   const release = await run(
     tsArgv(ciHold, ["release", context.pr, "--expect-head", reviewedHead]),
-    { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
+    { timeoutSec: ciHoldTimeoutSeconds() },
   );
+  if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
   if (release.code === 4) {
     console.error(
-      "review converged, but the head moved or the CI hold label changed during its release; not reporting merge-ready",
+      "review converged, but the CI hold's release could not settle (the head moved, the label changed, or the forge could not be read); not reporting merge-ready",
     );
     return 4;
   }
