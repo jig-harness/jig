@@ -92,7 +92,7 @@ export function nativeFacts(
             rowKey(key),
             reading.then(
               (found) =>
-                found.get(key) ?? guarded(() => source.issue(key, bound)),
+                found.get(key) ?? guarded(() => source.issue(key, bound), true),
             ),
           );
       }

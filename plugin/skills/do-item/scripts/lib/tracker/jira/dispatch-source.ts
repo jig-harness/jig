@@ -97,7 +97,6 @@ export function dispatchSource(
       const signal = readSignal(options);
       refuseStopped(signal);
       const account = await client.accountId(identity, signal);
-      const scope = await client.poolScope(signal);
       const names = [...demanded]
         .filter((name) => name.startsWith("queue-state:"))
         .map((name) => quote(name.slice(12)));
@@ -108,7 +107,6 @@ export function dispatchSource(
             client.project,
             `assignee = ${quote(account)}`,
             `status in (${names.join(", ")})`,
-            ...(scope === null ? [] : [scope]),
           ),
           undefined,
           signal,

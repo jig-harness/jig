@@ -266,6 +266,8 @@ export async function nativeSharedView(
   const progress = rows.filter((i) => isWorkingIssue(tracker, i));
   return {
     ...native,
+    // The snapshot is shared; each caller's own bound governs its projections.
+    ...(options.bound === undefined ? {} : { bound: options.bound }),
     scope,
     get limited() {
       const failure = facts.failure();

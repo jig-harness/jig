@@ -30,6 +30,20 @@ describe("native dispatch sources", () => {
     expect(jqlOf(required(query))).toContain('"Todo"');
   });
 
+  it("reads the Jira queue without one checkout's pool types, which includes() applies", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET user": MEMBER,
+        "POST search/jql": page(),
+        "GET issue/createmeta/ENG/issuetypes": [{ id: "10001", name: "Task" }],
+      }),
+      { issue_tracker: { jira: { pool_issue_types: ["Task"] } } },
+    );
+    await required(t.dispatchSource).queue(MEMBER.accountId);
+    const query = calls.find((call) => call.route === "POST search/jql");
+    expect(jqlOf(required(query))).not.toContain("issuetype");
+  });
+
   it("retains Jira epic children from another project like the ordinary child reader", async () => {
     const parent = issue({ key: "ENG-1", type: "Epic", labels: ["epic"] });
     const child = issue({ key: "OPS-2", parent: "ENG-1" });
