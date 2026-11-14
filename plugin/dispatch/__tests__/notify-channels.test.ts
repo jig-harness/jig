@@ -448,6 +448,28 @@ describe("a channel's answers", () => {
   });
 });
 
+describe("a delivery that outlasts its time", () => {
+  it("has stopped by the time its batch is answered lost", async () => {
+    const h = host();
+    h.state.machine.runtimeTimeoutMs = 20;
+    const slow = fakeChannel("slow");
+    let stopped = false;
+    slow.deliver = async (_due, time) => {
+      await new Promise<void>((resolve) =>
+        time.signal.addEventListener("abort", () => resolve()),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      stopped = true;
+      return [];
+    };
+    const report = await tick(h, slow, true);
+    expect(stopped).toBe(true);
+    expect(
+      report.notifications.find((n) => n.channel === "slow"),
+    ).toMatchObject({ outcome: "lost" });
+  });
+});
+
 describe("a channel's name", () => {
   it("is refused, reported, when it breaks the rule or repeats another's, and nothing goes through it", async () => {
     const h = host();

@@ -624,10 +624,28 @@ async function answersOf(
           reject(new Error(`delivery did not finish within ${timeoutMs}ms`));
         }, timeoutMs);
       });
-      const deliveries = await Promise.race([
-        channel.deliver(batch, { timeLeftMs, signal: controller.signal }),
-        expired,
-      ]);
+      const delivery = channel.deliver(batch, {
+        timeLeftMs,
+        signal: controller.signal,
+      });
+      const deliveries = await Promise.race([delivery, expired]).catch(
+        async (error: unknown) => {
+          // The channel stops before its next effect once aborted: wait for
+          // it to quiesce, within one more delivery bound, before the batch
+          // is answered, so no write lands after its outcome is recorded.
+          if (controller.signal.aborted)
+            await Promise.race([
+              delivery.then(
+                () => undefined,
+                () => undefined,
+              ),
+              new Promise((resolve) =>
+                setTimeout(resolve, deliveryTimeoutMs).unref?.(),
+              ),
+            ]);
+          throw error;
+        },
+      );
       if (controller.signal.aborted)
         return lostAnswers(
           channel,

@@ -345,11 +345,14 @@ function delivered(
   );
 }
 
+const SPENT = "the delivery time was spent before the write";
+
 /** One workspace's causes, joined into one message and sent. */
 async function sendTo(
   { state, root, repo, branch }: CardContext,
   workspace: Workspace,
   causes: Cause[],
+  signal: AbortSignal,
 ): Promise<Delivery[]> {
   const dispatcherOnly = branch !== null;
   // Reconcile an interrupted delivery even when every cause is already present.
@@ -359,6 +362,8 @@ async function sendTo(
   const late = noticeTime(state, 1);
   if (late !== null)
     return [...out, ...fresh.map((c) => answer(c, "waits", null, late))];
+  if (signal.aborted)
+    return [...out, ...fresh.map((c) => answer(c, "waits", null, SPENT))];
   const preserveRead = dispatcherOnly && !owned;
   const { send, later } = fitting(workspace, fresh, preserveRead);
   out.push(
@@ -437,18 +442,12 @@ export function orcaCard(
       if (typeof target === "string")
         return due.map((c) => answer(c, "waits", null, target));
       if (time.signal.aborted)
-        return due.map((c) =>
-          answer(
-            c,
-            "waits",
-            null,
-            "the delivery time was spent before the write",
-          ),
-        );
+        return due.map((c) => answer(c, "waits", null, SPENT));
       const out = await sendTo(
         context,
         target,
         due.map((c) => located(c, listed, target)),
+        time.signal,
       );
       written.add(target.path);
       return out;
