@@ -15,6 +15,11 @@
 // Orca from every drive a test runs, and could move a real workspace card. A
 // test of the Orca calls sets the variables itself.
 //
+// Turns the forge's shared budget off (`JIG_FORGE_BUDGET=off`), so a
+// fixture's fake refusal does not hold the forge for the tests after it and a
+// fake `gh` sees the command line its test wrote. Children inherit it. A test
+// of the budget supplies its own governor (`setForgeGovernor`).
+//
 // Removes the repository-routing variables a git hook may export from the
 // environment tests pass to children. scripts/test.ts also scrubs before
 // launching Bun: Bun's implicit child environment retains startup values.
@@ -30,4 +35,5 @@ for (const key of Object.keys(process.env))
 delete process.env.GITHUB_ACTIONS;
 delete process.env.ORCA_CLI_COMMAND;
 delete process.env.ORCA_CLI_BIN_DIR;
+process.env.JIG_FORGE_BUDGET = "off";
 markRunningTests(beforeEach, afterEach);

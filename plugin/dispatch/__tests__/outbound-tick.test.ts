@@ -118,3 +118,25 @@ test("Linear headers reach the ledger and the quota projection with the same mea
   expect(report.rows[0]?.caller).toBe("tick:linear");
   expect(quotaRisks(report, Date.now())[0]?.operations).toEqual(["Queue"]);
 });
+
+test("a tick reports GitHub's core and GraphQL balances from the machine's budget record", async () => {
+  const w = world();
+  current = w;
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`,
+  );
+  machineFile(w, [account(w, "a", "a@example.com")], {}, []);
+  const now = Date.now();
+  budgetGovernor(sqliteBudgetStore(budgetPath(w.home))).observe(
+    "github:fixture",
+    {
+      requests: { limit: 5000, remaining: 3210, resetAt: now + hour },
+      complexity: { limit: 5000, remaining: 4321, resetAt: now + hour },
+    },
+  );
+  const r = await w.dispatch([]);
+  expectSpawnExit(r, 0);
+  expect(r.stdout).toContain(
+    "outbound github: github:fixture: core 3210/5000, graphql 4321/5000",
+  );
+});

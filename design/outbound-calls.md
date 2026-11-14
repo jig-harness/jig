@@ -15,9 +15,10 @@ operation cost, and tells a reader exactly how a call failed.
 
 This is the design of [plan.md](plan.md) item 55, decided in
 [ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md). Built so
-far: the shared budget record for the tracker adapters
-(`plugin/shared/outbound/budget.ts`, documented under `tracker_share` in the
-[configuration reference](../plugin/CONFIGURATION.md)), conditional requests
+far: the shared budget record for the tracker adapters and the forge
+(`plugin/shared/outbound/budget.ts`, with GitHub's profile and the forge
+client's admission in `github-budget.ts`, documented under `outbound_share`
+in the [configuration reference](../plugin/CONFIGURATION.md)), conditional requests
 for some forge reads (`plugin/shared/gh-conditional.ts`), a deadline on
 every call, the page that shrinks (`paging`), and the ledger with its command, tick reports and low-quota need, and the failure classes with
 one retry for a read (`failure`, `retry`, `hold`): the tracker transports

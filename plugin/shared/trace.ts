@@ -9,6 +9,7 @@ import { errnoCode, swallow } from "./errors.ts";
 import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
+import { ghGovernance } from "./outbound/github-budget.ts";
 import type { OutboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
@@ -201,9 +202,39 @@ function traceCommand<T extends { code: number; timedOut: boolean }>(
 }
 
 /**
+ * One run of `gh`, admitted against the credential's budget record and
+ * observed into it (`outbound/github-budget.ts`): a run the record refuses
+ * is not started and answers `refuse`'s result, a failed run naming when
+ * the limit clears.
+ */
+async function governedRun<T extends GhRun, O>(
+  args: string[],
+  opts: O,
+  refuse: (failure: OutboundFailure) => T,
+  send: (argv: string[]) => Promise<T>,
+): Promise<T> {
+  const o = opts as {
+    env?: Record<string, string | undefined>;
+    stdout?: string;
+    onOutput?: unknown;
+  };
+  const governance = ghGovernance(args, {
+    ...(o.env === undefined ? {} : { env: o.env }),
+    captured: (o.stdout ?? "pipe") === "pipe" && o.onOutput === undefined,
+  });
+  if (governance === null) return send(args);
+  const admitted = governance.admit();
+  if ("refused" in admitted) return refuse(admitted.refused);
+  const began = currentMs();
+  const result = await send(governance.argv);
+  return governance.observe(result, admitted.sentAt, currentMs() - began);
+}
+
+/**
  * Shared gh boundary keeps its effective deadline and span metadata together,
- * and sends nothing to a forge this run holds (`outbound/hold.ts`): the call
- * then answers `refuse`'s result, a failed run naming the earlier failure.
+ * keeps to the credential's budget record (`governedRun`), and sends nothing
+ * to a forge this run holds (`outbound/hold.ts`): the call then answers
+ * `refuse`'s result, a failed run naming the earlier failure.
  */
 function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   args: string[],
@@ -231,7 +262,9 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   if (!held)
     return traceCommand("ghCall", "gh", deadline, () =>
       recordGhAttempt(args, opts, () =>
-        run(args, { ...opts, timeoutSec: deadline }),
+        governedRun(args, opts, refuse, (argv) =>
+          run(argv, { ...opts, timeoutSec: deadline }),
+        ),
       ),
     );
   return traceCommand("ghCall", "gh", deadline, () => {
@@ -240,18 +273,20 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
     // a fault it answered at once (which holds the forge).
     let tookMs = 0;
     return recordGhAttempt(args, opts, () =>
-      guarded(
-        GITHUB,
-        async () => {
-          const began = currentMs();
-          try {
-            return await run(args, { ...opts, timeoutSec: deadline });
-          } finally {
-            tookMs = currentMs() - began;
-          }
-        },
-        (r) => ghRunFailure(r, tookMs),
-        refuse,
+      governedRun(args, opts, refuse, (argv) =>
+        guarded(
+          GITHUB,
+          async () => {
+            const began = currentMs();
+            try {
+              return await run(argv, { ...opts, timeoutSec: deadline });
+            } finally {
+              tookMs = currentMs() - began;
+            }
+          },
+          (r) => ghRunFailure(r, tookMs),
+          refuse,
+        ),
       ),
     );
   });

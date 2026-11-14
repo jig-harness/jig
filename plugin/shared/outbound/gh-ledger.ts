@@ -1,5 +1,5 @@
 /** Account for forge commands at their shared runner, without keeping command arguments or query variables. */
-import { credentialKey } from "./budget.ts";
+import { githubCredential } from "./github-budget.ts";
 import { isRecord } from "../guards.ts";
 import { swallow } from "../errors.ts";
 import { type GhRun, ghRunFailure, graphQLErrorsClass } from "./github.ts";
@@ -138,11 +138,7 @@ export function recordGhAttempt<T extends GhRun, O>(
     stdin?: string;
     env?: Record<string, string | undefined>;
   };
-  const env = opts.env ?? process.env;
-  const credential = credentialKey(
-    "github",
-    env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || "opaque-cli-credential",
-  );
+  const credential = githubCredential(opts.env ?? process.env);
   const observation: Attempt = {
     system: "github",
     credential,

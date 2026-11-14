@@ -254,8 +254,6 @@ request per step:
 - **The cost ledger and its reports**: requests, cost and time per
   operation and caller; a line per system in the tick report, a
   `jig budget` command, and one need when a quota is about to run out.
-- **GitHub in the budget record**: its hourly and secondary limits beside
-  the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,
   identical reads in a run sent once and reads by key in one request,
   through the shared library that the existing queue snapshots adopt.
