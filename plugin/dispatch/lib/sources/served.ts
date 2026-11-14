@@ -32,6 +32,8 @@ import {
 import {
   childPlanHold,
   DEFAULT_EPIC_WIDTH,
+  type PassedChild,
+  type PassOver,
   parkedOnPerson,
   serializeEpics,
   summarizeEpics,
@@ -102,6 +104,8 @@ export interface ServedOptions extends ServedPolicy {
   views?: ServedViews;
   /** `dispatch.epic_width`: how many children of an epic with no execution plan are under way at once. */
   epicWidth?: number;
+  /** Why this machine's launch records keep an item from starting, so it takes no epic's slot. */
+  passOver?: PassOver;
 }
 /** An unplaced row's target, with the title and link the listing returned for it. */
 const itemOf = (i: PoolIssue) => ({
@@ -276,11 +280,20 @@ export async function readServedPickups(
     const serial = shared.serials.get(c.issue.identifier);
     if (c.serial === undefined && serial !== undefined) c.serial = serial;
   }
-  const ranked = serializeEpics(rankQueue(candidates), out.unplaced);
+  const passed = new Map<string, PassedChild>();
+  const ranked = serializeEpics(
+    rankQueue(candidates),
+    out.unplaced,
+    options.passOver,
+    passed,
+  );
   summarizeEpics(
     shared.walks,
-    new Set(ranked.map((c) => c.issue.identifier)),
+    new Set(
+      ranked.map((c) => c.issue.identifier).filter((key) => !passed.has(key)),
+    ),
     out.unplaced,
+    passed,
   );
   out.wanted = ranked.map((c) => ({
     key: c.issue.identifier,

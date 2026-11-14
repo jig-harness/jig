@@ -13,6 +13,7 @@ import {
   withSource,
 } from "../../../../shared/consumer.ts";
 import { splitCommandWords } from "../../../../shared/command-words.ts";
+import { DEFAULT_REFLECTION_TIMEOUT_SEC } from "../../../../shared/repo-commands.ts";
 import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
 
@@ -61,7 +62,7 @@ export type Reflection =
 const DEFAULTS = {
   store: "filesystem" as StoreKind,
   escalateAfter: 3,
-  timeoutSec: 120,
+  timeoutSec: DEFAULT_REFLECTION_TIMEOUT_SEC,
   mode: "quick" as Mode,
 };
 

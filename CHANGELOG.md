@@ -394,6 +394,82 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.237.0] - 2026-11-14
+
+### Added
+
+- The Jig Protocol has stable chapters on the drive mailbox and on the
+  pull-request labels, each with its data file in
+  `plugin/protocol/data/`. [The drive mailbox](plugin/protocol/mailbox.md):
+  the messages and directives a person or a tool may write to a running
+  drive and the acknowledgements it writes back, with every field of both
+  files' lines. [The pull-request labels](plugin/protocol/pr-labels.md):
+  the state labels a drive, a follow-up and the dispatcher's tick keep
+  current and the command labels a person adds. Both are generated from the
+  tables the mailbox's parser and the label projection read, so a program
+  that writes to a drive or filters by its labels reads the values the code
+  holds.
+- A stable chapter on
+  [the commands a repository supplies](plugin/protocol/repo-commands.md)
+  lists every setting whose value is a command Jig runs: who runs it, what
+  it is given and answers with, whether it runs under the command store's
+  rules or through a shell, its deadline and what changes it, and the exits
+  besides 0 its caller reads, with its data file. It is generated from one
+  table in `plugin/shared/repo-commands.ts`, which the preflight, the CI-log
+  read, code-stats' classify command, the changelog's `after_version` and
+  the reflection store's client take their deadlines and exits from.
+
+## [0.236.2] - 2026-11-14
+
+### Fixed
+
+- `tracker.ts claim` with `do_item.claim_marker`: a claim that met an earlier claim's marker only after it had assigned and started the item could stand down while the earlier attempt refused too, leaving the item started with nobody working on it. Each attempt now records how it ended in an outcome comment beside its marker (claimed, released or unresolved), and a marker whose attempt released holds nothing. A claim that stands down after its writes never undoes them: it keeps the item when its own marker still shows and every earlier attempt recorded a release (`"recovery": "reclaimed"`), stands down when one recorded its claim (`"held"`), and stands down `"unresolved"`, leaving the item for a person, when the outcomes cannot settle who holds it. Recovery reads for at most 90 seconds, keeps the outcomes it has seen across reads, starts from the earlier markers the read after the write listed, and before it keeps the item checks that its assignee and state are still the claim's. An outcome comment records which attempt ended how and no reason, so a refusal's text never stays on the item.
+
+## [0.236.1] - 2026-11-14
+
+### Fixed
+
+- On Jira, a type or a size kept in a custom field whose field is not on the
+  create screen of the issue type being filed (a Sub-task or a Bug screen
+  without the size field, say) is now refused before anything is written,
+  naming the facet, the field and the issue type, instead of reaching Jira
+  and failing there. A change through an edit screen that lacks the field is
+  refused the same way. The check now covers number, text and labels fields
+  and clearing a value, not only an option's value.
+- The audit's facet-store check on Jira reads the create screens of
+  `issue_tracker.jira.issue_type`, the sub-task type, each issue type a type
+  is kept as and `issue_tracker.jira.pool_issue_types`, and reports each one
+  that lacks a facet's field, naming the issue types whose filing fails. An
+  epic issue type (`issue_tracker.labels.epic_types`) is not checked for a
+  size, which it is never asked. Such a gap does not stop `file-issue`'s
+  weekly sweep, which changes existing issues.
+
+## [0.236.0] - 2026-11-14
+
+### Added
+
+- `failures.group` in the machine's dispatch file: `cause`, the default,
+  tells this host's own failing turns once per cause (the session runtime,
+  the state database, the configuration, the tracker, the forge, other),
+  naming every repository and tick scope that cause fails, so one host fault
+  is no longer told once for each scope it touches; `scope` keeps one notice
+  per scope. Each scope still counts and clears on its own.
+  **Consumer action:** none.
+
+### Fixed
+
+- A batch pickup that ended after claiming some of its members no longer
+  holds the members it never claimed: they are wanted again at the next
+  tick, whether the pass recorded `done` or `failed`. A pass that ended on a
+  question keeps them until a person answers it.
+- A served epic without an execution plan no longer gives its one-child slot
+  to a child this host's ended pickup record keeps from starting: its next
+  startable child takes the slot, and the epic names the held child and why.
+- An item an ended pickup record holds, with no question and no rule to
+  release it, is now a need for a person, framed with its options (pick it
+  up again, or leave it) and listed by `jig ask --waiting`, rather than a
+  quiet `pickup-ended` line. **Consumer action:** none.
+
 ## [0.235.3] - 2026-11-14
 
 ### Fixed
@@ -8222,7 +8298,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.235.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.237.0...HEAD
+[0.237.0]: https://github.com/jig-harness/jig/compare/v0.236.2...v0.237.0
+[0.236.2]: https://github.com/jig-harness/jig/compare/v0.236.1...v0.236.2
+[0.236.1]: https://github.com/jig-harness/jig/compare/v0.236.0...v0.236.1
+[0.236.0]: https://github.com/jig-harness/jig/compare/v0.235.3...v0.236.0
 [0.235.3]: https://github.com/jig-harness/jig/compare/v0.235.2...v0.235.3
 [0.235.2]: https://github.com/jig-harness/jig/compare/v0.235.1...v0.235.2
 [0.235.1]: https://github.com/jig-harness/jig/compare/v0.235.0...v0.235.1

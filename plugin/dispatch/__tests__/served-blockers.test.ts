@@ -446,6 +446,47 @@ describe("an assigned epic's children", () => {
     expect(read.wanted.map((item) => item.key)).toEqual(["#2"]);
   });
 
+  it("gives the slot to the next startable child while an ended pickup holds the top one", async () => {
+    const held = (i: { identifier: string }) =>
+      i.identifier === "#2" ? "launch record r1 ended" : null;
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3", "#4") },
+    }).read({ passOver: held, ...one });
+    // The held child stays wanted, so the pickup plan reports it; it takes no slot.
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3"]);
+    expect(reasons(read)["#4"]).toBe(
+      "#1 works at most 1 child at once (dispatch.epic_width): starting #3",
+    );
+    expect(reasons(read)["#1"]).toBe(
+      "#2 is held, so it does not hold its siblings: launch record r1 ended",
+    );
+  });
+
+  it("keeps a held child ranked after the leader planned, so its own need is raised", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3") },
+    }).read({
+      passOver: (i: { identifier: string }) =>
+        i.identifier === "#3" ? "launch record r1 ended" : null,
+      ...one,
+    });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3"]);
+    expect(reasons(read)["#3"]).toBeUndefined();
+  });
+
+  it("names the held child in the idle epic summary when no sibling can start", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2") },
+    }).read({ passOver: () => "launch record r1 ended" });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+    expect(reasons(read)["#1"]).toBe(
+      "none of its 1 open children can start; first, #2: launch record r1 ended",
+    );
+  });
+
   it("names a parked child in the idle epic summary", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
