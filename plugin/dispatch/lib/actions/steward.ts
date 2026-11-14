@@ -103,7 +103,13 @@ export async function applySteward(
     return skip("a steward pass already holds this repository");
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
-  const backlog = stewardBacklog(backlogInput(state, observation, station));
+  const queued = await stewardQueue(observation.tracked, () =>
+    readRoomMs(state),
+  );
+  if (!queued.ok) return skip(queued.failure.reason);
+  const backlog = stewardBacklog(
+    backlogInput(state, observation, station, queued.value),
+  );
   const trigger = stewardTrigger(
     backlog.members,
     judgedMembers(repo.slug, state.root),
@@ -200,7 +206,13 @@ export async function applySteward(
     mark: named.mark,
   };
   keepStewardRun(id, digest, currentMs(), state.root);
-  const launch = await startRecord(state, record, slots);
+  let launch: Awaited<ReturnType<typeof startRecord>>;
+  try {
+    launch = await startRecord(state, record, slots);
+  } catch (error) {
+    forgetStewardRun(id, state.root);
+    throw error;
+  }
   report.launches.push(launch);
   // A launch that left no record behind started no pass, so nobody judged its members.
   if (!state.records.some((r) => r.record.id === id))
@@ -229,8 +241,9 @@ function backlogInput(
   state: ApplyState,
   observation: RepoObservation,
   station: StationContext,
+  queue: PoolIssue[],
 ): BacklogInput {
-  const { opened, tracked, forge } = observation;
+  const { opened, forge } = observation;
   const labels = parseTrackerLabels(opened.values);
   return {
     slug: opened.repo.slug,
@@ -238,9 +251,7 @@ function backlogInput(
     running: opened.report.running,
     drives: forge.drives,
     held: observation.held,
-    queue: tracked.pickups.flatMap((item) =>
-      item.queueIssue === undefined ? [] : [item.queueIssue],
-    ),
+    queue,
     records: state.records,
     parkClasses: parkClassesOf(opened.values),
     labels: { hitl: labels.hitl, manualOps: labels.manualOps },

@@ -222,6 +222,37 @@ describe("the steward's trigger", () => {
     });
   });
 
+  test("an uncached queued item missing a facet makes the backlog due", async () => {
+    const root = freshRoot();
+    let reads = 0;
+    const seen = observation([]);
+    (seen as unknown as { tracked: unknown }).tracked = {
+      pickups: [{ key: "#40", title: "Task", state: "Todo" }],
+      tracker: {
+        poolIssue: async (key: string) => ({
+          identifier: key,
+          title: "Task",
+          url: null,
+          type: null,
+          priority: null,
+          size: null,
+          state: { id: "todo", name: "Todo", type: "unstarted" },
+          createdAt: "2026-01-01",
+          assignee: { id: "a", name: "alex" },
+          labels: [],
+          isEpic: false,
+          hasOpenChildren: false,
+          truncated: [],
+        }),
+      },
+    };
+    await applySteward(stateAt(root), seen, STATION, async () => {
+      reads++;
+      return { ok: false, failure: { code: "unread", reason: "stopped here" } };
+    });
+    expect(reads).toBe(1);
+  });
+
   test("a run taken back leaves its members unjudged", () => {
     const root = freshRoot();
     const seen = stalled("#12", "2026-11-14T08:00:00Z");
