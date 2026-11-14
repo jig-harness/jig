@@ -437,9 +437,11 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
 
   /**
    * Refuses, before anything is written, an issue type the issue's edit
-   * screen does not offer: Jira changes an issue type by an edit only
-   * between issue types of one workflow and field configuration, and
-   * answers any other change with a bare 400 on `issuetype`.
+   * screen lists the choices of and does not offer: Jira changes an issue
+   * type by an edit only between issue types of one workflow and field
+   * configuration, and answers any other change with a bare 400 on
+   * `issuetype`. A screen without an `issuetype` entry proves nothing, since
+   * editmeta is also filtered by screen configuration: that write goes ahead.
    */
   async function refuseUneditableType(
     issue: JiraIssue,
@@ -448,18 +450,22 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     editScreen: () => Promise<FieldMeta>,
   ) {
     const screen = await editScreen();
-    // Jira lists only the fields the caller may edit: none means no permission.
+    // Jira lists only the fields the issue's screens, workflow step and the
+    // caller's permissions allow editing: none has several possible causes.
     if (screen.size === 0)
       throw new TrackerRequestError(
         "unresolved",
-        `${kept}, but the edit screen of ${issue.key} lists no field at all, which Jira answers when the credential may not edit the issue; give the credential's account the Edit Issues permission on ${issue.key}`,
+        `${kept}, but the edit screen of ${issue.key} lists no field at all; Jira answers that when the credential may not edit the issue (Edit Issues permission), when the issue's current workflow step is not editable, or when no field is on its edit screen`,
       );
     const offered = screen.get("issuetype");
-    if (offered === null || offered?.some((n) => same(n, target.name))) return;
+    if (
+      offered === undefined ||
+      offered === null ||
+      offered.some((n) => same(n, target.name))
+    )
+      return;
     const from = issue.issueType?.name ?? "its issue type";
-    const others = (offered ?? []).filter(
-      (n) => !same(n, issue.issueType?.name ?? ""),
-    );
+    const others = offered.filter((n) => !same(n, issue.issueType?.name ?? ""));
     throw new TrackerRequestError(
       "unresolved",
       `${kept}, but the edit screen of ${issue.key} lets its issue type change from ${from} to ${others.length === 0 ? "no other type" : `${others.join(", ")} only`}: Jira changes an issue type by an edit only between issue types of one workflow and field configuration; move ${issue.key} to ${target.name} in Jira, or keep type in labels or a field (store: label or store: field)`,

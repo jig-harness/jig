@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 import { SITE, SIZE_OPTIONS, STORES } from "./jira-facet-fixtures.ts";
 import { issue, jira, routes, writes } from "./jira-fixtures.ts";
 
@@ -98,17 +97,15 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
     return { err, calls };
   };
 
-  it("refuses, before any write, a type change the edit screen offers no issue type field for", async () => {
+  it("leaves the write to Jira when the edit screen has no issue type field, which screen configuration also explains", async () => {
     const { err, calls } = await across(undefined, { type: "feature" });
-    expect(err).toBeInstanceOf(TrackerRequestError);
-    expect((err as TrackerRequestError).code).toBe("unresolved");
-    expect((err as Error).message).toBe(
-      "type feature is kept in Jira's issue types as 'Story', but the edit screen of ENG-1 lets its issue type change from Task to no other type: Jira changes an issue type by an edit only between issue types of one workflow and field configuration; move ENG-1 to Story in Jira, or keep type in labels or a field (store: label or store: field)",
-    );
-    expect(writes(calls)).toEqual([]);
+    expect(err).toBeUndefined();
+    expect(
+      calls.filter((c) => c.route === "PUT issue/ENG-1").map((c) => c.body),
+    ).toEqual([{ fields: { issuetype: { id: "t2" } } }]);
   });
 
-  it("names the credential, not the workflow, when the edit screen lists no field at all", async () => {
+  it("names every cause, not only the credential, when the edit screen lists no field at all", async () => {
     const { t, calls } = jira(
       routes({
         ...SITE,
@@ -121,7 +118,7 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
       .updateIssue("ENG-1", { type: "feature" })
       .catch((e: unknown) => e);
     expect((err as Error).message).toBe(
-      "type feature is kept in Jira's issue types as 'Story', but the edit screen of ENG-1 lists no field at all, which Jira answers when the credential may not edit the issue; give the credential's account the Edit Issues permission on ENG-1",
+      "type feature is kept in Jira's issue types as 'Story', but the edit screen of ENG-1 lists no field at all; Jira answers that when the credential may not edit the issue (Edit Issues permission), when the issue's current workflow step is not editable, or when no field is on its edit screen",
     );
     expect(writes(calls)).toEqual([]);
   });
