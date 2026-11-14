@@ -93,7 +93,12 @@ export interface FailureSettings {
   backoffMaxMs: number;
   /** `failures.notify_after`: the failures in a row at which a person is told. */
   notifyAfter: number;
+  /** `failures.group`: this host's own failing rows told one notice per cause (`cause`, also when absent) or one per scope (`scope`). */
+  group?: FailureGrouping;
 }
+
+/** How this host's own failing rows are told: one notice per cause, or one per scope. */
+export type FailureGrouping = "cause" | "scope";
 
 /**
  * The defaults. A single failure waits for nothing, since most are a
@@ -109,6 +114,7 @@ export const FAILURE_DEFAULTS: FailureSettings = {
   backoffMs: 2 * 60_000,
   backoffMaxMs: 60 * 60_000,
   notifyAfter: 3,
+  group: "cause",
 };
 
 /** The longest reason a row keeps. */

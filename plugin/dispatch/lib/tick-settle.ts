@@ -387,16 +387,18 @@ function quietWakeUps(
   nowMs: number,
 ): void {
   const at = isoFromMs(nowMs);
-  const rows = readFailures(undefined, root);
-  const release = stateDb(root).query("DELETE FROM notices WHERE key = ?");
+  const before = hostNoticeKeys(readFailures(undefined, root));
   for (const r of receipt.repos) {
     const key = `ticks ${resolve(r.path)}`;
     if (key === own || repoFailure(r) !== null) continue;
     quietFailure("", key, at, root);
-    // The notice was told at whichever repository was its destination: its record goes with the quiet, or a failure after it would still be suppressed there.
-    for (const row of rows.filter((w) => w.repo === "" && w.key === key))
-      for (const notice of hostNoticeKeys([row])) release.run(notice);
   }
+  // A notice was told at whichever repository was its destination: the
+  // record of each the quiet ended goes with it, or a failure after it would
+  // still be suppressed there. A cause another scope still fails keeps its.
+  const after = hostNoticeKeys(readFailures(undefined, root));
+  const release = stateDb(root).query("DELETE FROM notices WHERE key = ?");
+  for (const notice of before) if (!after.has(notice)) release.run(notice);
 }
 
 /** Put the ledger's rows that back off or are notified on the receipt. */

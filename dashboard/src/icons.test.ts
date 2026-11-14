@@ -133,6 +133,7 @@ describe("reading a recorded set from its declaration", () => {
   it("reads literals, named types and Exclude", () => {
     expect([...unionMembers("FailureCause")].sort()).toEqual([
       "action-failing",
+      "host-failing",
       "repository-failing",
       "ticks-failing",
     ]);

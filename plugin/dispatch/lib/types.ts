@@ -344,7 +344,8 @@ export type NotifyCause =
 export type FailureCause =
   | "action-failing"
   | "repository-failing"
-  | "ticks-failing";
+  | "ticks-failing"
+  | "host-failing";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
 export interface StaleClaim {

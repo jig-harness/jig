@@ -40,13 +40,16 @@ afterEach(() => {
   current = null;
 });
 
-/** A world whose machine file enables `rearm` and `notify` for the repository on account a. */
-function fixture(yaml: string): World {
+/** A world whose machine file enables `rearm` and `notify` for the repository on account a, with `extra` machine settings. */
+function fixture(yaml: string, extra: Record<string, unknown> = {}): World {
   const w = world();
   current = w;
   w.setConfig(yaml);
   withOrigin(w);
-  machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+  machineFile(w, [account(w, "a", "a@example.com")], extra, [
+    "rearm",
+    "notify",
+  ]);
   return w;
 }
 
@@ -241,8 +244,36 @@ describe("jig dispatch backs off a label write that keeps failing", () => {
 });
 
 describe("jig dispatch tells a person about a repository whose turn keeps failing", () => {
-  it("notifies after three failing ticks in a row, and one tick that reads it whole clears the row and retires the notice", async () => {
+  it("notifies the repository's turn and the ticks as one cause, naming both, and one tick that reads it whole retires it", async () => {
     const w = fixture(CONFIG);
+    w.setPrs("open", [openPr(7, "feature/7")]);
+    writeFileSync(join(w.dir, "prs-open-fail"), "");
+    for (const _ of [1, 2, 3]) expect(failing(await tick(w, 1))).toEqual([]);
+    const told = await tick(w, 1);
+    const host = (repo(told)?.notifications ?? []).filter((n) =>
+      ["host-failing", "repository-failing", "ticks-failing"].includes(n.cause),
+    );
+    expect(host).toMatchObject([{ cause: "host-failing", outcome: "sent" }]);
+    const key = host[0]?.key ?? "";
+    expect(key).toBe("host forge failing");
+    const workspaces = JSON.parse(
+      readFileSync(join(w.dir, "orca-ps.json"), "utf8"),
+    ) as { worktrees: Array<{ comment: string }> };
+    const comment =
+      workspaces.worktrees.find((x) => x.comment.includes(key))?.comment ?? "";
+    expect(comment).toContain("all with one cause: the forge");
+    expect(comment).toContain(`- the dispatcher's turn for ${SLUG}: failed`);
+    expect(comment).toContain("- this host's dispatcher ticks of ");
+
+    rmSync(join(w.dir, "prs-open-fail"));
+    await tick(w);
+    expect(rows(w)).toEqual([]);
+    await tick(w);
+    expect(noticeKeys(w).filter((k) => k.includes("failing"))).toEqual([]);
+  }, 180_000);
+
+  it("notifies each scope on its own under failures.group: scope, after three failing ticks in a row, and one tick that reads it whole clears the row and retires the notice", async () => {
+    const w = fixture(CONFIG, { failures: { group: "scope" } });
     w.setPrs("open", [openPr(7, "feature/7")]);
     writeFileSync(join(w.dir, "prs-open-fail"), "");
 

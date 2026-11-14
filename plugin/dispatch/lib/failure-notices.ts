@@ -18,6 +18,12 @@
  * identity wherever it is told: its notice key carries `host`, not the
  * destination's slug, and a delivery at any repository suppresses it at the
  * others (`hostNoticeKeys`).
+ *
+ * Under `failures.group: cause`, the default, the host's rows are told by
+ * their cause (`failure-groups.ts`): one notice per cause, naming every
+ * scope it fails and since when, so one fault is not told once for each
+ * repository and tick scope it touches. `failures.group: scope` tells each
+ * row on its own. Either way each row backs off and clears as its own.
  */
 import { resolve } from "node:path";
 import { stateRoot } from "../receipts.ts";
@@ -29,6 +35,13 @@ import {
   readFailures,
 } from "./failures.ts";
 import { failureSettings, type MachineConfig } from "./machine-config.ts";
+import {
+  byCause,
+  CAUSE_WORDS,
+  earliest,
+  type RowCause,
+  standingHostRows,
+} from "./failure-groups.ts";
 import { failingNotice } from "./notices.ts";
 import type { TickContext } from "./tick-context.ts";
 import type { OpenedRepo } from "./tick-observe.ts";
@@ -39,6 +52,7 @@ const FAILURE_CAUSES: ReadonlySet<NotifyCause> = new Set<FailureCause>([
   "action-failing",
   "repository-failing",
   "ticks-failing",
+  "host-failing",
 ]);
 
 export function isFailureCause(cause: NotifyCause): cause is FailureCause {
@@ -91,16 +105,67 @@ const RECEIPT =
 /** What the key of a host failure's notice starts with, in place of a repository's slug. */
 export const HOST_NOTICE = "host";
 
-/** The notice keys of the rows of this host's own failures: those of its repositories' turns and of its ticks, a quiet row's left out. */
+/**
+ * The notice keys of this host's own failures that stand: each row's, of
+ * its repositories' turns and of its ticks, a quiet row's left out, and
+ * each cause's those rows share, whichever `failures.group` tells them.
+ */
 export function hostNoticeKeys(rows: readonly FailureRow[]): Set<string> {
-  return new Set(
-    rows
-      .filter(
-        (r) =>
-          (r.kind === "tick" || r.kind === "repository") && r.quietAt === null,
-      )
-      .map((r) => hostCause(HOST_NOTICE, r).notice?.key as string),
+  const standing = standingHostRows(rows);
+  return new Set([
+    ...standing.map((r) => hostCause(HOST_NOTICE, r).notice?.key as string),
+    ...[...byCause(standing).keys()].map(groupKey),
+  ]);
+}
+
+/** The notice key of a cause's group: its cause alone. */
+function groupKey(cause: RowCause): string {
+  return failingNotice(HOST_NOTICE, groupIdentity(cause), []).key;
+}
+
+/** What a cause's group is keyed by. */
+function groupIdentity(cause: RowCause): string {
+  return `${cause} failing`;
+}
+
+/** A host row's scope, as a cause's notice lists it. */
+function scopeOf(row: FailureRow): string {
+  return row.kind === "repository"
+    ? `the dispatcher's turn for ${row.target}`
+    : `this host's dispatcher ${row.target}`;
+}
+
+/**
+ * The notification of a cause's host rows, one of them past the threshold:
+ * every scope it fails, each with its own count and since when.
+ */
+function groupCause(cause: RowCause, members: readonly FailureRow[]): Action {
+  const since = earliest(members);
+  const latest = members.reduce((a, b) => (b.lastAt > a.lastAt ? b : a));
+  const words = CAUSE_WORDS[cause];
+  const scopes = members.map(
+    (r) =>
+      `${scopeOf(r)}: failed ${times(r.count)} in a row since ${r.firstAt}; the last failure: ${sentence(r.reason)}`,
   );
+  return {
+    stage: "notify",
+    target: `this host's failures from ${words}`,
+    record: "runtime",
+    reason: `${members.length === 1 ? "one scope fails" : `${members.length} scopes fail`} with one cause, ${words}, since ${since}: ${latest.reason}`,
+    evidence: {
+      failures: members.reduce((n, r) => Math.max(n, r.count), 0),
+      since,
+      last: latest.reason,
+      fault: cause,
+      scopes: members.map((r) => r.target).join(", "),
+    },
+    cause: "host-failing",
+    notice: failingNotice(HOST_NOTICE, groupIdentity(cause), [
+      `This host's own turns have been failing since ${since}, all with one cause: ${words}. Each scope it fails:`,
+      ...scopes.map((s) => `- ${s}`),
+      `Each scope backs off and clears on its own; this notice retires once none of them fails for this cause. ${RECEIPT}`,
+    ]),
+  };
 }
 
 /** The cause for one row past the threshold. */
@@ -201,12 +266,15 @@ export function failureCauses(
   const owned = new Set(
     machine.repositories.filter((r) => r.owner).map((r) => r.path),
   );
-  for (const r of rows)
-    if (
-      due(r) &&
-      (r.kind === "tick" || (r.kind === "repository" && owned.has(r.repo)))
-    )
-      actions.push(hostCause(HOST_NOTICE, r));
+  const mine = standingHostRows(rows).filter(
+    (r) => r.kind === "tick" || owned.has(r.repo),
+  );
+  if (settings.group === "scope") {
+    for (const r of mine) if (due(r)) actions.push(hostCause(HOST_NOTICE, r));
+    return actions;
+  }
+  for (const [cause, members] of byCause(mine))
+    if (members.some(due)) actions.push(groupCause(cause, members));
   return actions;
 }
 
