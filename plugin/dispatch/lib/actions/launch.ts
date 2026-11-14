@@ -433,11 +433,7 @@ function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
   return replaced !== undefined && holds(replaced.state);
 }
 
-/**
- * Whether every launch before the latest one is a known failure. An earlier
- * attempt whose answer was lost may still have started the wrapper, so a
- * record carrying one is kept until its claim or exit settles it.
- */
+/** A lost earlier answer might have started the wrapper, so only known failures release it. */
 function releasable(record: LaunchRecord): boolean {
   return record.attempts.slice(0, -1).every((a) => a.outcome === "failed");
 }
