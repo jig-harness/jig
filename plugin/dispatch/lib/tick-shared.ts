@@ -54,6 +54,7 @@ import {
 import type { ForgeRead } from "./tick-forge.ts";
 import type { ActionBook } from "./failures.ts";
 import type { DrivenPr, MarkedPr, RepoReport, SharedReport } from "./types.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 
 /** A repository's shared records for one tick. */
 export interface TickShared {
@@ -285,7 +286,7 @@ export function settleOwnDrives(
     ),
     own,
     claims,
-    Date.now(),
+    currentMs(),
   );
 }
 
@@ -378,7 +379,7 @@ export async function endOwnClaims(
       inputs.forge.merged,
       own,
       inputs.outcomes,
-      new Date(inputs.nowMs).toISOString(),
+      isoFromMs(inputs.nowMs),
       scope,
       inputs.forge.ok ? (inputs.book ?? undefined) : undefined,
     )),

@@ -29,6 +29,7 @@ import {
   outboundFailure,
   unanswered,
 } from "./failure.ts";
+import { currentMs, isoFromMs } from "../time.ts";
 
 /** A system held in the file: when, and the failure that held it. */
 interface Kept {
@@ -73,7 +74,7 @@ function writeKept(b: Book): void {
   const value: Record<string, Kept> = Object.fromEntries(b.earlier);
   for (const [system, failure] of b.held)
     value[system] = {
-      at: new Date(b.now()).toISOString(),
+      at: isoFromMs(b.now()),
       reason: failure.reason,
     };
   try {
@@ -89,7 +90,7 @@ function writeKept(b: Book): void {
 /** Hold the systems that do not answer for the rest of this process's run, keeping the holds in `path` for the next. */
 export function holdUnanswered(
   path: string,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): void {
   book = {
     path,

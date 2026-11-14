@@ -65,6 +65,7 @@ import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** The stages a machine file can enable. */
 const MACHINE_STAGES = [
@@ -346,9 +347,9 @@ function stages(value: unknown, where: string): Checked<MachineStage[]> {
 function since(value: unknown, where: string): Checked<string | null> {
   if (value === undefined || value === null) return ok(null);
   const raw = value instanceof Date ? value.toISOString() : value;
-  if (typeof raw !== "string" || !Number.isFinite(Date.parse(raw)))
+  if (typeof raw !== "string" || !Number.isFinite(parseMs(raw)))
     return invalid(`${where} must be a date`);
-  return ok(new Date(raw).toISOString());
+  return ok(isoFromMs(parseMs(raw)));
 }
 
 function repository(value: unknown, i: number): Checked<MachineRepository> {

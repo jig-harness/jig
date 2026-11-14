@@ -11,6 +11,7 @@ import {
   TrackerRequestError,
   type WindowSpec,
 } from "./port.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 /** Refuse a priority outside the port's scale before any request. */
 export function checkPriority(priority: number | undefined): void {
@@ -123,6 +124,6 @@ export function inWindow(
 ): boolean {
   if (w === undefined) return true;
   if (at === null) return false;
-  const ms = Date.parse(at);
+  const ms = parseMs(at);
   return ms >= w.sinceMs && ms < w.untilMs;
 }

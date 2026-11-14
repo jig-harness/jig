@@ -8,6 +8,7 @@ import {
   type EpicRecognition,
   isEpic,
 } from "../../../../shared/tracker-labels.ts";
+import { parseMs } from "../../../../shared/time.ts";
 /** The default epic label, when a caller names none. */
 export const DEFAULT_EPIC_LABEL = "epic";
 /** The default epic: the default label, no issue types. */
@@ -96,7 +97,7 @@ export interface UnitsInput {
 
 export function inWindow(iso: string | null, w: WindowSpec): boolean {
   if (iso === null) return false;
-  const ms = Date.parse(iso);
+  const ms = parseMs(iso);
   return Number.isFinite(ms) && ms >= w.sinceMs && ms < w.untilMs;
 }
 

@@ -64,6 +64,7 @@ import {
   migrateRelations,
 } from "./related-migration.ts";
 import { GitHubApiError, pageAll } from "./transport.ts";
+import { parseMs } from "../../../../../../shared/time.ts";
 
 const SUB_ISSUES = (fields: string) => `
 query TrackerChildren($owner: String!, $name: String!, $number: Int!, $after: String) {
@@ -214,7 +215,7 @@ export function gitHubTracker(client: Client): Tracker {
           n.createdAt,
           `comments of ${key}[${i}].createdAt`,
         );
-        if (!Number.isFinite(Date.parse(createdAt)))
+        if (!Number.isFinite(parseMs(createdAt)))
           throw new GitHubApiError(`issue ${key}: an unreadable comment node`);
         return {
           id: str(n.id, `comments of ${key}[${i}].id`),

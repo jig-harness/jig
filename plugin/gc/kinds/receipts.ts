@@ -4,6 +4,7 @@ import { ok, type Outcome } from "../../shared/outcome.ts";
 import { readReceipt, receiptPaths, stateRoot } from "../receipts.ts";
 import { archivedAt, archivePaths } from "../legacy-archive.ts";
 import type { CollectionKind, Proof, Receipt } from "../types.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 function scopeKey(kind: {
   name: string;
@@ -60,7 +61,7 @@ function archiveProof(path: string, days: number): Proof {
       state: "unverified",
       reason: "archive age could not be read",
     };
-  if (Date.now() - at < days * 86_400_000)
+  if (currentMs() - at < days * 86_400_000)
     return { state: "live", reason: "archive retention guard has not elapsed" };
   return { state: "dead", reason: "archive retention elapsed" };
 }
@@ -97,7 +98,7 @@ export function receiptsKind(days: number, root = stateRoot()): CollectionKind {
           state: "unverified",
           reason: "run did not record completion; preserve its action evidence",
         };
-      if (Date.now() - Date.parse(candidate.startedAt) < days * 86_400_000)
+      if (currentMs() - parseMs(candidate.startedAt) < days * 86_400_000)
         return {
           state: "live",
           reason: "receipt retention guard has not elapsed",

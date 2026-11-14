@@ -56,6 +56,7 @@ import { failedBy } from "../../shared/outbound/failure.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import { checksFail } from "./automation.ts";
 import type { RepoTarget } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** The most pull requests a page asks for: the forge charges three points for a page this size. */
 export const PAGE = 50;
@@ -232,7 +233,7 @@ function keepSize(
       whole,
     },
     PAGE,
-    Date.now(),
+    currentMs(),
   );
   if (next !== null) sizes?.set(key, next);
 }
@@ -427,13 +428,13 @@ function configOf(repository: unknown): Read<string | null> {
 
 /** One query's answer, run in `cwd` where it names the repository by the checkout. */
 async function graphql(args: string[], cwd?: string): Promise<Asked<unknown>> {
-  const began = Date.now();
+  const began = currentMs();
   const r = await ghCall(["api", "graphql", ...args], {
     stderr: "pipe",
     env: ghRepoEnv(),
     ...(cwd === undefined ? {} : { cwd }),
   });
-  const failure = ghRunFailure(r, Date.now() - began);
+  const failure = ghRunFailure(r, currentMs() - began);
   if (failure !== null) {
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
     return failedBy(
@@ -553,7 +554,7 @@ async function readPages(
   paging: Paging,
   ask: AskPage,
 ): Promise<Outcome<RepositoryRead, "unreadable">> {
-  const startedAtMs = Date.now();
+  const startedAtMs = currentMs();
   const pageAfter = (after: string | null) =>
     shrinking(paging, "a page of pull requests", (size) =>
       ask(path, after, size),
@@ -641,7 +642,7 @@ async function readChunks(
   const read: CommentsRead = {
     comments: new Map(),
     overflow: [],
-    startedAtMs: Date.now(),
+    startedAtMs: currentMs(),
     pages: 0,
     cost: 0,
   };

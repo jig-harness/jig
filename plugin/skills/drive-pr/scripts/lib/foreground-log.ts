@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { detectHarness } from "../../../../shared/harness.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** Most log bytes one `wait` relays; older unseen output is summarised. */
 const LOG_CAP_BYTES = 256 * 1024;
@@ -144,20 +145,20 @@ function repeatLogTail(dir: string, size: number): void {
  */
 export function writeStdoutSync(bytes: Uint8Array): void {
   let off = 0;
-  const startedAt = Date.now();
+  const startedAt = currentMs();
   let lastProgress = startedAt;
   while (off < bytes.length) {
     try {
       const n = writeSync(1, bytes, off, bytes.length - off);
       off += n;
-      if (n > 0) lastProgress = Date.now();
+      if (n > 0) lastProgress = currentMs();
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EAGAIN") throw err;
       // A non-blocking stdout whose reader is behind: back off and retry. The
       // sleep blocks the event loop, so the stall is bounded here — a reader
       // that stays open but stops draining must fail the relay, not wedge it
       // past the wait budget with the cancellation handlers unable to run.
-      if (Date.now() - lastProgress > STDOUT_STALL_MS) {
+      if (currentMs() - lastProgress > STDOUT_STALL_MS) {
         throw new Error(
           `foreground-wait: stdout reader made no progress for ${STDOUT_STALL_MS}ms`,
           { cause: err },
@@ -166,7 +167,7 @@ export function writeStdoutSync(bytes: Uint8Array): void {
       // Slow-but-steady progress resets the stall clock, so the relay also has
       // an overall budget: a reader taking a few KiB per interval must not
       // keep this synchronous loop running past the caller's wait budget.
-      if (Date.now() - startedAt > STDOUT_RELAY_MAX_MS) {
+      if (currentMs() - startedAt > STDOUT_RELAY_MAX_MS) {
         throw new Error(
           `foreground-wait: stdout relay exceeded ${STDOUT_RELAY_MAX_MS}ms`,
           { cause: err },

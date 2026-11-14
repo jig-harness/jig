@@ -8,13 +8,14 @@ import { join, relative, sep } from "node:path";
 import type { Finding } from "./gates.ts";
 import { isDate, markdownFiles, readFrontmatter } from "./docs.ts";
 import { byteOrder, SettingsError } from "./settings.ts";
+import { currentIso, parseMs } from "../../../../shared/time.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Whole days from `from` to `to`, both `YYYY-MM-DD`. */
 export function daysBetween(from: string, to: string): number {
   return Math.round(
-    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS,
+    (parseMs(`${to}T00:00:00Z`) - parseMs(`${from}T00:00:00Z`)) / DAY_MS,
   );
 }
 
@@ -28,7 +29,7 @@ export function today(env: Record<string, string | undefined>): string {
       );
     return given;
   }
-  return new Date().toISOString().slice(0, 10);
+  return currentIso().slice(0, 10);
 }
 
 /**

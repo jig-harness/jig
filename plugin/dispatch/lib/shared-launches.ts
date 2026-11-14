@@ -82,6 +82,7 @@ import {
 } from "./launches.ts";
 import { stateDb } from "./state.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
+import { currentIso, currentMs, parseMs } from "../../shared/time.ts";
 
 /** This host as its claims name it: a digest of its dispatcher database's instance id. */
 export function hostOf(root = stateRoot()): string {
@@ -147,9 +148,9 @@ function startedDriver(c: ReadClaim, pr: DrivenPr): boolean {
   const s = c.says.value;
   if (s.end?.state === "died" || refusal(s) !== null) return false;
   // A time that does not read is NaN, which no comparison holds for.
-  const started = Date.parse(String(pr.evidence.started));
-  const until = s.end === null ? Infinity : Date.parse(s.end.at);
-  return Date.parse(s.at) <= started && started <= until;
+  const started = parseMs(String(pr.evidence.started));
+  const until = s.end === null ? Infinity : parseMs(s.end.at);
+  return parseMs(s.at) <= started && started <= until;
 }
 
 /** What another host's claims say about one driven pull request. */
@@ -467,7 +468,7 @@ async function checkedReservation(
   const why =
     history === null
       ? null
-      : recoveryReservationRefusal(record, own, history, Date.now());
+      : recoveryReservationRefusal(record, own, history, currentMs());
   if (why === null) return { claim: own };
   const released = await withdrawUnstarted(ctx, record, own);
   return {
@@ -489,7 +490,7 @@ async function withdrawUnstarted(
     own,
   );
   if (!released.ok && record.attempts.every((a) => a.outcome === "failed")) {
-    record.cancelledAt ??= new Date().toISOString();
+    record.cancelledAt ??= currentIso();
     writeRecord(record, ctx.root ?? stateRoot());
   }
   return released;
@@ -833,7 +834,7 @@ export async function settleAtExit(
 ): Promise<string[]> {
   // A retry's marker deletion needs the tick's current scope and dispute checks.
   if (retryableFollowup(r) || routineEnd(r) || waitEnd(r, root)) return [];
-  const nowIso = new Date().toISOString();
+  const nowIso = currentIso();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);
   const records = forgeShared({ login, timeoutSec: AT_EXIT_CALL_SEC });

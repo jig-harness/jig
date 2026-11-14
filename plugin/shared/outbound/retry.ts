@@ -10,6 +10,7 @@
  */
 import { swallow } from "../errors.ts";
 import { failureOf, type OutboundFailure, retriedOnce } from "./failure.ts";
+import { currentMs } from "../time.ts";
 
 /** The most requests one call sends: the first and one retry. */
 const MOST_ATTEMPTS = 2;
@@ -60,7 +61,7 @@ export async function retryRead<T>(
 ): Promise<T> {
   const { signal } = options;
   const wait = options.wait ?? waitForRetry;
-  const now = options.now ?? Date.now;
+  const now = options.now ?? currentMs;
   for (let attempt = 1; ; attempt++) {
     signal.throwIfAborted();
     const sent = await sendOnce(send);

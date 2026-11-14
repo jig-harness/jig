@@ -52,6 +52,7 @@ import { retryable } from "./stuck-launches.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
 import type { WorkLinks } from "./work-links.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /** The longest one step's git checks run. */
 const STEP_LIMIT_MS = 60_000;
@@ -200,7 +201,7 @@ async function doneFollowup(
     marker,
     {
       state: "ended",
-      at: new Date().toISOString(),
+      at: currentIso(),
       exit: null,
       outcome: "done",
     },

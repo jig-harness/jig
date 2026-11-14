@@ -6,6 +6,7 @@
 
 import { swallow } from "../../../../shared/errors.ts";
 import { isGitSha } from "./cli.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 export interface LabelTransition {
   id: string;
@@ -140,7 +141,7 @@ export function ciHoldTransitions(
       typeof actor.login !== "string" ||
       actor.login === "" ||
       typeof event.created_at !== "string" ||
-      !Number.isFinite(Date.parse(event.created_at))
+      !Number.isFinite(parseMs(event.created_at))
     )
       return null;
     const id = event.node_id;
@@ -234,7 +235,7 @@ export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
         !isGitSha(headSha) ||
         status === "" ||
         (conclusion !== null && conclusion === "") ||
-        (startedAt !== null && !Number.isFinite(Date.parse(startedAt)))
+        (startedAt !== null && !Number.isFinite(parseMs(startedAt)))
       )
         return null;
       result.push({
@@ -313,7 +314,7 @@ export function completedRequiredCi(
   evidence: RequiredEvidence = {},
 ): boolean {
   if (!isGitSha(head)) return false;
-  const floor = after === undefined ? null : Date.parse(after);
+  const floor = after === undefined ? null : parseMs(after);
   if (floor !== null && !Number.isFinite(floor)) return false;
   const met = (name: string, appId: number | undefined): boolean => {
     const newest = newestRunFor(runs, name, head, appId);
@@ -342,7 +343,7 @@ export function completedRequiredCi(
     )
       return false;
     if (floor !== null) {
-      const started = Date.parse(newest.startedAt);
+      const started = parseMs(newest.startedAt);
       if (strictAfter ? started <= floor : started < floor) return false;
     }
     return (
@@ -397,7 +398,7 @@ export function requiredCiStartedAt(
         newestRunFor(runs, name, head, appId)?.startedAt ?? null;
       if (
         startedAt !== null &&
-        (latest === null || Date.parse(startedAt) > Date.parse(latest))
+        (latest === null || parseMs(startedAt) > parseMs(latest))
       )
         latest = startedAt;
     }
@@ -465,11 +466,11 @@ export function createdUnderHold(
   createdAt: string,
   transitions: readonly LabelTransition[],
 ): boolean {
-  const created = Date.parse(createdAt);
+  const created = parseMs(createdAt);
   if (!Number.isFinite(created)) return true;
   let held = false;
   for (const transition of transitions) {
-    if (Date.parse(transition.createdAt) > created) break;
+    if (parseMs(transition.createdAt) > created) break;
     held = transition.event === "labeled";
   }
   return held;

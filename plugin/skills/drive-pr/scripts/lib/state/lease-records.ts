@@ -35,6 +35,7 @@ import {
   type TreeLeaseRef,
   treeLeaseRef,
 } from "./lease-model.ts";
+import { currentMs, isoFromMs, parseMs } from "../../../../../shared/time.ts";
 
 /** A `leases` or `tree_leases` row. */
 interface LeaseRow {
@@ -203,14 +204,14 @@ export function leaseIdentity(l: Lease): ProcessIdentity {
 
 /** A lease as the shared module's `Lease`, its expiry by this reader's window. */
 function asHeldLease(l: Lease): HeldLease {
-  const renewed = Date.parse(l.lastSeen);
+  const renewed = parseMs(l.lastSeen);
   return {
     holder: leaseIdentity(l),
     generation: l.generation,
     startedAt: l.startedAt,
     renewedAt: l.lastSeen,
     expiresAt: Number.isFinite(renewed)
-      ? new Date(renewed + leaseStaleMs()).toISOString()
+      ? isoFromMs(renewed + leaseStaleMs())
       : l.lastSeen,
   };
 }
@@ -226,8 +227,8 @@ function asHeldLease(l: Lease): HeldLease {
 export function leaseAlive(l: Lease): boolean {
   const held = asHeldLease(l);
   const verdict = l.holder === "session" ? isAliveSync(held.holder) : undefined;
-  if (!Number.isFinite(Date.parse(l.lastSeen))) return false;
-  return !isStale(held, new Date(), verdict);
+  if (!Number.isFinite(parseMs(l.lastSeen))) return false;
+  return !isStale(held, Temporal.Now.instant(), verdict);
 }
 
 /** Every LIVE lease on `pr`, from every working tree. */
@@ -335,7 +336,7 @@ export function leaseHolderLabel(l: Lease): string {
 }
 
 export function ageLabel(iso: string): string {
-  const ms = Date.now() - Date.parse(iso);
+  const ms = currentMs() - parseMs(iso);
   if (!Number.isFinite(ms) || ms < 0) return "just now";
   const sec = Math.round(ms / 1000);
   if (sec < 90) return `${sec}s ago`;
@@ -385,11 +386,11 @@ export function isRecycledPid(l: Lease, s: Session, actor: string): boolean {
   return lMs < sMs;
 }
 
-/** `s` as an ISO instant, only when it round-trips through `toISOString`. */
+/** `s` as an ISO instant, only when it round-trips through `isoFromMs`. */
 function parseStrictIsoInstantMs(s: string): number | null {
-  const ms = Date.parse(s);
+  const ms = parseMs(s);
   if (Number.isNaN(ms)) return null;
-  return new Date(ms).toISOString() === s ? ms : null;
+  return isoFromMs(ms) === s ? ms : null;
 }
 
 /** The identity a lease written now records for `session`'s holder. */
@@ -416,7 +417,7 @@ export function leaseForClaim(
   preserveGeneration: boolean,
   stateDir: string,
 ): Lease {
-  const now = new Date();
+  const now = currentMs();
   const keep = preserveGeneration && held !== null;
   const id =
     keep && held.pid === session.pid
@@ -432,9 +433,9 @@ export function leaseForClaim(
     platform: process.platform,
     actor,
     worktree,
-    startedAt: keep ? held.startedAt : now.toISOString(),
-    lastSeen: now.toISOString(),
-    expiresAt: new Date(now.getTime() + leaseStaleMs()).toISOString(),
+    startedAt: keep ? held.startedAt : isoFromMs(now),
+    lastSeen: isoFromMs(now),
+    expiresAt: isoFromMs(now + leaseStaleMs()),
     command,
     generation: keep
       ? held.generation

@@ -53,6 +53,7 @@ import { codexPermission, type PassArgs, permissionMode } from "./pass-args.ts";
 import { runTabEnv } from "../../../../shared/orca-tabs.ts";
 import { passCommand } from "./pass-command.ts";
 import { withCodexModel } from "./pass-model.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -368,7 +369,7 @@ async function awaitDrive(
     if (
       drive !== null &&
       drive !== "unreadable" &&
-      Date.parse(drive.started ?? "") >= opened - STARTED_SLACK_MS
+      parseMs(drive.started ?? "") >= opened - STARTED_SLACK_MS
     )
       return drive;
     if (deadline - deps.now() <= 0) return null;

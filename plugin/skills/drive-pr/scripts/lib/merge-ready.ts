@@ -25,6 +25,8 @@
  */
 
 /** The lanes of Ready to merge, in the order of the work they ask. */
+import { parseMs } from "../../../../shared/time.ts";
+
 export const LANES = ["merge-now", "approve-first", "update-next"] as const;
 export type Lane = (typeof LANES)[number];
 
@@ -194,12 +196,12 @@ const MERGES_NOW = new Set(["CLEAN", "HAS_HOOKS"]);
 
 /** Whether the timestamps prove that one ordinary attempt superseded another. */
 function supersedes(a: HeadCheck, b: HeadCheck): boolean {
-  const startA = Date.parse(a.startedAt ?? "");
-  const startB = Date.parse(b.startedAt ?? "");
+  const startA = parseMs(a.startedAt ?? "");
+  const startB = parseMs(b.startedAt ?? "");
   if (!Number.isFinite(startA) || !Number.isFinite(startB)) return false;
   if (startA !== startB) return startA > startB;
-  const endA = Date.parse(a.completedAt ?? "");
-  const endB = Date.parse(b.completedAt ?? "");
+  const endA = parseMs(a.completedAt ?? "");
+  const endB = parseMs(b.completedAt ?? "");
   return Number.isFinite(endA) && Number.isFinite(endB) && endA > endB;
 }
 

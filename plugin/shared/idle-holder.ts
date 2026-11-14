@@ -52,6 +52,7 @@ import {
   type RunResult,
 } from "./orca-workspace/runner.ts";
 import { cwdHolders, type ProbeRun } from "./process-cwd.ts";
+import { currentMs } from "./time.ts";
 
 /** The files and directories in a worktree's git directory that mean an operation is unfinished. */
 export const GIT_OPERATION_MARKERS = [
@@ -266,13 +267,13 @@ function prober(ctx: Context): { run: ProbeRun; timedOut: () => boolean } {
   let cut = false;
   const run: ProbeRun = (argv, cwd) => {
     const timeoutMs = budget(ctx, PROBE_TIMEOUT_MS);
-    const started = Date.now();
+    const started = currentMs();
     const done = ctx.run(argv, {
       timeoutMs,
       ...(cwd === undefined ? {} : { cwd }),
     });
     // The runner reports a killed child as -1; one that ran its whole time was cut short.
-    if (done.status === -1 && Date.now() - started >= timeoutMs) cut = true;
+    if (done.status === -1 && currentMs() - started >= timeoutMs) cut = true;
     return done;
   };
   return { run, timedOut: () => cut };

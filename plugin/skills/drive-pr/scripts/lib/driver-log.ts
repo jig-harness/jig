@@ -31,6 +31,7 @@
 import { appendFileSync, renameSync, statSync } from "node:fs";
 import { type Clock, systemClock } from "../../../../shared/clock.ts";
 import { errnoCode } from "../../../../shared/errors.ts";
+import { isoFromMs } from "../../../../shared/time.ts";
 
 export const DRIVER_LOG_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -90,7 +91,7 @@ export class DriverLog {
         ? text
         : this.decoders[level].decode(text, { stream: true });
     if (raw === "") return;
-    const stamp = `${new Date(this.clock.now()).toISOString()} ${level} `;
+    const stamp = `${isoFromMs(this.clock.now())} ${level} `;
     const continues = this.open === level;
     let out = this.open !== null && !continues ? "\n" : "";
     let atLineStart = !continues;

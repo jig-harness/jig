@@ -142,6 +142,13 @@ import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts"
 import { newerStateRefusal } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
 import { failedStartup } from "./lib/session-startup.ts";
+import {
+  currentIso,
+  currentMs,
+  isoFromMs,
+  parseInstant,
+  parseMs,
+} from "../shared/time.ts";
 
 const CLAIMED = 3;
 const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
@@ -244,8 +251,8 @@ async function endGroup(
 ): Promise<void> {
   if (pid === undefined || !groupAlive(pid)) return;
   signalTree("SIGKILL");
-  const gone = Date.now() + DRAIN_MS;
-  while (groupAlive(pid) && Date.now() < gone) await Bun.sleep(20);
+  const gone = currentMs() + DRAIN_MS;
+  while (groupAlive(pid) && currentMs() < gone) await Bun.sleep(20);
 }
 
 /** The timers that stop a pass at its deadline: a signal, then a kill after the grace. */
@@ -278,8 +285,8 @@ async function drainOutput(
   child: ChildProcess,
   drained: () => boolean,
 ): Promise<void> {
-  const until = Date.now() + DRAIN_MS;
-  while (!drained() && Date.now() < until) await Bun.sleep(20);
+  const until = currentMs() + DRAIN_MS;
+  while (!drained() && currentMs() < until) await Bun.sleep(20);
   if (!drained()) releasePipe(child);
 }
 
@@ -298,7 +305,7 @@ function runStage(
   options: RunOptions = { keepOutput: false, deadlineSec: 0 },
 ): Promise<Ran> {
   return new Promise((settle) => {
-    const started = Date.now();
+    const started = currentMs();
     let output = "";
     let stdout = "";
     let stderr = "";
@@ -382,7 +389,7 @@ function runStage(
     const done = async (code: number | null, signal: string | null) => {
       if (ended) return;
       ended = true;
-      const exited = Date.now();
+      const exited = currentMs();
       for (const timer of timers) clearTimeout(timer);
       watch.stopSampling();
       // What the agent started can outlive it; the exit is published once the group has ended.
@@ -444,22 +451,22 @@ async function recordedReset(
   nowMs: number,
 ): Promise<string | null> {
   const reset = await parkedReset(pr);
-  return reset !== null && Date.parse(reset) > nowMs ? reset : null;
+  return reset !== null && parseMs(reset) > nowMs ? reset : null;
 }
 
 async function writeAccountWall(
   record: LaunchRecord & { pr: number },
 ): Promise<void> {
-  const now = Date.now();
+  const now = currentMs();
   const reset = await recordedReset(record.pr, now);
   const path = writeWall({
     account: record.account,
     vendor: record.vendor,
     configDir: record.configDir,
-    resetAt: reset ?? new Date(now + record.wallBackoffMs).toISOString(),
+    resetAt: reset ?? isoFromMs(now + record.wallBackoffMs),
     source:
       reset === null
-        ? `no reset recorded; wall_backoff from ${new Date(now).toISOString()}`
+        ? `no reset recorded; wall_backoff from ${isoFromMs(now)}`
         : `the drive's quota park on PR #${record.pr}`,
   });
   console.error(`jig dispatch run: ${record.account} is walled (${path})`);
@@ -595,7 +602,7 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(`jig dispatch run: ${identity.failure.reason}; not starting`);
     return 2;
   }
-  const claim = { ...identity.value, claimedAt: new Date().toISOString() };
+  const claim = { ...identity.value, claimedAt: currentIso() };
   if (!claimRecord(id, claim)) {
     console.error(
       `jig dispatch run: ${id} is already claimed; nothing started`,
@@ -609,7 +616,7 @@ async function wrap(id: string, token: string): Promise<number> {
     argv = stageArgv(record);
   } catch (error) {
     console.error(`jig dispatch run: ${failureText(error)}; not starting`);
-    recordExit(id, { at: new Date().toISOString(), code: 2, signal: null });
+    recordExit(id, { at: currentIso(), code: 2, signal: null });
     await endSharedClaim(id);
     return 2;
   }
@@ -652,7 +659,7 @@ function recordStartupWall(record: LaunchRecord, startup: string): boolean {
       account: record.account,
       vendor: record.vendor,
       configDir: record.configDir,
-      resetAt: new Date(Date.now() + record.wallBackoffMs).toISOString(),
+      resetAt: isoFromMs(currentMs() + record.wallBackoffMs),
       source: `session could not start (${startup}); wall_backoff`,
     });
     return true;
@@ -686,7 +693,7 @@ async function finishRun(
   const startupWallUnrecorded =
     startup !== undefined && !recordStartupWall(record, startup);
   recordExit(id, {
-    at: new Date().toISOString(),
+    at: currentIso(),
     code,
     signal,
     ...(wallUnrecorded || startupWallUnrecorded
@@ -801,12 +808,14 @@ export async function runMain(argv: string[]): Promise<number> {
   }
   if (argv[0] === "quota" && argv.length === 4) {
     const [, session, cwd, since] = argv as [string, string, string, string];
-    if (!Number.isFinite(Date.parse(since))) {
+    if (!Number.isFinite(parseMs(since))) {
       console.error(`jig dispatch run: ${since} is not a date`);
       return 2;
     }
     console.log(
-      JSON.stringify(probeWall(session, cwd, new Date(since), new Date())),
+      JSON.stringify(
+        probeWall(session, cwd, parseInstant(since), Temporal.Now.instant()),
+      ),
     );
     return 0;
   }

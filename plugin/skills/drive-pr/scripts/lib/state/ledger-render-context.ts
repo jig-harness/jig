@@ -2,6 +2,7 @@
 import type { LedgerDriver } from "./ledger.ts";
 import type { LedgerDriverEnv } from "./ledger-mirror.ts";
 import { personStopFor } from "./person-stop.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 export function ledgerDriverRecord(
   driver: LedgerDriverEnv | null,
@@ -15,7 +16,7 @@ export function ledgerDriverRecord(
     ...(stateDir === undefined
       ? {}
       : personStopFor(stateDir, pr, driver?.started)),
-    heartbeat: new Date().toISOString(),
+    heartbeat: currentIso(),
     state: driver?.stopped === undefined ? "running" : "stopped",
     ...(typeof driver?.stopped === "number" ? { exit: driver.stopped } : {}),
     ...(driver?.started === undefined ? {} : { started: driver.started }),

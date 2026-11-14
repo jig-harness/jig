@@ -12,6 +12,7 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { type AssigneeChange, assignVerified } from "./assign-verified.ts";
 import type { LinearTransport } from "./linear.ts";
 import { type Tracker, TrackerRequestError, type TrackerUser } from "./port.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 /** An answer the claim cannot use: not the shape its query asked for, or a write Linear did not confirm. */
 class LinearClaimError extends Error {}
@@ -127,7 +128,7 @@ export function claimOperations(
       const node = record(n, where);
       if (
         typeof node.createdAt !== "string" ||
-        Number.isNaN(Date.parse(node.createdAt))
+        Number.isNaN(parseMs(node.createdAt))
       )
         throw new LinearClaimError(`${where}.createdAt: expected a time`);
       for (const side of ["fromAssignee", "toAssignee"])

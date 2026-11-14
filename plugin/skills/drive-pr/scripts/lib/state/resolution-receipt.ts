@@ -20,6 +20,7 @@ import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
 import { redact } from "../../../../../shared/redact.ts";
 import type { PendingAnswer } from "./pass-handoff.ts";
 import type { ParkedItem } from "./park-frame.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 /** How many receipts the state and the ledger keep, the newest last. */
 export const RESOLVED_PARKS_KEPT = 10;
@@ -57,7 +58,7 @@ export interface ConsumedVerdict {
 }
 
 const isTime = (v: unknown): v is string =>
-  isText(v) && Number.isFinite(Date.parse(v));
+  isText(v) && Number.isFinite(parseMs(v));
 
 const optional =
   (check: (v: unknown) => boolean) =>
@@ -172,7 +173,7 @@ export function receiptsFor(
     const answers = verdict.answers.map(withoutBody);
     const answeredAt = answers
       .map((a) => a.at)
-      .sort((a, b) => Date.parse(a) - Date.parse(b))
+      .sort((a, b) => parseMs(a) - parseMs(b))
       .at(-1);
     return [
       {
