@@ -75,6 +75,8 @@ export interface ServedReading {
   limitedUntil?: string;
   /** A served identity's queue failed to read for another reason: the claims are not known. */
   incomplete?: boolean;
+  /** What the first failed queue read raised, so its class reaches the record. */
+  failureCause?: unknown;
 }
 export interface ServedPolicy {
   hitl?: string;
@@ -131,6 +133,8 @@ interface PersonReading {
   candidates: Candidate[];
   limited: { error: TrackerRateLimited; view: ServedView | null } | null;
   failed: boolean;
+  /** What failed the read: the scope's cause, or the error thrown. */
+  failureCause?: unknown;
 }
 
 /** A served item in progress, as the claim dispatch monitors. */
@@ -180,6 +184,7 @@ async function readPerson(
     if (view.limited !== null) got.limited = { error: view.limited, view };
     if (view.unavailable !== undefined) {
       got.failed = true;
+      got.failureCause = view.unavailableCause ?? view.unavailable;
       got.unplaced.push(
         scopeFailureRow(
           tracker,
@@ -206,6 +211,7 @@ async function readPerson(
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
       got.failed = true;
+      got.failureCause = error;
       got.unplaced.push(readFailureRow(tracker, identity, view, error));
     }
   } finally {
@@ -249,7 +255,10 @@ export async function readServedPickups(
     out.claimed.push(...got.claimed);
     out.unplaced.push(...got.unplaced);
     candidates.push(...got.candidates);
-    if (got.failed) out.incomplete = true;
+    if (got.failed) {
+      out.incomplete = true;
+      if (!("failureCause" in out)) out.failureCause = got.failureCause;
+    }
     limited ??= got.limited;
   }
   if (limited !== null) {

@@ -644,10 +644,7 @@ export async function readPickups(
   );
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
-    read: {
-      ...factory.read,
-      detail: `${factory.read.detail}; ${extra.wanted.length} served pickup(s)`,
-    },
+    read: servedRead(factory.read, extra),
     wanted: [
       ...extra.wanted,
       ...factory.wanted.filter((i) => !keys.has(i.key)),
@@ -666,6 +663,36 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
+  };
+}
+
+/**
+ * The aggregate record with the served lane's reading in it: a served queue
+ * that failed to read makes the record not ok, with the failure's class, so
+ * settlement treats it as it does the identity's own failed read. A failure
+ * the record already carries is kept.
+ */
+function servedRead(
+  read: TrackerReading["read"],
+  extra: Awaited<ReturnType<typeof readServedPickups>>,
+): TrackerReading["read"] {
+  const detail = `${read.detail}; ${extra.wanted.length} served pickup(s)`;
+  if (extra.incomplete !== true) return { ...read, detail };
+  const cause = extra.failureCause;
+  const failure =
+    read.failure ??
+    (cause === undefined
+      ? undefined
+      : readFailureOf({
+          code: "unreadable",
+          reason: failureText(cause),
+          cause,
+        }));
+  return {
+    ...read,
+    ok: false,
+    detail: `${detail}; a served queue could not be read`,
+    ...(failure === undefined ? {} : { failure }),
   };
 }
 

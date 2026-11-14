@@ -94,6 +94,23 @@ describe("served pickups", () => {
         }),
       );
   });
+  it("keeps a served queue's failure class in the aggregate record", async () => {
+    const f = fake();
+    f.tracker.assignedIssues = async () => {
+      throw Object.assign(new Error("tracker timed out"), {
+        name: "TimeoutError",
+      });
+    };
+    const read = await readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      { people, cache: f.cache, nowMs: 1, headroom: true },
+    );
+    expect(read.read.ok).toBe(false);
+    expect(read.read.failure).toMatchObject({ class: "unreachable" });
+    expect(read.claimed).toBeNull();
+  });
   it("carries a tracker namespace through the public reader", async () => {
     const f = fake();
     const read = await readPickups(
