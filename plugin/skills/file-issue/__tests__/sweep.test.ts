@@ -271,6 +271,39 @@ describe("the weekly sweep", () => {
     );
   });
 
+  it("still sweeps when a store only cannot file some issue types", async () => {
+    const repo = setup();
+    const { tracker } = repo.view(LABEL_SECTION);
+    const filingOnly = {
+      ...tracker,
+      facetStores: async () => {
+        const stores = await tracker.facetStores();
+        return {
+          ...stores,
+          facets: stores.facets.map((f) =>
+            f.facet === "size"
+              ? {
+                  ...f,
+                  health: {
+                    status: "failed" as const,
+                    error: "size is not on the create screen of Sub-task",
+                    fails: "filing a Sub-task fails",
+                  },
+                }
+              : f,
+          ),
+        };
+      },
+    };
+    const report = await sweep(filingOnly, {
+      apply: false,
+      retired: none,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(report.storeProblem).toBeNull();
+    expect(report.read).toBe(true);
+  });
+
   it("paces its writes at 30 a minute", async () => {
     const clock = fakeClock();
     const writer = pacedWriter(clock);

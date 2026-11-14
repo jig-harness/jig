@@ -124,7 +124,7 @@ it("releases an ended batch when its returned member is ready to retry", () => {
   }
 });
 
-it("keeps an unclaimed batch member held after a sibling was claimed", () => {
+it("releases an unclaimed batch member once a sibling was claimed, and keeps the claimed one", () => {
   const w = world();
   try {
     const record = earlierRecord(w, {
@@ -147,24 +147,20 @@ it("keeps an unclaimed batch member held after a sibling was claimed", () => {
       },
       result: "failed",
     };
-    releaseEnded(
-      [read],
-      SLUG,
-      new Set(["#2"]),
-      new Set(["#1"]),
-      new Set(["#2"]),
-      dispatchState(w),
-    );
-    releaseEnded(
-      [read],
-      SLUG,
-      new Set(["#2"]),
-      new Set(),
-      new Set(["#2"]),
-      dispatchState(w),
-    );
+    for (let tick = 0; tick < 2; tick++)
+      releaseEnded(
+        [read],
+        SLUG,
+        new Set(["#2"]),
+        new Set(["#1"]),
+        new Set(["#2"]),
+        dispatchState(w),
+      );
+    expect(record.claimedItems).toEqual(["#1"]);
+    expect(record.releasedItems).toEqual(["#2"]);
     expect(record.released).toBe(false);
-    expect(pickupHold("#2", [read]).kind).toBe("ended");
+    expect(pickupHold("#2", [read]).kind).toBe("none");
+    expect(pickupHold("#1", [read]).kind).toBe("ended");
   } finally {
     w.close();
   }
