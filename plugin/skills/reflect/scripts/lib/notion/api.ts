@@ -159,7 +159,7 @@ export class NotionApi {
     path: string,
     body: unknown,
   ): Promise<{ response: Response; text: string }> {
-    const began = Date.now();
+    const began = currentMs();
     let status: number | null = null;
     let lost = true;
     let invalid = false;
@@ -188,7 +188,7 @@ export class NotionApi {
         operation,
         cost: 1,
         unit: "requests",
-        durationMs: Date.now() - began,
+        durationMs: currentMs() - began,
         failure: lost
           ? "unreachable"
           : invalid

@@ -4,6 +4,7 @@ import type {
   BudgetWindow,
 } from "../../shared/outbound/budget.ts";
 import type { LedgerReport, LedgerRow } from "../../shared/outbound/ledger.ts";
+import { isoFromMs } from "../../shared/time.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
 
 const HOUR = 3_600_000;
@@ -247,7 +248,7 @@ export function lowQuotaNeeds(
       title: "Quota projected to run out",
       workspace: null,
       since: known?.since ?? nowIso,
-      reason: `${risk.system}'s ${risk.window} quota is projected to empty at ${new Date(risk.emptiesAt).toISOString()}, before its refill horizon ${new Date(risk.resetAt).toISOString()}; ${Math.round(risk.remaining)} left, ${Math.round(risk.spent)} spent in the estimated last hour. Operations: ${risk.operations.join(", ")}. Inspect jig budget before changing the workload.`,
+      reason: `${risk.system}'s ${risk.window} quota is projected to empty at ${isoFromMs(risk.emptiesAt)}, before its refill horizon ${isoFromMs(risk.resetAt)}; ${Math.round(risk.remaining)} left, ${Math.round(risk.spent)} spent in the estimated last hour. Operations: ${risk.operations.join(", ")}. Inspect jig budget before changing the workload.`,
       question: null,
       decisions: [],
       notified: known?.notified ?? null,

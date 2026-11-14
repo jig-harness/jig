@@ -491,7 +491,7 @@ function leasedSender(
       unit: "requests",
       estimated: false,
     };
-    const began = Date.now();
+    const began = currentMs();
     return recordAttempt(
       observation,
       async () => {
@@ -517,7 +517,8 @@ function leasedSender(
           ? { res, text, data: answerBody(text, res.status, what) }
           : { res, text };
       },
-      (answer) => responseFailure(answer.res, Date.now() - began)?.code ?? null,
+      (answer) =>
+        responseFailure(answer.res, currentMs() - began)?.code ?? null,
     );
   };
   return async () => {

@@ -5,6 +5,7 @@ import { swallow } from "../errors.ts";
 import { type GhRun, ghRunFailure, graphQLErrorsClass } from "./github.ts";
 import { operationName } from "./ledger.ts";
 import { recordAttempt, type Attempt } from "./record-attempt.ts";
+import { currentMs } from "../time.ts";
 
 function parsed(text: string): unknown {
   const body = text.replace(/^HTTP\/[^\r\n]*\r?\n[\s\S]*?\r?\n\r?\n/, "");
@@ -154,7 +155,7 @@ export function recordGhAttempt<T extends GhRun, O>(
   return recordAttempt(
     observation,
     async () => {
-      const began = Date.now();
+      const began = currentMs();
       const result = await send();
       if (
         result.held === undefined &&
@@ -178,7 +179,7 @@ export function recordGhAttempt<T extends GhRun, O>(
       observation.estimated = hasOutput && cost === null;
       const run =
         typeof result.stderr === "string" && typeof result.code === "number"
-          ? ghRunFailure(result, Date.now() - began)
+          ? ghRunFailure(result, currentMs() - began)
           : null;
       if (run !== null) return { result, failure: run.code };
       const failure =

@@ -2,6 +2,7 @@
 import type { CommandComponent } from "../runtime/component.ts";
 import { ExitError } from "../shared/cli.ts";
 import { ledgerReport, type LedgerRow } from "../shared/outbound/ledger.ts";
+import { currentMs, isoFromMs } from "../shared/time.ts";
 import {
   command,
   type InferValue,
@@ -102,7 +103,7 @@ function printBalances(report: BudgetAnswer): void {
   const known = (value: number | null) => value ?? "unknown";
   for (const b of report.balances)
     console.log(
-      `Balance ${b.key}: requests ${known(b.record.requests.remaining)}/${known(b.record.requests.limit)}, points ${known(b.record.complexity.remaining)}/${known(b.record.complexity.limit)} (observed ${new Date(b.record.observedAt).toISOString()}).`,
+      `Balance ${b.key}: requests ${known(b.record.requests.remaining)}/${known(b.record.requests.limit)}, points ${known(b.record.complexity.remaining)}/${known(b.record.complexity.limit)} (observed ${isoFromMs(b.record.observedAt)}).`,
     );
 }
 
@@ -124,12 +125,12 @@ function budgetMain(args: BudgetArguments): number {
       2,
       "jig budget: --hours must be an integer from 1 to 168",
     );
-  const until = Date.now();
+  const until = currentMs();
   const since = until - hours * 3_600_000;
   const report = ledgerReport({ since, until });
   const answer = {
-    since: new Date(since).toISOString(),
-    until: new Date(until).toISOString(),
+    since: isoFromMs(since),
+    until: isoFromMs(until),
     ...report,
     operations: budgetGroups(report.rows, "operation"),
     callers: budgetGroups(report.rows, "caller"),

@@ -5,6 +5,7 @@ import { basename } from "node:path";
 import { launchOf } from "../launched-session.ts";
 import { swallow } from "../errors.ts";
 import { inTransaction, openDatabase, openReadOnly } from "../records/db.ts";
+import { currentMs } from "../time.ts";
 import { budgetPath, parseRecord, type BudgetRecord } from "./budget.ts";
 import type { FailureClass } from "./failure.ts";
 import { BUDGET_MIGRATIONS } from "./schema.ts";
@@ -136,7 +137,7 @@ export function recordCall(input: CallRecord): void {
       return;
     }
     const db = opened.value;
-    const at = input.at ?? Date.now();
+    const at = input.at ?? currentMs();
     const hour = Math.floor(at / HOUR) * HOUR;
     const unit = input.unit ?? "requests";
     const requests = positive(input.requests, 1);
@@ -217,7 +218,7 @@ export function ledgerReport(
   if (opened.value === null) return { rows: [], balances: [] };
   const db = opened.value.db;
   try {
-    const until = opts.until ?? Date.now();
+    const until = opts.until ?? currentMs();
     const since = Math.max(
       opts.since ?? until - 24 * HOUR,
       until - LEDGER_RETENTION_MS,

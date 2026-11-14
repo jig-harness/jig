@@ -1,6 +1,7 @@
 /** Per-attempt accounting shared by the transports, including an attempt the budget refused locally. */
 import { failureOf, type FailureClass } from "./failure.ts";
 import { recordCall } from "./ledger.ts";
+import { currentMs } from "../time.ts";
 
 export interface Attempt {
   system: string;
@@ -23,7 +24,7 @@ export async function recordAttempt<T>(
   send: () => Promise<T>,
   failed: (answer: T) => FailureClass | null,
 ): Promise<T> {
-  const began = Date.now();
+  const began = currentMs();
   let failure: FailureClass | null = null;
   try {
     const answer = await send();
@@ -35,7 +36,7 @@ export async function recordAttempt<T>(
   } finally {
     const event: AttemptEvent = {
       ...observation,
-      durationMs: Date.now() - began,
+      durationMs: currentMs() - began,
       failure,
     };
     recordCall(event);
