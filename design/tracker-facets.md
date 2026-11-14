@@ -565,16 +565,21 @@ before the run's budget is counted, so marked issues never use it up.
 They still take places in the capped read, and past the cap the same first
 issues, already commented, would take every run's pages; no order that
 depends on the sweep's own writes can advance past them, since a run that
-finds the marker writes nothing. So in this mode the read should keep a
+finds the marker writes nothing. So in this mode the read keeps a
 position: its pages are ordered oldest first, a creation order that no write
-changes, and the run records the key of the last issue it read in the
-state the sweep keeps between runs (on Jig's workflow, its cache). The next
-run resumes after that key, and a read that reaches the end of the
-population starts again from the first issue. An issue whose missing
-facets change after its comment is revisited when the position comes round
-to it, which is within as many runs as the population holds capped reads.
-The position is not built yet: until it is, a population past the read cap
-is commented on only as far as its first 20 pages.
+changes, and each issue the read lists carries its cursor. With
+`--position <file>`, a file the scheduler keeps between runs, the run saves
+the cursor of the last issue of the unbroken run of issues it handled
+(commented on, found marked, or skipped as changed), so an issue the budget
+or a refused write left is read first next time. The next run resumes after
+that cursor. A read that reaches the end of the population goes on from the
+first issue as far as its cap allows, stopping before an issue it read this
+run; when no page is left, the next run starts from the first issue. An
+issue whose missing facets change after its comment is revisited when the
+position comes round to it, which is within as many runs as the population
+holds capped reads. A file that is missing or unreadable starts the read
+from the first issue, with a warning: the position only saves work. Moving
+keeps no position, since a moved issue leaves the population.
 
 Its bounds:
 

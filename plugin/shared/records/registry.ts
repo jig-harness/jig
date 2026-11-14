@@ -662,6 +662,13 @@ const TREE: RecordKind[] = [
   ),
   plain(
     "tree",
+    "issue-fields-position",
+    "skills/file-issue/scripts/lib/sweep-position.ts",
+    "the file `check-fields.ts check --position` names, kept by the scheduler between runs",
+    1,
+  ),
+  plain(
+    "tree",
     "driven-tree",
     "shared/driven-tree.ts",
     "<git dir>/jig-driven-pr.json",

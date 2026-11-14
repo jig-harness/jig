@@ -518,7 +518,11 @@ to triage, a comment naming what it lacks posted first, and lists the
 started ones without moving them. Where the repository sets
 `file_issue.sweep.move: false`, `--yes` instead posts the comment and moves
 nothing; an issue already carrying the comment's marker is passed over
-without counting against the budget. It moves (or, without moving,
+without counting against the budget, and `--position <file>` keeps the
+read's place in that file, so each run resumes after the last issue the
+previous one handled and goes on from the oldest at the end (a missing or
+unreadable file starts from the oldest, with a warning; moving keeps no
+position). It moves (or, without moving,
 comments on) at most 50 a run and lists at most 20 pages of 100. Listing pages share one tracker census, bounded to
 a minute; the page limit bounds the report, not tracker issue reads. The
 next run takes what remains. Offer to settle a

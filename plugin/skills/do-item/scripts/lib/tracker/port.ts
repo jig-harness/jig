@@ -419,7 +419,11 @@ export interface IncompleteQuery {
   missing: Facet[];
   /** Labels a facet's store has retired; an issue carrying one is listed too. */
   retired: string[];
-  /** The cursor a previous page returned; absent for the first page. */
+  /**
+   * The cursor a previous page or issue returned; absent for the first page.
+   * The pages are ordered oldest first, an order no write changes, so a
+   * cursor kept from an earlier run resumes after the same issue.
+   */
   after?: string | null;
   /** The most issues one page holds, 1 to 100. */
   limit: number;
@@ -439,6 +443,11 @@ export interface IncompleteIssue {
   missing: Facet[];
   /** The retired labels it carries. */
   retired: string[];
+  /**
+   * The cursor that resumes a read after this issue, as `after` takes it:
+   * the sweep keeps the last one it handled between runs.
+   */
+  cursor: string;
 }
 
 /**

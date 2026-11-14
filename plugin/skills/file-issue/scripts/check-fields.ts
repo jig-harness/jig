@@ -8,7 +8,7 @@
  * through the tracker interface.
  *
  * Usage:
- *     bun check-fields.ts [check] [--yes] [--json]
+ *     bun check-fields.ts [check] [--yes] [--json] [--position <file>]
  *     bun check-fields.ts move --target <file> --record <file> [--json]
  *     bun check-fields.ts move --record <file> [--copy | --retire] [--yes] [--json]
  *     bun check-fields.ts move --restore <file> [--yes] [--json]
@@ -18,8 +18,10 @@
  * facet kept elsewhere; with `--yes` it moves each one not yet started back
  * to triage with a comment naming what it lacks, at most 50 a run, and lists
  * the started ones without moving them; with `file_issue.sweep.move: false`
- * it comments on each one and moves none. It prints issue keys, never a
- * title or a body.
+ * it comments on each one and moves none, and with `--position <file>`
+ * keeps the read's position in that file, so each run resumes where the last
+ * one left off and a population past the read cap is reached in turn. It
+ * prints issue keys, never a title or a body.
  *
  * `move` previews by default and writes nothing without `--yes`. The preview
  * (`--target` with the `issue_tracker.facets` section the repository will
@@ -78,11 +80,12 @@ import {
   storeName,
   withSection,
 } from "./lib/sections.ts";
+import { readPosition, writePosition } from "./lib/sweep-position.ts";
 import { sweepSettings } from "./lib/sweep-settings.ts";
 import { sweep, sweepLines } from "./lib/sweep.ts";
 
 const USAGE = `usage:
-  check-fields.ts [check] [--yes] [--json] [--retired-from <file>]
+  check-fields.ts [check] [--yes] [--json] [--retired-from <file>] [--position <file>]
   check-fields.ts move --target <file> --record <file> [--json]
   check-fields.ts move --record <file> [--copy | --retire] [--yes] [--json]
   check-fields.ts move --restore <file> [--yes] [--json]`;
@@ -96,6 +99,23 @@ function print(json: boolean, report: unknown, lines: string[]): void {
   console.log(json ? JSON.stringify(report, null, 2) : lines.join("\n"));
 }
 
+/** The position `file` keeps for a comment-only sweep; moving keeps none. */
+function keptPosition(
+  file: string | undefined,
+  move: boolean,
+): { after: string | null } | undefined {
+  if (file === undefined) return undefined;
+  if (move) {
+    console.error(
+      "--position: file_issue.sweep.move is true, so a moved issue leaves the population and no read position is kept",
+    );
+    return undefined;
+  }
+  const read = readPosition(file);
+  if (read.warning !== null) console.error(`warning: ${read.warning}`);
+  return { after: read.after };
+}
+
 async function check(argv: string[]): Promise<number> {
   const { values } = parseArgs({
     args: argv,
@@ -103,11 +123,15 @@ async function check(argv: string[]): Promise<number> {
       yes: { type: "boolean" },
       json: { type: "boolean" },
       "retired-from": { type: "string" },
+      position: { type: "string" },
     },
     strict: true,
   });
   const overlay = readOverlay();
   const settings = sweepSettings(overlay);
+  const positionFile =
+    values.position === undefined ? undefined : resolve(values.position);
+  const position = keptPosition(positionFile, settings.move);
   const config = trackerConfigFrom(overlay);
   const root = consumerRoot();
   const tracker = openTracker(config, root);
@@ -125,7 +149,10 @@ async function check(argv: string[]): Promise<number> {
     retired: (stores) => retiredLabels(overlay, config, root, stores, former),
     writer: pacedWriter(),
     progress: (line) => console.error(line),
+    ...(position === undefined ? {} : { position }),
   });
+  if (positionFile !== undefined && report.position !== null && report.apply)
+    writePosition(positionFile, report.position.next);
   print(values.json === true, report, sweepLines(report));
   if (report.stopped !== null) return 1;
   // A store problem fails a run asked to move, or one that could read nothing.
