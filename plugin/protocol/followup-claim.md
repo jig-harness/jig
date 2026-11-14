@@ -50,8 +50,9 @@ record.
 How a follow-up command claims, checks and ends its marker with
 `jig dispatch marker`: [the plugin's README](../README.md), under its
 follow-ups. The runs and their outcomes, for a program in any language:
-[data/followup-claim.json](data/followup-claim.json); the record's fields
-are in this chapter only, until the protocol's schemas carry them.
+[data/followup-claim.json](data/followup-claim.json), whose `field` entries
+also give each payload field's type and the runs whose markers carry it;
+schemas for them are a later step.
 
 ## The record
 

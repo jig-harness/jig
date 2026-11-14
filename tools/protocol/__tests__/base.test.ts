@@ -225,6 +225,93 @@ describe("the comparison with the integration branch", () => {
     ]);
   });
 
+  test("compares the runs that carry a payload field by run, and refuses a new value that is required of every writer", () => {
+    const spec = (type: "string" | "boolean") => ({
+      type,
+      nullable: true,
+      required: true,
+      identifies: false,
+      description: "A payload shape.",
+    });
+    const fields = {
+      ...FIELDS,
+      carriedBy: spec("string"),
+      fieldRequired: spec("boolean"),
+    };
+    const chapter = (rows: Record<string, unknown>[]) =>
+      fixtureChapter({
+        fields,
+        values: rows.map((r) => ({
+          carriedBy: null,
+          fieldRequired: null,
+          ...r,
+        })) as never,
+      });
+    const first = {
+      name: "ALPHA",
+      code: 1,
+      meaning: "the first thing happened",
+    };
+    const second = { ...first, name: "BETA", code: 2 };
+    const base = chapter([
+      { ...first, carriedBy: "tick (always), manual (sometimes)" },
+      second,
+    ]);
+    const problems = (rows: Record<string, unknown>[]) => {
+      const now = chapter(rows);
+      return check(scratchRepo([base], [now]), [now]).problems;
+    };
+    // Order, a run added as sometimes and a sometimes run dropped all widen.
+    expect(
+      problems([
+        {
+          ...first,
+          carriedBy: "manual (sometimes), tick (always), run3 (sometimes)",
+        },
+        second,
+      ]),
+    ).toEqual([]);
+    expect(
+      problems([{ ...first, carriedBy: "tick (always)" }, second]),
+    ).toEqual([]);
+    // An always run that stops being always, or a sometimes run that becomes always, breaks.
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (sometimes), manual (sometimes)" },
+        second,
+      ]),
+    ).toHaveLength(1);
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (always)" },
+        second,
+      ]),
+    ).toHaveLength(1);
+    // A new value that every writer must carry breaks; an optional one does not.
+    const added = { ...first, name: "GAMMA", code: 3 };
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (sometimes)" },
+        second,
+        { ...added, carriedBy: "tick (always)" },
+      ]),
+    ).toHaveLength(1);
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (sometimes)" },
+        second,
+        { ...added, fieldRequired: true },
+      ]),
+    ).toHaveLength(1);
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (sometimes)" },
+        second,
+        { ...added, carriedBy: "tick (sometimes)", fieldRequired: false },
+      ]),
+    ).toEqual([]);
+  });
+
   test("fails a field that is new and identifies a value, which would let two values share the base's identity", () => {
     const variant = {
       ...FIELDS,

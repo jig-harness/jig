@@ -115,6 +115,19 @@ describe("the follow-up marker's fields", () => {
     });
   }
 
+  it("hold, on every marker a writer writes, a value of the type the table declares", () => {
+    const typeOf = (value: unknown) =>
+      typeof value === "number" && Number.isInteger(value)
+        ? "integer"
+        : typeof value;
+    for (const run of Object.keys(FOLLOWUP_RUNS) as FollowupRun[])
+      for (const marker of MARKERS[run]())
+        for (const [field, value] of Object.entries(marker.payload))
+          expect(typeOf(value)).toBe(
+            FOLLOWUP_FIELDS[field as keyof typeof FOLLOWUP_FIELDS].type,
+          );
+  });
+
   it("carry a field the table says a run carries sometimes on some of its markers only", () => {
     for (const run of Object.keys(FOLLOWUP_RUNS) as FollowupRun[]) {
       const markers = MARKERS[run]();

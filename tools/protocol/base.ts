@@ -33,6 +33,7 @@ import {
   type DataValue,
   dataFile,
   type FieldSpec,
+  type Scalar,
   type Withdrawn,
 } from "./chapter.ts";
 import { RULE } from "./outputs.ts";
@@ -355,8 +356,68 @@ function changedFields(base: DataFile, self: DataValue, v: DataValue) {
       !spec.identifies &&
       field !== "meaning" &&
       self[field] !== undefined &&
-      self[field] !== (v[field] ?? null),
+      !sameBehaviour(field, self[field], v[field] ?? null),
   );
+}
+
+/**
+ * The runs a payload field's `carriedBy` names, each with `always` or
+ * `sometimes` (`tick (always), manual (sometimes)`); null when the text is
+ * not that shape, which is then compared as written.
+ */
+function carriedMap(text: Scalar | undefined): Map<string, string> | null {
+  if (typeof text !== "string") return null;
+  const runs = new Map<string, string>();
+  for (const part of text.split(", ")) {
+    const m = /^(\S+) \((always|sometimes)\)$/.exec(part);
+    if (m === null || runs.has(m[1] as string)) return null;
+    runs.set(m[1] as string, m[2] as string);
+  }
+  return runs;
+}
+
+/**
+ * Whether a field's new content keeps what a reader relied on. Which runs
+ * carry a payload field is compared by run, not as text: a run that
+ * always carried it still does, and any other run may start or stop
+ * carrying it only as `sometimes`, so the order the runs are written in
+ * does not matter.
+ */
+function sameBehaviour(field: string, was: Scalar, is: Scalar): boolean {
+  if (was === is) return true;
+  if (field !== "carriedBy") return false;
+  const before = carriedMap(was);
+  const after = carriedMap(is);
+  if (before === null || after === null) return false;
+  for (const [run, how] of before)
+    if (
+      how === "always"
+        ? after.get(run) !== "always"
+        : after.get(run) === "always"
+    )
+      return false;
+  return [...after].every(
+    ([run, how]) => before.has(run) || how === "sometimes",
+  );
+}
+
+/**
+ * A value the base lacks that obliges every writer from now on: an
+ * envelope field every record must carry, or a payload field some run's
+ * marker always carries. Adding it is the "new and required" break the
+ * outer fields already name.
+ */
+function obligingNewValues(view: ValueView): string[] {
+  return [...view.after]
+    .filter(([k]) => !view.before.has(k))
+    .filter(
+      ([, v]) =>
+        v.fieldRequired === true ||
+        [...(carriedMap(v.carriedBy)?.values() ?? [])].includes("always"),
+    )
+    .map(
+      ([, v]) => `the new value ${view.show(v)} is required of every writer`,
+    );
 }
 
 /** What a withdrawal may change: the `kind`, or a nullable field emptied to null. */
@@ -397,6 +458,7 @@ function valueFindings(file: string, base: DataFile, now: DataFile) {
   return [
     ...identityProblems(view),
     ...behaviourProblems(view),
+    ...obligingNewValues(view),
     ...meaningProblems(view),
   ].map((problem): Finding => ({ rule: RULE, file, problem, remedy }));
 }
