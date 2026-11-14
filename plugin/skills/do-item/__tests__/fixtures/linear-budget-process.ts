@@ -9,7 +9,8 @@ import {
   budgetGovernor,
   isRateLimited,
   sqliteBudgetStore,
-} from "../../../../shared/tracker-budget.ts";
+} from "../../../../shared/outbound/budget.ts";
+import { withLedgerPath } from "../../../../shared/outbound/ledger.ts";
 import { httpTransport } from "../../scripts/lib/tracker/linear-transport.ts";
 
 const [store, mode, reset, clock] = process.argv.slice(2);
@@ -42,7 +43,7 @@ const governor = budgetGovernor(sqliteBudgetStore(store as string), {
 const transport = httpTransport("lin_api_test", fetchImpl, governor);
 let ended: string;
 try {
-  await transport("query { viewer { id } }", {});
+  await withLedgerPath(store as string, () => transport("query { viewer { id } }", {}));
   ended = "answered";
 } catch (error) {
   ended = isRateLimited(error) ? `limited ${error.resetAt}` : String(error);

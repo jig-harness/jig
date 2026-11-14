@@ -371,6 +371,9 @@ function writeKept(
           ),
           lastAccount: lastAccount(records),
           previousNeeds: before?.needs ?? [],
+          ...(receipt.quotaRisks === undefined
+            ? {}
+            : { quotaRisks: receipt.quotaRisks }),
           recentTicksMs: before?.recentTicksMs ?? [],
         }),
         receipt.runId,

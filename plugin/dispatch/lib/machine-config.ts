@@ -57,7 +57,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { DEFAULT_DISPATCHER_SHARE } from "../../shared/tracker-budget.ts";
+import { DEFAULT_DISPATCHER_SHARE } from "../../shared/outbound/budget.ts";
 import { load } from "../../shared/yaml.ts";
 import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
 import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";

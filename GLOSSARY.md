@@ -2194,7 +2194,9 @@ make, use the entry's term instead.
   tracker adapters' transports keep the budget and the deadline, and they
   and the forge's `gh` calls fail as the failure classes; a tracker read
   is sent once more after a failure that may clear, a forge call is not;
-  the rest is planned ([ROADMAP.md](ROADMAP.md) item 55).
+  the transports record each attempt in the cost ledger. Shared caching,
+  GitHub budget windows and the boundary gates remain planned
+  ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
   and until when the system refuses the credential. Every process on the
@@ -2208,8 +2210,10 @@ make, use the entry's term instead.
   cost: for each hour, system, credential, named operation and caller, the
   requests sent, the cost in the system's own unit (a tracker's complexity
   points, a forge's query points) and the time taken. It answers "what
-  spent this quota" without probing the system. Planned
-  ([ROADMAP.md](ROADMAP.md) item 55).
+  spent this quota" without probing the system. Hourly totals stay 7 days
+  in the budget database; `jig budget` and each tick report read them, and
+  a low-quota need names the operations projected to empty a quota.
+  [Plugin README](plugin/README.md#the-dispatcher).
 - **Failure class** — one of the closed set of ways a call to an outside
   system fails: rate limited (with the time it clears), unreachable, too
   costly, server fault, unauthorized, not found, invalid. Each class has
