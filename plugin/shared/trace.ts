@@ -271,10 +271,17 @@ export function traceRunner<
     });
 }
 
+const unheldForms = new WeakMap<object, unknown>();
+
+/** The form of a runner `traceGhRunner` made that does not hold the forge; `undefined` for any other runner. */
+export function unheldForm<R extends object>(runner: R): R | undefined {
+  return unheldForms.get(runner) as R | undefined;
+}
+
 /**
  * Adapt the gh boundary without copying its deadline, span or hold bookkeeping;
- * `refuse` is a held call's result. With `held` false the run is not held: a
- * caller that applies the hold around its own retry does so itself.
+ * `refuse` is a held call's result. `unheldForm` gives the runner that does
+ * not hold, for a caller that applies the hold around its own retry.
  */
 export function traceGhRunner<
   T extends GhRun,
@@ -284,8 +291,12 @@ export function traceGhRunner<
   timeout: () => number,
   defaults: O,
   refuse: (failure: OutboundFailure) => T,
-  held = true,
 ): (args: string[], opts?: O) => Promise<T> {
-  return (args, opts = defaults) =>
-    traceGhCall(args, opts, timeout(), run, refuse, held);
+  const through =
+    (held: boolean) =>
+    (args: string[], opts: O = defaults) =>
+      traceGhCall(args, opts, timeout(), run, refuse, held);
+  const runner = through(true);
+  unheldForms.set(runner, through(false));
+  return runner;
 }

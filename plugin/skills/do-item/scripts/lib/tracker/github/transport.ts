@@ -20,8 +20,8 @@
 import {
   type RunResult,
   ghCall,
-  ghCallUnheld,
 } from "../../../../../drive-pr/scripts/lib/proc.ts";
+import { unheldForm } from "../../../../../../shared/trace.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import {
@@ -313,15 +313,14 @@ function errorsFailure(
  * wrapper (`runClient`). The request travels on standard input as one JSON
  * body, so variables keep their types and nothing reaches the command line.
  */
-export function ghTransport(
-  runner: typeof ghCall = ghCallUnheld,
-): GitHubTransport {
-  // The default runner is not held per run: the hold lands around the whole
+export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
+  // The shared runner is not held per run: the hold lands around the whole
   // call, after its retry. An injected runner is the caller's own.
-  const hold = runner === ghCallUnheld ? GITHUB : null;
+  const unheld = unheldForm(runner);
+  const hold = unheld === undefined ? null : GITHUB;
   return (query, variables, signal, idempotent = false) =>
     call(
-      (bound) => ghOnce(runner, { query, variables }, bound, signal),
+      (bound) => ghOnce(unheld ?? runner, { query, variables }, bound, signal),
       signal,
       idempotent,
       hold,

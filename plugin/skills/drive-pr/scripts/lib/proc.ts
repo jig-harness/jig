@@ -975,19 +975,6 @@ export const ghCall = traceGhRunner<RunResult, RunOptions>(
 );
 
 /**
- * `ghCall` without the hold on the forge: for a caller that holds the forge
- * around its own retry (`shared/outbound/hold.ts` `guarded`), so the hold
- * lands after the retry rather than between its attempts.
- */
-export const ghCallUnheld = traceGhRunner<RunResult, RunOptions>(
-  (args, opts) => run(["gh", ...args], opts),
-  ghCallTimeoutSeconds,
-  {},
-  heldRun,
-  false,
-);
-
-/**
  * `git`. Undeadlined BY DEFAULT, because every call in this skill but one is
  * local (`rev-parse`, `merge-base`, `cat-file`, `status`) and cannot hang on a
  * network the way `gh` can — which is why `ghCall` carries a deadline and this
