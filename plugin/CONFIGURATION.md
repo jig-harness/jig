@@ -1751,10 +1751,10 @@ message to tell them apart. What a host sees:
 | Class | What it means | Inside the call | At the tick |
 | --- | --- | --- | --- |
 | `rate-limited` | the system refused the credential until a reset | not sent again | not a failure before its reset: the repository's row in the failure ledger is neither counted nor cleared, and the tick exits 0 |
-| `unreachable` | no answer: the name did not resolve, the connection failed, the deadline passed | a read is sent once more after a backoff of about a second, within the call's deadline; a write is not | the system is asked nothing more in this tick, and the next tick sends it one request alone and reads on only when it is answered; the tick exits 0 until the repository's row reaches `failures.notify_after` |
+| `unreachable` | no answer: the name did not resolve, the connection failed, the deadline passed | a tracker read is sent once more after a backoff of about a second, within the call's deadline; a forge read and every write are not | the system is asked nothing more in this tick, and the next tick sends it one request alone and reads on only when it is answered; the tick exits 0 until the repository's row reaches `failures.notify_after` |
 | `server-fault` | the system answered at once with a 5xx status | as `unreachable` | as `unreachable` |
 | `too-costly` | the system ran out of time on the request, or `gh` did not finish within its deadline | the dispatcher's paged reads ask again for half the page | the tick exits 0 until the repository's row reaches `failures.notify_after` |
-| `unauthorized` | the credential is missing, expired or refused | not sent again | the tick exits 1, and a person is told at once: the repository's row counts as `failures.notify_after` failures |
+| `unauthorized` | the credential is missing, expired or refused | not sent again | the tick exits 1, and a person is told at once, through the host's home repository when that one still opens: the repository's row counts as `failures.notify_after` failures |
 | `not-found` | what was asked for does not exist or is not visible | not sent again | an absence, read as such |
 | `invalid` | the system refused the request as malformed, or answered in a form that does not read | not sent again | the tick exits 1, and the failure ledger tells a person at `failures.notify_after` |
 

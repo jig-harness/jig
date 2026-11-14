@@ -289,6 +289,11 @@ export function linearAttachments(
             `${error.message} (the file is already uploaded at ${assetUrl}, but no command attaches an existing address: run the attach again, which uploads a second copy and leaves this one unattached)`,
             error.status,
             error.code,
+            {
+              until: error.until,
+              sent: error.sent,
+              retryAfterMs: error.retryAfterMs,
+            },
           );
         throw error;
       }
