@@ -384,5 +384,6 @@ Where type is kept in Jira's issue types (`issue_tracker.facets.type`
 one workflow and field configuration. When the issue's edit screen
 lists the issue type choices and the new issue type is not among them, the change is
 refused before anything is written: move the issue in Jira, or keep type in
-labels or a field. When the screen lists no choices, Jira decides, and its
-rejection is explained afterward in the same words.
+labels or a field. When the screen omits the issue type choice list, Jira decides, and its
+rejection is explained afterward in the same words; a screen that offers an
+empty list refuses every target.
