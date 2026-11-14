@@ -76,37 +76,11 @@ function stationOf(need: LineNeed): Station {
   return "drive";
 }
 
-/** A need as an address, or the host target for a host-wide need. */
-function entryOf(need: LineNeed): WaitingEntry | null {
-  if (need.repo === HOST_NEED_REPO) {
-    return {
-      address: null,
-      target: need.target,
-      people: uniqueLogins(
-        need.decisions.flatMap((d) =>
-          d.person === undefined ? [] : [d.person],
-        ),
-      ),
-      act: personAct(need.cause),
-      needAct: actOfLineNeed(need),
-      since: need.since,
-      reason: need.reason,
-      url: need.url,
-      title: need.title,
-      questions: [],
-      notice: need.notified?.detail ?? null,
-    };
-  }
-  const station = stationOf(need);
-  const key =
-    station === "pickup"
-      ? need.item
-      : need.pr === null
-        ? null
-        : String(need.pr);
-  if (key === null) return null;
+/** What every entry carries of its need, whatever its address. */
+function entryFields(
+  need: LineNeed,
+): Omit<WaitingEntry, "address" | "questions"> {
   return {
-    address: formatAddress({ station, repo: need.repo, key }),
     target: need.target,
     people: uniqueLogins(
       need.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
@@ -117,6 +91,25 @@ function entryOf(need: LineNeed): WaitingEntry | null {
     reason: need.reason,
     url: need.url,
     title: need.title,
+    notice: need.notified?.detail ?? null,
+  };
+}
+
+/** A need as an address, or the host target for a host-wide need. */
+function entryOf(need: LineNeed): WaitingEntry | null {
+  if (need.repo === HOST_NEED_REPO)
+    return { address: null, ...entryFields(need), questions: [] };
+  const station = stationOf(need);
+  const key =
+    station === "pickup"
+      ? need.item
+      : need.pr === null
+        ? null
+        : String(need.pr);
+  if (key === null) return null;
+  return {
+    address: formatAddress({ station, repo: need.repo, key }),
+    ...entryFields(need),
     questions: [
       ...(need.question ? [need.question] : []),
       ...need.decisions.map((d) =>
@@ -125,7 +118,6 @@ function entryOf(need: LineNeed): WaitingEntry | null {
           : d.lines.join("\n"),
       ),
     ].filter((q) => q.length > 0),
-    notice: need.notified?.detail ?? null,
   };
 }
 

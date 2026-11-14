@@ -157,6 +157,15 @@ export async function orcaNotify(
   );
 }
 
+/** The settled entries the comment gives up: only the exact comment the sender found them in does. */
+function settledIn(target: NotifyTarget, comment: string | null): Set<string> {
+  return new Set(
+    target.settled !== undefined && comment === target.settled.comment
+      ? target.settled.keys
+      : [],
+  );
+}
+
 /** Persist only a projection whose fresh source the sender can vouch for. */
 function prepareProjection(
   target: NotifyTarget,
@@ -196,12 +205,7 @@ async function notifyUnlocked(
     message,
     target.dispatcherOnly === true &&
       card.comment !== target.replaceReadComment,
-    // Only the exact comment the sender found its settled entries in gives them up.
-    new Set(
-      target.settled !== undefined && card.comment === target.settled.comment
-        ? target.settled.keys
-        : [],
-    ),
+    settledIn(target, card.comment),
   );
   let ownedComment = false;
   if (merge !== null) {
