@@ -936,7 +936,10 @@ may create or edit labels runs; `jig install dispatch --repo <path>` does the sa
 beside the timer. A label write the forge refuses is reported (in the
 receipt, or on the drive's or the command's output) and fails nothing, except
 `jig dispatch marker failed`, which exits `1` when it cannot write its enabled
-label, since that label is its only record of the failure. An
+label, since that label is its only record of the failure, and
+`jig dispatch labels --yes` (with the labels phase of
+`jig install dispatch --repo <path> --yes`), which exits `1` while a label it
+needs is still missing or outdated after the write. An
 optional workflow, drive-pr's
 [`templates/github/state-labels.yml`](skills/drive-pr/templates/github/state-labels.yml),
 replaces `jig:converged` with `jig:stale` on a push to the pull request,
