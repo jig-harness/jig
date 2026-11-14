@@ -116,7 +116,8 @@ export interface LineNotified {
 export type NeedCause =
   | Exclude<NotifyCause, "waiting" | "drifting" | "ready" | FailureCause>
   | "assigner-cannot-write"
-  | "tracker-unreachable";
+  | "tracker-unreachable"
+  | "low-quota";
 
 /** One thing the line waits on a person for. */
 export interface LineNeed {

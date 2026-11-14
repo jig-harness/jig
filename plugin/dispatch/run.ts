@@ -435,6 +435,7 @@ async function executeStage(
     {
       ...withoutRunTabMarker(passEnvironment(process.env, record)),
       [LAUNCH_VARIABLE]: id,
+      JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
     },
     { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );

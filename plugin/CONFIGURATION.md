@@ -2136,3 +2136,29 @@ specs:
   body_section: Spec
   verification_section: Verification
 ```
+
+## Outbound cost reports
+
+The [cost ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) needs no configuration. It shares
+`~/.local/state/jig/tracker/budget.sqlite` with the budget record, preserving
+the existing table and adding hourly totals in `outbound_cost`. Each row names
+the system, a hashed credential key, operation, caller and unit, and totals
+requests, cost, duration, estimates, unknown costs and failure classes.
+The ledger holds 7 days; an unavailable database never stops an outbound call.
+
+`jig budget [--hours <1..168>] [--json]` reads the last 24 hours by default,
+with per-operation and per-caller totals and the latest known balances.
+The dispatch receipt's outbound section shows the tick's own spending and
+costliest operations per system. Linear reports measured complexity points;
+GitHub reports points when the query includes its cost, with unknown or
+estimated costs marked separately. The ledger contains no request payloads
+or raw credentials. A caller identifies one tick, one pass and its stage,
+or a skill a person ran.
+
+A `low-quota` need appears once per quota when the prior hour's spending would
+empty the balance before refill and is withdrawn when that projection clears.
+Forecasting weights partial hourly buckets assuming uniform spending, credits
+continuous refill and honours fixed-window resets. Unknown complexity costs
+cannot drive a points forecast. Other applications' spending is visible in
+the balance but cannot be attributed to Jig's operations. These reports add
+no GitHub admission window and no dashboard quota view.

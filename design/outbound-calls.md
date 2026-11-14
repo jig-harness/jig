@@ -16,10 +16,10 @@ operation cost, and tells a reader exactly how a call failed.
 This is the design of [plan.md](plan.md) item 55, decided in
 [ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md). Built so
 far: the shared budget record for the tracker adapters
-(`plugin/shared/tracker-budget.ts`, documented under `tracker_share` in the
+(`plugin/shared/outbound/budget.ts`, documented under `tracker_share` in the
 [configuration reference](../plugin/CONFIGURATION.md)), conditional requests
 for some forge reads (`plugin/shared/gh-conditional.ts`), a deadline on
-every call, the page that shrinks (`paging`), and the failure classes with
+every call, the page that shrinks (`paging`), and the ledger with its command, tick reports and low-quota need, and the failure classes with
 one retry for a read (`failure`, `retry`, `hold`): the tracker transports
 and the forge client's `ghCall` wrappers fail as the classes, and the tick
 and the passes follow the policies below.
@@ -57,7 +57,7 @@ module leaves its old path in the same pull request.
 | Part | What it does | Moved from |
 | --- | --- | --- |
 | `profile` | A system's limits: which exist, how each refills, how an answer reports them, what a refusal looks like, and who owns the quota | Constants in each transport |
-| `budget` | Admits and reserves per credential and limit, with a share for the dispatcher | `shared/tracker-budget.ts` |
+| `budget` | Admits and reserves per credential and limit, with a share for the dispatcher | `shared/outbound/budget.ts` |
 | `ledger` | Totals of requests, cost and time per operation and caller | New |
 | `failure`, `retry` | The closed classes; jittered backoff inside the call's deadline that honours `Retry-After`, for reads only | `tracker/read-retry.ts` and each transport's own classification |
 | `cache` | Answers kept by update time or by the system's validator, stable absences included | `shared/gh-conditional.ts`, the served queue's kept readings |

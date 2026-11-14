@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TrackerRateLimited } from "../../../shared/tracker-budget.ts";
+import { TrackerRateLimited } from "../../../shared/outbound/budget.ts";
 import { FacetReadStopped } from "../scripts/lib/tracker/facets/bounds.ts";
 import { LinearApiError } from "../scripts/lib/tracker/linear-transport.ts";
 import {
