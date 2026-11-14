@@ -31,11 +31,7 @@ export interface RecordKind {
   readonly owner: string;
   /** Who writes a kind Jig only reads: another tool, or a person. */
   readonly foreign?: string;
-  /**
-   * Where it lives: a path on the machine (from `~`, or `<tmp>`), in the
-   * working tree (from its root, or `<git dir>`), or the place on the forge
-   * or the tracker.
-   */
+  /** Where it lives: on the machine (from `~` or `<tmp>`), in the tree (its root or `<git dir>`), on the forge or tracker. */
   readonly at: string;
   /** The hidden markers it carries, each as written after `<!--`. */
   readonly markers?: readonly string[];
@@ -58,10 +54,7 @@ export interface NotARecord {
 /** A pull request's number: the key of a record about one pull request. */
 const PR_NUMBER = /^[1-9]\d*$/;
 
-/**
- * The keys of the claims on the forge (`forge-claims.ts`): what is claimed on
- * the pull request the claim's comment is on.
- */
+/** A forge claim's key (`forge-claims.ts`): what is claimed on the pull request its comment is on. */
 const TAKEOVER_KEY = /^takeover:\d+$/;
 /** A follow-up claim's key; one written before claims (version 1) is its pull request's number. */
 const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;

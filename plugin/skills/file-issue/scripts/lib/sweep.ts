@@ -32,9 +32,11 @@
 
 import type {
   Facet,
+  FacetReadOptions,
   FacetStores,
   IncompleteIssue,
   IncompletePage,
+  IncompleteQuery,
   Tracker,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { failureLine, type Writer, WriteRefused } from "./pace.ts";
@@ -166,57 +168,80 @@ function emptiedStore(counts: IncompletePage["counts"]): string | null {
   return null;
 }
 
+/** Where a paged read stands: where it started, where it goes on, and whether it is done. */
+interface ReadCursor {
+  start: string | null;
+  after: string | null;
+  /** The read reached the end of the population and went on from the oldest. */
+  wrapped: boolean;
+  /** Every issue the read can reach was read this run. */
+  covered: boolean;
+}
+
+/** Move the read past one page, of which `kept` issues were listed: on, from the oldest at the end, or done. */
+function advance(c: ReadCursor, got: IncompletePage, kept: number): void {
+  const reachedStart =
+    c.wrapped && c.start !== null && got.next !== null && got.next >= c.start;
+  if (kept < got.issues.length || reachedStart) c.covered = true;
+  else if (got.next !== null) c.after = got.next;
+  else if (c.start === null || c.wrapped) c.covered = true;
+  else {
+    c.wrapped = true;
+    c.after = null;
+  }
+}
+
 /**
- * Read every page the caps allow, then the one page of started issues. With a
- * position, the read starts after it, and on reaching the end goes on from the
- * oldest issue up to the position, so no issue is read twice in a run.
+ * Read the incomplete issues not yet started, as many pages as `pages`. With
+ * a position, the read starts after it, and on reaching the end goes on from
+ * the oldest issue up to the position, so no issue is read twice in a run.
  */
+async function readPages(
+  tracker: Tracker,
+  query: IncompleteQuery,
+  pages: number,
+  read: FacetReadOptions,
+  report: SweepReport,
+): Promise<ReadCursor> {
+  const start = report.position?.from ?? null;
+  const c: ReadCursor = { start, after: start, wrapped: false, covered: false };
+  for (let page = 0; page < pages && !c.covered; page++) {
+    const got = await tracker.incompleteIssues(
+      { ...query, after: c.after },
+      read,
+    );
+    if (page === 0) report.counts = got.counts;
+    // Pages come oldest first, so past the wrap the issues up to the start
+    // are a prefix of the page.
+    const issues = c.wrapped
+      ? got.issues.filter((i) => start === null || i.cursor <= start)
+      : got.issues;
+    report.listed.push(...issues);
+    advance(c, got, issues.length);
+  }
+  return c;
+}
+
+/** Read every page the caps allow, then the one page of started issues. */
 async function readAll(
   tracker: Tracker,
   query: { missing: Facet[]; retired: string[] },
   opts: SweepOptions,
   report: SweepReport,
 ): Promise<void> {
-  const pages = opts.limits?.pages ?? SWEEP_LIMITS.pages;
   const limit = opts.limits?.pageSize ?? SWEEP_LIMITS.pageSize;
   const read = {
     census: {},
     deadline: Date.now() + 60_000,
     ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
   };
-  const start = report.position?.from ?? null;
-  const beforeStart = (i: IncompleteIssue) =>
-    start === null || i.cursor <= start;
-  let after = start;
-  let wrapped = false;
-  let covered = false;
-  for (let page = 0; page < pages && !covered; page++) {
-    const got = await tracker.incompleteIssues(
-      { ...query, after, limit },
-      read,
-    );
-    if (page === 0) report.counts = got.counts;
-    // Pages come oldest first, so past the wrap the issues up to the start
-    // are a prefix of the page.
-    const issues = wrapped ? got.issues.filter(beforeStart) : got.issues;
-    report.listed.push(...issues);
-    if (
-      issues.length < got.issues.length ||
-      (wrapped && start !== null && got.next !== null && got.next >= start)
-    )
-      covered = true;
-    else if (got.next !== null) after = got.next;
-    else if (start === null || wrapped) covered = true;
-    else {
-      wrapped = true;
-      after = null;
-    }
-  }
-  report.readCapped = !covered;
+  const pages = opts.limits?.pages ?? SWEEP_LIMITS.pages;
+  const c = await readPages(tracker, { ...query, limit }, pages, read, report);
+  report.readCapped = !c.covered;
   if (report.position !== null) {
-    report.position.wrapped = wrapped;
+    report.position.wrapped = c.wrapped;
     // Wrapped with no page left: nothing past the end was read this run.
-    report.position.endedAtEnd = wrapped && !covered && after === null;
+    report.position.endedAtEnd = c.wrapped && !c.covered && c.after === null;
   }
   const started = await tracker.incompleteIssues(
     {

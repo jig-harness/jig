@@ -82,7 +82,7 @@ import {
 } from "./lib/sections.ts";
 import { readPosition, writePosition } from "./lib/sweep-position.ts";
 import { sweepSettings } from "./lib/sweep-settings.ts";
-import { sweep, sweepLines } from "./lib/sweep.ts";
+import { type SweepReport, sweep, sweepLines } from "./lib/sweep.ts";
 
 const USAGE = `usage:
   check-fields.ts [check] [--yes] [--json] [--retired-from <file>] [--position <file>]
@@ -99,11 +99,13 @@ function print(json: boolean, report: unknown, lines: string[]): void {
   console.log(json ? JSON.stringify(report, null, 2) : lines.join("\n"));
 }
 
-/** The position `file` keeps for a comment-only sweep; moving keeps none. */
+/** The position `file` keeps for a comment-only sweep, and its save once the run applied; moving keeps none. */
 function keptPosition(
   file: string | undefined,
   move: boolean,
-): { after: string | null } | undefined {
+):
+  | { from: { after: string | null }; save: (report: SweepReport) => void }
+  | undefined {
   if (file === undefined) return undefined;
   if (move) {
     console.error(
@@ -111,9 +113,16 @@ function keptPosition(
     );
     return undefined;
   }
-  const read = readPosition(file);
+  const path = resolve(file);
+  const read = readPosition(path);
   if (read.warning !== null) console.error(`warning: ${read.warning}`);
-  return { after: read.after };
+  return {
+    from: { after: read.after },
+    save: (report) => {
+      if (report.position !== null && report.apply)
+        writePosition(path, report.position.next);
+    },
+  };
 }
 
 async function check(argv: string[]): Promise<number> {
@@ -129,9 +138,7 @@ async function check(argv: string[]): Promise<number> {
   });
   const overlay = readOverlay();
   const settings = sweepSettings(overlay);
-  const positionFile =
-    values.position === undefined ? undefined : resolve(values.position);
-  const position = keptPosition(positionFile, settings.move);
+  const position = keptPosition(values.position, settings.move);
   const config = trackerConfigFrom(overlay);
   const root = consumerRoot();
   const tracker = openTracker(config, root);
@@ -149,10 +156,9 @@ async function check(argv: string[]): Promise<number> {
     retired: (stores) => retiredLabels(overlay, config, root, stores, former),
     writer: pacedWriter(),
     progress: (line) => console.error(line),
-    ...(position === undefined ? {} : { position }),
+    ...(position === undefined ? {} : { position: position.from }),
   });
-  if (positionFile !== undefined && report.position !== null && report.apply)
-    writePosition(positionFile, report.position.next);
+  position?.save(report);
   print(values.json === true, report, sweepLines(report));
   if (report.stopped !== null) return 1;
   // A store problem fails a run asked to move, or one that could read nothing.
