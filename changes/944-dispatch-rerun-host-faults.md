@@ -15,7 +15,8 @@ release: minor
   for the host's health check to pass (`jig doctor dispatch`'s last run):
   while it fails, every such follow-up that is not itself a run again is
   held, whatever its age, with nothing released or notified, and the host's
-  own `ticks-failing` or `repository-failing` notice is what a person sees.
+  own `host-failing` notice is what a person sees by default (`ticks-failing`
+  or `repository-failing` when `failures.group` is `scope`).
   Once it passes, a death's 6-hour window applies again, and a plain death
   older than it goes to a person.
   It stays one run again per follow-up, counted against the pull request's

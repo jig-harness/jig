@@ -64,6 +64,20 @@ function plan(read: ReadRecord, rerunsHeld: string | null = null) {
   });
 }
 
+function planMany(reads: ReadRecord[], rerunsHeld: string | null = null) {
+  return planPickups({
+    slug: "example-org/example-repo",
+    section: { stalledAfterMs: 3_600_000 } as DispatchSection,
+    pickups: [ITEM],
+    claimed: [],
+    sessions: { ok: true, source: "test", workspaces: [] },
+    launches: reads,
+    idleSince: new Map(),
+    nowMs: parseMs("2026-11-14T12:00:00Z"),
+    rerunsHeld,
+  });
+}
+
 describe("a pickup whose result the host could not write", () => {
   it("never raises the question its pass stopped on, where a pass that wrote nothing on its own asks it", () => {
     expect(plan(stopped(false)).actions).toContainEqual(
@@ -99,5 +113,18 @@ describe("a pickup whose result the host could not write", () => {
       class: "died",
       reason: expect.stringContaining("this host could not write it"),
     });
+  });
+
+  it("does not let an older unwritten pickup hide the latest pickup's stall", () => {
+    const older = stopped(true);
+    const newer = stopped(false);
+    newer.record = { ...newer.record, createdAt: "2026-11-14T11:30:00.000Z" };
+    const planned = planMany([older, newer], "the last tick exited 1");
+    expect(planned.actions).toContainEqual(
+      expect.objectContaining({ cause: "pickup-question", target: "#12" }),
+    );
+    expect(planned.quiet).not.toContainEqual(
+      expect.objectContaining({ target: "#12", class: "pickup-ended" }),
+    );
   });
 });

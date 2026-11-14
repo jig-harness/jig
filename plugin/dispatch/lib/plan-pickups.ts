@@ -384,17 +384,11 @@ function planClaimed(
     return;
   }
   if (settledByPr(item.key, pr.step, plan)) return;
+  const latestPickup = latestPickupFor(item.key, input.launches);
   const hostHeld =
     input.rerunsHeld !== null &&
-    input.launches.some(
-      (record) =>
-        record.record.action === "pickup" &&
-        (record.record.item === item.key ||
-          record.record.batchItems?.some((entry) => entry.key === item.key) ===
-            true) &&
-        holdsItem(record.record, item.key) &&
-        unwrittenResult(record),
-    );
+    latestPickup !== undefined &&
+    unwrittenResult(latestPickup);
   if (hostHeld) {
     plan.quiet.push({
       target: item.key,
@@ -481,16 +475,7 @@ function questionAsked(
   launches: ReadRecord[],
 ): Action | null {
   const { slug } = input;
-  const latest = launches
-    .filter(
-      (r) =>
-        r.record.action === "pickup" &&
-        (r.record.item === item.key ||
-          r.record.batchItems?.some((i) => i.key === item.key) === true) &&
-        holdsItem(r.record, item.key),
-    )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
-    .at(-1);
+  const latest = latestPickupFor(item.key, launches);
   if (latest === undefined) return null;
   // What a pass whose result the host could not write asked is the host's fault, never a person's question.
   const unwritten = unwrittenResult(latest);
@@ -529,6 +514,23 @@ function questionAsked(
     // The pass's ended row in the outcome log already holds how it ended.
     launched: true,
   };
+}
+
+/** The latest unreleased pickup for this item, shared by its question and host-health hold. */
+function latestPickupFor(
+  item: string,
+  launches: readonly ReadRecord[],
+): ReadRecord | undefined {
+  return launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item ||
+          r.record.batchItems?.some((entry) => entry.key === item) === true) &&
+        holdsItem(r.record, item),
+    )
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
+    .at(-1);
 }
 
 /** What the tick read as a waiting session's cause: the usage-limit wall still its last record, if any. */

@@ -105,4 +105,15 @@ describe("jig dispatch result's guard", () => {
     writeUnwritten(dir, ID, "the-token", "exit", "refused");
     expect(unwrittenExitWitness(dir, ID, "the-token")).toBe(true);
   });
+
+  it("keeps result evidence while independently publishing the exit witness", () => {
+    const dir = root();
+    writeUnwritten(dir, ID, "the-token", "result", "refused result");
+    writeUnwritten(dir, ID, "the-token", "exit", "refused exit");
+    expect(unwrittenOf(dir, ID, "the-token")).toEqual({
+      unwritten: expect.any(String),
+    });
+    expect(unwrittenExitWitness(dir, ID, "the-token")).toBe(true);
+    expect(files(dir)).toHaveLength(2);
+  });
 });

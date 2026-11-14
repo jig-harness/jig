@@ -8,12 +8,13 @@
  * and the tick reads it with the record once the database reads again
  * (`readLaunches`), as the record's `unwritten`.
  *
- * The file is named, and holds, the SHA-256 of the record's token, which the
+ * The files are named, and hold, the SHA-256 of the record's token, which the
  * writer was handed and cannot check while the database refuses it: the tick
- * reads only the file of the record's own digest, so no other process can
- * make a record owe a run again, nor keep the genuine pass's evidence out
- * with a file of its own. The first file of a digest stands; every file of a
- * record goes when the record is pruned.
+ * reads only files of the record's own digest, so no other process can make a
+ * record owe a run again, nor keep the genuine pass's evidence out with a
+ * file of its own. Result evidence and the wrapper's exit witness have
+ * separate files, so the latter can record cleanup after a refused result
+ * write. Every file of a record goes when the record is pruned.
  *
  * What the tick does with it: a follow-up whose record has no result and
  * this evidence is run again once (`session-startup.ts`), and neither a
@@ -45,7 +46,17 @@ function digest(token: string): string {
 }
 
 /** The evidence file of record `id` under the token whose digest is `hash`. */
-function unwrittenPath(root: string, id: string, hash: string): string {
+function unwrittenPath(
+  root: string,
+  id: string,
+  hash: string,
+  what: UnwrittenWhat,
+): string {
+  return join(root, "unwritten", `${id}.${hash}.${what}.json`);
+}
+
+/** The filename written before result and exit evidence were kept separately. */
+function legacyUnwrittenPath(root: string, id: string, hash: string): string {
   return join(root, "unwritten", `${id}.${hash}.json`);
 }
 
@@ -63,7 +74,7 @@ export function writeUnwritten(
 ): boolean {
   if (!LAUNCH_RECORD_ID.test(id)) return false;
   const hash = digest(token);
-  const path = unwrittenPath(root, id, hash);
+  const path = unwrittenPath(root, id, hash, what);
   if (existsSync(path)) return true;
   try {
     mkdirSync(join(root, "unwritten"), { recursive: true, mode: 0o700 });
@@ -104,20 +115,26 @@ export function unwrittenOf(
   token: string,
 ): { unwritten?: string } {
   const hash = digest(token);
-  const path = unwrittenPath(root, id, hash);
-  if (!existsSync(path)) return {};
-  try {
-    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return isMapping(value) &&
-      value.record === id &&
-      value.token === hash &&
-      typeof value.at === "string"
-      ? { unwritten: value.at }
-      : {};
-  } catch (error) {
-    swallow(error, "the evidence of an unwritten end does not read");
-    return {};
+  for (const path of [
+    unwrittenPath(root, id, hash, "result"),
+    unwrittenPath(root, id, hash, "exit"),
+    legacyUnwrittenPath(root, id, hash),
+  ]) {
+    if (!existsSync(path)) continue;
+    try {
+      const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (
+        isMapping(value) &&
+        value.record === id &&
+        value.token === hash &&
+        typeof value.at === "string"
+      )
+        return { unwritten: value.at };
+    } catch (error) {
+      swallow(error, "the evidence of an unwritten end does not read");
+    }
   }
+  return {};
 }
 
 /**
@@ -132,20 +149,25 @@ export function unwrittenExitWitness(
   token: string,
 ): boolean {
   const hash = digest(token);
-  const path = unwrittenPath(root, id, hash);
-  if (!existsSync(path)) return false;
-  try {
-    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return (
-      isMapping(value) &&
-      value.record === id &&
-      value.token === hash &&
-      value.what === "exit"
-    );
-  } catch (error) {
-    swallow(error, "the evidence of an unwritten end does not read");
-    return false;
+  for (const path of [
+    unwrittenPath(root, id, hash, "exit"),
+    legacyUnwrittenPath(root, id, hash),
+  ]) {
+    if (!existsSync(path)) continue;
+    try {
+      const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (
+        isMapping(value) &&
+        value.record === id &&
+        value.token === hash &&
+        value.what === "exit"
+      )
+        return true;
+    } catch (error) {
+      swallow(error, "the evidence of an unwritten end does not read");
+    }
   }
+  return false;
 }
 
 /** Remove every evidence file of the records that were pruned, best effort: a file left behind is read by nothing, since its record is gone. */
