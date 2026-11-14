@@ -42,6 +42,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { run } from "../../../shared/proc.ts";
+import { spawnLoop } from "./scripts-polling-fixtures.ts";
 import {
   skillsParentIsIntact,
   validateOutcomeBody,
@@ -603,12 +604,19 @@ describe.skipIf(process.platform === "win32")(
             cwd: repoDir,
             env: {
               ...gitCleanEnv(),
+              HOME: fix.dir,
+              USERPROFILE: fix.dir,
               PATH: `${binDir}${delimiter}${process.env.PATH}`,
               RRC_FIX: fix.dir,
               GH_CALL_TIMEOUT: "20",
             },
           },
         );
+        expect(
+          existsSync(
+            join(fix.dir, ".local", "state", "jig", "tracker", "budget.sqlite"),
+          ),
+        ).toBe(true);
         return { code: r.status, stderr: r.stderr };
       }
 
@@ -1468,38 +1476,6 @@ describe.skipIf(process.platform === "win32")(
       }
     }
 
-    /** The real loop, running, with its own throwaway ETag cache. */
-    function spawnLoop(
-      fix: Fixture,
-      args: string[],
-      env: Record<string, string> = {},
-    ): { done: Promise<{ code: number; stderr: string }>; kill: () => void } {
-      const child = spawn(
-        process.execPath,
-        [join(SCRIPTS, "await-round.ts"), fix.pr, ...args],
-        {
-          cwd: repoDir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            RRC_FIX: fix.dir,
-            GH_CALL_TIMEOUT: "20",
-            JIG_GH_CACHE_DIR: join(fix.dir, "etag-cache"),
-            AWAIT_ROUND_POLL_MS: "100",
-            ...env,
-          },
-        },
-      );
-      let stderr = "";
-      child.stderr?.on("data", (d) => {
-        stderr += String(d);
-      });
-      const done = new Promise<{ code: number; stderr: string }>((resolve) => {
-        child.on("close", (code) => resolve({ code: code ?? -1, stderr }));
-      });
-      return { done, kill: () => child.kill("SIGKILL") };
-    }
-
     const PENDING = [check("AI review (shadow)", "pending", "IN_PROGRESS")];
     const SETTLED = [check("AI review (shadow)", "pass", "COMPLETED")];
 
@@ -1531,6 +1507,11 @@ describe.skipIf(process.platform === "win32")(
       try {
         // Tick 1 reads (and primes the detector); ticks 2 and 3 are gated.
         await until("two gated polls", () => checkRunReads(fix) >= 3);
+        expect(
+          existsSync(
+            join(fix.dir, ".local", "state", "jig", "tracker", "budget.sqlite"),
+          ),
+        ).toBe(true);
         expect(lines(fix, "pr-checks-calls.log")).toBe(1);
         expect(lines(fix, "rest-conditional.log")).toBeGreaterThanOrEqual(2);
 
@@ -1914,6 +1895,8 @@ it.skipIf(process.platform === "win32")(
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...gitCleanEnv(),
+          HOME: fix.dir,
+          USERPROFILE: fix.dir,
           PATH: `${binDir}${delimiter}${process.env.PATH}`,
           RRC_FIX: fix.dir,
           GH_CALL_TIMEOUT: "20",

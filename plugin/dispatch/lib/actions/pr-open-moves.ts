@@ -18,7 +18,7 @@
  * report; nothing here throws.
  */
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { isRateLimited } from "../../../shared/tracker-budget.ts";
+import { isRateLimited } from "../../../shared/outbound/budget.ts";
 import { holding } from "../holding.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { failureText } from "../text.ts";

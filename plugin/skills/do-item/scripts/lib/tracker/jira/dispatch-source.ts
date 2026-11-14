@@ -1,5 +1,5 @@
 /** Jira's native readings, before a checkout maps its statuses and facet fields. */
-import { credentialKey } from "../../../../../../shared/tracker-budget.ts";
+import { credentialKey } from "../../../../../../shared/outbound/budget.ts";
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import type { DispatchRawIssue } from "../port.ts";

@@ -18,6 +18,13 @@ import {
   readLaunches,
   writeRecord,
 } from "../lib/launches.ts";
+import {
+  asClaim,
+  claimState,
+  registerStageProcess,
+  uncertainStage,
+} from "../lib/launch-supervision.ts";
+import { clearMain } from "../clear.ts";
 import { classifyEnded } from "../lib/log.ts";
 import { closeStateDb } from "../lib/state.ts";
 
@@ -72,6 +79,167 @@ async function ownClaim(): Promise<LaunchClaim> {
 }
 
 describe("a launch record's claim, judged by the shared process identity", () => {
+  it("holds a dead wrapper's slot while its durable stage child is alive", async () => {
+    const child = await ownClaim();
+    const claim = {
+      ...child,
+      pid: 2147483647,
+      supervision: { supervisor: child, child },
+    };
+    const dir = claimedRoot(claim);
+    const { records } = await readLaunches(dir);
+    expect(records[0]?.state.kind).toBe("unknown");
+    expect(records[0] !== undefined && holds(records[0].state)).toBe(true);
+  });
+
+  it("holds a dead wrapper's slot when the child launch handoff was interrupted", async () => {
+    const claim = {
+      ...(await ownClaim()),
+      pid: 2147483647,
+      supervision: { supervisor: null, child: null },
+    };
+    const { records } = await readLaunches(claimedRoot(claim));
+    expect(records[0]?.state.kind).toBe("unknown");
+    expect(records[0] !== undefined && holds(records[0].state)).toBe(true);
+  });
+
+  it("keeps malformed supervision unknown instead of reading a wrapper-only legacy claim", async () => {
+    const claim = {
+      ...(await ownClaim()),
+      pid: 2147483647,
+      supervision: { supervisor: {}, child: null },
+    };
+    const { records } = await readLaunches(
+      claimedRoot(claim as unknown as LaunchClaim),
+    );
+    expect(records[0]?.state.kind).toBe("unknown");
+    expect(asClaim(claim)).toBeNull();
+  });
+
+  it("holds a readable child when the wrapper or its handoff metadata is malformed", async () => {
+    const child = await ownClaim();
+    const claim = {
+      ...child,
+      pid: "not-a-pid",
+      claimedAt: 7,
+      supervision: { supervisor: {}, child },
+    };
+    const root = claimedRoot(claim as unknown as LaunchClaim);
+    const { records } = await readLaunches(root);
+    const state = records[0]?.state;
+    expect(state?.kind).toBe("unknown");
+    expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
+    expect(await clearMain(ID, root)).toBe(2);
+  });
+
+  it("reports the surviving child, rather than a dead wrapper, for malformed handoffs", async () => {
+    const child = await ownClaim();
+    const claim = {
+      ...child,
+      pid: 2147483647,
+      supervision: { supervisor: {}, child },
+    };
+    const { records } = await readLaunches(
+      claimedRoot(claim as unknown as LaunchClaim),
+    );
+    const state = records[0]?.state;
+    expect(state?.kind).toBe("unknown");
+    expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
+  });
+
+  it("keeps missing cleanup evidence unknown even when every recorded process has died or its pid was reused", async () => {
+    const identity = await ownClaim();
+    const dead = { ...identity, pid: 2147483647 };
+    const claim = {
+      ...dead,
+      supervision: {
+        supervisor: dead,
+        child: { ...identity, start: "an-earlier-start" },
+      },
+    };
+    const { records } = await readLaunches(claimedRoot(claim));
+    expect(records[0]?.state.kind).toBe("unknown");
+    expect(records[0] !== undefined && holds(records[0].state)).toBe(true);
+    expect(claimState(claim, null, thisHost()).kind).toBe("unknown");
+  });
+
+  it("holds uncertain cleanup after process death, but a reboot proves its processes gone", async () => {
+    const identity = await ownClaim();
+    const dead = { ...identity, pid: 2147483647 };
+    const claim = { ...dead, supervision: { supervisor: dead, child: dead } };
+    const root = claimedRoot(claim);
+    uncertainStage(ID, root);
+    const { records } = await readLaunches(root);
+    expect(records[0]?.state.kind).toBe("unknown");
+    const reboot = await readLaunches(root, {
+      ...thisHost(),
+      bootId: "new-boot",
+    });
+    expect(reboot.records[0]?.state.kind).toBe("died");
+  });
+
+  it("keeps uncertain cleanup when this host cannot verify a boot identity", async () => {
+    const identity = await ownClaim();
+    const dead = { ...identity, pid: 2147483647, bootId: "" };
+    const root = claimedRoot({
+      ...dead,
+      supervision: { supervisor: dead, child: dead },
+    });
+    uncertainStage(ID, root);
+    const { records } = await readLaunches(root, { ...thisHost(), bootId: "" });
+    expect(records[0]?.state.kind).toBe("unknown");
+  });
+
+  it("acknowledges each process once and refuses the wrong token or registering owner", async () => {
+    const identity = await ownClaim();
+    const root = claimedRoot({
+      ...identity,
+      supervision: { supervisor: null, child: null },
+    });
+    expect(
+      registerStageProcess(ID, "wrong", "supervisor", identity, identity, root)
+        .ok,
+    ).toBe(false);
+    expect(
+      registerStageProcess(
+        ID,
+        "t",
+        "supervisor",
+        identity,
+        { ...identity, start: "wrong" },
+        root,
+      ).ok,
+    ).toBe(false);
+    expect(
+      registerStageProcess(ID, "t", "supervisor", identity, identity, root).ok,
+    ).toBe(true);
+    expect(
+      registerStageProcess(ID, "t", "supervisor", identity, identity, root).ok,
+    ).toBe(false);
+    expect(
+      registerStageProcess(ID, "t", "child", identity, identity, root).ok,
+    ).toBe(true);
+    expect(
+      registerStageProcess(ID, "t", "child", identity, identity, root).ok,
+    ).toBe(false);
+  });
+
+  it("refuses manual clearance while a dead wrapper's registered child runs, including uncertain cleanup", async () => {
+    const child = await ownClaim();
+    for (const uncertain of [false, true]) {
+      const root = claimedRoot({
+        ...child,
+        pid: 2147483647,
+        supervision: { supervisor: null, child },
+      });
+      if (uncertain) uncertainStage(ID, root);
+      expect(await clearMain(ID, root)).toBe(2);
+      const { records } = await readLaunches(root);
+      expect(records).toHaveLength(1);
+      expect(records[0]?.state.kind).toBe("unknown");
+    }
+  });
+
   it("reads a launch claimed on this host before it restarted as died, and its outcome row says why", async () => {
     const claim = { ...(await ownClaim()), bootId: "boot-before" };
     const dir = claimedRoot(claim);

@@ -18,12 +18,14 @@ import { fileURLToPath } from "node:url";
 import { gcComponent } from "./gc/component.ts";
 import { dispatchComponent } from "./dispatch/component.ts";
 import { askComponent } from "./ask/component.ts";
+import { budgetComponent } from "./budget/component.ts";
 import { sendComponent } from "./send/component.ts";
 import { runMain as dispatchRun } from "./dispatch/run.ts";
 import type { CommandComponent, Component } from "./runtime/component.ts";
 import { runVerb, verbCommands } from "./runtime/verbs.ts";
 import { runMain, ExitError } from "./shared/cli.ts";
 import { USAGE_EXIT } from "./shared/command-line.ts";
+import { withCaller } from "./shared/outbound/ledger.ts";
 import { map, message, or, runParser } from "./shared/vendor/optique.mjs";
 
 /** The components, in the order the lifecycle verbs act on them. */
@@ -34,6 +36,7 @@ const COMMANDS: readonly CommandComponent[] = [
   ...COMPONENTS,
   askComponent,
   sendComponent,
+  budgetComponent,
 ];
 
 const verbs = verbCommands(COMPONENTS.map((component) => component.name));
@@ -120,7 +123,9 @@ function execute(parsed: Parsed, script: string): Promise<number> {
       script,
       run: (argv) => execute(parseCommandLine(argv), script),
     });
-  return commandNamed(parsed.component).main(parsed.args, script);
+  return withCaller(`skill:${parsed.component}`, () =>
+    commandNamed(parsed.component).main(parsed.args, script),
+  );
 }
 
 export async function main(argv: string[]): Promise<number> {

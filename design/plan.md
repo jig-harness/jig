@@ -239,9 +239,9 @@ or, where only a person can act, raised once for its cause.
 ### 55. Outbound calls: one governed transport for every system Jig calls
 
 Jig's code calls a forge, the issue trackers and the reflection stores,
-and each integration handles their limits on its own: one shared budget
-that only the tracker adapters feed, and no record of what an operation
-costs. On a dispatch host that showed as a
+and each integration handles their limits on its own. The tracker adapters
+feed a shared budget, and the cost ledger records what each operation
+spends. On a dispatch host the separate limits showed as a
 tracker credential held at its hourly allowance by one unbounded nested
 list, a repository the forge could not answer a full page of and so was
 never read, and ticks that exited 1 for refusals that clear by waiting.
@@ -251,9 +251,6 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **The cost ledger and its reports**: requests, cost and time per
-  operation and caller; a line per system in the tick report, a
-  `jig budget` command, and one need when a quota is about to run out.
 - **GitHub in the budget record**: its hourly and secondary limits beside
   the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,

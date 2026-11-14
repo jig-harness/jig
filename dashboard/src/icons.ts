@@ -245,6 +245,7 @@ export const CAUSE_ICONS = {
   "double-claim": is(CopyX, "double-claim"),
   "assigner-cannot-write": is(UserRoundX, "assigner-cannot-write"),
   "tracker-unreachable": is(Unplug, "tracker-unreachable"),
+  "low-quota": is(Gauge, "low-quota"),
 } satisfies Record<NeedCause, IconWord>;
 
 export const EVERYONE_ICONS = {
