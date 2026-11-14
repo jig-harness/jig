@@ -991,7 +991,9 @@ implementation. Skip this check for issues about the repository's own code.
    **Pre-PR code review gate (mandatory unless the diff is tiny):**
 
    Run it after the implementing agent finishes and the validation plan
-   passes, **before** `git push` / `gh pr create`. The validation plan is
+   passes, **before** the push that opens the pull request and
+   `gh pr create` (a [dispatched pass](#dispatched-passes) pushes its
+   committed work earlier as well). The validation plan is
    the one the change-area catalog emits for the complete workspace change
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
@@ -1349,7 +1351,10 @@ implementation. Skip this check for issues about the repository's own code.
         background execution; Claude Code uses Bash `run_in_background`,
         Codex uses `exec_command` with a short `yield_time_ms` and retains
         `session_id` for `write_stdin`). If neither tool is exposed, treat
-        this as `print` and name the limitation. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
+        this as `print` and name the limitation. A [dispatched pass](#dispatched-passes)
+        runs with background tasks off, so it treats `spawn` as `print`: it
+        records the result with the pull request and the unstarted command,
+        and says the drive is unarmed. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
         human-memory delay this step removes, and a `hitl` issue cleared
         this run is no reason to withhold it. In Claude Code, pass the Bash call's `timeout`
         of `28800000` (8 hours) with `run_in_background`: in an unattended
@@ -1913,6 +1918,23 @@ report. In such a pass:
   default), after which the wrapper stops it: open the pull request and arm
   its drive as soon as the work allows, and record the result before
   anything long-running that follows.
+- **The pass has no next turn.** A background task or agent still running
+  when its turn ends is lost with it, so run every long step (the
+  implementer, a reviewer, the gates) in the foreground and wait for it in
+  the same turn, and bound every wait on another agent: one that stops
+  without reporting is retried or replaced, or its failure is recorded, and
+  is never waited on until the deadline. A review the skill requires is not
+  discharged by an agent's silence: run it another way, or record that it
+  did not happen. A Claude Code pass runs with background tasks off. Once the
+  branch holds committed work, push it before a long validation step and
+  after each later commit, so a deadline or an interrupted run strands
+  less on the host. Where the repository's instructions require validation
+  before every push, they win and the early push is skipped. Each such push is the push step of
+  [Step 4a](#step-4a-standard-start-no-sub-issues): `commit-prefix.ts`
+  first when `pull_requests.commit_prefix` is set, since a pushed commit is
+  never reworded. A push the repository's pre-push hook refuses is no stop:
+  go on with validation, fix what it found, and push after it. The pull
+  request still opens only after validation and the pre-PR review.
 - **Write the closing report last.** Record the result as soon as the
   pull request's drive is armed and go on; when the pass is done, write
   its closing report, a `closing-report/v1` record of the shape the prompt

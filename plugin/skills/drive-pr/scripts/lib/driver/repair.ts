@@ -8,6 +8,7 @@ import {
 } from "./settings.ts";
 
 import type { DriveLock } from "./locks.ts";
+import { NO_BACKGROUND_TASKS } from "../pass-command.ts";
 
 import { refreshAccountIdentityBeforeSpawn } from "./identity.ts";
 
@@ -38,9 +39,7 @@ export function passEnv(
   delete env.CLAUDECODE;
   env.JIG_OUTBOUND_CALLER = `pass:drive:${task?.task ?? "review"}:${env.JIG_LAUNCH ?? "manual"}`;
   // A headless pass has no next turn to receive a background task's result.
-  // Claude Code removes background tool parameters and auto-backgrounding
-  // under this setting; other pass runtimes ignore this vendor variable.
-  env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+  Object.assign(env, NO_BACKGROUND_TASKS);
   // DELETED UNCONDITIONALLY FIRST, then set only for a repair pass. An
   // ordinary review round must never inherit a repair task — not from this
   // driver's own environment, and not from an operator who exported one by

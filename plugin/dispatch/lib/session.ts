@@ -117,6 +117,24 @@ function framingLines(record: Pick<LaunchRecord, "id" | "token">): string[] {
 }
 
 /**
+ * Why a headless pass keeps its work in its own turn: it has no next turn,
+ * so a background task or agent still running when the turn ends is lost
+ * with it, and an agent that stopped without reporting must not hold the
+ * pass until its deadline. A Claude Code pass also runs with background
+ * tasks off (`NO_BACKGROUND_TASKS`); this rule is a Codex pass's only one.
+ */
+const FOREGROUND_LINE =
+  "This pass has no next turn: a background task or agent still running when your turn ends is lost with it, and nothing reports its result. Run every long step (a long command, a subagent) in the foreground and wait for it in the same turn. When you wait on another agent, bound the wait; when it stops or goes quiet without reporting, retry or replace it, or record that its work did not happen (a required review is not discharged by silence), and never wait out the deadline.";
+
+/**
+ * Why a pickup pushes before it validates: a deadline or an interrupted
+ * validation run then strands nothing on the host. The push opens no pull
+ * request; that still waits for validation and review.
+ */
+const PUSH_BEFORE_VALIDATION_LINE =
+  "Once the branch holds committed work, push the branch before a long validation step (the gates, a full test run), and again after each later commit, so a deadline or an interrupted validation strands less on this host. Where the repository's instructions require validation before every push, they win: skip the early push. Push the way the skill's push step does, rewording unpushed commits to the configured commit prefix first, since a pushed commit is never reworded. A push the repository's pre-push hook refuses is no stop: go on with validation, fix what it found and push after it. Pushing opens no pull request: that still waits for validation and the pre-PR review.";
+
+/**
  * A person's answer to the decision an earlier session of this target
  * stopped on (`station-answer-store.ts`), quoted as data: the option they
  * chose as the decision states it, and their note, which may narrow the
@@ -230,6 +248,8 @@ function pickupPassPrompt(
         ]),
     "",
     "jig dispatch started this headless pass for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard, and nobody can answer a question while it runs.",
+    FOREGROUND_LINE,
+    PUSH_BEFORE_VALIDATION_LINE,
     `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...framingLines(record),
     ...pickupResultLines(record),
@@ -303,6 +323,7 @@ function followupPrompt(record: LaunchRecord): string {
     skillPrompt(record.vendor, `${record.command} ${pr}`),
     "",
     "jig dispatch started this headless pass for the follow-up of a merged pull request; nobody is at the keyboard, and nobody can answer a question while it runs.",
+    FOREGROUND_LINE,
     ...answeredLines(record),
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "Leave routine local housekeeping (branch retention, retired workspaces and scratch notes) to periodic cleanup, even when no collector covers a leftover yet. Do not ask a person about it or treat it as an incomplete arm or a failed result. Evidence of unlanded work or an active operational problem still belongs in the follow-up.",
@@ -432,6 +453,7 @@ export function stewardPassArgv(
     `Launch token: ${record.token}`,
     "Read only the token-bound digest and submit the skill's closed records. The dispatcher applies them on the next tick; launch nothing and make no repository, tracker or configuration changes yourself.",
     'Finish only after submit succeeds with {"submitted":true}, including an empty array when no record is justified. If read or submit fails, report that failure explicitly; never describe the pass as submitted without its confirmation.',
+    FOREGROUND_LINE,
     ...reportLines(record, "the submit"),
   ].join("\n");
   return headlessArgv(record, passArgs, prompt, true);
