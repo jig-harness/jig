@@ -144,40 +144,64 @@ async function byTrustedAssigner(
   const wanted: WantedItem[] = [];
   const unplaced: Unplaced[] = [];
   for (const issue of issues) {
-    let by: Awaited<ReturnType<Tracker["assignedBy"]>>;
-    try {
-      by =
-        view === undefined
-          ? await tracker.assignedBy(issue.identifier, identity)
-          : await view.once(
-              `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
-              () => tracker.assignedBy(issue.identifier, identity),
-            );
-    } catch (error) {
-      if (isRateLimited(error)) {
-        return { wanted: [], unplaced, limited: error };
-      }
-      unplaced.push({
+    const read = await readAssigner(tracker, issue, identity, view);
+    if ("limited" in read)
+      return { wanted: [], unplaced, limited: read.limited };
+    if ("unplaced" in read) {
+      unplaced.push(read.unplaced);
+      continue;
+    }
+    wanted.push(read.wanted);
+  }
+  return { wanted, unplaced };
+}
+
+/** One assigned item's assigner read, as a wanted item, an unplaced one or the rate limit. */
+async function readAssigner(
+  tracker: Tracker,
+  issue: PoolIssue,
+  identity: string,
+  view?: ServedView,
+): Promise<
+  | { wanted: WantedItem }
+  | { unplaced: Unplaced }
+  | { limited: TrackerRateLimited }
+> {
+  let by: Awaited<ReturnType<Tracker["assignedBy"]>>;
+  try {
+    by =
+      view === undefined
+        ? await tracker.assignedBy(issue.identifier, identity)
+        : await view.once(
+            `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
+            () => tracker.assignedBy(issue.identifier, identity),
+          );
+  } catch (error) {
+    if (isRateLimited(error)) return { limited: error };
+    return {
+      unplaced: {
         target: issue.identifier,
         title: issue.title,
         url: issue.url,
         record: "tracker",
         reason: `who assigned it cannot be read: ${failureText(error)}`,
-      });
-      continue;
-    }
-    if (!by.trusted) {
-      unplaced.push({
+      },
+    };
+  }
+  if (!by.trusted) {
+    return {
+      unplaced: {
         target: issue.identifier,
         title: issue.title,
         url: issue.url,
         record: "tracker",
         reason: `assigned to ${identity} by ${by.name}, who cannot write to ${tracker.team}; only a person with write access starts a pickup`,
         cause: "assigner-cannot-write",
-      });
-      continue;
-    }
-    wanted.push({
+      },
+    };
+  }
+  return {
+    wanted: {
       key: issue.identifier,
       title: issue.title,
       url: issue.url,
@@ -185,9 +209,8 @@ async function byTrustedAssigner(
       assignee: issue.assignee?.name ?? identity,
       assignedBy: by.name,
       ...(issue.updatedAt === undefined ? {} : { updatedAt: issue.updatedAt }),
-    });
-  }
-  return { wanted, unplaced };
+    },
+  };
 }
 
 /**
@@ -533,6 +556,14 @@ export async function freshPickup(
   return issue;
 }
 
+/** The tick's served input as the options a served read takes: everything but the people. */
+function servedReadOptions<T extends { people: readonly ServedPerson[] }>(
+  served: T,
+): Omit<T, "people"> {
+  const { people: _people, ...options } = served;
+  return options;
+}
+
 /** Factory and host-served work share the same plan and capacity checks. */
 export async function readPickups(
   open: () => Tracker,
@@ -576,23 +607,11 @@ export async function readPickups(
     once,
   );
   if (served === undefined || served.people.length === 0) return factory;
-  const extra = await readServedPickups(once(), served.people, {
-    ...(served.cache === undefined ? {} : { cache: served.cache }),
-    nowMs: served.nowMs,
-    headroom: served.headroom,
-    ...(served.bound === undefined ? {} : { bound: served.bound }),
-    ...(served.hitl === undefined ? {} : { hitl: served.hitl }),
-    ...(served.manualOps === undefined ? {} : { manualOps: served.manualOps }),
-    ...(served.executionPlanBlock === undefined
-      ? {}
-      : { executionPlanBlock: served.executionPlanBlock }),
-    ...(served.repoScope === undefined ? {} : { repoScope: served.repoScope }),
-    ...(served.views === undefined ? {} : { views: served.views }),
-    ...(served.unlabeled === undefined ? {} : { unlabeled: served.unlabeled }),
-    ...(served.trackerNamespace === undefined
-      ? {}
-      : { trackerNamespace: served.trackerNamespace }),
-  });
+  const extra = await readServedPickups(
+    once(),
+    served.people,
+    servedReadOptions(served),
+  );
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
     read: {

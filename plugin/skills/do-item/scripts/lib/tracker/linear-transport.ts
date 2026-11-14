@@ -216,51 +216,51 @@ export function httpTransport(
     governor === undefined
       ? null
       : { governor, key: credentialKey("linear", token) };
-  const transport: LinearTransport = async (query, variables, signal) => {
-    if (cancelled(signal)) throw abortedError(signal);
-    const sentAt = governed?.governor.admit("linear", governed.key);
-    let res: Response;
-    try {
-      res = await postGraphQL(
-        fetchImpl,
-        LINEAR_API,
-        token,
-        { query, variables },
-        { timeoutMs: LINEAR_TIMEOUT_MS, signal },
-      );
-    } catch (err) {
+  return dispatchTagged(
+    async (query, variables, signal) => {
       if (cancelled(signal)) throw abortedError(signal);
-      throw new LinearApiError(
-        `Linear API unreachable: ${err instanceof Error ? err.message : String(err)}`,
-        null,
-      );
-    }
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      // Linear answers a missing entity with HTTP 200 and an errors array, but
-      // an error status may carry the same body.
-      let body: unknown = null;
+      const sentAt = governed?.governor.admit("linear", governed.key);
+      let res: Response;
       try {
-        body = JSON.parse(text);
-      } catch {
-        // not JSON
+        res = await postGraphQL(
+          fetchImpl,
+          LINEAR_API,
+          token,
+          { query, variables },
+          { timeoutMs: LINEAR_TIMEOUT_MS, signal },
+        );
+      } catch (err) {
+        if (cancelled(signal)) throw abortedError(signal);
+        throw new LinearApiError(
+          `Linear API unreachable: ${err instanceof Error ? err.message : String(err)}`,
+          null,
+        );
       }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        // Linear answers a missing entity with HTTP 200 and an errors array, but
+        // an error status may carry the same body.
+        let body: unknown = null;
+        try {
+          body = JSON.parse(text);
+        } catch {
+          // not JSON
+        }
+        settle(governed, linearAnswer(res.headers, res.status, body), sentAt);
+        if (isRecord(body) && Array.isArray(body.errors))
+          unwrapResponse(body, res.status);
+        throw new LinearApiError(
+          `Linear API HTTP ${res.status}: ${text.slice(0, 300)}`,
+          res.status,
+        );
+      }
+      const body: unknown = await res.json();
       settle(governed, linearAnswer(res.headers, res.status, body), sentAt);
-      if (isRecord(body) && Array.isArray(body.errors))
-        unwrapResponse(body, res.status);
-      throw new LinearApiError(
-        `Linear API HTTP ${res.status}: ${text.slice(0, 300)}`,
-        res.status,
-      );
-    }
-    const body: unknown = await res.json();
-    settle(governed, linearAnswer(res.headers, res.status, body), sentAt);
-    return unwrapResponse(body, res.status);
-  };
-  return Object.assign(transport, {
-    dispatchCredential: credentialKey("linear", token),
-    dispatchPersistent: true,
-  });
+      return unwrapResponse(body, res.status);
+    },
+    credentialKey("linear", token),
+    true,
+  );
 }
 
 /**
@@ -292,6 +292,15 @@ function cliFailure(r: RunResult): LinearApiError | null {
   return null;
 }
 
+/** A transport carrying the dispatch identity its snapshots are keyed by. */
+function dispatchTagged(
+  transport: LinearTransport,
+  dispatchCredential: string,
+  dispatchPersistent: boolean,
+): LinearTransport {
+  return Object.assign(transport, { dispatchCredential, dispatchPersistent });
+}
+
 /** The CLI hides its credential, so its dispatch snapshots live for this process only. */
 const CLI_DISPATCH_SESSION = randomUUID();
 
@@ -311,49 +320,46 @@ export function cliTransport(
     governor === undefined
       ? null
       : { governor, key: credentialKey("linear", `cli:${bin}`) };
-  const transport: LinearTransport = async (query, variables, signal) => {
-    if (cancelled(signal)) throw abortedError(signal);
-    governed?.governor.admit("linear", governed.key);
-    const r = await runCli(
-      [bin, "api", query, "--variables-json", JSON.stringify(variables)],
-      signal,
-    );
-    if (cancelled(signal)) throw abortedError(signal);
-    const failure = cliFailure(r);
-    if (failure !== null) throw failure;
-    let body: unknown;
-    try {
-      body = JSON.parse(r.stdout);
-    } catch {
-      throw new LinearApiError(
-        `linear api returned no JSON (exit ${r.code}): ${(r.stderr || r.stdout).slice(0, 300)}`,
-        null,
+  return dispatchTagged(
+    async (query, variables, signal) => {
+      if (cancelled(signal)) throw abortedError(signal);
+      governed?.governor.admit("linear", governed.key);
+      const r = await runCli(
+        [bin, "api", query, "--variables-json", JSON.stringify(variables)],
+        signal,
       );
-    }
-    if (rateLimitedBody(body))
-      settle(governed, {
-        limitedUntil: Date.now() + FALLBACK_LIMIT_MS,
-        why: "Linear refused the request (RATELIMITED)",
-      });
-    // A failed invocation is a failure even when its output parses: report
-    // the errors it carries, else its exit status.
-    if (r.code !== 0) {
-      if (isRecord(body) && Array.isArray(body.errors))
-        unwrapResponse(body, null);
-      throw new LinearApiError(
-        `linear api exited ${r.code}: ${(r.stderr || r.stdout).slice(0, 300)}`,
-        null,
-      );
-    }
-    return unwrapResponse(body, null);
-  };
-  return Object.assign(transport, {
-    dispatchPersistent: false,
-    dispatchCredential: credentialKey(
-      "linear",
-      `cli:${bin}:${CLI_DISPATCH_SESSION}`,
-    ),
-  });
+      if (cancelled(signal)) throw abortedError(signal);
+      const failure = cliFailure(r);
+      if (failure !== null) throw failure;
+      let body: unknown;
+      try {
+        body = JSON.parse(r.stdout);
+      } catch {
+        throw new LinearApiError(
+          `linear api returned no JSON (exit ${r.code}): ${(r.stderr || r.stdout).slice(0, 300)}`,
+          null,
+        );
+      }
+      if (rateLimitedBody(body))
+        settle(governed, {
+          limitedUntil: Date.now() + FALLBACK_LIMIT_MS,
+          why: "Linear refused the request (RATELIMITED)",
+        });
+      // A failed invocation is a failure even when its output parses: report
+      // the errors it carries, else its exit status.
+      if (r.code !== 0) {
+        if (isRecord(body) && Array.isArray(body.errors))
+          unwrapResponse(body, null);
+        throw new LinearApiError(
+          `linear api exited ${r.code}: ${(r.stderr || r.stdout).slice(0, 300)}`,
+          null,
+        );
+      }
+      return unwrapResponse(body, null);
+    },
+    credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
+    false,
+  );
 }
 
 /**

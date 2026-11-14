@@ -601,8 +601,7 @@ async function openView(
     p = await plan(tracker, identity, kept, options.nowMs, options.headroom);
     if (options.bound !== undefined) p.bound = options.bound;
   } catch (error) {
-    if (isRateLimited(error)) return offlineView(tracker, kept, error);
-    return unavailableView(tracker, kept, error);
+    return failedView(tracker, kept, error);
   }
   if (p.source === "kept" || p.source === "unchanged")
     return assemble(tracker, p, undefined, save, options.nowMs);
@@ -610,9 +609,19 @@ async function openView(
     const queue = await readQueue(tracker, identity);
     return assemble(tracker, p, queue, save, options.nowMs);
   } catch (error) {
-    if (isRateLimited(error)) return offlineView(tracker, kept, error);
-    return unavailableView(tracker, kept, error);
+    return failedView(tracker, kept, error);
   }
+}
+
+/** The view of a queue whose read failed: offline when rate limited, else unavailable. */
+function failedView(
+  tracker: Tracker,
+  kept: Snapshot | null,
+  error: unknown,
+): ServedView {
+  return isRateLimited(error)
+    ? offlineView(tracker, kept, error)
+    : unavailableView(tracker, kept, error);
 }
 
 /** The view of a queue whose read failed for a reason other than a rate limit. */

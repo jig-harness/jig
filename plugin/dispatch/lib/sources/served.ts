@@ -133,6 +133,31 @@ interface PersonReading {
   failed: boolean;
 }
 
+/** A served item in progress, as the claim dispatch monitors. */
+function servedClaim(i: PoolIssue) {
+  return {
+    key: i.identifier,
+    title: i.title,
+    url: i.url,
+    state: i.state.name,
+    ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
+    served: true as const,
+  };
+}
+
+/** The one unplaced row an identity's failed read leaves. */
+function readFailureRow(
+  tracker: Tracker,
+  identity: string,
+  view: ServedView | null,
+  error: unknown,
+): Unplaced {
+  const reason = `the served assignments could not be read: ${failureText(error)}`;
+  return view?.scope !== undefined && isUnavailable(error)
+    ? scopeFailureRow(tracker, view, reason)
+    : { target: identity, record: "tracker", reason };
+}
+
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
 async function readPerson(
   tracker: Tracker,
@@ -164,14 +189,7 @@ async function readPerson(
       );
     }
     const progress = view.progress();
-    got.claimed = progress.map((i) => ({
-      key: i.identifier,
-      title: i.title,
-      url: i.url,
-      state: i.state.name,
-      ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
-      served: true as const,
-    }));
+    got.claimed = progress.map(servedClaim);
     // Claims are monitored either way; an invalid scope only starts nothing.
     if (options.repoScope?.invalid !== undefined) return got;
     // The walk fills `got` as it goes, so a limit met in a later generation
@@ -188,19 +206,7 @@ async function readPerson(
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
       got.failed = true;
-      got.unplaced.push(
-        view?.scope !== undefined && isUnavailable(error)
-          ? scopeFailureRow(
-              tracker,
-              view,
-              `the served assignments could not be read: ${failureText(error)}`,
-            )
-          : {
-              target: identity,
-              record: "tracker",
-              reason: `the served assignments could not be read: ${failureText(error)}`,
-            },
-      );
+      got.unplaced.push(readFailureRow(tracker, identity, view, error));
     }
   } finally {
     view?.save();
