@@ -559,9 +559,20 @@ export async function readPickups(
       : { ...servedInput, views: servedInput.views ?? new Map() };
   let tracker: Tracker | undefined;
   const once = () => (tracker ??= open());
+  const factoryReading = await readFactoryPickups(
+    once,
+    section,
+    facets,
+    served?.cache,
+    served,
+  );
+  // A failed native scope is a wall for this tick: do not let the optional
+  // ready-pool lane send unrelated tracker reads after it.
   const factory = withPool(
-    await readFactoryPickups(once, section, facets, served?.cache, served),
-    await readPool(once, section, served, facets?.bound()),
+    factoryReading,
+    factoryReading.claimed === null
+      ? null
+      : await readPool(once, section, served, facets?.bound()),
     once,
   );
   if (served === undefined || served.people.length === 0) return factory;

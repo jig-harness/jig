@@ -80,13 +80,16 @@ export function dispatchSource(
       demanded = new Set([...demanded, ...union]);
     },
     get shape() {
-      return JSON.stringify([...demanded].sort());
+      return JSON.stringify([...demanded].sort((a, b) => a.localeCompare(b)));
     },
     shareReads: (reads) => client.shareReads(reads),
-    async credential() {
+    async credential(options) {
+      const signal = readSignal(options);
+      refuseStopped(signal);
       const selected = resolveJiraCredential();
       if (!selected.ok) return credentialKey("jira", "unavailable");
       const header = await jiraAuthorization(selected.value).header();
+      refuseStopped(signal);
       if (!header.ok) throw new JiraApiError(header.failure.reason);
       return credentialKey("jira", header.value);
     },
@@ -94,6 +97,7 @@ export function dispatchSource(
       const signal = readSignal(options);
       refuseStopped(signal);
       const account = await client.accountId(identity, signal);
+      const scope = await client.poolScope(signal);
       const names = [...demanded]
         .filter((name) => name.startsWith("queue-state:"))
         .map((name) => quote(name.slice(12)));
@@ -104,6 +108,7 @@ export function dispatchSource(
             client.project,
             `assignee = ${quote(account)}`,
             `status in (${names.join(", ")})`,
+            ...(scope === null ? [] : [scope]),
           ),
           undefined,
           signal,

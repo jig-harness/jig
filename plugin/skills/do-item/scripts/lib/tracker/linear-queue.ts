@@ -36,6 +36,7 @@ import type {
   StateNames,
   DispatchRawIssue,
 } from "./port.ts";
+import { readSignal, refuseStopped } from "./facets/bounds.ts";
 
 type Pager = (
   transport: LinearTransport,
@@ -335,10 +336,18 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
         demanded = new Set([...demanded, ...union]);
       },
       get shape() {
-        return JSON.stringify([...demanded].sort());
+        return JSON.stringify([...demanded].sort((a, b) => a.localeCompare(b)));
       },
-      credential: async () => dispatchCredential(transport),
+      credential: async (options?: FacetReadOptions) => {
+        const signal = readSignal(options);
+        refuseStopped(signal);
+        const credential = await dispatchCredential(transport);
+        refuseStopped(signal);
+        return credential;
+      },
       async queue(identity: string, options?: FacetReadOptions) {
+        const signal = readSignal(options);
+        refuseStopped(signal);
         const nodes = await pageAll(
           transport,
           rawQuery,
@@ -361,11 +370,13 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
           },
           (d) => d.issues,
           `the native queue of ${identity}`,
-          options?.signal,
+          signal,
         );
         return nodes.map(rawOf);
       },
       async issue(key: string, options?: FacetReadOptions) {
+        const signal = readSignal(options);
+        refuseStopped(signal);
         const found = await readByKey(
           rawOptions,
           {
@@ -375,11 +386,13 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
           },
           [key],
           rawOf,
-          options?.signal,
+          signal,
         );
         return found.get(key.toUpperCase()) ?? null;
       },
       async issues(keys: ReadonlyArray<string>, options?: FacetReadOptions) {
+        const signal = readSignal(options);
+        refuseStopped(signal);
         return readByKey(
           rawOptions,
           {
@@ -389,10 +402,12 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
           },
           keys,
           rawOf,
-          options?.signal,
+          signal,
         );
       },
       async children(key: string, options?: FacetReadOptions) {
+        const signal = readSignal(options);
+        refuseStopped(signal);
         const query = poolQueries("estimate").openChildren;
         const nodes = await pageAll(
           transport,
@@ -412,15 +427,17 @@ export function queueOperations(opts: QueueOptions): QueueOperations {
           },
           (d) => record(d.issue, `issue ${key}`).children,
           `native children of ${key}`,
-          options?.signal,
+          signal,
         );
         return nodes.map((value) => {
           const read = opts.parsePool(value);
           return { identifier: read.identifier, value: read };
         });
       },
-      project: async (raw: DispatchRawIssue) =>
-        raw.value as WithEstimate<CorePoolIssue>,
+      project: async (raw: DispatchRawIssue, options?: FacetReadOptions) => {
+        refuseStopped(readSignal(options));
+        return raw.value as WithEstimate<CorePoolIssue>;
+      },
     },
     async queueIssues(
       identity: string,

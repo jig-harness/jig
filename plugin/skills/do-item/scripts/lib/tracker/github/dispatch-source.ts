@@ -178,10 +178,13 @@ export function dispatchSource(
       demanded = new Set([...demanded, ...union]);
     },
     get shape() {
-      return JSON.stringify([...demanded].sort());
+      return JSON.stringify([...demanded].sort((a, b) => a.localeCompare(b)));
     },
-    async credential() {
+    async credential(options) {
+      const signal = readSignal(options);
+      refuseStopped(signal);
       const token = await credentialToken()();
+      refuseStopped(signal);
       return credentialKey("github", token ?? "unavailable");
     },
     async queue(identity, options) {

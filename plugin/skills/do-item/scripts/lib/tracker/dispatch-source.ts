@@ -53,7 +53,7 @@ export interface DispatchSource {
   shareReads?(reads: Map<string, Promise<unknown>>): void;
   readonly shape?: string;
   /** A one-way credential identity; never the credential itself. */
-  credential(): Promise<string>;
+  credential(options?: FacetReadOptions): Promise<string>;
   queue(
     identity: string,
     options?: FacetReadOptions,

@@ -64,6 +64,7 @@ export async function prepareTrackers(
   opened: readonly OpenedRepo[],
   context: TickContext,
 ): Promise<void> {
+  const bound = facetBound(tickDeadline(context).deadline);
   const needs = opened.flatMap((repo) => {
     try {
       const people = repo.stages.has("pickup")
@@ -100,7 +101,7 @@ export async function prepareTrackers(
     needs.map(async ({ tracker }) => {
       const source = tracker.dispatchSource;
       if (source === undefined) return;
-      const credential = await source.credential();
+      const credential = await source.credential(bound);
       const key = JSON.stringify([
         tracker.adapter,
         tracker.instance ?? "",
@@ -128,7 +129,7 @@ export async function prepareTrackers(
           .filter(({ tracker }) => members.includes(tracker))
           .map(({ identity }) => identity),
       ),
-    ].sort();
+    ].sort((a, b) => a.localeCompare(b));
     const requirements = [
       ...new Set([
         ...members.flatMap(
@@ -138,7 +139,7 @@ export async function prepareTrackers(
           .filter(({ tracker }) => members.includes(tracker))
           .flatMap(({ requirements }) => requirements),
       ]),
-    ].sort();
+    ].sort((a, b) => a.localeCompare(b));
     for (const tracker of members) {
       scopeIdentities.set(tracker, identities);
       tracker.dispatchSource?.configure?.(requirements);
@@ -146,7 +147,6 @@ export async function prepareTrackers(
     }
   }
   const headroom = trackerHeadroom(context);
-  const bound = facetBound(tickDeadline(context).deadline);
   const readings = await Promise.allSettled(
     needs.map(({ tracker, identity }) =>
       context.reads.pool.run(() =>

@@ -109,7 +109,10 @@ export async function nativeSharedView(
       new Error("the tracker has no native dispatch source"),
     );
   const changedSince = tracker.changedSince;
-  const credential = await source.credential();
+  const credentialRead = source.credential(options.bound);
+  const credential = await (options.bound === undefined
+    ? credentialRead
+    : within(credentialRead, options.bound));
   engine.credential(tracker, credential);
   const scope = `${tracker.adapter}:${tracker.instance ?? ""}:${tracker.team}:${credential}`;
   const reads = sharedReads(views, scope);
@@ -129,8 +132,9 @@ export async function nativeSharedView(
                 .map((person) => engine.probe(nativeTracker, person, cache))
                 .filter((value) => value !== null);
               const since =
-                [query.since, ...saved.map((value) => value.since)].sort()[0] ??
-                query.since;
+                [query.since, ...saved.map((value) => value.since)].sort(
+                  (a, b) => a.localeCompare(b),
+                )[0] ?? query.since;
               const keys = [
                 ...new Set([
                   ...query.keys,
@@ -179,7 +183,9 @@ export async function nativeSharedView(
     opening = engine.open(
       nativeTracker,
       identity,
-      options,
+      // The shared snapshot must not retain one repository's read allowance.
+      // Each caller applies its own bound while awaiting or projecting it.
+      { nowMs: options.nowMs, headroom: options.headroom },
       cache,
       source.shape,
     );

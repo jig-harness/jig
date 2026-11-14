@@ -65,7 +65,7 @@ export function nativeFacts(
   };
   const issue = (key: string) =>
     scopeRead(reads, rowKey(key), () =>
-      guarded(() => source.issue(key, bound)),
+      guarded(() => source.issue(key, bound), true),
     );
   return {
     failure: () => dispatchScopeFailure(reads),
@@ -86,7 +86,7 @@ export function nativeFacts(
       const missing = keys.filter((key) => !reads.has(rowKey(key)));
       const batch = source.issues;
       if (batch !== undefined && missing.length > 0) {
-        const reading = guarded(() => batch(missing, bound));
+        const reading = guarded(() => batch(missing, bound), true);
         for (const key of missing)
           reads.set(
             rowKey(key),
