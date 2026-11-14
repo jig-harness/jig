@@ -22,7 +22,7 @@ import {
   mergeLanes,
 } from "./merge-view.ts";
 import { RepoLink } from "./pr.tsx";
-import { LinkedDetail, LinkedInline, Work } from "./work.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 import type { Clock } from "./view.ts";
 
 function MergeItem({ card }: { card: MergeCardView }) {
@@ -35,16 +35,11 @@ function MergeItem({ card }: { card: MergeCardView }) {
       face={
         <>
           <div className="rowTop">
-            <Work
+            <WorkLead
               repo={card.repo}
               target={card.target}
               url={card.url}
               title={card.title}
-              links={card.links}
-            />
-            <LinkedInline
-              repo={card.repo}
-              target={card.target}
               links={card.links}
             />
             <span className="m sm mut end nowrap">ready {card.age}</span>

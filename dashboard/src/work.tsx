@@ -373,7 +373,7 @@ function Linked({ repo, target, url }: Omit<WorkProps, "links">) {
 }
 
 /** Linked work on a card's face, after its identity: up to two, then "+N more"; nothing when none is known. */
-export function LinkedInline({
+function LinkedInline({
   repo,
   target,
   links,
@@ -396,6 +396,20 @@ export function LinkedInline({
         <span className="linkMore">+{linked.more} more</span>
       )}
     </span>
+  );
+}
+
+/** A card's lead identity and the linked work after it, as every card's first row draws them. */
+export function WorkLead(props: WorkProps) {
+  return (
+    <>
+      <Work {...props} />
+      <LinkedInline
+        repo={props.repo}
+        target={props.target}
+        links={props.links}
+      />
+    </>
   );
 }
 

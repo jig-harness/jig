@@ -1,6 +1,6 @@
 import { FollowupBadge } from "./followups.tsx";
 import { RepoLink } from "./pr.tsx";
-import { LinkedDetail, LinkedInline, Work } from "./work.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * What is coming, ordered by what will happen to each target rather than where
  * it came from. The cap at the foot says items cannot be added here; it is never
@@ -28,16 +28,11 @@ function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
         <>
           <div className="rowTop">
             <Mark role={item.role} />
-            <Work
+            <WorkLead
               repo={item.repo}
               target={item.target}
               url={item.url}
               title={item.title}
-              links={item.links}
-            />
-            <LinkedInline
-              repo={item.repo}
-              target={item.target}
               links={item.links}
             />
             <RepoLink repo={item.repo} url={item.url} />

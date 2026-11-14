@@ -1,7 +1,7 @@
 import { FollowupBadge } from "./followups.tsx";
 import { runningFollowup } from "./followup-view.ts";
 import { ItemTitle } from "./pr.tsx";
-import { LinkedDetail, LinkedInline, Work } from "./work.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * What is running: accounts and sessions as one surface. Each account is a row
  * and each held slot a box inside it, so which session holds which slot is a
@@ -37,16 +37,11 @@ function Slot({ slot }: { slot: SlotView }) {
         <>
           <div className="rowTop">
             <Mark role={slot.role} />
-            <Work
+            <WorkLead
               repo={slot.repo}
               target={slot.target}
               url={slot.url}
               title={slot.title}
-              links={slot.links}
-            />
-            <LinkedInline
-              repo={slot.repo}
-              target={slot.target}
               links={slot.links}
             />
             <StageHint stage={slot.stage} />

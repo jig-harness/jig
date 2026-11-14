@@ -31,21 +31,31 @@ const TAP_SLOP_PX = 8;
 /** Whether the person has text selected inside `area`. */
 function selectingIn(area: Element): boolean {
   const selection = window.getSelection();
-  if (selection === null || selection.isCollapsed) return false;
-  if (selection.toString().trim() === "") return false;
-  return (
-    (selection.anchorNode !== null && area.contains(selection.anchorNode)) ||
-    (selection.focusNode !== null && area.contains(selection.focusNode))
+  if (selection === null || selection.toString().trim() === "") return false;
+  return [selection.anchorNode, selection.focusNode].some(
+    (node) => node !== null && area.contains(node),
   );
 }
 
-/**
- * The handlers that let a whole area toggle, the area's own controls aside.
- * A click from a popup the area opened reaches it through the component tree,
- * not the document, so only a click on the area's own elements counts.
- */
+/** Whether a click landed on the area's own space: not a control of its own, nor a popup it opened, which reaches it through the component tree. */
+function onOwnSpace(area: Element, target: EventTarget): boolean {
+  if (!(target instanceof Element) || !area.contains(target)) return false;
+  const own = target.closest(OWN_CLICK);
+  return own === null || !area.contains(own);
+}
+
+type Point = { x: number; y: number };
+
+/** Whether the pointer moved past a tap's slop between press and release. */
+function moved(from: Point | null, to: Point): boolean {
+  return (
+    from !== null && Math.hypot(to.x - from.x, to.y - from.y) > TAP_SLOP_PX
+  );
+}
+
+/** The handlers that let a whole area toggle, the area's own controls aside. */
 export function useTapToggle(toggle: (() => void) | null) {
-  const pressed = useRef<{ x: number; y: number } | null>(null);
+  const pressed = useRef<Point | null>(null);
   return {
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
       pressed.current = { x: event.clientX, y: event.clientY };
@@ -58,16 +68,8 @@ export function useTapToggle(toggle: (() => void) | null) {
       pressed.current = null;
       if (toggle === null || event.defaultPrevented) return;
       const area = event.currentTarget;
-      const target = event.target;
-      if (!(target instanceof Element) || !area.contains(target)) return;
-      const own = target.closest(OWN_CLICK);
-      if (own !== null && area.contains(own)) return;
-      if (selectingIn(area)) return;
-      if (
-        from !== null &&
-        Math.hypot(event.clientX - from.x, event.clientY - from.y) > TAP_SLOP_PX
-      )
-        return;
+      if (!onOwnSpace(area, event.target) || selectingIn(area)) return;
+      if (moved(from, { x: event.clientX, y: event.clientY })) return;
       toggle();
     },
   };

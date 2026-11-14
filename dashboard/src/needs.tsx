@@ -1,7 +1,7 @@
 import { FollowupBadge } from "./followups.tsx";
 import { runningFollowup } from "./followup-view.ts";
 import { ItemTitle, RepoLink } from "./pr.tsx";
-import { LinkedDetail, LinkedInline, Work } from "./work.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * Needs you: the person's list, one group per act. Each card opens with the
  * act, then, for a parked need, one short row per decision (`decision-rows.tsx`)
@@ -185,16 +185,11 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
           <div className="rowTop">
             <ActPill act={need.act} />
             <Mark role={need.role} />
-            <Work
+            <WorkLead
               repo={need.repo}
               target={need.target}
               url={need.url}
               title={need.title}
-              links={need.links}
-            />
-            <LinkedInline
-              repo={need.repo}
-              target={need.target}
               links={need.links}
             />
             <span className="m sm mut end nowrap">{need.age}</span>
@@ -254,16 +249,11 @@ function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
         <>
           <div className="rowTop">
             <Mark role={slot.role} />
-            <Work
+            <WorkLead
               repo={slot.repo}
               target={slot.target}
               url={slot.url}
               title={slot.title}
-              links={slot.links}
-            />
-            <LinkedInline
-              repo={slot.repo}
-              target={slot.target}
               links={slot.links}
             />
             <span className="br" />

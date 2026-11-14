@@ -8,7 +8,7 @@
 import type { LineLinks } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 
 /** Linked work a card's face shows before "+N more". */
-export const LINKED_SHOWN = 2;
+const LINKED_SHOWN = 2;
 
 /** One piece of linked work, as its identity draws it. */
 export interface LinkedRef {
