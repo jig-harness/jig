@@ -6,6 +6,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { CANONICAL_STATES } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { ServedPlan } from "./served-plan.ts";
 
 /** A person owns the next step, so this child cannot occupy a plan-less epic's working slot. */
@@ -17,7 +18,10 @@ export function parkedOnPerson(
   const context = child.nativeType ?? null;
   const states = canonicalStatesFor(tracker, child.state.name, context);
   return (
-    (states.length === 1 && states[0] === "ops_pending") ||
+    (states.includes("ops_pending") &&
+      states.every(
+        (state) => state === "ops_pending" || state === "in_review",
+      )) ||
     queueHold({ issue: child, blockers: [], unblocks: 0 }, policy) ===
       PERSON_HOLD
   );
@@ -29,21 +33,8 @@ function canonicalStatesFor(
   name: string,
   context: string | null,
 ): CanonicalState[] {
-  const canonical: CanonicalState[] = [
-    "triage",
-    "backlog",
-    "todo",
-    "in_progress",
-    "pr_open",
-    "blocked",
-    "in_review",
-    "ops_pending",
-    "done",
-    "canceled",
-    "duplicate",
-  ];
   const native = name.trim().toLowerCase();
-  return canonical.filter(
+  return CANONICAL_STATES.filter(
     (state) =>
       tracker.stateName(state, context)?.trim().toLowerCase() === native,
   );

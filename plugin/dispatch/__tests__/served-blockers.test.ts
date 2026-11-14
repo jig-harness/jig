@@ -368,6 +368,27 @@ describe("an assigned epic's children", () => {
     );
   });
 
+  it("releases a serial slot for an operations state shared only with merged review work", async () => {
+    const w = world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          {
+            ...started("#5"),
+            state: { id: "review", name: "Review", type: "started" },
+          },
+          ...kids("#2"),
+        ],
+      },
+    });
+    w.tracker.stateName = ((state: CanonicalState) =>
+      ["in_review", "ops_pending"].includes(state)
+        ? "Review"
+        : state) as Tracker["stateName"];
+    const read = await w.read();
+    expect(read.wanted.map((item) => item.key)).toEqual(["#2"]);
+  });
+
   it("names a parked child in the idle epic summary", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
