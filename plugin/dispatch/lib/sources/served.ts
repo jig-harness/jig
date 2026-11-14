@@ -804,7 +804,7 @@ async function childStates(
             view,
           ).catch((error: unknown) => {
             // An epic with a plan keeps the failure: its consistency needs this read.
-            if (slots === undefined) throw error;
+            if (slots === undefined) return Promise.reject(error);
             return takeUnreadSlot(slots.unread, child.identifier, error, (e) =>
               unreadable(child, failureText(e), slots.found, e),
             );
