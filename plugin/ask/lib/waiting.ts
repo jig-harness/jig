@@ -28,6 +28,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "nudge-unanswered": "answer the waiting session",
   "pickup-question":
     "settle the pickup's question, then return the item to the dispatch states",
+  "pickup-ended": "pick the item up again or leave it",
   "assigner-cannot-write": "assign the item as someone who can write",
   "tracker-unreachable": "authorize the account's tracker credential",
 };
@@ -73,36 +74,9 @@ function stationOf(need: LineNeed): Station {
   return "drive";
 }
 
-/** A need as an address, or the host target for a host-wide need. */
-function entryOf(need: LineNeed): WaitingEntry | null {
-  if (need.repo === HOST_NEED_REPO) {
-    return {
-      address: null,
-      target: need.target,
-      people: uniqueLogins(
-        need.decisions.flatMap((d) =>
-          d.person === undefined ? [] : [d.person],
-        ),
-      ),
-      act: personAct(need.cause),
-      needAct: actOfLineNeed(need),
-      since: need.since,
-      reason: need.reason,
-      url: need.url,
-      title: need.title,
-      questions: [],
-    };
-  }
-  const station = stationOf(need);
-  const key =
-    station === "pickup"
-      ? need.item
-      : need.pr === null
-        ? null
-        : String(need.pr);
-  if (key === null) return null;
+/** What every entry says of its need, beside its address and its questions. */
+function shared(need: LineNeed): Omit<WaitingEntry, "address" | "questions"> {
   return {
-    address: formatAddress({ station, repo: need.repo, key }),
     target: need.target,
     people: uniqueLogins(
       need.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
@@ -113,6 +87,24 @@ function entryOf(need: LineNeed): WaitingEntry | null {
     reason: need.reason,
     url: need.url,
     title: need.title,
+  };
+}
+
+/** A need as an address, or the host target for a host-wide need. */
+function entryOf(need: LineNeed): WaitingEntry | null {
+  if (need.repo === HOST_NEED_REPO)
+    return { address: null, ...shared(need), questions: [] };
+  const station = stationOf(need);
+  const key =
+    station === "pickup"
+      ? need.item
+      : need.pr === null
+        ? null
+        : String(need.pr);
+  if (key === null) return null;
+  return {
+    address: formatAddress({ station, repo: need.repo, key }),
+    ...shared(need),
     questions: [
       ...(need.question ? [need.question] : []),
       ...need.decisions.map((d) =>

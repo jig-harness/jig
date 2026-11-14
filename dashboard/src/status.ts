@@ -121,6 +121,7 @@ const RECORDED: Record<RecordedSet, Record<string, RoleKey>> = {
     "followup-failed": "needs",
     "nudge-unanswered": "needs",
     "pickup-question": "needs",
+    "pickup-ended": "needs",
     waiting: "waiting",
     drifting: "waiting",
     "stopped-unknown": "needs",

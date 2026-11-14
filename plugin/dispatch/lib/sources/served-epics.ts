@@ -82,15 +82,45 @@ function serialHold(
     : `waiting on ${first}; ${serial.epic} takes one child at a time`;
 }
 
-/** `ranked` best first: each serial epic keeps its first child, and none while a child is in progress. */
+/**
+ * Why the tick will not start an item whatever its epic's slot (this
+ * machine's ended pickup record holds it), or `null` when it may start.
+ */
+export type PassOver = (issue: PoolIssue) => string | null;
+
+/** A serial epic's child the tick will not start: it keeps its own row and leaves the epic's slot to a sibling. */
+export interface PassedChild {
+  epic: string;
+  why: string;
+}
+
+/**
+ * `ranked` best first: each serial epic keeps its first child, and none
+ * while a child is in progress. A child `passOver` names is kept, so the
+ * pickup plan reports it, but takes no slot: it is noted in `passed` and
+ * its next sibling may lead.
+ */
 export function serializeEpics<
   T extends QueueItem & { serial?: Serial | undefined },
->(ranked: readonly T[], unplaced: Unplaced[]): T[] {
+>(
+  ranked: readonly T[],
+  unplaced: Unplaced[],
+  passOver: PassOver = () => null,
+  passed: Map<string, PassedChild> = new Map(),
+): T[] {
   const leader = new Map<string, string>();
   const kept: T[] = [];
   for (const item of ranked) {
     const serial = item.serial;
     const key = item.issue.identifier;
+    // A child the tick will not start stays planned, so its own need is
+    // raised whichever sibling holds the slot, and takes no slot itself.
+    const held = serial === undefined ? null : passOver(item.issue);
+    if (serial !== undefined && held !== null) {
+      passed.set(key, { epic: serial.epic, why: held });
+      kept.push(item);
+      continue;
+    }
     const why = serial === undefined ? null : serialHold(serial, key, leader);
     if (why !== null) {
       unplaced.push({ target: key, record: "tracker", reason: why });
@@ -113,11 +143,16 @@ export interface EpicWalk {
   parked: string[];
 }
 
-/** An epic none of whose open children can start reports one reason of its own, deepest epics first. */
+/**
+ * An epic none of whose open children can start reports one reason of its
+ * own, deepest epics first; one whose child `serializeEpics` passed over
+ * names that child and why it is held.
+ */
 export function summarizeEpics(
   walks: readonly EpicWalk[],
   wanted: ReadonlySet<string>,
   unplaced: Unplaced[],
+  passed: ReadonlyMap<string, PassedChild> = new Map(),
 ): void {
   const byKey = new Map(walks.map((w) => [w.key, w]));
   const reach = (
@@ -133,14 +168,28 @@ export function summarizeEpics(
   const startable = (key: string): boolean =>
     wanted.has(key) ||
     reach(key, new Set(), (w) => w.children.some((c) => wanted.has(c)));
+  const rowOf = (
+    child: string,
+  ): Pick<Unplaced, "target" | "reason"> | undefined => {
+    const own = unplaced.find((u) => u.target === child);
+    if (own !== undefined) return own;
+    const pass = passed.get(child);
+    return pass === undefined ? undefined : { target: child, reason: pass.why };
+  };
   for (const walk of [...walks].reverse()) {
+    const skipped = walk.children.find((c) => passed.get(c)?.epic === walk.key);
     // A child in progress anywhere below keeps the epic working, not idle.
-    if (startable(walk.key) || reach(walk.key, new Set(), (w) => w.working))
+    if (startable(walk.key) || reach(walk.key, new Set(), (w) => w.working)) {
+      if (skipped !== undefined)
+        unplaced.push({
+          target: walk.key,
+          record: "tracker",
+          reason: `${skipped} is held, so it does not hold its siblings: ${passed.get(skipped)?.why ?? ""}`,
+        });
       continue;
+    }
     const all = [...walk.children, ...walk.unread];
-    const held = all
-      .map((c) => unplaced.find((u) => u.target === c))
-      .find((u) => u !== undefined);
+    const held = all.map(rowOf).find((u) => u !== undefined);
     const parked = walk.parked[0];
     const first = parked ?? held?.target ?? all[0];
     const why =

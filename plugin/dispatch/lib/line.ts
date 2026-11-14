@@ -135,6 +135,7 @@ function needStage(cause: NeedCause): LineNeed["stage"] {
     cause === "stalled" ||
     cause === "double-claim" ||
     cause === "pickup-question" ||
+    cause === "pickup-ended" ||
     cause === "assigner-cannot-write"
   )
     return "pickup";

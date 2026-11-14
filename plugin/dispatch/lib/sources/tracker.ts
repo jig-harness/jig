@@ -613,6 +613,7 @@ export async function readPickups(
     views?: import("./served-reads.ts").ServedViews;
     unlabeled?: import("./served-repo.ts").UnlabeledMode;
     trackerNamespace?: string;
+    passOver?: import("./served-epics.ts").PassOver;
   },
 ): Promise<TrackerReading> {
   const served =

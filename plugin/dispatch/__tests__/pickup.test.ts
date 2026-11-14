@@ -439,17 +439,45 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(text.stdout).toContain("--apply withheld, nothing was started");
   });
 
-  it("does not pick an item up again once its pass ended without claiming it", async () => {
+  it("asks a person, once, whether to pick an item up again once its pass ended without claiming it", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, false))[0]?.record);
     await waitFor("the pass", () => claudeRuns(w).length === 1);
     writeFileSync(join(w.dir, "claude-exit"), "1");
     await waitFor("the exit", () => exitWritten(w, id));
-    const later = await applyTick(w, false);
-    expect(launches(later)).toEqual([]);
-    expect(later.repos[0]?.quiet).toContainEqual(
-      expect.objectContaining({ target: "#12", class: "pickup-ended" }),
-    );
+    const needOf = async () => {
+      const tick = await applyTick(w, false);
+      expect(launches(tick)).toEqual([]);
+      const ended = (tick.repos[0]?.actions ?? []).filter(
+        (a) => a.cause === "pickup-ended",
+      );
+      expect(ended).toHaveLength(1);
+      expect(ended[0]).toMatchObject({
+        stage: "notify",
+        target: "#12",
+        evidence: { record: id, stage: "pickup" },
+      });
+      const answer = await w.dispatch(["line", "--json"]);
+      expectSpawnExit(answer, 0);
+      const { line } = (
+        JSON.parse(answer.stdout) as { value: { line: LineSnapshot } }
+      ).value;
+      const needs = line.needs.filter((n) => n.target === "#12");
+      expect(needs).toHaveLength(1);
+      expect(needs[0]).toMatchObject({
+        cause: "pickup-ended",
+        stage: "pickup",
+      });
+      const options = needs[0]?.decisions[0]?.options?.map((o) => o.name);
+      expect(options).toEqual(["Release the claim", "Leave it to me"]);
+      return {
+        digest: needs[0]?.decisions[0]?.digest,
+        notice: ended[0]?.notice?.key,
+      };
+    };
+    const first = await needOf();
+    // The next tick raises the same need on the same facts, not a second one.
+    expect(await needOf()).toEqual(first);
     expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
   });
 

@@ -23,7 +23,12 @@
  *   item, so it is picked up again. An item read without an `updatedAt`
  *   keeps the rule above. A batch pass that named the members the rules
  *   refused holds only those, each on its own `updatedAt`; the rest of the
- *   batch is free to be picked up, and batched, again.
+ *   batch is free to be picked up, and batched, again;
+ * - a batch pass that ended after claiming some of its members holds only
+ *   those: it worked them, whether it recorded `done` or `failed`, and the
+ *   members it never claimed are wanted again under the queue's usual
+ *   rules; a pass that ended on a question for a person keeps every member
+ *   until the person answers it.
  */
 import {
   holds,
@@ -35,6 +40,7 @@ import {
 } from "../launches.ts";
 import { holdsItem } from "../launch-pickups.ts";
 import { refusalOf } from "../pickup-refusal.ts";
+import { questionOf } from "../session.ts";
 import { isPersonHold } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
@@ -100,7 +106,7 @@ function describe(r: ReadRecord): string {
 }
 
 /** How a record that no longer holds its stage ended, in words. */
-function endedHow(r: ReadRecord): string {
+export function endedHow(r: ReadRecord): string {
   const s = r.state;
   const answer = r.result ?? "failed (no result recorded)";
   if (s.kind === "ended")
@@ -146,17 +152,36 @@ export function pickupHold(
     return { kind: "none" };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
-    return parseMs(latest.waitsUntil) > nowMs
-      ? {
-          kind: "held",
-          record: latest,
-          why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${latest.waitsUntil}; the item starts again after it`,
-        }
-      : { kind: "none" };
+    return waitsHold(latest, latest.waitsUntil, nowMs);
+  return stoppedHold(latest, item, updatedAt);
+}
+
+/** A rate-limit wait: held until the reset it names, then nothing. */
+function waitsHold(
+  latest: ReadRecord,
+  until: string,
+  nowMs: number,
+): PickupHold {
+  return parseMs(until) > nowMs
+    ? {
+        kind: "held",
+        record: latest,
+        why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${until}; the item starts again after it`,
+      }
+    : { kind: "none" };
+}
+
+/** What an ended record that still holds `item` holds it for: a refusal, an end, or nothing. */
+function stoppedHold(
+  latest: ReadRecord,
+  item: string,
+  updatedAt: string | undefined,
+): PickupHold {
   const recorded = latest.refusal ?? null;
   const refusal = recorded === null ? null : refusalOf(recorded, item);
   // The pass named the members it refused, and this is not one of them.
   if (recorded !== null && refusal === null) return { kind: "none" };
+  if (refusal === null && leftUnclaimed(latest, item)) return { kind: "none" };
   if (refusal !== null && updatedAt !== undefined) {
     if (changedSince(updatedAt, refusal.updatedAt)) return { kind: "none" };
     return {
@@ -169,6 +194,45 @@ export function pickupHold(
     kind: "ended",
     record: latest,
     why: `launch record ${latest.record.id} ended (${endedHow(latest)}) while the item stayed assigned in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`,
+  };
+}
+
+/**
+ * Whether `item` is a member an ended batch pickup never claimed while it
+ * claimed a sibling: the pass worked its claimed members, so this one is
+ * no longer its. A record that claimed none, or that only a legacy
+ * `claimedSeen` describes, keeps every member, and so does a pass that
+ * ended on a question: the answer may be about the members it left.
+ */
+function leftUnclaimed(r: ReadRecord, item: string): boolean {
+  const { record } = r;
+  const members = record.batchItems?.map((i) => i.key) ?? [];
+  const claimed = record.claimedItems ?? [];
+  const asked =
+    questionOf(r.state) !== null ||
+    (r.result === "failed" && r.framed !== undefined);
+  return (
+    !asked &&
+    members.length > 1 &&
+    claimed.some((key) => members.includes(key)) &&
+    !claimed.includes(item)
+  );
+}
+
+/**
+ * Why `repo`'s ended pickup records keep an item from starting, or `null`:
+ * an epic's one-child slot is never given to a child the tick will not
+ * start (`serializeEpics`).
+ */
+export function endedPassOver(
+  records: readonly ReadRecord[],
+  repo: string,
+  nowMs: number,
+): (issue: { identifier: string; updatedAt?: string }) => string | null {
+  const mine = records.filter((r) => r.record.repo === repo);
+  return (issue) => {
+    const hold = pickupHold(issue.identifier, mine, issue.updatedAt, nowMs);
+    return hold.kind === "ended" || hold.kind === "refused" ? hold.why : null;
   };
 }
 
@@ -256,7 +320,8 @@ export function releaseEnded(
     // release one by one.
     const unclaimed = members.filter((key) => !claimedMembers.includes(key));
     const dropped = unclaimed.filter(
-      (key) => !wantsRecord(record, key, wanted, returned),
+      (key) =>
+        leftUnclaimed(r, key) || !wantsRecord(record, key, wanted, returned),
     );
     if (dropped.length === 0) continue;
     // A member no longer wanted is released alone, so its siblings keep the

@@ -31,6 +31,8 @@ import {
 } from "./served-pull.ts";
 import {
   childPlanHold,
+  type PassedChild,
+  type PassOver,
   parkedOnPerson,
   serializeEpics,
   summarizeEpics,
@@ -99,6 +101,8 @@ export interface ServedOptions extends ServedPolicy {
   bound?: import("./tracker-facets.ts").FacetBound;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
+  /** Why this machine's launch records keep an item from starting, so it takes no epic's slot. */
+  passOver?: PassOver;
 }
 /** An unplaced row's target, with the title and link the listing returned for it. */
 const itemOf = (i: PoolIssue) => ({
@@ -273,11 +277,20 @@ export async function readServedPickups(
     const serial = shared.serials.get(c.issue.identifier);
     if (c.serial === undefined && serial !== undefined) c.serial = serial;
   }
-  const ranked = serializeEpics(rankQueue(candidates), out.unplaced);
+  const passed = new Map<string, PassedChild>();
+  const ranked = serializeEpics(
+    rankQueue(candidates),
+    out.unplaced,
+    options.passOver,
+    passed,
+  );
   summarizeEpics(
     shared.walks,
-    new Set(ranked.map((c) => c.issue.identifier)),
+    new Set(
+      ranked.map((c) => c.issue.identifier).filter((key) => !passed.has(key)),
+    ),
     out.unplaced,
+    passed,
   );
   out.wanted = ranked.map((c) => ({
     key: c.issue.identifier,

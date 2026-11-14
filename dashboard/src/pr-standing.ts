@@ -52,6 +52,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "followup-stale": "Follow-up claim went stale",
   "nudge-unanswered": "Nudge unanswered",
   "pickup-question": "Pickup stopped on a question",
+  "pickup-ended": "Pickup ended without moving the item on",
   "double-claim": "Claimed twice",
   "assigner-cannot-write": "Assigned by someone who cannot write",
   "tracker-unreachable": "An account cannot reach the tracker",

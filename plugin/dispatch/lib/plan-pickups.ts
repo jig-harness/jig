@@ -27,6 +27,8 @@
  * - An item whose latest pickup pass ended on a question, without recording
  *   `done`, is a need: its `Question:` line is notified, and nothing is
  *   started for it, whether it was claimed or is still in a dispatch state.
+ *   One whose pass ended without a question and that no rule starts again
+ *   is a need too, framed with its options: pick it up again, or leave it.
  *
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
@@ -34,6 +36,7 @@
 import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
+  endedHow,
   holdingRecords,
   pickupClaimed,
   type PickupHold,
@@ -230,7 +233,7 @@ export function planPickups(input: PickupInput): PickupPlan {
 /**
  * An item whose latest pickup ended without claiming it: held while the
  * repository's start rules refused it, a need when its pass stopped on a
- * question, else quiet.
+ * question, else a need that asks whether to pick it up again.
  */
 function planStopped(
   slug: string,
@@ -245,8 +248,45 @@ function planStopped(
     return;
   }
   const asked = questionAsked(slug, item, launches);
-  if (asked !== null) plan.actions.push(asked);
-  else plan.quiet.push({ target: item.key, class: "pickup-ended", why });
+  plan.actions.push(asked ?? endedNeed(slug, item, hold.record, why));
+}
+
+/**
+ * The need an item raises when its latest pickup ended without a question
+ * and no rule starts it again: notified once per launch record, framed with
+ * the step a person may take (release the record, or leave it).
+ */
+function endedNeed(
+  slug: string,
+  item: WantedItem,
+  latest: ReadRecord,
+  why: string,
+): Action {
+  const { record } = latest;
+  const reason = `the pickup ended without moving it on, and no rule starts it again: ${why}`;
+  return {
+    stage: "notify",
+    target: item.key,
+    record: "runtime",
+    reason,
+    evidence: {
+      record: record.id,
+      stage: "pickup",
+      title: item.title,
+      state: item.state,
+      account: record.account,
+      ended: endedHow(latest),
+    },
+    cause: "pickup-ended",
+    notice: pickupNotice(
+      slug,
+      `${item.key} pickup ended, record ${record.id}`,
+      `${item.key} (${item.title}): ${reason}; a person picks it up again or leaves it`,
+    ),
+    ...(record.workspace === null ? {} : { workspace: record.workspace.path }),
+    // The pass's ended row in the outcome log already holds how it ended.
+    launched: true,
+  };
 }
 
 /**
