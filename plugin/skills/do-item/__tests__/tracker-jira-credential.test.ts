@@ -907,4 +907,20 @@ describe("a failure's stalled body", () => {
     expect((await failure(t(request))).status).toBe(400);
     expect(cancelled).toBe(true);
   });
+
+  it("is let go once the call is cancelled, though the stream's cancel never settles", async () => {
+    const { runner } = printing("one");
+    const impl = (async (_url: unknown, _init?: RequestInit) =>
+      new Response(
+        new ReadableStream({
+          cancel: () => new Promise<void>(() => undefined),
+        }),
+        { status: 400 },
+      )) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const began = Date.now();
+    const err = await failure(t(request, AbortSignal.timeout(100)));
+    expect(err.message).toContain("Jira request cancelled:");
+    expect(Date.now() - began).toBeLessThan(900);
+  });
 });

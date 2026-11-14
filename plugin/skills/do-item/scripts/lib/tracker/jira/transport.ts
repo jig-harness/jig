@@ -296,15 +296,44 @@ function answerBody(text: string, status: number, what: string): unknown {
 /** How long a failure's body is waited for: it only words the error, so a stalled one is let go. */
 const FAILURE_BODY_WAIT_MS = 1_000;
 
+/** Cancels a reader, never waiting past the wait bound or `signal`: a cancel that never settles is let go. */
+async function releaseReader(
+  reader: { cancel(): Promise<void> },
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let release: () => void = () => undefined;
+  const letGo = new Promise<void>((resolve) => {
+    release = resolve;
+    timer = setTimeout(resolve, FAILURE_BODY_WAIT_MS);
+    if (signal?.aborted === true) resolve();
+    else signal?.addEventListener("abort", release, { once: true });
+  });
+  try {
+    await Promise.race([reader.cancel().catch(() => undefined), letGo]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", release);
+  }
+}
+
 /** A failure's body, read through a reader this owns: a stalled one is cancelled through it, which releases the stream. */
-async function failureBodyText(res: Response): Promise<string> {
+async function failureBodyText(
+  res: Response,
+  signal: AbortSignal | undefined,
+): Promise<string> {
   if (res.body === null) return "";
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let text = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let resolveStalled: (v: "stalled") => void = () => undefined;
+  const stop = () => resolveStalled("stalled");
   const stalled = new Promise<"stalled">((resolve) => {
-    timer = setTimeout(() => resolve("stalled"), FAILURE_BODY_WAIT_MS);
+    resolveStalled = resolve;
+    timer = setTimeout(stop, FAILURE_BODY_WAIT_MS);
+    if (signal?.aborted === true) stop();
+    else signal?.addEventListener("abort", stop, { once: true });
   });
   const drain = async (): Promise<"done"> => {
     for (;;) {
@@ -318,12 +347,13 @@ async function failureBodyText(res: Response): Promise<string> {
     const outcome = await Promise.race([settled, stalled]);
     if (outcome === "stalled") {
       settled.catch(() => undefined);
-      await reader.cancel().catch(() => undefined);
+      await releaseReader(reader, signal);
       return "";
     }
     return text + decoder.decode();
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
   }
 }
 
@@ -335,7 +365,7 @@ async function bodyText(
 ): Promise<string> {
   try {
     if (res.ok) return await res.text();
-    return await failureBodyText(res);
+    return await failureBodyText(res, signal);
   } catch (err) {
     if (cancelled(signal)) throw abortedError(signal, true);
     if (!res.ok) return "";

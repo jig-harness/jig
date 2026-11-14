@@ -1,5 +1,6 @@
 /** A failed native queue never turns unknown factory claims into an empty list. */
 import { expect, it } from "bun:test";
+import { LinearApiError } from "../../skills/do-item/scripts/lib/tracker/linear-transport.ts";
 import { readPickups } from "../lib/sources/tracker.ts";
 import type { DispatchSection } from "../lib/types.ts";
 import { FakeLinear } from "./served-linear-fake.ts";
@@ -97,7 +98,7 @@ it("keeps the factory queue and its age while a scope is unreachable, with claim
   const offline = {
     ...tracker,
     changedSince: async () => {
-      throw new Error("connection unavailable");
+      throw new LinearApiError("connection unavailable", null, "unreachable");
     },
   };
   const second = await readPickups(() => offline, section, undefined, {
@@ -108,6 +109,7 @@ it("keeps the factory queue and its age while a scope is unreachable, with claim
     views: new Map(),
   });
   expect(second.read.ok).toBe(false);
+  expect(second.read.failure?.class).toBe("unreachable");
   expect(second.claimed).toBeNull();
   expect(second.unplaced).toEqual([
     expect.objectContaining({

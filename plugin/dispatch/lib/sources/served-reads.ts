@@ -92,6 +92,8 @@ export interface ServedView {
   readonly bound?: FacetBound;
   /** A shared transport failure, with the kept reading still available. */
   readonly unavailable?: string | undefined;
+  /** What the shared transport threw, which carries the failure's class. */
+  readonly unavailableCause?: unknown;
   /** The refusal that left the view offline; `null` when it is online. */
   readonly limited: TrackerRateLimited | null;
   /** When the reading the view holds was taken. */
@@ -353,6 +355,7 @@ interface Plan {
   since: string;
   limited: TrackerRateLimited | null;
   unavailable?: string;
+  unavailableCause?: unknown;
 }
 
 /** Whether the kept reading serves, needs part re-read, or must be taken whole. */
@@ -510,7 +513,9 @@ function assemble(
   return {
     source: p.source,
     ...(p.bound === undefined ? {} : { bound: p.bound }),
-    ...(p.unavailable === undefined ? {} : { unavailable: p.unavailable }),
+    ...(p.unavailable === undefined
+      ? {}
+      : { unavailable: p.unavailable, unavailableCause: p.unavailableCause }),
     limited: p.limited,
     readAt,
     open: () => open,
@@ -637,6 +642,7 @@ function unavailableView(
     since: kept?.since ?? "",
     limited: null,
     unavailable: failureText(error),
+    unavailableCause: error,
   });
 }
 

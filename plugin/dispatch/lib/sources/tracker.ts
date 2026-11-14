@@ -411,7 +411,16 @@ function unavailableFactory(
     view,
     view.unavailable ?? "the scope could not be read",
   );
-  const failed = failedFactory(source, identity, row.reason, stores);
+  const cause = view.unavailableCause;
+  const failed = failedFactory(
+    source,
+    identity,
+    row.reason,
+    stores,
+    cause === undefined
+      ? undefined
+      : { code: "unreadable", reason: row.reason, cause },
+  );
   failed.unplaced.push(row);
   return failed;
 }

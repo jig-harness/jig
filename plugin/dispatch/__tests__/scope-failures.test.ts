@@ -56,6 +56,7 @@ it("latches transport failures across distinct fact keys and people, but keeps d
   ).rejects.toThrow("network unreachable");
   await expect(b.pool("TEAM-P")).rejects.toThrow("network unreachable");
   expect(b.unavailable).toBe("network unreachable");
+  expect(b.unavailableCause).toBeInstanceOf(LinearApiError);
   expect(a.scope).toBe(b.scope);
   expect(later).toBe(0);
 });
