@@ -267,7 +267,7 @@ export interface LineQueued {
   assignedBy: string | null;
   /** For a pull request held behind a serialized leader. */
   hold: { leader: number; area: string; since: string } | null;
-  /** What the newest tick's launch of it did, and, for a follow-up that waits for its lane, what it waits on; `null` when it did not try. */
+  /** What the newest tick's launch of it did, and, for a follow-up held back this tick, what it waits on; `null` when it did not try. */
   launch: {
     outcome: LaunchOutcome["outcome"];
     detail: string;
