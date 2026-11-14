@@ -1,0 +1,329 @@
+{
+  "chapter": "drive-exits",
+  "title": "Drive end states and exit codes",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The state's name as a drive-status.ts --json report's state field carries it, or the name of a class of states, a withdrawn code or an exit with no report."
+    },
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "state, class-label, tombstone, driver-only or helper, as the code names its categories."
+    },
+    "exit": {
+      "type": "integer",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The code this entry holds in the drive's numbering."
+    },
+    "driveStatusExit": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The code drive-status.ts exits with for it; null when drive-status.ts never does. Not part of identity: a withdrawn code keeps its row with this null."
+    },
+    "driveExit": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The code drive.ts ends with for it; null when drive.ts never does."
+    },
+    "endsDrive": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "Whether it ends the drive without the caller re-arming it on its own; null for a withdrawn code."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What it means to a reader that branches on it, and what that reader does next."
+    }
+  },
+  "values": [
+    {
+      "name": "ROUND_READY",
+      "kind": "state",
+      "exit": 0,
+      "driveStatusExit": 0,
+      "driveExit": null,
+      "endsDrive": false,
+      "meaning": "Work is left for this round: open review threads or unanswered summary findings. The caller runs a pass; `drive.ts` runs it itself and never ends with this state."
+    },
+    {
+      "name": "INDETERMINATE",
+      "kind": "state",
+      "exit": 1,
+      "driveStatusExit": 1,
+      "driveExit": 1,
+      "endsDrive": true,
+      "meaning": "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming."
+    },
+    {
+      "name": "UNSUPPORTED_CLI",
+      "kind": "state",
+      "exit": 2,
+      "driveStatusExit": 2,
+      "driveExit": 2,
+      "endsDrive": true,
+      "meaning": "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which."
+    },
+    {
+      "name": "CONVERGED",
+      "kind": "state",
+      "exit": 3,
+      "driveStatusExit": 3,
+      "driveExit": 0,
+      "endsDrive": true,
+      "meaning": "The pull request is ready to merge: the reviewer reviewed this exact head and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean."
+    },
+    {
+      "name": "HEAD_LAG",
+      "kind": "state",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The pull request's head on the forge and the local head disagree, and the reason says how: a local head ahead with no record of a push (push it through `guarded-push.ts`), a push the forge does not show yet (wait), a tree behind (update it), or diverged history (reconcile it). Then read again."
+    },
+    {
+      "name": "AWAITING_REVIEWER",
+      "kind": "state",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The reviewer has not reviewed this head yet. Wait, then read again."
+    },
+    {
+      "name": "STALE_REVIEW",
+      "kind": "state",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The reviewer's latest review describes an earlier head. Wait for its review of this one, then read again."
+    },
+    {
+      "name": "HEAD_MOVED",
+      "kind": "state",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The head or the base moved while the round was being judged, so nothing read about it holds. Read again."
+    },
+    {
+      "name": "MERGEABILITY_UNKNOWN",
+      "kind": "state",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The forge has not yet worked out whether the pull request merges cleanly. Read again."
+    },
+    {
+      "name": "NOT_SETTLED",
+      "kind": "class-label",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved or the CI hold label changed as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm)."
+    },
+    {
+      "name": "PR_NOT_OPEN",
+      "kind": "state",
+      "exit": 5,
+      "driveStatusExit": 5,
+      "driveExit": 5,
+      "endsDrive": true,
+      "meaning": "The pull request was merged or closed. Stop, and push nothing to it."
+    },
+    {
+      "name": "MAX_ROUNDS",
+      "kind": "driver-only",
+      "exit": 6,
+      "driveStatusExit": null,
+      "driveExit": 6,
+      "endsDrive": true,
+      "meaning": "The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming."
+    },
+    {
+      "name": "REVIEWER_FAILED",
+      "kind": "state",
+      "exit": 7,
+      "driveStatusExit": 7,
+      "driveExit": 7,
+      "endsDrive": true,
+      "meaning": "The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming."
+    },
+    {
+      "name": "HITL_PARKED",
+      "kind": "state",
+      "exit": 8,
+      "driveStatusExit": 8,
+      "driveExit": 8,
+      "endsDrive": true,
+      "meaning": "Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it."
+    },
+    {
+      "name": "PR_CONFLICTING",
+      "kind": "state",
+      "exit": 9,
+      "driveStatusExit": 9,
+      "driveExit": 9,
+      "endsDrive": true,
+      "meaning": "The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm."
+    },
+    {
+      "name": "RETIRED",
+      "kind": "tombstone",
+      "exit": 10,
+      "driveStatusExit": null,
+      "driveExit": null,
+      "endsDrive": null,
+      "meaning": "Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning."
+    },
+    {
+      "name": "SESSION_LEASE_HELD",
+      "kind": "state",
+      "exit": 11,
+      "driveStatusExit": 11,
+      "driveExit": 11,
+      "endsDrive": true,
+      "meaning": "Another live session in this working tree holds the drive's lease for this pull request. Nothing was changed: wait for it, or clear its lease once its process is gone."
+    },
+    {
+      "name": "SINGLE_INSTANCE_LOCK",
+      "kind": "driver-only",
+      "exit": 11,
+      "driveStatusExit": null,
+      "driveExit": 11,
+      "endsDrive": true,
+      "meaning": "Another driver already holds this pull request's or this working tree's lock, so the drive is already armed. Nothing was changed."
+    },
+    {
+      "name": "WORKTREE_UNCLEAN",
+      "kind": "driver-only",
+      "exit": 12,
+      "driveStatusExit": null,
+      "driveExit": 12,
+      "endsDrive": true,
+      "meaning": "The working tree holds work no round shipped: uncommitted edits, an unfinished git operation or a commit nobody reviewed. Settle it, then re-arm in this tree."
+    },
+    {
+      "name": "DRIVE_HELD_BY_OTHER_WORKTREE",
+      "kind": "state",
+      "exit": 13,
+      "driveStatusExit": 13,
+      "driveExit": 13,
+      "endsDrive": true,
+      "meaning": "Another live working tree, or a driver in another clone, is driving this pull request. Nothing was changed; that driver is the one to finish."
+    },
+    {
+      "name": "STALLED",
+      "kind": "driver-only",
+      "exit": 14,
+      "driveStatusExit": null,
+      "driveExit": 14,
+      "endsDrive": true,
+      "meaning": "Rounds stopped changing anything the drive can see. Read what the passes decided, and what the tree still holds, before re-arming."
+    },
+    {
+      "name": "PASS_DEADLINE",
+      "kind": "driver-only",
+      "exit": 15,
+      "driveStatusExit": null,
+      "driveExit": 15,
+      "endsDrive": true,
+      "meaning": "A pass ran past its deadline and was stopped more often than the drive restarts one. Check the tree for the stopped pass's leftovers before re-arming."
+    },
+    {
+      "name": "QUOTA_PARKED",
+      "kind": "driver-only",
+      "exit": 16,
+      "driveStatusExit": null,
+      "driveExit": 16,
+      "endsDrive": true,
+      "meaning": "A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account. `drive.ts` also exits `16` when it refuses such a re-arm while the limit holds, from a session that bills the same account or one it cannot tell."
+    },
+    {
+      "name": "PUSH_HELD",
+      "kind": "helper",
+      "exit": 17,
+      "driveStatusExit": null,
+      "driveExit": null,
+      "endsDrive": false,
+      "meaning": "A `hold-push` directive in the drive's mailbox is in force, so nothing was pushed; the pre-push hook's recheck exits with it to stop a push already under way. Not an end state: clear the hold, then push again."
+    },
+    {
+      "name": "MAILBOX_STOPPED",
+      "kind": "driver-only",
+      "exit": 18,
+      "driveStatusExit": null,
+      "driveExit": 18,
+      "endsDrive": true,
+      "meaning": "A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. A stop that names this driver's generation ends this driver alone; one that names none stops every later driver too, so resume it before re-arming."
+    },
+    {
+      "name": "MAILBOX_PAUSE_TIMEOUT",
+      "kind": "driver-only",
+      "exit": 19,
+      "driveStatusExit": null,
+      "driveExit": 19,
+      "endsDrive": true,
+      "meaning": "A pause sent through the drive's mailbox lasted longer than the drive waits. Resume it, then re-arm."
+    },
+    {
+      "name": "TAKEN_OVER",
+      "kind": "driver-only",
+      "exit": 20,
+      "driveStatusExit": null,
+      "driveExit": 20,
+      "endsDrive": true,
+      "meaning": "Another clone took the drive over and drives it now. Nothing to recover here."
+    },
+    {
+      "name": "CI_REPAIR_SPENT",
+      "kind": "driver-only",
+      "exit": 21,
+      "driveStatusExit": null,
+      "driveExit": 21,
+      "endsDrive": true,
+      "meaning": "The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again."
+    },
+    {
+      "name": "REVIEW_SKIPPED",
+      "kind": "state",
+      "exit": 22,
+      "driveStatusExit": 22,
+      "driveExit": 22,
+      "endsDrive": true,
+      "meaning": "The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms."
+    },
+    {
+      "name": "CI_INFRA_PERSISTED",
+      "kind": "driver-only",
+      "exit": 23,
+      "driveStatusExit": null,
+      "driveExit": 23,
+      "endsDrive": true,
+      "meaning": "The review converged, but checks kept failing on the CI service's own infrastructure after the drive re-ran them. Nothing in the code needs repair; re-arm once the service recovers."
+    }
+  ]
+}
