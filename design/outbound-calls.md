@@ -62,8 +62,8 @@ module leaves its old path in the same pull request.
 | `failure`, `retry` | The closed classes; jittered backoff inside the call's deadline that honours `Retry-After`, for reads only | `tracker/read-retry.ts` and each transport's own classification |
 | `cache` | Answers kept by update time or by the system's validator, stable absences included | `shared/gh-conditional.ts`, the served queue's kept readings |
 | `coalesce`, `batch` | One request for identical reads in a run; reads by key in chunks | `dispatch/lib/tick-reads.ts`, the Linear read by key |
-| `paging` | Page caps, and a page that shrinks when the system runs out of time | Built with step 1 |
-| `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | Built with step 3; the hold moves into `budget` once GitHub joins it |
+| `paging` | Page caps, and a page that shrinks when the system runs out of time | `shared/outbound/paging.ts` |
+| `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | `shared/outbound/hold.ts`; the hold moves into `budget` once GitHub joins it |
 
 A transport supplies its profile, how to send one request
 (an HTTPS request or a run of a command-line client) and how to read a
@@ -223,26 +223,16 @@ was sent: the caller reads the item again before it writes again.
 
 ## Build order
 
-One pull request per step. Steps 3 to 6 change the same transport files and
-are built in that order.
+One pull request per remaining step. GitHub's budget and reuse change the
+same transport files and are built in that order.
 
-1. **A page that shrinks.** `paging`, and the dispatcher's pull-request
-   read through it.
-2. **The rule.** ADR-0021, the rule in `AGENTS.md`, this design.
-3. **Failure classes and one retry.** `failure` and `retry`, which keep
-   one retry for a read (the moved `tracker/read-retry.ts` permits three);
-   the tracker
-   transports and the forge client's wrapper return the classes; the tick
-   and the passes follow the policies above.
-4. **The ledger and the reports.** `ledger`; `budget` moved into the
-   library; the tick's line, `jig budget`, the low-quota need.
-5. **GitHub in the budget record.** Its profile; the wrapper admits and
+- **GitHub in the budget record.** Its profile; the wrapper admits and
    observes; the tick's own budget read goes.
-6. **Reuse.** Move the existing queue snapshots and assignment caches into
+- **Reuse.** Move the existing queue snapshots and assignment caches into
    `cache`, `coalesce` and `batch`. The remaining reads adopt the library:
    the deferral script's tracker calls through the adapter, and the nested
    page sizes of the issue and ledger queries.
-7. **The gates and the lens.**
+- **The gates and the lens.**
 
 ## Left out
 
