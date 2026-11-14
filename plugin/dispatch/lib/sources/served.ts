@@ -416,19 +416,34 @@ async function walk(
     planHold: undefined,
   }));
   while (generation.length > 0) {
-    const visits = generation.map((node) => visitNode(ctx, node));
+    // Each visit fills a record the walk owns, so what a visit found before
+    // it rejected is merged all the same.
+    const nodes = generation.map((node) => ({ node, found: newFound() }));
+    const visits = nodes.map(({ node, found }) => visitNode(ctx, node, found));
     const settled = await Promise.allSettled(visits);
     generation = [];
-    for (const s of settled) {
-      if (s.status === "rejected") continue;
-      all.unplaced.push(...s.value.unplaced);
-      all.candidates.push(...s.value.candidates);
-      all.failures.push(...s.value.failures);
-      generation.push(...s.value.pending);
+    settled.forEach((s, i) => {
+      const found = nodes[i]?.found;
+      if (found === undefined) return;
+      all.unplaced.push(...found.unplaced);
+      all.candidates.push(...found.candidates);
+      all.failures.push(...found.failures);
+      if (s.status === "fulfilled") generation.push(...found.pending);
+    });
+    try {
+      await Promise.all(visits);
+    } catch (error) {
+      // The walk ends with this one error; every other rejected visit is a
+      // failed read kept here, and a rate limit is the walk's limit alone.
+      for (const s of settled)
+        if (
+          s.status === "rejected" &&
+          s.reason !== error &&
+          !isRateLimited(s.reason)
+        )
+          all.failures.push(s.reason);
+      throw error;
     }
-    // What the sibling visits found stays in `all` when one ends the walk:
-    // the settled visits reject here with the first one's error.
-    await Promise.all(visits);
   }
   return all;
 }
@@ -570,14 +585,16 @@ function leavesNode(
   );
 }
 
-async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
+function newFound(): Found {
+  return { unplaced: [], candidates: [], pending: [], failures: [] };
+}
+
+async function visitNode(
+  ctx: WalkContext,
+  node: Pending,
+  found: Found,
+): Promise<Found> {
   const { tracker, options, seen } = ctx;
-  const found: Found = {
-    unplaced: [],
-    candidates: [],
-    pending: [],
-    failures: [],
-  };
   const { issue, ancestor } = node;
   if (leavesNode(issue, options, seen, tracker)) return found;
   // A child assigned elsewhere is not inherited. A direct assignment is read in its owner's list.
