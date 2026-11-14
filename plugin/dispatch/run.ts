@@ -485,13 +485,15 @@ async function tryWriteWall(
  * recorded. Throws when the pass's permission settings do not read.
  */
 function stageArgv(record: LaunchRecord): string[] {
+  // `drive.pass_args` is Claude Code's: a Codex pass never reads it, so a bad value cannot stop one.
+  const claudeWords = (): readonly string[] =>
+    record.vendor === "codex" ? [] : configuredPassArgs().words;
   if (record.action === "steward")
-    return stewardPassArgv(record, configuredPassArgs().words);
+    return stewardPassArgv(record, claudeWords());
   if (isDrive(record)) return driveCommand(record, driveScript());
   if (record.action === "followup")
-    return followupPassArgv(record, configuredPassArgs().words);
-  if (!isInteractive(record))
-    return pickupPassArgv(record, configuredPassArgs().words);
+    return followupPassArgv(record, claudeWords());
+  if (!isInteractive(record)) return pickupPassArgv(record, claudeWords());
   return sessionArgv(record);
 }
 

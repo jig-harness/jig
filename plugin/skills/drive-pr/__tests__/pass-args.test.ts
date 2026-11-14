@@ -218,6 +218,22 @@ describe("effectivePassArgs", () => {
     ).toEqual(other);
   });
 
+  it("starts a Codex pass whose unused drive.pass_args does not read", () => {
+    const unreadableClaude = (): PassArgs => {
+      throw new Error("drive.pass_args must be a list of words");
+    };
+    const bare = passCommand("codex", 7, true);
+    const pass = effectivePassArgs(bare, undefined, unreadableClaude, codexSet);
+    expect(pass.argv).toEqual(withCodexPassArgs(bare, HOOK_TRUST));
+    const own = effectivePassArgs(
+      ["codex", "exec", "--sandbox", "read-only", "/jig:drive-pr 7"],
+      undefined,
+      unreadableClaude,
+      codexSet,
+    );
+    expect(own.argv).toContain("read-only");
+  });
+
   it("reads a Codex pass command's permission from its own words", () => {
     const documented = passCommand("codex", 7, true);
     const pass = effectivePassArgs(

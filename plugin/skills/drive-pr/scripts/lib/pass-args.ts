@@ -264,6 +264,18 @@ function otherPass(
   };
 }
 
+/** The log's note that `drive.pass_args` is ignored; best effort, since a Codex pass never reads that setting and only this annotation does. */
+function claudeNote(configured: () => PassArgs): string {
+  let note = "";
+  try {
+    if (configured().words.length > 0)
+      note = "; drive.pass_args applies to a Claude Code pass command";
+  } catch {
+    note = "";
+  }
+  return note;
+}
+
 /**
  * A Codex pass command: `drive.codex_pass_args` added before the prompt of
  * one with no arguments of its own, a command that carries its own kept as
@@ -286,19 +298,15 @@ function codexPass(
     return done([...argv], "pass args: none (--pass-args)");
   if (hasOwnCodexArgs(argv)) {
     let chosen: PassArgs;
-    let claude: string;
     try {
       chosen = codex();
-      claude =
-        configured().words.length > 0
-          ? "; drive.pass_args applies to a Claude Code pass command"
-          : "";
     } catch {
       return done(
         [...argv],
         "pass args: the pass command's own, kept as written",
       );
     }
+    const claude = claudeNote(configured);
     if (chosen.words.length > 0 && carries(argv, chosen.words))
       return done(
         [...argv],
@@ -312,13 +320,9 @@ function codexPass(
     );
   }
   const chosen = codex();
-  const claude =
-    configured().words.length > 0
-      ? "; drive.pass_args applies to a Claude Code pass command"
-      : "";
   return done(
     withCodexPassArgs(argv, chosen.words),
-    `pass args: ${shown(chosen.words)} (${chosen.source})${claude}`,
+    `pass args: ${shown(chosen.words)} (${chosen.source})${claudeNote(configured)}`,
   );
 }
 
