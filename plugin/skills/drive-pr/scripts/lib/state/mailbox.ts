@@ -3,7 +3,8 @@
  * human, the orchestrating session that spawned this drive, or `drives.ts
  * --stop`) and a headless `drive.ts` run in the same working tree. It is the
  * one way to steer or stop a running drive: append-only JSONL logs under
- * `.context/drive-mailbox/` (gitignored, workspace-scoped — the same
+ * `.context/drive-mailbox/` (gitignored, tagged disposable with a
+ * `CACHEDIR.TAG` for `jig gc`, workspace-scoped — the same
  * granularity as the worktree lock in `store.ts`'s `worktreeLockName`, and NOT
  * the clone-wide state dir: a mailbox is a conversation with THIS tree's
  * driver).
@@ -134,6 +135,7 @@ import {
   writeAllSync,
 } from "./fsutil.ts";
 import { fileLock } from "./file-lock.ts";
+import { markDisposable } from "../../../../../shared/disposable-mark.ts";
 
 export const MAILBOX_DIRNAME = "drive-mailbox";
 
@@ -446,6 +448,9 @@ async function appendLine(path: string, line: string): Promise<void> {
   // for why it is not, on its own, a safe basis for deciding whether to
   // fsync at all.
   const firstCreatedDir = mkdirSync(dirname(path), { recursive: true });
+  // Nothing needs the mailbox once the work is finished: the tag lets a
+  // collector set the directory aside. An untagged one is only kept longer.
+  markDisposable(dirname(path));
   const lock = fileLock(path, "mailbox.ts (append)");
   await lock.acquire();
   try {
@@ -1157,6 +1162,7 @@ export async function readPushHoldUnderLock(
 ): Promise<{ blocked: boolean; reason: string }> {
   const path = inboxPath(dir);
   mkdirSync(dirname(path), { recursive: true });
+  markDisposable(dirname(path));
   const lock = fileLock(path, label);
   await lock.acquire();
   try {

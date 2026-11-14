@@ -1265,6 +1265,7 @@ the installed plugin copy, outside a Git checkout.
 | `hour` | 4; local hour (0–23) for the daily scheduled run |
 | `collect_day` | 0; local weekday (Sunday 0 through Saturday 6) on which the daily run collects |
 | `min_free_bytes` | 0, disabled; collect on other days when available space in the home filesystem falls below this threshold |
+| `archive_max_bytes` | 67108864 (64 MiB); the most the one-time archive of one worktree's ignored content may hold, for a worktree made before marking began ([the collector's README](gc/README.md#ignored-content)); 0 archives nothing, so that content keeps vetoing |
 | `orca.command` | Unset; the absolute path of Orca's command (`orca`, or `orca-ide` on Linux). When set, the worktrees kind tells worktrees Orca manages from plain ones and collects them through Orca ([the collector's README](gc/README.md#worktrees-orca-manages)) |
 
 The job records Bun's executable, the installed command's path, `HOME`,
