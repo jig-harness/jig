@@ -49,7 +49,7 @@ user's own fetches. See
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tool-state` | Runs drive-pr's state reaper in report mode for each configured clone: the files a clone keeps beside the drive's database that the reaper would retire. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the reaper's lock excludes only other reapers.                                                                                                                                                                                                                                                                            |
 | `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Registered test scopes can be collected only when their persistent registration proves every holder gone; incomplete registrations and other scratch remain report-only.                                                                                                                            |
-| `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence unless a rule accounts for it ([below](#ignored-content)); the receipt lists every path set aside and the rule that set it aside. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
+| `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded, except the worktrees an agent tool makes inside the clone ([below](#worktrees-an-agent-tool-makes)). Ignored local content needs preservation evidence unless a rule accounts for it ([below](#ignored-content)); the receipt lists every path set aside and the rule that set it aside. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); an agent tool's worktree is marked `runtime: agent-tool` and collected with git; any other eligible worktree remains report-only until the opener shares session admission. |
 | `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. Removes the one-time archives of collected worktrees' ignored content past the same retention.                                                                                                                                                                                                                                                                                                                           |
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
@@ -60,7 +60,8 @@ creator's [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSA
 needs inspection; it is never stolen on age, and the refusal names its
 creator and why that creator counts as gone.
 Worktree openers have not adopted that protocol, so clean or merged worktrees
-are reported only, except those a workspace runtime manages.
+are reported only, except those a workspace runtime manages and those an
+agent tool makes.
 
 ### Ignored content
 
@@ -148,6 +149,35 @@ can reap its registered children. The directory stays until another proof
 confirms every holder gone. The collector checks again under exclusive
 scratch admission before each action. It does not sweep at test startup or
 use age as ownership evidence.
+
+### Worktrees an agent tool makes
+
+Claude Code's agent tool gives each isolated subagent a worktree of its own
+under the clone's primary checkout, in `.claude/worktrees/`. No declared root
+holds that directory and no runtime keeps a record of the trees in it, so
+without this rule they pile up, and one still on a pull request's branch
+holds that branch: no other worktree can check it out, and a workspace
+manager makes a `<branch>-2` workspace instead. The kind derives the
+directory from the clone's primary checkout, whatever roots the repository
+declares, and marks each tree in it `runtime: agent-tool`.
+
+A subagent ends with the session that started it, so for these trees no
+process inside and the idle guard past stand in for the session admission
+the agent tool does not hold. Every other check applies unchanged: a tree is
+collected only when it is clean (no changes, hidden index flags, operation in
+progress or ignored content no rule accounts for), no open pull request
+holds its branch or commit, and its commits are on a remote branch or under
+a merged pull request's head. A clean tree that has no pull request and no
+commit the base lacks is collected too, where a tree of another opener is a
+finding. Collection runs the base branch's remove hook inside the tree and
+parks its reflection findings, as for an Orca checkout, then removes it with
+`git worktree remove` without `--force`, so git itself refuses a tree that
+gained changes meanwhile.
+
+A tree the kind keeps (an open pull request, unpushed commits, changes, a
+process in it) is never changed. When it is on a branch, the reason names
+the branch and the command that releases it while keeping every file and
+commit: `git -C <tree> switch --detach`.
 
 ### Detached worktrees
 

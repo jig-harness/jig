@@ -544,6 +544,8 @@ export async function preserveLegacyContent(
 /**
  * The proof of a worktree no runtime manages, or the runtime's proof after
  * its registry showed no agent: what Git, the forge and the file system say.
+ * `agentTool` marks a worktree an agent tool made, which may be collected
+ * without a registry once no process holds it and the idle guard has passed.
  * Evidence that cannot be read fails it; the kind records that as
  * `unverified`.
  */
@@ -552,6 +554,7 @@ export async function worktreeProof(
   policy: WorktreePolicy,
   idleDays: number,
   coordinated = false,
+  agentTool = false,
 ): Promise<Outcome<Proof>> {
   if (!lstatSync(path).isDirectory())
     return ok({ state: "finding", reason: "worktree root is not a directory" });
@@ -559,7 +562,7 @@ export async function worktreeProof(
   if (!identity.ok) return identity;
   const local = await localEvidence(path, identity.value.admin, coordinated);
   if (!local.ok) return local;
-  const facts = local.value;
+  const facts = { ...local.value, agentTool };
   // Changes, index flags and an operation in progress veto before ignored
   // content is weighed for an archive.
   const unarchivable = localWorktreeVeto({

@@ -32,6 +32,12 @@ export interface WorktreeEvidence {
    * than waiting for the opener to share session admission.
    */
   coordinated?: boolean;
+  /**
+   * An agent tool made the worktree inside the clone (`.claude/worktrees`)
+   * for one subagent, whose session ends with its parent's: no process in it
+   * and the idle guard past stand in for session admission.
+   */
+  agentTool?: boolean;
 }
 const unknown = (reason: string): Proof => ({ state: "unverified", reason });
 const live = (reason: string): Proof => ({ state: "live", reason });
@@ -60,10 +66,16 @@ export function localWorktreeVeto(
   return null;
 }
 function lifecycle(facts: WorktreeEvidence): Proof {
-  const coordinated = facts.coordinated === true;
+  const coordinated: Coordination =
+    facts.coordinated === true
+      ? "runtime"
+      : facts.agentTool === true
+        ? "agent-tool"
+        : null;
   if (facts.localOnlyCommits === null)
     return unknown("remote commit coverage could not be verified");
-  if (!facts.requests?.length) return withoutRequest(facts.aheadOfBase);
+  if (!facts.requests?.length)
+    return withoutRequest(facts.aheadOfBase, coordinated);
   const merged = facts.requests.some((request) => request.state === "MERGED");
   if (!merged && facts.localOnlyCommits)
     return live("closed pull request has commits on no remote branch");
@@ -76,17 +88,30 @@ function lifecycle(facts: WorktreeEvidence): Proof {
     coordinated,
   );
 }
-function withoutRequest(aheadOfBase: number | null): Proof {
+function withoutRequest(
+  aheadOfBase: number | null,
+  coordinated: Coordination,
+): Proof {
   if (aheadOfBase === null)
     return unknown("base ancestry could not be verified");
   if (aheadOfBase > 0)
     return live("branch without a pull request is ahead of the base");
+  // An agent tool's subagent ends with its session, so a clean tree with no
+  // commit of its own past the idle guard holds nothing the base lacks.
+  if (coordinated === "agent-tool")
+    return candidate(
+      "worktree without a pull request holds no commit the base lacks",
+      coordinated,
+    );
   return {
     state: "finding",
     reason: "worktree without a pull request has no registered session owner",
   };
 }
-function mergedCoverage(covered: boolean | null, coordinated: boolean): Proof {
+function mergedCoverage(
+  covered: boolean | null,
+  coordinated: Coordination,
+): Proof {
   if (covered === null)
     return unknown("merged pull request head ancestry could not be verified");
   return covered
@@ -96,11 +121,18 @@ function mergedCoverage(covered: boolean | null, coordinated: boolean): Proof {
       )
     : live("commits are outside remote branches and merged pull request heads");
 }
-function candidate(reason: string, coordinated: boolean): Proof {
-  if (coordinated)
+/** What stands in for session admission: a runtime's registry, an agent tool's lifetime, or nothing. */
+type Coordination = "runtime" | "agent-tool" | null;
+function candidate(reason: string, coordinated: Coordination): Proof {
+  if (coordinated === "runtime")
     return {
       state: "dead",
       reason: `${reason}; the runtime's registry shows no agent at work in it`,
+    };
+  if (coordinated === "agent-tool")
+    return {
+      state: "dead",
+      reason: `${reason}; an agent tool's worktree with no process in it, idle past the guard`,
     };
   return {
     state: "dead",

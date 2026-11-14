@@ -21,7 +21,11 @@ import { spawnSync } from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
 import { isAbsolute, join, normalize, relative, sep } from "node:path";
 import { gcGit as git, gitEnvironment } from "../git.ts";
-import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
+import {
+  localSteps,
+  removeThroughOrca,
+  removeWithGit,
+} from "../worktree-removal.ts";
 import { processHolder } from "./worktree-git.ts";
 import {
   type Collected,
@@ -50,6 +54,13 @@ import { currentMs } from "../../shared/time.ts";
 const ORCA_REMOVE_TIMEOUT_SEC = 300;
 /** The time a removal through Orca may take: the remove hook, the park and the removal. */
 const ORCA_REMOVAL_LIMIT_MS = 30 * 60_000;
+/**
+ * Where Claude Code's agent tool makes a worktree for each isolated subagent,
+ * under the clone's primary checkout, and the `runtime` the inventory marks
+ * its worktrees with.
+ */
+const AGENT_TOOL_DIR = [".claude", "worktrees"];
+const AGENT_TOOL = "agent-tool";
 /** The time the one-time archive of a worktree's ignored content may take. */
 const ARCHIVE_LIMIT_MS = 5 * 60_000;
 
@@ -327,40 +338,25 @@ async function collectThroughOrca(
         hook: () => base?.hook ?? null,
         // The hook may run for minutes: Orca can start an agent meanwhile, and
         // the hook can leave a process in the checkout that outlives it.
-        admit: async (worktree) => {
-          const checks = async (): Promise<Outcome<undefined, string>> => {
-            const live = await orcaLiveness(command, worktree);
-            if (live !== null)
-              return failed("live", `kept after the hook: ${live.reason}`);
-            // Read after the registry and after gc's admission: a launch the
-            // plugin let through meanwhile left its marker first.
-            const launch = launched();
-            if (launch !== null)
-              return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
-            if ((await processHolder(worktree)) !== false)
-              return failed(
-                "held",
-                "kept after the hook: a process holds the worktree, or holders could not be read",
-              );
-            return ok(undefined);
-          };
-          const before = await checks();
-          if (!before.ok) return before;
-          // Last, so the archive holds the content as the removal finds it.
-          const preserved = await preserveLegacyContent(
+        admit: (worktree) =>
+          admitAfterHook(
             worktree,
             legacy,
-            currentMs() + ARCHIVE_LIMIT_MS,
-          );
-          if (!preserved.ok) return preserved;
-          // Named on every failure from here on.
-          archived = preserved.value;
-          // The archive may have run for minutes: an agent or process can
-          // have started meanwhile, so what removal relies on is read again.
-          const after = await checks();
-          if (!after.ok) return after;
-          return ok(undefined);
-        },
+            async () => {
+              const live = await orcaLiveness(command, worktree);
+              if (live !== null)
+                return failed("live", `kept after the hook: ${live.reason}`);
+              // Read after the registry and after gc's admission: a launch the
+              // plugin let through meanwhile left its marker first.
+              const launch = launched();
+              if (launch !== null)
+                return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
+              return unheld(worktree);
+            },
+            (written) => {
+              archived = written;
+            },
+          ),
       },
     });
     // An archive written before a step that then failed stays, named in the
@@ -390,6 +386,137 @@ async function collectThroughOrca(
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
+}
+/** Kept when a process holds the worktree, or holders could not be read. */
+async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
+  if ((await processHolder(worktree)) !== false)
+    return failed(
+      "held",
+      "kept after the hook: a process holds the worktree, or holders could not be read",
+    );
+  return ok(undefined);
+}
+/**
+ * The last admission before a worktree goes, after its hook and park: what
+ * removal relies on (`checks`), the one-time archive of its ignored content,
+ * then `checks` again, since the archive may have run for minutes and an
+ * agent or process can have started meanwhile. `archived` is told of an
+ * archive as soon as it is written, so every failure after it names it.
+ */
+async function admitAfterHook(
+  worktree: string,
+  legacy: LegacyPolicy | undefined,
+  checks: () => Promise<Outcome<undefined, string>>,
+  archived: (written: Archived | null) => void,
+): Promise<Outcome<undefined, string>> {
+  const before = await checks();
+  if (!before.ok) return before;
+  // Last, so the archive holds the content as the removal finds it.
+  const preserved = await preserveLegacyContent(
+    worktree,
+    legacy,
+    currentMs() + ARCHIVE_LIMIT_MS,
+  );
+  if (!preserved.ok) return preserved;
+  archived(preserved.value);
+  const after = await checks();
+  if (!after.ok) return after;
+  return ok(undefined);
+}
+/**
+ * Collect a worktree an agent tool made: the base branch's remove hook inside
+ * it, its reflection findings parked, then `git worktree remove` without
+ * `--force`, so git itself refuses a checkout that gained changes. No runtime
+ * keeps records of it, so there is nothing else to remove.
+ */
+async function collectAgentWorktree(
+  resource: Resource,
+  repository: string,
+  declaration: string,
+  legacy: LegacyPolicy | undefined,
+): Promise<Collected> {
+  let archived: Archived | null = null;
+  const log = (line: string): void => {
+    process.stderr.write(`${line}\n`);
+  };
+  const withArchive = (collected: Collected): Collected =>
+    archived === null
+      ? collected
+      : {
+          ...collected,
+          details: {
+            ...(isMapping(collected.details) ? collected.details : {}),
+            archive: archived,
+          },
+        };
+  let snapshot: { hook: string; dir: string } | null = null;
+  try {
+    const taken = await snapshotBaseHooks(repository, declaration, resource.id);
+    if (!taken.ok) return { outcome: "failed", reason: taken.failure.reason };
+    snapshot = taken.value;
+    const base = snapshot;
+    const removed = await removeWithGit({
+      worktree: resource.id,
+      log,
+      steps: {
+        ...localSteps(currentMs() + ORCA_REMOVAL_LIMIT_MS, log),
+        hook: () => base?.hook ?? null,
+        // The hook can leave a process in the checkout that outlives it.
+        admit: (worktree) =>
+          admitAfterHook(
+            worktree,
+            legacy,
+            () => unheld(worktree),
+            (written) => {
+              archived = written;
+            },
+          ),
+      },
+      remove: async (worktree) => {
+        const done = await git(repository, ["worktree", "remove", worktree]);
+        return done.ok
+          ? ok(undefined)
+          : failed(
+              "git-refused",
+              `git worktree remove: ${done.failure.reason}`,
+            );
+      },
+    });
+    if (!removed.ok)
+      return withArchive({ outcome: "failed", reason: removed.failure.reason });
+    return withArchive({
+      outcome: "collected",
+      reason: `removed with git: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} git worktree remove`,
+      details: {
+        ...(isMapping(resource.details) ? resource.details : {}),
+        hook: removed.value.hook,
+        parked: true,
+      },
+    });
+  } catch (error) {
+    return withArchive({
+      outcome: "failed",
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    if (snapshot !== null)
+      rmSync(snapshot.dir, { recursive: true, force: true });
+  }
+}
+/** Whether the inventory found the worktree in the agent tool's directory. */
+function isAgentTool(resource: Resource): boolean {
+  return isMapping(resource.details) && resource.details.runtime === AGENT_TOOL;
+}
+/**
+ * What a kept agent tool's worktree on a branch adds to its reason: the
+ * branch it holds, which no other worktree can then check out (a workspace
+ * manager makes a `<branch>-2` one instead), and the command that releases it
+ * while keeping every file and commit.
+ */
+async function heldBranch(path: string): Promise<string | null> {
+  const name = await git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (!name.ok || name.value === "") return null;
+  return `it holds branch ${name.value}; \`git -C ${path} switch --detach\` releases the branch and keeps the worktree as it is`;
 }
 /** What the receipt's reason says of an archive written before removal. */
 function archiveNote(archived: Archived | null): string {
@@ -466,7 +593,7 @@ export function worktreesKind(
           "malformed",
           "Git worktree inventory was empty or malformed",
         );
-      const canonical = roots.map((root) => {
+      const canonicalRoot = (root: string): string => {
         try {
           // As git spells a worktree: links resolved and, on Windows, 8.3
           // short names expanded.
@@ -475,15 +602,25 @@ export function worktreesKind(
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return root;
           throw error;
         }
+      };
+      const canonical = roots.map(canonicalRoot);
+      // Derived, not declared: the agent tool's directory sits in the
+      // primary checkout git lists first, whatever roots the clone declares.
+      const primary = entries[0]?.id ?? repository;
+      const agentRoot = canonicalRoot(join(primary, ...AGENT_TOOL_DIR));
+      const selected = entries.slice(1).filter((entry) => {
+        if (within(entry.id, agentRoot)) {
+          entry.details.runtime = AGENT_TOOL;
+          return true;
+        }
+        return canonical.some((root) => within(entry.id, root));
       });
-      const selected = entries
-        .slice(1)
-        .filter((entry) => canonical.some((root) => within(entry.id, root)));
       if (orca === undefined || selected.length === 0) return ok(selected);
       const managed = await orcaWorktrees(orca, repository);
       if (!managed.ok) return managed;
       for (const entry of selected) {
         const row = managed.value.get(canonicalWorktree(entry.id));
+        if (row === undefined && entry.details.runtime === AGENT_TOOL) continue;
         entry.details.runtime = row === undefined ? "none" : "orca";
         if (row !== undefined) {
           entry.details.orca = row.id;
@@ -500,17 +637,35 @@ export function worktreesKind(
       if (!resolved.ok)
         return { state: "unverified", reason: resolved.failure.reason };
       const proving = { ...resolved.value, legacy: legacy() };
+      const agentTool = isAgentTool(resource);
       const proved =
         orca !== undefined && orcaId(resource) !== null
           ? await runtimeWorktreeProof(resource.id, proving, idleDays, {
               orca,
             })
-          : await worktreeProof(resource.id, proving, idleDays);
-      return proved.ok
+          : await worktreeProof(
+              resource.id,
+              proving,
+              idleDays,
+              false,
+              agentTool,
+            );
+      if (!proved.ok)
+        return { state: "unverified", reason: proved.failure.reason };
+      if (!agentTool || proved.value.state === "dead") return proved.value;
+      const held = await heldBranch(resource.id);
+      return held === null
         ? proved.value
-        : { state: "unverified", reason: proved.failure.reason };
+        : { ...proved.value, reason: `${proved.value.reason}; ${held}` };
     },
     collect: async (resource) => {
+      if (isAgentTool(resource))
+        return collectAgentWorktree(
+          resource,
+          repository,
+          declaration,
+          legacy(),
+        );
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
         return guardedCollection(resource, orcaPath(resource), (launched) =>
