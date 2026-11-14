@@ -25,7 +25,9 @@ import { withOrigin } from "./pickup-fixtures.ts";
 import { recordExit, readRecord } from "../lib/launches.ts";
 import { dispatched } from "../lib/runtime/port.ts";
 import {
+  claimStewardRecord,
   judgedResumes,
+  markStewardEffect,
   keepStewardRun,
   readStewardDigest,
   stewardRecords,
@@ -234,14 +236,21 @@ test("a refused duplicate resume never blocks the replay of the lost one", async
   );
   expect(started?.record).toBeTruthy();
   if (!started?.record) return;
-  const record = readRecord(started.record, dispatchState(w));
-  if (!record) return;
-  record.attempts = [
-    { at: new Date().toISOString(), outcome: "lost", detail: "response lost" },
-  ];
-  stateDb(dispatchState(w))
-    .query("UPDATE launches SET record = ? WHERE id = ?")
-    .run(JSON.stringify(record), record.id);
+  const lose = () => {
+    const record = readRecord(started.record as string, dispatchState(w));
+    expect(record).toBeTruthy();
+    if (!record) return;
+    record.attempts = [
+      {
+        at: new Date().toISOString(),
+        outcome: "lost",
+        detail: "response lost",
+      },
+    ];
+    stateDb(dispatchState(w))
+      .query("UPDATE launches SET record = ? WHERE id = ?")
+      .run(JSON.stringify(record), record.id);
+  };
   const digest = readStewardDigest("source-run", dispatchState(w));
   expect(digest.ok).toBe(true);
   if (!digest.ok) return;
@@ -252,20 +261,48 @@ test("a refused duplicate resume never blocks the replay of the lost one", async
     dispatchState(w),
   );
   expect(submitted).toMatchObject({ ok: true, value: "submitted" });
-  const retried: boolean[] = [];
-  for (let i = 0; i < 2; i += 1)
-    retried.push(
-      (await tick(w)).repos[0]?.launches.some(
-        (l) => l.record === record.id && l.outcome === "retried",
-      ) ?? false,
-    );
+  await tick(w);
   expect(
     stewardRecords(SLUG, dispatchState(w)).filter(
       (r) => r.run === "duplicate-run" && r.effect === "refused",
     ),
   ).toHaveLength(1);
-  expect(retried).toContain(true);
+  lose();
+  const replayed = await tick(w);
+  expect(
+    replayed.repos[0]?.launches.some(
+      (l) => l.record === started.record && l.outcome === "retried",
+    ),
+  ).toBe(true);
 }, 90000);
+
+test("an earlier refusal of a resume naming a pass outside its digest leaves the pass offered", () => {
+  const { w } = fixture("pickup");
+  const digest = readStewardDigest("source-run", dispatchState(w));
+  expect(digest.ok).toBe(true);
+  if (!digest.ok) return;
+  keepStewardRun(
+    "older-run",
+    { ...digest.value, passes: [] },
+    Date.now(),
+    dispatchState(w),
+  );
+  expect(
+    submitStewardRecords(
+      "older-run",
+      [{ kind: "resume", record: OLD, reason: "named wrongly" }],
+      dispatchState(w),
+    ),
+  ).toMatchObject({ ok: true, value: "submitted" });
+  const [older] = stewardRecords(SLUG, dispatchState(w)).filter(
+    (r) => r.run === "older-run",
+  );
+  expect(older).toBeTruthy();
+  if (!older) return;
+  expect(claimStewardRecord(older.id, dispatchState(w))).toBe(true);
+  markStewardEffect(older.id, "refused", dispatchState(w));
+  expect(judgedResumes(SLUG, dispatchState(w)).has(OLD)).toBe(false);
+});
 
 test("a pending batch resume rechecks every member and never repeats claims", async () => {
   const { w } = fixture("pickup", true);

@@ -476,11 +476,19 @@ export function judgedResumes(
       r.applied &&
       r.effect !== null &&
       r.effect !== STEWARD_REFUSED_OPEN &&
-      r.value.kind === "resume"
+      r.value.kind === "resume" &&
+      !namedOutsideDigest(r, root)
         ? [r.value.record]
         : [],
     ),
   );
+}
+
+/** An earlier steward settled a resume naming a pass outside its own digest as refused: that pass stays offered. */
+function namedOutsideDigest(r: KeptStewardRecord, root: string): boolean {
+  if (r.effect !== STEWARD_REFUSED) return false;
+  const digest = readStewardDigest(r.run, root);
+  return digest.ok && !recordBelongsToDigest(r.value, digest.value);
 }
 
 /** The claim precedes any action; an interrupted application is never attempted twice. */
