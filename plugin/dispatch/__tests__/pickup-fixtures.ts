@@ -114,6 +114,8 @@ export function claudeRuns(w: World): Array<{
   cwd: string;
   configDir: string | null;
   token: string | null;
+  /** `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` as the pass saw it. */
+  backgroundTasksOff?: string | null;
 }> {
   const path = join(w.dir, "claude-runs.jsonl");
   if (!existsSync(path)) return [];
