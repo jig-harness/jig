@@ -98,10 +98,16 @@ export function runTitleSays(title: string): RunTitleSays {
 
 /** CodeRabbit's comment-only draft skip, recognized from its current body. */
 export function commentSaysDraftSkip(app: string, body: string): boolean {
-  const draftNotice =
-    /^\s*(?:>\s*)?(?:#{1,6}\s+)?(?:\*\*)?Draft PR not reviewed(?:\*\*)?\s*$/im.test(
-      body,
+  const draftNotice = body.split(/\r?\n/u).some((line) => {
+    const text = line
+      .trim()
+      .replace(/^>\s*/u, "")
+      .replace(/^#{1,6}\s+/u, "")
+      .trim();
+    return (
+      text === "Draft PR not reviewed" || text === "**Draft PR not reviewed**"
     );
+  });
   return (
     app === "coderabbitai" &&
     // The generated marker labels CodeRabbit's generic skip template too.

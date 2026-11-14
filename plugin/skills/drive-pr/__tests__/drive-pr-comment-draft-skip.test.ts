@@ -92,13 +92,15 @@ describe("a comment-only draft skip", () => {
   });
 
   it("does not trust another author's skip or an unrelated heading", async () => {
-    expectProbeExit(await gate(marker), 4);
-    expectProbeExit(await gate(draftSkip, {}, "someone"), 4);
-    expectProbeExit(
+    for (const result of [
+      await gate(marker),
+      await gate(draftSkip, {}, "someone"),
       await gate("The description says Draft PR not reviewed"),
-      4,
-    );
-    expectProbeExit(await gate("## Review summary"), 4);
+      await gate("## Review summary"),
+    ]) {
+      expectProbeExit(result, 4);
+      expect(result.state).toBe("AWAITING_REVIEWER");
+    }
   });
 
   it("does not use CodeRabbit's comment for another configured reviewer", async () => {
@@ -135,6 +137,7 @@ describe("a comment-only draft skip", () => {
         new Response(child.stderr).text(),
         child.exited,
       ]);
+      expect(exitCode).toBe(isDraft ? 0 : 4);
       expectSpawnExit({ stdout, stderr, exitCode }, isDraft ? 0 : 4);
     }
   });
