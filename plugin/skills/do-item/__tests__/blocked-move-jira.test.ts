@@ -98,7 +98,7 @@ function site(
         if (outage)
           return new JiraApiError(
             "Jira API HTTP 503 on POST issue/ENG-1/transitions: unavailable",
-            { status: 503, unavailable: true },
+            { status: 503, code: "server-fault" },
           );
         const fields = (c.body.fields ?? {}) as Record<string, unknown>;
         if (state.status !== "Blocked" && required !== null)

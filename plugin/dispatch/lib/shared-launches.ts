@@ -68,6 +68,7 @@ import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
 import { retriedDeath, retryableFollowup } from "./session-startup.ts";
 import { routineEnd, routineRerun } from "./routine-reruns.ts";
+import { waitEnd } from "./followup-waits.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
@@ -781,7 +782,7 @@ function ownRecordClaims(
   );
 }
 
-/** Whether the marker naming `record` is released rather than answered: a retry's, or one a routine run again follows. */
+/** Whether the marker naming `record` is released rather than answered: a retry's, or one a routine run again or a rate limit's reset follows. */
 function released(
   record: string,
   byId: ReadonlyMap<string, ReadRecord>,
@@ -789,7 +790,8 @@ function released(
   records: readonly ReadRecord[],
 ): boolean {
   const r = byId.get(record);
-  if (retryable(r) || (r !== undefined && routineEnd(r))) return true;
+  if (retryable(r) || (r !== undefined && (routineEnd(r) || waitEnd(r))))
+    return true;
   return routineRerun(written, records)?.record === record;
 }
 
@@ -823,14 +825,15 @@ async function releaseStartupClaims(
  * through `ghCall` under `AT_EXIT_CALL_SEC`. Best effort: it returns why an
  * end was not written, and the tick's settle writes it. Retryable startup
  * markers, and those of a follow-up that owes a routine run again, are
- * released only by the tick, which reads current dispatch scope.
+ * released only by the tick, which reads current dispatch scope; so are
+ * those of a follow-up that waits out a rate limit (`followup-waits.ts`).
  */
 export async function settleAtExit(
   r: ReadRecord,
   root = stateRoot(),
 ): Promise<string[]> {
   // A retry's marker deletion needs the tick's current scope and dispute checks.
-  if (retryableFollowup(r) || routineEnd(r)) return [];
+  if (retryableFollowup(r) || routineEnd(r) || waitEnd(r, root)) return [];
   const nowIso = currentIso();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);

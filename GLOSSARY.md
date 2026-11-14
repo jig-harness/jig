@@ -960,6 +960,18 @@ make, use the entry's term instead.
   worktree sees them, so nothing another worktree, or a person not working
   in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+  Throwaway working files go under `.context/scratch/`, and a working
+  directory that nothing needs once the work is finished carries a
+  `CACHEDIR.TAG` file; `jig gc` keeps anything else under `.context/` until
+  it is preserved, except a drive's handoff file (`pr-drive-<PR>.md`), which
+  it sets aside whole without archiving, so keep nothing there you need.
+- **Cache directory tag** — a file named `CACHEDIR.TAG`, starting with a
+  fixed signature line, that a tool leaves in a directory it can rebuild or
+  no longer needs, so backup tools and collectors can tell that directory
+  from content that may be the only copy of something. Jig's scripts tag
+  their working directories under `.context/` this way, and `jig gc` sets a
+  tagged directory aside where any other ignored content keeps a worktree
+  ([the collector's rule](plugin/gc/README.md#ignored-content)).
 - **Collection kind** — one class of resource a machine's garbage collector
   knows how to judge and remove (worktrees, scratch directories, container
   volumes, merged branches, tool state, registered processes), shipped with
@@ -2179,8 +2191,10 @@ make, use the entry's term instead.
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
   ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
-  tracker adapters' transports keep the budget and the deadline; the rest
-  is planned ([ROADMAP.md](ROADMAP.md) item 55).
+  tracker adapters' transports keep the budget and the deadline, and they
+  and the forge's `gh` calls fail as the failure classes; a tracker read
+  is sent once more after a failure that may clear, a forge call is not;
+  the rest is planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
   and until when the system refuses the credential. Every process on the
@@ -2310,10 +2324,13 @@ make, use the entry's term instead.
   that account.
 - **Closing report** — the short record of what a run the *dispatcher*
   started concluded: its question for a person if it has one, the next step
-  it suggests, and a cause when it fell short. A *headless pass* writes it
-  as its last act; for a drive, whose last pass cannot know it is last, the
-  driver writes it when the drive stops. The *steward* reads a run's
-  transcript only when the run left no report. Designed in
+  it suggests, and a cause when it fell short: a `closing-report/v1`
+  record that holds conclusions, never output. A pickup's, a follow-up's or
+  the *steward*'s *headless pass* writes it as its last act through
+  `jig dispatch report`, which keeps it on the launch record and its fields
+  on the run's row of the outcome log; for a drive, whose last pass cannot
+  know it is last, the driver writes it when the drive stops. The *steward*
+  reads a run's transcript only when the run left no report. Designed in
   [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
   [ROADMAP.md](ROADMAP.md) item 51.
 - **Process runtime** — a *session runtime* that runs a *headless pass* as
@@ -2753,10 +2770,6 @@ make, use the entry's term instead.
   browser's drawing interface for three-dimensional graphics) and
   JavaScript; without them, for a reader who asks for reduced motion, or on
   a narrow screen, a still drawing stands in its place
-  ([design/website.md](design/website.md)).
-- **Jig Protocol** — the planned readable account of Jig's operating rules,
-  arranged as generated, linkable chapters for teams that adopt Jig. Its
-  design determines its final source, generation and rendering
   ([design/website.md](design/website.md)).
 - **GLB** — the binary form of glTF, the standard file format for
   three-dimensional models on the web: one file holding a model's parts,

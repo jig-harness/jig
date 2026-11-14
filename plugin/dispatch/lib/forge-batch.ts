@@ -51,24 +51,15 @@ import {
   sizeToKeep,
   startSize,
 } from "../../shared/outbound/paging.ts";
-import {
-  ghCall,
-  ghRepoEnv,
-  type RunResult,
-} from "../../skills/drive-pr/scripts/lib/proc.ts";
+import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
+import { failedBy } from "../../shared/outbound/failure.ts";
+import { ghRunFailure } from "../../shared/outbound/github.ts";
 import { checksFail } from "./automation.ts";
 import type { RepoTarget } from "./types.ts";
 import { currentMs } from "../../shared/time.ts";
 
 /** The most pull requests a page asks for: the forge charges three points for a page this size. */
 export const PAGE = 50;
-
-/**
- * A failed answer that came sooner than this is no timeout: the forge works
- * on a query for about ten seconds before it gives up, and answers at once
- * when it is itself unavailable.
- */
-const TIMEOUT_FLOOR_MS = 5_000;
 
 /** Comments, labels and review threads read with each pull request: a pull request with more comments is listed on its own. */
 const ITEMS = 100;
@@ -136,7 +127,11 @@ export interface RepositoryRead extends CommentsRead {
 /** A query's answer, or the part of it, that does not read as one. */
 type Read<T> = Outcome<T, "unreadable">;
 
-/** One query as the forge answered it: `too-costly` when the forge ran out of time on it, which fewer items to a query may avoid. */
+/**
+ * One query as the forge answered it: `too-costly` when the forge ran out
+ * of time on it, which fewer items to a query may avoid; any other failed
+ * call is `unreadable`, carrying its failure class (`failedBy`).
+ */
 type Asked<T> = Outcome<T, "unreadable" | "too-costly">;
 
 /**
@@ -177,21 +172,6 @@ function pagingOf(sizes: PageSizes | undefined, key: string): Paging {
   const kept = keptSize(sizes?.get(key), PAGE);
   const started = startSize(kept, PAGE);
   return { kept, started, size: started, read: 0, slowestMs: 0 };
-}
-
-/**
- * Whether a failed `gh` call says the forge ran out of time on the request:
- * the call passed its own deadline, or the forge answered HTTP 502 or 504
- * after working on it for `TIMEOUT_FLOOR_MS` or longer.
- */
-export function ranOutOfTime(
-  r: Pick<RunResult, "timedOut" | "stderr">,
-  tookMs: number,
-): boolean {
-  return (
-    r.timedOut ||
-    (tookMs >= TIMEOUT_FLOOR_MS && /\bHTTP 50[24]\b/.test(r.stderr))
-  );
 }
 
 /**
@@ -454,10 +434,12 @@ async function graphql(args: string[], cwd?: string): Promise<Asked<unknown>> {
     env: ghRepoEnv(),
     ...(cwd === undefined ? {} : { cwd }),
   });
-  if (r.code !== 0) {
+  const failure = ghRunFailure(r, currentMs() - began);
+  if (failure !== null) {
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    return failed(
-      ranOutOfTime(r, currentMs() - began) ? "too-costly" : "unreadable",
+    return failedBy(
+      failure.code === "too-costly" ? "too-costly" : "unreadable",
+      failure,
       `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
     );
   }

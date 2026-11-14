@@ -14,9 +14,31 @@
  * search (`nextPageToken`, `isLast`). An item repeated across pages, or a
  * page that says nothing about whether it is the last, fails the read: the
  * list moved under it, and a shorter population is never presented as whole.
+ *
+ * A failure is a `JiraApiError` whose code is its failure class
+ * (`shared/outbound/failure.ts`), read here from the answer's status: a
+ * refused credential is `unauthorized`, a 404 `not-found`, a 429
+ * `rate-limited` until its `Retry-After`, a 5xx `server-fault`, no answer
+ * `unreachable` (with `sent` when the request left), anything else Jira
+ * refused `invalid`. A read (a GET, or a POST its builder marks
+ * idempotent) that met `unreachable` or `server-fault` is sent once more
+ * inside the call's deadline (`shared/outbound/retry.ts`); a write never is.
  */
 
-import { discardBody, retryAfterSeconds, retryRead } from "../read-retry.ts";
+import {
+  answerClass,
+  type FailureClass,
+  type OutboundFailure,
+  OutboundError,
+  outboundFailure,
+  retryAfterMs,
+  statusClass,
+} from "../../../../../../shared/outbound/failure.ts";
+import { guarded } from "../../../../../../shared/outbound/hold.ts";
+import {
+  discardBody,
+  retryRead,
+} from "../../../../../../shared/outbound/retry.ts";
 import {
   type BudgetGovernor,
   credentialKey,
@@ -78,43 +100,55 @@ export type JiraTransport = (
 ) => Promise<unknown>;
 
 /**
- * Jira answered with an error, or could not be asked. `notFound` is a 404;
- * `unavailable` a request that could not be made or answered (the
- * network, a rate limit, a server error),
- * which a caller may report as "try later". `errorMessages` and `errors`
- * are Jira's own error body, also carried in the message.
+ * Jira answered with an error, or could not be asked. Its `code` is the
+ * failure class, read from `status` when none is given (`invalid` with
+ * neither). `notFound` is a `not-found` answer; `unavailable` a class that
+ * clears by waiting (no answer, a rate limit, a server fault), which a
+ * caller may report as "try later". `errorMessages` and `errors` are Jira's
+ * own error body, also carried in the message.
  */
-export class JiraApiError extends Error {
+export class JiraApiError extends OutboundError {
+  override name = "JiraApiError";
   // Declared fields, not parameter properties: the repository's TypeScript
   // settings allow erasable syntax only.
   readonly status: number | null;
-  readonly notFound: boolean;
-  readonly unavailable: boolean;
-  /** The request left and no usable answer came back, so a write may have landed. */
-  readonly answerLost: boolean;
-  readonly retryAfterSec: number | null;
   readonly errorMessages: string[];
   readonly errors: Record<string, string>;
   constructor(
     message: string,
     opts: {
       status?: number | null;
-      notFound?: boolean;
-      unavailable?: boolean;
-      answerLost?: boolean;
-      retryAfterSec?: number | null;
+      code?: FailureClass;
+      /** The request left and no usable answer came back, so a write may have landed. */
+      sent?: boolean;
+      until?: number | null;
+      retryAfterMs?: number | null;
       errorMessages?: string[];
       errors?: Record<string, string>;
     } = {},
   ) {
-    super(message);
-    this.status = opts.status ?? null;
-    this.notFound = opts.notFound ?? false;
-    this.unavailable = opts.unavailable ?? false;
-    this.answerLost = opts.answerLost ?? false;
-    this.retryAfterSec = opts.retryAfterSec ?? null;
+    const status = opts.status ?? null;
+    super(
+      opts.code ?? (status === null ? null : statusClass(status)) ?? "invalid",
+      message,
+      opts,
+    );
+    this.status = status;
     this.errorMessages = opts.errorMessages ?? [];
     this.errors = opts.errors ?? {};
+  }
+  get notFound(): boolean {
+    return this.code === "not-found";
+  }
+  get unavailable(): boolean {
+    return this.clearsByWaiting;
+  }
+  /** The request left and no usable answer came back, so a write may have landed. */
+  get answerLost(): boolean {
+    return this.sent;
+  }
+  get retryAfterSec(): number | null {
+    return this.retryAfterMs === null ? null : this.retryAfterMs / 1000;
   }
 }
 
@@ -126,10 +160,12 @@ function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
   return signal?.aborted === true;
 }
 
-export function abortedError(signal: AbortSignal): JiraApiError {
+/** `sent`: the request had been dispatched, so a write may have landed. */
+export function abortedError(signal: AbortSignal, sent = false): JiraApiError {
   const reason: unknown = signal.reason;
   return new JiraApiError(
     `Jira request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,
+    { code: "unreachable", ...(sent ? { sent: true } : {}) },
   );
 }
 
@@ -167,18 +203,13 @@ function parsedOrNull(text: string): unknown {
   }
 }
 
-/** The seconds a `Retry-After` header asks to wait, or `null`. */
-function retryAfterOf(headers: Headers): number | null {
-  return retryAfterSeconds(headers);
-}
-
 /** The longest a `Retry-After` may limit a credential; a larger ask is not believed. */
 const MAX_LIMIT_MS = 24 * 3_600_000;
 
 /** When a 429 limits the credential until: the header's wait, bounded, else the fallback. */
 function limitedUntil(now: number, headers: Headers): number {
-  const wait = retryAfterOf(headers);
-  const ms = wait === null ? FALLBACK_LIMIT_MS : wait * 1000;
+  const wait = retryAfterMs(headers, () => now);
+  const ms = wait === null ? FALLBACK_LIMIT_MS : wait;
   return now + (ms > MAX_LIMIT_MS ? FALLBACK_LIMIT_MS : ms);
 }
 
@@ -188,6 +219,7 @@ export function httpFailure(
   headers: Headers,
   text: string,
   what: string,
+  tookMs = 0,
 ): JiraApiError {
   const { errorMessages, errors } = errorBody(parsedOrNull(text));
   const said = [
@@ -211,9 +243,9 @@ export function httpFailure(
       : message,
     {
       status,
-      notFound: status === 404,
-      unavailable: status === 429 || status >= 500,
-      retryAfterSec: retryAfterOf(headers),
+      code: answerClass(status, tookMs) ?? "invalid",
+      ...(status === 429 ? { until: limitedUntil(currentMs(), headers) } : {}),
+      retryAfterMs: retryAfterMs(headers),
       errorMessages,
       errors,
     },
@@ -256,9 +288,73 @@ function answerBody(text: string, status: number, what: string): unknown {
   } catch {
     throw new JiraApiError(`Jira returned no JSON on ${what}`, {
       status,
-      unavailable: true,
-      answerLost: true,
+      code: "unreachable",
+      sent: true,
     });
+  }
+}
+
+/** How long a failure's body is waited for: it only words the error, so a stalled one is let go. */
+const FAILURE_BODY_WAIT_MS = 1_000;
+
+/** Cancels a reader, never waiting past the wait bound or `signal`: a cancel that never settles is let go. */
+async function releaseReader(
+  reader: { cancel(): Promise<void> },
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let release: () => void = () => undefined;
+  const letGo = new Promise<void>((resolve) => {
+    release = resolve;
+    timer = setTimeout(resolve, FAILURE_BODY_WAIT_MS);
+    if (signal?.aborted === true) resolve();
+    else signal?.addEventListener("abort", release, { once: true });
+  });
+  try {
+    await Promise.race([reader.cancel().catch(() => undefined), letGo]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", release);
+  }
+}
+
+/** A failure's body, read through a reader this owns: a stalled one is cancelled through it, which releases the stream. */
+async function failureBodyText(
+  res: Response,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  if (res.body === null) return "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let resolveStalled: (v: "stalled") => void = () => undefined;
+  const stop = () => resolveStalled("stalled");
+  const stalled = new Promise<"stalled">((resolve) => {
+    resolveStalled = resolve;
+    timer = setTimeout(stop, FAILURE_BODY_WAIT_MS);
+    if (signal?.aborted === true) stop();
+    else signal?.addEventListener("abort", stop, { once: true });
+  });
+  const drain = async (): Promise<"done"> => {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return "done";
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  };
+  const settled = drain();
+  try {
+    const outcome = await Promise.race([settled, stalled]);
+    if (outcome === "stalled") {
+      settled.catch(() => undefined);
+      await releaseReader(reader, signal);
+      return "";
+    }
+    return text + decoder.decode();
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
   }
 }
 
@@ -269,13 +365,14 @@ async function bodyText(
   what: string,
 ): Promise<string> {
   try {
-    return await res.text();
+    if (res.ok) return await res.text();
+    return await failureBodyText(res, signal);
   } catch (err) {
-    if (cancelled(signal)) throw abortedError(signal);
+    if (cancelled(signal)) throw abortedError(signal, true);
     if (!res.ok) return "";
     throw new JiraApiError(
       `Jira answer lost while reading the body on ${what}: ${err instanceof Error ? err.message : String(err)}`,
-      { unavailable: true, answerLost: true, status: res.status },
+      { code: "unreachable", sent: true, status: res.status },
     );
   }
 }
@@ -289,10 +386,10 @@ async function fileBytes(
   try {
     return new Uint8Array(await res.arrayBuffer());
   } catch (err) {
-    if (cancelled(signal)) throw abortedError(signal);
+    if (cancelled(signal)) throw abortedError(signal, true);
     throw new JiraApiError(
       `Jira answer lost while reading the file on ${what}: ${err instanceof Error ? err.message : String(err)}`,
-      { unavailable: true, answerLost: true, status: res.status },
+      { code: "unreachable", sent: true, status: res.status },
     );
   }
 }
@@ -303,12 +400,10 @@ function headerOf(
   signal: AbortSignal | undefined,
 ): string {
   if (!header.ok && header.failure.code === "token-command-unavailable")
-    throw new JiraApiError(header.failure.reason, { unavailable: true });
+    throw new JiraApiError(header.failure.reason, { code: "unreachable" });
   if (cancelled(signal)) throw abortedError(signal);
   if (!header.ok)
-    throw new JiraApiError(header.failure.reason, {
-      unavailable: header.failure.code === "token-command-unavailable",
-    });
+    throw new JiraApiError(header.failure.reason, { code: "unauthorized" });
   return header.value;
 }
 
@@ -323,33 +418,48 @@ async function send(
   try {
     return await fetchImpl(url, init);
   } catch (err) {
-    if (cancelled(signal)) throw abortedError(signal);
+    if (cancelled(signal)) throw abortedError(signal, true);
     throw new JiraApiError(
       `Jira API unreachable on ${what}: ${err instanceof Error ? err.message : String(err)}`,
-      { unavailable: true, answerLost: true },
+      { code: "unreachable", sent: true },
     );
   }
 }
 
-/** The transport never waits toward a reset its whole-call deadline cannot reach. */
-interface CallBudget {
-  governor: BudgetGovernor | undefined;
-  deadlineAt: number;
-}
-
+/** A 429 limits the credential in the budget until its reset, and ends the call: nothing is sent before then. */
 function observeLimit(
   response: Response,
   key: string,
   what: string,
-  budget: CallBudget,
+  governor: BudgetGovernor | undefined,
 ): TrackerRateLimited | null {
-  if (response.status !== 429 || budget.governor === undefined) return null;
+  if (response.status !== 429 || governor === undefined) return null;
   const until = limitedUntil(currentMs(), response.headers);
   const why = `Jira refused ${what} (HTTP 429)`;
-  budget.governor.observe(key, { limitedUntil: until, why });
-  return until >= budget.deadlineAt
-    ? new TrackerRateLimited("jira", until, why)
-    : null;
+  governor.observe(key, { limitedUntil: until, why });
+  return new TrackerRateLimited("jira", until, why);
+}
+
+/** The failure a response that took `tookMs` stands for, `null` for a success: what decides whether a read is sent again. */
+function responseFailure(
+  res: Response,
+  tookMs: number,
+): OutboundFailure | null {
+  const code = answerClass(res.status, tookMs);
+  return code === null
+    ? null
+    : outboundFailure(code, `Jira API HTTP ${res.status}`, {
+        retryAfterMs: retryAfterMs(res.headers),
+      });
+}
+
+/** One attempt's answer with its body, read inside the attempt. */
+interface Read {
+  res: Response;
+  text?: string;
+  bytes?: Uint8Array;
+  /** A successful answer's decoded body, read inside the attempt. */
+  data?: unknown;
 }
 
 /** Keep one call's leased credential and renewal separate from its read retries. */
@@ -359,7 +469,7 @@ function leasedSender(
   lease: JiraLease,
   bound: AbortSignal,
   fetchImpl: typeof fetch,
-  budget: CallBudget,
+  governor: BudgetGovernor | undefined,
 ): () => Promise<Response> {
   const what = `${request.method} ${request.path}`;
   const url = requestUrl(base, request);
@@ -367,7 +477,7 @@ function leasedSender(
   let header = headerOf(lease.header, bound);
   let key = keyOf(header);
   return async () => {
-    budget.governor?.admit("jira", key);
+    governor?.admit("jira", key);
     let res = await send(
       fetchImpl,
       url,
@@ -382,7 +492,7 @@ function leasedSender(
           await bodyText(res, bound, what);
           header = headerOf(renewed, bound);
           key = keyOf(header);
-          budget.governor?.admit("jira", key);
+          governor?.admit("jira", key);
           res = await send(
             fetchImpl,
             url,
@@ -396,7 +506,7 @@ function leasedSender(
         }
       }
     }
-    const refused = observeLimit(res, key, what, budget);
+    const refused = observeLimit(res, key, what, governor);
     if (refused !== null) {
       void discardBody(res, bound);
       throw refused;
@@ -407,8 +517,9 @@ function leasedSender(
 
 /**
  * HTTPS transport to `base`, the site or its API gateway address; each call
- * bounded as a whole by `JIRA_TIMEOUT_MS`. Idempotent reads retry 429/503
- * answers within that deadline, rechecking credential holds before each send.
+ * bounded as a whole by `JIRA_TIMEOUT_MS`. A read that met `unreachable` or
+ * `server-fault` is sent once more within that deadline, rechecking credential
+ * holds before it is sent; a 429 is never sent again before its reset.
  * A 401 renews the header once, when the
  * credential can be renewed, and sends the request again with it: a 401 is
  * refused before the request is acted on, so a write is not doubled. With
@@ -427,51 +538,88 @@ export function httpTransport(
   // Until one request succeeds, a 403 carries `firstRefusal`: a credential
   // the host does not take is refused on the first request.
   let answered = false;
+  const system = `jira:${new URL(base).host}`;
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
     const what = `${request.method} ${request.path}`;
     // One deadline for the whole call: the token command, the request, a
     // renewal and the request sent again all spend the same budget.
-    const budget = { governor, deadlineAt: currentMs() + JIRA_TIMEOUT_MS };
+    const deadlineAt = currentMs() + JIRA_TIMEOUT_MS;
     const deadline = AbortSignal.timeout(JIRA_TIMEOUT_MS);
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
     if (cancelled(signal)) throw abortedError(signal);
-    const res = await retryRead(
-      leasedSender(base, request, lease, bound, fetchImpl, budget),
-      request.method === "GET" || request.idempotent === true,
+    const sender = leasedSender(
+      base,
+      request,
+      lease,
+      bound,
+      fetchImpl,
+      governor,
+    );
+    let tookMs = 0;
+    // Once an attempt has begun, a cancellation may have cut a request that
+    // landed: `retryRead` throws the bare reason, which carries no marker.
+    let dispatched = false;
+    // The attempt reads and decodes the body too: a peer that drops the
+    // connection after its headers, or answers with no JSON, is `unreachable`
+    // inside the retry and the hold.
+    const timed = async (): Promise<Read> => {
+      const began = currentMs();
+      dispatched = true;
+      const response = await sender();
+      tookMs = currentMs() - began;
+      if (request.bytes === true && response.ok)
+        return { res: response, bytes: await fileBytes(response, bound, what) };
+      const text = await bodyText(response, bound, what);
+      return response.ok
+        ? { res: response, text, data: answerBody(text, response.status, what) }
+        : { res: response, text };
+    };
+    const failureOf = (answer: Read) => responseFailure(answer.res, tookMs);
+    const read = await guarded(
+      system,
+      () =>
+        retryRead(timed, {
+          read: request.method === "GET" || request.idempotent === true,
+          signal: bound,
+          deadlineAt,
+          failureOf,
+        }),
+      failureOf,
+      (failure) => {
+        throw new JiraApiError(failure.reason, { code: failure.code });
+      },
       bound,
     ).catch((err: unknown) => {
-      if (cancelled(signal)) throw abortedError(signal);
+      // A call cancelled once its request was dispatched keeps that fact: a
+      // write may have landed.
+      const sent = dispatched || (err instanceof JiraApiError && err.sent);
+      if (cancelled(signal)) throw abortedError(signal, sent);
+      if (cancelled(bound)) throw abortedError(bound, sent);
       throw err;
     });
-    if (request.bytes === true && res.ok) {
+    const res = read.res;
+    if (read.bytes !== undefined) {
       answered = true;
-      return fileBytes(res, bound, what);
+      return read.bytes;
     }
-    const text = await bodyText(res, bound, what);
-    if (res.status === 429 && governor !== undefined) {
-      const until = limitedUntil(currentMs(), res.headers);
-      throw new TrackerRateLimited(
-        "jira",
-        until,
-        `Jira refused ${what} (HTTP 429)`,
-      );
-    }
+    const text = read.text ?? "";
     if (!res.ok) {
-      const failure = httpFailure(res.status, res.headers, text, what);
+      const failure = httpFailure(res.status, res.headers, text, what, tookMs);
       if (res.status !== 403 || answered || firstRefusal === undefined)
         throw failure;
       throw new JiraApiError(`${failure.message} (${firstRefusal})`, {
         status: failure.status,
-        retryAfterSec: failure.retryAfterSec,
+        code: failure.code,
+        retryAfterMs: failure.retryAfterMs,
         errorMessages: failure.errorMessages,
         errors: failure.errors,
       });
     }
     answered = true;
-    return answerBody(text, res.status, what);
+    return read.data;
   };
 }
 
@@ -489,13 +637,15 @@ export function defaultTransport(
   if (!credential.ok) {
     const { reason } = credential.failure;
     return async () => {
-      throw new JiraApiError(`${reason}; ${JIRA_CREDENTIAL_HELP}`);
+      throw new JiraApiError(`${reason}; ${JIRA_CREDENTIAL_HELP}`, {
+        code: "unauthorized",
+      });
     };
   }
   const refusal = bearerOnSite(credential.value, base);
   if (refusal !== null)
     return async () => {
-      throw new JiraApiError(refusal);
+      throw new JiraApiError(refusal, { code: "unauthorized" });
     };
   const variable = bearerVariable(credential.value);
   return httpTransport(

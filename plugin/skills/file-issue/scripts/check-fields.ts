@@ -8,7 +8,7 @@
  * through the tracker interface.
  *
  * Usage:
- *     bun check-fields.ts [check] [--yes] [--json]
+ *     bun check-fields.ts [check] [--yes] [--json] [--position <file>]
  *     bun check-fields.ts move --target <file> --record <file> [--json]
  *     bun check-fields.ts move --record <file> [--copy | --retire] [--yes] [--json]
  *     bun check-fields.ts move --restore <file> [--yes] [--json]
@@ -18,8 +18,10 @@
  * facet kept elsewhere; with `--yes` it moves each one not yet started back
  * to triage with a comment naming what it lacks, at most 50 a run, and lists
  * the started ones without moving them; with `file_issue.sweep.move: false`
- * it comments on each one and moves none. It prints issue keys, never a
- * title or a body.
+ * it comments on each one and moves none, and with `--position <file>`
+ * keeps the read's position in that file, so each run resumes where the last
+ * one left off and a population past the read cap is reached in turn. It
+ * prints issue keys, never a title or a body.
  *
  * `move` previews by default and writes nothing without `--yes`. The preview
  * (`--target` with the `issue_tracker.facets` section the repository will
@@ -39,8 +41,9 @@
  * anything; 2 usage.
  */
 
-import { existsSync, realpathSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, basename, resolve } from "node:path";
+import { swallow } from "../../../shared/errors.ts";
 import { withFileLock } from "../../../shared/file-lock.ts";
 import { parseArgs } from "node:util";
 import { ExitError, fail, runMain } from "../../../shared/cli.ts";
@@ -78,12 +81,13 @@ import {
   storeName,
   withSection,
 } from "./lib/sections.ts";
+import { readPosition, writePosition } from "./lib/sweep-position.ts";
 import { sweepSettings } from "./lib/sweep-settings.ts";
-import { sweep, sweepLines } from "./lib/sweep.ts";
+import { type SweepReport, sweep, sweepLines } from "./lib/sweep.ts";
 import { currentIso } from "../../../shared/time.ts";
 
 const USAGE = `usage:
-  check-fields.ts [check] [--yes] [--json] [--retired-from <file>]
+  check-fields.ts [check] [--yes] [--json] [--retired-from <file>] [--position <file>]
   check-fields.ts move --target <file> --record <file> [--json]
   check-fields.ts move --record <file> [--copy | --retire] [--yes] [--json]
   check-fields.ts move --restore <file> [--yes] [--json]`;
@@ -97,6 +101,73 @@ function print(json: boolean, report: unknown, lines: string[]): void {
   console.log(json ? JSON.stringify(report, null, 2) : lines.join("\n"));
 }
 
+/**
+ * `file` with symlinks resolved through its nearest existing ancestor (and in
+ * itself when it exists), so aliases share one lock. It creates nothing and
+ * never throws: a path it cannot resolve stays as written, and the lock or the
+ * read that follows reports what is wrong with it.
+ */
+function canonicalPath(file: string): string {
+  const path = resolve(file);
+  const rest: string[] = [];
+  for (let at = path; ; at = dirname(at)) {
+    try {
+      return resolve(realpathSync(at), ...rest);
+    } catch (err) {
+      swallow(err, "an unresolvable path is used as written");
+    }
+    if (dirname(at) === at) return path;
+    rest.unshift(basename(at));
+  }
+}
+
+/** Milliseconds a run waits on a position's lock: long enough to reclaim a dead owner's, short enough to refuse a live one. */
+const POSITION_LOCK_WAIT_MS = 2000;
+
+/** The position `file` keeps for a comment-only sweep, and its save once the run applied; moving keeps none. */
+function keptPosition(
+  file: string | undefined,
+  move: boolean,
+):
+  | {
+      path: string;
+      from: { after: string | null };
+      save: (report: SweepReport) => string | null;
+    }
+  | undefined {
+  if (file === undefined) return undefined;
+  if (move) {
+    console.error(
+      "--position: file_issue.sweep.move is true, so a moved issue leaves the population and no read position is kept",
+    );
+    return undefined;
+  }
+  const path = canonicalPath(file);
+  const read = readPosition(path);
+  if (read.warning !== null) console.error(`warning: ${read.warning}`);
+  return {
+    path,
+    from: { after: read.after },
+    // The failure to save, so the report still prints.
+    save: (report) => {
+      // Only a run that read and could write moves the position.
+      if (
+        report.position === null ||
+        !report.apply ||
+        !report.read ||
+        report.storeProblem !== null
+      )
+        return null;
+      try {
+        writePosition(path, report.position.next);
+        return null;
+      } catch (err) {
+        return `the read position ${path} could not be saved (${(err as Error).message}); the next run starts from the position it read`;
+      }
+    },
+  };
+}
+
 async function check(argv: string[]): Promise<number> {
   const { values } = parseArgs({
     args: argv,
@@ -104,11 +175,56 @@ async function check(argv: string[]): Promise<number> {
       yes: { type: "boolean" },
       json: { type: "boolean" },
       "retired-from": { type: "string" },
+      position: { type: "string" },
     },
     strict: true,
   });
   const overlay = readOverlay();
   const settings = sweepSettings(overlay);
+  if (values.position === undefined || settings.move)
+    return checkRun(values, overlay, settings, values.position);
+  // Two runs sharing a position file would overwrite each other's progress.
+  const path = canonicalPath(values.position);
+  // A run that cannot make its lock directory stops: without the lock it
+  // could overwrite another run's progress. Only a failure before the run
+  // starts is a lock failure; the run's own errors reach main() unchanged.
+  let locked: Awaited<ReturnType<typeof withFileLock<number>>>;
+  let started = false;
+  try {
+    locked = await withFileLock(
+      path,
+      () => {
+        started = true;
+        return checkRun(values, overlay, settings, path);
+      },
+      {
+        root: dirname(path),
+        name: "sweep-position",
+        waitMs: POSITION_LOCK_WAIT_MS,
+      },
+    );
+  } catch (err) {
+    if (started || err instanceof ExitError) throw err;
+    return fail(
+      1,
+      `the read position ${path} cannot be locked (${(err as Error).message}); give --position a file in a directory this run can write`,
+    );
+  }
+  if (locked === null)
+    return fail(
+      1,
+      "another run holds this read position; wait for it to finish",
+    );
+  return locked.value;
+}
+
+async function checkRun(
+  values: { yes?: boolean; json?: boolean; "retired-from"?: string },
+  overlay: ReturnType<typeof readOverlay>,
+  settings: ReturnType<typeof sweepSettings>,
+  positionFile: string | undefined,
+): Promise<number> {
+  const position = keptPosition(positionFile, settings.move);
   const config = trackerConfigFrom(overlay);
   const root = consumerRoot();
   const tracker = openTracker(config, root);
@@ -126,8 +242,14 @@ async function check(argv: string[]): Promise<number> {
     retired: (stores) => retiredLabels(overlay, config, root, stores, former),
     writer: pacedWriter(),
     progress: (line) => console.error(line),
+    ...(position === undefined ? {} : { position: position.from }),
   });
+  const saveFailure = position?.save(report) ?? null;
   print(values.json === true, report, sweepLines(report));
+  if (saveFailure !== null) {
+    console.error(`check-fields: ${saveFailure}`);
+    return 1;
+  }
   if (report.stopped !== null) return 1;
   // A store problem fails a run asked to move, or one that could read nothing.
   if (report.storeProblem !== null && (report.apply || !report.read)) return 1;

@@ -257,6 +257,10 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
     ...(receipt.logCopyFailed === undefined
       ? []
       : [`outcome log: ${receipt.logCopyFailed}`]),
+    ...(receipt.unanswered ?? []).map(
+      (u) =>
+        `${u.system} did not answer (${u.class}), so it was not asked again this tick: ${u.reason}`,
+    ),
     ...receipt.repos.flatMap((r) => [...repoLines(r, receipt.apply), ""]),
     ...(receipt.defect === undefined
       ? []

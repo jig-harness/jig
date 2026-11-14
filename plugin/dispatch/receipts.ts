@@ -88,6 +88,8 @@ export interface TickReceipt {
   lineFailed?: string;
   /** The repositories another tick held the observe lock of, so this tick neither read nor acted on them. */
   busy?: { path: string; heldBy: string }[];
+  /** The outside systems that did not answer in this tick, so no further request went to them in it; the next tick probes each once before it reads on. */
+  unanswered?: { system: string; class: string; reason: string }[];
   /** The forge's budget as the tick started, when it was low enough that the optional reads (thread samples, serialization's reads) were skipped. */
   lowBudget?: { remaining: number; limit: number; skipped: string[] };
   /** The host's gauges as the act phase read them, the load factor, each kind's reservation and the launches the load factor held or would hold (`lib/load.ts`); absent from a tick with no machine file. */

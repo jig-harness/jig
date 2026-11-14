@@ -132,12 +132,17 @@ describe("the pass arguments", () => {
     );
   });
 
-  it("ignores drive.pass_args for a pass command that is not Claude Code's, and says so", async () => {
+  it("ignores drive.pass_args and drive.codex_pass_args for a pass command of another tool, and says so", async () => {
     const r = await dryRun(["sh", "-c", ": pass for 999"], [], SETTING);
     expect(wouldRun(r.stderr)).toBe("sh -c : pass for 999");
     expect(r.stderr).toContain(
-      "drive.pass_args applies to a Claude Code pass command, and 'sh' ignores it",
+      "drive.pass_args applies to a Claude Code pass command and drive.codex_pass_args to a Codex one, and 'sh' ignores both",
     );
+    const codex = await dryRun(["sh", "-c", ": pass for 999"], [], {
+      JIG__DRIVE__CODEX_PASS_ARGS: "[--dangerously-bypass-hook-trust]",
+    });
+    expect(wouldRun(codex.stderr)).toBe("sh -c : pass for 999");
+    expect(codex.stderr).toContain("'sh' ignores both");
     const flag = await dryRun(
       ["sh", "-c", ": pass for 999"],
       ["--pass-args", BYPASS.join(" ")],
@@ -241,6 +246,20 @@ describe("the pass arguments", () => {
     // Without the printed flag the setting would apply again.
     const bare = await dryRun(printed.agent, [], SETTING);
     expect(wouldRun(bare.stderr)).toContain("--permission-mode");
+  });
+
+  it("prints a re-arm command for a Codex pass that pins its empty list, and one that carries drive.codex_pass_args's words", async () => {
+    const codex = ["codex", "exec", "/jig:drive-pr 999"];
+    const empty = await parkedRearm(codex, {});
+    expect(empty.flags).toEqual(["--pass-args", ""]);
+    const words = await parkedRearm(codex, {
+      JIG__DRIVE__CODEX_PASS_ARGS: "[--dangerously-bypass-hook-trust]",
+    });
+    expect(words.flags).toEqual([]);
+    expect(words.agent.slice(-2)).toEqual([
+      "--dangerously-bypass-hook-trust",
+      "/jig:drive-pr 999",
+    ]);
   });
 
   it("refuses a --pass-args value that is another driver flag", async () => {

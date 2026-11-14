@@ -6,6 +6,7 @@
  * them again under the act lock, and builds the apply state from that read.
  */
 import type { ApplyState } from "./actions/drive.ts";
+import { enforcedDeadlineMs } from "./actions/launch.ts";
 import { actionBook, type ActionBook } from "./failures.ts";
 import { failureSettings } from "./machine-config.ts";
 import { stateRoot } from "../receipts.ts";
@@ -58,6 +59,18 @@ export interface TickContext {
   failuresSettled?: boolean;
   /** The exit status the tick's failure row was last settled for. */
   tickSettledExit?: number;
+}
+
+/** The launcher's deadline, leaving time for the tick to write its receipt. */
+export function tickDeadline(context: TickContext): { deadline?: number } {
+  const machine = context.options.machine;
+  if (machine == null) return {};
+  return {
+    deadline:
+      context.startedMs +
+      enforcedDeadlineMs(machine) -
+      machine.runtimeTimeoutMs,
+  };
 }
 
 /**

@@ -625,6 +625,10 @@ export function gitHubTracker(client: Client): Tracker {
   const tracker: CoreTracker = {
     adapter: "github",
     team: slug(home),
+    instance:
+      process.env.JIG_GITHUB_GRAPHQL_URL?.trim() ||
+      process.env.GH_HOST?.trim() ||
+      "github.com",
     readinessKey: JSON.stringify([
       ctx.board?.url ?? null,
       ctx.board?.statusField ?? null,

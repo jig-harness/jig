@@ -146,14 +146,25 @@ function report(snapshot: LedgerSnapshot): void {
 }
 
 /**
- * The cross-clone half of `--take-over`, decided before any lock is taken
- * when no driver of this clone holds the drive. `null` when the ledger names
- * no running driver in another clone, which leaves nothing to take over.
+ * What the drive ledger says of `--take-over` when no driver of this clone
+ * holds the drive's lock: a takeover of another clone's driver, admitted;
+ * this clone's own driver still named `running`, in this working tree or
+ * another (it released its locks as it ended, without writing its stop);
+ * or no running driver at all.
  */
-export async function admitCrossCloneTakeover(
+export type LedgerTakeover =
+  | { kind: "cross-clone"; plan: TakeoverPlan }
+  | { kind: "this-tree" | "other-tree"; actor: string }
+  | { kind: "none" };
+
+/**
+ * The ledger's half of `--take-over`, decided before any lock is taken when
+ * no driver of this clone holds the drive (`LedgerTakeover`).
+ */
+export async function ledgerTakeover(
   pr: string,
   id: LedgerIdentity,
-): Promise<TakeoverPlan | null> {
+): Promise<LedgerTakeover> {
   const snapshot = await readLedgerSnapshot(pr, id.login);
   if (typeof snapshot === "string")
     return fail(
@@ -161,7 +172,13 @@ export async function admitCrossCloneTakeover(
       `drive.ts --take-over: PR #${pr}'s drive ledger: ${snapshot}; refusing to take over blind.`,
     );
   const ledger = readLedger(pr, snapshot);
-  if (ledger === null || !otherCloneDriving(ledger, id)) return null;
+  if (ledger === null || ledger.driver.state !== "running")
+    return { kind: "none" };
+  if (!otherCloneDriving(ledger, id))
+    return {
+      kind: ledger.driver.actor === id.actor ? "this-tree" : "other-tree",
+      actor: ledger.driver.actor,
+    };
   const age = heartbeatAgeMs(ledger, currentMs());
   const window = stallThresholdMs();
   if (age <= window)
@@ -174,12 +191,15 @@ export async function admitCrossCloneTakeover(
     `drive.ts --take-over: PR #${pr}'s ledger heartbeat from another clone (${ledger.driver.actor}) is ${minutes(age)} minute(s) old, past the ${minutes(window)}-minute lease window; claiming the drive.`,
   );
   return {
-    verdict: "STALE",
-    fromActor: ledger.driver.actor,
-    fromAccount: null,
-    holderStarted: null,
-    held: heldFromLedger(ledger.held).held,
-    crossClone: true,
+    kind: "cross-clone",
+    plan: {
+      verdict: "STALE",
+      fromActor: ledger.driver.actor,
+      fromAccount: null,
+      holderStarted: null,
+      held: heldFromLedger(ledger.held).held,
+      crossClone: true,
+    },
   };
 }
 

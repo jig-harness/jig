@@ -8,6 +8,7 @@
  */
 
 import { renameWithRetry } from "../../../../shared/rename-with-retry.ts";
+import { markDisposable } from "../../../../shared/disposable-mark.ts";
 import {
   linkSync,
   lstatSync,
@@ -239,6 +240,8 @@ export function captureIntentChain(input: CaptureInput): CaptureResult {
   const tmp = `${pin}.tmp-${process.pid}`;
   try {
     mkdirSync(chainDir, { recursive: true });
+    // The chain is working state, like the writer's: tag it for a collector.
+    markDisposable(chainDir);
     writeFileSync(tmp, pickup.text, { mode: 0o600 });
     if (input.refresh) {
       withFileLock(pinLock(pin), () => renameWithRetry(tmp, pin));

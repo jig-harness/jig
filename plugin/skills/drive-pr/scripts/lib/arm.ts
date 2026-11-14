@@ -15,7 +15,8 @@
  * The pass command is the session's own agent tool's documented one
  * (`pass-command.ts`): Claude Code's in a Claude Code session, Codex's in a
  * Codex session, with the bypass only on a host that set
- * `drive.codex_bypass`. Both use a tab where available, otherwise the
+ * `drive.codex_bypass`. Each carries the extra arguments of its own tool
+ * (`pass-args.ts`): Claude Code's before `-p`, Codex's before the prompt. Both use a tab where available, otherwise the
  * session's managed background execution. A session of any other tool,
  * or one no harness can be read for, prints Claude Code's command only: a guessed one for another agent
  * tool is worse than one left for a person to run.
@@ -119,8 +120,8 @@ export function commandLine(
 /**
  * The pass command `vendor` runs on `model`: Claude Code's with `passArgs`
  * before its `-p`; Codex's with `-m` after `exec` (none when `model` is
- * `null`, so Codex's own configuration decides) and the bypass when
- * `codexBypass` says the host opted in.
+ * `null`, so Codex's own configuration decides), the bypass when
+ * `codexBypass` says the host opted in, and `passArgs` before the prompt.
  */
 function passArgv(
   vendor: AccountVendor,
@@ -129,7 +130,7 @@ function passArgv(
   passArgs: readonly string[],
   codexBypass: boolean,
 ): string[] {
-  const pass = passCommand(vendor, pr, codexBypass);
+  const pass = passCommand(vendor, pr, codexBypass, passArgs);
   if (vendor === "codex")
     return model === null ? pass : withCodexModel(pass, model);
   const [claude, ...prompt] = pass;
@@ -144,7 +145,8 @@ function passArgv(
 /**
  * The argument list that starts the drive: `drive.ts` in the tree, its pass
  * (`vendor`'s documented pass command) on `model`, with `passArgs` before a
- * Claude Code pass's `-p` and, on a host that opted in, a Codex pass's bypass.
+ * Claude Code pass's `-p` or a Codex pass's prompt and, on a host that opted
+ * in, a Codex pass's bypass.
  */
 export function driveArgv(
   request: ArmRequest,
@@ -456,7 +458,7 @@ export interface ArmReport {
   /** `null` when the pass command's tool decides (a Codex pass with no model configured). */
   model: string | null;
   modelSource: string;
-  /** The extra words the pass command carries before `-p`, and their source. */
+  /** The extra words the pass command carries before Claude Code's `-p` or Codex's prompt, and their source. */
   passArgs: string[];
   passArgsSource: string;
   /** The permission mode the pass runs in (`pass-args.ts`). */
@@ -501,7 +503,9 @@ export function failedReport(
       : driveArgv(known, model.model, passArgs.words, vendor, codexBypass);
   const permission =
     vendor === "codex"
-      ? codexPermission(passArgv(vendor, request.pr, null, [], codexBypass))
+      ? codexPermission(
+          passArgv(vendor, request.pr, null, passArgs.words, codexBypass),
+        )
       : permissionMode(["claude", ...passArgs.words]);
   return {
     pr: request.pr,

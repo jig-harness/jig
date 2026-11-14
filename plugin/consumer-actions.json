@@ -21,6 +21,28 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.232.0",
+      "actions": [
+        {
+          "id": "0.232.0#6456c423",
+          "strength": "advised",
+          "levels": ["instructions"],
+          "description": "`tracker.ts` exits with one code per class: `5` for a spent rate limit, as before, with its `RATE-LIMITED until <time>` line, then `6` unreachable, `7` too costly, `8` server fault, `9` unauthorized, `10` not found and `11` invalid, the class named at the start of the error line. A failure no call to the tracker caused still exits `1`. [do-item's tracker operations](plugin/skills/do-item/SKILL.md#tracker-operations) list them.",
+          "instruction": "A runbook or script that reads `tracker.ts`'s exit `1` as every failure reads `6` to `11` as failures too.",
+          "hints": []
+        },
+        {
+          "id": "0.232.0#0e71f9bf",
+          "strength": "required",
+          "levels": ["machine"],
+          "description": "**Codex: the turn-budget hook is registered by `jig upgrade`, not shipped by the plugin.** Codex re-reviews a plugin's hooks whenever any file of the plugin changes, and skips them until it is approved again. The Codex plugin now ships none. `jig upgrade` adds one `PreToolUse` entry to `$CODEX_HOME/hooks.json` (`~/.codex` by default) whose command never changes and runs the installed plugin copy's guard, so approving it once with `/hooks` stands across releases. After this release, approve the guard once in each Codex home; until then it does not run there. Run `jig upgrade --codex` with `CODEX_HOME` set to give another home the entry. `jig uninstall --machine --yes` removes it. Claude Code is unchanged.",
+          "instruction": "Run `jig upgrade --codex` and approve the guard with `/hooks` in every Codex home that runs unattended passes.",
+          "hints": []
+        }
+      ],
+      "retracts": []
     }
   ]
 }

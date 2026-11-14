@@ -9,6 +9,7 @@ import { stateDb } from "./state.ts";
 import type { Action, DrivenPr } from "./types.ts";
 import type { FailureRow } from "./failures.ts";
 import type { LineLoad } from "./dashboard-contract.ts";
+import type { StewardTargetEvidence } from "./steward-evidence.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
 
 export const STEWARD_DEADLINE_SEC = 900;
@@ -48,6 +49,10 @@ export interface StewardDigest {
   failures: FailureRow[];
   load: LineLoad | null;
   history?: unknown[];
+  /** Facts read for this digest, never authority for applying a record. */
+  targets?: StewardTargetEvidence[];
+  /** Current targets are always first; only this many additional historical targets are read. */
+  targetHistoryLimit?: number;
 }
 export interface StewardRun {
   id: string;
@@ -133,6 +138,9 @@ export function digestHash(digest: StewardDigest): string {
       a.identifier.localeCompare(b.identifier),
     ),
     passes: [...stable.passes].sort((a, b) => a.record.localeCompare(b.record)),
+    targets: stable.targets?.toSorted((a, b) =>
+      a.target.localeCompare(b.target),
+    ),
     failures: [...stable.failures].sort((a, b) => a.key.localeCompare(b.key)),
     history: [...(stable.history ?? [])].sort((a, b) =>
       JSON.stringify(a).localeCompare(JSON.stringify(b)),
@@ -271,6 +279,104 @@ export function keepStewardRun(
       "INSERT INTO steward_runs (id, repo, hash, at_ms, digest) VALUES (?, ?, ?, ?, ?)",
     )
     .run(id, digest.repo, digestHash(digest), at, JSON.stringify(digest));
+}
+/**
+ * Erase the output-bearing fields (each target's last-pass tail and each
+ * pass's quoted question context) from digests older than the retention,
+ * in step with launch pruning. The rest of the digest stays.
+ */
+export function eraseStewardOutput(
+  nowMs: number,
+  days: number,
+  root = stateRoot(),
+): number {
+  const db = stateDb(root);
+  const rows = db
+    .query(
+      "SELECT id, digest FROM steward_runs WHERE erased = 0 AND at_ms <= ? ORDER BY at_ms LIMIT 200",
+    )
+    .all(nowMs - days * 86_400_000) as Array<{ id: string; digest: string }>;
+  let erased = 0;
+  for (const row of rows) {
+    const next = erasedOutput(row.digest);
+    db.query("UPDATE steward_runs SET digest = ?, erased = 1 WHERE id = ?").run(
+      next ?? row.digest,
+      row.id,
+    );
+    if (next !== null) erased++;
+  }
+  return erased;
+}
+
+/** Empty each target's last-pass tail; whether any held one. */
+function erasedTails(targets: unknown): boolean {
+  let changed = false;
+  for (const t of Array.isArray(targets) ? targets : []) {
+    const out =
+      isMapping(t) && isMapping(t.lastPass) ? t.lastPass.output : null;
+    if (!isMapping(out) || out.tail === "") continue;
+    out.tail = "";
+    out.unavailable = "erased after the retention period";
+    changed = true;
+  }
+  return changed;
+}
+
+/** Null each pass's `said` and `question`; whether any held one. */
+function erasedPassFields(passes: unknown): boolean {
+  let changed = false;
+  for (const p of Array.isArray(passes) ? passes : [])
+    for (const field of ["said", "question"])
+      if (isMapping(p) && p[field] !== null && p[field] !== undefined) {
+        p[field] = null;
+        changed = true;
+      }
+  return changed;
+}
+
+/**
+ * Whether every structure that can hold output has the shape the erasers
+ * walk, so a malformed one is tombstoned rather than left with its text.
+ */
+function outputFieldsReadable(digest: unknown): boolean {
+  if (!isMapping(digest)) return false;
+  const { targets, passes } = digest;
+  if (targets !== undefined && !Array.isArray(targets)) return false;
+  if (!Array.isArray(passes) || !passes.every(isMapping)) return false;
+  return (targets ?? []).every((t: unknown) => {
+    if (!isMapping(t)) return false;
+    const last = t.lastPass;
+    if (last === undefined || last === null) return true;
+    return (
+      isMapping(last) &&
+      (last.output === undefined ||
+        last.output === null ||
+        isMapping(last.output))
+    );
+  });
+}
+
+/** What an expired digest that does not parse is replaced with: its text is unclassified, so none of it stays. */
+const UNREADABLE_TOMBSTONE = JSON.stringify({
+  erased: "unreadable digest removed after the retention period",
+});
+
+/**
+ * The digest text without its output, the tombstone when it does not parse
+ * as a digest, or `null` when it holds no output.
+ */
+function erasedOutput(text: string): string | null {
+  const parsed = attempt("unreadable", "the steward digest does not read", () =>
+    JSON.parse(text),
+  );
+  if (!parsed.ok) return UNREADABLE_TOMBSTONE;
+  const digest: unknown = parsed.value;
+  if (!isStewardDigest(digest) || !outputFieldsReadable(digest))
+    return UNREADABLE_TOMBSTONE;
+  const erasedTargets = erasedTails(digest.targets);
+  const erasedPasses = erasedPassFields(digest.passes);
+  const changed = erasedTargets || erasedPasses;
+  return changed ? JSON.stringify(digest) : null;
 }
 export function readStewardDigest(
   id: string,

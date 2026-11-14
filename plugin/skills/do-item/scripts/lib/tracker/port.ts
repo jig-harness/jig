@@ -15,6 +15,8 @@
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
+import type { DispatchSource } from "./dispatch-source.ts";
+export type { DispatchRawIssue, DispatchSource } from "./dispatch-source.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
 
 /**
@@ -417,14 +419,11 @@ export interface IncompleteQuery {
   missing: Facet[];
   /** Labels a facet's store has retired; an issue carrying one is listed too. */
   retired: string[];
-  /** The cursor a previous page returned; absent for the first page. */
+  /** A page's or an issue's cursor, which reads on after it; absent for the first page. */
   after?: string | null;
   /** The most issues one page holds, 1 to 100. */
   limit: number;
-  /**
-   * List the open issues already started instead of those not yet started:
-   * the sweep reads one such page, to list them without moving them.
-   */
+  /** List the started open issues instead, which the sweep lists without moving them. */
   started?: boolean;
 }
 
@@ -437,6 +436,8 @@ export interface IncompleteIssue {
   missing: Facet[];
   /** The retired labels it carries. */
   retired: string[];
+  /** The cursor that reads on after this issue, kept by the sweep between runs. */
+  cursor: string;
 }
 
 /**
@@ -652,6 +653,8 @@ export interface ChangeQuery {
   /** An ISO 8601 time: issues updated after it count. */
   since: string;
   identity: string;
+  /** All people sharing this scope probe, when dispatch groups its queues. */
+  identities?: ReadonlyArray<string>;
   keys: ReadonlyArray<string>;
 }
 
@@ -675,6 +678,8 @@ export interface TrackerLabel {
  * `blocked-port.ts`.
  */
 export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
+  /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
+  readonly dispatchSource?: DispatchSource;
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
   /**

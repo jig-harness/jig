@@ -29,8 +29,15 @@ import {
   LAUNCH_VETO,
 } from "./worktree-guard.ts";
 import {
+  markingSince,
+  type Archived,
+  type ArchivePolicy,
+  type LegacyPolicy,
+} from "../legacy-archive.ts";
+import {
   canonicalWorktree,
   orcaLiveness,
+  preserveLegacyContent,
   runtimeWorktreeProof,
   worktreePolicy,
   worktreeProof,
@@ -43,6 +50,8 @@ import { currentMs } from "../../shared/time.ts";
 const ORCA_REMOVE_TIMEOUT_SEC = 300;
 /** The time a removal through Orca may take: the remove hook, the park and the removal. */
 const ORCA_REMOVAL_LIMIT_MS = 30 * 60_000;
+/** The time the one-time archive of a worktree's ignored content may take. */
+const ARCHIVE_LIMIT_MS = 5 * 60_000;
 
 function within(path: string, root: string): boolean {
   const rel = relative(root, path);
@@ -282,8 +291,10 @@ async function collectThroughOrca(
   orcaWorktree: { id: string; launched: () => string | null },
   repository: string,
   declaration: string,
+  legacy: LegacyPolicy | undefined,
 ): Promise<Collected> {
   const { id, launched } = orcaWorktree;
+  let archived: Archived | null = null;
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
@@ -317,31 +328,55 @@ async function collectThroughOrca(
         // The hook may run for minutes: Orca can start an agent meanwhile, and
         // the hook can leave a process in the checkout that outlives it.
         admit: async (worktree) => {
-          const live = await orcaLiveness(command, worktree);
-          if (live !== null)
-            return failed("live", `kept after the hook: ${live.reason}`);
-          // Read after the registry and after gc's admission: a launch the
-          // plugin let through meanwhile left its marker first.
-          const launch = launched();
-          if (launch !== null)
-            return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
-          if ((await processHolder(worktree)) !== false)
-            return failed(
-              "held",
-              "kept after the hook: a process holds the worktree, or holders could not be read",
-            );
+          const checks = async (): Promise<Outcome<undefined, string>> => {
+            const live = await orcaLiveness(command, worktree);
+            if (live !== null)
+              return failed("live", `kept after the hook: ${live.reason}`);
+            // Read after the registry and after gc's admission: a launch the
+            // plugin let through meanwhile left its marker first.
+            const launch = launched();
+            if (launch !== null)
+              return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
+            if ((await processHolder(worktree)) !== false)
+              return failed(
+                "held",
+                "kept after the hook: a process holds the worktree, or holders could not be read",
+              );
+            return ok(undefined);
+          };
+          const before = await checks();
+          if (!before.ok) return before;
+          // Last, so the archive holds the content as the removal finds it.
+          const preserved = await preserveLegacyContent(
+            worktree,
+            legacy,
+            currentMs() + ARCHIVE_LIMIT_MS,
+          );
+          if (!preserved.ok) return preserved;
+          // Named on every failure from here on.
+          archived = preserved.value;
+          // The archive may have run for minutes: an agent or process can
+          // have started meanwhile, so what removal relies on is read again.
+          const after = await checks();
+          if (!after.ok) return after;
           return ok(undefined);
         },
       },
     });
-    if (!removed.ok) return failure(removed);
+    // An archive written before a step that then failed stays, named in the
+    // receipt, and expires with the receipts.
+    if (!removed.ok)
+      return archived === null
+        ? failure(removed)
+        : { ...failure(removed), details: { archive: archived } };
     return {
       outcome: "collected",
-      reason: `removed through Orca: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings, orca worktree rm`,
+      reason: `removed through Orca: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} orca worktree rm`,
       details: {
         ...(isMapping(resource.details) ? resource.details : {}),
         hook: removed.value.hook,
         parked: true,
+        ...(archived === null ? {} : { archive: archived }),
       },
     };
   } catch (error) {
@@ -349,11 +384,43 @@ async function collectThroughOrca(
     return {
       outcome: "failed",
       reason: error instanceof Error ? error.message : String(error),
+      ...(archived === null ? {} : { details: { archive: archived } }),
     };
   } finally {
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
+}
+/** What the receipt's reason says of an archive written before removal. */
+function archiveNote(archived: Archived | null): string {
+  return archived === null
+    ? ""
+    : ` archived ${archived.paths.length} ignored path(s), ${archived.bytes} bytes, to ${archived.path},`;
+}
+/**
+ * The archive policy with the instant marking began on this host, read once
+ * per run; undefined, so nothing is archived, without a policy or when the
+ * instant cannot be read or recorded.
+ */
+function legacyPolicy(
+  archive: ArchivePolicy | undefined,
+): () => LegacyPolicy | undefined {
+  let read: { value: LegacyPolicy | undefined } | undefined;
+  return () => {
+    if (read === undefined) {
+      // Stamped even while archiving is off, so enabling it later does not
+      // date the worktrees made meanwhile as older than marking.
+      const since =
+        archive === undefined ? undefined : markingSince(archive.root);
+      read = {
+        value:
+          archive !== undefined && archive.maxBytes > 0 && since?.ok
+            ? { ...archive, since: since.value }
+            : undefined,
+      };
+    }
+    return read.value;
+  };
 }
 export function worktreesKind(
   repository: string,
@@ -362,12 +429,16 @@ export function worktreesKind(
   idleDays = 7,
   policy?: WorktreePolicy,
   orca?: string,
+  archive?: ArchivePolicy,
 ): CollectionKind {
+  const legacy = legacyPolicy(archive);
   return {
     name: "worktrees",
     repository,
     declaration,
     inventory: async () => {
+      // The marking boundary is this run's, whether or not a worktree reaches proof.
+      legacy();
       const output = await git(repository, [
         "worktree",
         "list",
@@ -428,12 +499,13 @@ export function worktreesKind(
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
         return { state: "unverified", reason: resolved.failure.reason };
+      const proving = { ...resolved.value, legacy: legacy() };
       const proved =
         orca !== undefined && orcaId(resource) !== null
-          ? await runtimeWorktreeProof(resource.id, resolved.value, idleDays, {
+          ? await runtimeWorktreeProof(resource.id, proving, idleDays, {
               orca,
             })
-          : await worktreeProof(resource.id, resolved.value, idleDays);
+          : await worktreeProof(resource.id, proving, idleDays);
       return proved.ok
         ? proved.value
         : { state: "unverified", reason: proved.failure.reason };
@@ -448,6 +520,7 @@ export function worktreesKind(
             { id, launched },
             repository,
             declaration,
+            legacy(),
           ),
         );
       return {

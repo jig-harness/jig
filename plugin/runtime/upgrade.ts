@@ -22,6 +22,7 @@ import { swallow } from "../shared/errors.ts";
 import { decodeJson, isRecord } from "../shared/guards.ts";
 import { failed as failure, ok, type Outcome } from "../shared/outcome.ts";
 import { run } from "../shared/proc.ts";
+import { refreshCodexHook } from "./codex-hook.ts";
 import type { Component } from "./component.ts";
 import {
   type Channel,
@@ -34,6 +35,7 @@ import {
   type Say,
   upgradeHarnesses,
 } from "./harness.ts";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { installedEntry } from "./launcher.ts";
 import {
   type Announce,
@@ -140,6 +142,31 @@ async function updatedPrograms(
 }
 
 /**
+ * `refresh` and then the turn-budget hook's entry in the Codex home
+ * (`codex-hook.ts`), which this copy of the plugin writes beside the jobs.
+ */
+async function withCodexHook(
+  refresh: Promise<RefreshResult[]>,
+): Promise<RefreshResult[]> {
+  const jobs = await refresh;
+  try {
+    return [
+      ...jobs,
+      await exclusiveInstallLock(async () => refreshCodexHook()),
+    ];
+  } catch (error) {
+    return [
+      ...jobs,
+      {
+        target: "codex turn-budget hook",
+        outcome: "failed",
+        detail: (error as Error).message,
+      },
+    ];
+  }
+}
+
+/**
  * The refresh, by the plugin copy a harness names now: in this process when
  * that is this copy, otherwise by running it.
  */
@@ -155,9 +182,11 @@ export async function refreshFromInstalled(
   }
   const scheduled = options.scheduled === true;
   return entry === realpathSync(options.script)
-    ? refreshInstalled(options.components, announcer(options.say), {
-        scheduled,
-      })
+    ? withCodexHook(
+        refreshInstalled(options.components, announcer(options.say), {
+          scheduled,
+        }),
+      )
     : refreshByRunning(entry, options.say, scheduled);
 }
 
@@ -204,9 +233,11 @@ async function upgrade(options: UpgradeOptions): Promise<UpgradeResult> {
   if (options.request === null)
     return {
       harnesses: [],
-      jobs: await refreshInstalled(options.components, announcer(options.say), {
-        scheduled: options.scheduled === true,
-      }),
+      jobs: await withCodexHook(
+        refreshInstalled(options.components, announcer(options.say), {
+          scheduled: options.scheduled === true,
+        }),
+      ),
     };
   const harnesses = upgradeHarnesses(options.request, options.say);
   return { harnesses, jobs: await refreshFromInstalled(options, harnesses) };
