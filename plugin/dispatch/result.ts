@@ -113,7 +113,8 @@ export function refusedResultMain(
   return 0;
 }
 
-function sameToken(a: string, b: string): boolean {
+/** Whether two tokens are the same, compared in constant time. */
+export function sameToken(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);

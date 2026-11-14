@@ -1220,6 +1220,7 @@ jig dispatch result <record> <token> done|failed  # a session's or a follow-up p
 jig dispatch result <record> <token> waits --until <time>  # a pickup or follow-up a rate limit stopped
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
+jig dispatch report <record> <token> <file>       # a pass's closing report (dispatched-sessions.md)
 ```
 
 A tick without `--apply` prints every action it would take, each with the

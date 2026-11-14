@@ -93,7 +93,8 @@ jig dispatch marker done "$PR" --comment "$MARKER"
 Marking it done also sets the pull request's `followed-up` state label
 where the repository turns the state labels on. A session the dispatcher
 started records its result with the `jig dispatch result` command its
-prompt names instead. A run that stops short leaves its marker as it is,
+prompt names instead, and, as its last act, its closing report with the
+`jig dispatch report` command the prompt names. A run that stops short leaves its marker as it is,
 and says so with
 `jig dispatch marker failed "$PR" --comment "$MARKER"`, which sets the
 `followup-failed` state label: the label is where the failure shows, and the

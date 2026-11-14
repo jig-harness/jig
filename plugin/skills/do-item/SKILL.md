@@ -1855,7 +1855,8 @@ the factory identity, or an unassigned one from the repository's ready pool
 followed by the line
 `route: rules`, with nobody at the keyboard and nobody to answer while it
 runs. Its prompt says so, and names the `jig dispatch result` commands that
-record how it ended. In such a pass:
+record how it ended and the `jig dispatch report` command for its closing
+report. In such a pass:
 
 - **The route reaches the implementer, not this session**: forward it as
   [Step 4a item 1](#step-4a-standard-start-no-sub-issues) says.
@@ -1911,6 +1912,15 @@ record how it ended. In such a pass:
   default), after which the wrapper stops it: open the pull request and arm
   its drive as soon as the work allows, and record the result before
   anything long-running that follows.
+- **Write the closing report last.** Record the result as soon as the
+  pull request's drive is armed and go on; when the pass is done, write
+  its closing report, a `closing-report/v1` record of the shape the prompt
+  gives (what the run concluded, the next step and who takes it, the
+  question and its framed decision when a person must decide, why it fell
+  short when it did, and references as evidence, never contents), to a
+  file, and record it with the `jig dispatch report` command the prompt
+  names. When the command refuses the report, fix what it names and run it
+  again; the last report it takes stands, and it never changes the result.
 
 ## Error handling
 
