@@ -70,7 +70,9 @@ read through the tracker interface, registered in
 [RECORDS.md](../plugin/RECORDS.md) as `tracker-footprint`:
 
 ```text
-<!-- jig:footprint {"kind":"tracker-footprint","v":1,"key":"#123","writer":{…},"at":"2026-11-14T17:30:00.000Z","source":"scout","base":"<commit>","paths":["plugin/dispatch/lib/load.ts","plugin/dispatch/lib/sources/"],"areas":["dispatch"]} -->
+<!-- jig:footprint
+{"kind":"tracker-footprint","v":1,"key":"#123","writer":{…},"at":"2026-11-14T17:30:00.000Z","source":"scout","base":"<commit>","paths":["plugin/dispatch/lib/load.ts","plugin/dispatch/lib/sources/"],"areas":["dispatch"]}
+-->
 Predicted footprint (scout, at <commit>): 2 paths in area dispatch.
 ```
 
@@ -163,8 +165,10 @@ The tick already reads changed files for the pull requests in a
 listing limit). This design widens that read to every open pull request of
 the repository, through the forge's governed transport (item 55):
 
-- **Reuse.** A pull request's files are kept under its head commit, so a
-  pull request whose head did not move costs nothing; the same reading
+- **Reuse.** A pull request's files are kept under its head commit and its
+  comparison base (the base branch's name and commit, as the listing
+  reports them), so a pull request whose head and base did not move costs
+  nothing; a retarget or a base that moved is read again. The same reading
   serves serialization and overlap.
 - **Admit and bound.** Each page asks the shared budget record. Pages of
   100 files, at most 3,000 files a pull request (the forge's own listing
@@ -211,13 +215,20 @@ never both start as if neither existed.
   rate. A directory or an area in either footprint that holds a file or
   directory of the other is one unit for the whole match, however many
   files it covers, at `dispatch.overlap.area_rate` (0.2), since it is the
-  weaker prediction. So a coarse footprint never weighs more than a precise
-  one that names the same files.
+  weaker prediction. Units do not overlap: a match is counted once, at its
+  most precise form. A directory or an area whose match holds a file match
+  adds nothing beyond that file; the coarse matches that hold no file match
+  are one unit together, so adding redundant paths or areas to a footprint
+  never changes the cost. A coarse footprint can weigh more than a precise
+  one that names the same files, when those files rarely conflict: that is
+  the price of not knowing which files the work will change.
 - **`rate(p)`** is the share of the merged pull requests that changed `p`
   in the window and met a conflict before they merged, once at least 5
-  merged pull requests changed it. A merged pull request is one commit on
-  the integration branch's first-parent history (a squash, a rebase merge
-  or a merge commit) and the files that commit changed; it met a conflict
+  merged pull requests changed it. A merged pull request is one entry of the forge's list of merged pull
+  requests, with the files it changed, the union over its commits (a rebase
+  merge puts several first-parent commits on the integration branch, and
+  they are one pull request). A first-parent commit the forge maps to no
+  merged pull request is unknown. It met a conflict
   when the merge replay or a live conflict record names it, and merged
   cleanly when the replay reached its head and found none, as M11's
   conflict metric sorts them
@@ -256,7 +267,11 @@ goes to tier 3 when starting it would put more than
 per-epic width's default) that change one of its files. Only file matches
 count: an area or a directory names no file. Patience does not move a
 tier 3 candidate forward; a slot reaches it only when no candidate of tiers
-1 and 2 can take it. A value of `0` turns the bound off.
+1 and 2 can take it. So that it cannot wait forever behind a stream of
+other candidates, a candidate that has waited in tier 3 longer than
+`dispatch.overlap.bound_patience` (24 hours) is ordered as tier 2, ahead of
+the later candidates of that tier, and may start past the bound once a slot
+is free. A value of `0` turns the bound off.
 
 The bound replaces the per-epic width: it applies across all work, inside
 an epic, across epics, across served people, the ready pool and the
@@ -281,8 +296,13 @@ before either:
 - **A conflict edge** that an epic's execution plan sets between two steps.
 - **A serialized area** of the change-area catalog. Today it holds only the
   drives of the pull requests in the area. It also holds a pickup whose
-  footprint names a file of the area while another piece of work in flight
-  touches the area, reported as `held: serialized behind #N in <area>`.
+  footprint reaches the area while another piece of work in flight touches
+  the area, reported as `held: serialized behind #N in <area>`. A footprint
+  reaches the area when a file of it lies in the area, or when a directory
+  or an area of it holds, or is held by, a glob of the area: the hold
+  reads the coarse match conservatively. A footprint that is unknown is not
+  a proven non-match: the pickup is not held for it, and the report says
+  `serialized: footprint unknown`.
 - **A person's hold** (`jig:hold`, `hitl`).
 
 ### Merge evidence for a plan's conflict edges
@@ -298,8 +318,11 @@ integration branch, and changing at least one of the edge's
 directly, through the forge's transport, rather than from its listing of
 recent merges, which reaches back only to the day the follow-up stage was
 turned on and is absent where it is off. A verified merge does not change,
-so it is kept once read, in the state database's merge reads
-(`dispatch-merge-read`). Evidence that does not read, or is ambiguous (two
+so the pull request's merged state and files are kept once read, in the
+state database's merge reads (`dispatch-merge-read`). Whether that merge
+releases the edge is not kept: each tick it checks the predecessor's
+current linked pull requests again, so a pull request opened for the
+predecessor after the merge holds the edge. Evidence that does not read, or is ambiguous (two
 linked pull requests, one still open), keeps the edge held and says which.
 
 ### Validation capacity
@@ -325,7 +348,8 @@ record, `resource-lock-sample`: the lock's name, the worktree the run held
 it from, when it asked, how long it waited and how long it held, the newest
 kept for 7 days. From them the tick reads:
 
-- **Run time**: the 90th percentile of how long one run held the lock.
+- **Run time**: the 90th percentile of how long one run held the lock; 15
+  minutes until there are samples.
 - **Runs at once**: the median number of runs that held the lock together
   while another waited. Before any run has waited, the most runs that held
   it together; with no samples at all, 1. The lock admits by load, so the
@@ -334,16 +358,20 @@ kept for 7 days. From them the tick reads:
   made, from the samples whose worktree is a pass's workspace; 1 until a
   kind has samples.
 - **Time to validation**: for each kind, the median time from a pass's
-  launch to its first run's request.
+  launch to its first run's request; one hour until a kind has samples.
 
-**The runs ahead.** Two kinds of work are ahead of a new pass:
+The defaults are positive, so the gauge is never unread on a new host or
+once the retention window empties the samples; the receipt names a figure
+that is a default.
+
+**The runs ahead.** Ahead of a new pass are:
 
 - **At the lock now**: the runs holding or waiting on it, the dispatcher's
   and anyone else's (a person's run, another tool's).
 - **Still to arrive**: each pickup or drive pass in flight that has not yet
   made its kind's runs per pass since its launch, counted by the runs it
-  still has to make. A pass whose workspace holds or waits on the lock now
-  is counted at the lock, not here. Follow-ups and the steward do not run
+  still has to make, less the one run its workspace holds or waits on at the
+  lock now, which is counted at the lock. Follow-ups and the steward do not run
   the test stage.
 
 **The measure.** A new pass reaches the lock after its kind's time to
@@ -388,7 +416,7 @@ rather than on average; the gauge does not depend on it.
 ### Where the settings live
 
 The `dispatch.overlap` keys (`max_per_file`, `patience`, `file_rate`,
-`area_rate`, `unknown_cost`, `ignore`, `quiet_after`) are a section of the
+`area_rate`, `unknown_cost`, `ignore`, `quiet_after`, `bound_patience`) are a section of the
 repository's `dispatch` configuration, read from the default branch as the
 rest of that section is, so a pull request cannot loosen its own admission:
 which files collide, and how often, is the repository's. The `validation`

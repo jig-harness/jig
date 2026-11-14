@@ -295,9 +295,10 @@ admission. The steps are filed once the
 design merges.
 
 Done when, on a dispatch host over a week with `load.enforce` on: no pass
-times out waiting for the test lock; every item that waits names overlap,
-the overlap bound, validation capacity or a declared hold with the work it
-waits on; the per-epic width key is gone; and the share of merged pull
+times out waiting for the test lock; every item that waits names its reason: overlap, the overlap
+bound, a declared hold or serialized area with the work it waits on, or
+validation capacity or another capacity or account wait of the load
+factor; the per-epic width key is gone; and the share of merged pull
 requests that met a conflict, from M11's metric, is no higher than in the
 week before overlap admission.
 
