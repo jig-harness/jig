@@ -835,17 +835,21 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   ): Promise<PoolIssue[]>;
   /**
    * Who made the assignment of `assignee` (default: the issue's current
-   * assignee) to the issue, from the tracker's history. Throws with the
-   * reason when the history cannot be read in full or holds no such
-   * assignment, so an unknown assigner is never read as a trusted one.
-   * An adapter that can tell the history's definite answer that no user
-   * made the assignment (it holds no assignment of `assignee`, or one made
-   * by an integration or an automation) throws `AssignerUnknown` for it,
-   * which a caller may keep until the issue changes; any other throw is a
-   * read to try again. Linear classifies this way; the GitHub and Jira
-   * adapters throw their API errors for it.
+   * assignee) to the issue, from the tracker's history. Throws with the reason
+   * when the history cannot be read in full or holds no such assignment, so an
+   * unknown assigner is never read as a trusted one. An adapter that can tell
+   * the history's definite answer that no user made the assignment (it holds no
+   * assignment of `assignee`, or one made by an integration or an automation)
+   * throws `AssignerUnknown` for it, which a caller may keep until the issue
+   * changes; any other throw is a read to try again. Linear classifies this
+   * way; the GitHub and Jira adapters throw their API errors for it. An aborted
+   * `signal` ends the read.
    */
-  assignedBy(key: string, assignee?: string): Promise<Assigner>;
+  assignedBy(
+    key: string,
+    assignee?: string,
+    signal?: AbortSignal,
+  ): Promise<Assigner>;
   /**
    * This team's open issues assigned to nobody in one of `states`, inside
    * the tracker's pool scope (`issue_tracker.jira.pool_issue_types` on
@@ -858,22 +862,21 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   ): Promise<PoolIssue[]>;
   /**
    * Who made the issue's latest move into the state it is in now, from the
-   * tracker's history; the issue's creator when the history holds no move
-   * into it, since the issue was then created there. Throws with the reason
-   * when the history cannot be read in full, or the state is one whose
-   * moves the tracker does not record, so an unknown mover is never read as
-   * a trusted one. Optional, beside `unassignedIssues`.
+   * tracker's history; the issue's creator when the history holds no move into
+   * it, since the issue was then created there. Throws with the reason when the
+   * history cannot be read in full, or the state is one whose moves the tracker
+   * does not record, so an unknown mover is never read as a trusted one.
+   * Optional, beside `unassignedIssues`. An aborted `signal` ends the read.
    */
-  stateChangedBy?(key: string): Promise<Assigner>;
+  stateChangedBy?(key: string, signal?: AbortSignal): Promise<Assigner>;
   /**
-   * One page of this team's open issues not in triage and not yet started
-   * that lack a value for a facet of `missing` (no size asked of an epic) or
-   * carry a `retired` label, oldest first, with the cursor of the next page
-   * and the counts over every open issue outside triage. The one read that
-   * returns part of a population on purpose: a started issue is never
-   * listed, unless `started` asks for the started ones alone. Throws on an
-   * unknown facet, a facet the repository has no store for, or a `limit`
-   * outside 1 to 100.
+   * One page of this team's open issues not in triage and not yet started that
+   * lack a value for a facet of `missing` (no size asked of an epic) or carry a
+   * `retired` label, oldest first, with the cursor of the next page and the
+   * counts over every open issue outside triage. The one read that returns part
+   * of a population on purpose: a started issue is never listed, unless
+   * `started` asks for the started ones alone. Throws on an unknown facet, a
+   * facet the repository has no store for, or a `limit` outside 1 to 100.
    */
   incompleteIssues(
     query: IncompleteQuery,

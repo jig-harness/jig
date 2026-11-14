@@ -22,7 +22,7 @@ import { actObserved } from "./tick-apply.ts";
 import {
   allRecords,
   emptyReport,
-  tickDeadline,
+  tickBound,
   type TickContext,
 } from "./tick-context.ts";
 import { projectObserved } from "./tick-labels.ts";
@@ -90,6 +90,7 @@ export async function observeOpenedTurn(
 ): Promise<Observed> {
   const { turn, opened } = prepared;
   const { path, timer } = turn;
+  const bound = tickBound(context);
   const observation = await observeRepo(
     opened,
     {
@@ -98,7 +99,7 @@ export async function observeOpenedTurn(
       nowMs: context.nowMs,
       records: allRecords(context),
       reads: context.reads,
-      ...tickDeadline(context),
+      ...(bound === undefined ? {} : { bound }),
     },
     timer,
   );
@@ -112,6 +113,7 @@ export async function observeOpenedTurn(
             forge.login,
             context.reads.comments,
             opened.report,
+            bound,
           ),
         )
       : [];

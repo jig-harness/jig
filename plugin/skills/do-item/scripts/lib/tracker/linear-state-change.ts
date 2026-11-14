@@ -73,10 +73,10 @@ export function stateChangeOperations(opts: {
   team: string;
   transport: LinearTransport;
   pageAll: AssignedOptions["pageAll"];
-}): { stateChangedBy(key: string): Promise<Assigner> } {
+}): { stateChangedBy(key: string, signal?: AbortSignal): Promise<Assigner> } {
   const { team, transport, pageAll } = opts;
   return {
-    async stateChangedBy(key) {
+    async stateChangedBy(key, signal) {
       let issue: Record<string, unknown> | null = null;
       const nodes = await pageAll(
         transport,
@@ -87,6 +87,7 @@ export function stateChangeOperations(opts: {
           return issue.history;
         },
         `history of ${key}`,
+        signal,
       );
       const read = field(issue, `issue ${key}`);
       const state = field(read.state, `issue ${key}.state`);

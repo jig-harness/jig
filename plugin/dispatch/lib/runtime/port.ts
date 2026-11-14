@@ -182,10 +182,11 @@ export interface NoticesTarget {
 /** Whether a runtime can start an interactive session billed to a chosen account. */
 export type Binding = { ok: true } | { ok: false; reason: string };
 
-/** A runtime's answer to which workspaces and sessions one repository has. */
+/** A runtime's answer to which workspaces and sessions one repository has; an aborted `signal` ends the read as `sessions`' does. */
 export type SessionsReader = (
   repo: RepoTarget,
   join: JoinTargets,
+  signal?: AbortSignal,
 ) => Promise<SessionsReport>;
 
 export interface SessionRuntime {
@@ -201,8 +202,15 @@ export interface SessionRuntime {
    * The workspaces of `repo` with their agents, joined to items and pull
    * requests; `ok: false` when the answer cannot be trusted whole (a host
    * not covered, a page cut short), so nothing is read as "no session".
+   * An aborted `signal` starts no further call and answers `ok: false`
+   * at once; a runtime that cannot stop a call in flight lets it run to
+   * its own deadline unread.
    */
-  sessions(repo: RepoTarget, join: JoinTargets): Promise<SessionsReport>;
+  sessions(
+    repo: RepoTarget,
+    join: JoinTargets,
+    signal?: AbortSignal,
+  ): Promise<SessionsReport>;
   /**
    * A reader of `sessions` for one tick's observe phases: what the runtime
    * lists host-wide is read at most once for the reader's life, and each

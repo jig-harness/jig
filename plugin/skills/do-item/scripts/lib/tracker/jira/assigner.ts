@@ -23,6 +23,7 @@ async function wantedAccount(
   client: Client,
   issue: JiraIssue,
   assignee: string | undefined,
+  signal?: AbortSignal,
 ): Promise<string> {
   const current = issue.assignee;
   if (current === null)
@@ -30,7 +31,7 @@ async function wantedAccount(
   const who =
     assignee === undefined
       ? current.accountId
-      : await client.accountId(assignee);
+      : await client.accountId(assignee, signal);
   if (current.accountId !== who)
     throw new JiraApiError(
       `issue ${issue.key} is no longer assigned to ${assignee ?? who}`,
@@ -43,8 +44,9 @@ async function latestAssigner(
   client: Client,
   key: string,
   who: string,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown> | null> {
-  const latest = (await client.changelog(key))
+  const latest = (await client.changelog(key, signal))
     .filter((e) =>
       e.items.some((i) => i.fieldId === "assignee" && i.to === who),
     )
@@ -76,10 +78,13 @@ export function assignerOperations(
   client: Client,
 ): Pick<Tracker, "assignedBy"> {
   return {
-    async assignedBy(key, assignee) {
-      const issue = await client.mustIssue(key);
-      const who = await wantedAccount(client, issue, assignee);
-      return authorOf(client, await latestAssigner(client, issue.key, who));
+    async assignedBy(key, assignee, signal) {
+      const issue = await client.mustIssue(key, signal);
+      const who = await wantedAccount(client, issue, assignee, signal);
+      return authorOf(
+        client,
+        await latestAssigner(client, issue.key, who, signal),
+      );
     },
   };
 }

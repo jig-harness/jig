@@ -250,10 +250,10 @@ export function stateChangeOperations(
   }
 
   return {
-    async stateChangedBy(key) {
+    async stateChangedBy(key, signal) {
       const ref = client.ref(key);
       refuseForeign(client, ref, key);
-      const found = await client.issue(ref);
+      const found = await client.issue(ref, "", signal);
       if (found === null)
         throw new GitHubApiError(`issue ${key} does not exist`);
       const { issue } = found;
@@ -266,11 +266,15 @@ export function stateChangeOperations(
       }) as OpenState;
       const name = model.stateName(state) ?? state;
       const data = record(
-        await client.transport(MOVES(ctx.board !== null), {
-          owner: ref.owner,
-          name: ref.name,
-          number: ref.number,
-        }),
+        await client.transport(
+          MOVES(ctx.board !== null),
+          {
+            owner: ref.owner,
+            name: ref.name,
+            number: ref.number,
+          },
+          signal,
+        ),
         "data",
       );
       const read = record(
@@ -314,7 +318,7 @@ export function stateChangeOperations(
       return {
         id: latest.actor,
         name: latest.actor,
-        trusted: await canWrite(client, latest.actor),
+        trusted: await canWrite(client, latest.actor, signal),
       } satisfies Assigner;
     },
   };

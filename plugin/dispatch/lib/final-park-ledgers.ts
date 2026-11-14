@@ -2,16 +2,21 @@
 import { snapshotFromListing } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { readLine } from "./line-store.ts";
 import { ledgerParks, type FinalParks } from "./park-events.ts";
+import { ended, passedBefore, type TickBound } from "./sources/bounded.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { RepoReport } from "./types.ts";
 
-/** A successful read retires its held parks; a failed read leaves them for the next tick. */
+/**
+ * A successful read retires its held parks; a failed read leaves them for
+ * the next tick, as does one the tick's bound ended before it began.
+ */
 export async function finalParkLedgers(
   slug: string,
   open: readonly { number: number }[],
   login: string | null,
   comments: TickComments,
   report: RepoReport,
+  bound?: TickBound,
 ): Promise<FinalParks[]> {
   const before = readLine();
   if (!before.ok || before.value === null) return [];
@@ -23,6 +28,15 @@ export async function finalParkLedgers(
         .map((p) => p.pr),
     ),
   ];
+  if (prs.length > 0 && ended(bound)) {
+    report.records.push({
+      record: "forge",
+      source: `gh ${slug}`,
+      ok: false,
+      detail: `${passedBefore("the final drive ledgers were read")}; their parks stay held for the next tick`,
+    });
+    return [];
+  }
   const readings = await Promise.all(
     prs.map(async (number) => {
       const listing = await comments.read(slug, number);

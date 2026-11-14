@@ -11,6 +11,7 @@ import { isRateLimited } from "../../../shared/tracker-budget.ts";
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { PickupReads } from "../pickup-reads.ts";
 import { failureText } from "../text.ts";
+import { ended, passedBefore, type TickBound, within } from "./bounded.ts";
 import type { ClaimedItem, Unplaced } from "../types.ts";
 import { trackerScope } from "./served-reads.ts";
 
@@ -41,13 +42,14 @@ function keptMark(
  * The claimed items, each one a trusted claim marker naming `identity` is on marked `found`,
  * and each whose comments could not be read marked `unread` with a row
  * saying so. After the tracker's rate limit, the rest are not read and are
- * `unread` too.
+ * `unread` too, as are those `tick`, the tick's bound, ended before.
  */
 export async function markClaims(
   tracker: Tracker,
   identity: string,
   items: ClaimedItem[],
   cache: PickupReads,
+  tick?: TickBound,
 ): Promise<{ claimed: ClaimedItem[]; unplaced: Unplaced[] }> {
   const unplaced: Unplaced[] = [];
   const claimed: ClaimedItem[] = [];
@@ -70,9 +72,12 @@ export async function markClaims(
     if (kept !== undefined) mark(item, kept);
     else if (limited)
       unread(item, "the tracker's rate limit stopped an earlier read", false);
+    else if (ended(tick))
+      unread(item, passedBefore("its comments were read"), false);
     else
       try {
-        const found = await marked(tracker, item.key, identity);
+        const asked = marked(tracker, item.key, identity);
+        const found = await (tick === undefined ? asked : within(asked, tick));
         if (item.updatedAt !== undefined)
           cache.set(key, { updatedAt: item.updatedAt, marked: found });
         mark(item, found);

@@ -178,6 +178,17 @@ function notRead(reason: string, pending: number[], ms = 0): BoardRead {
   };
 }
 
+/** The board read a tick did not start, with why: its converged pull requests pending. */
+export function unstartedBoard(
+  drives: BoardInput["drives"],
+  reason: string,
+): BoardRead {
+  return notRead(
+    reason,
+    convergedDrives(drives).map((d) => d.number),
+  );
+}
+
 /** Read the board's facts, then once more those whose head moved or whose mergeability is not computed yet, within the deadline. */
 async function readFacts(
   input: BoardInput,

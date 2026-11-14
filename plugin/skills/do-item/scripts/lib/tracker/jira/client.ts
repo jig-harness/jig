@@ -128,8 +128,8 @@ export interface Client {
   ): Promise<JiraIssue[]>;
   /** Every comment on an issue, oldest first. */
   comments(key: string, signal?: AbortSignal): Promise<JiraComment[]>;
-  /** Every changelog entry of an issue. */
-  changelog(key: string): Promise<ChangelogEntry[]>;
+  /** Every changelog entry of an issue; an aborted `signal` ends the read and the pages not yet read. */
+  changelog(key: string, signal?: AbortSignal): Promise<ChangelogEntry[]>;
   /** A fix version of the project by its name; its id. */
   version(name: string, signal?: AbortSignal): Promise<string>;
   /** A priority by its name; its id. */
@@ -739,11 +739,12 @@ export function jiraClient(opts: ClientOptions): Client {
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
 
-    async changelog(key) {
+    async changelog(key, signal) {
+      const log = `changelog of ${key}`;
       const values = await offsetPages(
         transport,
         { method: "GET", path: `issue/${encodeURIComponent(key)}/changelog` },
-        { items: "values", idOf: (v) => v.id, where: `changelog of ${key}` },
+        { items: "values", idOf: (v) => v.id, where: log, signal },
       );
       return values.map((v, i) => {
         const where = `changelog of ${key}[${i}]`;

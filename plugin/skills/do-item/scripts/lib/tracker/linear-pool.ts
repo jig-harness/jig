@@ -319,7 +319,7 @@ export function assignedOperations(
         signal,
       ),
 
-    async assignedBy(key, assignee) {
+    async assignedBy(key, assignee, signal) {
       let current: unknown = null;
       const nodes = await pageAll(
         transport,
@@ -331,6 +331,7 @@ export function assignedOperations(
           return issue.history;
         },
         `history of ${key}`,
+        signal,
       );
       const who = assignee ?? (isRecord(current) ? current.id : undefined);
       if (typeof who !== "string")
