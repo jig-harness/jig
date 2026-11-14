@@ -63,6 +63,7 @@ async function latestAssigner(
 export async function authorOf(
   client: Client,
   author: Record<string, unknown> | null,
+  signal?: AbortSignal,
 ): Promise<Assigner> {
   if (author === null || typeof author.accountId !== "string")
     return { id: "", name: "a deleted account", trusted: false };
@@ -70,7 +71,7 @@ export async function authorOf(
   return {
     id: author.accountId,
     name: name || author.accountId,
-    trusted: await client.trusted(author),
+    trusted: await client.trusted(author, signal),
   };
 }
 
@@ -84,6 +85,7 @@ export function assignerOperations(
       return authorOf(
         client,
         await latestAssigner(client, issue.key, who, signal),
+        signal,
       );
     },
   };

@@ -2,7 +2,12 @@
 import { snapshotFromListing } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { readLine } from "./line-store.ts";
 import { ledgerParks, type FinalParks } from "./park-events.ts";
-import { ended, passedBefore, type TickBound } from "./sources/bounded.ts";
+import {
+  CUT_AT_BOUND,
+  ended,
+  passedBefore,
+  type TickBound,
+} from "./sources/bounded.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { RepoReport } from "./types.ts";
 
@@ -34,6 +39,7 @@ export async function finalParkLedgers(
       source: `gh ${slug}`,
       ok: false,
       detail: `${passedBefore("the final drive ledgers were read")}; their parks stay held for the next tick`,
+      failure: CUT_AT_BOUND,
     });
     return [];
   }

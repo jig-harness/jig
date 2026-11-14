@@ -281,6 +281,7 @@ describe("the runtime's read under the tick's bound", () => {
       ok: false,
       source: "fake",
       reason: `${PASSED} the runtime was read`,
+      failure: { class: "unreachable" },
     });
   });
 
@@ -293,6 +294,7 @@ describe("the runtime's read under the tick's bound", () => {
       ok: false,
       source: "fake",
       reason: "the runtime could not be read: stopped at the tick's deadline",
+      failure: { class: "unreachable" },
     });
   });
 

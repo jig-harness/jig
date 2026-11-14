@@ -28,6 +28,12 @@ import {
 } from "./launches.ts";
 import { isProbedWall, type ProbedWall } from "./quota-probe.ts";
 import { type SessionsReport, WAITING_STATES } from "./runtime/port.ts";
+import {
+  ended,
+  passedBefore,
+  type TickBound,
+  within,
+} from "./sources/bounded.ts";
 import { stateDb } from "./state.ts";
 import { failureText } from "./text.ts";
 import { type Wall, writeWall } from "./walls.ts";
@@ -105,13 +111,15 @@ export async function observeWalls(
   sessions: SessionsReport,
   timeoutSec: number,
   root?: string,
+  bound?: TickBound,
 ): Promise<string[]> {
   const failures: string[] = [];
   for (const r of records) {
     if (r.record.repo !== repo) continue;
     const cwd = waitingSession(r, sessions);
     if (cwd === null) continue;
-    const found = await probe(r, cwd, timeoutSec);
+    // A probe is neither started nor awaited past the tick's bound.
+    const found = await probeHeldTo(r, cwd, timeoutSec, bound);
     if (typeof found === "string") {
       failures.push(`launch record ${r.record.id}: ${found}`);
       // Without a successful read this tick cannot say the wall is still the
@@ -122,6 +130,23 @@ export async function observeWalls(
     keepEpisode(r, found, root);
   }
   return failures;
+}
+
+/** `probe`, or why the tick's bound kept it from reading. */
+async function probeHeldTo(
+  r: ReadRecord,
+  cwd: string,
+  timeoutSec: number,
+  bound: TickBound | undefined,
+): Promise<Awaited<ReturnType<typeof probe>>> {
+  if (bound === undefined) return probe(r, cwd, timeoutSec);
+  if (ended(bound)) return passedBefore("its wall was read");
+  try {
+    return await within(probe(r, cwd, timeoutSec), bound);
+  } catch (error) {
+    if (!bound.signal.aborted) throw error;
+    return `the tick's deadline passed during its wall's read`;
+  }
 }
 
 /** The session went on past its last wall, never met one, or could not be read this tick: its latest episode is not known to be its last record. */

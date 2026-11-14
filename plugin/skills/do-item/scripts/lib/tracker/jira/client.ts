@@ -183,10 +183,17 @@ export interface Client {
    * An aborted `signal` ends the request in flight and the pages not yet read.
    */
   accountId(identity: string, signal?: AbortSignal): Promise<string>;
-  /** Whether the account can be assigned issues in the project; cached. */
-  assignable(accountId: string): Promise<boolean>;
-  /** Whether a user (a comment author, an assigner) is trusted. */
-  trusted(user: Record<string, unknown> | null): Promise<boolean>;
+  /**
+   * Whether the account can be assigned issues in the project; cached. The
+   * cached lookup is shared and runs on: an aborted `signal` ends only this
+   * caller's wait, and starts no new lookup.
+   */
+  assignable(accountId: string, signal?: AbortSignal): Promise<boolean>;
+  /** Whether a user (a comment author, an assigner) is trusted; `signal` bounds this caller's wait as `assignable` does. */
+  trusted(
+    user: Record<string, unknown> | null,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
 }
@@ -206,6 +213,17 @@ function allowedOf(meta: unknown): string[] | null {
   return meta.allowedValues.flatMap((v) => {
     const name = isRecord(v) ? (v.value ?? v.name) : v;
     return typeof name === "string" ? [name] : [];
+  });
+}
+
+/** `pending`, or the rejection `signal`'s abort gives; `pending` itself runs on for its other callers. */
+function waitFor<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(signal.reason);
+    signal.addEventListener("abort", stop, { once: true });
+    pending.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", stop);
+    });
   });
 }
 
@@ -951,7 +969,8 @@ export function jiraClient(opts: ClientOptions): Client {
         : searchAccount(get, who, signal);
     },
 
-    assignable(accountId) {
+    assignable(accountId, signal) {
+      signal?.throwIfAborted();
       let found = assignables.get(accountId);
       if (found === undefined) {
         found = (async () => {
@@ -969,13 +988,13 @@ export function jiraClient(opts: ClientOptions): Client {
         found.catch(() => assignables.delete(accountId));
         assignables.set(accountId, found);
       }
-      return found;
+      return signal === undefined ? found : waitFor(found, signal);
     },
 
-    async trusted(user) {
+    async trusted(user, signal) {
       if (user === null || typeof user.accountId !== "string") return false;
       if (user.accountType !== "atlassian" || user.guest === true) return false;
-      return client.assignable(user.accountId);
+      return client.assignable(user.accountId, signal);
     },
 
     timeZone() {

@@ -44,7 +44,7 @@ import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { PrLinkText } from "./work-links.ts";
-import { type TickBound, unlessEnded } from "./sources/bounded.ts";
+import { heldRead, type TickBound } from "./sources/bounded.ts";
 import { PAGE } from "./forge-batch.ts";
 import type { CommentsOutcome, RepositoryOutcome } from "./tick-reads.ts";
 import { failureText } from "./text.ts";
@@ -168,7 +168,7 @@ export async function readForge(
     const open = queried.ok
       ? listedOpen(queried.value.open, read)
       : await reads.pool.run(() =>
-          unlessEnded(reads.bound, "the pull requests were listed", () =>
+          heldRead(reads.bound, "the pull requests were listed", () =>
             openPullRequests(repo.slug, read),
           ),
         );
@@ -207,10 +207,8 @@ export async function readForge(
       section.followupCommand === null
         ? null
         : await reads.pool.run(() =>
-            unlessEnded(
-              reads.bound,
-              "the merged pull requests were listed",
-              () => mergedSince(repo.slug, since, read),
+            heldRead(reads.bound, "the merged pull requests were listed", () =>
+              mergedSince(repo.slug, since, read),
             ),
           );
     if (merges !== null && !merges.ok) {

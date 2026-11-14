@@ -56,6 +56,7 @@ export function stateChangeOperations(
         latest === undefined
           ? await creatorOf(client, issue.key, signal)
           : latest.author,
+        signal,
       );
     },
   };

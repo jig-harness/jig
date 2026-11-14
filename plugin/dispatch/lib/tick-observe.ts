@@ -87,11 +87,15 @@ import { batchSafePickups } from "./queue-batch-areas.ts";
 import { slotTable } from "./accounts.ts";
 import type { ServedPerson } from "./serve-config.ts";
 import {
+  CUT_AT_BOUND,
+  cutRead,
   ended,
+  heldRead,
   heldTo,
   passedBefore,
   passedRead,
   type TickBound,
+  within,
 } from "./sources/bounded.ts";
 import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
@@ -112,7 +116,11 @@ import {
   type Outcome,
 } from "../../shared/outcome.ts";
 import { clearsByWaiting } from "../../shared/outbound/failure.ts";
-import { lastForgeReading, readFailureOf } from "./read-failures.ts";
+import {
+  lastForgeReading,
+  readFailureOf,
+  readFailureOfError,
+} from "./read-failures.ts";
 import type {
   ClaimedItem,
   DispatchSection,
@@ -219,7 +227,11 @@ export async function openRepo(
   try {
     target = queried.ok
       ? ok(queried.value.target)
-      : await pool.run(() => repoTarget(path));
+      : await pool.run(() =>
+          heldRead(context.bound, "this repository was identified", () =>
+            repoTarget(path),
+          ),
+        );
   } catch (error) {
     target = failed("unreadable", failureText(error), error);
   }
@@ -245,7 +257,11 @@ export async function openRepo(
   try {
     config = queried.ok
       ? ok(queried.value.config)
-      : await pool.run(() => defaultBranchConfig(repo));
+      : await pool.run(() =>
+          heldRead(context.bound, "its dispatch section was read", () =>
+            defaultBranchConfig(repo),
+          ),
+        );
   } catch (error) {
     return unread(failureText(error));
   }
@@ -429,6 +445,7 @@ export async function observeRepo(
         sessions,
         forge.created,
         threads,
+        context.bound,
       );
       return observeContention(
         repo,
@@ -453,15 +470,17 @@ export async function observeRepo(
         ? Promise.resolve(
             unstartedBoard(forge.drives, passedBefore("the board was read")),
           )
-        : observeBoard({
-            slug: repo.slug,
-            values,
-            drives: forge.drives,
-            open: forge.open,
-            held,
-            serialized,
-            budget: reads.budget,
-          }),
+        : boardHeldTo(context.bound, forge.drives, () =>
+            observeBoard({
+              slug: repo.slug,
+              values,
+              drives: forge.drives,
+              open: forge.open,
+              held,
+              serialized,
+              budget: reads.budget,
+            }),
+          ),
     ),
   );
   if (board.ok || convergedDrives(forge.drives).length > 0)
@@ -470,19 +489,14 @@ export async function observeRepo(
   const holders = forge.drives.some((d) => d.class === "silent")
     ? await timer.time("observe", () =>
         pool.run(() =>
-          ended(context.bound)
-            ? Promise.resolve(
-                failed(
-                  "unreadable",
-                  passedBefore("the clone's drive doctor ran"),
-                ),
-              )
-            : readHolders(
-                repo.path,
-                Math.ceil(
-                  (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
-                ),
+          heldRead(context.bound, "the clone's drive doctor ran", () =>
+            readHolders(
+              repo.path,
+              Math.ceil(
+                (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
               ),
+            ),
+          ),
         ),
       )
     : undefined;
@@ -502,6 +516,21 @@ export async function observeRepo(
     board,
     ...(holders === undefined ? {} : { holders }),
   };
+}
+
+/** The board `read` makes, or the unread board when the tick's bound ends while it runs. */
+async function boardHeldTo(
+  bound: TickBound | undefined,
+  drives: Parameters<typeof unstartedBoard>[0],
+  read: () => Promise<BoardRead>,
+): Promise<BoardRead> {
+  if (bound === undefined) return read();
+  try {
+    return await within(read(), bound);
+  } catch (error) {
+    if (!bound.signal.aborted) throw error;
+    return unstartedBoard(drives, cutRead("the board was read").failure.reason);
+  }
 }
 
 /** Why the optional reads are skipped this tick, from the forge's budget as it started or the tick's bound; `null` while they run. */
@@ -532,6 +561,9 @@ function runtimeRead(
         ? `${sessions.workspaces.length} workspace(s) of ${repo.slug}`
         : sessions.reason
     }`,
+    ...(!sessions.ok && sessions.failure !== undefined
+      ? { failure: sessions.failure }
+      : {}),
   };
 }
 
@@ -569,6 +601,7 @@ async function observeRunning(
   sessions: SessionsReport,
   created: ReadonlyMap<number, string>,
   threads: (pr: number) => Promise<Outcome<number>>,
+  bound?: TickBound,
 ): Promise<void> {
   const { records } = launches;
   if (launches.sample) await sampleThreads(records, repo.slug, drives, threads);
@@ -579,6 +612,8 @@ async function observeRunning(
     repo.slug,
     sessions,
     timeoutSec,
+    undefined,
+    bound,
   ))
     report.unplaced.push({
       target: "a waiting session",
@@ -696,14 +731,25 @@ export async function readSessions(
       ok: false,
       source: runtime.name,
       reason: passedBefore("the runtime was read"),
+      failure: CUT_AT_BOUND,
     };
   try {
-    return await heldTo((signal) => read(repo, join, signal), bound);
+    const sessions = await heldTo((signal) => read(repo, join, signal), bound);
+    // A listing the bound's signal cut short is the bound's failure, whatever words the runtime used.
+    return sessions.ok || sessions.failure !== undefined || !ended(bound)
+      ? sessions
+      : { ...sessions, failure: CUT_AT_BOUND };
   } catch (error) {
+    const cause = readFailureOfError(error);
     return {
       ok: false,
       source: runtime.name,
       reason: `the runtime could not be read: ${failureText(error)}`,
+      ...(ended(bound)
+        ? { failure: cause ?? CUT_AT_BOUND }
+        : cause === undefined
+          ? {}
+          : { failure: cause }),
     };
   }
 }

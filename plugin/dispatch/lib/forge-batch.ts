@@ -55,7 +55,13 @@ import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { failedBy, outboundOf } from "../../shared/outbound/failure.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import { checksFail } from "./automation.ts";
-import { ended, passedRead, type TickBound } from "./sources/bounded.ts";
+import {
+  cutRead,
+  ended,
+  passedRead,
+  type TickBound,
+  within,
+} from "./sources/bounded.ts";
 import type { RepoTarget } from "./types.ts";
 import { currentMs } from "../../shared/time.ts";
 
@@ -219,7 +225,7 @@ async function shrinking(
   return carried === null ? partial(why) : failedBy("unreadable", carried, why);
 }
 
-/** `ask`, not asked once `bound` has ended: each page and each smaller retry keeps to the tick's bound. */
+/** `ask`, not asked once `bound` has ended and given up on when it ends mid-call: each page and each smaller retry keeps to the tick's bound. */
 function heldAsk<A extends unknown[]>(
   ask: (...args: A) => Promise<Asked<unknown>>,
   bound: TickBound | undefined,
@@ -227,8 +233,15 @@ function heldAsk<A extends unknown[]>(
 ): (...args: A) => Promise<Asked<unknown>> {
   return bound === undefined
     ? ask
-    : (...args) =>
-        ended(bound) ? Promise.resolve(passedRead(what)) : ask(...args);
+    : async (...args) => {
+        if (ended(bound)) return passedRead(what);
+        try {
+          return await within(ask(...args), bound);
+        } catch (error) {
+          if (!bound.signal.aborted) throw error;
+          return cutRead(what);
+        }
+      };
 }
 
 /** Keep the size the next read of `key` starts from, where this one changes it (`sizeToKeep`). */

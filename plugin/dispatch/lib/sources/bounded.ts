@@ -26,6 +26,7 @@ import {
   outboundFailure,
 } from "../../../shared/outbound/failure.ts";
 import { currentMs } from "../../../shared/time.ts";
+import type { ReadFailure } from "../types.ts";
 
 /** The tick's own bound: its deadline (epoch milliseconds) and the signal that fires there. */
 export type TickBound = FacetBound;
@@ -47,6 +48,9 @@ export function passedBefore(what: string): string {
   return `the tick's deadline passed before ${what}`;
 }
 
+/** The failure class a read the tick's bound ended carries: `unreachable`, which clears by waiting. */
+export const CUT_AT_BOUND: ReadFailure = { class: "unreachable" };
+
 /** The failed read of what the tick's bound ended before: `unreachable`, saying what was not done. */
 export function passedRead(what: string): {
   ok: false;
@@ -54,6 +58,35 @@ export function passedRead(what: string): {
 } {
   const reason = passedBefore(what);
   return failedBy("unreadable", outboundFailure("unreachable", reason), reason);
+}
+
+/** The failed read of what the tick's bound ended while it ran: `unreachable`, saying what was cut. */
+export function cutRead(what: string): {
+  ok: false;
+  failure: CausedFailure<"unreadable">;
+} {
+  const reason = `the tick's deadline passed during ${what}`;
+  return failedBy("unreadable", outboundFailure("unreachable", reason), reason);
+}
+
+/**
+ * `read`, not started once `bound` has ended and given up on when it ends
+ * while `read` runs: either way the failed read `passedRead` or `cutRead`
+ * gives. A rejection the bound did not cause is the read's own.
+ */
+export async function heldRead<T>(
+  bound: FacetBound | undefined,
+  what: string,
+  read: () => Promise<Outcome<T, "unreadable">>,
+): Promise<Outcome<T, "unreadable">> {
+  if (bound === undefined) return read();
+  if (ended(bound)) return passedRead(what);
+  try {
+    return await within(read(), bound);
+  } catch (error) {
+    if (!bound.signal.aborted) throw error;
+    return cutRead(what);
+  }
 }
 
 /** `read`, or an `unreachable` rejection once `bound` has ended it. */

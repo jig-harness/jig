@@ -316,6 +316,8 @@ export interface Unplaced {
   cause?: "assigner-cannot-write" | "needs-repository-label";
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
   readFailed?: true;
+  /** For a `readFailed` entry a failed call caused: that call's failure class, which decides whether the read is waited out. */
+  failure?: ReadFailure;
   /** Internal tracker namespace used to keep identical issue keys distinct across trackers. */
   source?: string;
 }

@@ -41,6 +41,12 @@ function readFailure(outbound: OutboundFailure): ReadFailure {
   };
 }
 
+/** The failure class a thrown error stands for; `undefined` when it names none (a defect). */
+export function readFailureOfError(error: unknown): ReadFailure | undefined {
+  const thrown = failureOf(error);
+  return thrown.code === "invalid" ? undefined : readFailure(thrown);
+}
+
 /**
  * The failure class of a read's failure: the call's it carries, else what
  * its cause or a thrown error says; `undefined` when no call failed it.
@@ -86,15 +92,21 @@ export function combinedFailure(
  */
 export function waitingFailures(report: RepoReport): ReadFailure[] | null {
   if ((report.stageDefects?.length ?? 0) > 0) return null;
+  // A row a failed call of a known class cut waits with the rest; any other failed row, and the outcome log, do not.
   if (
     report.unplaced.some(
-      (u) => u.readFailed === true || u.target === "the outcome log",
+      (u) =>
+        (u.readFailed === true && u.failure === undefined) ||
+        u.target === "the outcome log",
     )
   )
     return null;
   const failed: (ReadFailure | undefined)[] = [
     ...(report.refused === null ? [] : [report.refusedBy]),
     ...report.records.filter((r) => !r.ok).map((r) => r.failure),
+    ...report.unplaced
+      .filter((u) => u.readFailed === true)
+      .map((u) => u.failure),
   ];
   if (failed.length === 0) return null;
   const waiting = failed.filter(

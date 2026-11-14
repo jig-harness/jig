@@ -189,4 +189,43 @@ describe("Jira adapter: the assigner and mover reads' signal", () => {
     await t.assignedBy("ENG-7");
     expect(own(calls).every((c) => c.signal === undefined)).toBe(true);
   });
+
+  it("ends the wait on the shared trust lookup when the signal aborts", async () => {
+    const { t } = jira(
+      routes({
+        "GET issue/ENG-7": jiraIssue({
+          key: "ENG-7",
+          status: "Todo",
+          assignee: FACTORY,
+        }),
+        "GET issue/ENG-7/changelog": {
+          values: [
+            {
+              id: "1",
+              author: MEMBER,
+              created: "2026-01-03T09:00:00.000+0000",
+              items: [
+                {
+                  field: "assignee",
+                  fieldId: "assignee",
+                  from: null,
+                  to: FACTORY.accountId,
+                },
+              ],
+            },
+          ],
+          startAt: 0,
+          maxResults: 100,
+          total: 1,
+          isLast: true,
+        },
+        // The lookup never answers: only the signal ends this caller's wait.
+        "GET user/assignable/search": () => new Promise(() => undefined),
+      }),
+    );
+    const stop = new AbortController();
+    const read = t.assignedBy("ENG-7", undefined, stop.signal);
+    setTimeout(() => stop.abort(new Error("the tick's deadline")), 30);
+    await expect(read).rejects.toThrow("the tick's deadline");
+  });
 });

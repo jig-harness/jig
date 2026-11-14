@@ -27,7 +27,13 @@ import { nativeQueueRequirements } from "../../../skills/do-item/scripts/lib/tra
 import { scopeFailureRow } from "./scope-failures.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
-import { ended, heldTo, passedBefore, within } from "./bounded.ts";
+import {
+  CUT_AT_BOUND,
+  ended,
+  heldTo,
+  passedBefore,
+  within,
+} from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
 import {
@@ -54,7 +60,11 @@ import {
   ok,
   type Outcome,
 } from "../../../shared/outcome.ts";
-import { combinedFailure, readFailureOf } from "../read-failures.ts";
+import {
+  combinedFailure,
+  readFailureOf,
+  readFailureOfError,
+} from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import {
   type FacetBound,
@@ -95,13 +105,13 @@ async function readClaimed(
   identity: string,
   tick?: FacetBound,
 ): Promise<ClaimedItem[] | Unplaced> {
-  const unread = (why: string, late = false): Unplaced => ({
+  const unread = (why: string, cut?: ReadFailure): Unplaced => ({
     target: `items in ${workingNames(tracker)}`,
     record: "tracker",
     reason: `the items ${identity} claimed could not be read, so stalls and double claims are not checked: ${why}`,
-    ...(late ? { readFailed: true as const } : {}),
+    ...(cut === undefined ? {} : { readFailed: true as const, failure: cut }),
   });
-  if (ended(tick)) return unread(passedBefore("they were read"), true);
+  if (ended(tick)) return unread(passedBefore("they were read"), CUT_AT_BOUND);
   try {
     const issues = await heldTo(
       (signal) =>
@@ -128,7 +138,10 @@ async function readClaimed(
       }));
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    return unread(failureText(error), ended(tick));
+    return unread(
+      failureText(error),
+      ended(tick) ? (readFailureOfError(error) ?? CUT_AT_BOUND) : undefined,
+    );
   }
 }
 
@@ -180,6 +193,7 @@ async function byTrustedAssigner(
         record: "tracker",
         reason: `assigned to ${identity} in ${issue.state.name}, but ${passedBefore("who assigned it was read")}`,
         readFailed: true,
+        failure: CUT_AT_BOUND,
       });
       continue;
     }
@@ -217,7 +231,7 @@ async function readAssigner(
           )
         : await view.once(
             `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
-            () => tracker.assignedBy(issue.identifier, identity),
+            () => tracker.assignedBy(issue.identifier, identity, tick?.signal),
           );
   } catch (error) {
     if (isRateLimited(error)) return { limited: error };
@@ -228,8 +242,11 @@ async function readAssigner(
         url: issue.url,
         record: "tracker",
         reason: `who assigned it cannot be read: ${failureText(error)}`,
-        ...(view === undefined && ended(tick)
-          ? { readFailed: true as const }
+        ...(ended(tick)
+          ? {
+              readFailed: true as const,
+              failure: readFailureOfError(error) ?? CUT_AT_BOUND,
+            }
           : {}),
       },
     };

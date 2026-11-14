@@ -18,7 +18,7 @@
  * dispatcher started it.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
-import type { BusyHolder, RepoTarget } from "../types.ts";
+import type { BusyHolder, ReadFailure, RepoTarget } from "../types.ts";
 
 /** An agent in a workspace, by the id the runtime reports it under. */
 export interface AgentSession {
@@ -65,7 +65,7 @@ export interface JoinTargets {
 
 export type SessionsReport =
   | { ok: true; source: string; workspaces: Workspace[] }
-  | { ok: false; source: string; reason: string };
+  | { ok: false; source: string; reason: string; failure?: ReadFailure };
 
 /** The states in which an agent holds its stage. */
 /** The most characters one comment holds: it travels as one process argument, which a platform bounds. */

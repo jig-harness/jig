@@ -11,8 +11,15 @@ import { isRateLimited } from "../../../shared/outbound/budget.ts";
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { PickupReads } from "../pickup-reads.ts";
 import { failureText } from "../text.ts";
-import { ended, passedBefore, type TickBound, within } from "./bounded.ts";
-import type { ClaimedItem, Unplaced } from "../types.ts";
+import {
+  CUT_AT_BOUND,
+  ended,
+  passedBefore,
+  type TickBound,
+  within,
+} from "./bounded.ts";
+import { readFailureOfError } from "../read-failures.ts";
+import type { ClaimedItem, ReadFailure, Unplaced } from "../types.ts";
 import { trackerScope } from "./served-reads.ts";
 
 /** Whether a trusted claim marker naming `identity` is on `key`. */
@@ -57,13 +64,23 @@ export async function markClaims(
     claimed.push(found ? { ...item, claimMarker: "found" } : item);
   // A request that failed, or that the tick's bound ended before, is a
   // failed read; the tracker's rate limit is a deferral.
-  const unread = (item: ClaimedItem, why: string, failed: boolean) => {
+  const unread = (
+    item: ClaimedItem,
+    why: string,
+    failed: boolean,
+    cause?: ReadFailure,
+  ) => {
     claimed.push({ ...item, claimMarker: "unread" });
     unplaced.push({
       target: item.key,
       record: "tracker",
       reason: `whether a claim marker took it could not be read, so its stall watch waits for a read: ${why}`,
-      ...(failed ? { readFailed: true as const } : {}),
+      ...(failed
+        ? {
+            readFailed: true as const,
+            ...(cause === undefined ? {} : { failure: cause }),
+          }
+        : {}),
     });
   };
   let limited = false;
@@ -74,7 +91,7 @@ export async function markClaims(
     else if (limited)
       unread(item, "the tracker's rate limit stopped an earlier read", false);
     else if (ended(tick))
-      unread(item, passedBefore("its comments were read"), true);
+      unread(item, passedBefore("its comments were read"), true, CUT_AT_BOUND);
     else
       try {
         const asked = marked(tracker, item.key, identity);
@@ -84,7 +101,12 @@ export async function markClaims(
         mark(item, found);
       } catch (error) {
         limited = isRateLimited(error);
-        unread(item, failureText(error), !limited);
+        unread(
+          item,
+          failureText(error),
+          !limited,
+          ended(tick) ? (readFailureOfError(error) ?? CUT_AT_BOUND) : undefined,
+        );
       }
   }
   return { claimed, unplaced };
