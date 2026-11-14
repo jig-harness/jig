@@ -85,7 +85,7 @@ export async function facetFindings(tracker: Tracker): Promise<Finding[]> {
         {
           id: `derivation:${at}`,
           severity: "error",
-          message: `${f.facet}'s configured store cannot be used: ${f.health.error}; its reads and writes fail`,
+          message: `${f.facet}'s configured store cannot be used: ${f.health.error}; ${f.health.fails ?? "its reads and writes fail"}`,
         },
       ];
     if (
