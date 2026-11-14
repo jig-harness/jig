@@ -450,7 +450,7 @@ pass in a prompting mode is denied every write under a protected path such
 as `.claude/skills/**` (`--permission-mode auto` lets a classifier approve
 some). A Codex pass command can carry extra words before its prompt, such as
 `--dangerously-bypass-hook-trust`, without which it runs only the hooks its
-Codex home trusts. They come from `--pass-args "<words>"` for this run
+Codex home trusts. Claude Code's words come from `--pass-args "<words>"` for this run
 (one value, split on spaces; empty for none), else `drive.pass_args`, which
 `drive.ts` adds only to a pass command with no arguments of its own; a
 command that carries its own, as an arm command or a printed re-arm or
@@ -476,7 +476,7 @@ the drive naming its field: exit `1` from the field, exit `2` from
 `--pass-args`. `drive.codex_pass_args` also refuses the words Codex would read
 as the model (`-m`, `--model`, `-c model=…`), the prompt or a subcommand (a
 word that is neither an option nor an option's value, `-`, `--`,
-`-i`/`--image`), and `--dangerously-bypass-approvals-and-sandbox`, which is
+`-i`/`--image`), `--yolo`, and `--dangerously-bypass-approvals-and-sandbox`, which are
 `drive.codex_bypass`'s.
 
 **The attach.** Once it holds the tree's driver lock and the PR's,

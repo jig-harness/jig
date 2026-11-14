@@ -540,7 +540,7 @@ fields:
     type: list
     items:
       type: string
-      pattern: "^(?!(?:--|-|--model|--image|--dangerously-bypass-approvals-and-sandbox)$)(?!--model=|--image=|--config=model=|-c=?model=|-m|-i)\\S+$"
+      pattern: "^(?!(?:--|-|--model|--image|--dangerously-bypass-approvals-and-sandbox|--yolo)$)(?!--model=|--image=|--config=model=|-c=?model=|-m|-i)\\S+$"
     default: []
     since: next
     read_by: [drive-pr, do-item, dispatch]

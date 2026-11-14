@@ -28,7 +28,7 @@ export const DEFAULT_CODEX_PASS_ARGS: readonly string[] = [];
  * that depend on a word's neighbours.
  */
 export const CODEX_PASS_ARG_PATTERN =
-  /^(?!(?:--|-|--model|--image|--dangerously-bypass-approvals-and-sandbox)$)(?!--model=|--image=|--config=model=|-c=?model=|-m|-i)\S+$/;
+  /^(?!(?:--|-|--model|--image|--dangerously-bypass-approvals-and-sandbox|--yolo)$)(?!--model=|--image=|--config=model=|-c=?model=|-m|-i)\S+$/;
 
 /** `codex exec`'s options that need a value, but the model's and the images', which are refused outright. */
 const CODEX_VALUE_OPTIONS: ReadonlySet<string> = new Set([
@@ -78,7 +78,7 @@ function refusedWord(word: string, isValue: boolean): string | undefined {
     word.startsWith("-i")
   )
     return `cannot hold ${word}: it reads the words after it, the drive's prompt among them, as images`;
-  if (word === CODEX_BYPASS)
+  if (word === CODEX_BYPASS || word === "--yolo")
     return `cannot hold ${word}: drive.codex_bypass adds it`;
   if (!isValue && !word.startsWith("-"))
     return `cannot hold ${word}: a word that is not an option or an option's value is read as the prompt (or, first, as a subcommand such as exec), and the drive writes the prompt`;

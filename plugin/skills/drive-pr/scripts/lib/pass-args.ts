@@ -278,23 +278,38 @@ function codexPass(
   });
   if (flag !== undefined)
     return done([...argv], "pass args: none (--pass-args)");
-  const chosen = codex();
-  const claude =
-    configured().words.length > 0
-      ? "; drive.pass_args applies to a Claude Code pass command"
-      : "";
-  if (chosen.words.length > 0 && carries(argv, chosen.words))
-    return done(
-      [...argv],
-      `pass args: ${shown(chosen.words)} (${chosen.source}, as written in the pass command)${claude}`,
-    );
-  if (hasOwnCodexArgs(argv))
+  if (hasOwnCodexArgs(argv)) {
+    let chosen: PassArgs;
+    let claude: string;
+    try {
+      chosen = codex();
+      claude =
+        configured().words.length > 0
+          ? "; drive.pass_args applies to a Claude Code pass command"
+          : "";
+    } catch {
+      return done(
+        [...argv],
+        "pass args: the pass command's own, kept as written",
+      );
+    }
+    if (chosen.words.length > 0 && carries(argv, chosen.words))
+      return done(
+        [...argv],
+        `pass args: ${shown(chosen.words)} (${chosen.source}, as written in the pass command)${claude}`,
+      );
     return done(
       [...argv],
       chosen.words.length === 0
         ? `pass args: the pass command's own, kept as written${claude}`
         : `pass args: the pass command's own, kept as written; ${chosen.source} (${shown(chosen.words)}) is added only to a pass command without arguments of its own${claude}`,
     );
+  }
+  const chosen = codex();
+  const claude =
+    configured().words.length > 0
+      ? "; drive.pass_args applies to a Claude Code pass command"
+      : "";
   return done(
     withCodexPassArgs(argv, chosen.words),
     `pass args: ${shown(chosen.words)} (${chosen.source})${claude}`,
@@ -307,17 +322,29 @@ function codexPass(
  * `--sandbox` names, or as Codex's own configuration decides.
  */
 export function codexPermission(argv: readonly string[]): PermissionMode {
-  if (argv.slice(1).includes(CODEX_BYPASS))
+  if (argv.slice(1).some((word) => word === CODEX_BYPASS || word === "--yolo"))
     return {
       mode: "no sandbox, no approvals",
       source: `the pass command's ${CODEX_BYPASS}`,
     };
-  for (let i = 1; i + 1 < argv.length; i++)
-    if (argv[i] === "--sandbox" || argv[i] === "-s")
+  for (let i = 1; i < argv.length; i++) {
+    const word = argv[i] as string;
+    if ((word === "--sandbox" || word === "-s") && argv[i + 1] !== undefined)
       return {
         mode: `sandbox ${argv[i + 1]}`,
         source: "the pass command's --sandbox",
       };
+    const value = word.startsWith("--sandbox=")
+      ? word.slice("--sandbox=".length)
+      : word.startsWith("-s") && word !== "-s"
+        ? word.slice(2).replace(/^=/, "")
+        : undefined;
+    if (value !== undefined && value !== "")
+      return {
+        mode: `sandbox ${value}`,
+        source: "the pass command's --sandbox",
+      };
+  }
   return {
     mode: "inherited",
     source: "the pass command sets no --sandbox; Codex's configuration decides",

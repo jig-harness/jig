@@ -234,6 +234,20 @@ describe("effectivePassArgs", () => {
     ).toBe("sandbox workspace-write");
     expect(
       effectivePassArgs(
+        ["codex", "exec", "--sandbox=read-only", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("sandbox read-only");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "-sread-only", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("sandbox read-only");
+    expect(
+      effectivePassArgs(
         ["codex", "exec", "/jig:drive-pr 7"],
         undefined,
         configured,
@@ -329,6 +343,16 @@ describe("a Codex pass's drive.codex_pass_args", () => {
       "drive.codex_pass_args",
     );
   });
+
+  it("keeps a command with its own arguments without reading the setting", () => {
+    const unreadable = (): PassArgs => {
+      throw new Error("drive.codex_pass_args must be a list of words");
+    };
+    const own = ["codex", "exec", "--sandbox", "workspace-write", "x 7"];
+    expect(effectivePassArgs(own, undefined, unset, unreadable).argv).toEqual(
+      own,
+    );
+  });
 });
 
 describe("refusedCodexPassArgs", () => {
@@ -348,6 +372,7 @@ describe("refusedCodexPassArgs", () => {
       ["--dangerously-bypass-approvals-and-sandbox"],
       "drive.codex_bypass adds it",
     ],
+    [["--yolo"], "drive.codex_bypass adds it"],
     [["--sandbox", "--model"], "cannot hold --model"],
   ])("refuses %j", (words, why) => {
     expect(refusedCodexPassArgs(words)).toContain(why);
