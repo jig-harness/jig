@@ -12,7 +12,11 @@ recurring defect. When touching this skill, check:
   `scripts/lib/state/db.ts` (a change adds a migration, says whether it is
   additive, and adds the table's entry to `shared/records/registry.ts`), lock
   timing in `scripts/lib/state/lock.ts`, lease timing in
-  `scripts/lib/state/lease-model.ts`, and the terminal-state set in
+  `scripts/lib/state/lease-model.ts`, the mailbox's directives, outbox
+  statuses and line fields in `scripts/lib/state/mailbox-values.ts` (the
+  Jig Protocol's mailbox chapter is generated from it, and
+  `__tests__/mailbox-values.test.ts` holds it to the parsers), and the
+  terminal-state set in
   `scripts/lib/status/terminal-states.ts`, restated by hand in `SKILL.md`,
   `README.md`, `references/terminal-states.md` and `scripts/drive-status.ts`'s
   header, and read by name (`DRIVE_EXIT`) by the dispatcher under
