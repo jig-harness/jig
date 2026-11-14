@@ -215,7 +215,7 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
     await waitFor("the exit", () => exitWritten(w, launched?.record ?? ""));
   });
 
-  it("launches no second pass for a drive whose driver is live, and records its exit 11", async () => {
+  it("launches no second pass on the ledger facts drive.ts refused with exit 11, and says why", async () => {
     const { w } = fixture();
     machineFile(w, [account(w, "a", "a@example.com")]);
     writeFileSync(join(w.dir, "drive-exit"), "11");
@@ -232,6 +232,34 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
       why: `launch record ${record} ended 11, drive.ts's refusal, on these same ledger facts; it is not launched again until they change`,
     });
     expect(terminalCreates(w)).toHaveLength(1);
+  });
+
+  it("launches no second pass alongside a driver still running on the ledger facts it was launched for", async () => {
+    const { w } = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    // The drive runs until the test lets it end; the ledger still asks for a re-arm meanwhile.
+    const hold = join(w.dir, "drive-hold");
+    writeFileSync(hold, "");
+    cleanups.push(() => rmSync(hold, { force: true }));
+    const first = await tick(w);
+    const record = launches(first)[0]?.record ?? "";
+    expect(launches(first)[0]?.outcome).toBe("launched");
+    await waitFor("the drive", () => driveRuns(w).length === 1);
+
+    const second = await tick(w);
+    expect(launches(second)).toEqual([]);
+    const held = second.repos[0]?.running.find((r) => r.target === "PR #7");
+    const pid = Number(/is running, pid (\d+)/.exec(held?.reason ?? "")?.[1]);
+    expect(held?.reason).toContain(`launch record ${record} (rearm on a)`);
+    expect(pid).toBeGreaterThan(0);
+    // The wrapper the tick names is the live one: the drive it started has not ended.
+    expect(() => process.kill(pid, 0)).not.toThrow();
+    expect(exitWritten(w, record)).toBe(false);
+    expect(terminalCreates(w)).toHaveLength(1);
+    expect(driveRuns(w)).toHaveLength(1);
+
+    rmSync(hold);
+    await waitFor("the exit", () => exitWritten(w, record));
   });
 
   it("takes over a silent driver this machine started, in the replaced record's slot", async () => {
