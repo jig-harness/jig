@@ -217,8 +217,19 @@ parks its reflection findings, as for an Orca checkout. Right before removal
 it checks again that the tree's commit and branch are the ones the final
 proof saw, that it gained no changes, hidden index flags or operation, and
 that no process holds it: the hook may run for minutes, and a commit on a
-detached head would be on no ref once the tree is gone. Then it removes the
-tree with `git worktree remove` without `--force`, which deletes ignored
+detached head would be on no ref once the tree is gone. Git has no
+check-and-remove in one step, so for a detached tree gc takes the tree's
+`HEAD.lock` in its git directory after the last scans and before that
+comparison, and holds it until the removal: a commit, checkout or reset in
+the tree from then on fails with git's own "cannot lock ref 'HEAD'" error
+instead of moving the head, its staged work stays, and `git worktree remove`
+then refuses the tree because of it. No commit can land on the detached head
+between the comparison and the removal, so none is lost. A `HEAD.lock` that
+another git process already holds keeps the tree, as does a repository that
+keeps its refs in reftable rather than in files, where that lock holds
+nothing; when the removal does not happen, gc deletes its lock. A tree on a
+branch needs no hold: the branch keeps any commit made meanwhile. Then it
+removes the tree with `git worktree remove` without `--force`, which deletes ignored
 content such as dependency directories, under a deadline of its own; a
 removal cut short leaves the tree partly deleted, and the receipt says so.
 

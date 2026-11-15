@@ -69,6 +69,7 @@ import {
   type WorktreeIdentity,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
+import { holdDetachedHead, type HeadHold } from "./worktree-head-hold.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
@@ -509,17 +510,18 @@ async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
  * The last admission before a worktree goes, after its hook and park: what
  * removal relies on (`checks`), the one-time archive of its ignored content,
  * then `checks` again, since the archive may have run for minutes and an
- * agent or process can have started meanwhile. `archived` is told of an
+ * agent or process can have started meanwhile; that second run is told it is
+ * the `final` one, the last before removal. `archived` is told of an
  * archive as soon as it is written, so every failure after it names it.
  */
 async function admitAfterHook(
   worktree: string,
   legacy: LegacyPolicy | undefined,
-  checks: () => Promise<Outcome<undefined, string>>,
+  checks: (final: boolean) => Promise<Outcome<undefined, string>>,
   archived: (written: Archived | null) => void,
   regenerablePaths: readonly string[],
 ): Promise<Outcome<undefined, string>> {
-  const before = await checks();
+  const before = await checks(false);
   if (!before.ok) return before;
   // Last, so the archive holds the content as the removal finds it.
   const preserved = await preserveLegacyContent(
@@ -530,7 +532,7 @@ async function admitAfterHook(
   );
   if (!preserved.ok) return preserved;
   archived(preserved.value);
-  const after = await checks();
+  const after = await checks(true);
   if (!after.ok) return after;
   return ok(undefined);
 }
@@ -555,6 +557,8 @@ async function collectAgentWorktree(
   const withArchive = (collected: Collected): Collected =>
     withArchiveOf(collected, archived);
   let snapshot: { hook: string; dir: string } | null = null;
+  // The detached head held from the final comparison through the removal.
+  const holds: HeadHold[] = [];
   try {
     // The commit and branch the runner's final proof saw: every check before
     // removal holds the tree to them.
@@ -581,9 +585,23 @@ async function collectAgentWorktree(
             legacy,
             // The holder read can take half a minute, so the identity
             // comparison goes last: nothing slow stands between it and removal.
-            async () => {
+            // Before the final one the head is held, so no commit lands on a
+            // detached head between it and `git worktree remove`.
+            async (final) => {
               const held = await unheld(worktree);
-              return held.ok ? unchangedSinceProof(worktree, identity) : held;
+              if (!held.ok) return held;
+              return unchangedSinceProof(
+                worktree,
+                identity,
+                final
+                  ? async () => {
+                      const taken = await holdDetachedHead(worktree, identity);
+                      if (!taken.ok) return taken;
+                      holds.push(taken.value);
+                      return ok(undefined);
+                    }
+                  : undefined,
+              );
             },
             (written) => {
               archived = written;
@@ -615,6 +633,10 @@ async function collectAgentWorktree(
       reason: error instanceof Error ? error.message : String(error),
     });
   } finally {
+    for (const hold of holds) {
+      const released = hold.release();
+      if (!released.ok) log(released.failure.reason);
+    }
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
