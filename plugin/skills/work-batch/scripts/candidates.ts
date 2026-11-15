@@ -50,8 +50,8 @@ import type {
 import {
   areasOf,
   type ChangeAreaCatalog,
-  matchesGlob,
 } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { matchesGlob } from "../../../shared/glob.ts";
 import {
   batchableSizeOf,
   describeReason,

@@ -24,11 +24,8 @@
 import { formatField } from "../../../../shared/config-layers.ts";
 import { JigError } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
-import {
-  type ChangeAreaCatalog,
-  globProblem,
-  matchesGlob,
-} from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { globProblem, matchesGlob } from "../../../../shared/glob.ts";
+import type { ChangeAreaCatalog } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
 
 export interface GuidanceEntry {
   /** Lowercased: labels match in any case. */
