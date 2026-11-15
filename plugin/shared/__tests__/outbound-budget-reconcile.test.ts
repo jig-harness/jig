@@ -97,4 +97,30 @@ describe("an ordinary answer's reconciliation with the stored balance", () => {
     );
     expect(store.read(KEY)?.requests.remaining).toBeLessThanOrEqual(3700);
   });
+
+  it("keeps a reservation made in the millisecond an unreserved request was sent", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
+    }));
+    now += 5;
+    // A conditional request reserves nothing; another reserves in its millisecond.
+    const sentAt = governor.admit("GitHub", KEY, { reserve: null });
+    governor.admit("GitHub", KEY, { reserve: "requests" });
+    expect(store.read(KEY)?.requests.remaining).toBe(3999);
+    now += 10;
+    governor.observe(
+      KEY,
+      { requests: { limit: 5000, remaining: 3990, resetAt: reset } },
+      sentAt,
+      null,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(3989);
+  });
 });
