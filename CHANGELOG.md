@@ -396,6 +396,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.247.1] - 2026-11-15
+
+### Fixed
+
+- The dispatch dashboard page is built again from its current source, so its
+  list of the files Jig keeps on a machine now includes the cursor where
+  `jig gc` stopped reading the test-fixture registry.
+
 ## [0.247.0] - 2026-11-15
 
 ### Added
@@ -8690,7 +8698,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.247.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.247.1...HEAD
+[0.247.1]: https://github.com/jig-harness/jig/compare/v0.247.0...v0.247.1
 [0.247.0]: https://github.com/jig-harness/jig/compare/v0.246.0...v0.247.0
 [0.246.0]: https://github.com/jig-harness/jig/compare/v0.245.0...v0.246.0
 [0.245.0]: https://github.com/jig-harness/jig/compare/v0.244.2...v0.245.0
