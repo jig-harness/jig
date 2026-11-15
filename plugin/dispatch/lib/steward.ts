@@ -461,6 +461,46 @@ export function stewardRecords(
       : [{ ...r, value: record, applied: r.applied === 1 }];
   });
 }
+/** A resume refused for a fact its ended pass fixes: the pass is settled. */
+export const STEWARD_REFUSED = "refused";
+/** A resume refused for a fact that can change (policy, an unvalidated name): the pass stays offered. */
+export const STEWARD_REFUSED_OPEN = "refused-open";
+
+/** The passes a resume record already settled, launched or refused for good: the digest offers them no more. */
+export function judgedResumes(
+  repo: string,
+  root = stateRoot(),
+): ReadonlySet<string> {
+  const digests = new Map<string, ReturnType<typeof readStewardDigest>>();
+  return new Set(
+    stewardRecords(repo, root).flatMap((r) =>
+      r.applied &&
+      r.effect !== null &&
+      r.effect !== STEWARD_REFUSED_OPEN &&
+      r.value.kind === "resume" &&
+      !namedOutsideDigest(r, root, digests)
+        ? [r.value.record]
+        : [],
+    ),
+  );
+}
+
+/** An earlier steward settled a resume naming a pass outside its own digest as refused: that pass stays offered. */
+function namedOutsideDigest(
+  r: KeptStewardRecord,
+  root: string,
+  digests: Map<string, ReturnType<typeof readStewardDigest>>,
+): boolean {
+  if (r.effect !== STEWARD_REFUSED) return false;
+  // One run's refusals share one digest: read and parse it once per call.
+  let digest = digests.get(r.run);
+  if (digest === undefined) {
+    digest = readStewardDigest(r.run, root);
+    digests.set(r.run, digest);
+  }
+  return digest.ok && !recordBelongsToDigest(r.value, digest.value);
+}
+
 /** The claim precedes any action; an interrupted application is never attempted twice. */
 export function claimStewardRecord(id: number, root = stateRoot()): boolean {
   return (
