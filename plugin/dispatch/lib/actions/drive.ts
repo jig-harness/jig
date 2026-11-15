@@ -9,9 +9,11 @@
  *    same head) and no `hold` label has appeared on it;
  * 2. admit an account (accounts.ts), and check that the wrapper's
  *    environment resolves to that account's identity;
- * 3. use the workspace that holds the pull request, or open one named for
- *    the stage and the pull request (`dispatched` in `runtime/port.ts`),
- *    under the launch record's id minted here;
+ * 3. use the workspace that holds the pull request once the runtime proves
+ *    it is still the pull request's checkout (`verifyWorkspace`), or open
+ *    one named for the stage and the pull request (`dispatched` in
+ *    `runtime/port.ts`), whose open proves it, under the launch record's id
+ *    minted here;
  * 4. write the launch record, which holds the slot from here on;
  * 5. claim the launch where another host dispatching the repository reads
  *    it (`shared-launches.ts`): a current claim of another host's with no
@@ -25,8 +27,8 @@
  *
  * Before any of that, a pending record of the repository whose launch got
  * no answer is retried once, under its own record and token, never as a
- * fresh launch. Everything else in the plan is reported, as without
- * `--apply`.
+ * fresh launch, and only once its recorded workspace is proven again.
+ * Everything else in the plan is reported, as without `--apply`.
  */
 import { worktreePathKey } from "../../../skills/drive-pr/scripts/lib/state/actor.ts";
 import { realpathSync } from "node:fs";
@@ -170,7 +172,7 @@ async function retryPending(
     const action = { target: `PR #${record.pr}`, stage: "rearm" } as Action;
     let blocked: string | ReplayBlock | null =
       record.pr === null ? null : (fresh.unplaced?.get(record.pr) ?? null);
-    blocked ??= await retryBlocked(state, record, fresh);
+    blocked ??= await retryBlocked(state, repo, record, fresh);
     let claim: number | null = null;
     if (blocked === null) {
       const taken = await unclaimed(state, record, fresh.claimer);
@@ -223,6 +225,7 @@ const IDLE =
 /** Why a pending record's launch must not be replayed now; `null` when it may. */
 async function retryBlocked(
   state: ApplyState,
+  repo: RepoTarget,
   record: LaunchRecord,
   fresh: FreshDrive,
 ): Promise<string | ReplayBlock | null> {
@@ -260,6 +263,7 @@ async function retryBlocked(
   if (blocked !== null) return blocked;
   const stopped =
     (await replayOriginalTree(record, read)) ??
+    (await replayWorkspace(state, repo, record, read)) ??
     (await accountBlock(state, record));
   if (stopped === null) await refreshHeads(state, record, read);
   return stopped;
@@ -285,6 +289,66 @@ async function replayOriginalTree(
     if (different !== null) return different;
   }
   return null;
+}
+
+/**
+ * Why a pending record's workspace is not proven to be its pull request's
+ * checkout now; `null` once it is. The workspace may have changed since the
+ * launch that got no answer, so a replay proves it again, as a first launch
+ * into a workspace it did not open does.
+ */
+async function replayWorkspace(
+  state: ApplyState,
+  repo: RepoTarget,
+  record: LaunchRecord,
+  read: DrivenPr,
+): Promise<string | null> {
+  if (record.workspace === null) return "its workspace is no longer recorded";
+  return unproven(state, repo, record.workspace, read.number, read.head);
+}
+
+/**
+ * Why a workspace this launch did not open is not proven to be the pull
+ * request's checkout (`SessionRuntime.verifyWorkspace`); `null` once it is.
+ * The proof changes nothing in the workspace, so a tree a stop left work in
+ * keeps that work whatever it answers.
+ */
+async function unproven(
+  state: ApplyState,
+  repo: RepoTarget,
+  workspace: { id: string; path: string },
+  pr: number,
+  head: string,
+): Promise<string | null> {
+  const late = outOfTime(state);
+  if (late !== null) return late;
+  let why: string | null;
+  try {
+    why = await state.runtime.verifyWorkspace(
+      repo,
+      workspace,
+      { pr, head },
+      timeLeftMs(state) ?? undefined,
+    );
+  } catch (error) {
+    why = failureText(error);
+  }
+  return why === null
+    ? null
+    : `the workspace ${workspace.path} is not proven to be PR #${pr}'s checkout, so nothing runs in it and its work stays as it is: ${why}`;
+}
+
+/** An existing workspace the launch runs in once it is proven, or its refusal. */
+async function provenWorkspace(
+  state: ApplyState,
+  repo: RepoTarget,
+  pr: number,
+  head: string,
+  found: { id: string; path: string },
+): Promise<Opened> {
+  const workspace = { id: found.id, path: found.path };
+  const why = await unproven(state, repo, workspace, pr, head);
+  return why === null ? { workspace } : { refused: why };
 }
 
 /**
@@ -414,6 +478,12 @@ async function originalTree(
   }
 }
 
+/**
+ * The workspace a drive launch runs in: an existing one (the tree a stop left
+ * work in, the stopped driver's original tree, or the one workspace joined to
+ * the pull request on its head branch), proven before it is used, or one the
+ * runtime opens.
+ */
 async function workspaceFor(
   state: ApplyState,
   repo: RepoTarget,
@@ -435,7 +505,7 @@ async function workspaceFor(
       ? {
           refused: `the stop left work in its tree (${tree}), which no open workspace holds now; a fresh tree would not carry it`,
         }
-      : { workspace: { id: own.id, path: own.path } };
+      : provenWorkspace(state, repo, pr, head, own);
   }
   const candidates = sessions.ok
     ? sessions.workspaces.filter(
@@ -453,7 +523,7 @@ async function workspaceFor(
   const matched = candidates.filter((_, i) => verified[i] === null);
   const held = matched[0];
   if (matched.length === 1 && held !== undefined)
-    return { workspace: { id: held.id, path: held.path } };
+    return provenWorkspace(state, repo, pr, head, held);
   if (originalActor !== null)
     return {
       waits: `recovery requires exactly one existing tree linked to the pull request and matching the stopped driver's actor and clone; no replacement workspace is opened${verified.length === 0 ? "" : `: ${verified.filter((why) => why !== null).join("; ")}`}`,

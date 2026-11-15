@@ -66,15 +66,60 @@ export interface Envelope {
   generation?: number;
 }
 
-/** The envelope's fields: a payload never carries one of these names. */
-const ENVELOPE_FIELDS = [
-  "kind",
-  "v",
-  "key",
-  "writer",
-  "at",
-  "generation",
-] as const;
+/** One field of the envelope, as a reader outside Jig meets it in the JSON. */
+export interface EnvelopeField {
+  readonly type: "string" | "integer" | "object";
+  /** Whether every record that carries the envelope carries the field. */
+  readonly required: boolean;
+  /** What the field says, and what the strict form holds it to. */
+  readonly meaning: string;
+}
+
+/**
+ * The envelope's fields, in the order `encode` writes them: a payload never
+ * carries one of these names. The Jig Protocol's chapter on hidden comment
+ * markers prints them.
+ */
+export const ENVELOPE_FIELDS: Readonly<Record<keyof Envelope, EnvelopeField>> =
+  {
+    kind: {
+      type: "string",
+      required: true,
+      meaning:
+        "The record's kind, as the records registry names it. A kind the reader's registry does not hold does not read.",
+    },
+    v: {
+      type: "integer",
+      required: true,
+      meaning:
+        "The version of its kind's schema the record was written in, from 1. A version newer than the one the reader's release writes does not read.",
+    },
+    key: {
+      type: "string",
+      required: true,
+      meaning:
+        "What the record is about, unique within its kind (on the forge and the tracker, within its repository), in the shape its kind declares.",
+    },
+    writer: {
+      type: "object",
+      required: true,
+      meaning:
+        "Who wrote it: the forge login where the writer knows it, the host, and the boot, process id and start time of the writing process. On the forge and the tracker the host and the boot are digests, so a public comment names no machine.",
+    },
+    at: {
+      type: "string",
+      required: true,
+      meaning: "When it was written, as an ISO 8601 time.",
+    },
+    generation: {
+      type: "integer",
+      required: false,
+      meaning:
+        "For a record rewritten in place, or a claim on one round of something, a count: one past the highest the writer had read, or the round it claims.",
+    },
+  };
+
+const ENVELOPE_NAMES = Object.keys(ENVELOPE_FIELDS) as (keyof Envelope)[];
 
 /** A record read back: its envelope, and the rest of its fields as its payload. */
 export interface Enveloped {
@@ -245,7 +290,7 @@ export function encode(
   envelope: Envelope,
   payload: Record<string, unknown>,
 ): string {
-  const clash = ENVELOPE_FIELDS.find((field) => field in payload);
+  const clash = ENVELOPE_NAMES.find((field) => field in payload);
   if (clash !== undefined)
     throw new Defect(
       `the payload of a ${envelope.kind} record carries the envelope's field ${clash}`,

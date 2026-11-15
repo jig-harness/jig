@@ -160,7 +160,9 @@ async function untilProbed(
  * the request answers instead. `answered` says what an answer stands for;
  * a throw is read through `failureOf`, recorded and rethrown. A request
  * waiting for another's probe stops waiting when `signal` aborts, throwing
- * its reason, and is not sent after it.
+ * its reason, and is not sent after it. An answer `unsent` names was
+ * refused before it left the machine: it says nothing of the system, so it
+ * neither holds it nor releases an earlier hold.
  */
 export async function guarded<T>(
   system: string,
@@ -168,6 +170,7 @@ export async function guarded<T>(
   answered: (answer: T) => OutboundFailure | null,
   refuse: (failure: OutboundFailure) => T | Promise<T>,
   signal?: AbortSignal,
+  unsent: (answer: T) => boolean = () => false,
 ): Promise<T> {
   const b = book;
   if (b === null) return send();
@@ -184,7 +187,7 @@ export async function guarded<T>(
   if (probe !== null) b.probes.set(system, probe.promise);
   try {
     const answer = await send();
-    settle(b, system, answered(answer));
+    if (!unsent(answer)) settle(b, system, answered(answer));
     return answer;
   } catch (error) {
     settle(b, system, failureOf(error));

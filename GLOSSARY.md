@@ -895,11 +895,10 @@ make, use the entry's term instead.
   `has-migration`, `api-change`, `dpa-relevant` (personal data covered by a
   data-processing agreement) and `manual-ops`. A fired flag sends a call to a human instead of an agent
   ([decide](plugin/skills/decide/SKILL.md)) and widens the review a change gets.
-- **Epic** — an issue whose sub-issues are worked one at a time, each as its
-  own pull request, while the epic itself tracks the whole. Jig's
-  `do-item` skill picks up the next sub-issue and records the epic's order in
-  a machine-readable execution plan
-  ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
+- **Epic** — an issue whose sub-issues are each worked as their own pull
+  request, while the epic itself tracks the whole. Jig's `do-item` skill
+  picks up the next sub-issue in the order the epic's *execution plan*
+  gives, when it has one ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
   (an outcome too large for one pull request, and the unit progress is
   reported on), not by how many children it has, and it closes on an
   *acceptance verdict*, never on a count of open children
@@ -915,6 +914,31 @@ make, use the entry's term instead.
   finish, such as a legal sign-off, an operator step or review debt. At
   closure a tail is linked back and given a comment naming the epic, then
   unparented and moved to the standing destination for its kind.
+- **Execution plan** — the order of an *epic*'s children, kept on the epic
+  as a section with a machine-readable block (`execution-plan-v1`): each
+  child's precedence band (its depth in the order), its lane (a group of
+  related children, which orders nothing), whether it waits on a person,
+  and the edges between children with their reasons. The pickup and the
+  dispatcher read it; the *epic planner* writes it
+  ([design](design/epic-planner.md)).
+- **Human gate** — a step of an *execution plan* that waits on a person before
+  an agent may start it: a child carrying the configured human-in-the-loop
+  label or one of its facets (such as `<label>:legal`), or one the plan
+  marks with its reason. A plan cannot cancel such a label
+  ([design](design/epic-planner.md)).
+- **Epic planner** — the skill that writes and keeps an *epic*'s *execution
+  plan*: it records each real dependency as a native tracker relation,
+  renders the plan, applies the mechanical changes on its own and asks a
+  person once for the changes that need judgment
+  ([design](design/epic-planner.md)).
+- **Critical path** — the longest chain of an *epic*'s open children that
+  must land one after another, each child weighted by its size. Its children
+  take the epic's priority in the *epic planner*'s priority rule.
+- **Relation statement** — a hold or an order stated as data rather than a
+  sentence: subject references, a relation word from a closed list (such as
+  "waits on"), object references, a count and an optional reason. Each reference carries its
+  kind (issue or pull request), state, link and counterpart, so a view can
+  show it as a chip with its link ([design](design/epic-planner.md)).
 - **Epic census** — the read-only count of how a repository's started *epics*
   stand, kept by the fleet-health sensor: *finished-but-open* (every child is
   closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
@@ -2207,11 +2231,11 @@ make, use the entry's term instead.
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
   ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
-  tracker adapters' transports keep the budget and the deadline, and they
-  and the forge's `gh` calls fail as the failure classes; a tracker read
+  tracker adapters' transports and the forge's `gh` calls keep the budget
+  and the deadline and fail as the failure classes; a tracker read
   is sent once more after a failure that may clear, a forge call is not;
-  the transports record each attempt in the cost ledger. Shared caching,
-  GitHub budget windows and the boundary gates remain planned
+  the transports record each attempt in the cost ledger. Shared caching
+  and the boundary gates remain planned
   ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
@@ -2220,7 +2244,7 @@ make, use the entry's term instead.
   starts and a person's skills spend one allowance knowingly. A *governed
   transport* asks it before each request and tells it what each answer
   said; the dispatcher's own reads keep to a share of each limit
-  (`tracker_share`,
+  (`outbound_share`,
   [configuration reference](plugin/CONFIGURATION.md)).
 - **Cost ledger** — the record of what Jig's calls to outside systems
   cost: for each hour, system, credential, named operation and caller, the
@@ -2744,16 +2768,24 @@ make, use the entry's term instead.
   repository; the pickup's claim assigns it to the *factory identity*, and
   the claim marker decides between hosts that take the same item
   ([dispatch.pool](plugin/CONFIGURATION.md#dispatch)).
-- **Steward** — the agent pass a *dispatcher*'s host starts every 20
-  minutes, when its input changed, to read what is stopped and waiting on
-  the line and propose what to do about it: re-arm a drive once when its
-  logs show a passing cause, frame each need that stays a person's with
-  its *act*, fill in a missing priority, size or type, and order the queue.
+- **Steward** — the agent pass a *dispatcher*'s host starts when a
+  repository's *judgment backlog* holds work no pass has judged, to read
+  what is stopped and waiting on the line and propose what to do about it:
+  re-arm a drive once when its logs show a passing cause, frame a need that
+  arrived with no framing with its *act*, fill in a missing priority, size
+  or type, and order the queue.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
   text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
+- **Judgment backlog** — the work in one repository that no rule of the
+  *tick* settles and no *steward* pass has judged yet: a stalled pickup or
+  failed follow-up with no running session, a stopped drive a re-arm could
+  resolve, an ended pass that recommends a resume, a queued item missing a
+  facet, a need with no framing. The steward starts only when it holds a
+  member no earlier pass saw
+  ([the steward's trigger](design/dark-factory-dispatch.md#the-stewards-trigger)).
 - **Steward remit** — the record kinds a *steward* may submit for a
   repository on a host: today, a re-arm, a resume, a need, a facet and an
   order. The planned widening lets a host add record kinds that settle a

@@ -112,8 +112,9 @@ rather than waiting:
   "Review skipped / Draft detected"), and a CI-hosted reviewer job commonly
   skips drafts too (`!…pull_request.draft`). Where such a bot is the
   reviewer that decides convergence (`review.reviewer_evidence:
-  review_object`, CodeRabbit's profile), its draft skip is no wait: the draft
-  converges on its own work, and the drive marks it Ready and waits for that
+  review_object`, CodeRabbit's profile), its draft skip is no wait: a skip
+  check run, or CodeRabbit's current skip comment when no check run exists,
+  lets the draft converge on its own work, and the drive marks it Ready and waits for that
   review.
 
 So a draft is driven exactly like a Ready PR, and **after the first completed
@@ -170,7 +171,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
-| `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes per head and failing check (`DRIVE_PR_CI_REPAIR_ROUNDS`) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
+| `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes per head and failing check (`drive.ci_repair_rounds`; `DRIVE_PR_CI_REPAIR_ROUNDS` for one run) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
 | `CI_INFRA_PERSISTED` | 23 | The review converged, and every failing check on the head failed on the infrastructure (a lost runner, or a setup step's network failure, with no code diagnostic) through the drive's re-runs and head moves (`DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each). No CI-repair pass was spent and nothing in the code needs repair. Under `jig dispatch` the dispatcher re-drives it after a backoff that doubles with each consecutive such stop, and tells a person once the stops outlast its re-drives |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
@@ -292,7 +293,8 @@ non-reviewer CI verdict to be green before it writes the PR-global
 `verifiedSha` or exits 0.
 
 **A red verdict there is a repair round, not a stop**. Up to
-`DRIVE_PR_CI_REPAIR_ROUNDS` times per head and failing check (default 2), the driver dispatches a
+`drive.ci_repair_rounds` times per head and failing check (default 2;
+`DRIVE_PR_CI_REPAIR_ROUNDS` sets it for one run and wins), the driver dispatches a
 `ci-repair` pass (§ 0) and re-gates from the top afterwards, because a repair
 that pushed moved the head and staled every piece of evidence gathered under
 the old one — the reviewer's stamp included. Only a verdict naming failing
@@ -368,7 +370,13 @@ earlier, has completed with a result, the cancelled run's checks no longer
 count, under whatever name they carry, except that an unsuccessful check stays
 when the replacing runs report its name only as skipped. The event that started
 either run does not matter. A failure beside a cancelled check is still a failure, and
-reads `failing: …`. With no active run of the same workflow on this head,
+reads `failing: …`. When every failing check is a job of a run that concluded
+`cancelled` (an always-run aggregator fails when a job it needs was cancelled),
+no commit status fails beside them and a cancelled job in them is unreplaced,
+the drive recovers that run as it
+recovers a cancelled check, below, before any retry or CI-repair pass; a real
+failure comes back from the re-run in a run that is not cancelled, and is
+repaired then. With no active run of the same workflow on this head,
 the drive observes a 30-second grace period, then requests one re-run per
 head. Its SQLite claim survives re-arms and is recorded before the request.
 The drive keeps polling during the grace period and re-run; unrelated pending
@@ -1650,7 +1658,7 @@ is a product decision, a CI failure that is a genuine design disagreement —
 say so on stderr and exit non-zero. The driver falls back to the stop it would
 have taken anyway, which is the honest outcome, and burns no further budget.
 
-The budgets are `DRIVE_PR_CI_REPAIR_ROUNDS` (default 2) and
+The budgets are `drive.ci_repair_rounds` (default 2; `DRIVE_PR_CI_REPAIR_ROUNDS` for one run) and
 `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1), both in-memory per driver
 process and both disabled by `0`, which stops without a repair pass.
 CI repair counts belong to each head and failing check, and conflict repair
@@ -3171,6 +3179,11 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --round N --reason "round N
 `--round N` applies `pull_requests.mark_ready`: before the configured round,
 or when the repository marks Ready only at convergence or never, it prints
 `not-due` and does nothing.
+
+A standalone successful transition gives back the session leases it acquired, so
+a drive can start immediately in that tree. A call inside a running drive keeps
+its driver's leases; a claim held by another caller and an unconfirmed remote
+transition retain their existing protection.
 
 When it prints `marked`, move the Orca workspace card to the review stage with
 the pull request linked, as `drive.ts` does itself; outside Orca it does

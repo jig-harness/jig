@@ -103,6 +103,8 @@ export interface LineNotified {
   at: string | null;
   outcome: NotifyOutcome["outcome"];
   workspace: string | null;
+  /** Why it has not reached a person, for a notice that waits or was lost (held for room in the comment, its destination unreachable); absent otherwise. */
+  detail?: string;
 }
 
 /**

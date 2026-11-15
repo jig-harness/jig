@@ -337,6 +337,20 @@ describe("a need's words", () => {
       ).evidence.find((r) => r.k === "notified")?.v,
     ).toBe("lost");
   });
+
+  it("says why a notification waits", () => {
+    const detail = "the comment is full";
+    const notified = (at: string | null) =>
+      needView(
+        {
+          ...NEED,
+          notified: { at, outcome: "waits", workspace: null, detail },
+        },
+        CLOCK,
+      ).evidence.find((r) => r.k === "notified")?.v;
+    expect(notified(null)).toBe(`waits: ${detail}`);
+    expect(notified(iso(10, 5))).toBe(`10:05; now waits: ${detail}`);
+  });
 });
 
 describe("the person's list", () => {

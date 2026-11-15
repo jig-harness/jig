@@ -137,9 +137,15 @@ next gc settles it by asking again rather than by inferring: it takes over the
 claim from the dead or finished owner, repeats its idle proof and calls
 `orca worktree rm` once more, and that call's reply or the worktree's absence
 releases the claim. Repeating the call is safe because the claim still
-excludes every launch the hook mediates and the proof is read afresh. A removal
-that keeps failing holds its worktree closed to launches and appears in each
-run's receipt as refused, until the cause is fixed; that cost is
+excludes every launch the hook mediates and the proof is read afresh. A
+worktree that is gone is never collected again, so each run of the worktrees
+kind also lists every claim a collector that ended left on a worktree gone
+from Orca's list and from the disk, and collecting that line deletes it. A
+removal that keeps failing holds its worktree closed to launches and, while
+the worktree's idle proof still holds, appears in each run's receipt with the
+reason the claim stays, until the cause is fixed. A worktree whose proof finds
+it in use again is not collected, and its receipt line names the claim and
+how to inspect it, which stays until a person removes it. That cost is
 accepted over reopening the deletion race by treating an intact worktree as
 proof the removal failed.
 A gc that crashed before the mark leaves an admission the hook and the next

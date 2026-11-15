@@ -251,3 +251,31 @@ export async function withFileLock<T>(
     }
   }
 }
+
+/**
+ * The synchronous, single-attempt form of `withFileLock`: takes the lock for
+ * `key` once, reclaiming it first when its owner is gone, runs `body` and
+ * releases it; `null` when another live process holds it.
+ */
+export function tryFileLockSync<T>(
+  key: string,
+  body: () => T,
+  options: Pick<FileLockOptions, "root" | "name">,
+): { value: T } | null {
+  mkdirSync(options.root, { recursive: true, mode: 0o700 });
+  const lock = fileLockPath(key, options.root, options.name);
+  const content = ownContent();
+  if (!tryTake(lock, content)) {
+    reclaim(lock, performance.now() + LOCK_WAIT_MS);
+    if (!tryTake(lock, content)) return null;
+  }
+  try {
+    return { value: body() };
+  } finally {
+    try {
+      if (readFileSync(lock, "utf8") === content) rmSync(lock);
+    } catch (error) {
+      swallow(error, "reclaimed as stale already; nothing left to release");
+    }
+  }
+}

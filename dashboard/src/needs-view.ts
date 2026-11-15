@@ -159,8 +159,10 @@ function needEvidence(
       k: "notified",
       v:
         n.notified.at === null
-          ? n.notified.outcome
-          : `${clock(Date.parse(n.notified.at), timeZone)}${to}`,
+          ? n.notified.detail === undefined
+            ? n.notified.outcome
+            : `${n.notified.outcome}: ${n.notified.detail}`
+          : `${clock(Date.parse(n.notified.at), timeZone)}${to}${n.notified.detail === undefined ? "" : `; now ${n.notified.outcome}: ${n.notified.detail}`}`,
     });
   }
   if (n.stuckRecord != null) {

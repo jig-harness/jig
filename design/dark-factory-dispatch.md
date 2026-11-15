@@ -88,8 +88,9 @@ own once a repository's ledgers name its converged drives
 ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
 The act phase reads the host's gauges when it builds its apply state, and
 admits each launch within the load factor. And the steward is one more
-stage, launched on the owner host when its digest changed, whose records
-the next tick's plan reads.
+stage, launched on the owner host when its judgment backlog holds work no
+pass has judged ([The steward's trigger](#the-stewards-trigger)), whose
+records the next tick's plan reads.
 
 ```mermaid
 flowchart TD
@@ -418,9 +419,20 @@ guards keep one stage from starting twice:
   recent (within the session lease, 6 hours): the tick releases the marker
   it left, whether or not an answer was written onto it, and a later tick
   starts the follow-up again under a record whose facts carry the recovery
-  tag, within the pull request's recovery budget (see Launch records). Only
-  the death whose marker a tick released this way makes the next follow-up a
-  run again; one a person asks for by deleting a failed marker is a new
+  tag, within the pull request's recovery budget (see Launch records). A
+  pass whose result or exit the host could not write (`jig dispatch result`
+  keeps that evidence outside the state database when the database refuses
+  it, as the wrapper does for an exit) is run again once in the same manner,
+  whatever it said and with no age limit, and the question it asked is never
+  a person's. Both wait for the host's health check: the tick releases the
+  marker, and starts the run again, only while the dispatcher's last run
+  passed (`jig doctor dispatch`'s `dispatch:last-run`). While it fails,
+  every such follow-up that is not itself a run again is held quietly,
+  whatever its age, with nothing released or notified; once it passes, the
+  session lease applies again, and a plain death older than it goes to a
+  person. `failures.rerun_died: 0` turns both off.
+  Only the death whose marker a tick released this way makes the next
+  follow-up a run again; one a person asks for by deleting a failed marker is a new
   follow-up. A pass that ended failed on a **routine question** (see
   Sessions that wait) is run again once in the same manner, with no age
   limit, since it waits on no session lease: its outcome record
@@ -1366,6 +1378,7 @@ The tick reaches the runtime only through these methods:
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sessions(repo)`                                     | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark                                                                                                                                                                                                                                                                                                                                              |
 | `openWorkspace(...)`                                 | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists                                                                                                                                                                                                                                                                                                                                                                                           |
+| `verifyWorkspace(repo, workspace, target)`           | proof that a workspace the launch did not open (the one joined to the pull request, a recovery's tree, a pending launch's recorded workspace) is still the pull request's checkout: a checkout of the repository's clone, its origin the head repository at the head the forge reports, its commit on that head's line of history; why not, or none once proven. It changes no work in the workspace, and a drive runs in no workspace it refuses                                            |
 | `launch(workspace, stage, account, key, sessionId?)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session. `sessionId`, given for an interactive session, is the vendor session id the tick minted and keeps on the launch record (see Control), distinct from the agent's id and the key; a launch that cannot carry it records no wall and gets no nudge |
 | `notify(target, message)`                            | a message that reaches a person; its receipt carries the target's comment as written                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `steer(session, nudge)`                              | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send                                                                                                                                                                                                                                                                                                                         |
@@ -1743,6 +1756,37 @@ supervisor exit. This proves only what was observed, within
 cooperative scope; it does not add operating-system containment or prove
 that every possible descendant ended.
 
+### The steward's trigger
+
+The [steward](../GLOSSARY.md) supplies judgment the tick's rules cannot, so
+it starts on that work alone. Each tick derives one repository's **judgment
+backlog** from what it already read: the items no rule settles and no
+steward pass has judged yet. Its members are
+
+- a stalled pickup or a failed follow-up with no running session;
+- a stopped drive whose class a re-arm could resolve, keyed by its ledger
+  facts, so new facts make a new member;
+- an ended pass that recommends a resume;
+- a queued item missing a priority, type or size;
+- a need with no framing: one neither its pass, its drive's parks nor the
+  tick frames as a decision a person answers in a word.
+
+The trigger reads the backlog only. An empty backlog starts no pass, and
+neither does one whose every member a pass of the repository's latest 20
+already saw. A member no pass has seen starts one on the same tick, with no
+cadence to wait on; the host's budget of three passes in a rolling hour, and
+one pass holding a repository at a time, stay. `steward.every` is still
+read, so a file that sets it keeps loading, and changes nothing.
+
+The digest the pass reads carries the backlog, the unframed needs and,
+beside them, each framed need with the framing it already carries. A `need`
+record may name only a target among the digest's unframed needs; one for
+any other target is refused. A tick that starts no pass says why on its
+receipt and in the line the dashboard reads: the backlog was empty, its
+members were all judged, or the hourly budget was spent.
+
+A person's on-demand start of a pass through `jig send` is not built.
+
 ### What it never does
 
 - **Merge**, or arm a merge: a person merges
@@ -1861,7 +1905,15 @@ A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
 into one message, and when the target is still marked unread from an
 earlier notification it appends the new causes to that comment rather than
-overwriting it. Each cause's text carries its key (the facts its
+overwriting it. One comment holds at most 16,000 characters, so a comment
+that is exactly what the dispatcher wrote gives up the entries whose causes
+are settled (no cause the tick names carries the key, and no suppression
+record that still stands does: the test that retires an unread notices
+workspace) to make room for the new ones; an entry whose cause still stands
+is never dropped. A cause that still finds no room waits, and the failure
+ledger counts it as a failed delivery, so past `failures.notify_after`
+ticks a person is told through whatever destination still delivers (see
+Failures). Each cause's text carries its key (the facts its
 suppression record is keyed by). A cause counts as sent, and its
 suppression record is written, only once the runtime's receipt shows the
 comment carrying its key, so a cause never delivered is never suppressed.

@@ -33,6 +33,7 @@
  *   backoff: 2m
  *   backoff_max: 1h
  *   notify_after: 3
+ *   rerun_died: 1      # 0 runs no follow-up again after a death or an unwritten result
  *   group: cause            # or scope: one notice per failing scope
  * dashboard:
  *   listen: 100.64.0.7:8765
@@ -43,7 +44,7 @@
  *   shared: forge
  * send: true
  * change_probe: true
- * tracker_share: 0.5
+ * outbound_share: 0.5   # was tracker_share, which still reads
  * preflight: [tracker]   # the checks run on each account before a tracker stage: preflight-config.ts
  * load:
  *   enforce: false          # the gauges' lines and reservations: load-config.ts
@@ -119,7 +120,7 @@ const SHARED_MEDIA = ["forge"] as const;
 export type SharedMedium = (typeof SHARED_MEDIA)[number];
 
 export interface MachineConfig {
-  steward?: { enabled: boolean; everyMs: number };
+  steward?: { enabled: boolean };
   path: string;
   /** People authorized by this host, never by a repository overlay. */
   serve?: ServedPerson[];
@@ -162,8 +163,8 @@ export interface MachineConfig {
   changeProbe: boolean;
   /** The host's gauges' lines, the kinds' default reservations and whether the load factor holds launches (`load`). */
   load: LoadSettings;
-  /** The share of each tracker credential's rate-limit window the tick's own reads may use (`tracker_share`); `DEFAULT_DISPATCHER_SHARE` when absent. */
-  trackerShare?: number;
+  /** The share of each rate-limit window, a tracker's or the forge's, the tick's own calls may use (`outbound_share`, or its older name `tracker_share`); `DEFAULT_DISPATCHER_SHARE` when absent. */
+  outboundShare?: number;
   /** The checks the tick runs on each account before a stage that needs them (`preflight`); `[tracker]` when absent. */
   preflight?: PreflightProbe[];
 }
@@ -202,11 +203,18 @@ const TOP_KEYS = [
   "send",
   "change_probe",
   "load",
+  "outbound_share",
   "tracker_share",
   "preflight",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
-const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after", "group"];
+const FAILURES_KEYS = [
+  "backoff",
+  "backoff_max",
+  "notify_after",
+  "rerun_died",
+  "group",
+];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -629,30 +637,40 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   });
 }
 
-/** The tracker's share of each credential's budget, and the checks run on each account before a tracker stage. */
+/** The tick's share of each credential's budget, and the checks run on each account before a tracker stage. */
 function trackerSettings(
   top: Record<string, unknown>,
-): Checked<Pick<MachineConfig, "trackerShare" | "preflight">> {
-  const trackerShare = share(top.tracker_share, "tracker_share");
-  if (!trackerShare.ok) return trackerShare;
+): Checked<Pick<MachineConfig, "outboundShare" | "preflight">> {
+  const named = top.outbound_share !== undefined && top.outbound_share !== null;
+  const older = top.tracker_share !== undefined && top.tracker_share !== null;
+  if (named && older)
+    return invalid(
+      "outbound_share and tracker_share name one setting: keep outbound_share and remove tracker_share",
+    );
+  const outboundShare = older
+    ? share(top.tracker_share, "tracker_share")
+    : share(top.outbound_share, "outbound_share");
+  if (!outboundShare.ok) return outboundShare;
   const preflight = preflightSetting(top.preflight);
   if (!preflight.ok) return preflight;
-  return ok({ trackerShare: trackerShare.value, preflight: preflight.value });
+  return ok({ outboundShare: outboundShare.value, preflight: preflight.value });
 }
 
-function stewardSettings(
-  value: unknown,
-): Checked<{ enabled: boolean; everyMs: number }> {
-  if (value === undefined || value === null)
-    return ok({ enabled: false, everyMs: 20 * 60_000 });
+/**
+ * The steward's settings. `every` is still accepted, as a duration, so a
+ * file that sets it keeps reading; the judgment backlog starts a pass, and
+ * no cadence is waited on.
+ */
+function stewardSettings(value: unknown): Checked<{ enabled: boolean }> {
+  if (value === undefined || value === null) return ok({ enabled: false });
   if (!isMapping(value)) return invalid("steward must be a mapping");
   const known = only(value, ["enabled", "every"], "steward");
   if (!known.ok) return known;
   const enabled = flag(value.enabled, "steward.enabled", false);
   if (!enabled.ok) return enabled;
-  const every = optionalDuration(value.every, "steward.every", 20 * 60_000);
+  const every = optionalDuration(value.every, "steward.every", 0);
   if (!every.ok) return every;
-  return ok({ enabled: enabled.value, everyMs: every.value });
+  return ok({ enabled: enabled.value });
 }
 
 /** The tick's interval, backoff, timeouts, opens and retention, with defaults. */
@@ -822,6 +840,10 @@ function failures(value: unknown): Checked<FailureSettings> {
     FAILURE_DEFAULTS.notifyAfter,
   );
   if (!notifyAfter.ok) return notifyAfter;
+  const rerunDied = value.rerun_died ?? FAILURE_DEFAULTS.rerunDied;
+  // A run again never earns another, so the bound is one or none.
+  if (rerunDied !== 0 && rerunDied !== 1)
+    return invalid("failures.rerun_died must be 0 or 1");
   if (backoffMaxMs.value < backoffMs.value)
     return invalid("failures.backoff_max must be at least failures.backoff");
   const group = failureGrouping(value.group);
@@ -830,6 +852,7 @@ function failures(value: unknown): Checked<FailureSettings> {
     backoffMs: backoffMs.value,
     backoffMaxMs: backoffMaxMs.value,
     notifyAfter: notifyAfter.value,
+    rerunDied,
     group: group.value,
   });
 }
