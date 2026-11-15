@@ -18,7 +18,12 @@
  * - **One comment per workspace.** The causes for one workspace in a tick
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
- *   rather than replacing what a person has not read.
+ *   rather than replacing what a person has not read. A comment that is
+ *   exactly what the dispatcher wrote gives up the entries whose causes are
+ *   settled (the test that retires an unread notices workspace: no cause
+ *   this tick names, no record that still stands) to make room; an entry
+ *   whose cause stands is never dropped. A cause that still finds no room
+ *   waits, counted as a failed delivery (`NO_ROOM`).
  * - **Sent on its read-back.** A cause counts as sent only once the
  *   runtime's receipt shows the comment carrying its key; a cause whose key
  *   the comment already carries is answered as already there. A repeat goes
@@ -52,6 +57,7 @@ import {
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
+  settledEntries,
   type Suppression,
 } from "../notice-records.ts";
 import { carries, holdsNotice } from "../notices.ts";
@@ -63,6 +69,7 @@ import {
   MAX_COMMENT,
   NOTICES_BRANCH,
   NOTICES_NAME,
+  type NotifyTarget,
   type RuntimeReceipt,
   type SessionsReport,
   type Workspace,
@@ -147,6 +154,8 @@ interface CardContext {
   workspaces: Workspace[];
   /** `dispatch.notices_branch`; `null` for the repository's notices workspace. */
   branch: string | null;
+  /** The keys that stand this tick: the causes named, and the host failures still standing. */
+  standing: () => ReadonlySet<string>;
   root: string;
 }
 
@@ -228,12 +237,14 @@ async function noticesWorkspace({
   return noticesBlocked(read) ?? read;
 }
 
-/** The causes that fit one comment after the unread text, which is kept whole; one that does not fit waits until it is read, and a later one that fits still goes. */
+/** The causes that fit one comment after the unread text, which is kept whole but for its `settled` entries; one that does not fit waits until there is room, and a later one that fits still goes. */
 export function fitting(
   workspace: Workspace,
   causes: Cause[],
   preserveRead = false,
+  settled: readonly string[] = [],
 ): { send: Cause[]; later: Cause[] } {
+  const gone = new Set(settled);
   const send: Cause[] = [];
   const later: Cause[] = [];
   for (const c of causes) {
@@ -241,6 +252,7 @@ export function fitting(
       { comment: workspace.comment, unread: workspace.unread !== false },
       messageFor([...send, c]),
       preserveRead,
+      gone,
     );
     if (next !== null && next.length > MAX_COMMENT) {
       later.push(c);
@@ -261,14 +273,11 @@ async function write(
   state: ApplyState,
   workspace: Workspace,
   message: string,
-  dispatcherOnly: boolean,
   signal: AbortSignal,
-  replaceReadComment?: string,
-  prepareComment?: (
-    before: string,
-    projected: string,
-    unread: boolean,
-  ) => boolean,
+  policy: Pick<
+    NotifyTarget,
+    "dispatcherOnly" | "replaceReadComment" | "settled" | "prepareComment"
+  >,
 ): Promise<RuntimeReceipt> {
   try {
     return await state.runtime.notify(
@@ -276,10 +285,8 @@ async function write(
         id: workspace.id,
         path: workspace.path,
         branch: workspace.branch,
-        dispatcherOnly,
         signal,
-        ...(prepareComment === undefined ? {} : { prepareComment }),
-        ...(replaceReadComment === undefined ? {} : { replaceReadComment }),
+        ...policy,
       },
       message,
     );
@@ -354,12 +361,70 @@ function delivered(
 
 const SPENT = "the delivery time was spent before the write";
 
+/**
+ * Why a cause waits for room: the unread comment, less the entries whose
+ * causes are settled, leaves too little. It counts as a failed delivery.
+ */
+export const NO_ROOM =
+  "the comment is full: its unread entries still stand, or a person added to it; read the unread notices or shorten personal additions so a later tick can deliver it";
+
+/** What one workspace's write is allowed to replace, and how it reads the comment it finds. */
+function writePolicy(
+  workspace: Workspace,
+  {
+    root,
+    slug,
+    dispatcherOnly,
+    owned,
+    settled,
+  }: {
+    root: string;
+    slug: string;
+    dispatcherOnly: boolean;
+    owned: boolean;
+    settled: readonly string[];
+  },
+): Parameters<typeof write>[4] {
+  return {
+    dispatcherOnly,
+    ...(owned ? { replaceReadComment: workspace.comment } : {}),
+    ...(settled.length === 0
+      ? {}
+      : { settled: { comment: workspace.comment, keys: [...settled] } }),
+    prepareComment: (before, projected, unread) => {
+      const known =
+        ownsComment({ ...workspace, comment: before }, root) ||
+        (!dispatcherOnly && !unread);
+      if (known) intendComment(workspace, projected, root, slug);
+      return known;
+    },
+  };
+}
+
+/** What a write's receipt changes: whether a write may have happened, and the comment now on the workspace. */
+function afterWrite(
+  workspace: Workspace,
+  receipt: RuntimeReceipt,
+  root: string,
+  slug: string,
+  mayHaveWritten: () => void,
+): void {
+  // A refusal that wrote nothing is `lost: false`; only an answer that may have written counts.
+  if (receipt.ok || receipt.lost === true) mayHaveWritten();
+  if (!receipt.ok || receipt.comment === undefined) return;
+  if (receipt.ownedComment === true)
+    recordComment(workspace, receipt.comment, root, slug);
+  workspace.comment = receipt.comment;
+  workspace.unread = receipt.unread ?? null;
+}
+
 /** One workspace's causes, joined into one message and sent. */
 async function sendTo(
-  { state, root, repo, branch }: CardContext,
+  { state, root, repo, report, branch, standing }: CardContext,
   workspace: Workspace,
   causes: Cause[],
   signal: AbortSignal,
+  mayHaveWritten: () => void,
 ): Promise<Delivery[]> {
   const dispatcherOnly = branch !== null;
   // Reconcile an interrupted delivery even when every cause is already present.
@@ -372,49 +437,37 @@ async function sendTo(
   if (signal.aborted)
     return [...out, ...fresh.map((c) => answer(c, "waits", null, SPENT))];
   const preserveRead = dispatcherOnly && !owned;
-  const { send, later } = fitting(workspace, fresh, preserveRead);
-  out.push(
-    ...later.map((c) =>
-      answer(
-        c,
-        "waits",
-        null,
-        "the comment is full: read unread notices or shorten personal additions so a later tick can deliver it",
-      ),
-    ),
-  );
+  // Only a comment known to be the dispatcher's alone gives up its settled entries.
+  const settled = owned
+    ? settledEntries(
+        workspace.comment,
+        report,
+        standing(),
+        retirementRecords(repo.slug, root),
+      )
+    : [];
+  const { send, later } = fitting(workspace, fresh, preserveRead, settled);
+  out.push(...later.map((c) => answer(c, "waits", null, NO_ROOM)));
   if (send.length === 0) return out;
-  const message = messageFor(send);
   const receipt = await write(
     state,
     workspace,
-    message,
-    dispatcherOnly,
+    messageFor(send),
     signal,
-    owned ? workspace.comment : undefined,
-    (before, projected, unread) => {
-      const known =
-        ownsComment({ ...workspace, comment: before }, root) ||
-        (!dispatcherOnly && !unread);
-      if (known) intendComment(workspace, projected, root, repo.slug);
-      return known;
-    },
+    writePolicy(workspace, {
+      root,
+      slug: repo.slug,
+      dispatcherOnly,
+      owned,
+      settled,
+    }),
   );
-  if (
-    receipt.ok &&
-    receipt.ownedComment === true &&
-    receipt.comment !== undefined
-  )
-    recordComment(workspace, receipt.comment, root, repo.slug);
-  if (receipt.ok && receipt.comment !== undefined) {
-    workspace.comment = receipt.comment;
-    workspace.unread = receipt.unread ?? null;
-  }
+  afterWrite(workspace, receipt, root, repo.slug, mayHaveWritten);
   for (const c of send) out.push(delivered(receipt, c, workspace.path, signal));
   return out;
 }
 
-/** The `orca-card` channel of one repository in one tick, and the workspaces it wrote or opened. */
+/** The `orca-card` channel of one repository in one tick, and the workspaces it opened or wrote a comment to. */
 export interface OrcaCard extends NotificationChannel<Cause> {
   readonly written: ReadonlySet<string>;
 }
@@ -426,6 +479,7 @@ export function orcaCard(
   report: RepoReport,
   sessions: SessionsReport,
   branch: string | null,
+  standing: () => ReadonlySet<string>,
 ): OrcaCard {
   const root = state.root ?? stateRoot();
   const written = new Set<string>();
@@ -442,6 +496,7 @@ export function orcaCard(
         report,
         workspaces: sessions.workspaces,
         branch,
+        standing,
         root,
       };
       // The listing before the destination is opened: the notices workspace is no cause's own.
@@ -456,8 +511,10 @@ export function orcaCard(
         target,
         due.map((c) => located(c, listed, target)),
         time.signal,
+        () => written.add(target.path),
       );
-      written.add(target.path);
+      // An opened workspace counts as written; a refusal that wrote nothing does not.
+      if (!listed.some((w) => w.path === target.path)) written.add(target.path);
       return out;
     },
   };

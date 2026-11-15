@@ -37,6 +37,7 @@ import { driverRuntime } from "./runtime.ts";
 import { attemptsFor, chargeRepair, repairSelection } from "./ci-attempts.ts";
 import {
   beforeRepairRecovery,
+  cancelledRunRecovery,
   pendingRetryDisposition,
 } from "./ci-recovery.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
@@ -65,14 +66,17 @@ export async function releaseAndReadFinalCi(
   // persisted labelled timeline-event id before removing anything, and
   // adopts a live label it holds no record of, then removes it.
   const finalCiSignals = await context.finalCiWait.prime();
+  // Captured, then written through the console, so the driver log keeps
+  // why a release failed: an inherited stream reaches the terminal only.
   const release = await run(
     tsArgv(ciHold, ["release", context.pr, "--expect-head", reviewedHead]),
-    { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
+    { timeoutSec: ciHoldTimeoutSeconds() },
   );
+  if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
   if (release.code === 4) {
     console.error(
-      "review converged, but the head moved or the CI hold label changed during its release; not reporting merge-ready",
+      "review converged, but the CI hold's release could not settle (the head moved, the label changed, or the forge could not be read); not reporting merge-ready",
     );
     return 4;
   }
@@ -441,7 +445,7 @@ async function repairConvergedCi(
     // "Never charge until certain" needs no compensating action at
     // all — this line only has to DISPLAY the attempt number the
     // dispatch below, if it happens, will actually become.
-    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (DRIVE_PR_CI_REPAIR_ROUNDS=${context.ciRepairBudget}; 0 stops here instead).`,
+    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (drive.ci_repair_rounds, or DRIVE_PR_CI_REPAIR_ROUNDS for one run; 0 stops here instead).`,
   );
   // The repair dispatches ahead of the round's own refresh: resolve the
   // policy base again, for a pull request retargeted since.
@@ -669,9 +673,18 @@ export async function evaluateFinalCi(
   // and a `/fix-ci` pass handed neither a run nor a check name has
   // nothing to work from. Those keep today's stop verbatim, below.
   //
-  // A failure every one of whose checks failed on the infrastructure is
-  // re-run first, whatever the repair budget: no code change fixes it, so it
-  // spends no repair pass (`infra-recovery.ts`).
+  // A failure only cancelled runs carry is recovered as a cancellation, and
+  // one every one of whose checks failed on the infrastructure is re-run,
+  // first and whatever the repair budget: no code change fixes either, so
+  // neither spends a repair pass (`ci-recovery.ts`, `infra-recovery.ts`).
+  const cancelled = await cancelledRunRecovery(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+  );
+  if (cancelled !== null) return cancelled;
   const recovered = await beforeRepairRecovery(
     finalVerdict,
     staleRequiredFailure,
