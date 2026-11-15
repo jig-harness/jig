@@ -554,6 +554,7 @@ export function ghGovernance(
         key,
         forgeAnswerOf(args, headers, body, failure, now, result.stderr ?? ""),
         sentAt,
+        admitted.reserve ?? null,
       );
       const answered =
         strip && headers !== null ? { ...result, stdout: body } : result;

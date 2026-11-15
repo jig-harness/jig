@@ -379,9 +379,16 @@ export interface BudgetGovernor {
   admit(adapter: string, key: string, opts?: AdmitOptions): number;
   /**
    * Record what one answer said. `sentAt` is the `admit` time of the request
-   * it answers: what was recorded since is not in the answer.
+   * it answers: what was recorded since is not in the answer. `reservedIn`
+   * names the window that request reserved, `null` for one that reserved
+   * nothing; left out, it is read as the window `admit` reserves by default.
    */
-  observe(key: string, answer: BudgetAnswer, sentAt?: number): void;
+  observe(
+    key: string,
+    answer: BudgetAnswer,
+    sentAt?: number,
+    reservedIn?: string | null,
+  ): void;
   /** Until when the credential is held after the answers recorded so far, epoch milliseconds; `null` when it is not. */
   heldUntil?(key: string): number | null;
   /**
@@ -410,6 +417,7 @@ function merged(
   next: BudgetWindow | undefined,
   now: number,
   sentAt: number | undefined,
+  requestReserved = true,
 ): BudgetWindow {
   if (next === undefined) return prev;
   // The settlement watermark of the last snapshot stays: `release` relies on
@@ -424,7 +432,12 @@ function merged(
     ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
     answeredOrdinarilyAt: now,
   };
-  const { settled, adopted } = reconciliation(prev, read, sentAt ?? now);
+  const { settled, adopted } = reconciliation(
+    prev,
+    read,
+    sentAt ?? now,
+    requestReserved,
+  );
   const kept = (remaining: number | null): BudgetWindow => ({
     ...read,
     remaining,
@@ -461,17 +474,21 @@ function reconciliation(
   prev: BudgetWindow,
   read: BudgetWindow,
   sent: number,
+  requestReserved: boolean,
 ): {
   settled: (count: number) => number;
   adopted: (count: number | null) => BudgetWindow;
 } {
   const pending = prev.pending ?? [];
   // Reservations at the request's own millisecond cannot be told from it:
-  // one of them is the request, the rest were made after it was sent.
+  // when the request reserved in this window one of them is the request and
+  // the rest were made after it was sent; when it reserved nothing, all were.
   const atSent = pending.filter((t) => t === sent).length;
   const later = [
     ...pending.filter((t) => t > sent),
-    ...Array<number>(Math.max(0, atSent - 1)).fill(sent),
+    ...Array<number>(Math.max(0, atSent - (requestReserved ? 1 : 0))).fill(
+      sent,
+    ),
   ];
   // The forgotten ones (past `PENDING_CAP`) cannot be told apart either, so
   // those after the request count as later: that under-credits at worst.
@@ -709,11 +726,18 @@ function mergedWindows(
   next: Record<string, BudgetWindow> | undefined,
   now: number,
   sentAt: number | undefined,
+  reservedIn: string | null,
 ): Record<string, BudgetWindow> | undefined {
   if (next === undefined) return prev;
   const out: Record<string, BudgetWindow> = { ...prev };
   for (const [name, w] of Object.entries(next))
-    out[name] = merged(prev?.[name] ?? EMPTY, w, now, sentAt);
+    out[name] = merged(
+      prev?.[name] ?? EMPTY,
+      w,
+      now,
+      sentAt,
+      reservedIn === name,
+    );
   return out;
 }
 
@@ -854,7 +878,7 @@ export function budgetGovernor(
       if (out.refusal !== null) throw out.refusal;
       return now;
     },
-    observe(key, answer, sentAt) {
+    observe(key, answer, sentAt, reservedIn = "requests") {
       const now = clock();
       store.update(key, (prev) => {
         const base: BudgetRecord = prev ?? {
@@ -873,14 +897,24 @@ export function budgetGovernor(
                 ...base.windows,
                 ...stamped(base.windows, answer.windows, now, sentAt),
               }
-            : mergedWindows(base.windows, answer.windows, now, sentAt);
-        const take = (prev: BudgetWindow, next: BudgetWindow | undefined) =>
+            : mergedWindows(
+                base.windows,
+                answer.windows,
+                now,
+                sentAt,
+                reservedIn,
+              );
+        const take = (
+          prev: BudgetWindow,
+          next: BudgetWindow | undefined,
+          name: string,
+        ) =>
           answer.snapshot === true
             ? snapshotOf(prev, next, now, sentAt)
-            : merged(prev, next, now, sentAt);
+            : merged(prev, next, now, sentAt, reservedIn === name);
         return {
-          requests: take(base.requests, answer.requests),
-          complexity: take(base.complexity, answer.complexity),
+          requests: take(base.requests, answer.requests, "requests"),
+          complexity: take(base.complexity, answer.complexity, "complexity"),
           limitedUntil:
             hold.until !== null
               ? Math.max(

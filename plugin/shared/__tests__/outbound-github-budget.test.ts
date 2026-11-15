@@ -840,6 +840,45 @@ describe("the accounting of runs whose answers say little of the balance", () =>
     expect(store.read(KEY)?.requests.remaining).toBe(3700);
   });
 
+  it("keeps a reservation made in the millisecond an unreserved request was sent", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: {
+        limit: 5000,
+        remaining: 4000,
+        resetAt: reset,
+        refillMs: 3_600_000_000_000,
+        readAt: now,
+      },
+    }));
+    now += 5;
+    // A conditional request reserves nothing; another reserves in its millisecond.
+    const sentAt = governor.admit("GitHub", KEY, { reserve: null });
+    governor.admit("GitHub", KEY, { reserve: "requests" });
+    expect(store.read(KEY)?.requests.remaining).toBeCloseTo(3999, 3);
+    now += 10;
+    governor.observe(
+      KEY,
+      {
+        requests: {
+          limit: 5000,
+          remaining: 3990,
+          resetAt: reset,
+          refillMs: 3_600_000_000_000,
+        },
+      },
+      sentAt,
+      null,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBeCloseTo(3989, 3);
+  });
+
   it("releases one reservation of several made in the same millisecond", () => {
     const store = memoryBudgetStore();
     const governor = budgetGovernor(store, {
