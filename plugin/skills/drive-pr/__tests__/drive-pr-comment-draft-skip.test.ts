@@ -101,6 +101,10 @@ describe("a comment-only draft skip", () => {
       "Old notice:\n```markdown\n## Draft PR not reviewed\n```",
     ],
     ["a tilde fence", "~~~\n## Draft PR not reviewed\n~~~"],
+    [
+      "a multiline code span",
+      "The old notice is `\n**Draft PR not reviewed**\n`.",
+    ],
     ["indented code", "    ## Draft PR not reviewed"],
     ["a quote", "> ## Draft PR not reviewed"],
     [
