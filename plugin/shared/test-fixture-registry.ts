@@ -466,7 +466,7 @@ export interface FixtureEnclosureIndex {
  * a readable registration, or a read past its time bound, leaves the index
  * incomplete rather than guessing.
  */
-export function fixtureEnclosureIndex(
+function fixtureEnclosureIndex(
   store = testFixtureRegistryRoot(),
 ): FixtureEnclosureIndex {
   const index: FixtureEnclosureIndex = { roots: new Map(), complete: true };
