@@ -644,6 +644,82 @@ describe("the accounting of runs whose answers say little of the balance", () =>
     expect(store.read(KEY)?.requests.remaining).toBe(4000);
   });
 
+  it("keeps an ordinary answer's lower balance when a delayed snapshot arrives", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
+    }));
+    now += 10;
+    governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.observe(
+      KEY,
+      { requests: { limit: 5000, remaining: 0, resetAt: reset } },
+      now - 1,
+    );
+    now += 10;
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 4000, resetAt: reset },
+      },
+      1_000_005,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(0);
+  });
+
+  it("never credits a reservation the cap forgot", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
+    }));
+    for (let i = 0; i < 300; i += 1) {
+      now += 1;
+      governor.admit("GitHub", KEY, { reserve: "requests" });
+    }
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 4000, resetAt: reset },
+      },
+      1_000_000,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(3700);
+  });
+
+  it("releases one reservation of several made in the same millisecond", () => {
+    const store = memoryBudgetStore();
+    const governor = budgetGovernor(store, {
+      clock: () => 1_000_000,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: 1 },
+    }));
+    const a = governor.admit("GitHub", KEY, { reserve: "requests" });
+    const b = governor.admit("GitHub", KEY, { reserve: "requests" });
+    expect(store.read(KEY)?.requests.remaining).toBe(3998);
+    governor.release?.(KEY, "requests", a);
+    expect(store.read(KEY)?.requests.remaining).toBe(3999);
+    governor.release?.(KEY, "requests", b);
+    expect(store.read(KEY)?.requests.remaining).toBe(4000);
+  });
+
   it("does not let an answer from an ended window replace a guessed reset", async () => {
     const store = memoryBudgetStore();
     let now = 3_000_000;

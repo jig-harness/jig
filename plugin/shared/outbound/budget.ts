@@ -74,13 +74,42 @@ export interface BudgetWindow {
    * `t` in its balance. Absent: none recorded.
    */
   pending?: number[];
+  /**
+   * Reservations forgotten beyond `PENDING_CAP`: how many, and the newest
+   * one's time. A snapshot sent at or before that time counts them all as
+   * unsettled, which under-credits at worst; none is ever given back.
+   */
+  overflow?: { count: number; at: number };
+  /**
+   * When an ordinary answer last reported this window. A snapshot sent
+   * before it does not know of that answer's spending, so it cannot raise
+   * the balance above it.
+   */
+  answeredOrdinarilyAt?: number;
 }
 
-/** How many unsettled reservations a window remembers. */
+/** How many unsettled reservations a window remembers one by one. */
 const PENDING_CAP = 256;
 
-const withPending = (w: BudgetWindow, at: number): number[] =>
-  [...(w.pending ?? []), at].slice(-PENDING_CAP);
+/** The window's unsettled reservations with one more at `at`, and what the cap forgot. */
+function withPending(
+  w: BudgetWindow,
+  at: number,
+): Pick<BudgetWindow, "pending" | "overflow"> {
+  const all = [...(w.pending ?? []), at];
+  const forgotten = all.slice(0, Math.max(0, all.length - PENDING_CAP));
+  const overflow =
+    forgotten.length === 0
+      ? w.overflow
+      : {
+          count: (w.overflow?.count ?? 0) + forgotten.length,
+          at: Math.max(w.overflow?.at ?? 0, ...forgotten),
+        };
+  return {
+    pending: all.slice(-PENDING_CAP),
+    ...(overflow === undefined ? {} : { overflow }),
+  };
+}
 
 /** What the machine knows of one credential's budget. */
 export interface BudgetRecord {
@@ -221,6 +250,8 @@ function validWindow(w: unknown): w is BudgetWindow {
     estimated,
     snapshotSentAt,
     pending,
+    overflow,
+    answeredOrdinarilyAt,
   } = w as Record<string, unknown>;
   return (
     orNull(limit, (n) => n >= 0) &&
@@ -233,6 +264,13 @@ function validWindow(w: unknown): w is BudgetWindow {
     (pending === undefined ||
       (Array.isArray(pending) &&
         pending.every((t) => typeof t === "number" && Number.isFinite(t)))) &&
+    (overflow === undefined ||
+      (typeof overflow === "object" &&
+        overflow !== null &&
+        Number.isFinite((overflow as { count?: unknown }).count) &&
+        Number.isFinite((overflow as { at?: unknown }).at))) &&
+    (answeredOrdinarilyAt === undefined ||
+      orNull(answeredOrdinarilyAt, (n) => n >= 0)) &&
     (estimated === undefined || typeof estimated === "boolean")
   );
 }
@@ -383,6 +421,8 @@ function merged(
       : { snapshotSentAt: prev.snapshotSentAt }),
     // An ordinary answer settles no reservation of its own.
     ...(prev.pending === undefined ? {} : { pending: prev.pending }),
+    ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
+    answeredOrdinarilyAt: now,
   };
   const count = next.remaining;
   // A guessed reset yields to an answer that reports the current window,
@@ -591,7 +631,7 @@ function reserved(
     ...w,
     remaining: held - 1,
     readAt: now,
-    pending: withPending(w, now),
+    ...withPending(w, now),
   });
 }
 
@@ -680,16 +720,34 @@ function snapshotOf(
   // What the snapshot cannot count: the reservations made since its request
   // was sent. Those made before it are in its balance, and settled.
   const pending = (prev.pending ?? []).filter((t) => t >= since);
+  const forgotten =
+    prev.overflow !== undefined && prev.overflow.at >= since
+      ? prev.overflow
+      : undefined;
   const read: BudgetWindow = {
     ...next,
     readAt: now,
     answeredAt: now,
     snapshotSentAt: since,
     pending,
+    ...(forgotten === undefined ? {} : { overflow: forgotten }),
   };
-  return next.remaining === null
-    ? read
-    : { ...read, remaining: next.remaining - pending.length };
+  if (next.remaining === null) return read;
+  const counted = next.remaining - pending.length - (forgotten?.count ?? 0);
+  // An ordinary answer recorded since the snapshot's request was sent holds
+  // spending the snapshot cannot know of: the lower balance of one window stands.
+  const newer =
+    prev.answeredOrdinarilyAt !== undefined &&
+    prev.answeredOrdinarilyAt >= since &&
+    prev.remaining !== null &&
+    next.resetAt === prev.resetAt;
+  if (!newer || prev.answeredOrdinarilyAt === undefined)
+    return { ...read, remaining: counted };
+  return {
+    ...read,
+    remaining: Math.min(counted, prev.remaining as number),
+    answeredOrdinarilyAt: prev.answeredOrdinarilyAt,
+  };
 }
 
 /** A governor over `store`; `clock` and `share` are for tests. */
@@ -793,7 +851,10 @@ export function budgetGovernor(
           (w.pending !== undefined && !w.pending.includes(sentAt))
         )
           return null;
-        const pending = w.pending?.filter((t) => t !== sentAt);
+        // One reservation, even where several share a millisecond.
+        const at = w.pending?.indexOf(sentAt) ?? -1;
+        const pending =
+          at < 0 ? w.pending : w.pending?.filter((_, i) => i !== at);
         const remaining =
           w.limit === null
             ? w.remaining + 1
