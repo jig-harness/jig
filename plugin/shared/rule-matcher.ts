@@ -29,7 +29,6 @@ import {
   RULE_FIELDS,
   type RuleField,
 } from "./rule-matcher-values.ts";
-import { type Shape, s } from "./shapes.ts";
 
 export * from "./rule-matcher-values.ts";
 
@@ -407,20 +406,6 @@ function what(match: Match, owner: string | undefined): string {
 export function reason(match: Match, owner?: string): string {
   return `${ruleAt(match)}, for ${what(match, owner)}`;
 }
-
-// ---------------------------------------------------------------------------
-// The shape of a rule, for the Protocol chapter's JSON Schema
-// ---------------------------------------------------------------------------
-
-const factList = s.optional(
-  s.array(s.string({ minLength: 1 }), { minItems: 1 }),
-);
-
-/** A rule written as a mapping of facts, as `when` holds it. */
-export const RULE_SHAPE: Shape = s.object(
-  Object.fromEntries(FACT_NAMES.map((f) => [f, factList])),
-  { additionalProperties: false },
-);
 
 // ---------------------------------------------------------------------------
 // Checking a configuration's rules at load

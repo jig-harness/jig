@@ -18,6 +18,7 @@ import { FOLLOWUP_CLAIM_CHAPTER } from "./chapters/followup-claim.ts";
 import { MAILBOX } from "./chapters/mailbox.ts";
 import { PR_LABELS } from "./chapters/pr-labels.ts";
 import { REPO_COMMANDS_CHAPTER } from "./chapters/repo-commands.ts";
+import { RULE_MATCHERS_CHAPTER } from "./chapters/rule-matchers.ts";
 
 export const CHAPTERS: readonly Chapter[] = [
   DRIVE_EXITS,
@@ -26,6 +27,7 @@ export const CHAPTERS: readonly Chapter[] = [
   COMMENT_MARKERS,
   REPO_COMMANDS_CHAPTER,
   FOLLOWUP_CLAIM_CHAPTER,
+  RULE_MATCHERS_CHAPTER,
 ];
 
 export const WITHDRAWN: readonly Withdrawn[] = [];

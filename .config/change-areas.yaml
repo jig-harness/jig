@@ -380,8 +380,9 @@ areas:
     # generated from drive-pr's terminal-state table, the drive mailbox's
     # tables, the pull-request label projection, the table of commands a
     # repository supplies, the records registry, the record envelope's codec
-    # and the follow-up marker's tables, and its base comparison reads change
-    # notes through the changelog skill's scripts.
+    # and the follow-up marker's tables, and the rule matcher's tables, and
+    # its base comparison reads change notes through the changelog skill's
+    # scripts.
     category: tooling
     paths: ["plugin/protocol/**", "tools/protocol/**"]
     workspace: []
@@ -419,6 +420,9 @@ areas:
           - "plugin/protocol/data/followup-claim.json"
           - "plugin/protocol/schemas/followup-claim.json"
           - "plugin/protocol/schemas/followup-result.json"
+          - "plugin/protocol/rule-matchers.md"
+          - "plugin/protocol/data/rule-matchers.json"
+          - "plugin/protocol/schemas/rule.json"
         source:
           - "tools/protocol/**"
           - "biome.json"
@@ -448,6 +452,7 @@ areas:
           - "plugin/shared/records/writer.ts"
           - "plugin/shared/repo-command-shapes.ts"
           - "plugin/shared/repo-commands.ts"
+          - "plugin/shared/rule-matcher-values.ts"
           - "plugin/shared/shapes.ts"
           - "plugin/shared/time.ts"
           - "plugin/skills/drive-pr/scripts/lib/state/ledger-shapes.ts"

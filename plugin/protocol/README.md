@@ -52,6 +52,7 @@ authorizes an action.
 | [Hidden comment markers on the forge and the tracker](comment-markers.md) | The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means. | 1 | stable | [data/comment-markers.json](data/comment-markers.json) |
 | [Commands a repository supplies](repo-commands.md) | The settings whose value is a command Jig runs: what each command is given, what it answers with, its deadline and the exits its caller reads. | 1 | stable | [data/repo-commands.json](data/repo-commands.json) |
 | [The follow-up claim and its result](followup-claim.md) | The marker that claims a merged pull request's follow-up: who took it, a dispatcher's tick or a person's run, and how it ended. | 1 | stable | [data/followup-claim.json](data/followup-claim.json) |
+| [Rule matchers in configuration](rule-matchers.md) | The configuration fields that select by an item's or a change's facts: the facts a rule may test, how each is compared, how a rule combines its values, and how a field's rules resolve. | 1 | stable | [data/rule-matchers.json](data/rule-matchers.json) |
 
 <!-- /protocol:generated -->
 

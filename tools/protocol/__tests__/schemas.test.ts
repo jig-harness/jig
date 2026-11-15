@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseRule } from "../../../plugin/shared/rule-matcher.ts";
 import { s } from "../../../plugin/shared/shapes.ts";
 import {
   encodeMarker,
@@ -354,6 +355,20 @@ describe("stable JSON writers", () => {
         ...message,
         kind: "future",
       });
+    }
+  });
+});
+
+describe("the rule schema", () => {
+  test("accepts what the rule matcher reads as a rule, and refuses what it refuses", () => {
+    const at = "pull_requests.base_rules[0].when";
+    for (const rule of [{ labels: ["hotfix"] }, { labels: ["a", "b"] }]) {
+      expectSchemaAccepts(published("rule"), rule);
+      expect(parseRule("pull_requests.base_rules", rule, at).ok).toBe(true);
+    }
+    for (const rule of [{ colour: ["red"] }, { labels: [] }, { labels: "x" }]) {
+      expectSchemaRejects(published("rule"), rule);
+      expect(parseRule("pull_requests.base_rules", rule, at).ok).toBe(false);
     }
   });
 });

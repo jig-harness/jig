@@ -7,6 +7,7 @@
  * (`plugin/protocol/rule-matchers.md`) is generated from these tables, so
  * each entry carries the meaning the chapter prints.
  */
+import { type Shape, s } from "./shapes.ts";
 
 /** The facts a rule may test, in the order a rule's facts are tried. */
 export const FACT_NAMES = ["labels", "title", "size", "paths"] as const;
@@ -238,3 +239,16 @@ export const RULE_FIELDS: Readonly<Record<string, RuleField>> = {
       "Holds an item out of a batch, joined to the flags work-batch derives (the human-in-the-loop label and its facets, `manual-ops`, and every flag the catalog declares).",
   },
 };
+
+const factList = s.optional(
+  s.array(s.string({ minLength: 1 }), { minItems: 1 }),
+);
+
+/**
+ * A rule written as a mapping of facts, as a `when` holds it: each fact a
+ * nonempty list of nonempty values, no other key.
+ */
+export const RULE_SHAPE: Shape = s.object(
+  Object.fromEntries(FACT_NAMES.map((f) => [f, factList])),
+  { additionalProperties: false },
+);

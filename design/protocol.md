@@ -21,8 +21,8 @@ This is the design of [plan.md](plan.md) item 53. Its stable chapters and their 
 the generator, its gate and the chapter on the drive's end states and exit
 codes; the records chapters, on hidden comment markers and on the
 follow-up claim and its result; the chapters on the drive mailbox and on
-the pull-request labels; and the chapter on the commands a repository
-supplies, with JSON Schemas generated from the readers' shape descriptions; the site renders the chapters at `/protocol/`. The steps after
+the pull-request labels; the chapter on the commands a repository
+supplies; and the chapter on rule matchers in configuration, with JSON Schemas generated from the readers' shape descriptions; the site renders the chapters at `/protocol/`. The steps after
 them in § Build order are open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
@@ -158,6 +158,7 @@ free while it is in use.
 | Hidden comment markers on the forge and the tracker | stable | the forge and tracker kinds of `shared/records/registry.ts` except the claims below, `NOT_RECORDS`, and the marker codec in `shared/records/envelope.ts` | — |
 | Commands a repository supplies | stable | `REPO_COMMANDS` in `shared/repo-commands.ts`: each command's contract (the preflight's exit `3`, a reflection store's JSON), which the runner in `shared/repo-command.ts` and each caller read | — |
 | The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and its runs, outcomes and fields (`shared/records/followup-values.ts`) | — |
+| Rule matchers in configuration | stable | the tables of `shared/rule-matcher-values.ts`: the facts a rule may test, how a rule combines its values, each list semantics and form, and every configuration field that selects by an item's or a change's facts, which the matcher in `shared/rule-matcher.ts` and each field's reader use | — |
 | Addresses and the verbs of `jig ask` and `jig send` | provisional | `shared/address.ts` and `send/` | 39, 42 |
 | Needs and structured answers | provisional | the decision record (`parked-decision/v1`) and the need classes | 46, 50 |
 | Steward records | provisional | the steward's record kinds and their closed fields | 50 |
