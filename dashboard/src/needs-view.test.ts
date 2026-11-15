@@ -148,6 +148,15 @@ describe("a park", () => {
     expect(view.goLabel).toBe("Answer on the pull request");
   });
 
+  it("sends to its pull request on github.com, and a stop with no decision does not", () => {
+    const url = "https://github.com/example-org/web/pull/7";
+    expect(needView({ ...park, url }, CLOCK).send).toEqual({
+      to: { repo: "example-org/web", number: 7 },
+    });
+    expect("absent" in needView(park, CLOCK).send).toBe(true);
+    expect("absent" in needView({ ...NEED, url }, CLOCK).send).toBe(true);
+  });
+
   it("names each decision key a person answers, once", () => {
     expect(needView(park, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
     const twice = { ...park, decisions: [FRAMED, FRAMED] };
