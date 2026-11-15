@@ -194,7 +194,16 @@ async function matchesStoppedDriver(
   // Ledgers written before clone identities included their host suffix remain
   // readable, but cannot prove the stronger current ownership relation.
   if (driver === null || !driver.clone.includes("@")) return ok(true);
-  if (`wt-${worktreePathKey(path)}` !== driver.actor) return ok(false);
+  let actor: string;
+  try {
+    actor = `wt-${worktreePathKey(path)}`;
+  } catch (error) {
+    return unreadable(
+      `the worktree identity of candidate ${path} could not be read: ${String(error)}`,
+      error,
+    );
+  }
+  if (actor !== driver.actor) return ok(false);
   const sec = ctx.reading.sourceSec();
   if (sec === 0)
     return unreadable(
