@@ -396,6 +396,63 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.239.0] - 2026-11-15
+
+### Added
+
+- A dispatcher tick its launcher bounds now keeps every read of its observe
+  phase to one bound: the launcher's deadline less the time its receipt
+  needs. The tracker's assigner, mover, claimed-item and claim-marker reads
+  and the session runtime's listings are given the bound's signal where
+  their transport takes one, and held to it either way. A forge listing or
+  query the bound ended before is not started, a paged forge query asks no
+  page after the bound ends, and a comment listing gets no more time than
+  the bound has left. A read the bound cut short is a failed read of class
+  `unreachable`: a repository refused, a tracker, forge or runtime record
+  not ok, or an item unplaced with "the tick's deadline passed before …".
+  The tick still writes its receipt and lets its locks go, and the failure
+  ledger tells a person when it keeps happening. A tick no launcher bounds,
+  such as one run by hand without a machine file, reads as before. The
+  tracker port's `assignedBy` and `stateChangedBy` and the session
+  runtime's `sessions` take an optional `AbortSignal` on the GitHub, Jira
+  and Linear adapters and on Orca. **Consumer action:** none.
+
+### Changed
+
+- The dispatcher's notices now go out through a notification channel, so a
+  later release can add a team chat beside the Orca workspace comment. The
+  Orca comment and unread mark are the `orca-card` channel, and what a
+  person sees there does not change. Each channel keeps its own record of
+  what it sent and backs off on its own, so a notice that one channel loses
+  is tried again on that channel alone. The state database's `notices`
+  table gains a `channel` column and an index for channel-qualified host
+  notices. Existing rows read as `orca-card`; the migration requires the
+  release that introduces channels before a dispatcher uses that state.
+- A notice about a drive (parked, stopped, ready to merge) now also carries
+  structured fields beside its text: the drive's address, the pull
+  request's link, the commands its text names, and, for a park, each
+  decision with its question, recommendation and options, with what each
+  changes and costs. These fields appear in the tick's receipt; the text
+  is unchanged.
+
+### Fixed
+
+- A draft skipped by CodeRabbit through its comment alone now finishes its
+  own review round, marks Ready under the repository's policy and waits for
+  the review. A Ready pull request still waits when only the old skip comment
+  exists. **Consumer action:** none.
+- A successful standalone Ready transition releases its session leases so a drive can start immediately in the same working tree. Calls inside a running drive keep its leases. **Consumer action:** none.
+- `jig gc` no longer lets Orca launch an agent into a worktree whose removal
+  may still be under way. When `orca worktree rm` times out, exits with an
+  error, or prints something gc cannot read, gc now keeps its claim on the
+  worktree, so Jig's plugin for Orca keeps refusing launches there. The next
+  run checks again that the worktree is idle and calls `orca worktree rm`
+  once more; the claim is released when that call answers, or when the
+  worktree is gone from Orca's list and from the disk. The receipt says when
+  a claim is kept and why
+  ([the launch guard record](plugin/gc/README.md#the-launch-guard-record)).
+  **Consumer action:** none.
+
 ## [0.238.7] - 2026-11-15
 
 ### Fixed
@@ -8411,7 +8468,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.7...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.239.0...HEAD
+[0.239.0]: https://github.com/jig-harness/jig/compare/v0.238.7...v0.239.0
 [0.238.7]: https://github.com/jig-harness/jig/compare/v0.238.6...v0.238.7
 [0.238.6]: https://github.com/jig-harness/jig/compare/v0.238.5...v0.238.6
 [0.238.5]: https://github.com/jig-harness/jig/compare/v0.238.4...v0.238.5
