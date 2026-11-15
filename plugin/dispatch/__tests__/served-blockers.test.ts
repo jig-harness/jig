@@ -624,35 +624,41 @@ describe("an assigned epic's children", () => {
     expect(read.incomplete).toBe(true);
   });
 
-  it("records a failed open child's read once", async () => {
-    const read = await world({
-      assigned: [issue("#1", ["epic"])],
-      children: { "#1": kids("#2", "#3") },
-      failing: ["#3"],
-    }).read({ epicWidth: 2 });
-    expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
-  });
-
-  it("keeps a failed child's record when another epic meets a rate limit", async () => {
-    const read = await world({
-      assigned: [issue("#1", ["epic"]), issue("#5", ["epic"])],
-      children: { "#1": kids("#2", "#3"), "#5": kids("#6") },
-      failing: ["#3"],
-      limiting: ["#6"],
-    }).read({ epicWidth: 2 });
-    expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
-  });
-
-  it("keeps a failed child's record when a sibling of the same epic meets a rate limit", async () => {
-    const read = await world({
-      assigned: [issue("#1", ["epic"])],
-      children: { "#1": kids("#2", "#3") },
-      failing: ["#3"],
-      limiting: ["#2"],
-      slow: ["#3"],
-    }).read({ epicWidth: 2 });
-    expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
-  });
+  const failedRecordCases: [string, Spec][] = [
+    [
+      "records a failed open child's read once",
+      {
+        assigned: [issue("#1", ["epic"])],
+        children: { "#1": kids("#2", "#3") },
+        failing: ["#3"],
+      },
+    ],
+    [
+      "keeps a failed child's record when another epic meets a rate limit",
+      {
+        assigned: [issue("#1", ["epic"]), issue("#5", ["epic"])],
+        children: { "#1": kids("#2", "#3"), "#5": kids("#6") },
+        failing: ["#3"],
+        limiting: ["#6"],
+      },
+    ],
+    [
+      "keeps a failed child's record when a sibling of the same epic meets a rate limit",
+      {
+        assigned: [issue("#1", ["epic"])],
+        children: { "#1": kids("#2", "#3") },
+        failing: ["#3"],
+        limiting: ["#2"],
+        slow: ["#3"],
+      },
+    ],
+  ];
+  for (const [name, spec] of failedRecordCases) {
+    it(name, async () => {
+      const read = await world(spec).read({ epicWidth: 2 });
+      expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
+    });
+  }
 
   it("reports a rate limit from a later child of a planned epic beside an earlier ordinary failure", async () => {
     const description =
