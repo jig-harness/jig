@@ -259,6 +259,25 @@ describe("the store client", () => {
     expect(r.code).toBe(EXIT.unavailable);
   });
 
+  it("keeps permissive command fields and ignores append entries without ids", async () => {
+    const permissive = join(dir, "permissive.ts");
+    const event = sampleFinding("20261012T150405Z-0000000000000001", "x");
+    writeFileSync(
+      permissive,
+      `
+      if (process.argv[2] === "check") console.log(JSON.stringify({ok: "yes", reason: 3, fix: null, extra: true}));
+      else console.log(JSON.stringify({stored: [null, {id: 3}, {id: "${event.id}", ref: 4}]}));
+    `,
+    );
+    const store = new Store(tsArgv(permissive), 30);
+    expect(await store.check()).toEqual({
+      ok: false,
+      reason: undefined,
+      fix: undefined,
+    });
+    expect(await store.append([event])).toEqual([{ id: event.id, ref: null }]);
+  });
+
   it("refuses an append the store did not report whole", async () => {
     const liar = join(dir, "liar.ts");
     writeFileSync(liar, "console.log(JSON.stringify({ stored: [] }));\n");

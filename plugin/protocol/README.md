@@ -27,6 +27,19 @@ Each chapter's values are also in a JSON file under [data/](data/), with the
 chapter's version, status and a description of each field, for a program in
 any language. These files describe the plugin release they ship in.
 
+JSON documents also have draft 2020-12 JSON Schemas in [schemas/](schemas/).
+Their `$id` identifies the owning chapter and its version. The descriptions
+that generate them also supply the readers' field checks and TypeScript
+types. Tests validate records from the writers with an independent schema
+validator. Marker lines that carry text rather than JSON have no schema.
+
+These schemas describe structural acceptance. Calendar-time validity,
+relationships between fields (such as a record's pull-request number and
+its envelope key), repository-specific names and author trust are checked
+by the readers too. Optional telemetry that a reader ignores or normalizes
+when unusable remains permissive in its schema. Passing a schema never
+authorizes an action.
+
 ## Chapters
 
 <!-- protocol:generated source=tools/protocol/chapters.ts#CHAPTERS -->
@@ -39,6 +52,7 @@ any language. These files describe the plugin release they ship in.
 | [Hidden comment markers on the forge and the tracker](comment-markers.md) | The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means. | 1 | stable | [data/comment-markers.json](data/comment-markers.json) |
 | [Commands a repository supplies](repo-commands.md) | The settings whose value is a command Jig runs: what each command is given, what it answers with, its deadline and the exits its caller reads. | 1 | stable | [data/repo-commands.json](data/repo-commands.json) |
 | [The follow-up claim and its result](followup-claim.md) | The marker that claims a merged pull request's follow-up: who took it, a dispatcher's tick or a person's run, and how it ended. | 1 | stable | [data/followup-claim.json](data/followup-claim.json) |
+| [Addresses and the verbs of `jig send`](addresses.md) | The stations an address names on a piece of work, what each one's key is, and the verbs `jig send` tells a station. | 1 | provisional, moved by [plan item 39](https://github.com/jig-harness/jig/issues/485), [plan item 42](https://github.com/jig-harness/jig/issues/541) | [data/addresses.json](data/addresses.json) |
 
 <!-- /protocol:generated -->
 

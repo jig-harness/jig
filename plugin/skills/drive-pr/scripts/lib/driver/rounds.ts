@@ -8,6 +8,7 @@ import { isDigits } from "./../cli.ts";
 import {
   ciRepairRounds,
   finalCiWitnessPolls,
+  finalRegateLimit,
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
@@ -15,6 +16,8 @@ import {
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
+
+import { statusViewFlags } from "./final-regate.ts";
 
 import { infraRecoveryBudget } from "./infra-recovery.ts";
 
@@ -214,6 +217,10 @@ export async function runDriverRounds({
     held,
     witnessWaitHead,
     witnessWaitLimit,
+    statusView: statusViewFlags(forward),
+    finalRegates: 0,
+    finalRegateKey: "",
+    finalRegateLimit: finalRegateLimit(),
     maxRoundsN,
     deadlineRetryBudget,
     stallExtraRound: false,

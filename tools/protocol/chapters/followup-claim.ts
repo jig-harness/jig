@@ -19,6 +19,12 @@ import {
 } from "../../../plugin/shared/records/registry.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { table } from "../markdown.ts";
+import { s } from "../../../plugin/shared/shapes.ts";
+import { envelopeShape } from "../../../plugin/shared/records/envelope-shape.ts";
+import {
+  FOLLOWUP_PAYLOAD_SHAPE,
+  FOLLOWUP_RUN_SHAPE,
+} from "../../../plugin/shared/records/followup-shapes.ts";
 
 const REGISTRY = "plugin/shared/records/registry.ts";
 const VALUES = "plugin/shared/records/followup-values.ts";
@@ -228,7 +234,41 @@ function values(): DataValue[] {
   ];
 }
 
+/** A version-1 record names its pull request in the envelope key; its pr field is not read. */
+const FOLLOWUP_RECORD_SHAPE = s.union([
+  s.intersection(
+    envelopeShape(followupKind()),
+    s.intersection(
+      s.object({ v: s.literal(1), pr: s.optional(s.unknown()) }),
+      FOLLOWUP_RUN_SHAPE,
+    ),
+  ),
+  s.intersection(
+    envelopeShape(followupKind()),
+    s.intersection(
+      s.object({
+        v: s.literal(followupKind().version),
+        key: s.literal("followup"),
+      }),
+      FOLLOWUP_PAYLOAD_SHAPE,
+    ),
+  ),
+]);
+
 export const FOLLOWUP_CLAIM_CHAPTER: Chapter = {
+  schemas: [
+    {
+      name: "followup-claim",
+      shape: FOLLOWUP_RECORD_SHAPE,
+    },
+    {
+      name: "followup-result",
+      shape: s.intersection(
+        FOLLOWUP_RECORD_SHAPE,
+        s.object({ outcome: s.enum(["done", "failed"]) }),
+      ),
+    },
+  ],
   id: "followup-claim",
   title: "The follow-up claim and its result",
   summary:

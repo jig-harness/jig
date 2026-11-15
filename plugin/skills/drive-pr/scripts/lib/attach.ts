@@ -35,6 +35,7 @@
  */
 import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { ignoreDriveContext } from "./context-ignore.ts";
 import {
   type DrivenTree,
   detachedTreeRecord,
@@ -271,6 +272,9 @@ export async function requireOrigin(
 
 /** Refuse a tree with uncommitted changes or an unfinished operation. */
 async function requireSettled(tree: string, which: string): Promise<void> {
+  // This tree's own rules decide what its status reads: a branch switched to
+  // since the attach began may no longer ignore the drive's `.context/`.
+  await ignoreDriveContext(tree, false, "attach");
   const status = await g(tree, [
     "status",
     "--porcelain",
@@ -681,6 +685,9 @@ export async function attachPr(
   }
   const locks = locksHeld ? [] : await takeDriverLocks(number);
   try {
+    // Before any clean-tree check: the drive's own `.context/` files are
+    // not uncommitted changes.
+    await ignoreDriveContext(tree, false, "attach");
     await requireOrigin(tree, head, number, remote);
     const fetched = await fetchHead(tree, head.branch, remote);
     if (fetched !== null) refuse(1, fetched);

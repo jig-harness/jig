@@ -440,13 +440,19 @@ assignee makes the pickup refuse without restoring anyone. Linear and Jira
 have one assignee, so they assign first and verify the assignment from history;
 when that check finds a concurrent assignee was replaced, they conditionally
 make a best-effort restoration and refuse the pickup. A tracker without either
-operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
-none while a started child still needs an agent. A child awaiting a person
-does not occupy that slot: it is in the tracker's `ops_pending` state, or
-carries `hitl`, `hitl:*`, `manual-ops` (including their configured names) or
-`jig:hold`. Nor does a child this host's ended pickup record keeps from
-starting: its next startable sibling takes the slot, and the epic reports
-the held child and why. An epic none of whose open children can start reports one reason,
+operation leaves the blocker for a person to assign. An assigned epic without
+an execution plan has its ready children started in parallel, best-ranked
+first, up to `dispatch.epic_width` of them under way at once (4 by default;
+1 starts one child at a time). A started child counts toward the width while
+it still needs an agent, and so does a child that cannot be read, since it
+may be under way. A child awaiting a person takes no part of the width: it
+is in the tracker's `ops_pending` state, or carries `hitl`, `hitl:*`,
+`manual-ops` (including their configured names) or `jig:hold`. Nor does a
+child this host's ended pickup record keeps from starting: its next
+startable sibling takes its place, and the epic reports the held child and
+why. A child that waits on the width says so, naming the epic and the width
+([ADR-0024](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)).
+An epic none of whose open children can start reports one reason,
 naming a child waiting on a person when it has one. An execution plan keeps
 its own ordering rules.
 
@@ -615,6 +621,31 @@ keeps the report whole; the outcome log's `ended` row keeps its fields and
 who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
 left none), with `cause` and `by` as columns. A run that ends without a
 report still leaves its `Question:` line.
+
+A drive runs many passes, and most of its stops are decided by `drive.ts`
+after a pass has ended, so no pass knows it is the last. Each pass instead
+ends its round with a
+[round report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+the same fields, kept in the drive's state directory and stamped with the
+pass's launch and round. When the drive stops, `drive.ts` writes the
+closing report (`by: driver`): its `concluded` is the stop's own line
+followed by what the last round report of this launch concluded, cut to
+the 600 characters; its `cause` and next step are the ones the drive's
+[terminal-state table](protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)
+gives its exit; at a park it carries the first parked decision's question
+and framed options. `jig dispatch report` refuses a drive's record: the
+wrapper hands `drive.ts` a file in the run's own state directory
+(`runs/<record>/`), and once the drive ended it checks the report there,
+records it under the record before the exit and removes the file. A
+follow-up pass that could not start gets the wrapper's own report
+(`by: wrapper`, cause `startup`, or `usage-limit` on a vendor usage
+notice). Whatever report a run keeps, the wrapper prints as its last lines.
+As each pass of a drive starts, `drive.ts` records the session id it gave
+the pass on the launch record, round by round, so the run is found in the
+vendor's transcripts; a Codex pass takes none, and neither does a CI or
+conflict repair pass, whose transcripts `launches.sessions` does not list. The end the wrapper writes
+onto the shared claim carries the report's `cause` and who wrote it
+(`by`), never its text.
 
 #### Every need is a decision
 
@@ -1457,6 +1488,10 @@ person, one line per entry. Anything else it answers in sentences.
 | `drive` | the pull request's number | the live driver: a dispatched re-arm or takeover, or a driver someone armed by hand |
 | `followup` | the merged pull request's number | the follow-up pass, or a person's run |
 
+The Jig Protocol's [Addresses chapter](protocol/addresses.md) lists the
+stations and the verbs below, generated from the code, for a program that
+forms addresses or sends verbs.
+
 The repository may be its short name where the
 [machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists
 exactly one repository of that name (`drive@jig#456`), or left out inside a
@@ -1590,6 +1625,14 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
   stopping a drive elsewhere stays that host's act.
+
+For `rearm`, the drive listing or a drive launch supplies its tree first.
+When neither names an existing tree, a successful dispatched pickup's
+handoff and Git's worktrees on the pull request's head branch are searched
+across known local clones. That fallback must find exactly one existing
+tree: several candidates are named and refused, and an incomplete search
+is refused too. Nothing opens a replacement tree; the tick checks ownership
+again before launching.
 
 The text of an `answer` is one line of at most 500 characters, with no
 control character (no line break, no mark that reorders text) and no hidden

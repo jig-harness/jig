@@ -17,6 +17,7 @@ import {
 import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
+import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
 import type { AdoptRule, DispatchSection, StalledScope } from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
@@ -53,6 +54,7 @@ const KEYS = [
   "labels",
   "adopt",
   "pool",
+  "epic_width",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
@@ -157,6 +159,14 @@ function rounds(value: unknown): Checked<number> {
     return invalid(
       "dispatch.drive_rounds_flat must be a positive whole number",
     );
+  return ok(value);
+}
+
+/** `epic_width`: a positive whole number, `DEFAULT_EPIC_WIDTH` when absent. */
+function width(value: unknown): Checked<number> {
+  if (value === undefined || value === null) return ok(DEFAULT_EPIC_WIDTH);
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    return invalid("dispatch.epic_width must be a positive whole number");
   return ok(value);
 }
 
@@ -329,6 +339,7 @@ type Timings = Omit<
   | "labels"
   | "adopt"
   | "pickupDeadlineMs"
+  | "epicWidth"
 >;
 
 /** `stalled_scope`: `claimed` unless the section says `assigned`. */
@@ -432,11 +443,14 @@ export function dispatchSection(
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
+  const epicWidth = width(section.epic_width);
+  if (!epicWidth.ok) return epicWidth;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
+    epicWidth: epicWidth.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

@@ -27,7 +27,7 @@ import { DECISION_BYTE_LIMIT, type ParkedDecision } from "./decisions/park.ts";
 import { Checker, COMMIT, type Json } from "./decisions/source.ts";
 import { failed, ok, type Outcome } from "./outcome.ts";
 import { maskCredentials } from "./credentials.ts";
-import { redactStrings } from "./redact.ts";
+import { redact, redactStrings } from "./redact.ts";
 
 export const CLOSING_REPORT_SCHEMA = "closing-report/v1";
 
@@ -210,6 +210,18 @@ export function checkClosingReport(value: unknown): string[] {
   return c.problems;
 }
 
+const REDACTED = "<redacted>";
+
+/**
+ * `text` as a report keeps it: email addresses, account identifiers and
+ * credential-shaped values replaced with `<redacted>`, as `closingReportOf`
+ * replaces them in every string of a report. A writer that composes a field
+ * to a bound redacts its parts first, so the check counts what is kept.
+ */
+export function redactReportText(text: string): string {
+  return maskCredentials(redact(text), REDACTED);
+}
+
 /**
  * The report `text` holds, redacted and checked, or why it is refused: over
  * the size a report may have, not JSON, or every problem the check names.
@@ -235,7 +247,7 @@ export function closingReportOf(
   const value = redactStrings(parsed, (text) =>
     maskCredentials(
       token === "" ? text : text.split(token).join("<redacted>"),
-      "<redacted>",
+      REDACTED,
     ),
   );
   const problems = checkClosingReport(value);
