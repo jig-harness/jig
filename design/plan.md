@@ -707,9 +707,10 @@ dispatcher when an agent's status changes, refuses a launch into a worktree
 `jig gc` is removing, shows the dispatch line in Orca's status bar, and
 opens a panel on the person's inbox, where a park is answered.
 [design/orca-integration.md](orca-integration.md) has how it works, in
-classes built in order. Still open, one pull request per step, the steps
-in parallel: the launch guard admission names only a worktree path, so it
-records the repository that owns it and the worktree's incarnation
+classes built in order. Still open, one pull request per step, in
+parallel where nothing orders them: the launch guard admission names only
+a worktree path, and records the repository that owns it and the
+worktree's incarnation
 ([#1201](https://github.com/jig-harness/jig/issues/1201)); a spike on
 binding a launch to the dispatcher's chosen account through the
 `agent.launch.before` hook, for Claude Code and for Codex
@@ -723,25 +724,28 @@ and a merge button on a merge-now entry that runs the pinned merge command
 as the person, once the dispatch board's Ready to merge (item 36) puts
 merge-now entries on the line
 ([#1308](https://github.com/jig-harness/jig/issues/1308)). The board and
-each piece of work open in the dashboard (item 42), which the plugin's
-"Open the dashboard" command opens in Orca's own browser. Orca stays
+each piece of work open in the dashboard (item 42), which item 42's
+"Open the dashboard" command for the plugin will open in Orca's own
+browser. Orca stays
 optional: every view of the dashboard works in any browser, and each thing
 the plugin adds has a Herdr or plain-text equivalent. Also open: what Jig
-asks of Orca (usage per account from the command line; a phone push only
-when an agent needs input; a hook before a workspace's removal; filed by a
-person, each with its pull request offered).
+asks of Orca, filed by a person, each with its pull request offered: usage
+per account from the command line (filed as stablyai/orca#33138), a phone
+push only when an agent needs input, and a hook before a workspace's
+removal.
 
 Done when a launch guard admission is honoured only for the repository
 that owns it and the worktree incarnation it was taken on, so another
 repository's list cannot release it and a worktree recreated at the same
 path inherits no launch block; the spike's answer is recorded and, where a
 launch binds to its account, the dispatcher starts pickups through Orca on
-the account it chose; the dispatcher's account cap reads `orca account
+the account it chose, or, where it does not, the design records why; the dispatcher's account cap reads `orca account
 usage --json` where Orca has it, an `unavailable` row holding its account;
 the panel shows a parked decision's options and choice as `jig ask` and
 the dashboard do, and a Send settles it; and a merge-now entry in the
 panel runs its pinned merge command on a person's click and on nothing
-else.
+else, a command that fails the strict forms runs nothing and says why, and
+an entry in another lane shows no button.
 
 ## Next
 

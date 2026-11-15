@@ -221,18 +221,19 @@ tooling supports, beside Herdr, the runtime it targets first. A small
 plugin Orca loads runs a dispatcher tick the moment an agent stops or
 waits. On an Orca host it refuses to start an agent in a worktree
 `jig gc` is removing, for every launch Orca makes through its launchers.
-So a launch gc's last check could miss is turned away. The protection is
-best-effort: a restored session, a hook that fails and a plugin that is
-down are not covered. The plugin shows the dispatch line in Orca's status
-bar, and a panel opens on what waits on that person, where a parked
-question is answered. Still to come, the guard will tell apart
-repositories that share a worktree folder, and a worktree recreated at the
-same path. The panel will pick a parked decision's answer as the dashboard
-does, and merge a pull request that is ready to merge on that person's
-click. A command will open the dashboard in Orca's own browser for the
-board and each piece of work. The dispatcher will read each account's
-usage from Orca's command line once Orca offers it. A trial will find
-whether a launch can be bound to the account the dispatcher chose. The plugin is Orca-bound.
+A launch that slips past gc's last check is turned away. The protection
+is best-effort: a restored session, a hook that fails and a plugin that
+is down are not covered. Orca's status bar shows how many pull requests
+are ready to merge and how many questions wait on a person. A panel lists
+what waits on that person, who answers a parked question there. Next,
+the guard will tell apart repositories that share a worktree folder, and
+a worktree recreated at the same path. A person will pick a parked
+decision's answer in the panel as on the dashboard, and merge a pull
+request that is ready to merge with one click. A command will open the
+dashboard in Orca's own browser for the board and each piece of work.
+The dispatcher will read each account's usage from Orca's command line
+once Orca offers it. A trial will find whether a launch can be bound to
+the account the dispatcher chose. The plugin is Orca-bound.
 
 ## Next
 
