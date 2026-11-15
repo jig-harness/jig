@@ -113,6 +113,17 @@ describe("a comment-only draft skip", () => {
     ],
     ["an HTML comment", "<!--\n## Draft PR not reviewed\n-->"],
     ["a pre block", "<pre>\n## Draft PR not reviewed\n</pre>"],
+    [
+      "a heading after an HTML block opener",
+      "<!-- example -->## Draft PR not reviewed",
+    ],
+    [
+      "a heading after a comment that hides a fence",
+      "```html\n<!--\n```\n## Draft PR not reviewed\n-->",
+    ],
+    ["a textarea block", "<textarea>\n## Draft PR not reviewed\n</textarea>"],
+    ["a script block", "<script>\n## Draft PR not reviewed\n</script>"],
+    ["a div block", "<div>\n## Draft PR not reviewed\n</div>"],
   ];
   for (const [name, body, login] of untrusted) {
     it(`does not trust ${name}`, async () => {
