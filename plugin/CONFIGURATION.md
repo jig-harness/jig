@@ -1265,6 +1265,13 @@ test registrations permit collection only where they prove the scope's
 holders gone. Unresolved child launches and legacy scratch remain retained.
 See [test scratch](gc/README.md#test-scratch) for the ownership checks.
 
+The `worktrees` kind bounds each pull request lookup with `GH_CALL_TIMEOUT`,
+including lookups by branch, recorded pull request number and detached commit.
+It defaults to 30 seconds; set the environment variable to a positive whole
+number of seconds (at most 2147483) to change it. A lookup that exceeds its
+deadline is reported as unavailable, so the tree is retained without verified
+pull request evidence.
+
 ### The machine's collection policy
 
 These settings live only in the user file (`$JIG_HOME/jig.yaml`, default
