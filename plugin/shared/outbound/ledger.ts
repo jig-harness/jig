@@ -276,7 +276,13 @@ export function ledgerReport(
     const owners = new Map(
       has("github_owner")
         ? (
-            db.query("SELECT credential, owner FROM github_owner").all() as {
+            db
+              .query(
+                "SELECT credential, owner FROM github_owner WHERE credential IN (SELECT value FROM json_each(?))",
+              )
+              .all(
+                JSON.stringify([...new Set(rows.map((r) => r.credential))]),
+              ) as {
               credential: string;
               owner: string;
             }[]

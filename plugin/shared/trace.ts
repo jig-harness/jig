@@ -18,7 +18,7 @@ import {
 } from "./outbound/github-budget.ts";
 import { setDiscoveryRunner } from "./outbound/github-owner.ts";
 import { drivePages, pagePlan } from "./outbound/gh-paginate.ts";
-import type { OutboundFailure } from "./outbound/failure.ts";
+import { type OutboundFailure, outboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
 /** Stable child-process diagnostic code for incomplete forge accounting. */
@@ -228,20 +228,36 @@ async function governedRun<T extends GhRun, O>(
   refuse: (failure: OutboundFailure) => T,
   send: (argv: string[], spentSec: number) => Promise<T>,
   attribution: GhAttribution,
+  entered: number,
+  timeoutSec: number,
 ): Promise<T> {
-  const entered = currentMs();
   // The host a call names (`--hostname`) is the one it sends to, so its
   // credential and owner are those of that host.
   const given = (opts as { env?: Record<string, string | undefined> }).env;
   const env = ghHostIn(args, given ?? process.env);
-  const owner = await forgeOwner(args, env);
+  const spentSec = () => (currentMs() - entered) / 1000;
+  // One deadline covers the wait for a probe, the owner's discovery and the
+  // run: discovery gets what is left, and no run starts once it is spent.
+  const spentFailure = () =>
+    refuse(
+      outboundFailure(
+        "unreachable",
+        "the call's deadline was spent before it was sent; nothing was sent",
+      ),
+    );
+  if (spentSec() >= timeoutSec) return spentFailure();
+  const owner = await forgeOwner(
+    args,
+    env,
+    Math.max(0, (timeoutSec - spentSec()) * 1000),
+  );
+  if (spentSec() >= timeoutSec) return spentFailure();
   const governance = ghGovernance(args, {
     env,
     captured: captured(opts),
     ...(owner === undefined ? {} : { owner }),
     attribution,
   });
-  const spentSec = () => (currentMs() - entered) / 1000;
   if (governance === null) return send(args, spentSec());
   const admitted = governance.admit();
   if ("refused" in admitted) return refuse(admitted.refused);
@@ -264,6 +280,7 @@ function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
   refuse: (failure: OutboundFailure) => T,
   held: boolean,
 ): Promise<T> {
+  const entered = currentMs();
   // A parent reader counts nested forge calls at dispatch, including timed-out reads.
   if (process.env.JIG_FORGE_CALL_COUNT_FILE) {
     try {
@@ -292,6 +309,8 @@ function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
               timeoutSec: Math.max(1, Math.ceil(timeoutSec - spentSec)),
             }),
           attribution,
+          entered,
+          timeoutSec,
         ),
       attribution,
     );
@@ -321,15 +340,20 @@ function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
             args,
             opts,
             refuseHere,
-            async (argv) => {
+            async (argv, spentSec) => {
               const began = currentMs();
               try {
-                return await run(argv, { ...opts, timeoutSec });
+                return await run(argv, {
+                  ...opts,
+                  timeoutSec: Math.max(1, Math.ceil(timeoutSec - spentSec)),
+                });
               } finally {
                 tookMs = currentMs() - began;
               }
             },
             attribution,
+            entered,
+            timeoutSec,
           ),
         (r) => ghRunFailure(r, tookMs),
         refuse,
@@ -358,12 +382,14 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
     opts.timeoutSec === undefined
       ? envDeadline
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
+  // The host a call names is the one it sends to: accounting, governance
+  // and paging all read the call's environment with it applied.
+  const given = (opts as { env?: Record<string, string | undefined> }).env;
+  const env = ghHostIn(args, given ?? process.env);
+  const effective = env === (given ?? process.env) ? opts : { ...opts, env };
   const request = (argv: string[], timeoutSec: number) =>
-    ghRequest(argv, opts, timeoutSec, run, refuse, held);
-  const env = (opts as { env?: Record<string, string | undefined> }).env;
-  const plan = forgeBudgetOn(env ?? process.env)
-    ? pagePlan(args, captured(opts))
-    : null;
+    ghRequest(argv, effective, timeoutSec, run, refuse, held);
+  const plan = forgeBudgetOn(env) ? pagePlan(args, captured(opts), env) : null;
   return traceCommand("ghCall", "gh", deadline, () =>
     plan === null
       ? request(args, deadline)
@@ -418,8 +444,12 @@ export function traceGhRunner<
       traceGhCall(args, opts, timeout(), run, refuse, held);
   const runner = through(true);
   unheldForms.set(runner, through(false));
+  // Discovery runs inside the request that needs the owner, which may be
+  // the hold's probe: it must not wait on that hold, so it takes the form
+  // that does not hold the forge.
+  const unheld = through(false);
   setDiscoveryRunner((args, env, timeoutSec) =>
-    runner(args, { ...defaults, env, timeoutSec } as O),
+    unheld(args, { ...defaults, env, timeoutSec } as O),
   );
   return runner;
 }

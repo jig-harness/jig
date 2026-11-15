@@ -72,6 +72,8 @@ type Env = Record<string, string | undefined>;
 const TOKEN_OWNER_TTL_MS = 7 * 24 * 3_600_000;
 /** How long the owner a stored login named is trusted before it is asked again. */
 const LOGIN_OWNER_TTL_MS = 24 * 3_600_000;
+/** How long a mapping nobody asked again is kept. */
+const OWNER_RETENTION_MS = 30 * 24 * 3_600_000;
 /** How long a failed discovery waits before it is tried again. */
 export const DISCOVERY_BACKOFF_MS = 15 * 60_000;
 /** The discovery request's deadline. */
@@ -104,13 +106,24 @@ interface OwnerRow {
 }
 
 /** The owners in the budget database at `path`; one that cannot be opened keeps nothing. */
-export function sqliteOwnerStore(path: string): OwnerStore {
+export function sqliteOwnerStore(
+  path: string,
+  clock: () => number = currentMs,
+): OwnerStore {
   let db: Database | null | undefined;
   const open = (): Database | null => {
     if (db !== undefined) return db;
     const opened = openDatabase({ path, migrations: BUDGET_MIGRATIONS });
     if (!opened.ok) swallow(opened.failure, "the GitHub owner store");
     db = opened.ok ? opened.value : null;
+    // A credential nobody has used since its check came due is forgotten.
+    try {
+      db?.query("DELETE FROM github_owner WHERE retry_at < ?").run(
+        clock() - OWNER_RETENTION_MS,
+      );
+    } catch (error) {
+      swallow(error, "prune the GitHub owner store");
+    }
     return db;
   };
   return {
@@ -245,7 +258,7 @@ export interface OwnerResolution {
 /** Finds and remembers credentials' owners. */
 export interface GithubOwnerResolver {
   /** The owner, asking GitHub at most once a check period. */
-  resolve(env: Env): Promise<OwnerResolution>;
+  resolve(env: Env, deadlineMs?: number): Promise<OwnerResolution>;
   /** The owner the machine already knows, sending nothing; `null` for a credential never asked. */
   known(env: Env): OwnerResolution | null;
 }
@@ -332,6 +345,7 @@ export function githubOwnerResolver(deps: {
     env: Env,
     credential: string,
     entry: OwnerEntry | null,
+    deadlineMs: number,
   ): Promise<OwnerResolution> => {
     const now = clock();
     const fallback = unverified(env, credential);
@@ -348,7 +362,7 @@ export function githubOwnerResolver(deps: {
       return entry?.verified === true ? fromEntry(credential, entry) : fallback;
     }
     const began = currentMs();
-    const answer = await discover(env, DISCOVERY_DEADLINE_MS);
+    const answer = await discover(env, deadlineMs);
     const user = "user" in answer ? answer.user : null;
     const owner =
       user !== null
@@ -356,6 +370,14 @@ export function githubOwnerResolver(deps: {
         : entry?.verified === true
           ? entry.owner
           : fallback.owner;
+    // The answer's own quota headers were observed against the unverified
+    // record, the owner not being known then: apply them to the owner it
+    // named, when that record was read during this discovery.
+    if (user !== null && owner !== fallback.owner) {
+      const seen = deps.budget.read(fallback.owner);
+      if (seen !== null && seen.observedAt >= began)
+        deps.budget.update(owner, (prev) => carried(prev, seen, clock()));
+    }
     // The default discovery is a run of `gh` the wrapper records itself; a
     // discovery given in its place is recorded here.
     if (deps.discover !== undefined)
@@ -391,7 +413,10 @@ export function githubOwnerResolver(deps: {
     return entry === null ? null : fromEntry(credential, entry);
   };
 
-  const resolve = async (env: Env): Promise<OwnerResolution> => {
+  const resolve = async (
+    env: Env,
+    deadlineMs: number = DISCOVERY_DEADLINE_MS,
+  ): Promise<OwnerResolution> => {
     const credential = githubCredential(env);
     if (installationToken(env)) {
       const found = installation(env, credential);
@@ -412,7 +437,12 @@ export function githubOwnerResolver(deps: {
       seed(env, found.owner);
       return found;
     }
-    const asked = ask(env, credential, entry)
+    const asked = ask(
+      env,
+      credential,
+      entry,
+      Math.min(DISCOVERY_DEADLINE_MS, deadlineMs),
+    )
       .then((found) => {
         // A refused admission stores nothing: the process waits out the
         // backoff before it asks again.

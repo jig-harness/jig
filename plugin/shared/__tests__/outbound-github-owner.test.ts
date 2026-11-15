@@ -91,7 +91,7 @@ function processOn(
   const store = sqliteBudgetStore(path);
   const governor = budgetGovernor(store, { share: () => null, clock });
   const owners = githubOwnerResolver({
-    owners: sqliteOwnerStore(path),
+    owners: sqliteOwnerStore(path, clock),
     budget: store,
     governor,
     discover,

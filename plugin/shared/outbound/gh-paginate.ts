@@ -121,13 +121,16 @@ function stripped(
 }
 
 /** The host a command line sends to: its `--hostname`, else `GH_HOST`, else github.com. */
-function hostOf(args: readonly string[]): string {
+function hostOf(
+  args: readonly string[],
+  env: Record<string, string | undefined> = process.env,
+): string {
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i] ?? "";
     if (arg === "--hostname") return (args[i + 1] ?? "").toLowerCase();
     if (arg.startsWith("--hostname=")) return arg.slice(11).toLowerCase();
   }
-  return (process.env.GH_HOST ?? "github.com").toLowerCase();
+  return (env.GH_HOST ?? "github.com").toLowerCase();
 }
 
 /** Whether `url` is an https URL on the API origin of `host` (`api.<host>`, or `<host>` itself for an enterprise server). */
@@ -225,6 +228,7 @@ function merged(pages: readonly string[]): string {
 export function pagePlan(
   args: readonly string[],
   captured: boolean,
+  env: Record<string, string | undefined> = process.env,
 ): PagePlan | null {
   if (args[0] !== "api" || !args.includes("--paginate") || !captured)
     return null;
@@ -255,7 +259,7 @@ export function pagePlan(
   const method = methodOf(args);
   const fields = args.some(isField);
   if (method === null ? fields : method !== "GET") return null;
-  const host = hostOf(args);
+  const host = hostOf(args, env);
   // gh asks REST pages 100 at a time unless the caller said otherwise.
   const first = stripped(args, () => false);
   const firstAt = apiRouteAt(first);

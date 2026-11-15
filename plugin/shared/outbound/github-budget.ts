@@ -592,13 +592,14 @@ function asksOwnIdentity(args: readonly string[]): boolean {
 export async function forgeOwner(
   args: readonly string[],
   env: Record<string, string | undefined> = process.env,
+  deadlineMs?: number,
 ): Promise<string | undefined> {
   if (limitsOf(args) === null || !forgeBudgetOn(env)) return undefined;
   const owners = override === null ? machine().owners : overrideOwners;
   if (owners === null) return githubCredential(env);
   if (asksOwnIdentity(args))
     return owners.known(env)?.owner ?? unverifiedOwner(githubHost(env));
-  return (await owners.resolve(env)).owner;
+  return (await owners.resolve(env, deadlineMs)).owner;
 }
 
 /**

@@ -487,3 +487,14 @@ describe("the pages' own rules", () => {
     );
   });
 });
+
+describe("the host a paged read follows", () => {
+  it("follows next links on the host the request's own environment names", () => {
+    const env = { GH_HOST: "ghe.example.com" };
+    const plan = pagePlan(["api", "--paginate", "repos/o/r/issues"], true, env);
+    const headers = new Headers({
+      link: '<https://ghe.example.com/api/v3/repos/o/r/issues?page=2>; rel="next"',
+    });
+    expect(plan?.next(headers, "[]")).not.toBeNull();
+  });
+});
