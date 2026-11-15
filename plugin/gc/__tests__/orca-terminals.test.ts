@@ -106,7 +106,7 @@ function kind(
     orca,
     table: async () => rows,
     now: () => now,
-    sleep: async () => {},
+    sleep: () => Promise.resolve(),
   };
   return orcaTerminalsKind(ORCA, 24, deps);
 }
@@ -256,7 +256,7 @@ describe("collecting run tabs", () => {
       orca: orca.runner,
       table: async () => rows,
       now: () => NOW,
-      sleep: async () => {},
+      sleep: () => Promise.resolve(),
     });
     const [tab] = await inventory(k);
     expect((await k.prove(tab as Resource)).state).toBe("dead");

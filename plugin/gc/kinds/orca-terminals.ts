@@ -1,7 +1,7 @@
 /**
  * Run tabs as a collection kind: the Orca terminal tabs Jig opened for a run
  * (`shared/orca-tabs.ts`) whose run was killed before it could close its own
- * tab (SIGKILL, a host reboot), and parked run tabs nobody returned to.
+ * tab (killed outright, or by a host reboot), and parked run tabs nobody returned to.
  *
  * The inventory is the run-tab records joined to `orca terminal list`. A tab
  * is kept while its shell is gone or was reused (the record no longer proves
