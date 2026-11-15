@@ -288,8 +288,6 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **GitHub in the budget record**: its hourly and secondary limits beside
-  the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,
   identical reads in a run sent once and reads by key in one request,
   through the shared library that the existing queue snapshots adopt.
