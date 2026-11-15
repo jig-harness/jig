@@ -79,3 +79,8 @@ test("the page badge tolerates unavailable or rejected badge APIs", async () => 
     });
   }
 });
+
+test("an address that is not wholly percent-encoded is not drawn on", () => {
+  const raw = `data:image/svg+xml,${SVG}`;
+  expect(markWith(raw, 3)).toBe(raw);
+});

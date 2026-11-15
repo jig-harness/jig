@@ -13,7 +13,8 @@ interface AppBadge {
   clearAppBadge?: () => Promise<void>;
 }
 
-const SVG_HEAD = "data:image/svg+xml,";
+/** An svg address whose payload is entirely percent-encoded, so no markup characters reach the drawing. */
+const ENCODED_SVG = /^data:image\/svg\+xml,[A-Za-z0-9%._~!*'()-]*$/;
 /** The end of an svg, as an address holds it. */
 const SVG_END = encodeURIComponent("</svg>");
 /** The attribute that keeps the address the page was built with. */
@@ -36,13 +37,20 @@ export function titleWith(base: string, count: number): string {
  */
 export function markWith(href: string, count: number): string {
   const at = href.lastIndexOf(SVG_END);
-  if (count <= 0 || !href.startsWith(SVG_HEAD) || at < 0) return href;
+  if (count <= 0 || !ENCODED_SVG.test(href) || at < 0) return href;
   const text = badgeText(count);
   const size = text.length > 1 ? 17 : 22;
   const drawn =
     '<circle cx="31" cy="28" r="14" fill="#c8372d"/>' +
     `<text x="31" y="${28 + size * 0.36}" font-family="sans-serif" font-weight="700" font-size="${size}" text-anchor="middle" fill="#fff">${text}</text>`;
   return `${href.slice(0, at)}${encodeURIComponent(drawn)}${href.slice(at)}`;
+}
+
+/** Sets or clears the installed app's badge; a browser with no badge, or one that refuses it, is left alone. */
+function setAppBadge(count: number): void {
+  const app = navigator as Navigator & AppBadge;
+  const done = count > 0 ? app.setAppBadge?.(count) : app.clearAppBadge?.();
+  done?.catch(() => undefined);
 }
 
 /** Updates the page's badge and returns the cleanup required when its owner disappears. */
@@ -57,10 +65,7 @@ export function applyReadyBadge(count: number): () => void {
     link.setAttribute("href", markWith(built, count));
   }
   document.title = titleWith(title.replace(/^\(\d+\) /, ""), count);
-  const app = navigator as Navigator & AppBadge;
-  // A browser with no badge, or one that refuses it, leaves the title and the icon as the signal.
-  const done = count > 0 ? app.setAppBadge?.(count) : app.clearAppBadge?.();
-  done?.catch(() => undefined);
+  setAppBadge(count);
   return () => {
     document.title = title;
     if (link !== null) {
@@ -69,7 +74,7 @@ export function applyReadyBadge(count: number): () => void {
       if (builtBefore === null) link.removeAttribute(BUILT);
       else link.setAttribute(BUILT, builtBefore);
     }
-    app.clearAppBadge?.()?.catch(() => undefined);
+    setAppBadge(0);
   };
 }
 
@@ -77,6 +82,19 @@ export function applyReadyBadge(count: number): () => void {
 function useReadyBadge(ready: number | undefined): void {
   const count = ready ?? 0;
   useEffect(() => applyReadyBadge(count), [count]);
+  // The app badge is shared by every window of the app, and the latest set or clear wins:
+  // a window that comes back into view puts its own count back.
+  useEffect(() => {
+    const reassert = () => {
+      if (document.visibilityState !== "hidden") setAppBadge(count);
+    };
+    window.addEventListener("focus", reassert);
+    document.addEventListener("visibilitychange", reassert);
+    return () => {
+      window.removeEventListener("focus", reassert);
+      document.removeEventListener("visibilitychange", reassert);
+    };
+  }, [count]);
 }
 
 /** Renders nothing; it holds the badge for the page, so the page itself carries none of its logic. */
