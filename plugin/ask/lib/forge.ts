@@ -26,6 +26,8 @@ export interface PullDoc {
   url: string;
   state: "OPEN" | "CLOSED" | "MERGED";
   head: string;
+  /** The pull request's checked-out branch, when the forge names it. */
+  headRef?: string;
   /** The branch it merges into. */
   baseRef: string;
   author: string;
@@ -97,6 +99,7 @@ export async function readPull(
     state:
       v.merged === true ? "MERGED" : v.state === "open" ? "OPEN" : "CLOSED",
     head,
+    headRef: isRecord(v.head) ? text(v.head.ref) : "",
     baseRef: isRecord(v.base) ? text(v.base.ref) : "",
     author: isRecord(v.user) ? text(v.user.login) : "",
     labels,
