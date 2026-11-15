@@ -86,6 +86,9 @@ export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
 import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
+import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
+import { latestDeaths, witnessedState } from "./launch-recovery.ts";
+import { asResult } from "./launch-result.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
 import { isoOf, parseMs } from "../../shared/time.ts";
 
@@ -219,6 +222,8 @@ export interface LaunchRecord {
   endedAt?: string;
   /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
   cancelledAt?: string;
+  /** For a follow-up: the machine file's `failures.rerun_died` when the record was written, kept only when it is `0`, which runs no follow-up again after a death or an unwritten result. */
+  rerunDied?: number;
   /** For a follow-up: its prompt offered the routine question tags (`routine-questions.ts`), so its question's class is read from its tag. Absent on a record written before passes tagged their questions. */
   routineTags?: boolean;
   /** For a follow-up's routine run again: the question the earlier pass stopped on and the classes whose standing answers its prompt gives; absent on any other record. */
@@ -304,6 +309,8 @@ export interface ReadRecord {
   refusal?: PickupRefusal | null;
   /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
   framed?: FramedResult;
+  /** When the pass's result or the stage's exit could not be written on this host (`unwritten-result.ts`); absent otherwise. */
+  unwritten?: string;
   /** The run's closing report (`closing-report-store.ts`); absent or `null` when it left none. */
   report?: KeptReport | null;
 }
@@ -554,45 +561,28 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
   return {
     record,
     state: stateOf(row, null, thisHost()),
-    ...answerOf(row),
+    ...answerOf(row, record, root),
   };
 }
 
-/** What a row says the session answered: its result, handoff, refusal, framed decision and closing report. */
-function answerOf(row: LaunchRow): Omit<ReadRecord, "record" | "state"> {
+/** What a row says the session answered (its result, handoff, refusal, framed decision and closing report), and the evidence that it could not be written. */
+function answerOf(
+  row: LaunchRow,
+  record: LaunchRecord,
+  root: string,
+): Omit<ReadRecord, "record" | "state"> {
   return {
     result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
     ...framedOf(row.result_decision),
+    ...unwrittenOf(root, row.id, record.token),
     report: readKeptReport(row.report),
   };
 }
 
-export { recordResult } from "./launch-result.ts";
-
-/**
- * A row's answer. A `waits` result is kept as `failed` with the time in
- * `result_until`, so a copy of the plugin that knows no `waits` reads a
- * failed pass, which it holds until a person settles it.
- */
-export function asResult(
-  value: string | null,
-  until: string | null = null,
-): SessionResult | null {
-  if (value === "failed" && until !== null) return "waits";
-  return value === "done" || value === "failed" ? value : null;
-}
-
-/** A record's recorded answer; `null` when none. */
-export function readResult(
-  id: string,
-  root = stateRoot(),
-): SessionResult | null {
-  const row = launchRow(id, root);
-  return asResult(row?.result ?? null, row?.result_until ?? null);
-}
+export { asResult, readResult, recordResult } from "./launch-result.ts";
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
 export function claimOf(row: LaunchRow): LaunchClaim | null | undefined {
@@ -746,8 +736,8 @@ export async function readLaunches(
     }
     records.push({
       record,
-      state: stateOf(row, rows, here),
-      ...answerOf(row),
+      state: witnessedState(stateOf(row, rows, here), record, root),
+      ...answerOf(row, record, root),
     });
   }
   return { records, unreadable };
@@ -844,6 +834,7 @@ export function pruneLaunches(
     latestRedrives,
     latestArms,
     latestDriveRefusals,
+    latestDeaths,
   ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)
@@ -870,6 +861,7 @@ export function pruneLaunches(
       removeSettled.run(id);
     }
   });
+  removeUnwritten(root, removed);
   return removed;
 }
 
@@ -904,6 +896,7 @@ export function removeRecord(id: string, root = stateRoot()): void {
     db.query("DELETE FROM launches WHERE id = ?").run(id);
     db.query("DELETE FROM settled_ends WHERE record = ?").run(id);
   });
+  removeUnwritten(root, [id]);
 }
 
 /** A row as `inspectRow` read it: what a conditional removal compares against. */
@@ -957,6 +950,7 @@ export function removeRecordIf(
       .run(id, seen.claim, seen.exit);
     if (result.changes === 0) return false;
     db.query("DELETE FROM nudges WHERE record = ?").run(id);
+    removeUnwritten(root, [id]);
     return true;
   });
 }
