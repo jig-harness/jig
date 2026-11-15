@@ -17,6 +17,8 @@ export interface HeldPhrase {
 const lineEndings = (text: string): string => text.replaceAll("\r\n", "\n");
 
 /** HTML comments are not operational Markdown, so they cannot satisfy a check. */
+const protectedFencedCommentOpener = "\uE000held-comment-opener\uE001";
+
 function withoutHtmlComments(text: string): string {
   let visible = "";
   let cursor = 0;
@@ -30,7 +32,7 @@ function withoutHtmlComments(text: string): string {
       const delimiter = text.slice(codeStart, end);
       const close = closingDelimiter(text, delimiter, end);
       if (close < 0) {
-        const boundary = text.indexOf("\n\n", end);
+        const boundary = text.slice(end).search(/\n[ \t]*\n/);
         if (boundary < 0) return visible + text.slice(cursor);
         // This unmatched opener is literal text in its paragraph. Resume at
         // it so comments in the following block remain comments.
@@ -54,6 +56,23 @@ function withoutHtmlComments(text: string): string {
     if (end < 0) return visible;
     cursor = end + "-->".length;
   }
+}
+
+/** Preserve literal comment openers in fenced examples while comments are stripped. */
+function protectFencedCommentOpeners(source: string): string {
+  let fence: { char: "`" | "~"; length: number } | undefined;
+  return source
+    .split("\n")
+    .map((line) => {
+      if (fence !== undefined) {
+        if (closesFence(line, fence, 0)) fence = undefined;
+        return line.replaceAll("<!--", protectedFencedCommentOpener);
+      }
+      const marker = fenceMarker(line);
+      if (marker !== null) fence = marker;
+      return line;
+    })
+    .join("\n");
 }
 
 /** A backslash escapes a delimiter when it is preceded by an odd backslash run. */
@@ -88,7 +107,7 @@ function closingDelimiter(
     // An inline code span cannot make a later Markdown block part of its
     // context. In particular, an unmatched delimiter in one paragraph must
     // not shield an HTML comment after a blank line.
-    if (text.startsWith("\n\n", cursor)) return -1;
+    if (/^\n[ \t]*\n/.test(text.slice(cursor))) return -1;
     if (text.startsWith(delimiter, cursor)) {
       const beforeMatches = text[cursor - 1] === "`";
       const afterMatches = text[cursor + delimiter.length] === "`";
@@ -289,8 +308,10 @@ function sectionOf(
   // `visibleLines` retains one line for every source line, so its heading
   // boundaries also locate the raw command examples in this section.
   return withoutHtmlComments(
-    source.split("\n").slice(start.index, next?.index).join("\n"),
-  );
+    protectFencedCommentOpeners(
+      source.split("\n").slice(start.index, next?.index).join("\n"),
+    ),
+  ).replaceAll(protectedFencedCommentOpener, "<!--");
 }
 
 /** Escape literal text for the small semantic-pattern check below. */

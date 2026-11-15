@@ -212,6 +212,28 @@ test("held phrases keep comments in separate Markdown blocks from code spans", (
     "## Operational instruction\n\n~~~text\n<!--\n~~~\n\nExit `11` on the lock\n",
   );
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nAn unmatched ` delimiter.\n \n<!-- Exit `11` on the lock -->\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+});
+
+test("held phrases preserve comment syntax in opted-in fenced examples", () => {
+  const root = tempDir("held-fenced-comment-example");
+  const phrase = {
+    file: "skill.md",
+    text: "run --command stop",
+    section: "## Operational instruction",
+    includeCodeExamples: true,
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n~~~text\n<!--\n~~~\n\nrun --command stop\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
 });
 
 test("held phrases recognize headings without backtracking over closing hashes", () => {
