@@ -174,14 +174,18 @@ export function matchedAreas(
       { labels, paths: paths ?? [] },
     );
     const by =
-      viaMap !== undefined
-        ? `label ${viaMap.toLowerCase()}`
-        : own !== null && own !== "unknown"
-          ? `${own.fact === "labels" ? "label" : "path"} ${own.fact === "labels" ? own.value.toLowerCase() : own.value}`
-          : null;
+      viaMap === undefined ? ownReach(own) : `label ${viaMap.toLowerCase()}`;
     if (by !== null) out.push({ key, by });
   }
   return out;
+}
+
+/** How an area's own labels or globs reached the item, or `null`. */
+function ownReach(own: ReturnType<typeof matchRule>): string | null {
+  if (own === null || own === "unknown") return null;
+  return own.fact === "labels"
+    ? `label ${own.value.toLowerCase()}`
+    : `path ${own.value}`;
 }
 
 /** What an area brings: its implementation skills and notes, and its own notes. */

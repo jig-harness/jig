@@ -442,17 +442,12 @@ function valueAt(
   return at;
 }
 
-/** The rule parts of one field's value, checked. */
-function checkField(field: string, raw: unknown): Outcome<null, RuleFailure> {
-  const { form } = ruleField(field);
-  if (form === "list") {
-    const rule = ruleList(field, raw);
-    return rule.ok ? ok(null) : rule;
-  }
-  if (form === "map") {
-    const entries = ruleMap(field, raw, (v) => ok(v), "a value to a result");
-    return entries.ok ? ok(null) : entries;
-  }
+/** The entries of a `when` or entry-rule field's list, checked. */
+function checkEntries(
+  field: string,
+  form: "when" | "entry",
+  raw: unknown,
+): Outcome<null, RuleFailure> {
   if (!Array.isArray(raw))
     return failed("rule-invalid", `${field} must be a list of rules`);
   for (const [i, entry] of raw.entries()) {
@@ -466,6 +461,20 @@ function checkField(field: string, raw: unknown): Outcome<null, RuleFailure> {
     if (!rule.ok) return rule;
   }
   return ok(null);
+}
+
+/** The rule parts of one field's value, checked. */
+function checkField(field: string, raw: unknown): Outcome<null, RuleFailure> {
+  const { form } = ruleField(field);
+  if (form === "list") {
+    const rule = ruleList(field, raw);
+    return rule.ok ? ok(null) : rule;
+  }
+  if (form === "map") {
+    const entries = ruleMap(field, raw, (v) => ok(v), "a value to a result");
+    return entries.ok ? ok(null) : entries;
+  }
+  return checkEntries(field, form, raw);
 }
 
 /**
