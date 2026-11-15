@@ -28,13 +28,46 @@ test("a held value must survive unchanged, including its operational context", (
   expect(unreadable[0]?.remedy).toContain("read access");
 });
 
-test("a held value is checked at its declared operational location", () => {
+test("a held value is checked in its declared operational section", () => {
   const root = tempDir("held-location");
-  const phrase = { file: "skill.md", text: "Exit `11` on the lock", line: 1 };
-  put(root, "skill.md", "Exit `11` on the lock\nExit `11` on the lock\n");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nExit `11` on the lock\n\n## Other\n\nExit `11` on the lock\n",
+  );
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
-  put(root, "skill.md", "Exit `13` on the lock\nExit `11` on the lock\n");
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nExit `13` on the lock\n\n## Other\n\nExit `11` on the lock\n",
+  );
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+});
+
+test("held phrases ignore hidden Markdown comments and tolerate section layout changes", () => {
+  const root = tempDir("held-rendered");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nExit `13` on the lock <!-- Exit `11` on the lock -->\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "\n## Operational instruction\n\nNew context.\n\nExit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
 });
 
 test("held phrases accept either checkout line ending and still reject changed values", () => {

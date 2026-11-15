@@ -228,62 +228,65 @@ export function checkDriveExitPhrases(root: string) {
     {
       file: "plugin/skills/do-item/SKILL.md",
       text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **per-PR** lock`,
-      line: 1408,
+      section: "### Step 4a: Standard start (no sub-issues)",
     },
     {
       file: "plugin/skills/do-item/SKILL.md",
       text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **worktree** lock`,
-      line: 1415,
+      section: "### Step 4a: Standard start (no sub-issues)",
     },
     {
       file: "plugin/skills/do-item/SKILL.md",
       text: `Exit \`${DRIVE_EXIT.CONVERGED}\` → the drive already reached a terminal state`,
-      line: 1427,
+      section: "### Step 4a: Standard start (no sub-issues)",
     },
     ...(
       [
         [
           `exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` (single-instance lock)`,
-          1253,
+          "### Arm",
         ],
         [
           `Proceed only on exit \`${TERMINAL_STATES.ROUND_READY?.exitCode}\`. Anything else is the answer for *this* gate's own`,
-          1661,
+          "### 1. Gate",
         ],
         [
           `For a driver pass carrying a \`WORKTREE_UNCLEAN\` notice, exit \`${TERMINAL_STATES.CONVERGED?.exitCode}\``,
-          1666,
+          "### 1. Gate",
         ],
-        [`**exit \`${DRIVE_EXIT.QUOTA_PARKED}\`,\n  QUOTA_PARKED**`, 3625],
+        [
+          `**exit \`${DRIVE_EXIT.QUOTA_PARKED}\`,\n  QUOTA_PARKED**`,
+          "## Session-budget honesty",
+        ],
         [
           `\`drive.ts\` refuses that re-arm itself (exit \`${DRIVE_EXIT.QUOTA_PARKED}\`)`,
-          3635,
+          "## Session-budget honesty",
         ],
         [
           `exit \`${DRIVE_EXIT.CONVERGED}\` inside the window → the drive already reached a terminal state`,
-          1279,
+          "### Arm",
         ],
         [
           `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live **session in your tree** holds the drive lease`,
-          3086,
+          "### 6. Commit, then finish the round with *one* command",
         ],
         [
           `| \`${TERMINAL_STATES.DRIVE_HELD_BY_OTHER_WORKTREE?.exitCode}\` | Another live **working tree** is driving this PR`,
-          3087,
+          "### 6. Commit, then finish the round with *one* command",
         ],
         [
           `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live session holds this working tree's tree lease`,
-          2777,
+          "### 5. Sync the base, then validate the cumulative tree — every round",
         ],
         [
           `also refuses (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\`) while a mailbox \`hold-push\` directive`,
-          4030,
+          "## Guardrails",
         ],
       ] as const
-    ).map(([text, line]) => ({
+    ).map(([text, section]) => ({
       file: "plugin/skills/drive-pr/SKILL.md",
       text,
-      line,
+      section,
     })),
   ]);
 }
