@@ -60,6 +60,7 @@ import {
   foreignHold,
 } from "./shared-launches.ts";
 import { failed } from "../../shared/outcome.ts";
+import { readFailureOf } from "./read-failures.ts";
 import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
@@ -467,11 +468,14 @@ function planForeign(
   )
     return null;
   if (hold.kind === "unread") {
+    // A listing a failed call stopped carries that call's class; a claim that does not read carries none.
+    const failure = claims.ok ? undefined : readFailureOf(claims.failure);
     plan.unplaced.push({
       target,
       record: "forge",
       reason: hold.why,
       readFailed: true,
+      ...(failure === undefined ? {} : { failure }),
     });
     return true;
   }
@@ -536,6 +540,9 @@ function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
     record: "forge",
     reason: pr.why,
     ...(pr.readFailed === true ? { readFailed: true as const } : {}),
+    ...(pr.readFailed === true && pr.failure !== undefined
+      ? { failure: pr.failure }
+      : {}),
   };
 }
 

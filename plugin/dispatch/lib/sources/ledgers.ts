@@ -85,7 +85,11 @@
  *
  * A ledger that cannot be read (its comments, a version this reader does
  * not know, a damaged body, an unreadable heartbeat or park answer) is
- * `unplaced`: reported, never planned. So is a converged one whose
+ * `unplaced`: reported, never planned. Where a failed call stopped the read
+ * (its comments, a thread's answers, its base branch's head), the drive
+ * carries that call's failure class, which decides whether the tick waits
+ * it out (`read-failures.ts`); a read that answered but does not parse
+ * carries none. So is a converged one whose
  * mergeability the forge is still computing, or whose head or verified head
  * is not known, since whether it is stale cannot be told this tick, and one
  * that stopped `PR_CONFLICTING` whose mergeability, head or base branch's head
@@ -103,10 +107,7 @@ import type {
   Ledger,
   LedgerSnapshot,
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
-import {
-  readLedgerSnapshot,
-  snapshotFromListing,
-} from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { snapshotFromListing } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { ledgerTree } from "../stall-tree.ts";
@@ -121,18 +122,29 @@ import type { Listing } from "../tick-comments.ts";
 import { failureText, minutesBetween } from "../text.ts";
 import { readPark, type ParkReading } from "./park-reading.ts";
 import { ledgerParks } from "../park-events.ts";
+import {
+  combinedFailure,
+  readFailureOf,
+  readFailureOfError,
+} from "../read-failures.ts";
+import { listComments } from "../../../shared/records/forge-claims.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
   Evidence,
   LedgerClass,
+  ReadFailure,
   StaleCause,
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
 
-/** What the head of a pull request's base branch read as. */
-type BaseHead = { oid: string } | { unreadable: string };
+/** What the head of a pull request's base branch read as; where it did not, the failed call's class. */
+type BaseHead = { oid: string } | { unreadable: string; failure?: ReadFailure };
+
+/** The `failure` field of a failed read with a class; nothing without one. */
+const classed = (failure: ReadFailure | undefined) =>
+  failure === undefined ? {} : { failure };
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
@@ -734,8 +746,8 @@ interface Reading {
   adoption: Adoption | null;
   /** The head of a base branch, read at most once per reading. */
   baseHead: (branch: string | undefined) => Promise<BaseHead>;
-  /** A pull request's comments as the tick listed them, shared with the other records read from them; absent, each read goes to the forge. */
-  comments?: (pr: number) => Promise<Listing>;
+  /** A pull request's comments as the tick listed them, shared with the other records read from them, or as the forge lists them now. */
+  comments: (pr: number) => Promise<Listing>;
   /** What this host shows of a silent ledger's driver. */
   presence: (pr: number, ledger: Ledger) => Promise<DriverPresence>;
 }
@@ -755,8 +767,16 @@ function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
     if (known !== undefined) return known;
     const head = admit(() => branchHead(slug, branch)).then(
       (oid): BaseHead =>
-        oid.ok ? { oid: oid.value } : { unreadable: oid.failure.reason },
-      (error: unknown): BaseHead => ({ unreadable: failureText(error) }),
+        oid.ok
+          ? { oid: oid.value }
+          : {
+              unreadable: oid.failure.reason,
+              ...classed(readFailureOf(oid.failure)),
+            },
+      (error: unknown): BaseHead => ({
+        unreadable: failureText(error),
+        ...classed(readFailureOfError(error)),
+      }),
     );
     read.set(branch, head);
     return head;
@@ -826,21 +846,17 @@ async function presenceEvidence(
 async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   const { slug, login, nowMs, windowMs, labels } = r;
   const base = baseOf(pr, labels);
-  const listing = await r.comments?.(pr.number);
-  const snapshot =
-    listing === undefined
-      ? await readLedgerSnapshot(String(pr.number), login, slug)
-      : listing.ok
-        ? snapshotFromListing(listing.value, login)
-        : listing.failure.reason;
-  if (typeof snapshot === "string")
+  const listing = await r.comments(pr.number);
+  if (!listing.ok)
     return {
       ...base,
       class: "unplaced",
-      why: snapshot,
+      why: listing.failure.reason,
       evidence: {},
       readFailed: true,
+      ...classed(readFailureOf(listing.failure)),
     };
+  const snapshot = snapshotFromListing(listing.value, login);
   const why = unreadable(snapshot);
   if (why === "") return unarmed(pr, base, r);
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
@@ -852,12 +868,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       readFailed: true,
     };
   const ledger = snapshot.canonical.parsed.ledger;
-  const park = await readPark(
-    pr.number,
-    ledger,
-    slug,
-    listing?.ok ? listing.value : undefined,
-  );
+  const park = await readPark(pr.number, ledger, slug, listing.value);
   const forge = await factsOf(pr, ledger, r);
   let classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
   const request = rearmRequest(ledger, labels, pr.labels, classified);
@@ -865,12 +876,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   return {
     ...base,
     ...classified,
-    ...(classified.class === "unplaced" &&
-    ((ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
-      (park === undefined || "unreadable" in park)) ||
-      (forge.base !== undefined && "unreadable" in forge.base))
-      ? { readFailed: true as const }
-      : {}),
+    ...(classified.class === "unplaced" ? failedRead(ledger, park, forge) : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
       ...request.evidence,
@@ -880,6 +886,28 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...waitingOf(classified, park, pr.author?.login),
     parks: ledgerParks(ledger),
   };
+}
+
+/**
+ * The read that failed beside an unplaced ledger, its park's answers or its
+ * base branch's head, with the class of the call that failed it; nothing
+ * when neither failed.
+ */
+function failedRead(
+  ledger: Ledger,
+  park: ParkReading | undefined,
+  forge: PrFacts,
+): { readFailed?: true; failure?: ReadFailure } {
+  const failed: (ReadFailure | undefined)[] = [];
+  if (
+    ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
+    (park === undefined || "unreadable" in park)
+  )
+    failed.push(park?.failure);
+  if (forge.base !== undefined && "unreadable" in forge.base)
+    failed.push(forge.base.failure);
+  if (failed.length === 0) return {};
+  return { readFailed: true, ...classed(combinedFailure(failed)) };
 }
 
 /** The unanswered decisions a parked ledger carries into its notification, its conflict's re-drive included. */
@@ -931,7 +959,7 @@ export async function readDrives(
     adoption,
     baseHead: baseHeads(slug, admit),
     presence: driverPresence,
-    ...(comments === undefined ? {} : { comments }),
+    comments: comments ?? ((pr) => listComments({ repo: slug, number: pr })),
   };
   const out: DrivenPr[] = [];
   for (const pr of prs) {
