@@ -6,6 +6,7 @@ import type {
   Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
 import { dispatchSection } from "../lib/section.ts";
 import { freshServedPickup, readServedPickups } from "../lib/sources/served.ts";
@@ -30,6 +31,8 @@ interface Spec {
   descriptions?: Record<string, string>;
   /** Items whose relations cannot be read. */
   failing?: string[];
+  /** Items whose relation read meets a tracker rate limit. */
+  limiting?: string[];
 }
 
 function world(spec: Spec) {
@@ -58,6 +61,11 @@ function world(spec: Spec) {
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
     openChildren: async (k: string) => spec.children?.[k] ?? [],
     listRelations: async (k: string) => [
+      ...(spec.limiting?.includes(k)
+        ? (() => {
+            throw new TrackerRateLimited("github", 60_000, "limited");
+          })()
+        : []),
       ...(spec.failing?.includes(k)
         ? (() => {
             throw new Error(`relations of ${k} cannot be read`);
@@ -622,6 +630,16 @@ describe("an assigned epic's children", () => {
     expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
   });
 
+  it("keeps a failed child's record when another epic meets a rate limit", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"]), issue("#5", ["epic"])],
+      children: { "#1": kids("#2", "#3"), "#5": kids("#6") },
+      failing: ["#3"],
+      limiting: ["#6"],
+    }).read({ epicWidth: 2 });
+    expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
+  });
+
   it("keeps an epic working while its started child cannot be read", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
@@ -629,7 +647,7 @@ describe("an assigned epic's children", () => {
       failing: ["#3"],
     }).read(one);
     const summary = read.unplaced.filter((u) => u.target === "#1");
-    expect(summary.map((u) => u.reason).join("\n")).not.toMatch(/idle/i);
+    expect(summary).toEqual([]);
   });
 
   it("holds a directly assigned child while a sibling cannot be read", async () => {

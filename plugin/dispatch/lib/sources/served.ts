@@ -135,6 +135,8 @@ interface EpicState {
   walks: EpicWalk[];
   /** The width constraint of each child of an epic with no execution plan, whoever reaches the child first. */
   serials: Map<string, Serial>;
+  /** Items whose failed read is already recorded, so a later visit does not report it again. */
+  reported: Set<string>;
 }
 
 /** What one served identity's queue gave: its claims, its holds and candidates, and the limit that stopped it. */
@@ -247,7 +249,11 @@ export async function readServedPickups(
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
-  const shared: EpicState = { walks: [], serials: new Map() };
+  const shared: EpicState = {
+    walks: [],
+    serials: new Map(),
+    reported: new Set(),
+  };
   let limited: PersonReading["limited"] = null;
   if (options.repoScope?.invalid !== undefined)
     out.unplaced.push({
@@ -408,6 +414,7 @@ interface WalkContext {
   seen: Set<string>;
   walks: EpicWalk[];
   serials: Map<string, Serial>;
+  reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
 interface Found {
@@ -649,7 +656,8 @@ async function visitNode(
   } catch (error) {
     if (isRateLimited(error)) throw error;
     if (ctx.view.scope !== undefined && isUnavailable(error)) throw error;
-    unreadable(issue, failureText(error), found, error);
+    if (!ctx.reported.has(issue.identifier))
+      unreadable(issue, failureText(error), found, error);
   }
   return found;
 }
@@ -812,11 +820,10 @@ async function childStates(
               child.identifier,
               error,
               (e) => {
-                // A child the walk still visits reports this same failure there.
-                const visited =
-                  child.assignee === null &&
-                  !leavesNode(child, options, ctx.seen, tracker);
-                if (!visited) unreadable(child, failureText(e), slots.found, e);
+                // Recorded when observed: a later visit may never happen.
+                if (ctx.reported.has(child.identifier)) return;
+                ctx.reported.add(child.identifier);
+                unreadable(child, failureText(e), slots.found, e);
               },
             );
           }),
