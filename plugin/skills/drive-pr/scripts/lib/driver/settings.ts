@@ -369,7 +369,7 @@ export function passTimeoutSeconds(): number {
  * `0` disables repair passes. Failed-job retries are independently controlled
  * by `ci.rerun_failed_once` and never charge a repair allowance.
  */
-const CI_REPAIR_ROUNDS_DEFAULT = 2;
+export const CI_REPAIR_ROUNDS_DEFAULT = 2;
 
 const CONFLICT_REPAIR_ROUNDS_DEFAULT = 1;
 
