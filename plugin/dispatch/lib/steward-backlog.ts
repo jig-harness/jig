@@ -210,7 +210,7 @@ const JUDGED_RUNS = 20;
  * a pass that submitted, or whose launch (`live`) still holds. A pass that
  * ended without submitting judged nothing, and a resume
  * its pass proposed but the policy refused for now (`refused-open`) stays
- * offered, so neither suppresses its member.
+ * offered, whichever run judged it, so neither suppresses its member.
  */
 export function judgedMembers(
   repo: string,
@@ -227,17 +227,17 @@ export function judgedMembers(
     submitted: number;
     backlog: string | null;
   }>;
+  const marks = rows.map(() => "?").join(",");
   const open = new Set(
     (
       db
         .query(
-          "SELECT run, json_extract(value, '$.record') AS record FROM steward_records WHERE repo = ? AND effect = ? AND json_extract(value, '$.kind') = 'resume'",
+          `SELECT json_extract(value, '$.record') AS record FROM steward_records WHERE run IN (${marks}) AND effect = ? AND json_extract(value, '$.kind') = 'resume'`,
         )
-        .all(repo, STEWARD_REFUSED_OPEN) as Array<{
-        run: string;
+        .all(...rows.map((r) => r.id), STEWARD_REFUSED_OPEN) as Array<{
         record: string | null;
       }>
-    ).map((r) => `${r.run}\u0000${r.record}`),
+    ).map((r) => r.record),
   );
   const judged = new Set<string>();
   for (const row of rows) {
@@ -250,7 +250,7 @@ export function judgedMembers(
         typeof m?.kind === "string" &&
         typeof m.target === "string" &&
         typeof m.facts === "string" &&
-        !(m.kind === "resume" && open.has(`${row.id}\u0000${m.target}`))
+        !(m.kind === "resume" && open.has(m.target))
       )
         judged.add(memberKey(m as BacklogMember));
   }

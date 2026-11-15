@@ -434,6 +434,11 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: false,
     sql: "SELECT 1;",
   },
+  {
+    // A steward run's records by effect (`judgedMembers` reads the refused-open ones of the latest runs only).
+    additive: true,
+    sql: "CREATE INDEX steward_records_run_effect ON steward_records (run, effect);",
+  },
 ];
 
 /** The schema version this plugin writes. */

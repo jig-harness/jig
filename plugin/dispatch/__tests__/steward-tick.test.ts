@@ -100,18 +100,14 @@ describe("steward tick integration", () => {
   test("a new backlog member starts a pass in the same tick, and the hourly budget refuses a fourth", async () => {
     const w = fixture();
     const db = stateDb(dispatchState(w));
-    const endSteward = () =>
-      db
-        .query(
-          "UPDATE launches SET exit = ?, result = 'done' WHERE action = 'steward' AND exit IS NULL",
-        )
-        .run(
-          JSON.stringify({
-            at: new Date().toISOString(),
-            code: 0,
-            signal: null,
-          }),
-        );
+    const endSteward = () => {
+      db.query(
+        "UPDATE launches SET exit = ?, result = 'done' WHERE action = 'steward' AND exit IS NULL",
+      ).run(
+        JSON.stringify({ at: new Date().toISOString(), code: 0, signal: null }),
+      );
+      db.query("UPDATE steward_runs SET submitted = 1").run();
+    };
     const stewardLaunches = (receipt: TickReceipt) =>
       receipt.repos[0]?.launches.filter((r) => r.action === "steward");
     for (const prs of [[7], [7, 8], [7, 8, 9]]) {
@@ -119,6 +115,7 @@ describe("steward tick integration", () => {
       const receipt = await tick(w);
       expect(stewardLaunches(receipt)).toMatchObject([{ outcome: "launched" }]);
       endSteward();
+      expect(stewardLaunches(await tick(w))).toEqual([]);
     }
     stopped(w, [7, 8, 9, 10]);
     const fourth = await tick(w);
