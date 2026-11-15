@@ -173,6 +173,44 @@ consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.
 
+### 56. The epic planner: every epic planned, and its plan kept current
+
+An epic's children run in parallel only when the epic carries an
+execution plan, the block the pickup and the dispatcher read, and nothing
+in Jig writes one: of 51 open epics on 2026-11-14, one had a plan and 17
+had no children. A consumer repository operates a planner on one tracker.
+[design/epic-planner.md](epic-planner.md) has how it moves into Jig and
+what is reshaped on the way: every read and write through the tracker
+interface, each dependency recorded as a native relation first
+([ADR-0015](../docs/adr/ADR-0015-relationships-live-in-the-tracker.md)),
+plans parallel by default, holds and order stated as relation statements,
+and a plan kept current, its mechanical edits applied and its judgment
+edits approved. What it will build, one pull request per step:
+
+- **The tracker interface removes a relation**, on GitHub Issues, Linear
+  and Jira.
+- **The planner moves in** as `/jig:plan-epic`, with its tests, and the
+  consumer's copy is deleted in the same rollout.
+- **Filing hands its epic to the planner**: `/jig:file-issue`'s split ends
+  with a plan run on the epic.
+- **Relation statements**: the holds and order a view renders, computed by
+  the planner.
+- **Footprints**: each step's expected paths, written where overlap-aware
+  admission keeps them.
+- **Keeping a plan current**: a changed epic re-planned with the same split,
+  and a dispatched pass's approval asked as one parked decision.
+- **The doctrine**: M6 states an acceptance stage, a plan's claims checked
+  against the code before building, and the execution plan as an
+  invariant, with templates, the block's schema and audit criteria.
+
+Done when one real epic is planned and then picked up on the plugin on
+GitHub Issues and on Linear, the Jira adapter's recorded answers pass the
+same tests, every dependency is a native relation, and
+its children start in parallel where nothing orders them; a child added
+after the plan is either added by the next run or reported, never left
+waiting unseen; the consumer's copy is gone; and a re-audit of Jig scores
+M6's new criteria.
+
 ### 50. What the line hands a person: each class of need settled at its source
 
 Most of what the dispatcher hands a person is not a decision: a flaky
@@ -1312,10 +1350,7 @@ Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion.
-- **M6 and M7**:
-  - an acceptance stage;
-  - plan claims checked against the code before building;
-  - the execution-plan format the pickup skill reads;
+- **M7**:
   - a skill that runs the post-merge stage M7 states, for any repository (the
     stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
 - **M0, M4 and M5**:
@@ -1536,9 +1571,10 @@ conditions for considering a tap without adopting one ahead of that evidence.
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from
   the stack-specific checks it carries.
-- **Tracker planning.** Epic planning and prioritisation as skills on the
-  tracker interface, where the procedure is generic rather than one
-  organization's workflow.
+- **Tracker planning.** Prioritisation, the epic acceptance review, a
+  review-debt report and a skill that applies approved learnings, as skills
+  on the tracker interface, where the procedure is generic rather than one
+  organization's workflow. Epic planning is item 56.
 - **A forge interface.** GitHub is the only forge: the skills that work on
   pull requests call `gh` directly. An interface on the tracker's model (pull
   requests, review threads, checks and required checks, labels and comments),

@@ -59,6 +59,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalStrings(value.releasedItems) &&
     optionalStrings(value.codexPassArgs) &&
     optionalSeconds(value.passTimeoutSec) &&
+    optionalSeconds(value.rerunDied) &&
     optionalBooleans(value, [
       "rearmConsumed",
       "pooled",
