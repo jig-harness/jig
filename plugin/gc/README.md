@@ -39,7 +39,11 @@ The repository declares kinds in `.config/jig.yaml`. The machine file
 controls the schedule, retention and longer idle guards. Collecting runs
 fetch the declaration from the install-recorded base branch and remote URL,
 refusing when a URL rewrite rule redirects that URL; only the intersection
-with confirmed install bounds is authorized. A confirmed `worktrees` kind
+with confirmed install bounds is authorized. After upgrading to a version
+that adds a regenerable-path default, every existing installation must preview
+and confirm `jig install gc --repo <repository> --yes`, even without changing
+its repository configuration: older installed bounds deliberately grant no
+authority for that new default. A confirmed `worktrees` kind
 covers the agent tool's directory in the clone's primary checkout
 ([below](#worktrees-an-agent-tool-makes)) as well as the confirmed roots. Git hooks and the file-system
 monitor are disabled for these calls; transport and credential settings the
@@ -89,7 +93,8 @@ writer left, or a repository declaration:
   that path and its descendants. The default is `[.fallow]`, the unused-code
   tool cache Jig's gates create. An explicit list replaces the default; add
   a build output such as `dist` only when it can be rebuilt. Refresh the
-  installed collector after widening this list. Absolute paths, traversal,
+  installed collector after widening this list. Existing installations must
+  also refresh after upgrading to a version that adds the default. Absolute paths, traversal,
   globs, Git metadata and `.context/` outside `.context/scratch/` are refused.
 - **`cache-tag`**: a directory holding a `CACHEDIR.TAG` file that starts with
   the [cache directory tag](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)

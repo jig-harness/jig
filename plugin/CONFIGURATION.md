@@ -1258,7 +1258,10 @@ roots, prefixes and regenerable paths. Changes in a checkout, environment overri
 remote URL, and newly widened base declarations cannot grant deletion authority.
 A report reads the checkout and names that source. An uninstalled repository
 can be reported but cannot be collected. After adding regenerable paths, refresh
-the installed collector to confirm the widened bounds. The default `.fallow`
+the installed collector to confirm the widened bounds. Existing installations
+must also refresh after upgrading to a version that adds the default, even when
+their declaration does not change: older installed bounds deliberately exclude
+new deletion authority. The default `.fallow`
 covers the unused-code tool cache Jig's gates create; an output such as `dist`
 needs an explicit declaration when it is safe to rebuild.
 
