@@ -118,7 +118,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     required: true,
     identifies: false,
     description:
-      "For a verb, the stations whose addresses take it, comma-separated. Null for a station.",
+      "For a verb, the stations whose addresses take it, each separated from the next by a comma and a space. Null for a station.",
   },
   person: {
     type: "boolean",

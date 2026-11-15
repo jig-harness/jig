@@ -34,7 +34,7 @@ export const SEND_VERBS = {
     person: true,
     args: "",
     meaning:
-      "Hand the item to the line: assign it to the factory identity and move it into the first dispatch state, for the dispatcher's next tick to pick up",
+      "Hand the item to the line: assign it to the factory identity and, when it is in no dispatch state, move it into the first one, for the dispatcher's next tick to pick up",
   },
   drive: {
     stations: ["drive"],
@@ -69,7 +69,7 @@ export const SEND_VERBS = {
     person: true,
     args: ANSWER_ARGS,
     meaning:
-      "Answer a parked question or a need's decision, in the person's own words or by approving or choosing one of its options: one answer comment per item, which the re-arm or the dispatcher's next tick reads",
+      "Answer a parked question or a need's decision by approving or choosing one of its options, at any of these stations; a drive also takes the person's own words, and --all to approve every parked question it may at once, which the other stations refuse. One answer comment per item, read by the re-arm or the dispatcher's next tick",
   },
   pause: {
     stations: ["drive"],

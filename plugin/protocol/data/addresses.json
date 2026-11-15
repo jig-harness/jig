@@ -40,7 +40,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
-      "description": "For a verb, the stations whose addresses take it, comma-separated. Null for a station."
+      "description": "For a verb, the stations whose addresses take it, each separated from the next by a comma and a space. Null for a station."
     },
     "person": {
       "type": "boolean",
@@ -81,7 +81,7 @@
       "stations": null,
       "person": null,
       "args": null,
-      "meaning": "The drive of an open pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand"
+      "meaning": "The drive of a pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand"
     },
     {
       "kind": "station",
@@ -99,7 +99,7 @@
       "stations": "pickup",
       "person": true,
       "args": null,
-      "meaning": "Hand the item to the line: assign it to the factory identity and move it into the first dispatch state, for the dispatcher's next tick to pick up"
+      "meaning": "Hand the item to the line: assign it to the factory identity and, when it is in no dispatch state, move it into the first one, for the dispatcher's next tick to pick up"
     },
     {
       "kind": "verb",
@@ -144,7 +144,7 @@
       "stations": "drive, followup, pickup",
       "person": true,
       "args": "<key> <text> | <key> --approve|--choose <option> [--note <text>] [--decision <digest>] | --all --approve [--decision-set <token>]",
-      "meaning": "Answer a parked question or a need's decision, in the person's own words or by approving or choosing one of its options: one answer comment per item, which the re-arm or the dispatcher's next tick reads"
+      "meaning": "Answer a parked question or a need's decision by approving or choosing one of its options, at any of these stations; a drive also takes the person's own words, and --all to approve every parked question it may at once, which the other stations refuse. One answer comment per item, read by the re-arm or the dispatcher's next tick"
     },
     {
       "kind": "verb",

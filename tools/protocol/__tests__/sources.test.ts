@@ -379,7 +379,15 @@ describe("addresses and the verbs of jig send", () => {
       ).toBe(spec.key);
   });
 
-  test("shows every station and every verb in its sections", () => {
-    expect(missingRows(ADDRESSES, [...stations, ...verbs])).toEqual([]);
+  test("shows every station in the stations section and every verb in the verbs section", () => {
+    // Each section on its own: a station also appears in the verbs table's
+    // To column, and the verb drive shares its name with the station.
+    const [stationsSection, verbsSection] = ADDRESSES.sections.map((s) =>
+      s.render(),
+    );
+    const missing = (text: string | undefined, names: readonly string[]) =>
+      names.filter((n) => !(text ?? "").includes(`\n| \`${n}\` |`));
+    expect(missing(stationsSection, stations)).toEqual([]);
+    expect(missing(verbsSection, verbs)).toEqual([]);
   });
 });

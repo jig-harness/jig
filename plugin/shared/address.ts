@@ -48,7 +48,7 @@ export const STATIONS = {
   drive: {
     key: "pull-request",
     meaning:
-      "The drive of an open pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand",
+      "The drive of a pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand",
   },
   followup: {
     key: "pull-request",

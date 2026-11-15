@@ -39,9 +39,11 @@ pull request's key after `#` without a second one, an item key as the
 tracker writes it. A program that compares addresses compares that form.
 
 A malformed address, an unknown station, a short name that names no
-repository or two, and a key not in its station's form are each refused as
-a usage error (exit `2`), with a reason that lists the valid stations where
-the station is at fault.
+repository or two, an address that leaves its repository out outside a
+checkout, a key not in its station's form, and a `pickup` key with no
+checkout on the machine to name its tracker are each refused as a usage
+error (exit `2`), with a reason; the reason for a malformed address or an
+unknown station lists the valid stations.
 
 ## Stations
 
@@ -52,7 +54,7 @@ A reader that meets a station this table does not list refuses the address.
 | Station | Its key | Meaning |
 | --- | --- | --- |
 | `pickup` | the tracker's item key | The pick-up of a tracker item: held by the session that claimed the item to start its work |
-| `drive` | the pull request's number | The drive of an open pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand |
+| `drive` | the pull request's number | The drive of a pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand |
 | `followup` | the pull request's number | The follow-up of a merged pull request: the pass, a dispatcher's tick or a person's run, that settles what the merge still owes |
 
 <!-- /protocol:generated -->
@@ -60,23 +62,24 @@ A reader that meets a station this table does not list refuses the address.
 ## The verbs of `jig send`
 
 `jig send` writes one record of a kind the line already reads, and exits;
-the record's reader acts on it at its next run. Each verb is taken by the
-stations its row names, and refused, as a usage error, at any other. A
-person's command is refused in a session the line started (a dispatched
-launch, or a drive's pass, which carries `JIG_LAUNCH`); the mailbox
-directives are not a person's commands, and such a session may send them.
-`--dry-run` shows what a verb would write without writing it.
+the record's reader acts on it at its next run. A verb this table does not
+list, a verb sent to a station its row does not name, and arguments the verb
+does not take are each refused as a usage error (exit `2`). A person's
+command is refused, with exit `1`, in a session the line started (a
+dispatched launch, or a drive's pass, which carries `JIG_LAUNCH`); the
+mailbox directives are not a person's commands, and such a session may send
+them. `--dry-run` shows what a verb would write without writing it.
 
 <!-- protocol:generated source=plugin/send/lib/verb-values.ts#SEND_VERBS -->
 
 | Verb | Arguments | To | A person's command | Meaning |
 | --- | --- | --- | --- | --- |
-| `assign` | — | `pickup` | yes | Hand the item to the line: assign it to the factory identity and move it into the first dispatch state, for the dispatcher's next tick to pick up |
+| `assign` | — | `pickup` | yes | Hand the item to the line: assign it to the factory identity and, when it is in no dispatch state, move it into the first one, for the dispatcher's next tick to pick up |
 | `drive` | — | `drive` | yes | Ask for a drive on a pull request that has none: the drive command label, which the dispatcher's next tick arms a drive for |
 | `rearm` | — | `drive` | yes | Ask for a stopped drive to be re-armed in its existing working tree: the rearm command label, which the dispatcher's next tick reads |
 | `hold` | — | `drive`, `followup` | yes | Keep the line off a pull request: add the hold command label, which every stage of the dispatcher respects |
 | `release` | — | `drive`, `followup` | yes | Withdraw a hold: remove the hold command label, so the dispatcher's next tick takes the pull request up again |
-| `answer` | `<key> <text> \| <key> --approve\|--choose <option> [--note <text>] [--decision <digest>] \| --all --approve [--decision-set <token>]` | `drive`, `followup`, `pickup` | yes | Answer a parked question or a need's decision, in the person's own words or by approving or choosing one of its options: one answer comment per item, which the re-arm or the dispatcher's next tick reads |
+| `answer` | `<key> <text> \| <key> --approve\|--choose <option> [--note <text>] [--decision <digest>] \| --all --approve [--decision-set <token>]` | `drive`, `followup`, `pickup` | yes | Answer a parked question or a need's decision by approving or choosing one of its options, at any of these stations; a drive also takes the person's own words, and --all to approve every parked question it may at once, which the other stations refuse. One answer comment per item, read by the re-arm or the dispatcher's next tick |
 | `pause` | — | `drive` | no | Pause a running drive at its next round boundary: a directive in the mailbox of the working tree that holds the drive on this machine |
 | `resume` | `<hold-push\|pause\|stop>` | `drive` | no | Withdraw the mailbox directive it names, so the drive goes on past it |
 | `stop` | — | `drive` | no | Stop a running drive at its next round boundary: a mailbox directive |
