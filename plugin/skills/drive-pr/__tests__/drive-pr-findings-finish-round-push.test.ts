@@ -195,9 +195,18 @@ describe("finish-round.ts", () => {
   // excluded it: the round's own handoff and mailbox live in the tree.
   const ownContext = async () => {
     const repo = scratchWithOrigin();
-    // Under the environment the push subprocess sees, not this process's:
-    // a user-level rule ignoring `.context/` must not stand in for the
-    // clone-local exclusion the drive writes.
+    // No user-level rule (`$XDG_CONFIG_HOME/git/ignore`, `core.excludesFile`)
+    // may stand in for the clone-local exclusion the drive writes.
+    const home = mkdtempSync(join(tmpdir(), "ctx-home-"));
+    const config = join(home, "gitconfig");
+    writeFileSync(config, "");
+    const isolated = {
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CONFIG_HOME: join(home, ".config"),
+      GIT_CONFIG_GLOBAL: config,
+      GIT_CONFIG_NOSYSTEM: "1",
+    };
     const setup = Bun.spawnSync(
       [
         process.execPath,
@@ -207,7 +216,11 @@ describe("finish-round.ts", () => {
         )}); console.log(JSON.stringify(await m.ensureContextIgnored(process.argv[1])));`,
         repo.dir,
       ],
-      { env: gitCleanEnv(), stdout: "pipe", stderr: "pipe" },
+      {
+        env: { ...gitCleanEnv(), ...isolated },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
     );
     expectSpawnExit(
       {
@@ -228,6 +241,7 @@ describe("finish-round.ts", () => {
     return {
       repo,
       env: {
+        ...isolated,
         DRIVE_PR_HANDOFF_DIR: context,
         DRIVE_PR_MAILBOX_DIR: join(context, "drive-mailbox"),
       },

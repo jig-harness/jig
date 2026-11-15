@@ -328,7 +328,6 @@ export async function alreadyPushing(
   env?: Record<string, string | undefined>,
 ): Promise<PushingProbe> {
   const timeoutSec = gitCallTimeoutSeconds();
-  await ignoreDriveContext(root, false, "base-sync.ts");
   // `--untracked-files=normal` and `--ignore-submodules=none` are explicit, not
   // decorative: a plain `--porcelain` inherits `status.showUntrackedFiles` from
   // repo/user config and `submodule.<name>.ignore` from `.gitmodules`, either
@@ -782,6 +781,7 @@ async function main(): Promise<number> {
     emit({ ...base, reason: readReason });
     return 0;
   }
+  await ignoreDriveContext(root, false, "base-sync.ts");
   if (!force) {
     const pushing = await alreadyPushing(git, root, headOid, identityEnv);
     if (!pushing.ok) {
@@ -856,7 +856,6 @@ async function main(): Promise<number> {
     // script, never to commit merely to unblock the merge without having
     // validated first.
     // Explicit `--untracked-files`/`--ignore-submodules`, as in `alreadyPushing`.
-    await ignoreDriveContext(root, false, "base-sync.ts");
     const dirty = await git(
       [
         "-C",

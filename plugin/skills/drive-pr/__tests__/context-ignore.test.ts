@@ -177,6 +177,15 @@ describe("ensureContextIgnored", () => {
     expect(untracked(tree)).toBe("?? pkg/");
   });
 
+  test("excludes the root's .context/ when started in a subdirectory that ignores its own", () => {
+    const tree = repo();
+    const nested = join(tree, "packages", "app");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, ".gitignore"), ".context/\n");
+    expect(ensureContextIgnored(nested).kind).toBe("excluded");
+    expect(contextLines(excludeOf(tree))).toBe(1);
+  });
+
   test("reports a rule a later negation defeats", () => {
     const tree = repo();
     writeFileSync(

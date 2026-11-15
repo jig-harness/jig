@@ -35,6 +35,39 @@ function readExclude(file: string): { text: string } | { error: string } {
   }
 }
 
+/** Append the pattern to the exclude file; the error text when that fails. */
+function appendPattern(file: string, current: string): string | null {
+  const separator = current === "" || current.endsWith("\n") ? "" : "\n";
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, `${separator}${CONTEXT_PATTERN}\n`);
+    return null;
+  } catch (error) {
+    return errnoCode(error) ?? String(error);
+  }
+}
+
+/** The drive's `.context/` sits at the worktree root, wherever `start` is. */
+async function worktreeRoot(
+  start: string,
+  base: {
+    env: Record<string, string | undefined>;
+    timeoutSec: number;
+    stderr: "pipe";
+  },
+): Promise<string | ContextIgnore> {
+  const top = await git(["rev-parse", "--show-toplevel"], {
+    ...base,
+    cwd: start,
+  });
+  const root = top.stdout.trim();
+  if (top.code === 0 && root !== "") return root;
+  return {
+    kind: "failed",
+    reason: `cannot locate the worktree root: ${top.stderr.trim()}`,
+  };
+}
+
 /**
  * Make sure `.context/` is ignored in the working tree at `tree`: nothing
  * changes when the repository's rules already ignore it or the exclude file
@@ -42,14 +75,16 @@ function readExclude(file: string): { text: string } | { error: string } {
  * `info/exclude`, every line already there kept.
  */
 export async function ensureContextIgnored(
-  tree: string,
+  start: string,
 ): Promise<ContextIgnore> {
-  const opts = {
-    cwd: tree,
+  const base = {
     env: gitIdentityEnv(),
     timeoutSec: gitCallTimeoutSeconds(),
     stderr: "pipe" as const,
   };
+  const tree = await worktreeRoot(start, base);
+  if (typeof tree !== "string") return tree;
+  const opts = { ...base, cwd: tree };
   // `--no-index`: a tracked file under `.context/` must not hide the rule.
   const probe = await git(
     ["check-ignore", "-q", "--no-index", CONTEXT_PATH],
@@ -77,16 +112,9 @@ export async function ensureContextIgnored(
     .split("\n")
     .some((line) => line.replace(/\r$/, "") === CONTEXT_PATTERN);
   if (!present) {
-    const separator = current === "" || current.endsWith("\n") ? "" : "\n";
-    try {
-      mkdirSync(dirname(file), { recursive: true });
-      appendFileSync(file, `${separator}${CONTEXT_PATTERN}\n`);
-    } catch (error) {
-      return {
-        kind: "failed",
-        reason: `cannot write ${file}: ${errnoCode(error) ?? String(error)}`,
-      };
-    }
+    const written = appendPattern(file, current);
+    if (written !== null)
+      return { kind: "failed", reason: `cannot write ${file}: ${written}` };
   }
   // The rule's presence is not its effect: a later negation can defeat it.
   const after = await git(
