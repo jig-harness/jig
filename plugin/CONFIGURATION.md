@@ -1250,13 +1250,20 @@ command can be registered as a collection kind.
 | `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
 | `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root. A root that does not exist on the machine that runs the audit is not reported: a repository names the roots of every machine it is worked on. The agent tool's directory in the primary checkout (`.claude/worktrees`) is inspected whatever this lists, and needs no entry | audit, gc, drive-pr |
 | `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
+| `gc.regenerable_paths` | distinct literal relative path list | `[.fallow]`; ignored paths that can be rebuilt, relative to each worktree. A path covers itself and its descendants only, never a similarly named sibling or a symbolic link. Trailing `/` is optional. No absolute paths, traversal, glob characters or `.context/` content outside `.context/scratch/`; Git metadata is refused. An explicit list replaces the default; `[]` disables it. The receipt names each path with rule `regenerable-path` | audit, gc |
 
 A collecting run fetches `.config/jig.yaml` from the remote URL and base branch
 recorded at install. It intersects that declaration with the confirmed kinds,
-roots and prefixes. Changes in a checkout, environment overrides, a changed
+roots, prefixes and regenerable paths. Changes in a checkout, environment overrides, a changed
 remote URL, and newly widened base declarations cannot grant deletion authority.
 A report reads the checkout and names that source. An uninstalled repository
-can be reported but cannot be collected.
+can be reported but cannot be collected. After adding regenerable paths, refresh
+the installed collector to confirm the widened bounds. Existing installations
+must also refresh after upgrading to a version that adds the default, even when
+their declaration does not change: older installed bounds deliberately exclude
+new deletion authority. The default `.fallow`
+covers the unused-code tool cache Jig's gates create; an output such as `dist`
+needs an explicit declaration when it is safe to rebuild.
 
 `--kind scratch` does not discover undeclared temporary directories. To
 inventory Jig's test scopes, include `scratch` in `gc.kinds` and declare the
@@ -1815,6 +1822,7 @@ gc:
   kinds: [tool-state]
   worktree_roots: [../worktrees]
   scratch_prefixes: [/tmp/example-test.]
+  regenerable_paths: [.fallow, dist]
 dispatch:
   identity: example-factory
   person: example-maintainer

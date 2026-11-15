@@ -58,6 +58,7 @@ function setup() {
     kinds: ["scratch"],
     worktree_roots: [],
     scratch_prefixes: [join(root, "scratch-")],
+    regenerable_paths: [],
   };
   writeFileSync(join(repo, ".config/jig.yaml"), dump({ gc: declaration }));
   command(["git", "add", "."]);

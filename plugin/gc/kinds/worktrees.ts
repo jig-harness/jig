@@ -70,6 +70,7 @@ import {
   type WorktreePolicy,
 } from "./worktree-proof.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
+import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
@@ -405,6 +406,7 @@ async function collectThroughOrca(
   repository: string,
   declaration: string,
   legacy: LegacyPolicy | undefined,
+  regenerablePaths: readonly string[],
 ): Promise<Collected> {
   const { id, guard } = orcaWorktree;
   const { launched } = guard;
@@ -459,6 +461,7 @@ async function collectThroughOrca(
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
         // The last step before the call: an unanswered call keeps the claim.
         submit: () => guard.submit(),
@@ -514,6 +517,7 @@ async function admitAfterHook(
   legacy: LegacyPolicy | undefined,
   checks: () => Promise<Outcome<undefined, string>>,
   archived: (written: Archived | null) => void,
+  regenerablePaths: readonly string[],
 ): Promise<Outcome<undefined, string>> {
   const before = await checks();
   if (!before.ok) return before;
@@ -522,6 +526,7 @@ async function admitAfterHook(
     worktree,
     legacy,
     currentMs() + ARCHIVE_LIMIT_MS,
+    regenerablePaths,
   );
   if (!preserved.ok) return preserved;
   archived(preserved.value);
@@ -541,6 +546,7 @@ async function collectAgentWorktree(
   declaration: string,
   legacy: LegacyPolicy | undefined,
   identity: WorktreeIdentity | undefined,
+  regenerablePaths: readonly string[],
 ): Promise<Collected> {
   let archived: Archived | null = null;
   const log = (line: string): void => {
@@ -582,6 +588,7 @@ async function collectAgentWorktree(
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
       },
       remove: (worktree) => gitRemove(repository, worktree),
@@ -791,6 +798,7 @@ export function worktreesKind(
   policy?: WorktreePolicy,
   orca?: string,
   archive?: ArchivePolicy,
+  regenerablePaths: readonly string[] = DEFAULT_REGENERABLE_PATHS,
 ): CollectionKind {
   const legacy = legacyPolicy(archive);
   // What each agent tool tree's latest proof saw, for its collection.
@@ -843,7 +851,7 @@ export function worktreesKind(
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
         return { state: "unverified", reason: resolved.failure.reason };
-      const proving = { ...resolved.value, legacy: legacy() };
+      const proving = { ...resolved.value, regenerablePaths, legacy: legacy() };
       const agentTool = isAgentTool(resource);
       proved.delete(resource.id);
       // Read before the proof, so the proof's own reads run inside it.
@@ -890,6 +898,7 @@ export function worktreesKind(
           declaration,
           legacy(),
           final,
+          regenerablePaths,
         );
       }
       const id = orcaId(resource);
@@ -902,6 +911,7 @@ export function worktreesKind(
             repository,
             declaration,
             legacy(),
+            regenerablePaths,
           ),
         );
       return {
