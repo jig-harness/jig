@@ -113,7 +113,6 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { swallow } from "./errors.ts";
 import {
@@ -133,7 +132,12 @@ import {
   type ProcessIdentity,
 } from "./liveness.ts";
 import { currentMs } from "./time.ts";
-import { encodeLockWait } from "./resource-lock-waits.ts";
+import {
+  encodeLockWait,
+  lockPlace,
+  resourceLockPath,
+} from "./resource-lock-waits.ts";
+export { lockPlace };
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
 /** The most slots a lock has, and so the slots an exclusive holder takes. */
@@ -387,14 +391,6 @@ async function runLockedCommand(
   void cancellation;
   return await child.exited;
 }
-export function resourceLockPath(root: string, name: string): string {
-  const safe = Array.from(new TextEncoder().encode(name), (b) =>
-    /[A-Za-z0-9._-]/.test(String.fromCharCode(b))
-      ? String.fromCharCode(b)
-      : "_",
-  ).join("");
-  return join(root, `jig-lock.${safe}`);
-}
 /** Slot `slot` of the lock `name`: slot 0 is the lock's own name, the others `<name>-slot-<n>`. */
 function resourceLockSlotPath(
   root: string,
@@ -402,16 +398,6 @@ function resourceLockSlotPath(
   slot: number,
 ): string {
   return resourceLockPath(root, slot === 0 ? name : `${name}-slot-${slot}`);
-}
-/** The lock's root and name as `env` sets them for a run: `LOCK_ROOT`, else the temporary directory; `LOCK_NAME`, else `heavy`. */
-export function lockPlace(env: NodeJS.ProcessEnv = process.env): {
-  root: string;
-  name: string;
-} {
-  return {
-    root: env.LOCK_ROOT || env.TMPDIR || tmpdir(),
-    name: env.LOCK_NAME || "heavy",
-  };
 }
 /**
  * How many runs hold a slot of the lock `name` under `root`, and how many

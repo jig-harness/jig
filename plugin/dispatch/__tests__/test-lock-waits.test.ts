@@ -14,6 +14,7 @@ import { decodeIdentity } from "../../shared/liveness.ts";
 import { endedHow } from "../lib/actions/pickup-hold.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { byPlatform } from "../../../lib/test-helpers/windows-skip.ts";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 
 it("reads a live wait's portable workspace and timestamp, refusing a reused identity", () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-wait-reading-"));
@@ -158,4 +159,55 @@ it("does not attribute a wait shared by two eligible live launches", () => {
     undefined,
     undefined,
   ]);
+});
+
+it("attributes a wait from a directory inside the workspace, not from a sibling", () => {
+  const records = [
+    { id: "inside", path: "/work/w" },
+    { id: "sibling", path: "/work/w2" },
+  ].map(({ id, path }) => ({
+    record: {
+      id,
+      repo: "o/r",
+      createdAt: "2026-11-01T10:00:00.000Z",
+      workspace: { path },
+    },
+    state: { kind: "alive" },
+  })) as unknown as ReadRecord[];
+  const now = Temporal.Instant.from(
+    "2026-11-01T12:00:00.000Z",
+  ).epochMilliseconds;
+  observeTestLockWaits(
+    records,
+    "o/r",
+    [
+      {
+        pid: 12,
+        workspace: "/work/w/plugin",
+        since: "2026-11-01T11:00:00.000Z",
+      },
+    ],
+    now,
+    () => undefined,
+  );
+  expect(records.map((r) => r.record.testLockWait?.pid)).toEqual([
+    12,
+    undefined,
+  ]);
+});
+
+it("reads waits without taking on the lock's signal handlers", () => {
+  // The dashboard server imports the outcome log, which names waits; a signal
+  // handler from the lock would turn its clean stop on SIGTERM into exit 143.
+  const log = join(import.meta.dir, "..", "lib", "log.ts");
+  const probe = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `await import(${JSON.stringify(log)}); console.log(process.listenerCount("SIGTERM"));`,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(probe, 0);
+  expect(probe.stdout.toString().trim()).toBe("0");
 });

@@ -2342,8 +2342,9 @@ waits without changing admission or pass deadlines. Resource-lock wait
 announcements carry the process identity, working directory and wait start
 on every platform. Attribution currently works on POSIX; Windows retains
 the aggregate lock gauge until its synchronous identity check can verify
-process creation time. A tick attributes a live announcement only to a running
-launch in the same workspace whose launch precedes the wait, and retains
+process creation time. A tick attributes a live announcement only when one
+running launch's workspace holds the waiter's working directory and the
+launch precedes the wait, and retains
 the last observed wait on that launch record. Running and drift reasons
 name the wait and its duration; ended and stalled pickup reasons and the
 outcome log name the last observation as historical evidence. Admission or

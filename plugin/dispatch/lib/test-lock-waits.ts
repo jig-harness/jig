@@ -1,11 +1,13 @@
 /** Attribute validation waits to this host's launches without changing deadlines. */
-import { lockPlace, resourceLockPath } from "../../shared/resource-lock.ts";
 import {
+  lockPlace,
   readLockWaits,
+  resourceLockPath,
   type LockWait,
 } from "../../shared/resource-lock-waits.ts";
 import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 import { type LaunchRecord, type ReadRecord, writeRecord } from "./launches.ts";
+import { sep } from "node:path";
 
 export interface TestLockWait extends LockWait {
   observedAt: string;
@@ -16,6 +18,16 @@ export interface TestLockWait extends LockWait {
 function testLockWaits(): LockWait[] {
   const { root, name } = lockPlace(process.env);
   return readLockWaits(root, resourceLockPath(root, name));
+}
+
+/** Whether a wait ran in the launch's workspace or a directory inside it. */
+function inWorkspace(wait: LockWait, record: LaunchRecord): boolean {
+  const root = record.workspace?.path;
+  if (root === undefined || root === "") return false;
+  return (
+    wait.workspace === root ||
+    wait.workspace.startsWith(root.endsWith(sep) ? root : root + sep)
+  );
 }
 
 /** Keep the last observation after admission or exit, explicitly marked as historical. */
@@ -30,7 +42,7 @@ export function observeTestLockWaits(
     records.filter(
       ({ record, state }) =>
         state.kind === "alive" &&
-        record.workspace?.path === wait.workspace &&
+        inWorkspace(wait, record) &&
         parseMs(record.createdAt) <= parseMs(wait.since),
     );
   for (const { record, state } of records) {
@@ -40,7 +52,7 @@ export function observeTestLockWaits(
         ? waits
             .filter(
               (w) =>
-                w.workspace === record.workspace?.path &&
+                inWorkspace(w, record) &&
                 parseMs(w.since) >= parseMs(record.createdAt) &&
                 parseMs(w.since) <= now &&
                 owners(w).length === 1,

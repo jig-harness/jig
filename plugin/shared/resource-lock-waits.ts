@@ -1,10 +1,36 @@
-/** Portable wait announcements. Older lock readers still read the identity. */
+/**
+ * Where the resource lock lives and its portable wait announcements, free of
+ * the lock's signal handling so a reader can import them without taking on
+ * the lock's process-wide handlers. Older lock readers still read the identity.
+ */
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { decodeIdentity, isAliveSync, ownIdentity } from "./liveness.ts";
 import { currentIso, parseMs } from "./time.ts";
 import { swallow } from "./errors.ts";
 import { isMapping } from "./config-layers.ts";
+
+/** The lock's root and name as `env` sets them for a run: `LOCK_ROOT`, else the temporary directory; `LOCK_NAME`, else `heavy`. */
+export function lockPlace(env: NodeJS.ProcessEnv = process.env): {
+  root: string;
+  name: string;
+} {
+  return {
+    root: env.LOCK_ROOT || env.TMPDIR || tmpdir(),
+    name: env.LOCK_NAME || "heavy",
+  };
+}
+
+/** The lock file of the lock `name` under `root`, its name made safe for a file name. */
+export function resourceLockPath(root: string, name: string): string {
+  const safe = Array.from(new TextEncoder().encode(name), (b) =>
+    /[A-Za-z0-9._-]/.test(String.fromCharCode(b))
+      ? String.fromCharCode(b)
+      : "_",
+  ).join("");
+  return join(root, `jig-lock.${safe}`);
+}
 
 export interface LockWait {
   pid: number;
