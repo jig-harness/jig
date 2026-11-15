@@ -141,7 +141,10 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
         remote: "origin",
         remote_url: REMOTE,
         base_branch: "main",
-        bounds: declaration,
+        bounds: {
+          ...declaration,
+          regenerable_paths: regenerable_paths ?? [".fallow"],
+        },
       },
     ],
   };
