@@ -110,3 +110,12 @@ carries a field on every marker or on some; "never" that it carries none.
 | `endedAt` | string | sometimes | never | When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome. |
 
 <!-- /protocol:generated -->
+
+## JSON Schemas
+
+The [claim schema](schemas/followup-claim.json) describes the enveloped JSON
+record, including version 1 envelopes. The
+[result schema](schemas/followup-result.json) additionally requires a final
+outcome. Earlier plain-text markers retain their textual grammar.
+Version 1 identifies its pull request by its envelope key and ignores any
+`pr` field; version 2 requires `pr` and uses the key `followup`.

@@ -45,14 +45,8 @@ import { currentIso, parseMs } from "../../../../../shared/time.ts";
  * an underdetermined call lacked was gathered, and the two provisional
  * decisions only `wide` takes.
  */
-export const DECISION_CLASSES = [
-  "file-issue",
-  "defer-without-tracker",
-  "decide-reversible",
-  "decide-underdetermined",
-  "decide-provisional",
-  "provisional-reply",
-] as const;
+import { DECISION_CLASSES } from "./ledger-values.ts";
+export { DECISION_CLASSES } from "./ledger-values.ts";
 export type DecisionClass = (typeof DECISION_CLASSES)[number];
 
 /** The classes only `wide` takes, each reversible by a person's comment. */

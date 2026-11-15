@@ -873,7 +873,7 @@ pull-request labels, on hidden comment markers, on the commands a
 repository supplies and on the follow-up claim and its result
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
-Open, in order: the stable chapters' schemas, their restatements as links
+Open, in order: the stable chapters' restatements as links
 and the provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated

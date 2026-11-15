@@ -1,18 +1,8 @@
 /** The dimensions every tracked file is classified along, and its counts. */
 
 /** What a file is. */
-export const KINDS = [
-  "code",
-  "test",
-  "docs",
-  "config",
-  "data",
-  "generated",
-  "fixture",
-  "asset",
-  "vendored",
-  "other",
-] as const;
+import { CLASSIFY_KINDS } from "../../../../shared/repo-command-shapes.ts";
+export const KINDS = CLASSIFY_KINDS;
 export type Kind = (typeof KINDS)[number];
 
 export function isKind(value: unknown): value is Kind {
