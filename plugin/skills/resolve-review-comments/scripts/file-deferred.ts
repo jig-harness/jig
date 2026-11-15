@@ -59,7 +59,7 @@ import {
   deferToTracker,
   findingIdentityLines,
 } from "./lib/tracker-defer-batch.ts";
-import { batchTitle, leadingKeyLine } from "./lib/batch-description.ts";
+import { leadingKeyLine } from "./lib/batch-description.ts";
 import { JigError } from "../../../shared/outcome.ts";
 import { createHash } from "node:crypto";
 import { fail, runMain } from "../../../shared/cli.ts";
@@ -365,12 +365,9 @@ const heldIssue = (found: Held, entry: DeferredEntry): Got => ({
   stale: !found.lines.includes(textLine(entry)),
 });
 
-function damagedBatch(found: Held, entry: DeferredEntry, pr: string): boolean {
-  return (
-    leadingKeyLine(found.issue.description)?.startsWith(
-      "<!-- defer-batch-key:",
-    ) || found.issue.title === batchTitle(pr, entry.type ?? "unknown")
-  );
+/** Old one-finding issues predate batches and have an explicit body shape. */
+function legacyIndividualIssue(issue: Issue): boolean {
+  return /^Filed by `?file-deferred\.ts`?\b/.test(issue.description);
 }
 
 /** Repair the setup of an existing open batch before its entry is recorded as filed. */
@@ -391,10 +388,10 @@ async function readyHeld(
     marker ?? "",
   );
   if (key === null) {
-    if (damagedBatch(found, entry, context.pr))
+    if (!legacyIndividualIssue(found.issue))
       throw new JigError(
         "deferral",
-        "The held batch lost or malformed its key; do not record the finding as filed",
+        "The held issue has no verifiable batch key or legacy individual-issue shape; do not record the finding as filed",
       );
     return got;
   }
@@ -465,7 +462,7 @@ async function issueOf(
 
 /** An unfiled entry this run files: the issue the tracker holds for it, else how a new one is filed. */
 type Open =
-  | { entry: DeferredEntry; held: Held; plan: Plan | null }
+  | { entry: DeferredEntry; held: Held; plan: Plan | { why: string } | null }
   | { entry: DeferredEntry; held: null; plan: Plan };
 
 type How = { held: Held; plan: Plan | null } | { held: null; plan: Plan };
@@ -476,7 +473,10 @@ async function howToFile(
   entry: DeferredEntry,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
 ): Promise<How | { why: string }> {
-  if (initial.held !== null) return { held: initial.held, plan: initial.plan };
+  if (initial.held !== null) {
+    if (initial.plan !== null && "why" in initial.plan) return initial.plan;
+    return { held: initial.held, plan: initial.plan };
+  }
   const next = await plan(entry);
   return "why" in next ? next : { held: null, plan: next };
 }
@@ -618,7 +618,7 @@ async function heldPlan(
   held: Held,
   entry: DeferredEntry,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
-): Promise<Plan | null> {
+): Promise<Plan | { why: string } | null> {
   if (
     !/^<!-- defer-batch-key: repo=\S+ pr=\d+ type=\S+ -->$/.test(
       leadingKeyLine(held.issue.description) ?? "",
@@ -626,7 +626,7 @@ async function heldPlan(
   )
     return null;
   const expected = await plan(entry);
-  return "why" in expected ? null : expected;
+  return expected;
 }
 
 async function fileable(
@@ -768,10 +768,15 @@ export async function missingEntries(
 /** The issue explicitly linked by the pull request, independent of its tracker. */
 export function originatingFromBody(body: string): string | undefined {
   const keys = issueKeysOrNull();
-  for (const match of body.matchAll(
-    /^\s*(?:closes|fixes|resolves|refs)\s+(\S+)/gim,
-  )) {
-    const candidate = match[1] ?? "";
+  for (const rawLine of body.split("\n")) {
+    const line = rawLine.trimStart();
+    const separator = line.indexOf(" ");
+    if (separator < 1) continue;
+    const verb = line.slice(0, separator).toLowerCase();
+    if (!["closes", "fixes", "resolves", "refs"].includes(verb)) continue;
+    const rest = line.slice(separator).trimStart();
+    const end = [...rest].findIndex((char) => /\s/.test(char));
+    const candidate = end < 0 ? rest : rest.slice(0, end);
     const key = keys?.normalize(candidate);
     if (key !== null && key !== undefined) return key;
     if (

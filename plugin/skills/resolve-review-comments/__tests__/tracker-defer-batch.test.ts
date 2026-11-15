@@ -232,7 +232,7 @@ describe("tracker-independent deferral batches", () => {
     expect(f.created).toHaveLength(2);
   });
 
-  test("a mixed-size batch clears its aggregate size and still records both findings", async () => {
+  test("a mixed-size batch preserves its established required size and records both findings", async () => {
     const f = fixture("github");
     const common = {
       repo: "example/project",
@@ -255,7 +255,7 @@ describe("tracker-independent deferral batches", () => {
       size: "xs",
     });
     const batch = must(f.issues.get(first.identifier));
-    expect(batch.size).toBeNull();
+    expect(batch.size).toBe("small");
     expect(batch.description).toContain("small finding");
     expect(batch.description).toContain("xs finding");
   });

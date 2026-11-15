@@ -35,9 +35,32 @@ export interface TrackerDeferral {
 
 const open = (i: Issue) =>
   !["completed", "canceled", "duplicate"].includes(i.state.type);
+const normalizedLink = (line: string): string => {
+  let out = "";
+  let cursor = 0;
+  while (cursor < line.length) {
+    const start = line.indexOf("[", cursor);
+    if (start < 0) return out + line.slice(cursor);
+    const labelEnd = line.indexOf("](", start + 1);
+    const targetEnd = labelEnd < 0 ? -1 : line.indexOf(")", labelEnd + 2);
+    if (targetEnd < 0) return out + line.slice(cursor);
+    const target = line.slice(labelEnd + 2, targetEnd);
+    const url =
+      target.startsWith("<") && target.endsWith(">")
+        ? target.slice(1, -1)
+        : target;
+    out += line.slice(cursor, start);
+    out +=
+      url.startsWith("http://") || url.startsWith("https://")
+        ? url
+        : line.slice(start, targetEnd + 1);
+    cursor = targetEnd + 1;
+  }
+  return out;
+};
 export const findingIdentityLines = (text: string) =>
   authoritativeLines(text.replaceAll("\r", "")).map((l) =>
-    l.replace(/\[[^\]]*\]\(<?(https?:\/\/[^)>]+)>?\)/g, "$1").trim(),
+    normalizedLink(l).trim(),
   );
 const higher = (a: number, b: number) =>
   a === 0 ? b : b === 0 ? a : Math.min(a, b);
@@ -228,9 +251,9 @@ async function persist(
     ...(missing.length > 0 ? { addLabels: missing } : {}),
     ...(issue.type === null ? { type: d.type } : {}),
     ...(issue.size === null && d.size !== undefined ? { size: d.size } : {}),
-    ...(issue.size !== null && d.size !== undefined && issue.size !== d.size
-      ? { size: null }
-      : {}),
+    // A batch has one required size facet. Keep its established value when
+    // individual findings have different estimates: clearing it leaves an
+    // invalid issue and makes a retry alternate between sizes.
   };
   if (Object.keys(patch).length > 0)
     await tracker.updateIssue(issue.identifier, patch);
@@ -265,7 +288,7 @@ async function confirmed(
     higher(issue.priority, d.priority) === issue.priority,
     d.labels.every((l) => issue.labels.includes(l)),
     issue.type?.toLowerCase() === d.type.toLowerCase(),
-    d.size === undefined || issue.size === null || issue.size === d.size,
+    d.size === undefined || issue.size !== null,
     targets.every((t) =>
       related.some((r) => r.type === "related" && r.issue === t),
     ),

@@ -506,7 +506,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     const { t, calls } = trackerThatFiles([
       {
         number: 7,
-        body: `Mentions ${comment}.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}\n${textLine({ text: deferredEntries(body)[0]?.text ?? "" })}`,
+        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}\n${textLine({ text: deferredEntries(body)[0]?.text ?? "" })}`,
       },
     ]);
     const r = await fileDeferred(forge, t, "42", {

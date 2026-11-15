@@ -73,24 +73,34 @@ interface Fence {
   len: number;
 }
 
+function openingFence(line: string): { fence: Fence; info: string } | null {
+  let start = 0;
+  while (line[start] === " " && start < 4) start += 1;
+  const char = line[start];
+  if ((char !== "`" && char !== "~") || start === 4) return null;
+  let end = start;
+  while (line[end] === char) end += 1;
+  const len = end - start;
+  return len < 3 ? null : { fence: { char, len }, info: line.slice(end) };
+}
+
 /** Classify one Markdown line while retaining the current fenced block. */
 function fenceLine(
   line: string,
   fence: Fence | null,
 ): { fence: Fence | null; consumed: boolean } {
-  const marker = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(line);
+  const marker = openingFence(line);
   if (marker === null) return { fence, consumed: fence !== null };
-  const text = marker[1] ?? "";
-  const char = text.charAt(0);
-  const info = marker[2] ?? "";
   if (fence !== null) {
     const closes =
-      char === fence.char && text.length >= fence.len && info.trim() === "";
+      marker.fence.char === fence.char &&
+      marker.fence.len >= fence.len &&
+      marker.info.trim() === "";
     return { fence: closes ? null : fence, consumed: true };
   }
-  if (char === "`" && info.includes("`"))
+  if (marker.fence.char === "`" && marker.info.includes("`"))
     return { fence: null, consumed: false };
-  return { fence: { char, len: text.length }, consumed: true };
+  return { fence: marker.fence, consumed: true };
 }
 
 export function entryHeadings(description: string): string[] {
@@ -110,6 +120,18 @@ export function hasEntry(description: string, entryKey: string): boolean {
   return entryHeadings(description).includes(entryKey);
 }
 
+/** Whether Markdown treats this as an indented code-block line. */
+function indentedCodeLine(line: string): boolean {
+  let columns = 0;
+  for (const char of line) {
+    if (char === " ") columns += 1;
+    else if (char === "\t") columns += 4 - (columns % 4);
+    else break;
+    if (columns >= 4) return true;
+  }
+  return false;
+}
+
 /** Lines that can carry an entry record, excluding Markdown examples. */
 export function authoritativeLines(description: string): string[] {
   const found: string[] = [];
@@ -117,7 +139,7 @@ export function authoritativeLines(description: string): string[] {
   for (const line of description.split("\n")) {
     const state = fenceLine(line, fence);
     fence = state.fence;
-    if (!state.consumed && !/^[ \t]{4}/.test(line)) found.push(line);
+    if (!state.consumed && !indentedCodeLine(line)) found.push(line);
   }
   return found;
 }
