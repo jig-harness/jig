@@ -396,6 +396,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.248.0] - 2026-11-15
+
+### Added
+
+- A label taxonomy entry may carry `color`, the colour its label shows in the
+  tracker, as six hex digits (`cfd3d7`, no `#`), so a colour that sets one
+  label apart is recorded and does not drift. `check-label-taxonomy.ts` fails
+  on a colour that is not six hex digits written as text; M9's template
+  documents the field.
+- `validate-labels.ts` reads an issue's own tracker type, from
+  `--native-type` or the `nativeType` of the issue it is given. An issue
+  whose type `issue_tracker.labels.epic_types` lists, such as Epic, is
+  checked as if it carried the epic label: a `requires:` naming that label
+  is met by it, and a group not required on the epic is not required on it.
+  A `roadmap` issue typed Epic needs no `epic` label beside it.
+
 ## [0.247.2] - 2026-11-15
 
 ### Fixed
@@ -8709,7 +8725,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.247.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.248.0...HEAD
+[0.248.0]: https://github.com/jig-harness/jig/compare/v0.247.2...v0.248.0
 [0.247.2]: https://github.com/jig-harness/jig/compare/v0.247.1...v0.247.2
 [0.247.1]: https://github.com/jig-harness/jig/compare/v0.247.0...v0.247.1
 [0.247.0]: https://github.com/jig-harness/jig/compare/v0.246.0...v0.247.0
