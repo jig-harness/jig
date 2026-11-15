@@ -396,6 +396,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.244.1] - 2026-11-15
+
+### Fixed
+
+- `jig send … rearm` finds an existing pull request worktree from the
+  dispatched pickup's result or its checked-out head branch when no drive
+  record names one. It refuses ambiguous or incomplete searches and explains
+  where it looked when no tree is found.
+
 ## [0.244.0] - 2026-11-15
 
 ### Added
@@ -8623,7 +8632,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.244.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.244.1...HEAD
+[0.244.1]: https://github.com/jig-harness/jig/compare/v0.244.0...v0.244.1
 [0.244.0]: https://github.com/jig-harness/jig/compare/v0.243.0...v0.244.0
 [0.243.0]: https://github.com/jig-harness/jig/compare/v0.242.0...v0.243.0
 [0.242.0]: https://github.com/jig-harness/jig/compare/v0.241.0...v0.242.0
