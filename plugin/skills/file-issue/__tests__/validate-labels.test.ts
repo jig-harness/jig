@@ -261,6 +261,109 @@ describe("the epic flag", () => {
   });
 });
 
+describe("an epic by its issue type", () => {
+  const epics = { epic: "epic", epicTypes: ["Epic"] };
+  const typed = (nativeType: string | null, by = epics) => ({
+    nativeType,
+    epics: by,
+  });
+  const roadmap = [...base, "roadmap"];
+
+  test("a requires naming the epic label is met by the label, or by an epic issue type", () => {
+    expect(errors(...roadmap)).toContain("'roadmap' requires 'epic' beside it");
+    expect(check(...roadmap, "epic").valid).toBe(true);
+    for (const type of ["Epic", "epic"]) {
+      const result = validateLabels(roadmap, taxonomy, undefined, typed(type));
+      expect({ type, errors: result.errors }).toEqual({ type, errors: [] });
+      expect(result.labels).toEqual(roadmap);
+      expect(result.parsed.flags).toEqual(["roadmap"]);
+    }
+  });
+
+  test("another issue type, or none listed, leaves it unmet", () => {
+    for (const marker of [
+      typed("Feature"),
+      typed(null),
+      typed("Epic", { epic: "epic", epicTypes: [] }),
+    ])
+      expect(
+        validateLabels(roadmap, taxonomy, undefined, marker).errors,
+      ).toContain("'roadmap' requires 'epic' beside it");
+  });
+
+  test("an issue typed Epic with no epic label passes beside its facets", () => {
+    const result = validateLabels(
+      ["app", "area:api", "roadmap"],
+      taxonomy,
+      { type: "feature", priority: 3, size: "small" },
+      typed("Epic"),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("the command line reads the issue type and the repository's epic types", () => {
+    const repo = mkdtempSync(join(tmpdir(), "validate-epic-type-"));
+    mkdirSync(join(repo, ".config"));
+    const overlay = join(repo, ".config", "jig.yaml");
+    const env = {
+      ...process.env,
+      JIG_CONSUMER_ROOT: repo,
+      JIG_OVERLAY: overlay,
+    };
+    const spawn = (args: string[], stdin?: string) =>
+      Bun.spawnSync(
+        [process.execPath, script, "--taxonomy", fixture, ...args],
+        {
+          cwd: repo,
+          env,
+          stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
+        },
+      );
+    writeFileSync(
+      overlay,
+      "issue_tracker:\n  labels:\n    epic_types: [Epic]\n",
+    );
+    expectSpawnExit(spawn(["--native-type", "Epic", ...roadmap]), 0);
+    expectSpawnExit(spawn(["--native-type=Feature", ...roadmap]), 3);
+    const issue = JSON.stringify({
+      labels: ["app", "area:api", "roadmap"],
+      type: "feature",
+      priority: 2,
+      size: "small",
+      nativeType: "Epic",
+    });
+    expectSpawnExit(spawn([], issue), 0);
+    expectSpawnExit(
+      spawn([
+        "--native-type",
+        "Epic",
+        "--type",
+        "feature",
+        "--priority",
+        "2",
+        "--size",
+        "small",
+        "app",
+        "area:api",
+        "roadmap",
+      ]),
+      0,
+    );
+    writeFileSync(overlay, "issue_tracker: {}\n");
+    const unlisted = spawn(["--native-type", "Epic", ...roadmap]);
+    expectSpawnExit(unlisted, 3);
+    expect(unlisted.stdout.toString()).toContain(
+      "'roadmap' requires 'epic' beside it",
+    );
+    writeFileSync(overlay, "issue_tracker:\n  labels:\n    epic_types: Epic\n");
+    const broken = spawn(["--native-type", "Epic", ...roadmap]);
+    expectSpawnExit(broken, 1);
+    expect(broken.stderr.toString()).toContain("epic_types");
+    expectSpawnExit(spawn(["--native-type"]), 2);
+  });
+});
+
 describe("warnings", () => {
   test("more labels of a category than its max warn, without failing", () => {
     const result = check(
