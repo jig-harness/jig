@@ -97,6 +97,10 @@ export function mergeLine(
       : {}),
     sessions: part(previous.sessions, fresh.sessions),
     needs: part(previous.needs, fresh.needs),
+    answeredHolds: part(
+      previous.answeredHolds ?? [],
+      fresh.answeredHolds ?? [],
+    ),
     queue: part(previous.queue, fresh.queue),
     ready: part(previous.ready ?? [], fresh.ready ?? []),
     repos: listed.flatMap(({ path }) => {

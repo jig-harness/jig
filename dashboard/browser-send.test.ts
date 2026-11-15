@@ -1,3 +1,4 @@
+import { ok as assert } from "node:assert/strict";
 /**
  * Send in a real browser against the real server, with GitHub's API answered
  * by the test: with no token kept no card has Send; the settings panel tests a
@@ -15,6 +16,19 @@ import { describe, expect } from "bun:test";
 import type { BrowserContext, Page, Request } from "playwright-core";
 import { withoutAnswerRecord } from "../plugin/shared/decisions/answer-record.ts";
 import { decodeMarker } from "../plugin/shared/records/envelope.ts";
+import type {
+  LineNeed,
+  StateAnswer,
+} from "../plugin/dispatch/lib/dashboard-contract.ts";
+import { decisionOf } from "../plugin/dispatch/lib/line-decision.ts";
+import {
+  frameStationDecision,
+  type StationFacts,
+} from "../plugin/shared/decisions/station.ts";
+import { dispatcherDecisionDigest } from "../plugin/shared/decisions/station-digest.ts";
+import { parseAnswerComment } from "../plugin/skills/drive-pr/scripts/lib/answer-forms.ts";
+import { stationItem } from "../plugin/dispatch/lib/station-answers.ts";
+import { fixture } from "./fixtures.ts";
 import { PICK_DIGESTS } from "./fixture-picks.ts";
 import { settled, shortControls, shows, until } from "./browser-page.ts";
 import { browserSuite, LAPTOP, PHONE, TIMEOUT } from "./browser-suite.ts";
@@ -60,6 +74,7 @@ async function openSend(
     touch?: boolean;
     kept?: { login: string } | null;
     github?: (call: Call) => Answer;
+    needs?: LineNeed[];
   } = {},
 ): Promise<Opened> {
   const server = await served(scenario);
@@ -135,6 +150,13 @@ async function openSend(
       );
     });
   });
+  if (o.needs !== undefined)
+    await page.route("**/state?*", async (route) => {
+      const response = await route.fetch();
+      const state = (await response.json()) as { value: StateAnswer };
+      if (state.value.line !== null) state.value.line.needs = o.needs ?? [];
+      await route.fulfill({ response, json: state });
+    });
   await page.goto(`${server.url}&view=needs`);
   await shows(page, ".pNeeds .need");
   await settled(page);
@@ -208,7 +230,9 @@ describe("Send", () => {
       try {
         const { page } = opened;
         expect(await page.locator(".copy.send").count()).toBe(0);
-        expect(await page.locator(".noSend").count()).toBe(0);
+        expect(await page.locator(".noSend").first().textContent()).toContain(
+          "Paste a GitHub token",
+        );
         await page.getByRole("button", { name: "Send from here" }).click();
         await shows(page, ".sendSettings");
         expect(await page.locator(".sendSettings").textContent()).toContain(
@@ -344,6 +368,11 @@ describe("Send", () => {
             name: "Send the answers for PR #502 as maintainer-a",
           })
           .click();
+        await two
+          .getByRole("button", {
+            name: "Confirm and send the answers for PR #502 as maintainer-a",
+          })
+          .click();
         await until("the card says it was sent", async () =>
           two
             .locator(".sentHere")
@@ -436,6 +465,11 @@ describe("Send", () => {
         );
         expect(await one.locator(".sendWaits").count()).toBe(0);
         await send.click();
+        await one
+          .getByRole("button", {
+            name: "Confirm and send the answers for PR #501 as maintainer-a",
+          })
+          .click();
         await until("the pick was sent", async () => opened.calls.length === 1);
         expect(posts(opened.calls)[0]).toMatchObject({
           lines: `answer PRRT_one: approve [${PICK_DIGESTS.one}]`,
@@ -469,7 +503,7 @@ describe("Send", () => {
         await send.click();
         await shows(page, ".pNeeds .guard");
         expect(await guarded.locator(".guard").textContent()).toContain(
-          "before you send",
+          "Send these answers",
         );
         expect(await guarded.locator(".guard").textContent()).toContain(
           "no rollback once deployed",
@@ -547,6 +581,11 @@ describe("Send", () => {
           "422: Validation Failed",
         ]) {
           await send.click();
+          await one
+            .getByRole("button", {
+              name: "Confirm and send the answers for PR #501 as someone-else",
+            })
+            .click();
           await until(`the card says ${said}`, async () =>
             ((await one.locator(".sendSaid").textContent()) ?? "").includes(
               said,
@@ -577,7 +616,9 @@ describe("Send", () => {
         expect(await page.locator(".copy.send").count()).toBe(0);
         const why = await page.locator(".noSend").allTextContents();
         expect(
-          why.some((t) => t.includes("only a drive's parked decisions")),
+          why.some((t) =>
+            t.includes("this station cannot read an answer comment"),
+          ),
         ).toBe(true);
         expect(
           why.some((t) =>
@@ -627,6 +668,11 @@ describe("Send", () => {
               name: "Send the answers for PR #502 as maintainer-a",
             })
             .tap();
+          await two
+            .getByRole("button", {
+              name: "Confirm and send the answers for PR #502 as maintainer-a",
+            })
+            .tap();
           await until("the card says it was sent", async () =>
             two
               .locator(".sentHere")
@@ -653,3 +699,186 @@ describe("Send", () => {
       TIMEOUT,
     );
 });
+
+function stationNeeds(issueRepository?: string): LineNeed[] {
+  const base = fixture("picks").line?.needs[0];
+  assert(base);
+  const facts: StationFacts[] = [
+    { kind: "stalled", item: "#17", state: "In Progress", carriedBy: [] },
+    { kind: "followup-stale", pr: 18, marker: 4, released: null },
+    { kind: "drive", pr: 19, exit: "1", started: null, failedRearm: null },
+  ];
+  return facts.map((fact, i) => {
+    const { key, decision } = frameStationDecision(fact);
+    const pr = i === 0 ? null : 17 + i;
+    return {
+      ...base,
+      target: pr === null ? "#17" : `PR #${pr}`,
+      pr,
+      stage: i === 0 ? "pickup" : i === 1 ? "followup" : "drive",
+      cause: i === 0 ? "stalled" : i === 1 ? "followup-stale" : "needs-person",
+      url: `https://github.com/${pr === null ? (issueRepository ?? base.repo) : base.repo}/${pr === null ? "issues/17" : `pull/${pr}`}`,
+      decisions: [
+        {
+          ...decisionOf({
+            key,
+            kind: "finding",
+            decision,
+            digest: dispatcherDecisionDigest({ key, decision }),
+            lines: [],
+          }),
+          answer: {
+            station: i === 0 ? "pickup" : i === 1 ? "followup" : "drive",
+            address: `${i === 0 ? "pickup" : i === 1 ? "followup" : "drive"}@${base.repo}#${17 + i}`,
+            on: pr === null ? "issue" : "pull-request",
+            framedBy: "dispatcher",
+            ...(pr === null
+              ? { repository: issueRepository ?? base.repo }
+              : {}),
+          },
+        },
+      ],
+    } as LineNeed;
+  });
+}
+
+browserIt(
+  "pickup, follow-up and drive recovery each Send a comment the station parses after confirmation",
+  async () => {
+    const needs = stationNeeds("example-org/tasks");
+    const opened = await openSend("picks", {
+      kept: { login: "maintainer-a" },
+      needs,
+    });
+    try {
+      const { page } = opened;
+      await showAll(page);
+      for (const [i, need] of needs.entries()) {
+        const decision = need.decisions[0];
+        assert(decision);
+        const item = card(page, need.target);
+        expect(await item.locator(".copy.send").count()).toBe(1);
+        await item.locator(".opt").first().click();
+        await item
+          .getByRole("button", {
+            name: `Send the answers for ${need.target} as maintainer-a`,
+          })
+          .click();
+        expect(posts(opened.calls)).toHaveLength(i);
+        expect(await item.locator(".guard").textContent()).toContain(
+          `${decision.answer?.repository ?? need.repo} #${17 + i}`,
+        );
+        expect(await item.locator(".sendPreview").textContent()).toContain(
+          `answer ${decision.key}:`,
+        );
+        await item
+          .getByRole("button", {
+            name: `Confirm and send the answers for ${need.target} as maintainer-a`,
+          })
+          .click();
+        await until(
+          "the station answer posted",
+          async () => posts(opened.calls).length === i + 1,
+        );
+        const posted = posts(opened.calls)[i];
+        assert(posted);
+        const call = opened.calls.filter((c) => c.method === "POST")[i];
+        assert(call);
+        const destination = decision.answer?.repository ?? need.repo;
+        expect(posted.path).toBe(
+          `/repos/${destination}/issues/${17 + i}/comments`,
+        );
+        const parsed = parseAnswerComment(
+          stationItem(decision),
+          {
+            body: (
+              call.body as {
+                body: string;
+              }
+            ).body,
+            author: "maintainer-a",
+            association: "MEMBER",
+            url: `https://github.com/${need.repo}/issues/${17 + i}#issuecomment-7`,
+            at: "2026-11-15T21:00:00Z",
+          },
+          "conversation",
+        );
+        expect(parsed?.choice?.option).toBe(
+          decision.options?.find((o) => o.recommended)?.name,
+        );
+      }
+      expectTokenOnlyToGithub(opened);
+    } finally {
+      await opened.context.close();
+    }
+  },
+  TIMEOUT,
+);
+
+browserIt(
+  "a changed note needs a fresh confirmation, and a posted answer polls until its tick outcome",
+  async () => {
+    const needs = stationNeeds().slice(0, 1);
+    const need = needs[0];
+    assert(need);
+    const decision = need.decisions[0];
+    assert(decision);
+    const opened = await openSend("picks", {
+      kept: { login: "maintainer-a" },
+      needs,
+    });
+    try {
+      const { page } = opened;
+      await page.clock.install();
+      const item = card(page, need.target);
+      const send = item.getByRole("button", {
+        name: `Send the answers for ${need.target} as maintainer-a`,
+      });
+      await item.locator(".opt").first().click();
+      await send.click();
+      await item.getByRole("button", { name: "Add a note" }).click();
+      await item.locator(".reply input").fill("Only after checking the branch");
+      expect(await item.locator(".guard").count()).toBe(0);
+      expect(posts(opened.calls)).toHaveLength(0);
+      await send.click();
+      expect(await item.locator(".sendPreview").textContent()).toContain(
+        "Only after checking the branch",
+      );
+      await item
+        .getByRole("button", {
+          name: `Confirm and send the answers for ${need.target} as maintainer-a`,
+        })
+        .click();
+      await until(
+        "posted receipt",
+        async () => (await item.locator(".sentHere a").count()) === 1,
+      );
+      const url = await item.locator(".sentHere a").getAttribute("href");
+      decision.acted = {
+        option: "Release the claim",
+        author: "maintainer-a",
+        outcome: "done",
+        detail: "Released the claim",
+        answer: `${url} 2026-11-15T21:00:00Z`,
+      };
+      const stateReads = () =>
+        opened.local.filter((s) => s.includes("/state?")).length;
+      const before = stateReads();
+      await page.clock.runFor(3_000);
+      await until(
+        "quicker state read reports the tick outcome",
+        async () =>
+          stateReads() > before &&
+          ((await item.locator(".actedAnswer").textContent()) ?? "").includes(
+            "carried out",
+          ),
+      );
+      const after = stateReads();
+      await page.clock.runFor(6_000);
+      expect(stateReads()).toBe(after);
+    } finally {
+      await opened.context.close();
+    }
+  },
+  TIMEOUT,
+);

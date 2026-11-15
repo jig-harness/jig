@@ -12,3 +12,11 @@ export function normalizeAnswerText(text: string): string {
     .replace(/[.!]$/, "")
     .trimEnd();
 }
+
+/** Both names of the dispatcher's hold option match while earlier decisions stay open. */
+export function normalizeOptionName(text: string): string {
+  const normalized = normalizeAnswerText(text);
+  return normalized === "leave it to me"
+    ? normalizeAnswerText("I'll handle it — hide this card")
+    : normalized;
+}

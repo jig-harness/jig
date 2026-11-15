@@ -15,7 +15,10 @@
  */
 import { listedActOfClass } from "./acts.ts";
 import { splitAnswerDigest } from "./decisions/answer-digest.ts";
-import { normalizeAnswerText } from "./decisions/answer-normalize.ts";
+import {
+  normalizeAnswerText,
+  normalizeOptionName,
+} from "./decisions/answer-normalize.ts";
 
 /** An option the card numbers: only whether it is the recommended one matters here. */
 export interface NumberableOption {
@@ -170,7 +173,9 @@ export function choiceInText<O extends { name: string }>(
     form === "approve"
       ? options.filter(isRecommended)
       : options.filter(
-          (o) => normalizeAnswerText(o.name) === normalized.slice(7),
+          (o) =>
+            normalizeOptionName(o.name) ===
+            normalizeOptionName(normalized.slice(7)),
         );
   const [option] = matches;
   return matches.length === 1 && option !== undefined ? { option, form } : null;

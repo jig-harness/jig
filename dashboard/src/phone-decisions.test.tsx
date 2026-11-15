@@ -1,0 +1,167 @@
+import { ok as assert } from "node:assert/strict";
+import { expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  frameStationDecision,
+  stationOptionId,
+} from "../../plugin/shared/decisions/station.ts";
+import { choiceInText } from "../../plugin/shared/decision-card.ts";
+import { sendTargetOf } from "./send-target.ts";
+import { NoSendReason } from "./send.tsx";
+import { ActedAnswers, AnsweredHolds } from "./needs.tsx";
+import { confirmationSignature } from "./confirmation.ts";
+import { rowAnswer } from "./picking.ts";
+import { needView } from "./needs-view.ts";
+import { fixture } from "../fixtures.ts";
+
+const HOLD = "I'll handle it — hide this card";
+test("hold tells the person the work stays undone and accepts both labels", () => {
+  const { call } = frameStationDecision({
+    kind: "drive",
+    pr: 7,
+    exit: "1",
+    started: null,
+    failedRearm: null,
+  }).decision;
+  const hold = call.options.find((o) => o.id === "hold");
+  expect(hold?.name).toBe(HOLD);
+  expect(hold?.summary).toContain(
+    "Nothing is done; the work stays where it is.",
+  );
+  expect(stationOptionId("Leave it to me")).toBe("hold");
+  expect(
+    choiceInText(
+      "choose Leave it to me",
+      call.options,
+      (o) => o.id === call.recommended,
+    )?.option.id,
+  ).toBe("hold");
+  expect(
+    choiceInText(`choose ${HOLD}`, [{ name: "Leave it to me" }], () => false)
+      ?.option.name,
+  ).toBe("Leave it to me");
+});
+test("station cards target the comment reader's issue or pull request", () => {
+  for (const [on, url, pr] of [
+    ["issue", "https://github.com/example-org/web/issues/17", null],
+    ["pull-request", "https://github.com/example-org/web/pull/17", 17],
+  ] as const) {
+    expect(
+      sendTargetOf({
+        repo: "example-org/web",
+        pr,
+        url,
+        parked: false,
+        answerOn: on,
+        target: pr === null ? "#17" : "PR #17",
+      }),
+    ).toEqual({ to: { repo: "example-org/web", number: 17 } });
+  }
+});
+test("an option card without a token explains how to paste one", () => {
+  const n = fixture("loud").line?.needs[0];
+  assert(n);
+  const need = needView(n, { nowMs: 0, timeZone: "UTC" });
+  expect(
+    renderToStaticMarkup(
+      <NoSendReason
+        hasToken={false}
+        fault={null}
+        need={{
+          ...need,
+          send: { to: { repo: "example-org/web", number: 17 } },
+        }}
+      />,
+    ),
+  ).toContain("Paste a GitHub token");
+});
+
+test("tick outcomes distinguish carried out, refused with detail, and held", () => {
+  for (const [outcome, word] of [
+    ["done", "carried out"],
+    ["refused", "refused"],
+    ["held", "held"],
+  ] as const) {
+    const html = renderToStaticMarkup(
+      <ActedAnswers
+        need={{
+          acted: [
+            {
+              key: "pickup",
+              option: "Release",
+              author: "maintainer-a",
+              outcome,
+              detail: "The claim changed.",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain(word);
+    expect(html).toContain("The claim changed.");
+  }
+  expect(
+    renderToStaticMarkup(
+      <AnsweredHolds
+        line={{
+          answeredHolds: [
+            {
+              repo: "example-org/web",
+              target: "#17",
+              why: "maintainer-a chose hold; it returns when its facts change",
+            },
+          ],
+        }}
+      />,
+    ),
+  ).toContain("maintainer-a chose hold");
+});
+
+test("confirmation changes with the note, destination, or credential", () => {
+  const source = fixture("picks").line?.needs[0];
+  assert(source);
+  const n = needView(source, {
+    nowMs: 0,
+    timeZone: "UTC",
+  });
+  const row = n.rows[0];
+  assert(row);
+  const answer = rowAnswer(row, null);
+  const before = confirmationSignature(n, [answer], 0);
+  expect(
+    confirmationSignature(n, [{ ...answer, note: "Only after review" }], 0),
+  ).not.toBe(before);
+  expect(
+    confirmationSignature(
+      { ...n, send: { to: { repo: "example-org/other", number: 17 } } },
+      [answer],
+      0,
+    ),
+  ).not.toBe(before);
+  expect(confirmationSignature(n, [answer], 1)).not.toBe(before);
+});
+
+test("an issue destination is checked against its configured tracker repository", () => {
+  const base = {
+    repo: "example-org/web",
+    pr: null,
+    url: "https://github.com/example-org/tasks/issues/17",
+    parked: false,
+    answerOn: "issue" as const,
+    answerRepository: "example-org/tasks",
+    target: "#17",
+  };
+  expect(sendTargetOf(base)).toEqual({
+    to: { repo: "example-org/tasks", number: 17 },
+  });
+  expect(
+    "absent" in
+      sendTargetOf({
+        ...base,
+        url: "https://github.com/example-org/other/issues/17",
+      }),
+  ).toBe(true);
+  expect(
+    "absent" in sendTargetOf({ ...base, answerRepository: "example-org/web" }),
+  ).toBe(true);
+});

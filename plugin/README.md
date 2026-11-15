@@ -658,8 +658,10 @@ and keeps it with the result; a record the check refuses records nothing,
 so the pass fixes it and sends it again. The need it raises (a failed
 follow-up, a pickup's question) carries that decision. For what the tick
 finds itself it frames the decision from the facts that identify it, with
-options it can carry out, each set ending with **Leave it to me** (no step,
-and the need leaves Needs you until its facts change):
+options it can carry out, each set ending with **I'll handle it — hide this card**.
+Nothing is done; the work stays where it is. The answered hold stays visible
+until its facts change. Answers naming **Leave it to me** still count, including
+answers sent from an older dashboard snapshot while the facts remain the same:
 
 | Need | Key | The other options, and what the tick does |
 | --- | --- | --- |
@@ -1323,16 +1325,21 @@ on the second step, which first shows what it changes and costs. When the
 server stops answering, it keeps what it last read and says when that was.
 
 **Send, from the browser.** With a GitHub token pasted under **Send from
-here** on Needs you, a parked drive's card whose pull request is on
-github.com also has **Send**. Once an option is picked on the card, it
-posts each decision's answer to the pull request through GitHub's API, from
+here** on Needs you, cards whose station reads answer comments on a GitHub
+issue or pull request also have **Send**. Without a token, the card says
+how to paste one. Once an option is picked on the card, it
+posts each decision's answer to that target through GitHub's API, from
 the browser, as the person: one comment per decision, the `drive-answer`
 record `jig send` writes, with Copy's line for that decision, any note line
 and the hidden record naming the person's login and `dashboard (browser)`
-as its writer. The card then links the comments and says they were sent
-here. With nothing picked, Send stays held back; Copy still takes the
+as its writer. The card then links the posted comments. It reads the line
+every 3 seconds for up to 90 seconds, stopping sooner when the tick records
+the outcome, and shows whether the step was carried out, refused with its
+reason, or held. With nothing picked, Send stays held back; Copy still takes the
 approval of a lone Decide decision's recommendation to paste. A guarded
-pick sends on the second step, as it copies. The page tests the token by asking GitHub
+pick takes a second step to copy. Every Send first confirms the target,
+login and exact answer; changing the answer, target or token requires a new
+confirmation. The page tests the token by asking GitHub
 which login it signs in as, names that login, keeps the token in that
 browser's local storage alone and forgets it on request; the dashboard's
 server never receives it and has no route that writes. Make a fine-grained

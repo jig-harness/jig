@@ -380,9 +380,13 @@ function GuardPanel({
   return (
     <div className="guard" role="alert">
       <p className="sm">
-        A pick here asks for authorization or cannot be undone. Read what it
-        does before you {send === null ? "copy" : "send"}:
+        {send === null
+          ? "A pick here asks for authorization or cannot be undone. Read what it does before you copy:"
+          : `Send these answers to ${send.to.repo} #${send.to.number} as ${send.login}?`}
       </p>
+      {send === null ? null : (
+        <pre className="sm sendPreview">{commit.text}</pre>
+      )}
       <ul className="sm">
         {commit.guarded.map((g) => (
           <li key={g.key}>

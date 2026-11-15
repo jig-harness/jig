@@ -13,7 +13,7 @@
  * count as a choice (`freeChoiceFault`).
  */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { normalizeAnswerText } from "../../shared/decisions/answer-normalize.ts";
+import { normalizeOptionName } from "../../shared/decisions/answer-normalize.ts";
 import { answerTextFault } from "../../shared/decisions/answer-text.ts";
 import { optionDetails } from "../../shared/decisions/model.ts";
 import type { ParkedOption } from "../../shared/decisions/park.ts";
@@ -116,7 +116,7 @@ function optionOf(
       ? options.filter((o) => o.id === recommended)
       : options.filter(
           (o) =>
-            normalizeAnswerText(o.name) === normalizeAnswerText(form.option),
+            normalizeOptionName(o.name) === normalizeOptionName(form.option),
         );
   const option = matches.length === 1 ? matches[0] : undefined;
   if (option === undefined)
