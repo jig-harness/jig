@@ -21,7 +21,12 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { MARKER } from "../lib/followup-marker.ts";
 import { readRecord } from "../lib/launches.ts";
 import { Database } from "bun:sqlite";
-import { closeStateDb, SCHEMA_VERSION, statePath } from "../lib/state.ts";
+import {
+  closeStateDb,
+  existingStateDb,
+  SCHEMA_VERSION,
+  statePath,
+} from "../lib/state.ts";
 import { newRunId, type TickReceipt, writeReceipt } from "../receipts.ts";
 import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
 import {
@@ -93,6 +98,7 @@ async function refused(w: World): Promise<string> {
   const id = String(launched?.record);
   await waitFor("the pass", () => claudeRuns(w).length === runs + 1);
   const root = dispatchState(w);
+  await waitFor("the child's identity", () => childRecorded(w, id));
   const token = String(readRecord(id, root)?.token);
   schemaAt(root, SCHEMA_VERSION + 1);
   const result = await w.dispatch(["result", id, token, "failed"]);
@@ -108,6 +114,18 @@ async function refused(w: World): Promise<string> {
   rmSync(join(w.dir, "claude-exit"));
   rmSync(join(w.dir, "claude-said"));
   return id;
+}
+
+/** Whether the wrapper recorded the pass's process on the record `id`: a write the raised schema would refuse. */
+function childRecorded(w: World, id: string): boolean {
+  const row = existingStateDb(dispatchState(w))
+    ?.query("SELECT claim FROM launches WHERE id = ?")
+    .get(id) as { claim: string | null } | null | undefined;
+  if (typeof row?.claim !== "string") return false;
+  return (
+    (JSON.parse(row.claim) as { supervision?: { child?: unknown } }).supervision
+      ?.child != null
+  );
 }
 
 /** Set the state database's schema version, as a plugin of that version would leave it. */
