@@ -396,6 +396,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.246.0] - 2026-11-15
+
+### Fixed
+
+- `jig gc`'s `scratch` kind no longer gives up on a test-fixture registry
+  larger than one bounded read ("Fixture inventory is malformed or exceeded
+  its bounded scan"). It reads the registry in bounded pages, resuming the
+  next run where the last stopped, and reports a malformed registration as
+  its own receipt line instead of failing the whole inventory.
+- A test-fixture registration whose roots are all gone is now retired by a
+  collecting run once every registered process has exited, under the same
+  exclusive scratch admission, and the receipt names each registration it
+  retired. Before, such a registration stayed for good, and the registry grew
+  without bound.
+
 ## [0.245.0] - 2026-11-15
 
 ### Added
@@ -8665,7 +8680,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.245.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.246.0...HEAD
+[0.246.0]: https://github.com/jig-harness/jig/compare/v0.245.0...v0.246.0
 [0.245.0]: https://github.com/jig-harness/jig/compare/v0.244.2...v0.245.0
 [0.244.2]: https://github.com/jig-harness/jig/compare/v0.244.1...v0.244.2
 [0.244.1]: https://github.com/jig-harness/jig/compare/v0.244.0...v0.244.1
