@@ -833,7 +833,7 @@ bun "<skill-dir>/scripts/drives.ts" --report --since <opened-at> --json
 when it stops, for the dispatcher to record and print: the stop's own line,
 followed by what the last pass of this launch said its round concluded in
 its round report, then the cause and the next step this table's exit gives
-([the protocol's table of them](../../protocol/drive-exits.md#what-drivets-closing-report-says-at-each-exit)).
+([the protocol's table of them](../../protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)).
 At a park it carries the first parked decision's question and its framed
 options, the line naming how many more wait. Every pass ends its round with
 that round report (`scripts/round-report.ts`), kept beside the drive's state

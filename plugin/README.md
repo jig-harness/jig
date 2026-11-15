@@ -631,7 +631,7 @@ pass's launch and round. When the drive stops, `drive.ts` writes the
 closing report (`by: driver`): its `concluded` is the stop's own line
 followed by what the last round report of this launch concluded, cut to
 the 600 characters; its `cause` and next step are the ones the drive's
-[terminal-state table](protocol/drive-exits.md#what-drivets-closing-report-says-at-each-exit)
+[terminal-state table](protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)
 gives its exit; at a park it carries the first parked decision's question
 and framed options. `jig dispatch report` refuses a drive's record: the
 wrapper hands `drive.ts` a file in the run's own state directory

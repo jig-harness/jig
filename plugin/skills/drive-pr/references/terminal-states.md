@@ -33,7 +33,7 @@ prose to know what happened. Each code `drive.ts` ends with also carries, in
 the same table, what the closing report it writes under `jig dispatch` says
 for it: the stop's own text, the `cause` and the suggested next step
 (`report` in `terminal-states.ts`, printed in the
-[protocol's chapter](../../../protocol/drive-exits.md#what-drivets-closing-report-says-at-each-exit)). `drive.ts` maps a converged drive to `0` (a
+[protocol's chapter](../../../protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)). `drive.ts` maps a converged drive to `0` (a
 successful run) — after certifying its own working tree is clean, since exit
 `0` is the signal an operator merges on and an edit no round shipped would
 otherwise die silently with the worktree — and leaves every other code
