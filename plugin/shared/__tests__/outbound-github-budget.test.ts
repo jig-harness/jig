@@ -709,6 +709,38 @@ describe("the accounting of runs whose answers say little of the balance", () =>
     expect(store.read(KEY)?.requests.remaining).toBe(4000);
   });
 
+  it("gives nothing back for a reservation an ordinary answer's lower balance outlasts a delayed snapshot", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
+    }));
+    now += 10;
+    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.observe(
+      KEY,
+      { requests: { limit: 5000, remaining: 0, resetAt: reset } },
+      now - 1,
+    );
+    now += 10;
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 4000, resetAt: reset },
+      },
+      1_000_015,
+    );
+    governor.release?.(KEY, "requests", sentAt);
+    expect(store.read(KEY)?.requests.remaining).toBe(0);
+  });
+
   it("reads a stored window with a negative or fractional overflow count as none", () => {
     const window = { limit: 5000, remaining: 4000, resetAt: 2_000_000 };
     const text = (overflow: unknown) =>

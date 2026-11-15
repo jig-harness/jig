@@ -421,8 +421,19 @@ function merged(
     ...(prev.snapshotSentAt == null
       ? {}
       : { snapshotSentAt: prev.snapshotSentAt }),
-    // An ordinary answer settles no reservation of its own.
-    ...(prev.pending === undefined ? {} : { pending: prev.pending }),
+    // An ordinary answer settles no reservation of its own, but a balance it
+    // reports below the stored one owes nothing to the reservations deducted
+    // from that one: none made before it can be given back.
+    ...(prev.pending === undefined
+      ? {}
+      : {
+          pending:
+            next.remaining !== null &&
+            prev.remaining !== null &&
+            next.remaining < prev.remaining
+              ? prev.pending.filter((t) => t > now)
+              : prev.pending,
+        }),
     ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
     answeredOrdinarilyAt: now,
   };
