@@ -2,16 +2,40 @@
 import { snapshotFromListing } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { readLine } from "./line-store.ts";
 import { ledgerParks, type FinalParks } from "./park-events.ts";
+import { readFailureOf } from "./read-failures.ts";
+import {
+  CUT_AT_BOUND,
+  ended,
+  heldRead,
+  passedBefore,
+  type TickBound,
+} from "./sources/bounded.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { RepoReport } from "./types.ts";
 
-/** A successful read retires its held parks; a failed read leaves them for the next tick. */
+/** The class of a listing's failure, for the record; none for a listing that read or whose failure names no call. */
+function failureField(listing: {
+  ok: boolean;
+  failure?: Parameters<typeof readFailureOf>[0];
+}): { failure?: NonNullable<ReturnType<typeof readFailureOf>> } {
+  const read =
+    listing.ok || listing.failure === undefined
+      ? undefined
+      : readFailureOf(listing.failure);
+  return read === undefined ? {} : { failure: read };
+}
+
+/**
+ * A successful read retires its held parks; a failed read leaves them for
+ * the next tick, as does one the tick's bound ended before it began.
+ */
 export async function finalParkLedgers(
   slug: string,
   open: readonly { number: number }[],
   login: string | null,
   comments: TickComments,
   report: RepoReport,
+  bound?: TickBound,
 ): Promise<FinalParks[]> {
   const before = readLine();
   if (!before.ok || before.value === null) return [];
@@ -23,9 +47,23 @@ export async function finalParkLedgers(
         .map((p) => p.pr),
     ),
   ];
+  if (prs.length > 0 && ended(bound)) {
+    report.records.push({
+      record: "forge",
+      source: `gh ${slug}`,
+      ok: false,
+      detail: `${passedBefore("the final drive ledgers were read")}; their parks stay held for the next tick`,
+      failure: CUT_AT_BOUND,
+    });
+    return [];
+  }
   const readings = await Promise.all(
     prs.map(async (number) => {
-      const listing = await comments.read(slug, number);
+      const listing = await heldRead(
+        bound,
+        `the final drive ledger of #${number} was read`,
+        () => comments.read(slug, number),
+      );
       const snapshot = listing.ok
         ? snapshotFromListing(listing.value, login)
         : null;
@@ -43,6 +81,7 @@ export async function finalParkLedgers(
         source: `gh ${slug}#${number}`,
         ok: false,
         detail: `the final drive ledger did not read; its parks stay held for the next tick${listing.ok ? "" : `: ${listing.failure.reason}`}`,
+        ...failureField(listing),
       });
       return null;
     }),

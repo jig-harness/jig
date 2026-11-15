@@ -17,6 +17,11 @@
  * A read a failed call stopped carries the call's failure class; when the
  * class clears by waiting, the record names the last reading a tick took
  * whole, with its age (`read-failures.ts`).
+ *
+ * In a tick its launcher bounds, a listing the tick's bound ended before it
+ * began is not started: the pull requests are then unread, as when the
+ * listing fails, and the comment listings the tick's reads refuse
+ * (`tick-reads.ts`) read as failed listings.
  */
 import type { SharedRecords } from "../../shared/records/shared.ts";
 import { adoptionNote, adoptionOf } from "./adopt.ts";
@@ -39,6 +44,7 @@ import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { PrLinkText } from "./work-links.ts";
+import { heldRead, type TickBound } from "./sources/bounded.ts";
 import { PAGE } from "./forge-batch.ts";
 import type { CommentsOutcome, RepositoryOutcome } from "./tick-reads.ts";
 import { failureText } from "./text.ts";
@@ -90,6 +96,8 @@ export interface ForgeReads {
   comments: TickComments;
   login(): Promise<string | null>;
   pool: Pool;
+  /** The tick's bound, which no listing starts after; absent for a tick no launcher bounds. */
+  bound?: TickBound;
 }
 
 /**
@@ -159,7 +167,11 @@ export async function readForge(
     // The tick's query of the repository, else the pull request listing on its own.
     const open = queried.ok
       ? listedOpen(queried.value.open, read)
-      : await reads.pool.run(() => openPullRequests(repo.slug, read));
+      : await reads.pool.run(() =>
+          heldRead(reads.bound, "the pull requests were listed", () =>
+            openPullRequests(repo.slug, read),
+          ),
+        );
     if (!open.ok) {
       unread(
         queried.ok
@@ -194,7 +206,11 @@ export async function readForge(
     const merges =
       section.followupCommand === null
         ? null
-        : await reads.pool.run(() => mergedSince(repo.slug, since, read));
+        : await reads.pool.run(() =>
+            heldRead(reads.bound, "the merged pull requests were listed", () =>
+              mergedSince(repo.slug, since, read),
+            ),
+          );
     if (merges !== null && !merges.ok) {
       unread(merges.failure.reason, merges.failure);
       return out;
