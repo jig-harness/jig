@@ -396,6 +396,30 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.242.0] - 2026-11-15
+
+### Added
+
+- Two more chapters of the [Jig Protocol](GLOSSARY.md), for a program
+  that reads Jig's records on the forge and the tracker without reading its
+  code, each with its values as JSON beside it in `protocol/data/`.
+  [Hidden comment markers on the forge and the tracker](plugin/protocol/comment-markers.md)
+  lists every hidden marker Jig writes or reads in comments and bodies, with
+  the record it marks, its version, its key's shape, who writes it and what
+  it means, and the fields of the record envelope.
+  [The follow-up claim and its result](plugin/protocol/followup-claim.md)
+  gives the follow-up marker's runs, each run's outcomes and the fields of
+  its record. Both are generated from the records registry and the code that
+  writes and reads the markers, and Jig's build fails when a chapter and the
+  code disagree. Every kind in the records registry now says what it means
+  to a reader, in a required `meaning`. **Consumer action:** none.
+
+### Fixed
+
+- The plugin's README and the features page said the steward runs every 20
+  minutes when its digest changed. They now say it starts as soon as a
+  repository's judgment backlog holds work no earlier pass judged.
+
 ## [0.241.0] - 2026-11-15
 
 ### Added
@@ -8555,7 +8579,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.241.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.242.0...HEAD
+[0.242.0]: https://github.com/jig-harness/jig/compare/v0.241.0...v0.242.0
 [0.241.0]: https://github.com/jig-harness/jig/compare/v0.240.0...v0.241.0
 [0.240.0]: https://github.com/jig-harness/jig/compare/v0.239.0...v0.240.0
 [0.239.0]: https://github.com/jig-harness/jig/compare/v0.238.7...v0.239.0
