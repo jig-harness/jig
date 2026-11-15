@@ -39,6 +39,13 @@ import {
   encodeMarker,
 } from "../../../../shared/records/envelope.ts";
 import { localWriter } from "../../../../shared/records/writer.ts";
+import { matches } from "../../../../shared/shapes.ts";
+import {
+  CLAIM_MARKER_PAYLOAD_SHAPE,
+  CLAIM_OUTCOME_PAYLOAD_SHAPE,
+  type CLAIM_OUTCOMES,
+} from "../../../../shared/records/marker-shapes.ts";
+export { CLAIM_OUTCOMES } from "../../../../shared/records/marker-shapes.ts";
 
 export const CLAIM_MARKER = "<!-- jig-claim -->";
 const CLAIM_DATA = "jig-claim-data";
@@ -66,7 +73,6 @@ export interface ClaimMarkerFacts {
 
 const OUTCOME_DATA = "jig-claim-outcome";
 
-export const CLAIM_OUTCOMES = ["claimed", "released", "unresolved"] as const;
 export type ClaimOutcome = (typeof CLAIM_OUTCOMES)[number];
 
 export interface ClaimOutcomeFacts {
@@ -124,13 +130,8 @@ export function readClaimMarker(body: string): ClaimMarkerFacts | null {
   if (!body.includes(`<!-- ${CLAIM_DATA}`)) return null;
   const read = decodeMarker(body, CLAIM_DATA, CLAIM_MARKER_KIND);
   if (!read.ok) return null;
+  if (!matches(CLAIM_MARKER_PAYLOAD_SHAPE, read.value.payload)) return null;
   const { attempt, session, branch, claimant } = read.value.payload;
-  if (
-    typeof session !== "string" ||
-    typeof branch !== "string" ||
-    typeof claimant !== "string"
-  )
-    return null;
   return {
     ...(typeof attempt === "string" ? { attempt } : {}),
     session,
@@ -165,12 +166,8 @@ export function readClaimOutcome(body: string): ClaimOutcomeFacts | null {
   if (!body.includes(`<!-- ${OUTCOME_DATA}`)) return null;
   const read = decodeMarker(body, OUTCOME_DATA, CLAIM_MARKER_KIND);
   if (!read.ok) return null;
+  if (!matches(CLAIM_OUTCOME_PAYLOAD_SHAPE, read.value.payload)) return null;
   const { attempt, outcome } = read.value.payload;
-  if (
-    typeof attempt !== "string" ||
-    !CLAIM_OUTCOMES.includes(outcome as ClaimOutcome)
-  )
-    return null;
   return {
     attempt,
     outcome: outcome as ClaimOutcome,

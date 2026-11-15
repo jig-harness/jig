@@ -18,6 +18,10 @@ import {
   fromRows,
 } from "../chapter.ts";
 import { flag, table } from "../markdown.ts";
+import {
+  MAILBOX_MESSAGE_SHAPE,
+  MAILBOX_OUTBOX_SHAPE,
+} from "../../../plugin/skills/drive-pr/scripts/lib/state/mailbox-shapes.ts";
 
 const SOURCE_FILE =
   "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts";
@@ -210,6 +214,10 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
 };
 
 export const MAILBOX: Chapter = {
+  schemas: [
+    { name: "mailbox-message", shape: MAILBOX_MESSAGE_SHAPE },
+    { name: "mailbox-outbox", shape: MAILBOX_OUTBOX_SHAPE },
+  ],
   id: "mailbox",
   title: "The drive mailbox",
   summary:

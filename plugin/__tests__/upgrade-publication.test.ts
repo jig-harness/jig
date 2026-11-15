@@ -13,6 +13,8 @@ import { upgradesSince } from "../skills/drive-pr/scripts/lib/morning-report-upg
 test("a dispatch receipt is new to a report from when it was written, not from when its tick started", () => {
   const root = mkdtempSync(join(tmpdir(), "jig-publication-"));
   try {
+    const gc = join(root, "gc");
+    mkdirSync(gc);
     const started = "2026-11-07T06:00:00.000Z";
     const runId = "2026-11-07T06-00-00-000Z-1234-abcdef12";
     const dir = join(root, "receipts", "2026-11-07");
@@ -41,10 +43,14 @@ test("a dispatch receipt is new to a report from when it was written, not from w
     const published = new Date("2026-11-07T06:10:00.000Z");
     utimesSync(path, published, published);
     const reportRan = Date.parse("2026-11-07T06:05:00.000Z");
-    const roots = { dispatch: root, gc: join(root, "gc") };
-    expect(upgradesSince(reportRan, roots).entries).toHaveLength(1);
     expect(
-      upgradesSince(Date.parse("2026-11-07T06:11:00.000Z"), roots).entries,
+      upgradesSince(reportRan, { dispatch: root, gc }).entries,
+    ).toHaveLength(1);
+    expect(
+      upgradesSince(Date.parse("2026-11-07T06:11:00.000Z"), {
+        dispatch: root,
+        gc,
+      }).entries,
     ).toHaveLength(0);
   } finally {
     rmSync(root, { recursive: true, force: true });

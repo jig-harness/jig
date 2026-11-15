@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/repo-commands/v1/schemas/classify-output.json",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "area": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "code",
+        "test",
+        "docs",
+        "config",
+        "data",
+        "generated",
+        "fixture",
+        "asset",
+        "vendored",
+        "other"
+      ]
+    },
+    "language": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "module": {
+      "type": "string",
+      "pattern": "\\S"
+    }
+  },
+  "required": ["path"],
+  "additionalProperties": false
+}
