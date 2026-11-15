@@ -154,7 +154,7 @@ export const RULE_FIELDS: Readonly<Record<string, RuleField>> = {
     facts: ["labels", "paths"],
     list: "every",
     form: "entry",
-    readBy: ["do-item"],
+    readBy: ["do-item", "audit"],
     meaning:
       "The review skills that must approve a change before it is pushed.",
   },
@@ -240,15 +240,26 @@ export const RULE_FIELDS: Readonly<Record<string, RuleField>> = {
   },
 };
 
-const factList = s.optional(
-  s.array(s.string({ minLength: 1 }), { minItems: 1 }),
-);
+const factList = s.array(s.string({ minLength: 1, pattern: "\\S" }), {
+  minItems: 1,
+});
 
 /**
- * A rule written as a mapping of facts, as a `when` holds it: each fact a
- * nonempty list of nonempty values, no other key.
+ * A rule written as a mapping of facts, as a `when` holds it: at least one
+ * fact, each a nonempty list of values that are not blank, no other key.
+ * Written as one alternative per fact that requires it, since the
+ * description's vocabulary has no minimum count of keys.
  */
-export const RULE_SHAPE: Shape = s.object(
-  Object.fromEntries(FACT_NAMES.map((f) => [f, factList])),
-  { additionalProperties: false },
+export const RULE_SHAPE: Shape = s.union(
+  FACT_NAMES.map((required) =>
+    s.object(
+      Object.fromEntries(
+        FACT_NAMES.map((f) => [
+          f,
+          f === required ? factList : s.optional(factList),
+        ]),
+      ),
+      { additionalProperties: false },
+    ),
+  ),
 );

@@ -35,6 +35,7 @@ const none = {
   holds: null,
   ruleValue: null,
   compared: null,
+  comparison: null,
   facts: null,
   list: null,
   form: null,
@@ -57,6 +58,7 @@ function rows(): TableRow[] {
           holds: f.holds,
           ruleValue: f.ruleValue,
           compared: f.compared,
+          comparison: f.comparison,
           meaning: f.meaning,
         },
       };
@@ -195,6 +197,9 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
   ruleValue: text("For a fact, what a rule lists for it; else null."),
   compared: text(
     "For a fact, how a rule's value is compared with the item's; else null.",
+  ),
+  comparison: text(
+    "For a fact, the comparison's name, for a program that evaluates a rule: equal-ignoring-case (equal after trimming white space and folding case), contained-ignoring-case (the rule's value is a substring of the item's, case folded) or glob (the change-area catalog's glob claims the path); else null.",
   ),
   facts: text(
     "For a field, the facts its rules may test, comma-separated; else null.",

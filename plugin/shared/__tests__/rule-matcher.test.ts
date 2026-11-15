@@ -187,6 +187,18 @@ describe("reading rules", () => {
     else throw new Error("accepted");
   });
 
+  it("refuses a fact an entry's field does not test", () => {
+    const title = parseEntryRule(
+      "do_item.gates",
+      { labels: ["db"], title: ["x"], skill: "s" },
+      "do_item.gates[0]",
+    );
+    if (title.ok) throw new Error("accepted");
+    expect(title.failure.reason).toBe(
+      "do_item.gates[0].title: the rules of do_item.gates test labels and paths only",
+    );
+  });
+
   it("refuses a value of the wrong kind and a glob that does not compile", () => {
     expect(
       parseRule("pull_requests.base_rules", { labels: "x" }, "at").ok,

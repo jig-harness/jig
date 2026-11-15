@@ -30,9 +30,16 @@ Protocol chapter.
   an unknown fact or gives a value of the wrong kind in any of these
   fields, naming the field and the file that set it, before any skill acts
   on it, and the audit reports it. A malformed rule a skill never read
-  (such as a `do_item.gates` entry) used to be ignored; now every skill
-  stops on it. **Consumer action:** required at configuration. Run the
-  audit's configuration fit and fix each rule it refuses.
+  (such as a `do_item.gates` entry) used to be ignored; now every skill,
+  `jig gc` and `jig dispatch` stop on it. A `do_item.gates` entry do-item
+  refuses (no labels or paths, no skill, an unknown field, a glob that does
+  not compile) now also stops `determine_agent.ts`, `determine_route.ts`,
+  work-batch and the dispatcher's batch planning, where before nothing read
+  the field. An empty key in `do_item.agents.labels`, `codearea_areas` or
+  `title_keywords` is refused too (an empty title keyword used to match
+  every title). **Consumer action:** required at configuration. Run the
+  audit's configuration fit and fix each rule it refuses: `rejected:every
+  skill (rule matcher)` and `rejected:do-item (review gates)`.
 - **Breaking:** `work_batch.solo_flags`, and the solo-only flags work-batch
   derives, match an item's labels ignoring case, as every other label rule
   does: an issue labelled `Privacy-Review` is now held out of a batch by
@@ -48,10 +55,6 @@ Protocol chapter.
   `flag has-migration` before. **Consumer action:** advised at instructions.
   Update a runbook or script that reads the old reason text.
   **Detect:** `text:raised medium`.
-- A malformed `do_item.gates` entry (no labels or paths, no skill, an
-  unknown field, a glob that does not compile) is refused when do-item
-  reads it, where before nothing read the field.
-  **Consumer action:** none.
 - Path globs are compiled by one shared module, so a glob in a configuration
   field and in the change-area catalog means the same.
   **Consumer action:** none.

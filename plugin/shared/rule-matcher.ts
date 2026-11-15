@@ -170,16 +170,23 @@ export function parseRule(
 
 /**
  * The rule an entry's own fact keys make (`do_item.gates`, `do_item.guidance`):
- * the keys among the field's facts, each checked; the entry's other keys are
- * its field's to check. An entry naming none matches nothing.
+ * the keys among the field's facts, each checked; a fact the field does not
+ * test is refused, and the entry's other keys are its field's to check.
  */
 export function parseEntryRule(
   field: string,
   entry: Readonly<Record<string, unknown>>,
   at: string,
 ): Outcome<Rule, RuleFailure> {
+  const tested = ruleField(field).facts;
+  const untested = FACT_NAMES.find((f) => !tested.includes(f) && f in entry);
+  if (untested !== undefined)
+    return failed(
+      "rule-invalid",
+      `${at}.${untested}: the rules of ${field} test ${tested.join(" and ")} only`,
+    );
   const rule: Partial<Record<FactName, string[]>> = {};
-  for (const fact of ruleField(field).facts) {
+  for (const fact of tested) {
     const raw = entry[fact];
     // An empty list tests nothing, as an absent one does.
     if (raw === undefined || raw === null) continue;

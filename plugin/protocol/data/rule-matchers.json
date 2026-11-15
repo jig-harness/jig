@@ -39,6 +39,13 @@
       "identifies": false,
       "description": "For a fact, how a rule's value is compared with the item's; else null."
     },
+    "comparison": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a fact, the comparison's name, for a program that evaluates a rule: equal-ignoring-case (equal after trimming white space and folding case), contained-ignoring-case (the rule's value is a substring of the item's, case folded) or glob (the change-area catalog's glob claims the path); else null."
+    },
     "facts": {
       "type": "string",
       "nullable": true,
@@ -89,6 +96,7 @@
       "holds": "a list of label names",
       "ruleValue": "a list of label names",
       "compared": "Equal, ignoring case and white space around the name: `Bug` matches `bug`.",
+      "comparison": "equal-ignoring-case",
       "facts": null,
       "list": null,
       "form": null,
@@ -102,6 +110,7 @@
       "holds": "one text",
       "ruleValue": "a list of keywords",
       "compared": "The keyword appears anywhere in the title, ignoring case: `migration` matches `Write the Migrations`.",
+      "comparison": "contained-ignoring-case",
       "facts": null,
       "list": null,
       "form": null,
@@ -115,6 +124,7 @@
       "holds": "a list of size names",
       "ruleValue": "a list of size names",
       "compared": "Equal, ignoring case and white space around the name, as a label is; a size is never compared by its step, so `large` does not match `L`.",
+      "comparison": "equal-ignoring-case",
       "facts": null,
       "list": null,
       "form": null,
@@ -128,6 +138,7 @@
       "holds": "a list of repository-relative paths",
       "ruleValue": "a list of path globs",
       "compared": "The glob claims the path, by the glob matching the change-area catalog uses: `**` spans directories, `*` and `?` stay within one, `{a,b}` alternates and `[...]` is a character class.",
+      "comparison": "glob",
       "facts": null,
       "list": null,
       "form": null,
@@ -141,6 +152,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -154,6 +166,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -167,6 +180,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -180,6 +194,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -193,6 +208,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -206,6 +222,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -219,6 +236,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -232,6 +250,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -245,6 +264,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": null,
       "list": null,
       "form": null,
@@ -258,6 +278,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "first",
       "form": "when",
@@ -271,11 +292,12 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels, paths",
       "list": "every",
       "form": "entry",
       "words": null,
-      "readBy": "do-item",
+      "readBy": "do-item, audit",
       "meaning": "The review skills that must approve a change before it is pushed."
     },
     {
@@ -284,6 +306,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels, paths",
       "list": "every",
       "form": "entry",
@@ -297,6 +320,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "lookup",
       "form": "map",
@@ -310,6 +334,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "lookup",
       "form": "map",
@@ -323,6 +348,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "title",
       "list": "lookup",
       "form": "map",
@@ -336,6 +362,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "lookup",
       "form": "map",
@@ -349,6 +376,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "lookup",
       "form": "map",
@@ -362,6 +390,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "one",
       "form": "list",
@@ -375,6 +404,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "one",
       "form": "list",
@@ -388,6 +418,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "size",
       "list": "one",
       "form": "list",
@@ -401,6 +432,7 @@
       "holds": null,
       "ruleValue": null,
       "compared": null,
+      "comparison": null,
       "facts": "labels",
       "list": "one",
       "form": "list",
@@ -411,43 +443,180 @@
   ],
   "schemas": {
     "rule": {
-      "type": "object",
-      "properties": {
-        "labels": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
           },
-          "minItems": 1
+          "required": ["labels"],
+          "additionalProperties": false
         },
-        "title": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
           },
-          "minItems": 1
+          "required": ["title"],
+          "additionalProperties": false
         },
-        "size": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
           },
-          "minItems": 1
+          "required": ["size"],
+          "additionalProperties": false
         },
-        "paths": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
           },
-          "minItems": 1
+          "required": ["paths"],
+          "additionalProperties": false
         }
-      },
-      "required": [],
-      "additionalProperties": false
+      ]
     }
   }
 }

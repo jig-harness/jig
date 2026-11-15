@@ -1,5 +1,6 @@
 /** Catalog sensitivity flags apply before grouping, from the reviewed default branch. */
 import { isRecord } from "../../shared/guards.ts";
+import { matchOne } from "../../shared/rule-matcher.ts";
 import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import {
   areaOfLabel,
@@ -40,13 +41,17 @@ export async function batchSafePickups(
       `${repo.slug}@${repo.defaultBranch}:${configured}`,
     );
     const routing = parseAgentRouting(values);
-    const flags = new Set([...catalog.values()].flatMap((area) => area.flags));
+    // The catalog's flags hold an item out as work-batch's solo flags do.
+    const flags = {
+      labels: [...catalog.values()].flatMap((area) => area.flags),
+    };
     return items.map((item) => ({
       ...item,
       batchAllowed:
         item.batchAllowed !== false &&
         !(item.queueIssue?.labels ?? []).some((label) => {
-          if (flags.has(label)) return true;
+          if (matchOne("work_batch.solo_flags", flags, { labels: [label] }))
+            return true;
           const area = areaOfLabel(routing, label);
           return (
             area !== undefined && (catalog.get(area)?.flags.length ?? 0) > 0

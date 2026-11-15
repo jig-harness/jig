@@ -366,7 +366,13 @@ describe("the rule schema", () => {
       expectSchemaAccepts(published("rule"), rule);
       expect(parseRule("pull_requests.base_rules", rule, at).ok).toBe(true);
     }
-    for (const rule of [{ colour: ["red"] }, { labels: [] }, { labels: "x" }]) {
+    for (const rule of [
+      { colour: ["red"] },
+      { labels: [] },
+      { labels: "x" },
+      {},
+      { labels: [" "] },
+    ]) {
       expectSchemaRejects(published("rule"), rule);
       expect(parseRule("pull_requests.base_rules", rule, at).ok).toBe(false);
     }

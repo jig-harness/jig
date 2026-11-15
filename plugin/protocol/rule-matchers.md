@@ -102,7 +102,7 @@ the one a reason names.
 | Field | Facts | List | Form | Words | Read by | Meaning |
 | --- | --- | --- | --- | --- | --- | --- |
 | `pull_requests.base_rules` | labels | `first` | `when` | — | do-item, audit | The base branch a pull request targets: the first rule's `base`; the integration branch when none matches. |
-| `do_item.gates` | labels, paths | `every` | `entry` | — | do-item | The review skills that must approve a change before it is pushed. |
+| `do_item.gates` | labels, paths | `every` | `entry` | — | do-item, audit | The review skills that must approve a change before it is pushed. |
 | `do_item.guidance` | labels, paths | `every` | `entry` | — | do-item, audit | The skills and notes the implementing agent is given. |
 | `do_item.agents.labels` | labels | `lookup` | `map` | — | do-item, work-batch | The agent that implements an item carrying the label. |
 | `do_item.agents.codearea_areas` | labels | `lookup` | `map` | — | do-item, work-batch | The change area an item carrying the label reaches, for the area's agent and guidance. |
