@@ -523,7 +523,9 @@ export function batchPolicy(
       ]),
     ],
     soloFlags,
-    soloFlagPrefixes: [`${labels.hitl.trim()}:`],
+    soloFlagPrefixes: [
+      ...new Set([`${labels.hitl}:`, `${labels.hitl.trim()}:`]),
+    ],
     epicLabel: labels.epic,
     epicTypes: labels.epicTypes,
     followupLabel: labels.followup,

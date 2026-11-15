@@ -42,6 +42,7 @@ describe("work_batch.solo_flags", () => {
       const spaced = policy({ issue_tracker: { labels: { hitl } } });
       expect(soloFlagOf([" hitl:security"], spaced)).toBe(" hitl:security");
       expect(soloFlagOf(["hitl:security"], spaced)).toBe("hitl:security");
+      expect(soloFlagOf([`${hitl}:legal`], spaced)).toBe(`${hitl}:legal`);
     }
   });
 });
