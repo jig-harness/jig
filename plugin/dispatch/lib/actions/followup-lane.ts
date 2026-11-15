@@ -9,8 +9,9 @@
  * free slot.
  *
  * A follow-up the lane holds back waits for a later tick, and its outcome
- * names what it waits on (`waitsOn`): the lane's budget, the lane's cap, or
- * the accounts.
+ * names what it waits on (`waitsOn`): the lane's budget, the lane's cap,
+ * the accounts, the tick's deadline or another admission check. Its detail
+ * gives the specific reason.
  */
 import { holds } from "../launches.ts";
 import type { SessionsReport } from "../runtime/port.ts";

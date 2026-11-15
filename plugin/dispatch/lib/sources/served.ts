@@ -14,6 +14,7 @@ import type {
 import { metadata, type Metadata } from "./served-metadata.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
+import { itemFailed, limitedRow, readFailureRow } from "./served-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -78,9 +79,9 @@ export interface ServedReading {
   claimed: ClaimedItem[];
   /** The tracker refused the reads for its rate limit: until when, in ISO 8601. */
   limitedUntil?: string;
-  /** A served identity's queue failed to read for another reason: the claims are not known. */
+  /** A served identity's queue, or an item in it, failed to read for another reason: the claims are not known. */
   incomplete?: boolean;
-  /** What each failed read raised, `undefined` for one no call failed, so every class reaches the record. */
+  /** What each read that fails the record raised: a queue's, or an item's a failed call stopped, so every class reaches the record. */
   failures?: unknown[];
 }
 export interface ServedPolicy {
@@ -111,24 +112,6 @@ const itemOf = (i: PoolIssue) => ({
   url: i.url,
 });
 
-/** How the row a rate-limited tracker leaves begins, which tells it from every other row. */
-export const LIMITED_REASON = "the issue service is rate limited until";
-
-/** The single row a rate-limited tracker leaves on the receipt. */
-export function limitedRow(
-  tracker: Pick<Tracker, "adapter" | "team">,
-  limited: TrackerRateLimited,
-  view: Pick<ServedView, "readAt" | "scope"> | null = null,
-): Unplaced {
-  const until = isoFromMs(limited.resetAt);
-  const row: Unplaced = {
-    target: `${tracker.adapter} ${tracker.team}`,
-    record: "tracker",
-    reason: `${LIMITED_REASON} ${until}: pickups wait for the reset, and no request is sent before it`,
-  };
-  return view === null ? row : scopeFailureRow(tracker, view, row.reason);
-}
-
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
@@ -142,8 +125,10 @@ interface PersonReading {
   unplaced: Unplaced[];
   candidates: Candidate[];
   limited: { error: TrackerRateLimited; view: ServedView | null } | null;
-  /** What failed each read: the scope's cause or the error thrown, `undefined` for a read no call failed. */
+  /** What failed each read that fails the record: the scope's cause or the error thrown. */
   failures: unknown[];
+  /** An item's read failed, so the claims below it are unknown. */
+  partial: boolean;
 }
 
 /** A served item in progress, as the claim dispatch monitors. */
@@ -156,19 +141,6 @@ function servedClaim(i: PoolIssue) {
     ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
     served: true as const,
   };
-}
-
-/** The one unplaced row an identity's failed read leaves. */
-function readFailureRow(
-  tracker: Tracker,
-  identity: string,
-  view: ServedView | null,
-  error: unknown,
-): Unplaced {
-  const reason = `the served assignments could not be read: ${failureText(error)}`;
-  return view?.scope !== undefined && isUnavailable(error)
-    ? scopeFailureRow(tracker, view, reason)
-    : { target: identity, record: "tracker", reason };
 }
 
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
@@ -186,6 +158,7 @@ async function readPerson(
     candidates: [],
     limited: null,
     failures: [],
+    partial: false,
   };
   let view: ServedView | null = null;
   try {
@@ -227,10 +200,11 @@ async function readPerson(
   return got;
 }
 
-/** A failed queue makes the reading incomplete; every cause is kept. */
+/** A failed queue or item read makes the reading incomplete; every cause that fails the record is kept. */
 function noteFailure(out: ServedReading, got: PersonReading): void {
-  if (got.failures.length === 0) return;
-  out.failures = [...(out.failures ?? []), ...got.failures];
+  if (got.failures.length === 0 && !got.partial) return;
+  if (got.failures.length > 0)
+    out.failures = [...(out.failures ?? []), ...got.failures];
   out.incomplete = true;
 }
 
@@ -412,8 +386,10 @@ interface Found {
   unplaced: Unplaced[];
   candidates: Candidate[];
   pending: Pending[];
-  /** What failed each read of this node, `undefined` for a read no call failed: the reading is incomplete. */
+  /** What failed each read of this node that fails the record. */
   failures: unknown[];
+  /** A read of this node failed: the claims below it are unknown. */
+  partial: boolean;
 }
 
 /**
@@ -447,6 +423,7 @@ async function walk(
       all.unplaced.push(...found.unplaced);
       all.candidates.push(...found.candidates);
       all.failures.push(...found.failures);
+      all.partial ||= found.partial;
       if (s.status === "fulfilled") generation.push(...found.pending);
     });
     try {
@@ -481,9 +458,12 @@ async function readChildren(
   const read = await Promise.all(
     meta.children.map(async (kept) => {
       try {
-        return { child: await view.pool(kept.identifier), error: undefined };
+        return {
+          child: await view.pool(kept.identifier),
+          threw: false as const,
+        };
       } catch (error) {
-        return { child: null, error };
+        return { child: null, threw: true as const, error };
       }
     }),
   );
@@ -491,21 +471,24 @@ async function readChildren(
   const unread: string[] = [];
   const limits: unknown[] = [];
   meta.children.forEach((kept, i) => {
-    const { child, error } = read[i] ?? { child: null, error: undefined };
+    const got = read[i];
+    const child = got?.child ?? null;
+    const threw = got?.threw === true;
+    const error = got?.threw ? got.error : undefined;
     if (isRateLimited(error)) {
       limits.push(error);
       return;
     }
     if (child === null || child.truncated.length) {
       unread.push(kept.identifier);
-      found.failures.push(error);
+      if (threw) itemFailed(found, error);
+      else itemFailed(found);
       found.unplaced.push({
         ...itemOf(kept),
         record: "tracker",
-        reason:
-          error === undefined
-            ? "the child cannot be read completely"
-            : `the child cannot be read: ${failureText(error)}`,
+        reason: threw
+          ? `the child cannot be read: ${failureText(error)}`
+          : "the child cannot be read completely",
       });
     } else children.push(child);
   });
@@ -602,7 +585,13 @@ function leavesNode(
 }
 
 function newFound(): Found {
-  return { unplaced: [], candidates: [], pending: [], failures: [] };
+  return {
+    unplaced: [],
+    candidates: [],
+    pending: [],
+    failures: [],
+    partial: false,
+  };
 }
 
 async function visitNode(
@@ -617,7 +606,7 @@ async function visitNode(
   if (ancestor !== undefined && issue.assignee !== null) return found;
   seen.add(issue.identifier);
   if (issue.truncated.length) {
-    found.failures.push(undefined);
+    itemFailed(found);
     found.unplaced.push({
       ...itemOf(issue),
       record: "tracker",
@@ -630,7 +619,7 @@ async function visitNode(
   } catch (error) {
     if (isRateLimited(error)) throw error;
     if (ctx.view.scope !== undefined && isUnavailable(error)) throw error;
-    unreadable(issue, failureText(error), found, error);
+    unreadable(issue, failureText(error), found, [error]);
   }
   return found;
 }
@@ -640,9 +629,9 @@ function unreadable(
   issue: PoolIssue,
   why: string,
   found: Found,
-  cause?: unknown,
+  thrown: [] | [cause: unknown] = [],
 ): void {
-  found.failures.push(cause);
+  itemFailed(found, ...thrown);
   found.unplaced.push({
     ...itemOf(issue),
     record: "tracker",
@@ -661,13 +650,13 @@ async function placeNode(
   const unplace = unplacer(issue, options.trackerNamespace, found);
   const carried = view.held(issue.identifier)?.relations ?? null;
   const meta = await metadata(tracker, issue, identity, cache, carried, view);
-  // A kept no-assigner answer is reported as the failed read it stands for.
+  // A kept no-assigner answer is reported as the item's unreadable row.
   if (meta.noAssigner !== undefined)
     return void unreadable(issue, meta.noAssigner, found);
   const initialHold = nodeHold(node, meta, identity, options, tracker);
   if (initialHold !== null) {
     // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
-    if (meta.description === null) found.failures.push(undefined);
+    if (meta.description === null) itemFailed(found);
     return void unplace(initialHold);
   }
   const open = await openBlockers(

@@ -378,3 +378,12 @@ moves the parent through its own status names. An explicit `null` marks a
 state absent from that workflow; the move is skipped and reported.
 The tracker’s states command prints the repository map and each configured type’s
 effective map. See the [configuration reference](../../CONFIGURATION.md#issue_tracker).
+
+Where type is kept in Jira's issue types (`issue_tracker.facets.type`
+`store: native`), an edit changes an issue's type only between issue types of
+one workflow and field configuration. When the issue's edit screen
+lists the issue type choices and the new issue type is not among them, the change is
+refused before anything is written: move the issue in Jira, or keep type in
+labels or a field. When the screen omits the issue type choice list, Jira decides, and its
+rejection is explained afterward in the same words; a screen that offers an
+empty list refuses every target.

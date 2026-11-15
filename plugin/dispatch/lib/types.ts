@@ -7,6 +7,7 @@ import type {
   FacetStoreKind,
   FacetStoreReport,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import type { NoticeFields } from "../../chat/channel.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { FailureClass } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
@@ -315,6 +316,8 @@ export interface Unplaced {
   cause?: "assigner-cannot-write" | "needs-repository-label";
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
   readFailed?: true;
+  /** For a `readFailed` entry a failed call caused: that call's failure class, which decides whether the read is waited out. */
+  failure?: ReadFailure;
   /** Internal tracker namespace used to keep identical issue keys distinct across trackers. */
   source?: string;
 }
@@ -362,9 +365,12 @@ export interface StaleClaim {
 /**
  * A notification's message: `key` names the facts its suppression record
  * is keyed by, and is carried in the text so a read of the target's comment
- * shows whether it arrived.
+ * shows whether it arrived. Beside them it carries what a channel renders
+ * in its own way (`chat/channel.ts`): the piece of work's address, its
+ * links, the acts that settle it and its framed decisions, each where its
+ * builder has it; the text is the fallback.
  */
-export interface Notice {
+export interface Notice extends NoticeFields {
   key: string;
   text: string;
 }
@@ -410,6 +416,13 @@ export interface Action {
   /** For a need with a framed decision: the answers the tick read for it and its step on the one that counts (`station-answers.ts`). */
   answered?: import("./station-answers.ts").StationAnswered;
 }
+
+/** A notification the plan names, with its cause and message; `repeat` once it is sent again after `renotify_after`. */
+export type NoticeCause = Action & {
+  cause: NotifyCause;
+  notice: Notice;
+  repeat?: true;
+};
 
 /** What `--apply` did with one stale follow-up claim. */
 export interface ReleaseOutcome {
@@ -478,18 +491,25 @@ export interface LaunchOutcome {
   record: string | null;
   detail: string;
   /**
-   * For a follow-up that waits for its lane: what it waits on. `lane-budget`:
+   * For a follow-up held back this tick: what it waits on. `lane-budget`:
    * the tick spent `followup_opens_per_tick`; `lane-cap`: the host runs
    * `followup_concurrency` follow-ups already; `accounts`: no admitted
-   * account has a free slot.
+   * account has a free slot; `tick-deadline`: the tick has no time left for
+   * the next step; `admission`: another check refused or deferred the
+   * follow-up, with the specific reason in `detail`.
    */
   waitsOn?: LaneWait;
   /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
   holder?: BusyHolder;
 }
 
-/** What a follow-up that waits for its lane waits on. */
-export type LaneWait = "lane-budget" | "lane-cap" | "accounts";
+/** What holds a follow-up back this tick; `detail` gives the specific reason. */
+export type LaneWait =
+  | "lane-budget"
+  | "lane-cap"
+  | "accounts"
+  | "tick-deadline"
+  | "admission";
 
 /** What `--apply` did with one notification. */
 export interface NotifyOutcome {
@@ -503,9 +523,11 @@ export interface NotifyOutcome {
    * arrived; `waits`: no target could be reached this tick.
    */
   outcome: "sent" | "already" | "suppressed" | "lost" | "waits";
-  /** The workspace it went to; `null` when none was reached. */
+  /** The workspace it went to, or its place on another channel; `null` when none was reached. */
   workspace: string | null;
   detail: string;
+  /** The notification channel, for a channel other than `orca-card` (`chat/channel.ts`). */
+  channel?: string;
 }
 
 /** What `--apply` did with the repository's notices workspace once its notifications were sent. */
