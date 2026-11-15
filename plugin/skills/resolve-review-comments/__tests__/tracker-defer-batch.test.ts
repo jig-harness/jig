@@ -232,6 +232,34 @@ describe("tracker-independent deferral batches", () => {
     expect(f.created).toHaveLength(2);
   });
 
+  test("a mixed-size batch clears its aggregate size and still records both findings", async () => {
+    const f = fixture("github");
+    const common = {
+      repo: "example/project",
+      pr: "42",
+      type: "bug",
+      category: "correctness",
+      priority: 3,
+      labels: ["pr-followup"],
+    };
+    const first = await deferToTracker(f.tracker, {
+      ...common,
+      identity: "small finding",
+      text: "small finding",
+      size: "small",
+    });
+    await deferToTracker(f.tracker, {
+      ...common,
+      identity: "xs finding",
+      text: "xs finding",
+      size: "xs",
+    });
+    const batch = must(f.issues.get(first.identifier));
+    expect(batch.size).toBeNull();
+    expect(batch.description).toContain("small finding");
+    expect(batch.description).toContain("xs finding");
+  });
+
   test("the real GitHub reader recognizes the native Epic type without an epic label", async () => {
     const actual = gitHub(
       () =>

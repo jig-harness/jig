@@ -78,8 +78,9 @@ function fenceLine(
   line: string,
   fence: Fence | null,
 ): { fence: Fence | null; consumed: boolean } {
-  const marker = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(line);
-  if (marker === null) return { fence, consumed: fence !== null };
+  const marker = /^ {0,3}(`+|~+)([^\r\n]*)$/.exec(line);
+  if (marker === null || (marker[1]?.length ?? 0) < 3)
+    return { fence, consumed: fence !== null };
   const text = marker[1] ?? "";
   const char = text.charAt(0);
   const info = marker[2] ?? "";
@@ -117,7 +118,7 @@ export function authoritativeLines(description: string): string[] {
   for (const line of description.split("\n")) {
     const state = fenceLine(line, fence);
     fence = state.fence;
-    if (!state.consumed && !/^ {4}/.test(line)) found.push(line);
+    if (!state.consumed && !/^[ \t]{4}/.test(line)) found.push(line);
   }
   return found;
 }

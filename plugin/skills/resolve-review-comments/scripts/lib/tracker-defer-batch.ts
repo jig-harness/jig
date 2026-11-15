@@ -178,11 +178,6 @@ function assertBatch(issue: Issue, d: TrackerDeferral): void {
       "deferral",
       `Batch ${issue.identifier} has type ${issue.type}, which contradicts its key ${d.type}`,
     );
-  if (issue.size !== null && d.size !== undefined && issue.size !== d.size)
-    throw new JigError(
-      "deferral",
-      `Batch ${issue.identifier} has size ${issue.size}, which contradicts the finding size ${d.size}`,
-    );
   const conflict = d.labelConflict?.([...issue.labels, ...d.labels]);
   if (conflict !== undefined) throw new JigError("deferral", conflict);
 }
@@ -233,6 +228,9 @@ async function persist(
     ...(missing.length > 0 ? { addLabels: missing } : {}),
     ...(issue.type === null ? { type: d.type } : {}),
     ...(issue.size === null && d.size !== undefined ? { size: d.size } : {}),
+    ...(issue.size !== null && d.size !== undefined && issue.size !== d.size
+      ? { size: null }
+      : {}),
   };
   if (Object.keys(patch).length > 0)
     await tracker.updateIssue(issue.identifier, patch);
@@ -267,7 +265,7 @@ async function confirmed(
     higher(issue.priority, d.priority) === issue.priority,
     d.labels.every((l) => issue.labels.includes(l)),
     issue.type?.toLowerCase() === d.type.toLowerCase(),
-    d.size === undefined || issue.size === d.size,
+    d.size === undefined || issue.size === null || issue.size === d.size,
     targets.every((t) =>
       related.some((r) => r.type === "related" && r.issue === t),
     ),
