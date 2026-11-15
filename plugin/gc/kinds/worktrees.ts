@@ -56,7 +56,10 @@ import {
   readWorktreeOwner,
 } from "../../shared/process-worktree-owner.ts";
 import { exclusiveGcLock } from "../../shared/gc-lock.ts";
-import { processWorktreeIdle } from "../process-worktrees.ts";
+import {
+  processWorktreeIdle,
+  retireProcessWorktreeCompletions,
+} from "../process-worktrees.ts";
 import { ownedCheckoutProof } from "./worktree-owned-proof.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
@@ -448,6 +451,7 @@ async function collectAgentWorktree(
   legacy: LegacyPolicy | undefined,
   identity: WorktreeIdentity | undefined,
   checkOwner?: () => Promise<Outcome<void>>,
+  retireCompletions?: () => Outcome<void>,
 ): Promise<Collected> {
   let archived: Archived | null = null;
   const log = (line: string): void => {
@@ -497,15 +501,14 @@ async function collectAgentWorktree(
     });
     if (!removed.ok)
       return withArchive({ outcome: "failed", reason: removed.failure.reason });
-    return withArchive({
-      outcome: "collected",
-      reason: `removed with git: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} git worktree remove`,
-      details: {
-        ...(isMapping(resource.details) ? resource.details : {}),
-        hook: removed.value.hook,
-        parked: true,
-      },
-    });
+    return withArchive(
+      completionRetirementResult(
+        resource,
+        removed.value,
+        archived,
+        retireCompletions,
+      ),
+    );
   } catch (error) {
     // A step that throws (a platform error, or a defect) fails the removal;
     // its stack goes to the log, since the receipt keeps the message only.
@@ -532,6 +535,41 @@ function withArchiveOf(
     details: {
       ...(isMapping(collected.details) ? collected.details : {}),
       archive: archived,
+    },
+  };
+}
+/** A failed evidence retirement does not erase the fact that Git removed the checkout. */
+function completionRetirementResult(
+  resource: Resource,
+  removed: { hook: string | null },
+  archived: Archived | null,
+  retireCompletions: (() => Outcome<void>) | undefined,
+): Collected {
+  const retired = retireCompletions?.();
+  if (retired !== undefined && !retired.ok)
+    return {
+      outcome: "failed",
+      reason: `removed with git, but completion evidence retirement failed: ${retired.failure.reason}`,
+      details: {
+        ...(isMapping(resource.details) ? resource.details : {}),
+        removal: {
+          method: "git worktree remove",
+          hook: removed.hook,
+          parked: true,
+        },
+        completionEvidence: {
+          outcome: "failed",
+          reason: retired.failure.reason,
+        },
+      },
+    };
+  return {
+    outcome: "collected",
+    reason: `removed with git: ${removed.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} git worktree remove`,
+    details: {
+      ...(isMapping(resource.details) ? resource.details : {}),
+      hook: removed.hook,
+      parked: true,
     },
   };
 }
@@ -806,6 +844,9 @@ export function worktreesKind(
           legacy(),
           final,
           processOwned && final !== undefined ? checkProcessOwner : undefined,
+          processOwned && final !== undefined
+            ? () => retireProcessWorktreeCompletions(resource.id, repository)
+            : undefined,
         );
       }
       const id = orcaId(resource);
