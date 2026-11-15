@@ -84,11 +84,19 @@ Its workflow, which moves unchanged:
    epic version covers a child's change, so a target whose evidence is
    missing or has moved stops the run: it fails closed rather than writing
    over a stale closure, priority or relation. Each write the run itself
-   completes advances the expected state of what it touched: `apply` reads
-   the target back after the write and takes that read as the new expected
-   evidence, so a child's relation write followed by its priority write is
-   not mistaken for a concurrent edit, while a change `apply` did not make
-   still mismatches. It stops at the first
+   completes advances the expected state of what it touched by that
+   mutation alone: the expected state becomes the approved snapshot with
+   the intended field changed. `apply` then reads the target back and
+   verifies the read against that expected state, and any difference the
+   mutation does not explain stops the run instead of becoming the new
+   baseline. The tracker port's mutations return nothing that attributes a
+   read-back to this run, so the read-back is a check, never the
+   evidence: a child's relation write followed by its priority write is
+   not mistaken for a concurrent edit, and a person's change between the
+   two still mismatches. The target's `updatedAt` moves with every write
+   and cannot tell this run's write from another's, so the check compares
+   the fields the planner reads and never takes a timestamp as the
+   approved one. It stops at the first
    mismatch and reports what it wrote and what is left. A run stopped halfway is
    recovered by running the planner again, whose proposal reads the tracker
    as it now is. The approval is a digest, a hash of the rows
