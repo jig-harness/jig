@@ -33,6 +33,8 @@ interface Spec {
   failing?: string[];
   /** Items whose relation read meets a tracker rate limit. */
   limiting?: string[];
+  /** Items whose relation read answers after the others. */
+  slow?: string[];
 }
 
 function world(spec: Spec) {
@@ -61,6 +63,7 @@ function world(spec: Spec) {
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
     openChildren: async (k: string) => spec.children?.[k] ?? [],
     listRelations: async (k: string) => [
+      ...(spec.slow?.includes(k) ? await Bun.sleep(20).then(() => []) : []),
       ...(spec.limiting?.includes(k)
         ? (() => {
             throw new TrackerRateLimited("github", 60_000, "limited");
@@ -636,6 +639,17 @@ describe("an assigned epic's children", () => {
       children: { "#1": kids("#2", "#3"), "#5": kids("#6") },
       failing: ["#3"],
       limiting: ["#6"],
+    }).read({ epicWidth: 2 });
+    expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
+  });
+
+  it("keeps a failed child's record when a sibling of the same epic meets a rate limit", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3") },
+      failing: ["#3"],
+      limiting: ["#2"],
+      slow: ["#3"],
     }).read({ epicWidth: 2 });
     expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
   });

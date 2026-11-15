@@ -801,7 +801,9 @@ async function childStates(
         children.find((c) => c.identifier === key) ?? (await view.pool(key)),
     ),
   );
-  const infos = await Promise.all(
+  // Every read settles, and each failure is recorded as observed, before a
+  // wall rejects: a sibling's slower failure is not lost to a faster limit.
+  const settledInfos = await Promise.allSettled(
     read.map((child) =>
       child === null || child.truncated.length
         ? null
@@ -828,6 +830,11 @@ async function childStates(
             );
           }),
     ),
+  );
+  const wall = settledInfos.find((r) => r.status === "rejected");
+  if (wall?.status === "rejected") return Promise.reject(wall.reason);
+  const infos = settledInfos.map((r) =>
+    r.status === "fulfilled" ? r.value : null,
   );
   const blockersOf = new Map<string, string[]>();
   keys.forEach((key, i) => {
