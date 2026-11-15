@@ -3,6 +3,7 @@ import { isRecord } from "../../shared/guards.ts";
 import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import { parseAgentRouting } from "../../skills/do-item/scripts/determine_agent.ts";
 import { defaultBranchFile } from "./forge.ts";
+import { heldRead, type TickBound } from "./sources/bounded.ts";
 import type { RepoTarget, WantedItem } from "./types.ts";
 
 export async function batchSafePickups(
@@ -10,6 +11,7 @@ export async function batchSafePickups(
   values: Record<string, unknown>,
   items: WantedItem[],
   allowRead = true,
+  bound?: TickBound,
 ): Promise<WantedItem[]> {
   if (!items.some((item) => item.servedPerson !== undefined)) return items;
   const configured = isRecord(values.drive)
@@ -25,7 +27,9 @@ export async function batchSafePickups(
     configured.split("/").includes("..")
   )
     return refused();
-  const read = await defaultBranchFile(repo, configured);
+  const read = await heldRead(bound, "the change-area catalog was read", () =>
+    defaultBranchFile(repo, configured),
+  );
   if (!read.ok || read.value === null) return refused();
   try {
     const catalog = loadCatalogText(

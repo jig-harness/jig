@@ -18,6 +18,12 @@
  * the comment listings among them, so the listings of many pull requests
  * are read at once with no more than the pool's size in flight.
  *
+ * In a tick its launcher bounds, the forge reads here keep to the tick's
+ * bound (`sources/bounded.ts`): one the bound ended before it left the
+ * pool is not started, and answers as a read that failed; a paged query
+ * asks no page after the bound ends; a comment listing is given no more
+ * time than the bound has left.
+ *
  * None of these serves a read just before a launch: those go to the forge
  * and the runtime (`tick-apply.ts`).
  */
@@ -37,10 +43,12 @@ import { forgetMergeRead } from "./merge-reads.ts";
 import { pickupReads } from "./pickup-reads.ts";
 import { type Pool, pool } from "./pool.ts";
 import type { SessionRuntime, SessionsReader } from "./runtime/port.ts";
+import { type TickBound, unlessEnded } from "./sources/bounded.ts";
 import type { ServedViews } from "./sources/served-reads.ts";
 import { failureText } from "./text.ts";
 import { type TickComments, tickComments } from "./tick-comments.ts";
 import type { SharedReport } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** The forge's budget as the tick started, or why it did not read. */
 export type TickBudget = SharedBudget | { unreadable: string };
@@ -89,6 +97,8 @@ export interface TickReads {
   pool: Pool;
   /** The served queues read this tick, one per tracker, team and person, shared by the repositories that name them. */
   servedViews?: ServedViews;
+  /** The tick's bound, which every read of the observe phase keeps to; absent for a tick no launcher bounds. */
+  bound?: TickBound;
 }
 
 /**
@@ -98,9 +108,10 @@ export interface TickReads {
  */
 function lazySessions(runtime: SessionRuntime): SessionsReader {
   let reader: SessionsReader | null = null;
-  return async (repo, join) => {
-    reader ??= runtime.sessionsOnce?.() ?? ((r, j) => runtime.sessions(r, j));
-    return await reader(repo, join);
+  return async (repo, join, signal) => {
+    reader ??=
+      runtime.sessionsOnce?.() ?? ((r, j, s) => runtime.sessions(r, j, s));
+    return await reader(repo, join, signal);
   };
 }
 
@@ -124,10 +135,11 @@ const pageSizes: PageSizes = {
 async function queryRepository(
   path: string,
   comments: TickComments,
+  bound: TickBound | undefined,
 ): Promise<RepositoryOutcome> {
   let read: RepositoryOutcome;
   try {
-    read = await readRepository(path, pageSizes);
+    read = await readRepository(path, pageSizes, undefined, bound);
   } catch (error) {
     return failed("unreadable", failureText(error));
   }
@@ -144,10 +156,11 @@ async function queryComments(
   slug: string,
   prs: readonly number[],
   comments: TickComments,
+  bound: TickBound | undefined,
 ): Promise<CommentsOutcome> {
   let read: CommentsOutcome;
   try {
-    read = await readComments(slug, prs, pageSizes);
+    read = await readComments(slug, prs, pageSizes, undefined, bound);
   } catch (error) {
     return failed("unreadable", failureText(error));
   }
@@ -157,16 +170,37 @@ async function queryComments(
   return read;
 }
 
-/** One tick's shared reads, its pool `poolSize` reads wide; a write the tick makes on a merged pull request drops its kept marker read too. */
+/** A comment listing's own deadline: the forge client's, or the whole seconds `bound` has left where that is sooner. */
+function listingDeadline(bound: TickBound | undefined): {
+  timeoutSec?: number;
+} {
+  if (bound === undefined) return {};
+  const left = Math.ceil((bound.deadline - currentMs()) / 1000);
+  return { timeoutSec: Math.max(1, left) };
+}
+
+/**
+ * One tick's shared reads, its pool `poolSize` reads wide, its forge reads
+ * kept to `bound` where the tick has one; a write the tick makes on a
+ * merged pull request drops its kept marker read too.
+ */
 export function tickReads(
   runtime: SessionRuntime,
   poolSize?: number,
+  bound?: TickBound,
 ): TickReads {
   let login: Promise<string | null> | null = null;
   let budget: Promise<TickBudget> | null = null;
   const reads = pool(poolSize);
   const comments = tickComments({
-    list: (target) => reads.run(() => listComments(target, {})),
+    list: (target) =>
+      reads.run(() =>
+        unlessEnded(
+          bound,
+          `the comments of #${target.number} were listed`,
+          () => listComments(target, listingDeadline(bound)),
+        ),
+      ),
     written: (repo, pr) => forgetMergeRead(repo, pr),
   });
   const repositories = new Map<string, Promise<RepositoryOutcome>>();
@@ -174,13 +208,21 @@ export function tickReads(
     repository: (path) => {
       let read = repositories.get(path);
       if (read === undefined) {
-        read = reads.run(() => queryRepository(path, comments));
+        read = reads.run(() =>
+          unlessEnded(bound, "the repository's query was read", () =>
+            queryRepository(path, comments, bound),
+          ),
+        );
         repositories.set(path, read);
       }
       return read;
     },
     pullRequestComments: (slug, prs) =>
-      reads.run(() => queryComments(slug, prs, comments)),
+      reads.run(() =>
+        unlessEnded(bound, "the merged pull requests' comments were read", () =>
+          queryComments(slug, prs, comments, bound),
+        ),
+      ),
     comments,
     login: () => {
       login ??= reads.run(() => resolveLogin());
@@ -194,6 +236,7 @@ export function tickReads(
     },
     pool: reads,
     servedViews: new Map(),
+    ...(bound === undefined ? {} : { bound }),
   };
 }
 

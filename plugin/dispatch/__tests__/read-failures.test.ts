@@ -76,6 +76,24 @@ describe("a repository whose read a failed call stopped", () => {
     ).toHaveLength(2);
   });
 
+  it("waits out an unplaced read the tick's bound cut, and fails the tick for one no call's class explains", () => {
+    const row = {
+      target: "#1",
+      record: "tracker" as const,
+      reason: "cut",
+      readFailed: true as const,
+    };
+    const cut = {
+      ...emptyReport("/checkouts/repo", ""),
+      refused: null,
+      unplaced: [{ ...row, failure: { class: "unreachable" as const } }],
+    };
+    expect(waitingFailures(cut)).toEqual([{ class: "unreachable" }]);
+    expect(waitsOut(cut, 0, SETTINGS, NOW)).toBe(true);
+    expect(waitsOut(cut, 2, SETTINGS, NOW)).toBe(false);
+    expect(waitingFailures({ ...cut, unplaced: [row] })).toBeNull();
+  });
+
   it("counts a rate limit past its reset like any other wait", () => {
     const past = unread({
       class: "rate-limited",

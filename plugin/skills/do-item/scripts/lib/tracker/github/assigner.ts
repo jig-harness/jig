@@ -96,10 +96,11 @@ function loginsOf(nodes: unknown, key: string): string[] {
   );
 }
 
-/** Whether `login` can write to the home repository: an admin, maintainer or writer. */
+/** Whether `login` can write to the home repository: an admin, maintainer or writer; an aborted `signal` ends the read. */
 export async function canWrite(
   client: Client,
   login: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const data = record(
     await client.transport(
@@ -109,7 +110,7 @@ export async function canWrite(
         name: client.home.name,
         login,
       },
-      undefined,
+      signal,
       true,
     ),
     "data",
@@ -133,7 +134,7 @@ export function assignerOperations(
   client: Client,
 ): Pick<Tracker, "assignedBy"> {
   return {
-    async assignedBy(key, assignee) {
+    async assignedBy(key, assignee, signal) {
       const ref = client.ref(key);
       refuseForeign(client, ref, key);
       const data = record(
@@ -144,7 +145,7 @@ export function assignerOperations(
             name: ref.name,
             number: ref.number,
           },
-          undefined,
+          signal,
           true,
         ),
         "data",
@@ -184,7 +185,7 @@ export function assignerOperations(
       return {
         id: latest.actor,
         name: latest.actor,
-        trusted: await canWrite(client, latest.actor),
+        trusted: await canWrite(client, latest.actor, signal),
       } satisfies Assigner;
     },
   };
