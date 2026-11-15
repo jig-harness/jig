@@ -17,6 +17,7 @@ import { encodeIdentity, ownIdentity } from "../../shared/liveness.ts";
 import { writeScratchOwner } from "../../shared/scratch-owner.ts";
 import {
   cachedFixtureEnclosure,
+  withoutRetired,
   nextFixtureRegistryPage,
   registerFixtureScope,
 } from "../../shared/test-fixture-registry.ts";
@@ -374,4 +375,18 @@ test("the enclosure index is reused across batches only while the store is uncha
     registerFixtureScope(join(f.base, "b"), { registry, node }, f.store).ok,
   ).toBe(true);
   expect(cachedFixtureEnclosure(f.store, first)).not.toBe(first);
+});
+
+test("the cached enclosure index survives the collector's own retirements", () => {
+  const f = fixture();
+  registerExited(f.store, [{ root: join(f.base, "a") }]);
+  registerExited(f.store, [{ root: join(f.base, "c") }]);
+  const old = new Date(Date.now() - 3_600_000);
+  for (const name of readdirSync(f.store))
+    utimesSync(join(f.store, name), old, old);
+  const first = cachedFixtureEnclosure(f.store);
+  const [gone] = readdirSync(f.store);
+  rmSync(join(f.store, gone ?? ""), { recursive: true, force: true });
+  const next = withoutRetired(first, [join(f.store, gone ?? "")]);
+  expect(cachedFixtureEnclosure(f.store, next)).toBe(next);
 });

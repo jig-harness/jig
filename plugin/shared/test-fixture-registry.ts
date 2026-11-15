@@ -544,12 +544,35 @@ export function cachedFixtureEnclosure(
     witness &&
     previous.witness &&
     witness.entries === previous.witness.entries &&
-    witness.newestNs === previous.witness.newestNs &&
-    previous.at - witness.newestNs > RACY_NS
+    witness.newestNs <= previous.witness.newestNs &&
+    previous.at - previous.witness.newestNs > RACY_NS
   )
     return previous;
   const at = BigInt(currentMs()) * 1_000_000n;
   return { index: fixtureEnclosureIndex(store), witness, at };
+}
+/**
+ * Account for registrations the caller itself just removed, so the next
+ * batch's witness still matches without reading the index again. Removing a
+ * folder moves no other folder's change time, and the cached newest time only
+ * ever bounds from above, so an external addition still shows as a newer one.
+ */
+export function withoutRetired(
+  cached: ReturnType<typeof cachedFixtureEnclosure>,
+  retired: string[],
+): ReturnType<typeof cachedFixtureEnclosure> {
+  const gone = new Set(retired);
+  for (const [root, holders] of cached.index.roots) {
+    for (const holder of gone) holders.delete(holder);
+    if (holders.size === 0) cached.index.roots.delete(root);
+  }
+  return {
+    ...cached,
+    witness: cached.witness && {
+      ...cached.witness,
+      entries: cached.witness.entries - gone.size,
+    },
+  };
 }
 /**
  * Whether a scope that still counts this registration's unknown launches

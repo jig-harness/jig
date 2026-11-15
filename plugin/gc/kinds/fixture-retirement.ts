@@ -1,8 +1,9 @@
 /** Registrations whose every root is gone, retired in bounded batches that name what they retired. */
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { processTable } from "../../shared/process-table.ts";
 import {
   cachedFixtureEnclosure,
+  withoutRetired,
   type FixtureEnclosureIndex,
   fixtureRetirementProof,
   fixtureRootGone,
@@ -149,6 +150,11 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
           });
       }
       proved.delete(resource.id);
+      if (cached && retired.length > 0)
+        cached = withoutRetired(
+          cached,
+          retired.map((name) => join(store, name)),
+        );
       return {
         outcome: failures.length > 0 ? "failed" : "collected",
         reason:
