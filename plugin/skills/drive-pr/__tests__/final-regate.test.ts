@@ -39,7 +39,7 @@ const ROUND_READY = {
 
 /** Run `body` with the console's error stream captured. */
 async function quietly<T>(body: () => T | Promise<T>): Promise<T> {
-  const spy = spyOn(console, "error").mockImplementation(() => {});
+  const spy = spyOn(console, "error").mockImplementation(() => undefined);
   try {
     return await body();
   } finally {
