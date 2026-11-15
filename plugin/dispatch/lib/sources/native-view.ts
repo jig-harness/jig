@@ -1,4 +1,5 @@
 /** Shared native tracker rows, interpreted anew by each repository. */
+import { coalesce } from "../../../shared/outbound/coalesce.ts";
 import type {
   DispatchRawIssue,
   PoolIssue,
@@ -145,17 +146,14 @@ export async function nativeSharedView(
                 ]),
               ];
               const probeKey = `dispatch scope probe ${options.nowMs}`;
-              let probe = reads.get(probeKey);
-              if (probe === undefined) {
-                probe = facts.guarded(() =>
+              return coalesce(reads, probeKey, () =>
+                facts.guarded(() =>
                   changedSince(
                     { ...query, since, keys, identities },
                     options.bound?.signal,
                   ),
-                );
-                reads.set(probeKey, probe);
-              }
-              return (await probe) as import("../../../skills/do-item/scripts/lib/tracker/port.ts").ChangeAnswer;
+                ),
+              );
             },
           }),
       configKey: `native-v1:${credential}`,

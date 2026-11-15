@@ -27,6 +27,18 @@ afterEach(() => {
     rmSync(directory, { recursive: true, force: true });
 });
 
+/** A gh runner whose every call answers an empty object; a hold would be a bug. */
+function emptyRestRunner() {
+  return traceGhRunner(
+    async () => ({ code: 0, stdout: "{}", stderr: "", timedOut: false }),
+    () => 10,
+    {},
+    () => {
+      throw new Error("unexpected hold");
+    },
+  );
+}
+
 describe("outbound transport cost accounting", () => {
   it("totals each named Linear operation from its cost header, including local refusals separately", async () => {
     const events: CallRecord[] = [];
@@ -133,14 +145,7 @@ describe("outbound transport cost accounting", () => {
     await withLedgerWriter(
       (event) => events.push(event),
       async () => {
-        const runner = traceGhRunner(
-          async () => ({ code: 0, stdout: "{}", stderr: "", timedOut: false }),
-          () => 10,
-          {},
-          () => {
-            throw new Error("unexpected hold");
-          },
-        );
+        const runner = emptyRestRunner();
         await runner([
           "api",
           "repos/private-owner/private-repo/issues/123?cursor=private-value",
@@ -156,6 +161,35 @@ describe("outbound transport cost accounting", () => {
       unit: "requests",
       estimated: true,
     });
+    expect(JSON.stringify(events)).not.toContain("private-");
+  });
+
+  it("attributes flag-first REST reads to their redacted route", async () => {
+    const events: CallRecord[] = [];
+    await withLedgerWriter(
+      (event) => events.push(event),
+      async () => {
+        const runner = emptyRestRunner();
+        await runner([
+          "api",
+          "--paginate",
+          "--slurp",
+          "repos/private-owner/private-repo/issues/123/comments",
+        ]);
+        await runner([
+          "api",
+          "-H",
+          "Accept: application/json",
+          "--method",
+          "GET",
+          "repos/private-owner/private-repo/pulls/123",
+        ]);
+      },
+    );
+    expect(events.map((e) => e.operation)).toEqual([
+      "GET /repos/{}/{}/issues/{}/comments",
+      "GET /repos/{}/{}/pulls/{}",
+    ]);
     expect(JSON.stringify(events)).not.toContain("private-");
   });
 

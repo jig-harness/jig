@@ -360,6 +360,28 @@ describe("Linear adapter: issue pickup", () => {
     ]);
   });
 
+  it("reads every child when the bounded issue page has more", async () => {
+    const child = issueNode.children.nodes[0] as Record<string, unknown>;
+    const { t, calls } = tracker((call) => {
+      if (call.query.includes("TrackerIssue("))
+        return { issue: { ...issueNode, children: page([child], "next") } };
+      return {
+        issue: {
+          children:
+            call.variables.after === null
+              ? page([child], "next")
+              : page([{ ...child, identifier: "ENG-3" }]),
+        },
+      };
+    });
+    expect(
+      (await t.getIssue("ENG-1"))?.children.map((c) => c.identifier),
+    ).toEqual(["ENG-2", "ENG-3"]);
+    expect(calls[0]?.query).toContain("children(first: 25)");
+    expect(calls[1]?.query).toContain("children(first: 25,");
+    expect(calls[2]?.variables.after).toBe("next");
+  });
+
   it("returns null for an issue the tracker does not have", async () => {
     const { t } = tracker(
       () => new LinearApiError("Entity not found", 200, "not-found"),
