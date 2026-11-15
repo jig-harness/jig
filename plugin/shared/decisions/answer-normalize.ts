@@ -13,10 +13,19 @@ export function normalizeAnswerText(text: string): string {
     .trimEnd();
 }
 
-/** Both names of the dispatcher's hold option match while earlier decisions stay open. */
-export function normalizeOptionName(text: string): string {
-  const normalized = normalizeAnswerText(text);
-  return normalized === "leave it to me"
-    ? normalizeAnswerText("I'll handle it — hide this card")
-    : normalized;
+/** Whether `answer` names `option`, including the dispatcher's retired hold spelling. */
+export function optionNameMatches(
+  option: { id?: string; name: string },
+  answer: string,
+): boolean {
+  const normalized = normalizeAnswerText(answer);
+  return (
+    normalizeAnswerText(option.name) === normalized ||
+    (option.id === "hold" &&
+      ((option.name === "I'll handle it — hide this card" &&
+        normalized === "leave it to me") ||
+        (option.name === "Leave it to me" &&
+          normalized ===
+            normalizeAnswerText("I'll handle it — hide this card"))))
+  );
 }

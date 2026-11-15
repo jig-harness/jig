@@ -13,7 +13,7 @@
  * count as a choice (`freeChoiceFault`).
  */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { normalizeOptionName } from "../../shared/decisions/answer-normalize.ts";
+import { optionNameMatches } from "../../shared/decisions/answer-normalize.ts";
 import { answerTextFault } from "../../shared/decisions/answer-text.ts";
 import { optionDetails } from "../../shared/decisions/model.ts";
 import type { ParkedOption } from "../../shared/decisions/park.ts";
@@ -114,10 +114,7 @@ function optionOf(
   const matches =
     form.kind === "approve"
       ? options.filter((o) => o.id === recommended)
-      : options.filter(
-          (o) =>
-            normalizeOptionName(o.name) === normalizeOptionName(form.option),
-        );
+      : options.filter((o) => optionNameMatches(o, form.option));
   const option = matches.length === 1 ? matches[0] : undefined;
   if (option === undefined)
     return refusedHere(

@@ -37,9 +37,22 @@ test("hold tells the person the work stays undone and accepts both labels", () =
     )?.option.id,
   ).toBe("hold");
   expect(
-    choiceInText(`choose ${HOLD}`, [{ name: "Leave it to me" }], () => false)
-      ?.option.name,
+    choiceInText(
+      `choose ${HOLD}`,
+      [{ id: "hold", name: "Leave it to me" }],
+      () => false,
+    )?.option.name,
   ).toBe("Leave it to me");
+  expect(
+    choiceInText(
+      "choose Leave it to me",
+      [
+        { id: "leave", name: "Leave it to me" },
+        { id: "hide", name: HOLD },
+      ],
+      () => false,
+    )?.option.id,
+  ).toBe("leave");
 });
 test("station cards target the comment reader's issue or pull request", () => {
   for (const [on, url, pr] of [

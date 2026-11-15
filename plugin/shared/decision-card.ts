@@ -17,7 +17,7 @@ import { listedActOfClass } from "./acts.ts";
 import { splitAnswerDigest } from "./decisions/answer-digest.ts";
 import {
   normalizeAnswerText,
-  normalizeOptionName,
+  optionNameMatches,
 } from "./decisions/answer-normalize.ts";
 
 /** An option the card numbers: only whether it is the recommended one matters here. */
@@ -156,7 +156,7 @@ export function cardComment(
  * exactly one form, or names no single option, so it reads as free. The
  * drive's readers and the dashboard read an answer through this one function.
  */
-export function choiceInText<O extends { name: string }>(
+export function choiceInText<O extends { id?: string; name: string }>(
   text: string,
   options: readonly O[],
   isRecommended: (option: O) => boolean,
@@ -172,11 +172,7 @@ export function choiceInText<O extends { name: string }>(
   const matches =
     form === "approve"
       ? options.filter(isRecommended)
-      : options.filter(
-          (o) =>
-            normalizeOptionName(o.name) ===
-            normalizeOptionName(normalized.slice(7)),
-        );
+      : options.filter((o) => optionNameMatches(o, normalized.slice(7)));
   const [option] = matches;
   return matches.length === 1 && option !== undefined ? { option, form } : null;
 }

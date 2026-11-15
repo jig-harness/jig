@@ -158,8 +158,10 @@ export function usePicking(
 
   const setText = (index: number, field: Field, text: string) => {
     const row = need.rows[index];
-    if (row !== undefined)
+    if (row !== undefined) {
       update(index, withText(row, keptNow(index), field, text, Date.now()));
+      setArmed(null);
+    }
   };
 
   /** What to commit now, or `null` when a row holds it back, nothing is picked to send, or its first step is still to show. */
