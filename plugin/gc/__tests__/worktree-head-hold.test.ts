@@ -111,6 +111,20 @@ describe("holding a worktree's head", () => {
     expect(readFileSync(lock, "utf8")).toBe("another\n");
   });
 
+  test("a short write keeps the tree and removes the lock it created", async () => {
+    const { tree } = setup();
+    const seen = await identity(tree);
+    const held = await holdHead(tree, seen, () => 3);
+    expect(held).toMatchObject({
+      ok: false,
+      failure: {
+        code: "head-unheld",
+        reason: expect.stringContaining("wrote 3 of"),
+      },
+    });
+    expect(existsSync(join(seen.admin, "HEAD.lock"))).toBe(false);
+  });
+
   test("a release after the git directory went is a success", async () => {
     const { repo, tree } = setup();
     const seen = await identity(tree);

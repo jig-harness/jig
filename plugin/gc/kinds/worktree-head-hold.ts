@@ -58,6 +58,7 @@ function refusalUnder(store: string): string | null {
 export async function holdHead(
   path: string,
   identity: WorktreeIdentity,
+  write: (fd: number, token: string) => number = writeSync,
 ): Promise<Outcome<HeadHold, "head-unheld" | "git-failed">> {
   const store = await refStore(path);
   if (!store.ok) return store;
@@ -76,7 +77,12 @@ export async function holdHead(
   let fd: number | null = null;
   try {
     fd = openSync(lock, "wx");
-    writeSync(fd, token);
+    const written = write(fd, token);
+    if (written !== Buffer.byteLength(token))
+      return failed(
+        "head-unheld",
+        `kept: the worktree's HEAD cannot be held: wrote ${written} of ${Buffer.byteLength(token)} bytes to HEAD.lock${discard(lock, fd)}`,
+      );
     closeSync(fd);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -137,7 +143,7 @@ function discard(lock: string, fd: number): string {
 /**
  * The ref store git actually uses. `--show-ref-format` answers from the
  * repository's setup, which a worktree's own config cannot override; git
- * before 2.48 lacks it and reads the shared config instead.
+ * that predates it reads the shared config instead.
  */
 async function refStore(path: string): Promise<Outcome<string, "git-failed">> {
   const format = await git(path, ["rev-parse", "--show-ref-format"]);
