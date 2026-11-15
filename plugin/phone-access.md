@@ -357,15 +357,15 @@ claims it works until it has.
 
 | What was tested | Result |
 | --- | --- |
-| Front and version (`tailscale version`) | Not yet run |
-| Phone browser and version | Not yet run |
-| Ordinary-browser access to the HTTPS address, no token in it | Not yet run |
+| Front and version (`tailscale version`) | Passed, 2026-11-15: Tailscale Serve on Tailscale 1.104.7, `--https=8443`, tailnet only; the host's tailnet address no longer answers on the dashboard's own port |
+| Phone browser and version | Run, 2026-11-15, for the install check below; the browser's version was not recorded |
+| Ordinary-browser access to the HTTPS address, no token in it | Passed, 2026-11-15: `/` answers `200` through the front with no token in the address, and the phone opens it |
 | Refusal for a device or sign-in the front does not admit | Not yet run |
 | Forged identity header from a refused device | Not yet run |
-| `Host` allowlist: `200` for the front name, `403` for another | Not yet run |
+| `Host` allowlist: `200` for the front name, `403` for another | Passed, 2026-11-15: `200` through the front; a request with another `Host` on the loopback port answers `403` |
 | Existing Serve routes unchanged after setup and after undo | Not yet run |
 | QR code and text for the token-free address, scanned on the phone | Not yet run |
 | Reading a decision, copying a command and an answer line, opening the forge link | Not yet run |
 | Copy after the clipboard permission is refused | Not yet run |
-| Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Not yet run |
+| Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Passed, 2026-11-15: the page installs as an app on the phone from the HTTPS front; the manifest (`start_url` `/`, `display` `standalone`) and its 192, 512 and maskable 512 icons each answer `200` through the front |
 | Reverse-proxy path, with its product and version | Not yet run |
