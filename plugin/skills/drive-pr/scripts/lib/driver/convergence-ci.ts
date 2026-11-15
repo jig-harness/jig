@@ -61,7 +61,7 @@ function silentReleaseCause(
     : release.timedOut
       ? `did not finish within its ${ciHoldTimeoutSeconds()}s deadline and was stopped`
       : "printed no error: a process stopped from outside (a signal) ends this way, as does one that exits before it can report";
-  return `ci-hold.ts release ${ended}. The step that failed is removing the CI hold label from PR #${pr} at head ${head}. Run 'ci-hold.ts release ${pr} --expect-head ${head}' to see its error, check whether something outside the drive stopped it, then re-arm.`;
+  return `ci-hold.ts release ${ended}. The step that failed is removing the CI hold label from PR #${pr} at head ${head}. Run the release by hand ('ci-hold.ts release ${pr} --expect-head ${head}', which removes the label as this step would) to see its error, check whether something outside the drive stopped it, then re-arm.`;
 }
 
 export async function releaseAndReadFinalCi(
