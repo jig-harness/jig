@@ -109,7 +109,7 @@ export function recordHolder(r: ReadRecord, generation: number | null): Holder {
   };
 }
 
-/** An outcome row as the last launch. */
+/** An outcome row as the last launch, with its stage and what its closing report says. */
 export function lastOfRow(row: EndedRow): Last {
   return {
     class: row.class,
@@ -117,6 +117,21 @@ export function lastOfRow(row: EndedRow): Last {
     reason: row.reason,
     from: "outcome log",
     next: row.next ?? null,
+    stage: row.stage,
+    ...(row.by === undefined
+      ? {}
+      : {
+          report: {
+            by: row.by,
+            ...(row.concluded === undefined
+              ? {}
+              : { concluded: row.concluded }),
+            ...(row.suggested_next === undefined
+              ? {}
+              : { suggested_next: row.suggested_next }),
+            ...(row.cause === undefined ? {} : { cause: row.cause }),
+          },
+        }),
   };
 }
 

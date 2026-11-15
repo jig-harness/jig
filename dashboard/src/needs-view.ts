@@ -61,6 +61,8 @@ export interface NeedView {
   recorded: string;
   classNote: string;
   question: string | null;
+  /** What the run the need is about concluded, from its closing report, beside the question as context; `null` without one. */
+  concluded: string | null;
   recommendation: string | null;
   /** The whole decision as Markdown; `null` when the record holds none. */
   decision: string | null;
@@ -212,6 +214,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
         ? ""
         : `${named === null ? "" : `, class ${named}`}, ${first.kind}`,
     question: question ?? n.reason,
+    concluded: n.concluded ?? null,
     // A record whose recommended option reads in full shows that option instead.
     recommendation:
       recommendation === null || recommended !== null

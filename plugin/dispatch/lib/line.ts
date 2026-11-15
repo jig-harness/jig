@@ -394,6 +394,12 @@ function aggregateNotification(
   return outcomes[0];
 }
 
+/** What the need's run concluded, from its closing report; nothing when it left none. */
+function concludedOf(action: Action): { concluded?: string } {
+  const concluded = text(action.evidence, "concluded");
+  return concluded === null ? {} : { concluded };
+}
+
 function needsOf(
   view: RepoView,
   nowIso: string,
@@ -437,6 +443,7 @@ function needsOf(
       question:
         text(action.evidence, "stewardAsk") ??
         text(action.evidence, "question"),
+      ...concludedOf(action),
       decisions,
       notified:
         notification === undefined

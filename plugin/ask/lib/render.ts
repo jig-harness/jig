@@ -64,6 +64,30 @@ function lastLine(last: Last | null): string {
     : `${last.class} at ${last.at}: ${last.reason} (from the ${last.from})`;
 }
 
+/** The *Last run* line: the stage, when it ended, what it concluded and the next step it suggests. */
+function lastRunLine(last: Last, station: string): string {
+  const head = `${last.stage ?? station}, ended ${last.at}`;
+  const report = last.report;
+  if (report === undefined)
+    return last.from === "launch claim"
+      ? `${head}: its closing report stays on the host that ran it`
+      : `${head}: no closing report was kept`;
+  if (report.by === "none") return `${head}: ended without a report`;
+  const next = report.suggested_next;
+  const owner =
+    next === undefined
+      ? ""
+      : next.owner === "person" && next.act !== undefined
+        ? `person, ${next.act}`
+        : next.owner;
+  return [
+    `${head}: ${report.concluded ?? "concluded nothing"}`,
+    next === undefined ? null : `suggested next: ${next.step} (${owner})`,
+  ]
+    .filter((p): p is string => p !== null)
+    .join(" · ");
+}
+
 function sourceLine(s: SourceRead): string {
   const where = s.local === true ? " (this machine)" : "";
   return `${s.record}${where}: ${s.read ? "read" : "not read"}${s.detail === undefined ? "" : ` (${s.detail})`}`;
@@ -113,6 +137,9 @@ export function renderAnswer(a: AskAnswer): string {
       : field("last.next", [
           a.last.next == null ? "not recorded" : nextText(a.last.next),
         ])),
+    ...(a.last === null
+      ? []
+      : field("last.run", [lastRunLine(a.last, a.station)])),
     ...field("sources", [
       ...a.sources.records.map(sourceLine),
       `forge calls ${a.sources.forgeCalls}, tracker calls ${a.sources.trackerCalls}`,

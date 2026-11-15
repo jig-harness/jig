@@ -103,11 +103,19 @@ function AnswerNotes({ need }: { need: NeedView }) {
   );
 }
 
+/** What the need's run concluded, from its closing report, as context for its question. */
+function Concluded({ need }: { need: NeedView }) {
+  return need.concluded === null ? null : (
+    <p className="sm mut concluded">The run concluded: {need.concluded}</p>
+  );
+}
+
 /** What a card with no decision to pick says first, after its act: the ask, the recommended option with what it changes and costs, and who it waits on. */
 function NeedAsk({ need }: { need: NeedView }) {
   return (
     <>
       {need.question === null ? null : <p className="q">{need.question}</p>}
+      <Concluded need={need} />
       {need.recommended === null ? null : (
         <p className="sm rec">
           Recommended: <OptionText option={need.recommended} />
@@ -196,6 +204,7 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
       <ItemTitle title={need.title} />
       {picks ? (
         <>
+          <Concluded need={need} />
           <DecisionRows need={need} picking={picking} />
           <AnswerNotes need={need} />
           <WaitsOn need={need} />

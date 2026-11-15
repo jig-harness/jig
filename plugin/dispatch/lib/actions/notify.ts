@@ -33,6 +33,11 @@
  *   past `failures.notify_after` lost deliveries in a row it is notified as
  *   failing, through whatever channel still delivers.
  *
+ * - **The destination's read state, every tick.** Before it delivers, the
+ *   stage records one `notices_read` event with the notices workspace's
+ *   read state (`notices-read.ts`), which the stage's retirement measure
+ *   reads.
+ *
  * The answer to a park stays a comment on the pull request (`answer <key>:
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
  * through the notification.
@@ -66,6 +71,7 @@ import {
   type Suppression,
 } from "../notice-records.ts";
 import { unobservedTarget } from "../notices.ts";
+import { logNoticesRead } from "../notices-read.ts";
 import {
   NO_ROOM,
   openCard,
@@ -409,6 +415,8 @@ export async function applyNotices(
   settings: NoticeSettings,
 ): Promise<void> {
   const root = state.root ?? stateRoot();
+  // The destination's read state as this tick found it, before any notice of its own marks it unread.
+  logNoticesRead(repo.slug, sessions, settings.branch, currentIso(), root);
   openCard(repo, sessions, root);
   // `standing` is read when the card writes, after the tick has named its causes.
   const card = orcaCard(

@@ -61,6 +61,11 @@
  * that is notified, with its age and whose claim it is, and never released
  * a second time, since a follow-up that stalls twice wants a person.
  */
+import {
+  reportEvidence,
+  reportFramed,
+  reportQuestion,
+} from "./report-needs.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
 import type { FollowupRelease } from "./followup-releases.ts";
@@ -459,7 +464,14 @@ function failedTick(
   const id = marker.run.record;
   const outcome = input.outcomes.get(pr.number);
   const kept = outcome?.record === id ? outcome : undefined;
-  const question = ended ? questionFor(found, kept) : null;
+  const stoppedOn = ended ? questionFor(found, kept) : null;
+  // A pass whose result the host could not write wrote no report a person reads.
+  const report =
+    ended && found !== undefined && !unwrittenResult(found)
+      ? found.report
+      : null;
+  const question =
+    stoppedOn === null ? null : reportQuestion(report, stoppedOn);
   const asked =
     question === null ? "" : `, on a question for a person: ${question}`;
   const again = againWords(found, kept);
@@ -468,7 +480,9 @@ function failedTick(
     : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
   const action = failed(input, pr, marker, why, ended, question);
   action.evidence.record = id;
-  if (ended && found?.framed !== undefined) action.framed = found.framed;
+  Object.assign(action.evidence, reportEvidence(report));
+  const framed = ended ? reportFramed(found?.framed, report) : undefined;
+  if (framed !== undefined) action.framed = framed;
   return action;
 }
 

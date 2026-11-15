@@ -152,6 +152,8 @@ const ENTRY_FIELDS = {
     reason: isString,
     question: (value) =>
       value === undefined || value === null || isString(value),
+    concluded: (value) =>
+      value === undefined || value === null || isString(value),
     decisions: listOf(DECISION_FIELDS),
     workspaces: Array.isArray,
     workspace: (value) =>
