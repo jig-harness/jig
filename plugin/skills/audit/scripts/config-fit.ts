@@ -1233,8 +1233,7 @@ function legacyFields(findings: Finding[]): Finding[] {
 
 /**
  * `.context/` not ignored by git. A drive keeps working files there and
- * excludes it in its own clone, but every other clone, and a round worked
- * without the drive, still reads those files as untracked.
+ * excludes it only in its own clone; elsewhere they read as untracked.
  */
 function contextDirFindings(root: string): Finding[] {
   const probe = run("git", ["check-ignore", "-q", ".context/jig-probe"], {
