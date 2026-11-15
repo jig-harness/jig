@@ -292,6 +292,19 @@ describe("launch-time recheck of a pulled blocker", () => {
 describe("an assigned epic's children", () => {
   const kids = (...keys: string[]) => keys.map((k) => issue(k, [], null));
 
+  const parallelPlan = () =>
+    "## Execution Plan\n" +
+    renderExecutionPlan({
+      epic: "#1",
+      intent: "deliver",
+      steps: [
+        { issue: "#2", band: 1, lane: "a", gate: "agent" },
+        { issue: "#3", band: 1, lane: "b", gate: "agent" },
+      ],
+      edges: [],
+      gates: [],
+    });
+
   const one = { epicWidth: 1 };
 
   it("starts ready children up to the epic's width when it has no execution plan", async () => {
@@ -661,22 +674,10 @@ describe("an assigned epic's children", () => {
   }
 
   it("reports a rate limit from a later child of a planned epic beside an earlier ordinary failure", async () => {
-    const description =
-      "## Execution Plan\n" +
-      renderExecutionPlan({
-        epic: "#1",
-        intent: "deliver",
-        steps: [
-          { issue: "#2", band: 1, lane: "a", gate: "agent" },
-          { issue: "#3", band: 1, lane: "b", gate: "agent" },
-        ],
-        edges: [],
-        gates: [],
-      });
     const read = await world({
       assigned: [issue("#1", ["epic"])],
       children: { "#1": kids("#2", "#3") },
-      descriptions: { "#1": description },
+      descriptions: { "#1": parallelPlan() },
       failing: ["#2"],
       limiting: ["#3"],
       slow: ["#3"],
@@ -739,22 +740,10 @@ describe("an assigned epic's children", () => {
   });
 
   it("keeps an execution plan's own order and parallelism", async () => {
-    const description =
-      "## Execution Plan\n" +
-      renderExecutionPlan({
-        epic: "#1",
-        intent: "deliver",
-        steps: [
-          { issue: "#2", band: 1, lane: "a", gate: "agent" },
-          { issue: "#3", band: 1, lane: "b", gate: "agent" },
-        ],
-        edges: [],
-        gates: [],
-      });
     const read = await world({
       assigned: [issue("#1", ["epic"])],
       children: { "#1": kids("#2", "#3") },
-      descriptions: { "#1": description },
+      descriptions: { "#1": parallelPlan() },
     }).read();
     expect(read.wanted.map((i) => i.key).sort()).toEqual(["#2", "#3"]);
   });
