@@ -1,4 +1,5 @@
 import { definedFields } from "./defined-fields.ts";
+import { validatorCache } from "./outbound/cache.ts";
 /**
  * Cheap reads for polling loops.
  *
@@ -290,17 +291,12 @@ export function createConditionalCache({
       const etag = probeBaselines.get(file);
       if (etag !== undefined) cached = { etag, body: "" };
     } else if (file !== null) {
-      const e = readJsonFile(file);
-      if (
-        e !== null &&
-        e.v === ENTRY_VERSION &&
-        e.path === request &&
-        typeof e.etag === "string" &&
-        e.etag !== "" &&
-        typeof e.body === "string"
-      ) {
-        cached = { etag: e.etag, body: e.body };
-      }
+      cached = validatorCache({
+        get: readJsonFile,
+        set: (key, value) => {
+          if (dir !== null) writeJsonFile(dir, key, value);
+        },
+      }).get(file, request);
     }
 
     const left = budgetLeftSec(ctx, startMs);
@@ -343,12 +339,10 @@ export function createConditionalCache({
         if (parsed.etag !== "") probeBaselines.set(file, parsed.etag);
         else probeBaselines.delete(file);
       } else if (file !== null && dir !== null && parsed.etag !== "") {
-        writeJsonFile(dir, file, {
-          v: ENTRY_VERSION,
-          path: request,
-          etag: parsed.etag,
-          body: parsed.body,
-        });
+        validatorCache({
+          get: readJsonFile,
+          set: (key, value) => writeJsonFile(dir, key, value),
+        }).set(file, request, parsed.etag, parsed.body);
       }
       return { ok: true, changed: true, body: parsed.body };
     }

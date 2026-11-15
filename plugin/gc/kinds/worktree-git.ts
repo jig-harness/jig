@@ -186,6 +186,15 @@ async function lookupTarget(
   return ok({ repository: repository.value, deadline: deadline.value });
 }
 
+/** The deadline remains visible alongside any diagnostic the forge printed. */
+function lookupError(result: { timedOut?: boolean; stderr: string }): string {
+  const diagnostic = result.stderr.trim();
+  const reason = result.timedOut
+    ? `pull request lookup exceeded its deadline${diagnostic ? `: ${diagnostic}` : ""}`
+    : diagnostic;
+  return `Forge inventory unavailable: ${reason}`;
+}
+
 export async function requests(
   root: string,
   remote: string,
@@ -213,10 +222,7 @@ export async function requests(
     { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   if (result.code !== 0)
-    return failed(
-      "forge-unavailable",
-      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
-    );
+    return failed("forge-unavailable", lookupError(result));
   const values: unknown = JSON.parse(result.stdout);
   if (!Array.isArray(values) || values.length >= 200)
     return failed("incomplete", "Pull request inventory is incomplete");
@@ -257,10 +263,7 @@ export async function requestByNumber(
     { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   if (result.code !== 0)
-    return failed(
-      "forge-unavailable",
-      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
-    );
+    return failed("forge-unavailable", lookupError(result));
   const matched = request(
     JSON.parse(result.stdout),
     repository.slice(repository.indexOf("/") + 1),
@@ -348,10 +351,7 @@ export async function requestsForCommit(
   )
     return ok([]);
   if (result.code !== 0)
-    return failed(
-      "forge-unavailable",
-      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
-    );
+    return failed("forge-unavailable", lookupError(result));
   let values: unknown;
   try {
     values = JSON.parse(result.stdout);

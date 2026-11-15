@@ -300,10 +300,6 @@ was sent: the caller reads the item again before it writes again.
 
 One pull request per remaining step.
 
-- **Reuse.** Move the existing queue snapshots and assignment caches into
-   `cache`, `coalesce` and `batch`. The remaining reads adopt the library:
-   the deferral script's tracker calls through the adapter, and the nested
-   page sizes of the issue and ledger queries.
 - **The gates and the lens.**
 
 ## Left out

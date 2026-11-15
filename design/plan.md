@@ -288,9 +288,6 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **Reuse**: answers cached by update time or the system's validator,
-  identical reads in a run sent once and reads by key in one request,
-  through the shared library that the existing queue snapshots adopt.
 - **Gates and a review lens**: no call leaves by another door than a
   transport, no query selects a list without a page size or passes its
   declared cost ceiling, and a change to an integration is reviewed
