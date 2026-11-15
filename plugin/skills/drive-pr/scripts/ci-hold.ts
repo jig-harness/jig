@@ -640,7 +640,9 @@ async function release(
     !ownsHeldTransition(persisted, latestOf(beforeTimeline))
   )
     return 4;
-  const watermark = await headWatermark(head, "before the unlabel");
+  const watermarkRead = await headWatermark(head, "before the unlabel");
+  if (!watermarkRead.ok) return unread(watermarkRead.failure);
+  const watermark = watermarkRead.value;
   if (watermark === null) {
     console.error(
       "ci-hold: no check run is registered on this head yet; retrying later",

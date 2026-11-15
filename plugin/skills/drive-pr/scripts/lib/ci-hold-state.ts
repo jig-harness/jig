@@ -24,7 +24,7 @@ import {
   ok,
   type Outcome,
 } from "../../../../shared/outcome.ts";
-import { fail, isGitSha } from "./cli.ts";
+import { isGitSha } from "./cli.ts";
 import { ghCall } from "./proc.ts";
 import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
@@ -144,18 +144,28 @@ export async function checkRuns(head: string): Promise<CheckRunLite[] | null> {
 }
 
 /**
- * The highest check-run id on `head`; exits 1 when the runs cannot be read,
- * and answers `null` when they were read and none is registered yet (the
- * caller waits: a zero watermark is never recorded for a drive release).
+ * The highest check-run id on `head`. An unreadable forge answer remains
+ * distinct from malformed evidence so a caller immediately before a mutation
+ * can retry transport failures without treating them as a corrupt proof.
+ * A successful `null` means no run is registered yet; the caller waits, and
+ * never records a zero watermark for a drive release.
  */
 export async function headWatermark(
   head: string,
   why: string,
-): Promise<number | null> {
+): Promise<Outcome<number | null, HoldReadFailure["code"]>> {
+  if (!isGitSha(head))
+    return failed(
+      "malformed",
+      `cannot establish the check-run watermark ${why}: the head is not a SHA`,
+    );
   const runs = await checkRuns(head);
-  if (runs === null || !isGitSha(head))
-    fail(1, `ci-hold: cannot establish the check-run watermark ${why}`);
-  return checkRunWatermark(runs, head);
+  if (runs === null)
+    return failed(
+      "unreadable",
+      `cannot establish the check-run watermark ${why}`,
+    );
+  return ok(checkRunWatermark(runs, head));
 }
 
 /**

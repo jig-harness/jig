@@ -1645,8 +1645,9 @@ false "green":
   job stays unknown when the replacing run reports its name as skipped. A
   failed job in a cancelled run still counts as failing, regardless of when it
   started; when every failing check is such a job, with no failing commit
-  status beside them, the drive takes the same once-per-head recovery before
-  any retry or repair (`lib/driver/ci-recovery.ts`). A run being re-run owes its unsuccessful jobs' results until it
+  status beside them, and at least one cancelled job still lacks a replacement,
+  the drive takes the same once-per-head recovery before any retry or repair
+  (`lib/driver/ci-recovery.ts`). A run being re-run owes its unsuccessful jobs' results until it
   completes; another run's success never discharges that obligation. With the
   workflow runs unreadable nothing is dropped: a cancelled check stays unknown
   and a failed one fails.

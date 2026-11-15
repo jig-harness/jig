@@ -4,6 +4,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
+import { headWatermark } from "../scripts/lib/ci-hold-state.ts";
 import {
   ciHoldTransitions,
   completedHoldPrecondition,
@@ -72,6 +73,25 @@ esac
 }
 
 describe("ci:hold evidence", () => {
+  it("keeps an unreadable final watermark distinct from malformed evidence", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ci-hold-watermark-read-"));
+    const previousPath = process.env.PATH;
+    try {
+      writeFakeProgram(
+        join(dir, "gh"),
+        "#!/bin/sh\necho temporary forge failure >&2\nexit 75\n",
+      );
+      process.env.PATH = `${dir}${delimiter}${previousPath ?? ""}`;
+      const result = await headWatermark(HEAD, "before the unlabel");
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.failure.code).toBe("unreadable");
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("the fake gh requires the snapshot field projection", () => {
     const dir = mkdtempSync(join(tmpdir(), "ci-hold-gh-projection-"));
     try {
