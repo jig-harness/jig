@@ -268,6 +268,38 @@ fifty at a time is read on every tick; a steady tick with nothing changed
 sends one tracker request per team; and both gates run in
 `bun run gates`, their counts of calls that predate the rule only falling.
 
+### 57. Overlap-aware admission: each item's footprint weighed against all work in flight
+
+The dispatcher starts work when a slot is free without telling work that
+will collide from work that will not, inside an epic or across epics. A
+plan-less epic's children are bounded only by a fixed width per epic
+(#1178), and admission ignores how many validation runs the host can
+finish: on 2026-11-14, with about 25 passes in flight, the machine-wide test
+lock ran validation one suite at a time and six passes ran out their time
+waiting for it. [design/overlap-aware-admission.md](overlap-aware-admission.md)
+has how it works: a footprint record on each item (the paths it is expected
+to touch, written by the pickup, a scout, the planner or `file-issue`),
+every open pull request's changed files read through the forge's governed
+transport, an overlap cost in expected conflict-resolution rounds that
+orders colliding work behind work that does not collide without ever
+leaving a slot idle, an overlap bound per file that replaces the per-epic
+width and, like the cost, only orders, merge evidence that releases a plan's conflict edges (#725),
+validation capacity as a gauge of the load factor, and the reason shown for
+each item that waits. What it will build, one pull request per step, is the
+design's build order: the record, its writers, conflict-edge evidence, the
+changed-files read, conflict rates from `history.ts`, overlap reported,
+serialized areas holding pickups, validation capacity, then overlap
+admission. The steps are filed once the
+design merges.
+
+Done when, on a dispatch host over a week with `load.enforce` on: no pass
+times out waiting for the test lock; every item that waits names its reason: overlap, the overlap
+bound, a declared hold or serialized area with the work it waits on, or
+validation capacity or another capacity or account wait of the load
+factor; the per-epic width key is gone; and the share of merged pull
+requests that met a conflict, from M11's metric, is no higher than in the
+week before overlap admission.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The merge is the one stage of the execution line that stays a person's, and
@@ -467,6 +499,27 @@ decision, and an answer to a decision the tick framed has its step carried
 out once, or refused with why; and `jig dispatch log` reports, per
 class, how many parks were approved as recommended and how long they
 waited.
+
+### 58. Declared priorities, a progress review and the overview
+
+A person sees individual failures without seeing whether their goals are
+advancing. [The design](priorities-and-overview.md) defines one priorities record
+at site, repository and individual levels. A reproducible shortlist carries
+each epic's rank to its children. A progress review proposes systematic fixes
+and never acts, and an overview joins the facts inside the existing dashboard.
+Urgent issues stay visible, assigned bugs retain their priority, and a
+minimum share keeps peripheral goals moving. The overview pairs each issue
+with its pull request and shows the decisions owed, with confirmed actions
+made by the person's browser, phone unlock and no phone merge.
+
+The person reviews the design before implementation. Build the record and
+ranker, then trial the progress review on Jig and a consumer repository,
+then the overview after its visual design round. Browser actions wait for
+the browser write path to merge and for device probes; site-level records arrive with
+the optional hub. Done when equal input snapshots reproduce the shortlist
+and every Urgent issue appears in each review. The overview must explain
+progress and waiting from structured facts, and browser actions must preserve
+the person's authority. The trial precedes new M9 audit criteria.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
