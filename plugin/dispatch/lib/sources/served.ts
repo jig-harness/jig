@@ -831,8 +831,13 @@ async function childStates(
           }),
     ),
   );
-  const wall = settledInfos.find((r) => r.status === "rejected");
-  if (wall?.status === "rejected") return Promise.reject(wall.reason);
+  // A rate limit outranks an ordinary failure, whichever child rejected first:
+  // only the limit carries the reset time the walk must stop on.
+  const rejected = settledInfos.filter(
+    (r): r is PromiseRejectedResult => r.status === "rejected",
+  );
+  const wall = rejected.find((r) => isRateLimited(r.reason)) ?? rejected.at(0);
+  if (wall !== undefined) return Promise.reject(wall.reason);
   const infos = settledInfos.map((r) =>
     r.status === "fulfilled" ? r.value : null,
   );

@@ -654,6 +654,30 @@ describe("an assigned epic's children", () => {
     expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
   });
 
+  it("reports a rate limit from a later child of a planned epic beside an earlier ordinary failure", async () => {
+    const description =
+      "## Execution Plan\n" +
+      renderExecutionPlan({
+        epic: "#1",
+        intent: "deliver",
+        steps: [
+          { issue: "#2", band: 1, lane: "a", gate: "agent" },
+          { issue: "#3", band: 1, lane: "b", gate: "agent" },
+        ],
+        edges: [],
+        gates: [],
+      });
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3") },
+      descriptions: { "#1": description },
+      failing: ["#2"],
+      limiting: ["#3"],
+      slow: ["#3"],
+    }).read({ epicWidth: 2 });
+    expect(read.limitedUntil).toBeDefined();
+  });
+
   it("keeps an epic working while its started child cannot be read", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
