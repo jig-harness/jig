@@ -396,6 +396,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.248.2] - 2026-11-15
+
+### Fixed
+
+- Worktree collection keeps the forge diagnostic when a pull request lookup
+  exceeds its deadline, alongside the deadline reason. The configuration guide
+  links to one definition of the lookup timeout, and lookup tests remove their
+  scratch directories. **Consumer action:** none.
+
 ## [0.248.1] - 2026-11-15
 
 ### Changed
@@ -8740,7 +8749,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.248.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.248.2...HEAD
+[0.248.2]: https://github.com/jig-harness/jig/compare/v0.248.1...v0.248.2
 [0.248.1]: https://github.com/jig-harness/jig/compare/v0.248.0...v0.248.1
 [0.248.0]: https://github.com/jig-harness/jig/compare/v0.247.2...v0.248.0
 [0.247.2]: https://github.com/jig-harness/jig/compare/v0.247.1...v0.247.2
