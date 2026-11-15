@@ -1463,6 +1463,12 @@ make, use the entry's term instead.
 - **Attested class** — a *decision class* whose answers count only with
   proof that a person, not a pass posting under their login, gave them
   ([design](design/structured-answers.md#who-may-answer)).
+- **Pass trust boundary** — the planned mechanisms that tell a comment an
+  agent's pass posts under a person's login from the person's own, so an
+  answer or an act can count as the person's on proof rather than on the
+  login alone. Until it lands, an act from the dashboard's page is trusted
+  as `jig send` from the person's terminal is
+  ([plan item 40](design/plan.md#40-the-pass-trust-boundary-as-mechanisms)).
 - **Autonomy level** — how far an agent may decide without asking a person:
   `attended`, the default, `unattended`, or `wide`, which also takes
   *provisional decisions*. A repository sets it and caps it with its
@@ -1599,6 +1605,12 @@ make, use the entry's term instead.
   done) or *not owed* (with the evidence that settled it). "Nothing found" is
   not evidence
   ([M7](modules/M7-pr-lifecycle-review/README.md#core-pieces)).
+- **Ops-pending** — the tracker state a merged item waits in while a step a
+  person performs outside the code (a setting, a host change, a live check)
+  is still owed. The *post-merge stage* moves a merged item there instead
+  of to done when it carries the manual-operations label, or when the
+  repository's last post-merge state stops there
+  ([`do_item.post_merge_state`](plugin/CONFIGURATION.md#do_item)).
 - **Declared verdict** — the resolution state written by the author, in a
   machine-readable form anchored to a fixed position in the reply, at the moment
   of replying — rather than reconstructed later from the thread's prose.
@@ -2432,6 +2444,23 @@ make, use the entry's term instead.
   or an *SSH* tunnel, does the same job. A front never publishes
   to the open internet, and it does not let the dashboard write. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
+- **WebAuthn** — the browser standard for asking a credential on a device or
+  security key to authenticate a person. Local verification can require the
+  device's unlock; it does not prove to Jig that a forge comment came from
+  a person rather than a pass. See [the phone unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **PRF extension** — WebAuthn's pseudo-random function extension: a supported
+  credential returns secret bytes bound to that credential and the supplied
+  input. The proposed browser unlock derives a wrapping key from those bytes
+  to protect a stored token. Support must be checked with the actual credential.
+  See [the phone unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **HKDF** — HMAC-based key derivation function, a standard way to derive a
+  cryptographic key from secret input with a separate purpose and salt.
+  The proposed browser unlock derives a wrapping key from a credential's
+  PRF output. See [the unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **AES-GCM** — Advanced Encryption Standard in Galois/Counter Mode, an
+  encryption scheme that also detects changed ciphertext. Each encryption
+  under a key needs a fresh nonce, a value used only once.
+  See [the unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
 - **Hub** — Jig's *shared control plane*: `jig hub serve`, one process with
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
@@ -2675,6 +2704,32 @@ make, use the entry's term instead.
   never takes the last unit of room, so the drives that turn earlier work
   into merges keep running. It reports what it would hold before a person
   turns the limit on ([load factor](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+- **Footprint** — the paths an issue is expected to touch, predicted
+  before the work starts and kept as a record on the issue, with who
+  predicted it: the pickup once it has read the code, a scout, the planner,
+  or the filing of the issue from a diff. The *dispatcher*
+  compares it with the files of open pull requests to tell work that will
+  collide from work that will not
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-footprint-record)).
+- **Overlap cost** — the conflict-resolution rounds starting an issue is
+  expected to bring, from the paths its *footprint* shares with the work in
+  flight and how often merges of those paths conflicted. The *dispatcher*
+  starts work with no overlap first and colliding work when capacity is
+  left, so overlap orders work and never leaves a slot unused
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-cost)).
+- **Overlap bound** — how many pieces of work in flight may change one file
+  before the *dispatcher* puts more work on that file behind everything
+  else that is ready. It replaces the width per epic, applies across all
+  work, and like the *overlap cost* only orders: work over the bound still
+  starts when nothing else can take a free slot
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-bound)).
+- **Validation capacity** — how many validation runs a host can finish
+  within the time a pass can wait for its turn: the runs the machine-wide
+  test lock lets through at once, times that wait, divided by how long one
+  run takes. The runs still to come from the passes already started count
+  against it. A gauge of the *load factor*, so the *dispatcher* starts no
+  more passes than the host can test in time
+  ([overlap-aware admission](design/overlap-aware-admission.md#validation-capacity)).
 - **Served person** — a person a *dispatcher*'s host works for, named with
   their forge logins and tracker identities in the host's own dispatch
   file. An open item a person with write access assigned to them, and each
@@ -2706,6 +2761,31 @@ make, use the entry's term instead.
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
+- **Priorities record** — the proposed versioned declaration of objectives,
+  purposes, end states, owners and capacity shares or limits at site,
+  repository or individual level. A mechanical ranker reads it with a tracker
+  snapshot to propose a reproducible shortlist; a person picks from it.
+  See [the design](design/priorities-and-overview.md).
+- **File draft** — the proposed record of an issue a progress review
+  suggests, prepared through the filing skill's checks (type, priority,
+  duplicates, scope) and kept with their evidence and age. It is not an issue
+  and reserves no tracker key; a person's File act rechecks it and only then
+  creates the issue as themselves
+  ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
+- **Steward approval** — the proposed record of a person's approval or refusal
+  of one steward proposal, pinned to the proposal id and its digest and target
+  revisions. It carries no authority beyond the tick's own guards: the tick
+  re-reads them before it applies anything, and a stale proposal is refused
+  ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
+- **Allocation owner** — the first objective matching an item at a priorities
+  level. That objective alone counts the item's start for capacity and the
+  peripheral floor; other matching objectives show it for reporting only.
+  See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
+- **Progress review** — the proposed scheduled or on-demand pass that reads
+  declared objectives, tracker progress and the line's records, and proposes
+  findings and systematic fixes across items. It never picks, starts,
+  answers, re-ranks or files; the steward keeps individual stopped items.
+  See [the design](design/priorities-and-overview.md#progress-review-proposals-after-mechanical-facts).
 - **Need class** — a *need* is one thing the *dispatcher* hands a person,
   shown on the dashboard's What needs you. Its class is the kind of wait it
   is (a spent CI repair, a stalled pickup, a blocked release, a host
