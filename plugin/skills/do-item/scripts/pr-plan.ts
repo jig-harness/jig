@@ -99,6 +99,7 @@ import {
   uncountedNote,
 } from "./lib/change-size.ts";
 import { prDiffContext, type Signal } from "./lib/pr-diff-context.ts";
+import { lookup } from "../../../shared/rule-matcher.ts";
 import { linkKeyFor } from "./lib/link-key.ts";
 import { trackerConfigFrom } from "./lib/tracker/config.ts";
 import {
@@ -192,16 +193,18 @@ export function issueSignals(
   policy: Pick<PrPolicy, "labelsFromIssue" | "reviewersFromIssue">,
   issueLabels: readonly string[],
 ): { labels: Signal[]; reviewers: Signal[] } {
-  const labels: Signal[] = [];
-  const reviewers: Signal[] = [];
-  for (const label of issueLabels) {
-    const key = label.toLowerCase();
-    const from = `issue label ${label}`;
-    const mapped = policy.labelsFromIssue.get(key);
-    if (mapped !== undefined) labels.push({ value: mapped, from });
-    for (const value of policy.reviewersFromIssue.get(key) ?? [])
-      reviewers.push({ value, from });
-  }
+  const facts = { labels: issueLabels };
+  const from = (m: { value: string }) => `issue label ${m.value}`;
+  const labels: Signal[] = lookup(
+    "pull_requests.labels_from_issue",
+    policy.labelsFromIssue,
+    facts,
+  ).map((m) => ({ value: m.result, from: from(m) }));
+  const reviewers: Signal[] = lookup(
+    "pull_requests.reviewers_from_issue",
+    policy.reviewersFromIssue,
+    facts,
+  ).flatMap((m) => m.result.map((value) => ({ value, from: from(m) })));
   return { labels, reviewers };
 }
 
@@ -303,7 +306,7 @@ async function planSignals(
   const fromIssue = issueSignals(policy, issueLabels ?? []);
   if (
     issueLabels === null &&
-    (policy.labelsFromIssue.size > 0 || policy.reviewersFromIssue.size > 0)
+    (policy.labelsFromIssue.length > 0 || policy.reviewersFromIssue.length > 0)
   )
     warnings.push(
       "pull_requests.labels_from_issue or reviewers_from_issue is set, but the issue's labels were not read: pass --issue-json <the issue JSON> so the plan adds what they map to",

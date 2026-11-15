@@ -211,7 +211,10 @@ describe("parseGuidance", () => {
       { guidance: [{ labels: ["x"], skill: "a" }] },
       /guidance\[0\]\.skill is not a known field/,
     ],
-    [{ guidance: [{ labels: "x", notes: "n" }] }, /labels must be a list/],
+    [
+      { guidance: [{ labels: "x", notes: "n" }] },
+      /labels must be a nonempty list/,
+    ],
     [{ guidance: [{ paths: ["src/{a,b"], notes: "n" }] }, /does not compile/],
     [
       { guidance: [{ labels: ["x"], notes: "" }] },

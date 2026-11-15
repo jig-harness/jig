@@ -1965,6 +1965,14 @@ make, use the entry's term instead.
   chapter's prose are written by hand
   ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
   (a spec is what a work item links).
+- **Rule matcher** — the one piece of the plugin that decides whether a rule
+  in a repository's configuration matches a tracker item or a change, for
+  every field that selects something (a base branch, a review gate, an
+  agent) by their facts: the item's labels, title or size, the paths the
+  change touches. A rule lists values per fact and matches when any one of
+  them does; each field says whether the first matching rule decides or
+  every one applies. Its *Protocol chapter* is *Rule matchers in
+  configuration* ([plugin/protocol/rule-matchers.md](plugin/protocol/rule-matchers.md)).
 - **Protocol chapter** — one contract's part of the *Jig Protocol*: a status
   line with its own version, prose written by hand, and generated sections
   listing every value with its meaning. A **stable** chapter only grows

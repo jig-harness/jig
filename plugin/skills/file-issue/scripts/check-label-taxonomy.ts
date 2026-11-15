@@ -20,7 +20,9 @@
 //   7. every `requires:` (on a flag or a category) names a type, group label,
 //      flag or closed category label of the file, never itself; every
 //      `requires_category:` names a category;
-//   8. no UNKNOWN top-level keys, and no mapping repeats a key.
+//   8. no UNKNOWN top-level keys, and no mapping repeats a key;
+//   9. an entry's `color:`, when present, is six hex digits as a text
+//      (`cfd3d7`, no `#`).
 //
 // Exit 0 on pass, 1 on a violation (reported), 2 on a usage error or a file
 // that cannot be read.

@@ -29,12 +29,15 @@
  * It also prints the implementation guidance (`lib/guidance.ts`): the
  * skills and notes of the matching `do_item.guidance` entries and of the
  * areas the item reaches, and the guidance skills nothing installed
- * answers (`missing_skills`). `--paths <file>` names the files the change
- * plans to touch, one per line, so path entries and areas match on them.
+ * answers (`missing_skills`), and the review gates (`lib/gates.ts`): the
+ * `do_item.gates` entries the item meets, and those only its paths could.
+ * `--paths <file>` names the files the change plans to touch, one per line,
+ * so path entries, gates and areas match on them. Every field is matched by
+ * the shared rule matcher (`shared/rule-matcher.ts`).
  *
  * Type: Discovery
  * Input: JSON with the issue's `labels` and `title` (from get_issue.ts)
- * Output: JSON with the agent recommendation and scouts
+ * Output: JSON with the agent recommendation, scouts, guidance and gates
  *
  * Usage:
  *     bun determine_agent.ts <issue-json-file>
@@ -71,8 +74,15 @@ import {
   parseGuidance,
   resolveGuidance,
 } from "./lib/guidance.ts";
+import { type Gate, parseGates, resolveGates } from "./lib/gates.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import { isRecord } from "../../../shared/guards.ts";
+import { failed, JigError, ok } from "../../../shared/outcome.ts";
+import {
+  lookup,
+  type MapEntry,
+  ruleMap,
+} from "../../../shared/rule-matcher.ts";
 
 /** The agent used when the consumer declares none. */
 export const DEFAULT_AGENT = "general-purpose";
@@ -81,11 +91,15 @@ export interface AgentRouting {
   default: string;
   integrator: string;
   catalog: Record<string, string>;
-  codeareaAreas: Record<string, string>;
-  labels: Record<string, string>;
-  titleKeywords: Record<string, string>;
+  /** `do_item.agents.codearea_areas`: label → change-area key, as the rule matcher reads the map. */
+  codeareaAreas: MapEntry<string>[];
+  /** `do_item.agents.labels`: label → agent. */
+  labels: MapEntry<string>[];
+  /** `do_item.agents.title_keywords`: title keyword → agent. */
+  titleKeywords: MapEntry<string>[];
   scouts: Record<string, string[]>;
   guidance: GuidanceEntry[];
+  gates: Gate[];
 }
 
 function stringMap(v: unknown, where: string): Record<string, string> {
@@ -101,6 +115,47 @@ function stringMap(v: unknown, where: string): Record<string, string> {
   }
   return out;
 }
+
+/** A rule field written as a map from a fact's value to a nonempty name, read by the rule matcher. */
+function nameMap(field: string, v: unknown): MapEntry<string>[] {
+  const entries = ruleMap(
+    field,
+    v,
+    (x) =>
+      typeof x === "string" && x.trim() !== ""
+        ? ok(x)
+        : failed("name", "must be a nonempty string"),
+    field.endsWith("codearea_areas")
+      ? "a label to a change-area key"
+      : field.endsWith("title_keywords")
+        ? "a title keyword to an agent"
+        : "a label to an agent",
+  );
+  if (!entries.ok)
+    throw new JigError("agent-routing-invalid", entries.failure.reason);
+  return entries.value;
+}
+
+/** The change area `do_item.agents.codearea_areas` maps one of the item's labels to, or `undefined`. */
+export function areaOfLabel(
+  routing: { readonly codeareaAreas: readonly MapEntry<string>[] },
+  label: string,
+): string | undefined {
+  return lookup(CODEAREA_AREAS, routing.codeareaAreas, { labels: [label] })[0]
+    ?.result;
+}
+
+/** The agent `do_item.agents.labels` maps one of the item's labels to, or `undefined`. */
+function agentOfLabel(
+  routing: AgentRouting,
+  label: string,
+): string | undefined {
+  return lookup(AGENT_LABELS, routing.labels, { labels: [label] })[0]?.result;
+}
+
+const CODEAREA_AREAS = "do_item.agents.codearea_areas";
+const AGENT_LABELS = "do_item.agents.labels";
+const TITLE_KEYWORDS = "do_item.agents.title_keywords";
 
 /** Validate `do_item.agents` and `do_item.scouts` from a parsed overlay. */
 export function parseAgentRouting(
@@ -135,17 +190,12 @@ export function parseAgentRouting(
     default: dflt,
     integrator: name(agents.integrator, "do_item.agents.integrator", dflt),
     catalog: stringMap(agents.catalog, "do_item.agents.catalog"),
-    codeareaAreas: stringMap(
-      agents.codearea_areas,
-      "do_item.agents.codearea_areas",
-    ),
-    labels: stringMap(agents.labels, "do_item.agents.labels"),
-    titleKeywords: stringMap(
-      agents.title_keywords,
-      "do_item.agents.title_keywords",
-    ),
+    codeareaAreas: nameMap(CODEAREA_AREAS, agents.codearea_areas),
+    labels: nameMap(AGENT_LABELS, agents.labels),
+    titleKeywords: nameMap(TITLE_KEYWORDS, agents.title_keywords),
     scouts,
     guidance: parseGuidance(section),
+    gates: parseGates(section),
   };
 }
 
@@ -155,7 +205,7 @@ export function parseAgentRouting(
  * `Object.prototype`, so `table["constructor"]` would otherwise return a
  * function and push it into the agent list.
  */
-function lookup<T>(table: Record<string, T>, key: string): T | undefined {
+function own<T>(table: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(table, key) ? table[key] : undefined;
 }
 
@@ -210,7 +260,7 @@ function catalogAgentsFromLabels(
   const hits: Array<[string, string, string]> = [];
   for (const label of labels) {
     const labelLower = label.toLowerCase();
-    const areaKey = lookup(routing.codeareaAreas, labelLower);
+    const areaKey = areaOfLabel(routing, label);
     if (areaKey === undefined) continue;
     const catalogAgent = catalog.get(areaKey)?.fields.agent;
     if (typeof catalogAgent === "string" && catalogAgent !== "")
@@ -219,7 +269,7 @@ function catalogAgentsFromLabels(
   // Ordered by area key, so the primary preference on a tie is stable.
   hits.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   for (const [, catalogAgent, labelLower] of hits) {
-    const type = lookup(routing.catalog, catalogAgent.toLowerCase());
+    const type = own(routing.catalog, catalogAgent.toLowerCase());
     if (type === undefined) continue;
     resolvedLabels.add(labelLower);
     if (!agentTypes.includes(type)) agentTypes.push(type);
@@ -238,7 +288,7 @@ export function determineAgents(
   const scouts = new Set<string>();
   const addAgent = (agent: string) => {
     agents.add(agent);
-    for (const scout of lookup(routing.scouts, agent) ?? []) scouts.add(scout);
+    for (const scout of own(routing.scouts, agent) ?? []) scouts.add(scout);
   };
 
   const { agentTypes: catalogAgents, resolvedLabels } = catalogAgentsFromLabels(
@@ -252,14 +302,14 @@ export function determineAgents(
   for (const label of labels) {
     const labelLower = label.toLowerCase();
     if (resolvedLabels.has(labelLower)) continue;
-    const agent = lookup(routing.labels, labelLower);
+    const agent = agentOfLabel(routing, label);
     if (agent !== undefined) addAgent(agent);
   }
 
-  const titleLower = title.toLowerCase();
-  for (const [word, agent] of Object.entries(routing.titleKeywords)) {
-    if (titleLower.includes(word) && !agents.has(agent)) addAgent(agent);
-  }
+  for (const { result } of lookup(TITLE_KEYWORDS, routing.titleKeywords, {
+    title,
+  }))
+    if (!agents.has(result)) addAgent(result);
 
   if (agents.size === 0) addAgent(routing.default);
 
@@ -286,7 +336,7 @@ export function determineAgents(
     scouts: [...scouts],
     coordination_needed: coordinationNeeded,
     labels_matched: labels.filter(
-      (l) => lookup(routing.labels, l.toLowerCase()) !== undefined,
+      (l) => agentOfLabel(routing, l) !== undefined,
     ),
     recommendation: `Task tool with subagent_type: "${primaryAgent}"`,
   };
@@ -309,7 +359,12 @@ export function guidanceFor(
   const areas =
     catalog === null
       ? []
-      : matchedAreas(labels, routing.codeareaAreas, catalog, paths);
+      : matchedAreas(
+          labels,
+          (label) => areaOfLabel(routing, label),
+          catalog,
+          paths,
+        );
   const g: Guidance = resolveGuidance(
     routing.guidance,
     labels,
@@ -332,13 +387,13 @@ export function guidanceFor(
 /** The guidance for the CLI, each skill nothing installed answers named on stderr. */
 function reportedGuidance(
   labels: string[],
-  parsed: { args: { values: Map<string, string> } },
+  paths: string[] | null,
   catalog: ChangeAreaCatalog | null,
   routing: AgentRouting,
 ): Record<string, unknown> {
   const guidance = guidanceFor(
     labels,
-    readPlannedPaths(parsed.args.values.get("paths") ?? null),
+    paths,
     catalog,
     routing,
     skillSearch(consumerRoot()),
@@ -348,6 +403,36 @@ function reportedGuidance(
       `Guidance skill not installed: ${name} (nothing installed answers it; name it in the status message)`,
     );
   return guidance;
+}
+
+/** The review gates for the CLI: those the item's labels meet, and those only its paths could. */
+function reportedGates(
+  labels: string[],
+  paths: string[] | null,
+  routing: AgentRouting,
+): Record<string, unknown> {
+  const gates = resolveGates(routing.gates, labels, paths);
+  return { applied: gates.applied, by_path: gates.byPath };
+}
+
+/** Add the guidance and the gates to the result, both matched on the planned paths `--paths` names. */
+function attachPathMatches(
+  result: Record<string, unknown>,
+  pathsFile: string | undefined,
+  item: {
+    labels: string[];
+    catalog: ChangeAreaCatalog | null;
+    routing: AgentRouting;
+  },
+): void {
+  const paths = readPlannedPaths(pathsFile ?? null);
+  result.guidance = reportedGuidance(
+    item.labels,
+    paths,
+    item.catalog,
+    item.routing,
+  );
+  result.gates = reportedGates(item.labels, paths, item.routing);
 }
 
 /** The planned paths `--paths` names, one per line; `null` without it. */
@@ -468,7 +553,11 @@ async function main(): Promise<number> {
     const catalog = configuredCatalog(catalogPath, verbose);
 
     const result = determineAgents(labels, title, catalog, routing);
-    result.guidance = reportedGuidance(labels, parsed, catalog, routing);
+    attachPathMatches(result, parsed.args.values.get("paths"), {
+      labels,
+      catalog,
+      routing,
+    });
 
     if (verbose) {
       console.error(`Primary agent: ${String(result.primary_agent)}`);

@@ -396,6 +396,124 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.249.0] - 2026-11-15
+
+Every configuration field that chooses something by an item's or a
+change's facts is now decided by one rule matcher, specified in a new
+Protocol chapter.
+
+### Added
+
+- One rule matcher decides every configuration field that selects by an
+  item's or a change's facts (`pull_requests.base_rules`,
+  `pull_requests.labels_from_issue`, `pull_requests.reviewers_from_issue`,
+  `do_item.gates`, `do_item.guidance`, `do_item.agents.labels`,
+  `do_item.agents.codearea_areas`, `do_item.agents.title_keywords`,
+  `routing.complex_flags`, `routing.raise.flags`, `routing.raise.sizes` and
+  `work_batch.solo_flags`). The new Protocol chapter *Rule matchers in
+  configuration* (`plugin/protocol/rule-matchers.md`) says which facts a rule may test, how each is compared, how a rule
+  combines its values and how each field's rules resolve, with a data file
+  and a JSON Schema for a rule. Today's forms of every field keep working
+  as written. **Consumer action:** none.
+- `determine_agent.ts` reads `do_item.gates` and prints, under `gates`, the
+  review gates an item meets and those only its planned paths could, with
+  why each applies; do-item applies what it printed.
+  **Consumer action:** none.
+
+### Changed
+
+- **Breaking:** The shared configuration reader refuses a rule that names
+  an unknown fact or gives a value of the wrong kind in any of these
+  fields, naming the field and the file that set it, before any skill acts
+  on it, and the audit reports it. A malformed rule a skill never read
+  (such as a `do_item.gates` entry) used to be ignored; now every skill,
+  `jig gc` and `jig dispatch` stop on it. A `do_item.gates` entry do-item
+  refuses (no labels or paths, no skill, an unknown field, a glob that does
+  not compile) now also stops `determine_agent.ts`, `determine_route.ts`,
+  work-batch and the dispatcher's batch planning, where before nothing read
+  the field. An empty key in `do_item.agents.labels`, `codearea_areas` or
+  `title_keywords` is refused too (an empty title keyword used to match
+  every title). **Consumer action:** required at configuration. Run the
+  audit's configuration fit and fix each rule it refuses: `rejected:every
+  skill (rule matcher)` and `rejected:do-item (review gates)`.
+- **Breaking:** `work_batch.solo_flags`, and the solo-only flags work-batch
+  derives, match an item's labels ignoring case, as every other label rule
+  does: an issue labelled `Privacy-Review` is now held out of a batch by
+  `solo_flags: [privacy-review]`, where before it was batched. The
+  dispatcher's batch grouping reads the same rule.
+  **Consumer action:** advised at configuration. Check that no label you
+  batch differs from a solo-only flag only in case; rename it if it should
+  stay batchable. **Detect:** `config:work_batch.solo_flags`.
+- A route's reasons name the configuration rule that matched in the
+  matcher's wording: `tier: complex (routing.complex_flags, for the item's
+  label has-migration)` and `effort: high (raised from medium:
+  routing.raise.flags, for the item's label has-migration)`, where they read
+  `flag has-migration` before. **Consumer action:** advised at instructions.
+  Update a runbook or script that reads the old reason text.
+  **Detect:** `text:raised medium`.
+- Path globs are compiled by one shared module, so a glob in a configuration
+  field and in the change-area catalog means the same.
+  **Consumer action:** none.
+
+## [0.248.2] - 2026-11-15
+
+### Fixed
+
+- Worktree collection keeps the forge diagnostic when a pull request lookup
+  exceeds its deadline, alongside the deadline reason. The configuration guide
+  links to one definition of the lookup timeout, and lookup tests remove their
+  scratch directories. **Consumer action:** none.
+
+## [0.248.1] - 2026-11-15
+
+### Changed
+
+- Tracker and forge reads share the outbound library’s caching, duplicate-read
+  grouping and bounded batches. Quiet ticks reuse unchanged assignment answers,
+  while failed reads are retried on the next tick. The change probe compares
+  check-state totals instead of downloading each check. **Consumer action:** none.
+
+### Fixed
+
+- Review-finding deferrals use the tracker adapter’s governed transport, and
+  issue children are read in bounded pages. Forge cost reports identify REST
+  routes even when command flags precede the route. **Consumer action:** none.
+
+## [0.248.0] - 2026-11-15
+
+### Added
+
+- A label taxonomy entry may carry `color`, the colour its label shows in the
+  tracker, as six hex digits (`cfd3d7`, no `#`), so a colour that sets one
+  label apart is recorded and does not drift. `check-label-taxonomy.ts` fails
+  on a colour that is not six hex digits written as text; M9's template
+  documents the field.
+- `validate-labels.ts` reads an issue's own tracker type, from
+  `--native-type` or the `nativeType` of the issue it is given. An issue
+  whose type `issue_tracker.labels.epic_types` lists, such as Epic, is
+  checked as if it carried the epic label: a `requires:` naming that label
+  is met by it, and a group not required on the epic is not required on it.
+  A `roadmap` issue typed Epic needs no `epic` label beside it.
+
+## [0.247.2] - 2026-11-15
+
+### Fixed
+
+- Count conditional GitHub request headers in their joined flag forms and forecast unknown primary-quota spending conservatively. **Consumer action:** none.
+- GitHub conditional reads answered unchanged now record request traffic with
+  zero primary quota cost, including when the CLI exits nonzero or response
+  headers are stripped. Budget reports retain that traffic separately, and
+  low-quota forecasts use the charged cost rather than unchanged traffic.
+- Finished worktrees are no longer kept just for the `.fallow` tool cache. Repositories can declare other rebuildable ignored paths with `gc.regenerable_paths`; undeclared content remains protected. Existing installations refresh the collector after upgrading, even without configuration changes, to confirm new default bounds. **Consumer action:** required at machine. After upgrading, review the preview and run `jig install gc --repo <repository> --yes` for every existing installation.
+
+## [0.247.1] - 2026-11-15
+
+### Fixed
+
+- The dispatch dashboard page is built again from its current source, so its
+  list of the files Jig keeps on a machine now includes the cursor where
+  `jig gc` stopped reading the test-fixture registry.
+
 ## [0.247.0] - 2026-11-15
 
 ### Added
@@ -8690,7 +8808,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.247.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.249.0...HEAD
+[0.249.0]: https://github.com/jig-harness/jig/compare/v0.248.2...v0.249.0
+[0.248.2]: https://github.com/jig-harness/jig/compare/v0.248.1...v0.248.2
+[0.248.1]: https://github.com/jig-harness/jig/compare/v0.248.0...v0.248.1
+[0.248.0]: https://github.com/jig-harness/jig/compare/v0.247.2...v0.248.0
+[0.247.2]: https://github.com/jig-harness/jig/compare/v0.247.1...v0.247.2
+[0.247.1]: https://github.com/jig-harness/jig/compare/v0.247.0...v0.247.1
 [0.247.0]: https://github.com/jig-harness/jig/compare/v0.246.0...v0.247.0
 [0.246.0]: https://github.com/jig-harness/jig/compare/v0.245.0...v0.246.0
 [0.245.0]: https://github.com/jig-harness/jig/compare/v0.244.2...v0.245.0

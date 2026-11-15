@@ -32,6 +32,7 @@
  *   the kept reading alone, any read it would send fails the same way, and
  *   the walk reports the limit once (`served.ts`).
  */
+import { coalesce } from "../../../shared/outbound/coalesce.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
 import { ended, within } from "./bounded.ts";
 import type { FacetBound } from "./tracker-facets.ts";
@@ -434,21 +435,16 @@ function offlineReason(p: Plan): unknown | null {
 
 function factReader(p: Plan, gate: Gate): ServedView["once"] {
   const reads = new Map<string, Promise<unknown>>();
-  return <T>(key: string, read: () => Promise<T>): Promise<T> => {
-    let kept = reads.get(key) as Promise<T> | undefined;
-    if (kept === undefined) {
-      kept =
-        p.source === "offline" || ended(p.bound)
-          ? Promise.reject(
-              offlineReason(p) ?? new Error("the tracker is offline"),
-            )
-          : p.bound === undefined
-            ? gate(read)
-            : within(gate(read), p.bound);
-      reads.set(key, kept);
-    }
-    return kept;
-  };
+  return <T>(key: string, read: () => Promise<T>): Promise<T> =>
+    coalesce(reads, key, () =>
+      p.source === "offline" || ended(p.bound)
+        ? Promise.reject(
+            offlineReason(p) ?? new Error("the tracker is offline"),
+          )
+        : p.bound === undefined
+          ? gate(read)
+          : within(gate(read), p.bound),
+    ) as Promise<T>;
 }
 
 /** Seed one view from unchanged pool rows and the fresher assigned queue. */
@@ -672,10 +668,7 @@ export async function sharedView(
     });
   if (views === undefined) return openView(tracker, identity, options, cache);
   const key = `${tracker.adapter}:${tracker.team}:${identity}:${configIdentity(tracker)}`;
-  let view = views.get(key);
-  if (view === undefined) {
-    view = openView(tracker, identity, options, cache);
-    views.set(key, view);
-  }
-  return view;
+  return coalesce(views, key, () =>
+    openView(tracker, identity, options, cache),
+  );
 }
