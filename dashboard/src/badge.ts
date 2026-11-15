@@ -17,8 +17,8 @@ interface AppBadge {
 const ENCODED_SVG = /^data:image\/svg\+xml,[A-Za-z0-9%._~!*'()-]*$/;
 /** The end of an svg, as an address holds it. */
 const SVG_END = encodeURIComponent("</svg>");
-/** The attribute that keeps the address the page was built with. */
-const BUILT = "data-built";
+/** The address each icon link was built with, kept here so a marked address is never read back from the page. */
+const BUILT = new WeakMap<HTMLLinkElement, string>();
 
 /** The count as a favicon has room for it: one digit, or `9+`. */
 export function badgeText(count: number): string {
@@ -58,11 +58,12 @@ export function applyReadyBadge(count: number): () => void {
   const title = document.title;
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   const href = link?.getAttribute("href") ?? null;
-  const builtBefore = link?.getAttribute(BUILT) ?? null;
+  const builtBefore = link === null ? undefined : BUILT.get(link);
   if (link !== null) {
     const built = builtBefore ?? href ?? "";
-    link.setAttribute(BUILT, built);
-    link.setAttribute("href", markWith(built, count));
+    BUILT.set(link, built);
+    if (ENCODED_SVG.test(built))
+      link.setAttribute("href", markWith(built, count));
   }
   document.title = titleWith(title.replace(/^\(\d+\) /, ""), count);
   setAppBadge(count);
@@ -71,8 +72,8 @@ export function applyReadyBadge(count: number): () => void {
     if (link !== null) {
       if (href === null) link.removeAttribute("href");
       else link.setAttribute("href", href);
-      if (builtBefore === null) link.removeAttribute(BUILT);
-      else link.setAttribute(BUILT, builtBefore);
+      if (builtBefore === undefined) BUILT.delete(link);
+      else BUILT.set(link, builtBefore);
     }
     setAppBadge(0);
   };
