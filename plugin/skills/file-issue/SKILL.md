@@ -141,8 +141,12 @@ level, which the level itself answers.
 
    ```bash
    bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --input .context/scratch/file-issue/<n>.json
-   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> <label>...
+   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> [--native-type <issue type>] <label>...
    ```
+
+   For an existing issue, pass `--native-type` its `nativeType` (from
+   `get_issue.ts`) when it has one, so an epic typed in the tracker meets the
+   same rules it meets when filed.
 
    It asks for a priority as it asks for a type and a size. Exit `0`:
    valid (read any `WARNING` and act on it or say why not). Exit

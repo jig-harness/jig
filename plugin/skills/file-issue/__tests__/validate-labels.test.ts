@@ -456,6 +456,52 @@ describe("a group not required on an epic", () => {
     ).toEqual([]);
   });
 
+  test("an epic issue type lifts it too: no size, no group error, nothing missing", () => {
+    const epicType = {
+      nativeType: "Epic",
+      epics: { epic: "epic", epicTypes: ["Epic"] },
+    };
+    const plain = { nativeType: "Feature", epics: epicType.epics };
+    const result = validateLabels(["feature"], sized, undefined, epicType);
+    expect(result.errors).toEqual([]);
+    expect(result.missing).toEqual([]);
+    expect(validateLabels(["feature"], sized, undefined, plain).errors).toEqual(
+      ["no label of required group 'size' (one of: small)"],
+    );
+    const faceted = validateLabels(
+      [],
+      sized,
+      { type: "feature", priority: 3 },
+      epicType,
+    );
+    expect(faceted.errors).toEqual([]);
+    expect(faceted.missing).toEqual([]);
+  });
+
+  test("an epic issue type meets a category that requires the epic label", () => {
+    const categorised = lintTaxonomyText(
+      [
+        "version: 1",
+        "types: [{ id: feature }]",
+        "statuses: [{ id: todo }]",
+        "flags:",
+        "  - { id: epic, scope: container, fires: roll-up, apply_when: a container }",
+        "categories:",
+        "  - { id: plan, prefix: 'plan:', requires: [epic], labels: [{ id: q1 }] }",
+      ].join("\n"),
+    ).taxonomy as Taxonomy;
+    const by = { epic: "epic", epicTypes: ["Epic"] };
+    expect(
+      validateLabels(["feature", "plan:q1"], categorised).errors.join("\n"),
+    ).toContain("epic");
+    expect(
+      validateLabels(["feature", "plan:q1"], categorised, undefined, {
+        nativeType: "Epic",
+        epics: by,
+      }).errors,
+    ).toEqual([]);
+  });
+
   test("names a flag the file lacks, or a group with no requirement to lift", () => {
     expect(
       lintTaxonomyText(
