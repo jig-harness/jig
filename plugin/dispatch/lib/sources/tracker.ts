@@ -210,21 +210,20 @@ async function byTrustedAssigner(
   return { wanted, unplaced };
 }
 
-/** One assigned item's assigner read, held to `tick` where there is one, as a wanted item, an unplaced one or the rate limit. */
-async function readAssigner(
+type AssignedBy = Awaited<ReturnType<Tracker["assignedBy"]>>;
+
+/** Who assigned one item, held to `tick` where there is one; the rate limit or an unplaced item when the read failed. */
+async function readAssignedBy(
   tracker: Tracker,
   issue: PoolIssue,
   identity: string,
   view?: ServedView,
   tick?: FacetBound,
 ): Promise<
-  | { wanted: WantedItem }
-  | { unplaced: Unplaced }
-  | { limited: TrackerRateLimited }
+  { by: AssignedBy } | { unplaced: Unplaced } | { limited: TrackerRateLimited }
 > {
-  let by: Awaited<ReturnType<Tracker["assignedBy"]>>;
   try {
-    by =
+    const by =
       view === undefined
         ? await heldTo(
             (signal) => tracker.assignedBy(issue.identifier, identity, signal),
@@ -234,6 +233,7 @@ async function readAssigner(
             `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
             () => tracker.assignedBy(issue.identifier, identity, tick?.signal),
           );
+    return { by };
   } catch (error) {
     if (isRateLimited(error)) return { limited: error };
     return {
@@ -252,6 +252,23 @@ async function readAssigner(
       },
     };
   }
+}
+
+/** One assigned item's assigner read, held to `tick` where there is one, as a wanted item, an unplaced one or the rate limit. */
+async function readAssigner(
+  tracker: Tracker,
+  issue: PoolIssue,
+  identity: string,
+  view?: ServedView,
+  tick?: FacetBound,
+): Promise<
+  | { wanted: WantedItem }
+  | { unplaced: Unplaced }
+  | { limited: TrackerRateLimited }
+> {
+  const read = await readAssignedBy(tracker, issue, identity, view, tick);
+  if (!("by" in read)) return read;
+  const { by } = read;
   if (!by.trusted) {
     return {
       unplaced: {

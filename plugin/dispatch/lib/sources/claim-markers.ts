@@ -45,6 +45,26 @@ function keptMark(
   return kept?.updatedAt === item.updatedAt ? kept.marked : undefined;
 }
 
+/** One claimed item's marker read, kept under `key` when it succeeds; the error when it fails. */
+async function readMark(
+  tracker: Tracker,
+  identity: string,
+  item: ClaimedItem,
+  key: string,
+  cache: PickupReads,
+  tick?: TickBound,
+): Promise<{ found: boolean } | { error: unknown }> {
+  try {
+    const asked = marked(tracker, item.key, identity);
+    const found = await (tick === undefined ? asked : within(asked, tick));
+    if (item.updatedAt !== undefined)
+      cache.set(key, { updatedAt: item.updatedAt, marked: found });
+    return { found };
+  } catch (error) {
+    return { error };
+  }
+}
+
 /**
  * The claimed items, each one a trusted claim marker naming `identity` is on marked `found`,
  * and each whose comments could not be read marked `unread` with a row
@@ -92,22 +112,21 @@ export async function markClaims(
       unread(item, "the tracker's rate limit stopped an earlier read", false);
     else if (ended(tick))
       unread(item, passedBefore("its comments were read"), true, CUT_AT_BOUND);
-    else
-      try {
-        const asked = marked(tracker, item.key, identity);
-        const found = await (tick === undefined ? asked : within(asked, tick));
-        if (item.updatedAt !== undefined)
-          cache.set(key, { updatedAt: item.updatedAt, marked: found });
-        mark(item, found);
-      } catch (error) {
-        limited = isRateLimited(error);
+    else {
+      const read = await readMark(tracker, identity, item, key, cache, tick);
+      if ("found" in read) mark(item, read.found);
+      else {
+        limited = isRateLimited(read.error);
         unread(
           item,
-          failureText(error),
+          failureText(read.error),
           !limited,
-          ended(tick) ? (readFailureOfError(error) ?? CUT_AT_BOUND) : undefined,
+          ended(tick)
+            ? (readFailureOfError(read.error) ?? CUT_AT_BOUND)
+            : undefined,
         );
       }
+    }
   }
   return { claimed, unplaced };
 }
