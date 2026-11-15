@@ -45,6 +45,7 @@
  *   `do-item`'s claim refuses an item already taken, and a follow-up stops
  *   before its next act on an earlier marker.
  */
+import type { ReportCause, ReportWriter } from "../closing-report.ts";
 import type { Outcome } from "../outcome.ts";
 import type { TickOutcome } from "./followup-values.ts";
 import type { Writer } from "./writer.ts";
@@ -68,6 +69,14 @@ export type LaunchEnd =
       exit: number | null;
       /** A follow-up's answer: `done`, or `failed` when its pass ended without recording done. */
       outcome: TickOutcome | null;
+      /**
+       * Who wrote the run's closing report (`shared/closing-report.ts`),
+       * `none` when it left none; never the report's own text, since the
+       * claim lives where others read it. Absent on older ends.
+       */
+      by?: ReportWriter;
+      /** The report's cause, when it named one. */
+      cause?: ReportCause;
     }
   | {
       state: "died";
