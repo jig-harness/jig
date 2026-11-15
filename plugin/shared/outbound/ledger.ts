@@ -62,7 +62,8 @@ export function setDefaultLedgerPath(path: string | null): void {
   if (path === null) delete dependencies[defaultPathKey];
   else dependencies[defaultPathKey] = path;
 }
-function defaultLedgerPath(): string {
+/** The budget database this process writes: the machine's, or the storage a harness supplied. */
+export function defaultLedgerPath(): string {
   return dependencies[defaultPathKey] ?? budgetPath();
 }
 

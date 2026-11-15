@@ -1,8 +1,10 @@
 # The labels an issue of this repository may carry, in families, with the
 # rules between them. `/jig:file-issue` checks every issue's labels against
 # this file before it writes, and `check-label-taxonomy.ts` keeps the file
-# honest (plugin/skills/file-issue/README.md). The open workflow states
-# (`state:` labels) are named in `.config/jig.yaml` (`issue_tracker.states`).
+# honest (plugin/skills/file-issue/README.md). An entry's `color` is the
+# colour its label shows on GitHub, recorded here so it does not drift. The
+# open workflow states (`state:` labels) are named in `.config/jig.yaml`
+# (`issue_tracker.states`).
 # Priority uses GitHub's own Priority field, as issue_tracker.facets declares.
 version: 1
 
@@ -131,11 +133,16 @@ flags:
       - the issue mirrors an item of design/plan.md
     notes: >-
       design/plan.md is the source of truth for what the item builds and
-      when it is done; the issue holds the sub-issues and the discussion
+      when it is done; the issue holds the sub-issues and the discussion.
+      The epic it requires is the epic label or an issue type
+      issue_tracker.labels.epic_types lists, such as Epic
 
   - id: pr-followup
     scope: shipping-item
     fires: deferral-ledger
+    # A neutral grey, so a follow-up never reads as parked work
+    # (jig:parked is red, d93f0b).
+    color: cfd3d7
     apply_when:
       - the issue was filed from a review finding deferred on a pull request
     notes: counted by fleet health as review debt until it closes

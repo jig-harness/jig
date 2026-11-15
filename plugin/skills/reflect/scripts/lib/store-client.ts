@@ -9,7 +9,14 @@
  * everything it started are stopped and the operation counts as unavailable.
  */
 import { join } from "node:path";
-import { isMapping } from "../../../../shared/config-layers.ts";
+import {
+  REFLECTION_CHECK_SHAPE,
+  REFLECTION_CHECK_FIELDS,
+  REFLECTION_STORED_SHAPE,
+  REFLECTION_APPEND_SHAPE,
+  REFLECTION_DIAGNOSE_SHAPE,
+} from "../../../../shared/repo-command-shapes.ts";
+import { matches } from "../../../../shared/shapes.ts";
 import { run, tsArgv } from "../../../../shared/proc.ts";
 import { fail } from "../../../../shared/cli.ts";
 import { REFLECTION_STORE_UNAVAILABLE_EXIT } from "../../../../shared/repo-commands.ts";
@@ -157,10 +164,17 @@ export class Store {
     );
     if (r.code !== EXIT.done) throw failed("check", r);
     const out = parseObject(r.stdout, "the store's check output");
+    if (!matches(REFLECTION_CHECK_SHAPE, out))
+      throw new StoreError(
+        EXIT.failed,
+        "the store's check output does not match its response shape",
+      );
     return {
-      ok: out.ok === true,
-      reason: typeof out.reason === "string" ? out.reason : undefined,
-      fix: typeof out.fix === "string" ? out.fix : undefined,
+      ok: matches(REFLECTION_CHECK_FIELDS.ok, out.ok),
+      reason: matches(REFLECTION_CHECK_FIELDS.reason, out.reason)
+        ? out.reason
+        : undefined,
+      fix: matches(REFLECTION_CHECK_FIELDS.fix, out.fix) ? out.fix : undefined,
     };
   }
 
@@ -179,12 +193,18 @@ export class Store {
     );
     if (r.code !== EXIT.done) throw failed("append", r);
     const out = parseObject(r.stdout, "the store's append output");
+    if (!matches(REFLECTION_APPEND_SHAPE, out))
+      throw new StoreError(
+        EXIT.failed,
+        "the store's append output does not match its response shape",
+      );
     const stored: Array<{ id: string; ref: string | null }> = [];
     for (const entry of Array.isArray(out.stored) ? out.stored : [])
-      if (isMapping(entry) && typeof entry.id === "string")
+      if (matches(REFLECTION_STORED_SHAPE, entry))
         stored.push({
           id: entry.id,
-          ref: typeof entry.ref === "string" ? entry.ref : null,
+          ref:
+            "ref" in entry && typeof entry.ref === "string" ? entry.ref : null,
         });
     const missing = events.filter(
       (event) => !stored.some((entry) => entry.id === event.id),
@@ -233,9 +253,15 @@ export class Store {
       this.cwd,
     );
     if (r.code !== EXIT.done) throw failed("diagnose", r);
-    return jsonlLines(r.stdout).map((line) =>
-      parseObject(line, "a diagnose notice"),
-    );
+    return jsonlLines(r.stdout).map((line) => {
+      const notice = parseObject(line, "a diagnose notice");
+      if (!matches(REFLECTION_DIAGNOSE_SHAPE, notice))
+        throw new StoreError(
+          EXIT.failed,
+          "a diagnose notice does not match its response shape",
+        );
+      return notice;
+    });
   }
 }
 

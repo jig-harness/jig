@@ -55,6 +55,8 @@ export interface WaitingEntry {
   title: string | null;
   /** Recorded stage and parked questions, verbatim; older parks use their recorded lines. */
   questions: string[];
+  /** Why its notice has not reached a person this tick (held for room in the comment, lost, its destination unreachable); `null` otherwise. */
+  notice: string | null;
 }
 
 /** What `--waiting` answers. */
@@ -88,6 +90,7 @@ function shared(need: LineNeed): Omit<WaitingEntry, "address" | "questions"> {
     reason: need.reason,
     url: need.url,
     title: need.title,
+    notice: need.notified?.detail ?? null,
   };
 }
 

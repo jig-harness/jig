@@ -895,10 +895,13 @@ make, use the entry's term instead.
   `has-migration`, `api-change`, `dpa-relevant` (personal data covered by a
   data-processing agreement) and `manual-ops`. A fired flag sends a call to a human instead of an agent
   ([decide](plugin/skills/decide/SKILL.md)) and widens the review a change gets.
-- **Epic** — an issue whose sub-issues are worked one at a time, each as its
-  own pull request, while the epic itself tracks the whole. Jig's
-  `do-item` skill picks up the next sub-issue and records the epic's order in
-  a machine-readable execution plan
+- **Epic** — an issue whose sub-issues are each delivered as their own pull
+  request, while the epic itself tracks the whole. A `do-item` session takes
+  one sub-issue at a time; the dispatcher starts an epic's ready sub-issues
+  in parallel, in the order and parallelism its execution plan sets, or
+  without one up to a per-epic width. Jig's `do-item` skill picks up the
+  next sub-issue and follows the epic's order when a machine-readable
+  execution plan is present
   ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
   (an outcome too large for one pull request, and the unit progress is
   reported on), not by how many children it has, and it closes on an
@@ -915,6 +918,31 @@ make, use the entry's term instead.
   finish, such as a legal sign-off, an operator step or review debt. At
   closure a tail is linked back and given a comment naming the epic, then
   unparented and moved to the standing destination for its kind.
+- **Execution plan** — the order of an *epic*'s children, kept on the epic
+  as a section with a machine-readable block (`execution-plan-v1`): each
+  child's precedence band (its depth in the order), its lane (a group of
+  related children, which orders nothing), whether it waits on a person,
+  and the edges between children with their reasons. The pickup and the
+  dispatcher read it; the *epic planner* writes it
+  ([design](design/epic-planner.md)).
+- **Human gate** — a step of an *execution plan* that waits on a person before
+  an agent may start it: a child carrying the configured human-in-the-loop
+  label or one of its facets (such as `<label>:legal`), or one the plan
+  marks with its reason. A plan cannot cancel such a label
+  ([design](design/epic-planner.md)).
+- **Epic planner** — the skill that writes and keeps an *epic*'s *execution
+  plan*: it records each real dependency as a native tracker relation,
+  renders the plan, applies the mechanical changes on its own and asks a
+  person once for the changes that need judgment
+  ([design](design/epic-planner.md)).
+- **Critical path** — the longest chain of an *epic*'s open children that
+  must land one after another, each child weighted by its size. Its children
+  take the epic's priority in the *epic planner*'s priority rule.
+- **Relation statement** — a hold or an order stated as data rather than a
+  sentence: subject references, a relation word from a closed list (such as
+  "waits on"), object references, a count and an optional reason. Each reference carries its
+  kind (issue or pull request), state, link and counterpart, so a view can
+  show it as a chip with its link ([design](design/epic-planner.md)).
 - **Epic census** — the read-only count of how a repository's started *epics*
   stand, kept by the fleet-health sensor: *finished-but-open* (every child is
   closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
@@ -1463,6 +1491,12 @@ make, use the entry's term instead.
 - **Attested class** — a *decision class* whose answers count only with
   proof that a person, not a pass posting under their login, gave them
   ([design](design/structured-answers.md#who-may-answer)).
+- **Pass trust boundary** — the planned mechanisms that tell a comment an
+  agent's pass posts under a person's login from the person's own, so an
+  answer or an act can count as the person's on proof rather than on the
+  login alone. Until it lands, an act from the dashboard's page is trusted
+  as `jig send` from the person's terminal is
+  ([plan item 40](design/plan.md#40-the-pass-trust-boundary-as-mechanisms)).
 - **Autonomy level** — how far an agent may decide without asking a person:
   `attended`, the default, `unattended`, or `wide`, which also takes
   *provisional decisions*. A repository sets it and caps it with its
@@ -1599,6 +1633,12 @@ make, use the entry's term instead.
   done) or *not owed* (with the evidence that settled it). "Nothing found" is
   not evidence
   ([M7](modules/M7-pr-lifecycle-review/README.md#core-pieces)).
+- **Ops-pending** — the tracker state a merged item waits in while a step a
+  person performs outside the code (a setting, a host change, a live check)
+  is still owed. The *post-merge stage* moves a merged item there instead
+  of to done when it carries the manual-operations label, or when the
+  repository's last post-merge state stops there
+  ([`do_item.post_merge_state`](plugin/CONFIGURATION.md#do_item)).
 - **Declared verdict** — the resolution state written by the author, in a
   machine-readable form anchored to a fixed position in the reply, at the moment
   of replying — rather than reconstructed later from the thread's prose.
@@ -2195,11 +2235,11 @@ make, use the entry's term instead.
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
   ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
-  tracker adapters' transports keep the budget and the deadline, and they
-  and the forge's `gh` calls fail as the failure classes; a tracker read
+  tracker adapters' transports and the forge's `gh` calls keep the budget
+  and the deadline and fail as the failure classes; a tracker read
   is sent once more after a failure that may clear, a forge call is not;
-  the transports record each attempt in the cost ledger. Shared caching,
-  GitHub budget windows and the boundary gates remain planned
+  the transports record each attempt in the cost ledger. Shared caching
+  and the boundary gates remain planned
   ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
@@ -2208,7 +2248,7 @@ make, use the entry's term instead.
   starts and a person's skills spend one allowance knowingly. A *governed
   transport* asks it before each request and tells it what each answer
   said; the dispatcher's own reads keep to a share of each limit
-  (`tracker_share`,
+  (`outbound_share`,
   [configuration reference](plugin/CONFIGURATION.md)).
 - **Cost ledger** — the record of what Jig's calls to outside systems
   cost: for each hour, system, credential, named operation and caller, the
@@ -2337,10 +2377,19 @@ make, use the entry's term instead.
   the *steward*'s *headless pass* writes it as its last act through
   `jig dispatch report`, which keeps it on the launch record and its fields
   on the run's row of the outcome log; for a drive, whose last pass cannot
-  know it is last, the driver writes it when the drive stops. The *steward*
+  know it is last, the driver writes it when the drive stops, from its own
+  stop and the last *round report*, and the dispatcher's wrapper records
+  it. The wrapper prints the report as the run's last lines. The *steward*
   reads a run's transcript only when the run left no report. Designed in
   [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
   [ROADMAP.md](ROADMAP.md) item 51.
+- **Round report** — what one pass of a drive concluded about its round, in
+  the fields of a *closing report*, written by the pass as its last act
+  (`round-report.ts`) to the drive's state directory, stamped with the
+  pass's launch and round, and never into the handoff narrative. When the
+  drive stops, the driver's own closing report ends with the `concluded`
+  of the last round report of its launch. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report).
 - **Process runtime** — a *session runtime* that runs a *headless pass* as
   a plain managed process in a git worktree Jig opens itself, with no
   terminal and no desktop app; a host chooses it in its machine dispatch
@@ -2396,7 +2445,8 @@ make, use the entry's term instead.
   each *piece of work* on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
   Each machine serves its own. A host's dashboard answers reads only, on
-  its loopback address; a laptop's serves the page to any browser, Orca's
+  its loopback address, and its page's Send posts a parked decision's
+  answer from the person's browser with a token kept there; a laptop's serves the page to any browser, Orca's
   among them, and shows every host through the *hub*'s *source feed*. It
   keeps no copy of the line, only the person's conversation with the
   operator, and nothing the line does waits on it
@@ -2432,6 +2482,23 @@ make, use the entry's term instead.
   or an *SSH* tunnel, does the same job. A front never publishes
   to the open internet, and it does not let the dashboard write. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
+- **WebAuthn** — the browser standard for asking a credential on a device or
+  security key to authenticate a person. Local verification can require the
+  device's unlock; it does not prove to Jig that a forge comment came from
+  a person rather than a pass. See [the phone unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **PRF extension** — WebAuthn's pseudo-random function extension: a supported
+  credential returns secret bytes bound to that credential and the supplied
+  input. The proposed browser unlock derives a wrapping key from those bytes
+  to protect a stored token. Support must be checked with the actual credential.
+  See [the phone unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **HKDF** — HMAC-based key derivation function, a standard way to derive a
+  cryptographic key from secret input with a separate purpose and salt.
+  The proposed browser unlock derives a wrapping key from a credential's
+  PRF output. See [the unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **AES-GCM** — Advanced Encryption Standard in Galois/Counter Mode, an
+  encryption scheme that also detects changed ciphertext. Each encryption
+  under a key needs a fresh nonce, a value used only once.
+  See [the unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
 - **Hub** — Jig's *shared control plane*: `jig hub serve`, one process with
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
@@ -2675,6 +2742,32 @@ make, use the entry's term instead.
   never takes the last unit of room, so the drives that turn earlier work
   into merges keep running. It reports what it would hold before a person
   turns the limit on ([load factor](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+- **Footprint** — the paths an issue is expected to touch, predicted
+  before the work starts and kept as a record on the issue, with who
+  predicted it: the pickup once it has read the code, a scout, the planner,
+  or the filing of the issue from a diff. The *dispatcher*
+  compares it with the files of open pull requests to tell work that will
+  collide from work that will not
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-footprint-record)).
+- **Overlap cost** — the conflict-resolution rounds starting an issue is
+  expected to bring, from the paths its *footprint* shares with the work in
+  flight and how often merges of those paths conflicted. The *dispatcher*
+  starts work with no overlap first and colliding work when capacity is
+  left, so overlap orders work and never leaves a slot unused
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-cost)).
+- **Overlap bound** — how many pieces of work in flight may change one file
+  before the *dispatcher* puts more work on that file behind everything
+  else that is ready. It replaces the width per epic, applies across all
+  work, and like the *overlap cost* only orders: work over the bound still
+  starts when nothing else can take a free slot
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-bound)).
+- **Validation capacity** — how many validation runs a host can finish
+  within the time a pass can wait for its turn: the runs the machine-wide
+  test lock lets through at once, times that wait, divided by how long one
+  run takes. The runs still to come from the passes already started count
+  against it. A gauge of the *load factor*, so the *dispatcher* starts no
+  more passes than the host can test in time
+  ([overlap-aware admission](design/overlap-aware-admission.md#validation-capacity)).
 - **Served person** — a person a *dispatcher*'s host works for, named with
   their forge logins and tracker identities in the host's own dispatch
   file. An open item a person with write access assigned to them, and each
@@ -2688,16 +2781,24 @@ make, use the entry's term instead.
   repository; the pickup's claim assigns it to the *factory identity*, and
   the claim marker decides between hosts that take the same item
   ([dispatch.pool](plugin/CONFIGURATION.md#dispatch)).
-- **Steward** — the agent pass a *dispatcher*'s host starts every 20
-  minutes, when its input changed, to read what is stopped and waiting on
-  the line and propose what to do about it: re-arm a drive once when its
-  logs show a passing cause, frame each need that stays a person's with
-  its *act*, fill in a missing priority, size or type, and order the queue.
+- **Steward** — the agent pass a *dispatcher*'s host starts when a
+  repository's *judgment backlog* holds work no pass has judged, to read
+  what is stopped and waiting on the line and propose what to do about it:
+  re-arm a drive once when its logs show a passing cause, frame a need that
+  arrived with no framing with its *act*, fill in a missing priority, size
+  or type, and order the queue.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
   text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
+- **Judgment backlog** — the work in one repository that no rule of the
+  *tick* settles and no *steward* pass has judged yet: a stalled pickup or
+  failed follow-up with no running session, a stopped drive a re-arm could
+  resolve, an ended pass that recommends a resume, a queued item missing a
+  facet, a need with no framing. The steward starts only when it holds a
+  member no earlier pass saw
+  ([the steward's trigger](design/dark-factory-dispatch.md#the-stewards-trigger)).
 - **Steward remit** — the record kinds a *steward* may submit for a
   repository on a host: today, a re-arm, a resume, a need, a facet and an
   order. The planned widening lets a host add record kinds that settle a
@@ -2706,6 +2807,31 @@ make, use the entry's term instead.
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
+- **Priorities record** — the proposed versioned declaration of objectives,
+  purposes, end states, owners and capacity shares or limits at site,
+  repository or individual level. A mechanical ranker reads it with a tracker
+  snapshot to propose a reproducible shortlist; a person picks from it.
+  See [the design](design/priorities-and-overview.md).
+- **File draft** — the proposed record of an issue a progress review
+  suggests, prepared through the filing skill's checks (type, priority,
+  duplicates, scope) and kept with their evidence and age. It is not an issue
+  and reserves no tracker key; a person's File act rechecks it and only then
+  creates the issue as themselves
+  ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
+- **Steward approval** — the proposed record of a person's approval or refusal
+  of one steward proposal, pinned to the proposal id and its digest and target
+  revisions. It carries no authority beyond the tick's own guards: the tick
+  re-reads them before it applies anything, and a stale proposal is refused
+  ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
+- **Allocation owner** — the first objective matching an item at a priorities
+  level. That objective alone counts the item's start for capacity and the
+  peripheral floor; other matching objectives show it for reporting only.
+  See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
+- **Progress review** — the proposed scheduled or on-demand pass that reads
+  declared objectives, tracker progress and the line's records, and proposes
+  findings and systematic fixes across items. It never picks, starts,
+  answers, re-ranks or files; the steward keeps individual stopped items.
+  See [the design](design/priorities-and-overview.md#progress-review-proposals-after-mechanical-facts).
 - **Need class** — a *need* is one thing the *dispatcher* hands a person,
   shown on the dashboard's What needs you. Its class is the kind of wait it
   is (a spent CI repair, a stalled pickup, a blocked release, a host

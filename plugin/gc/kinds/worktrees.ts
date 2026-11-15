@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
+import { swallow } from "../../shared/errors.ts";
 import {
   orcaEnvelope,
   orcaFailure,
@@ -19,7 +20,15 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run } from "../../shared/proc.ts";
 import { spawnSync } from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
-import { isAbsolute, join, normalize, relative, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  sep,
+} from "node:path";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import {
   localSteps,
@@ -29,8 +38,18 @@ import {
 import { processHolder } from "./worktree-git.ts";
 import {
   type Collected,
+  goneClaims,
+  isUnreadableClaim,
+  onDisk,
+  proveUnreadable,
+  standingClaims,
+  unreadableClaims,
   guardedCollection,
+  type GuardedRemoval,
+  isGoneClaim,
   LAUNCH_VETO,
+  proveGone,
+  releaseGone,
 } from "./worktree-guard.ts";
 import {
   markingSince,
@@ -51,6 +70,7 @@ import {
   type WorktreePolicy,
 } from "./worktree-proof.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
+import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
@@ -126,6 +146,83 @@ async function orcaWorktrees(
     managed.set(canonicalWorktree(row.path), { id: row.id, path: row.path });
   }
   return ok(managed);
+}
+/** Whether Orca's list `managed` holds the worktree at `path`, as Orca spells it or as git does. */
+function listedIn(
+  managed: Map<string, OrcaWorktree>,
+): (path: string) => boolean {
+  const paths = new Set([...managed.values()].map((row) => row.path));
+  return (path) => paths.has(path) || managed.has(normalize(path));
+}
+/**
+ * The selected worktrees, each marked with the runtime that manages it, and
+ * a line for each claim a collector that ended left on a worktree under
+ * `roots` that is gone from Orca's list and from the disk: no worktree is
+ * listed to settle it with.
+ */
+async function orcaInventory(
+  command: string,
+  repository: string,
+  selected: { id: string; details: Record<string, unknown> }[],
+  roots: string[],
+): Promise<Outcome<Resource[]>> {
+  const stale = goneClaims((path) =>
+    roots.some(
+      (root) => within(normalize(path), root) || underRoot(path, root),
+    ),
+  );
+  const unreadable = unreadableClaims();
+  if (selected.length === 0 && stale.length === 0)
+    return ok([...selected, ...unreadable]);
+  const managed = await orcaWorktrees(command, repository);
+  if (!managed.ok) return managed;
+  const listed = listedIn(managed.value);
+  // A checkout gone from the disk can still be registered with Git: the claim
+  // is then the resource, not the registration.
+  const known = new Set(
+    selected
+      .filter((entry) => onDisk(entry.id))
+      .map((entry) => resolvedPath(entry.id)),
+  );
+  const gone = stale.filter(
+    (claim) => !listed(claim.id) && !known.has(resolvedPath(claim.id)),
+  );
+  const replaced = new Set(gone.map((claim) => resolvedPath(claim.id)));
+  const standing = standingClaims();
+  const kept = selected.filter(
+    (entry) => !replaced.has(resolvedPath(entry.id)),
+  );
+  markManaged(kept, managed.value);
+  for (const entry of kept) {
+    const row = managed.value.get(canonicalWorktree(entry.id));
+    const path = row?.path ?? entry.id;
+    if (standing.has(path)) {
+      const submitted = standing.get(path);
+      entry.details.claim = "standing";
+      entry.details.claimNote = `a dead collection's launch guard claim stands on this worktree${submitted ? ` (orca worktree rm was called under it at ${submitted})` : ""} and keeps launches out; it is settled by a collection that removes the worktree, or inspect and remove its admission by hand`;
+    }
+  }
+  return ok([...kept, ...gone, ...unreadable]);
+}
+/** The path with its nearest existing ancestor resolved, the spelling git and the disk agree on. */
+function resolvedPath(path: string): string {
+  let ancestor = normalize(path);
+  let suffix = "";
+  for (;;) {
+    try {
+      return join(realpathSync.native(ancestor), suffix);
+    } catch (error) {
+      swallow(error, "the ancestor is gone: the next one up is tried");
+    }
+    const parent = dirname(ancestor);
+    if (parent === ancestor) return normalize(path);
+    suffix = join(basename(ancestor), suffix);
+    ancestor = parent;
+  }
+}
+/** Whether the claim's `path` lies under `root` once its nearest existing ancestor is resolved. */
+function underRoot(path: string, root: string): boolean {
+  return within(resolvedPath(path), root);
 }
 function orcaId(resource: Resource): string | null {
   return isMapping(resource.details) &&
@@ -305,12 +402,14 @@ async function extractBaseHooks(
 async function collectThroughOrca(
   command: string,
   resource: Resource,
-  orcaWorktree: { id: string; launched: () => string | null },
+  orcaWorktree: { id: string; guard: GuardedRemoval },
   repository: string,
   declaration: string,
   legacy: LegacyPolicy | undefined,
+  regenerablePaths: readonly string[],
 ): Promise<Collected> {
-  const { id, launched } = orcaWorktree;
+  const { id, guard } = orcaWorktree;
+  const { launched } = guard;
   let archived: Archived | null = null;
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
@@ -362,9 +461,13 @@ async function collectThroughOrca(
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
+        // The last step before the call: an unanswered call keeps the claim.
+        submit: () => guard.submit(),
       },
     });
+    guard.settle(removed);
     // An archive written before a step that then failed stays, named in the
     // receipt, and expires with the receipts.
     if (!removed.ok)
@@ -414,6 +517,7 @@ async function admitAfterHook(
   legacy: LegacyPolicy | undefined,
   checks: () => Promise<Outcome<undefined, string>>,
   archived: (written: Archived | null) => void,
+  regenerablePaths: readonly string[],
 ): Promise<Outcome<undefined, string>> {
   const before = await checks();
   if (!before.ok) return before;
@@ -422,6 +526,7 @@ async function admitAfterHook(
     worktree,
     legacy,
     currentMs() + ARCHIVE_LIMIT_MS,
+    regenerablePaths,
   );
   if (!preserved.ok) return preserved;
   archived(preserved.value);
@@ -441,6 +546,7 @@ async function collectAgentWorktree(
   declaration: string,
   legacy: LegacyPolicy | undefined,
   identity: WorktreeIdentity | undefined,
+  regenerablePaths: readonly string[],
 ): Promise<Collected> {
   let archived: Archived | null = null;
   const log = (line: string): void => {
@@ -482,6 +588,7 @@ async function collectAgentWorktree(
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
       },
       remove: (worktree) => gitRemove(repository, worktree),
@@ -654,6 +761,35 @@ function markManaged(
     entry.details.orcaPath = row.path;
   }
 }
+/** The proof of a claim resource (an admission with no worktree to prove), or null for a worktree. */
+function proveClaim(
+  orca: string,
+  resource: Resource,
+  repository: string,
+): Proof | Promise<Proof> | null {
+  if (isUnreadableClaim(resource)) return proveUnreadable(resource);
+  if (!isGoneClaim(resource)) return null;
+  return proveGone(resource, async () => {
+    const managed = await orcaWorktrees(orca, repository);
+    return managed.ok ? ok(listedIn(managed.value)) : managed;
+  });
+}
+/** The proof that needs no policy: a claim resource, or a locked worktree; null otherwise. */
+function proveEarly(
+  orca: string | undefined,
+  resource: Resource,
+  repository: string,
+): Proof | Promise<Proof> | null {
+  const claim =
+    orca === undefined ? null : proveClaim(orca, resource, repository);
+  if (claim !== null) return claim;
+  if (!isMapping(resource.details) || resource.details.locked !== true)
+    return null;
+  return withHeldBranch(resource, {
+    state: "live",
+    reason: "worktree is locked",
+  });
+}
 export function worktreesKind(
   repository: string,
   roots: string[],
@@ -662,6 +798,7 @@ export function worktreesKind(
   policy?: WorktreePolicy,
   orca?: string,
   archive?: ArchivePolicy,
+  regenerablePaths: readonly string[] = DEFAULT_REGENERABLE_PATHS,
 ): CollectionKind {
   const legacy = legacyPolicy(archive);
   // What each agent tool tree's latest proof saw, for its collection.
@@ -701,23 +838,20 @@ export function worktreesKind(
           "Git worktree inventory was empty or malformed",
         );
       const selected = selectWorktrees(entries, roots, repository);
-      if (orca === undefined || selected.length === 0) return ok(selected);
-      const managed = await orcaWorktrees(orca, repository);
-      if (!managed.ok) return managed;
-      markManaged(selected, managed.value);
-      return ok(selected);
+      if (orca === undefined) return ok(selected);
+      return orcaInventory(orca, repository, selected, [
+        ...roots.map(canonicalRoot),
+        canonicalRoot(join(entries[0]?.id ?? repository, ...AGENT_TOOL_DIR)),
+      ]);
     },
     prove: async (resource) => {
-      if (isMapping(resource.details) && resource.details.locked === true)
-        return withHeldBranch(resource, {
-          state: "live",
-          reason: "worktree is locked",
-        });
+      const early = proveEarly(orca, resource, repository);
+      if (early !== null) return early;
       const resolved =
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
         return { state: "unverified", reason: resolved.failure.reason };
-      const proving = { ...resolved.value, legacy: legacy() };
+      const proving = { ...resolved.value, regenerablePaths, legacy: legacy() };
       const agentTool = isAgentTool(resource);
       proved.delete(resource.id);
       // Read before the proof, so the proof's own reads run inside it.
@@ -747,6 +881,14 @@ export function worktreesKind(
       return withHeldBranch(resource, result.value);
     },
     collect: async (resource) => {
+      if (orca !== undefined && isUnreadableClaim(resource))
+        return {
+          outcome: "refused",
+          reason:
+            "kept: an admission gc cannot read is for a person to inspect",
+        };
+      if (orca !== undefined && isGoneClaim(resource))
+        return releaseGone(resource);
       if (isAgentTool(resource)) {
         const final = proved.get(resource.id);
         proved.delete(resource.id);
@@ -756,18 +898,20 @@ export function worktreesKind(
           declaration,
           legacy(),
           final,
+          regenerablePaths,
         );
       }
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
-        return guardedCollection(resource, orcaPath(resource), (launched) =>
+        return guardedCollection(resource, orcaPath(resource), (guard) =>
           collectThroughOrca(
             orca,
             resource,
-            { id, launched },
+            { id, guard },
             repository,
             declaration,
             legacy(),
+            regenerablePaths,
           ),
         );
       return {

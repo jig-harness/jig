@@ -36,13 +36,8 @@ import {
 } from "../../../../../shared/time.ts";
 
 /** The arbiter's verdicts (`plugin/agents/review-arbiter.md`). */
-export const ARBITER_VERDICTS = [
-  "fix-now",
-  "rejected",
-  "wont-fix",
-  "defer",
-  "escalate",
-] as const;
+import { ARBITER_VERDICTS } from "./ledger-values.ts";
+export { ARBITER_VERDICTS } from "./ledger-values.ts";
 type Verdict = (typeof ARBITER_VERDICTS)[number];
 
 /** The class the arbiter must give a call that touches a person's decision. */

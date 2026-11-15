@@ -46,6 +46,7 @@ import type {
   DrivenPr,
   Evidence,
   LaunchOutcome,
+  NotifyOutcome,
   RepoReport,
   Unplaced,
 } from "./types.ts";
@@ -160,7 +161,10 @@ function stageOfNeed(action: Action & { cause: NeedCause }): LineNeed["stage"] {
     : needStage(action.cause);
 }
 
-function isNeed(action: Action): action is Action & { cause: NeedCause } {
+/** Whether a notify action is a need: one that waits on a person and on nothing else. */
+export function isNeed(
+  action: Action,
+): action is Action & { cause: NeedCause } {
   return (
     action.stage === "notify" &&
     action.cause !== undefined &&
@@ -379,6 +383,17 @@ function sightedSince(
   return firstSeen(previous, repo, action.target, action.cause) ?? nowIso;
 }
 
+/** The one outcome a need shows when several channels answered for its key: one that delivered, else the failure, else the wait. */
+function aggregateNotification(
+  outcomes: NotifyOutcome[],
+): NotifyOutcome | undefined {
+  for (const kind of ["sent", "already", "lost", "waits"] as const) {
+    const found = outcomes.find((n) => n.outcome === kind);
+    if (found !== undefined) return found;
+  }
+  return outcomes[0];
+}
+
 function needsOf(
   view: RepoView,
   nowIso: string,
@@ -387,8 +402,8 @@ function needsOf(
   const planned = view.report.actions.filter(isNeed).map((action): LineNeed => {
     const pr = prNumber(action.target);
     const { act, decisions } = needDecisions(view, action, pr);
-    const notification = view.report.notifications.find(
-      (n) => n.key === action.notice?.key,
+    const notification = aggregateNotification(
+      view.report.notifications.filter((n) => n.key === action.notice?.key),
     );
     const at =
       action.notice === undefined
@@ -430,6 +445,10 @@ function needsOf(
               at: at ?? null,
               outcome: notification.outcome,
               workspace: notification.workspace,
+              ...(notification.outcome === "waits" ||
+              notification.outcome === "lost"
+                ? { detail: notification.detail }
+                : {}),
             },
       workspaces:
         action.cause === "double-claim"
@@ -582,6 +601,34 @@ function queueOf(view: RepoView): LineQueued[] {
   const planned = view.report.actions
     .map((action) => plannedStage(view, action))
     .filter((q): q is LineQueued => q !== null);
+  // A pending follow-up replay has no new planned action: its earlier launch
+  // record is what still owns the work. Keep only one that did not start in
+  // the queue, so it names what it waits on without duplicating an active
+  // session.
+  const replayed = view.report.launches
+    .filter(
+      (launch) =>
+        launch.action === "followup" &&
+        launch.record !== null &&
+        !STARTED.has(launch.outcome) &&
+        !view.report.actions.some(
+          (action) =>
+            action.stage === "followup" && action.target === launch.target,
+        ),
+    )
+    .map((launch) =>
+      queued(view, {
+        source: "merged",
+        group: groupOf(launch, "starts"),
+        target: launch.target,
+        why: launch.detail,
+        launch: {
+          outcome: launch.outcome,
+          detail: launch.detail,
+          ...(launch.waitsOn === undefined ? {} : { waitsOn: launch.waitsOn }),
+        },
+      }),
+    );
   const serial = (view.report.serialized?.held ?? []).map((h) =>
     queued(view, {
       source: "held",
@@ -609,7 +656,7 @@ function queueOf(view: RepoView): LineQueued[] {
         why: u.reason,
       }),
     );
-  return [...planned, ...serial, ...labelled, ...refused];
+  return [...planned, ...replayed, ...serial, ...labelled, ...refused];
 }
 
 function repoOf(
@@ -631,11 +678,24 @@ function repoOf(
         source: r.source,
         detail: r.detail,
       })),
-    notes: report.records
-      .filter((r) => r.ok && r.record === "tracker")
-      .map((r) => r.detail),
+    notes: [
+      ...report.records
+        .filter((r) => r.ok && r.record === "tracker")
+        .map((r) => r.detail),
+      ...stewardNote(report.steward),
+    ],
     ...boardUnread(report),
   };
+}
+
+/** Whether the steward started on the judgment backlog this tick, and if not, why. */
+function stewardNote(steward: RepoReport["steward"]): string[] {
+  if (steward?.trigger === undefined) return [];
+  return [
+    steward.trigger === "started"
+      ? `steward ${steward.status}`
+      : `steward not started: ${steward.status}`,
+  ];
 }
 
 function reasonOf(

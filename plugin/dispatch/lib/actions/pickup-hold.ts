@@ -235,7 +235,7 @@ function leftUnclaimed(r: ReadRecord, item: string): boolean {
 
 /**
  * Why `repo`'s ended pickup records keep an item from starting, or `null`:
- * an epic's one-child slot is never given to a child the tick will not
+ * a slot of an epic's width is never given to a child the tick will not
  * start (`serializeEpics`).
  */
 export function endedPassOver(

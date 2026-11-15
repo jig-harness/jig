@@ -13,6 +13,13 @@ import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 import { httpFailure } from "../scripts/lib/tracker/jira/transport.ts";
 import { JIG_TAXONOMY } from "./github-fixtures.ts";
 import {
+  PRIORITIES,
+  SCREEN,
+  SITE,
+  SIZE_OPTIONS,
+  STORES,
+} from "./jira-facet-fixtures.ts";
+import {
   type Call,
   issue,
   jira,
@@ -21,101 +28,6 @@ import {
   routes,
   writes,
 } from "./jira-fixtures.ts";
-
-/** The site's fields, as `GET field` returns them. */
-const SITE_FIELDS = [
-  { id: "summary", name: "Summary", schema: { type: "string" } },
-  { id: "customfield_10016", name: "Story Points", schema: { type: "number" } },
-  { id: "customfield_10050", name: "Size", schema: { type: "option" } },
-  { id: "customfield_10051", name: "Team", schema: { type: "option" } },
-  { id: "customfield_10052", name: "Team", schema: { type: "option" } },
-  {
-    id: "customfield_10060",
-    name: "Notes",
-    schema: {
-      type: "string",
-      custom: "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
-    },
-  },
-];
-
-/** The project's issue types, as `GET issue/createmeta/ENG/issuetypes` returns them. */
-const TYPES = {
-  issueTypes: [
-    ["t0", "Epic", false, 1],
-    ["t1", "Bug", false, 0],
-    ["t2", "Story", false, 0],
-    ["t3", "Task", false, 0],
-    ["t4", "Sub-task", true, -1],
-  ].map(([id, name, subtask, hierarchyLevel]) => ({
-    id,
-    name,
-    subtask,
-    hierarchyLevel,
-  })),
-  startAt: 0,
-  maxResults: 100,
-  total: 5,
-};
-
-const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL"].map((value, i) => ({
-  id: `o${i}`,
-  value,
-}));
-
-/** A create screen holding the Size field with its options. */
-const SCREEN = {
-  fields: [
-    { fieldId: "customfield_10050", allowedValues: SIZE_OPTIONS },
-    {
-      fieldId: "priority",
-      allowedValues: ["Highest", "High", "Medium", "Low"].map((name, i) => ({
-        id: String(i + 1),
-        name,
-      })),
-    },
-  ],
-  startAt: 0,
-  maxResults: 100,
-  isLast: true,
-};
-
-const PRIORITIES = {
-  values: ["Highest", "High", "Medium", "Low"].map((name, i) => ({
-    id: String(i + 1),
-    name,
-  })),
-  startAt: 0,
-  maxResults: 100,
-  isLast: true,
-};
-
-/** Type in the issue types (feature is a Story), size in the Size field. */
-const STORES: Overlay = {
-  issue_tracker: {
-    facets: {
-      type: { store: "native", values: { feature: "Story" } },
-      size: {
-        store: "field",
-        field: "Size",
-        values: { xs: "XS", small: "S", medium: "M", large: "L", xl: "XL" },
-      },
-    },
-  },
-  taxonomy: JIG_TAXONOMY,
-};
-
-/** Every create screen and the site's lists the stores read. */
-const SITE = {
-  "GET field": SITE_FIELDS,
-  "GET issue/createmeta/ENG/issuetypes": TYPES,
-  "GET issue/createmeta/ENG/issuetypes/t1": SCREEN,
-  "GET issue/createmeta/ENG/issuetypes/t2": SCREEN,
-  "GET issue/createmeta/ENG/issuetypes/t3": SCREEN,
-  "GET issue/createmeta/ENG/issuetypes/t4": SCREEN,
-  "GET priority/search": PRIORITIES,
-  "POST search/jql": page(),
-};
 
 const filed = (calls: Call[]) =>
   calls.find((c) => c.route === "POST issue")?.body.fields as Record<
@@ -356,128 +268,6 @@ describe("Jira: reading a type kept in the issue types", () => {
       null,
       ["type"],
     ]);
-  });
-});
-
-describe("Jira: changing a type and a size kept in Jira's own fields", () => {
-  const change = async (
-    current: Record<string, unknown>,
-    patch: Record<string, unknown>,
-    extra: Record<string, unknown> = {},
-  ) => {
-    const { t, calls } = jira(
-      routes({
-        ...SITE,
-        "GET issue/ENG-1": current,
-        "GET issue/ENG-1/editmeta": {
-          fields: { customfield_10050: { allowedValues: SIZE_OPTIONS } },
-        },
-        "PUT issue/ENG-1": null,
-        ...extra,
-      }),
-      STORES,
-    );
-    await t.updateIssue("ENG-1", patch);
-    return calls
-      .filter((c) => c.route === "PUT issue/ENG-1")
-      .map((c) => c.body);
-  };
-
-  it("moves a type to its issue type and takes its labels off, in one write", async () => {
-    expect(
-      await change(issue({ key: "ENG-1", type: "Task", labels: ["docs"] }), {
-        type: "bug",
-      }),
-    ).toEqual([
-      {
-        fields: { issuetype: { id: "t1" } },
-        update: { labels: [{ remove: "docs" }] },
-      },
-    ]);
-  });
-
-  it("gives a type with no issue type of its own the fallback issue type and its label", async () => {
-    expect(
-      await change(issue({ key: "ENG-1", type: "Bug" }), { type: "chore" }),
-    ).toEqual([
-      {
-        fields: { issuetype: { id: "t3" } },
-        update: { labels: [{ add: "chore" }] },
-      },
-    ]);
-    expect(
-      await change(issue({ key: "ENG-1", type: "Task", labels: ["docs"] }), {
-        type: "chore",
-      }),
-    ).toEqual([{ update: { labels: [{ add: "chore" }, { remove: "docs" }] } }]);
-  });
-
-  it("writes nothing for a type already in force", async () => {
-    expect(
-      await change(issue({ key: "ENG-1", type: "Story" }), { type: "feature" }),
-    ).toEqual([]);
-  });
-
-  it("refuses to remove a type the issue type holds", async () => {
-    await expect(
-      change(issue({ key: "ENG-1", type: "Bug" }), { type: null }),
-    ).rejects.toThrow(
-      "a Jira issue always has an issue type, and ENG-1's is Bug, the type bug",
-    );
-  });
-
-  it("refuses to remove the label of the type the write sets", async () => {
-    await expect(
-      change(
-        issue({
-          key: "ENG-1",
-          type: "Sub-task",
-          subtask: true,
-          labels: ["bug"],
-        }),
-        {
-          type: "bug",
-          removeLabels: ["bug"],
-        },
-      ),
-    ).rejects.toThrow("the label 'bug' to remove is the type 'bug'");
-  });
-
-  it("lets a write remove a label the type it sets no longer needs", async () => {
-    const writes = await change(
-      issue({ key: "ENG-1", type: "Task", labels: ["bug"] }),
-      { type: "bug", removeLabels: ["bug"] },
-    );
-    expect(writes).toHaveLength(1);
-    expect(JSON.stringify(writes[0])).toContain('"remove":"bug"');
-  });
-
-  it("sets and clears the size field, its option checked against the edit screen", async () => {
-    const current = issue({
-      key: "ENG-1",
-      fields: { customfield_10050: { value: "S" } },
-    });
-    expect(await change(current, { size: "large" })).toEqual([
-      { fields: { customfield_10050: { value: "L" } } },
-    ]);
-    expect(await change(current, { size: null })).toEqual([
-      { fields: { customfield_10050: null } },
-    ]);
-    await expect(
-      change(
-        current,
-        { size: "large" },
-        {
-          "GET issue/ENG-1/editmeta": {
-            fields: {
-              customfield_10050: {
-                allowedValues: [{ value: "S" }, { value: "M" }],
-              },
-            },
-          },
-        },
-      ),
-    ).rejects.toThrow("which has S, M");
   });
 });
 

@@ -103,6 +103,8 @@ export interface LineNotified {
   at: string | null;
   outcome: NotifyOutcome["outcome"];
   workspace: string | null;
+  /** Why it has not reached a person, for a notice that waits or was lost (held for room in the comment, its destination unreachable); absent otherwise. */
+  detail?: string;
 }
 
 /**
@@ -267,7 +269,7 @@ export interface LineQueued {
   assignedBy: string | null;
   /** For a pull request held behind a serialized leader. */
   hold: { leader: number; area: string; since: string } | null;
-  /** What the newest tick's launch of it did, and, for a follow-up that waits for its lane, what it waits on; `null` when it did not try. */
+  /** What the newest tick's launch of it did, and, for a follow-up held back this tick, what it waits on; `null` when it did not try. */
   launch: {
     outcome: LaunchOutcome["outcome"];
     detail: string;

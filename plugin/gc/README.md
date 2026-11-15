@@ -39,7 +39,11 @@ The repository declares kinds in `.config/jig.yaml`. The machine file
 controls the schedule, retention and longer idle guards. Collecting runs
 fetch the declaration from the install-recorded base branch and remote URL,
 refusing when a URL rewrite rule redirects that URL; only the intersection
-with confirmed install bounds is authorized. A confirmed `worktrees` kind
+with confirmed install bounds is authorized. After upgrading to a version
+that adds a regenerable-path default, every existing installation must preview
+and confirm `jig install gc --repo <repository> --yes`, even without changing
+its repository configuration: older installed bounds deliberately grant no
+authority for that new default. A confirmed `worktrees` kind
 covers the agent tool's directory in the clone's primary checkout
 ([below](#worktrees-an-agent-tool-makes)) as well as the confirmed roots. Git hooks and the file-system
 monitor are disabled for these calls; transport and credential settings the
@@ -78,12 +82,20 @@ the holders unknown and the worktree `unverified`.
 Ignored content is the one part of a worktree git cannot give back: an
 environment file or a note may be the only copy. A worktree with ignored
 content no rule accounts for is a `finding`, and its reason names the paths.
-A rule accounts for content only by a mark the writer left, never by a name
-alone:
+A rule accounts for content through a rebuildable dependency, a mark the
+writer left, or a repository declaration:
 
 - **`dependency`**: a detected package manager's dependency directory
   (`node_modules`, wherever it sits in the tree), rebuilt from the root
   `package.json` and the tracked lockfile; listed as `rebuildable`.
+- **`regenerable-path`**: a literal path in `gc.regenerable_paths`, read from
+  the base branch and bounded by the installed declaration. It covers only
+  that path and its descendants. The default is `[.fallow]`, the unused-code
+  tool cache Jig's gates create. An explicit list replaces the default; add
+  a build output such as `dist` only when it can be rebuilt. Refresh the
+  installed collector after widening this list. Existing installations must
+  also refresh after upgrading to a version that adds the default. Absolute paths, traversal,
+  globs, Git metadata and `.context/` outside `.context/scratch/` are refused.
 - **`cache-tag`**: a directory holding a `CACHEDIR.TAG` file that starts with
   the [cache directory tag](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   signature. Other tools tag their caches this way, and so do Jig's scripts
@@ -100,7 +112,7 @@ alone:
 A link is never followed, so a link named like a marked directory, or a tag
 that is a link, marks nothing. Anything else under `.context/`, such as a
 facet move's record a procedure tells a person to keep, still vetoes. The
-receipt's `details.setAside` lists each path a mark set aside with its rule,
+receipt's `details.setAside` lists each path a rule set aside with its rule,
 and `details.rebuildable` the dependency directories.
 
 **Worktrees made before marking.** Marking covers what was written after
@@ -159,6 +171,24 @@ can reap its registered children. The directory stays until another proof
 confirms every holder gone. The collector checks again under exclusive
 scratch admission before each action. It does not sweep at test startup or
 use age as ownership evidence.
+
+The registrations themselves are read in bounded pages: each run reads up to
+100,000 registration folders, or as many as it reads in 30 seconds, and a
+collecting run resumes the next one where it stopped, so a store of any size
+is read in full over successive collecting runs. A report run reads the page
+the next collecting run will start from and leaves that position alone. A folder that cannot
+be read as a registration gets an `unverified` receipt line of its own, and
+the rest of the page goes on. Removing a root that still exists needs the
+whole store read in one bounded pass, as before; until the store fits one,
+those roots stay.
+
+A registration whose every root is gone has nothing left to remove, so it is
+retired on lighter evidence than a root: every registered process has exited
+and no launch still waits for its child's acknowledgement. An opaque launch
+does not keep it, unless a scratch scope that still exists encloses its root,
+whose own proof still counts that launch. Retirement runs under the same
+exclusive scratch admission, at most 500 registrations per receipt line,
+and the line names each registration it retired.
 
 ### Worktrees an agent tool makes
 
@@ -283,8 +313,29 @@ Orca checkout it collects, gc:
 3. keeps the worktree when a launch marker for it is within the settling
    window or not older than the admission, or when the registry shows an
    agent in any state but done;
-4. otherwise removes it through Orca;
-5. deletes its admission either way.
+4. otherwise marks its admission submitted and removes it through Orca;
+5. deletes its admission, unless `orca worktree rm` was called and gave no
+   answer.
+
+Only the removal call's answer, success or Orca's explicit refusal, or the
+worktree's absence from Orca's list and from the disk releases a submitted
+admission. A call that timed out, exited nonzero without a refusal, or
+printed output gc cannot read may or may not have removed the worktree, so
+the admission stays and the plugin's hook keeps refusing launches into it; a
+gc that crashed after the mark leaves it the same way. The receipt line says
+so (`details.claim: kept`, and the reason says why). The next collection
+of the worktree takes the admission over from the collector that ended,
+keeping its mark, proves the worktree idle again and calls `orca worktree rm`
+once more; that call's answer releases it, and a refusal before the call
+keeps it. A worktree whose proof finds it in use again is not collected, and
+the admission stays until a person removes it after inspection; its receipt
+line names the claim (`details.claim: standing`, with `details.claimNote`
+saying how to inspect it) and the printed report repeats the note. A worktree that is gone from the disk and from Orca's list is
+never collected again, so each run of the worktrees kind also lists, as a
+line of its own with `details.claim: gone`, every admission a collector that
+ended left on a path under the declared roots that is gone from both, and
+collecting that line deletes the admission. While Orca's list cannot be read
+the admission stays. A live collector's admission is never touched.
 
 The launch markers are read once right after the admission, before the hook
 runs, and again after the registry's last read. A worktree the guard keeps is
@@ -324,9 +375,13 @@ file in the same directory, named so it does not end in `.json` (Jig's start
 with `.` and end in `.tmp`), then renames it into place; nobody edits a file
 in place or reads, changes and rewrites a shared one. gc publishes an
 admission with a link instead of a rename, so a second collector's link fails
-rather than replacing it. It replaces an admission whose holder is dead only
-while it holds a lock file created exclusively beside it
-(`admissions/.<key>.json.reclaim`), after reading the admission again.
+rather than replacing it. It takes over an admission whose holder is dead,
+or deletes one whose worktree is gone, only while it holds a file lock
+beside it (`admissions/reclaim.<digest>.lock`, the lock `shared/file-lock.ts`
+publishes whole and hands from a dead holder to one reclaimer at a time), after
+reading the admission again, and takes it over by a rename, so the file is
+never absent meanwhile. It marks its own admission submitted by renaming the
+marked copy over it.
 
 | File                    | Written by                                                             | Kind                   |
 | ----------------------- | ---------------------------------------------------------------------- | ---------------------- |
@@ -350,8 +405,10 @@ it), then the kind's own fields. A writer may add no other envelope field
 newline, with every `<` and `>` inside a string escaped as `\u003c` and
 `\u003e`; a plugin may write any valid JSON, and `JSON.parse` reads both.
 
-An admission. Its `at` is when gc wrote it, and `holder` is the collecting
-process's identity (`shared/liveness.ts`):
+An admission. Its `at` is when gc wrote it, `holder` is the collecting
+process's identity (`shared/liveness.ts`), and `submitted`, present once gc
+is about to call `orca worktree rm` under it, is when it did so, in the same
+form as `at`:
 
 ```json
 {
@@ -372,7 +429,8 @@ process's identity (`shared/liveness.ts`):
     "bootId": "6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c",
     "pid": 48213,
     "start": "Thu Nov  5 03:00:01 2026"
-  }
+  },
+  "submitted": "2026-11-05T03:04:40.118Z"
 }
 ```
 
@@ -420,7 +478,14 @@ which costs a later run and loses nothing.
 counts as absent. An admission or a
 launch marker in that state (a launch marker also when its `path`,
 `workspaceId` or `agent` is missing) counts as present: the plugin refuses the launch,
-and gc keeps the worktree and leaves the file for a person to inspect.
+and gc keeps the worktree and leaves the file for a person to inspect. So
+does an admission whose `submitted` is present but not a time. A reader
+ignores a kind's field it does not know, so a field added to a kind keeps
+its version: the plugin's hook, which refuses a launch into any worktree
+with an admission present, reads an admission with `submitted` as it reads
+one without. A submitted admission excludes launches whatever its holder's
+state: a reader that ever treats a dead holder's admission as abandoned may
+do so only for one without `submitted`.
 
 **Constants.**
 
@@ -431,10 +496,12 @@ and gc keeps the worktree and leaves the file for a person to inspect.
 | Marker retention    | 1 day | Each collection of an Orca checkout first deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
 
 An admission is deleted by the collector that wrote it once the worktree is
-removed or kept. One left by a collector that died stays until the next
-collection of that worktree, which replaces it when its holder is judged dead
-by identity, never by age; until then the hook refuses launches into that
-worktree.
+removed or kept, unless it is submitted and the removal call gave no answer.
+One left by a collector that ended stays until a later collection settles
+it, judging its holder dead by identity, never by age: the next collection
+of that worktree takes it over, or a run finds the worktree gone from Orca's
+list and from the disk and deletes it. Until then the hook refuses launches
+into that worktree.
 
 Reports and collections use the same receipt schema and human formatter.
 `would-collect`, `collected`, `refused`, `finding`, `unverified` and `failed`

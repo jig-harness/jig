@@ -16,6 +16,7 @@ import {
 } from "../scripts/lib/ci-hold.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { freshState, isUsableState } from "../scripts/lib/state/schema.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
@@ -72,6 +73,22 @@ esac
 }
 
 describe("ci:hold evidence", () => {
+  function watermarkCode(ghBody: string): string {
+    const probe = join(import.meta.dir, "fixtures", "watermark-probe.ts");
+    const result = Bun.spawnSync([process.execPath, probe, HEAD, ghBody], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(result, 0);
+    return result.stdout.toString();
+  }
+
+  it("keeps an unreadable final watermark distinct from malformed evidence", () => {
+    expect(watermarkCode("exit 75")).toBe("unreadable");
+    expect(watermarkCode("echo 'not json'")).toBe("malformed");
+    expect(watermarkCode("echo '{\"unexpected\": true}'")).toBe("malformed");
+  });
+
   it("the fake gh requires the snapshot field projection", () => {
     const dir = mkdtempSync(join(tmpdir(), "ci-hold-gh-projection-"));
     try {

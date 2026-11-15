@@ -18,7 +18,7 @@
  * dispatcher started it.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
-import type { BusyHolder, RepoTarget } from "../types.ts";
+import type { BusyHolder, ReadFailure, RepoTarget } from "../types.ts";
 
 /** An agent in a workspace, by the id the runtime reports it under. */
 export interface AgentSession {
@@ -65,7 +65,7 @@ export interface JoinTargets {
 
 export type SessionsReport =
   | { ok: true; source: string; workspaces: Workspace[] }
-  | { ok: false; source: string; reason: string };
+  | { ok: false; source: string; reason: string; failure?: ReadFailure };
 
 /** The states in which an agent holds its stage. */
 /** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
@@ -113,8 +113,16 @@ export interface NotifyTarget {
   path: string;
   branch?: string;
   dispatcherOnly?: boolean;
+  /** Aborted when the sender gives up: the adapter writes nothing further once it is. */
+  signal?: AbortSignal;
   /** Exact dispatcher-owned read comment that may be replaced; rechecked under the lock. */
   replaceReadComment?: string;
+  /**
+   * The entries of an unread comment whose causes are settled, by key, and
+   * the exact dispatcher-only comment they were found in: an unread comment
+   * still exactly `comment` under the lock gives them up to make room.
+   */
+  settled?: { comment: string; keys: readonly string[] };
   /** Persist the actual locked projection before writing; return whether it is dispatcher-only. */
   prepareComment?: (
     before: string,
@@ -182,10 +190,11 @@ export interface NoticesTarget {
 /** Whether a runtime can start an interactive session billed to a chosen account. */
 export type Binding = { ok: true } | { ok: false; reason: string };
 
-/** A runtime's answer to which workspaces and sessions one repository has. */
+/** A runtime's answer to which workspaces and sessions one repository has; an aborted `signal` ends the read as `sessions`' does. */
 export type SessionsReader = (
   repo: RepoTarget,
   join: JoinTargets,
+  signal?: AbortSignal,
 ) => Promise<SessionsReport>;
 
 export interface SessionRuntime {
@@ -201,8 +210,15 @@ export interface SessionRuntime {
    * The workspaces of `repo` with their agents, joined to items and pull
    * requests; `ok: false` when the answer cannot be trusted whole (a host
    * not covered, a page cut short), so nothing is read as "no session".
+   * An aborted `signal` starts no further call and answers `ok: false`
+   * at once; a runtime that cannot stop a call in flight lets it run to
+   * its own deadline unread.
    */
-  sessions(repo: RepoTarget, join: JoinTargets): Promise<SessionsReport>;
+  sessions(
+    repo: RepoTarget,
+    join: JoinTargets,
+    signal?: AbortSignal,
+  ): Promise<SessionsReport>;
   /**
    * A reader of `sessions` for one tick's observe phases: what the runtime
    * lists host-wide is read at most once for the reader's life, and each
@@ -221,6 +237,21 @@ export interface SessionRuntime {
     repo: RepoTarget,
     target: ItemTarget | PullRequestTarget | NoticesTarget,
   ): Promise<RuntimeReceipt>;
+  /**
+   * Prove that a workspace `openWorkspace` did not just open for this launch
+   * (one joined to the pull request, a recovery's tree, a pending launch's
+   * recorded workspace) is still the pull request's checkout before anything
+   * runs in it: a checkout of the repository's clone, its origin the head
+   * repository at the head the forge reports, and its commit on that head's
+   * line of history. Why it is refused, or `null` once proven, within
+   * `timeoutMs` when given. The proof changes no work in the workspace.
+   */
+  verifyWorkspace(
+    repo: RepoTarget,
+    workspace: { id: string; path: string },
+    target: { pr: number; head: string },
+    timeoutMs?: number,
+  ): Promise<string | null>;
   /**
    * A session in the workspace that runs the stage, billed to `account`.
    * `key` is the launch record's token: a second call with a key already

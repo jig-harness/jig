@@ -17,13 +17,13 @@ values generated from the code, their meaning written beside them in the
 code, and a gate that fails the build when the chapter and the code
 disagree.
 
-This is the design of [plan.md](plan.md) item 53. Its first, third and
-fourth build steps are in place, in
-[plugin/protocol/](../plugin/protocol/README.md): the generator, its gate
-and the chapter on the drive's end states and exit codes, the chapters on
-the drive mailbox and on the pull-request labels, and the chapter on the
-commands a repository supplies; the site renders the chapters at
-`/protocol/`. The other steps in § Build order are open. The decision that a chapter and the code must agree is
+This is the design of [plan.md](plan.md) item 53. Its stable chapters and their schemas are in place, in [plugin/protocol/](../plugin/protocol/README.md):
+the generator, its gate and the chapter on the drive's end states and exit
+codes; the records chapters, on hidden comment markers and on the
+follow-up claim and its result; the chapters on the drive mailbox and on
+the pull-request labels; and the chapter on the commands a repository
+supplies, with JSON Schemas generated from the readers' shape descriptions; the site renders the chapters at `/protocol/`. Of the provisional chapters, the one on addresses and the verbs of `jig send` is in place. The steps after
+them in § Build order are open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works
@@ -157,8 +157,8 @@ free while it is in use.
 | Pull-request labels Jig writes and reads | stable | `shared/pr-labels/` | — |
 | Hidden comment markers on the forge and the tracker | stable | the forge and tracker kinds of `shared/records/registry.ts` except the claims below, `NOT_RECORDS`, and the marker codec in `shared/records/envelope.ts` | — |
 | Commands a repository supplies | stable | `REPO_COMMANDS` in `shared/repo-commands.ts`: each command's contract (the preflight's exit `3`, a reflection store's JSON), which the runner in `shared/repo-command.ts` and each caller read | — |
-| The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and the follow-up outcomes (`dispatch/lib/followup-outcomes.ts`) | — |
-| Addresses and the verbs of `jig ask` and `jig send` | provisional | `shared/address.ts` and `send/` | 39, 42 |
+| The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and its runs, outcomes and fields (`shared/records/followup-values.ts`) | — |
+| Addresses and the verbs of `jig send` | provisional | `STATIONS` in `shared/address.ts` and `SEND_VERBS` in `send/lib/verb-values.ts` | 39, 42 |
 | Needs and structured answers | provisional | the decision record (`parked-decision/v1`) and the need classes | 46, 50 |
 | Steward records | provisional | the steward's record kinds and their closed fields | 50 |
 | Forge claims: takeover, launch and merge-ready | provisional | the `drive-takeover-claim`, `dispatch-launch-claim` and `drive-merge-ready` kinds of the records registry | 40, 49 |
@@ -196,7 +196,7 @@ alone, which only shows what is there now. So the check also reads the
 chapter's data file (below) as the integration branch holds it, from the
 merge base with that branch, and compares: a value or a field that the base
 has and the new data file lacks, a value whose meaning changed to another
-value's, a field whose type changed, or a field that is new and required or
+value's or a value added with the meaning of one the change withdraws, a field whose type changed, or a field that is new and required or
 that changed from optional to required or is new and identifies a value, a
 listed value whose other published field changed (a withdrawal to a tombstone
 excepted), fails the check unless the chapter's

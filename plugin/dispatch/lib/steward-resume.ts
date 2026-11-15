@@ -3,7 +3,7 @@ import { DEFAULT_PARK_CLASSES } from "../../shared/autonomy.ts";
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
 import { admittedVendor } from "./accounts.ts";
 import {
-  accountBlocked,
+  accountBlock,
   admitAccount,
   dropRecord,
   holdRecord,
@@ -46,6 +46,8 @@ import {
   markStewardEffect,
   stewardRecords,
   type StewardRecord,
+  STEWARD_REFUSED,
+  STEWARD_REFUSED_OPEN,
 } from "./steward.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { Action } from "./types.ts";
@@ -74,40 +76,83 @@ function unavailable(
   });
 }
 
+/** Why the pass a resume names can never be resumed, from facts its ended record fixes. */
+type Refusal = { refused: string; settled: boolean };
+
 function sourceOf(
   state: ApplyState,
   observation: RepoObservation,
   decision: ResumeDecision,
-): Source | null {
+): Source | Refusal {
   const old = state.records.find(
     (r) =>
       r.record.id === decision.record &&
       r.record.repo === observation.opened.repo.slug,
   );
-  if (
-    old?.state.kind !== "ended" ||
-    old.record.stewardResume !== undefined ||
-    old.result === "done" ||
-    !old.record.workspace
-  )
-    return null;
+  return resumeSource(old, parkClassesOf(observation.opened.values));
+}
+
+/** The repository's registry classes, which a resume never answers. */
+export function parkClassesOf(
+  values: Record<string, unknown>,
+): readonly string[] {
+  const policy = values.autonomy as { park_classes?: string[] } | undefined;
+  return policy?.park_classes ?? DEFAULT_PARK_CLASSES;
+}
+
+/**
+ * The ended pickup or follow-up a resume could continue: a pass that ended
+ * on a question outside the registry classes and recommended one option,
+ * and that was neither a resume itself nor recorded done; otherwise why not.
+ */
+export function resumeSource(
+  old: ReadRecord | undefined,
+  parkClasses: readonly string[],
+): Source | Refusal {
+  if (old?.state.kind !== "ended")
+    return {
+      refused: "the resume names no ended pass of this repository",
+      settled: false,
+    };
+  if (old.record.stewardResume !== undefined)
+    return { refused: "the pass is itself a resume", settled: true };
+  if (old.result === "done")
+    return { refused: "the pass ended done", settled: true };
+  if (old.framed)
+    return {
+      refused: "the pass framed a decision for a person, who answers it",
+      settled: true,
+    };
+  if (!old.record.workspace)
+    return { refused: "the pass kept no workspace", settled: true };
   if (old.record.action !== "pickup" && old.record.action !== "followup")
-    return null;
-  if (!eligiblePass(old)) return null;
+    return {
+      refused: "only a pickup or a follow-up pass resumes",
+      settled: true,
+    };
+  if (!eligiblePass(old))
+    return {
+      refused:
+        "the pass is not a headless pickup, or the follow-up lane retries it",
+      settled: true,
+    };
   const question = questionOf(old.state);
   const output = old.state.exit.context ?? old.state.exit.said ?? "";
-  const policy = observation.opened.values.autonomy as
-    | { park_classes?: string[] }
-    | undefined;
   if (
     question === null ||
-    routineRecommendation(
-      question,
-      output,
-      policy?.park_classes ?? DEFAULT_PARK_CLASSES,
-    ) === null
+    routineRecommendation(question, output, ["escalated"]) === null
   )
-    return null;
+    return {
+      refused:
+        "the pass's output holds no question with a single recommended option",
+      settled: true,
+    };
+  if (routineRecommendation(question, output, parkClasses) === null)
+    return {
+      refused:
+        "the pass's question falls in a human-decision class of the autonomy policy",
+      settled: false,
+    };
   return {
     record: {
       ...old.record,
@@ -151,21 +196,30 @@ function competed(
   );
 }
 
-function witnessOf(
-  state: ApplyState,
-  observation: RepoObservation,
-  id: number,
-  source: Source,
-  pending?: LaunchRecord,
-): boolean {
-  const previous = stewardRecords(source.record.repo, state.root).some(
+/** A refusal settled nothing that a launch needs: it never blocks the replay of a resume. */
+function isRefusal(effect: string | null): boolean {
+  return effect?.startsWith(STEWARD_REFUSED) === true;
+}
+
+/** Whether another resume record for the same pass was already applied. */
+function resumedBefore(state: ApplyState, id: number, source: Source): boolean {
+  return stewardRecords(source.record.repo, state.root).some(
     (r) =>
       r.id !== id &&
       r.applied &&
+      !isRefusal(r.effect) &&
       r.value.kind === "resume" &&
       r.value.record === source.record.id,
   );
-  if (previous || competed(state, source.record, pending)) return false;
+}
+
+function witnessOf(
+  state: ApplyState,
+  observation: RepoObservation,
+  source: Source,
+  pending?: LaunchRecord,
+): boolean {
+  if (competed(state, source.record, pending)) return false;
   if (pending && !sameTarget(source.record, pending)) return false;
   return !observation.forge.drives.some(
     (p) =>
@@ -399,7 +453,7 @@ async function replayResume(
     pending.stewardContext !== `${source.output}\nQuestion: ${source.question}`
   )
     return;
-  const blocked = await accountBlocked(state, pending);
+  const blocked = await accountBlock(state, pending);
   if (blocked !== null) {
     observation.opened.report.launches.push(
       await replay(state, pending, action, blocked),
@@ -508,6 +562,23 @@ async function startResume(
   );
 }
 
+/** A resume that can never apply is settled once, with its reason, so it is not checked again. */
+function refuseResume(
+  state: ApplyState,
+  observation: RepoObservation,
+  id: number,
+  reason: string,
+  settled: boolean,
+): void {
+  if (!claimStewardRecord(id, state.root)) return;
+  markStewardEffect(
+    id,
+    settled ? STEWARD_REFUSED : STEWARD_REFUSED_OPEN,
+    state.root,
+  );
+  unavailable(observation, `steward record ${id}`, reason);
+}
+
 export async function resumeSteward(
   state: ApplyState,
   observation: RepoObservation,
@@ -516,8 +587,23 @@ export async function resumeSteward(
   pending?: LaunchRecord,
 ): Promise<void> {
   const source = sourceOf(state, observation, decision);
-  if (source === null || !witnessOf(state, observation, id, source, pending))
+  if ("refused" in source) {
+    if (pending === undefined)
+      refuseResume(state, observation, id, source.refused, source.settled);
     return;
+  }
+  if (resumedBefore(state, id, source)) {
+    if (pending === undefined)
+      refuseResume(
+        state,
+        observation,
+        id,
+        "an earlier resume of the same pass was already applied",
+        true,
+      );
+    return;
+  }
+  if (!witnessOf(state, observation, source, pending)) return;
   if (!(await available(state, observation, source, pending))) return;
   const action: Action = {
     stage: source.record.action,

@@ -61,9 +61,9 @@ console.log(JSON.stringify({ ok: true, result: { worktree: card } }));
 const CHILD = `
 import { orcaNotify } from ${JSON.stringify(new URL("../lib/runtime/orca-notify.ts", import.meta.url).pathname)};
 const lockless = async (_w, body) => ({ value: await body() });
-const [name, message, owned] = process.argv.slice(1);
+const [name, message, owned, settled] = process.argv.slice(1);
 let intended;
-const receipt = await orcaNotify({ prepareComment: (before, projected) => { if (before === owned) { intended = projected; return true; } return false; }, id: "w", path: "/ws/notify-merge/" + name, ...(name.startsWith("named-") ? { branch: "desk", dispatcherOnly: true, replaceReadComment: owned } : {}) }, message, 5000, lockless);
+const receipt = await orcaNotify({ prepareComment: (before, projected) => { if (before === owned) { intended = projected; return true; } return false; }, id: "w", path: "/ws/notify-merge/" + name, ...(name.startsWith("named-") ? { branch: "desk", dispatcherOnly: true, replaceReadComment: owned } : {}), ...(settled === undefined ? {} : { settled: JSON.parse(settled) }) }, message, 5000, lockless);
 console.log(JSON.stringify({ ...receipt, intended }));
 `;
 
@@ -73,6 +73,7 @@ async function notify(
   name: string,
   message: string,
   owned?: string,
+  settled?: { comment: string; keys: string[] },
 ): Promise<Record<string, unknown>> {
   const child = Bun.spawnSync(
     [
@@ -81,7 +82,8 @@ async function notify(
       CHILD,
       name,
       message,
-      ...(owned === undefined ? [] : [owned]),
+      ...(owned === undefined && settled === undefined ? [] : [owned ?? ""]),
+      ...(settled === undefined ? [] : [JSON.stringify(settled)]),
     ],
     {
       env: { ...process.env, ORCA_CLI_COMMAND: orca.script, NOTIFY_NAME: name },
@@ -241,6 +243,36 @@ describe("notify on Orca: merging into an unread comment", () => {
       comment: `-${"n".repeat(MAX_COMMENT - 22)}`,
     });
     const receipt = await notify(orca, "prefix", "[jig dispatch: k]\n" + "x");
+    expect(receipt).toMatchObject({ ok: false, lost: false });
+    expect(orca.sets()).toEqual([]);
+  });
+
+  test("gives up the settled entries of the exact comment the sender read, to make room", async () => {
+    const gone = `[jig dispatch: gone]\n${"g".repeat(MAX_COMMENT - 100)}`;
+    const comment = `${gone}\n\n[jig dispatch: stays]\nstill waits`;
+    const orca = fakeOrca({ isUnread: true, comment });
+    const message = `[jig dispatch: new]\n${"x".repeat(200)}`;
+    expect(
+      await notify(orca, "settled", message, undefined, {
+        comment,
+        keys: ["gone"],
+      }),
+    ).toMatchObject({ ok: true, unread: true });
+    expect(orca.sets()).toEqual([
+      `[jig dispatch: stays]\nstill waits\n\n${message}`,
+    ]);
+  });
+
+  test("keeps every entry of a comment that changed after the sender read it", async () => {
+    const gone = `[jig dispatch: gone]\n${"g".repeat(MAX_COMMENT - 100)}`;
+    const orca = fakeOrca({ isUnread: true, comment: `${gone}\nmy note` });
+    const receipt = await notify(
+      orca,
+      "settled-changed",
+      `[jig dispatch: new]\n${"x".repeat(200)}`,
+      undefined,
+      { comment: gone, keys: ["gone"] },
+    );
     expect(receipt).toMatchObject({ ok: false, lost: false });
     expect(orca.sets()).toEqual([]);
   });

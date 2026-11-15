@@ -6,12 +6,11 @@
 
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join, delimiter } from "node:path";
+import { join } from "node:path";
 import { load as loadYaml } from "../../../shared/yaml.ts";
 
 import {
   SCRIPTS,
-  binDir,
   scratchClean,
   writeFixture as rawFixture,
   useDrivePrSuite,
@@ -27,6 +26,7 @@ import {
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { claimRow, putClaim } from "./state-rows.ts";
+import { markReady } from "./mark-ready-harness.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -41,36 +41,6 @@ useDrivePrSuite();
 // event, which is why every test here is about firing it AT MOST ONCE and never
 // against a human's later decision.
 describe("mark-ready.ts", () => {
-  async function markReady(
-    dir: string,
-    stateDir: string,
-    args: string[] = [],
-    env: Record<string, string> = {},
-  ) {
-    const proc = Bun.spawn(
-      scriptArgv(join(SCRIPTS, "mark-ready.ts"), "999", ...args),
-      {
-        cwd: scratchClean.dir,
-        env: {
-          ...process.env,
-          PATH: `${binDir}${delimiter}${process.env.PATH}`,
-          DRIVE_PR_FIXTURES: dir,
-          DRIVE_PR_STATE_DIR: stateDir,
-          DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
-          ...env,
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    return { outcome: stdout.trim(), stderr, exitCode };
-  }
-
   /** Any drive-state.ts command against this describe block's state dir. */
   async function markReadyState(stateDir: string, args: string[]) {
     const proc = Bun.spawn(

@@ -50,6 +50,8 @@ import { Refused } from "./refused.tsx";
 import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
 import { bindAnswersToPark, forgetOldAnswers } from "./answers.ts";
+import { useKeptToken } from "./forge-token.ts";
+import { forgetOldSends } from "./sent.ts";
 import { decisionRows } from "./picking.ts";
 import {
   FILTERED_VIEWS,
@@ -132,8 +134,12 @@ export function App() {
   const scheme = schemeOf(theme);
   const [filter, setFilter] = useFilter();
   useEffect(() => {
-    forgetOldAnswers(Date.now());
-    const timer = setInterval(() => forgetOldAnswers(Date.now()), AGES_MOVE_MS);
+    const forget = () => {
+      forgetOldAnswers(Date.now());
+      forgetOldSends(Date.now());
+    };
+    forget();
+    const timer = setInterval(forget, AGES_MOVE_MS);
     return () => clearInterval(timer);
   }, []);
   const state = useStateRead(token);
@@ -518,6 +524,7 @@ function CardView({
   log: RowsAnswer | null;
 }) {
   const { line, clock } = view;
+  const { kept } = useKeptToken();
   if (tab === "merge")
     return (
       <PanelBoundary name="Ready to merge" className="pMerge" reads={line}>
@@ -546,7 +553,7 @@ function CardView({
           pastTense={view.pastTense}
         />
       </PanelBoundary>
-      {line !== null && hasNeedRows(line, clock.nowMs) ? (
+      {line !== null && (hasNeedRows(line, clock.nowMs) || kept !== null) ? (
         <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
           <NeedsPanel line={line} clock={clock} />
         </PanelBoundary>
@@ -605,7 +612,7 @@ function HistoryPanels({
   );
 }
 
-/** The footer's line: versions, the receipt, when the page read, and that it writes nothing. */
+/** The footer's line: versions, the receipt, when the page read, and that it writes nothing to the host. */
 function Colophon({ view, token }: { view: PageView; token: string }) {
   const { answer, version, line } = view;
   return (
@@ -629,8 +636,9 @@ function Colophon({ view, token }: { view: PageView; token: string }) {
       )}
       <span>{readLine(view)}</span>
       <span>
-        read-only: this page sends GET requests and writes nothing to the host;
-        your theme and the answers you pick or draft stay in this browser
+        read-only for the host: this page sends it GET requests and writes
+        nothing there; your theme, the answers you pick or draft and any GitHub
+        token you paste stay in this browser, and Send posts to GitHub directly
       </span>
     </div>
   );

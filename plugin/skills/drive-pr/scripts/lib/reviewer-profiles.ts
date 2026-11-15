@@ -95,3 +95,28 @@ export function runTitleSays(title: string): RunTitleSays {
   if (/^review skipped\b/i.test(t)) return "skipped";
   return null;
 }
+
+/**
+ * CodeRabbit's comment-only draft skip, recognized from its current body: a
+ * heading line `Draft PR not reviewed` in a body that is plain Markdown. The
+ * notice is short and carries no code, quotes or raw HTML of its own, and a
+ * wrong "yes" lets a draft pass the reviewer gate, so any body with a
+ * backtick (a code fence or a code span, which may run across lines) or raw
+ * HTML beyond whole-line comments is refused outright rather than parsed for
+ * which part is visible.
+ */
+export function commentSaysDraftSkip(app: string, body: string): boolean {
+  if (app !== "coderabbitai") return false;
+  const lines = body
+    .split(/\r?\n/u)
+    // The generated marker labels CodeRabbit's generic skip template too, so
+    // only the draft notice itself can prove this was a draft skip.
+    .filter((line) => !/^\s*<!--(?:(?!-->).)*-->\s*$/u.test(line));
+  if (lines.some((line) => /(?:^ {0,3}~{3,}|`|<[!/?a-z])/iu.test(line)))
+    return false;
+  return lines.some((line) =>
+    /^ {0,3}(?:#{1,6}\s+Draft PR not reviewed(?:\s+#+)?|\*\*Draft PR not reviewed\*\*)\s*$/u.test(
+      line,
+    ),
+  );
+}

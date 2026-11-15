@@ -33,11 +33,43 @@ export type StewardRecord =
       reason: string;
     }
   | { kind: "order"; targets: string[]; reason: string };
+
+/** What kind of judgment a member of the judgment backlog waits on. */
+export type BacklogKind =
+  | "stalled"
+  | "followup-failed"
+  | "rearm"
+  | "resume"
+  | "facet"
+  | "need";
+
+/** One item of the judgment backlog: its kind, its target and the facts that make it this occurrence. */
+export interface BacklogMember {
+  kind: BacklogKind;
+  /** `PR #7`, an item key, or for a resume the ended launch's id. */
+  target: string;
+  facts: string;
+}
+
+/** A need that already arrives framed, and who framed it: context for the steward, never a target for its `need` record. */
+export interface FramedNeed {
+  target: string;
+  cause: string;
+  framedBy: "park" | "session" | "dispatcher";
+  /** The framed question, when its framing states one. */
+  question: string | null;
+}
+
 export interface StewardDigest {
   version: 1;
   repo: string;
+  /** The judgment backlog the pass was started on; absent from a digest kept before the trigger read it. */
+  backlog?: BacklogMember[];
   drives: DrivenPr[];
+  /** The needs with no framing: the only targets a `need` record may name. */
   needs: Action[];
+  /** The needs that arrive framed, with their framing: never reframed. */
+  framed?: FramedNeed[];
   queue: PoolIssue[];
   passes: Array<{
     record: string;
@@ -94,64 +126,29 @@ export function recordBelongsToDigest(
   }
 }
 
-/** The cadence or the rolling hourly cap rules a run out whatever the input: checked before the digest is read. */
-export function stewardWaits(
+/** The steward passes the host starts in a rolling hour, across its repositories. */
+const STEWARD_HOURLY_BUDGET = 3;
+
+/** Whether the host's passes in the rolling hour before `now` spent its budget. */
+export function stewardBudgetSpent(
   runs: readonly { at: number }[],
   now: number,
-  every: number,
 ): boolean {
-  const latest = [...runs].sort((a, b) => b.at - a.at)[0];
   return (
-    (latest !== undefined && (now - latest.at < every || latest.at > now)) ||
-    runs.filter((r) => r.at > now - 3_600_000).length >= 3
+    runs.filter((r) => r.at > now - 3_600_000).length >= STEWARD_HOURLY_BUDGET
   );
 }
 
-/** A changed input, the cadence and a rolling hourly cap must all permit a run. */
-export function stewardDue(
-  hash: string,
-  runs: readonly { hash: string; at: number }[],
-  now: number,
-  every: number,
-): boolean {
-  const latest = [...runs].sort((a, b) => b.at - a.at)[0];
-  return !stewardWaits(runs, now, every) && latest?.hash !== hash;
+export function memberKey(member: BacklogMember): string {
+  return JSON.stringify([member.kind, member.target, member.facts]);
 }
 
-/** Times in receipts and measured gauges do not turn unchanged work into a new digest. */
-export function digestHash(digest: StewardDigest): string {
-  const { load: _load, ...stable } = digest;
-  const ordered = {
-    ...stable,
-    drives: [...stable.drives]
-      .sort((a, b) => a.number - b.number)
-      .map(({ why: _why, ...p }) => p),
-    needs: stable.needs
-      .map((a) => ({
-        stage: a.stage,
-        target: a.target,
-        cause: a.cause,
-        evidence: a.evidence,
-      }))
-      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-    queue: [...stable.queue].sort((a, b) =>
-      a.identifier.localeCompare(b.identifier),
-    ),
-    passes: [...stable.passes].sort((a, b) => a.record.localeCompare(b.record)),
-    targets: stable.targets?.toSorted((a, b) =>
-      a.target.localeCompare(b.target),
-    ),
-    failures: [...stable.failures].sort((a, b) => a.key.localeCompare(b.key)),
-    history: [...(stable.history ?? [])].sort((a, b) =>
-      JSON.stringify(a).localeCompare(JSON.stringify(b)),
-    ),
-  };
+/** The trigger's hash: the judgment backlog's members alone, whatever else the line did. */
+export function backlogHash(members: readonly BacklogMember[]): string {
   return createHash("sha256")
     .update(
-      JSON.stringify(ordered, (key, value) =>
-        ["heartbeatAgeMinutes", "stewardAct", "stewardAsk"].includes(key)
-          ? undefined
-          : value,
+      JSON.stringify(
+        members.map(memberKey).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
       ),
     )
     .digest("hex");
@@ -278,7 +275,17 @@ export function keepStewardRun(
     .query(
       "INSERT INTO steward_runs (id, repo, hash, at_ms, digest) VALUES (?, ?, ?, ?, ?)",
     )
-    .run(id, digest.repo, digestHash(digest), at, JSON.stringify(digest));
+    .run(
+      id,
+      digest.repo,
+      backlogHash(digest.backlog ?? []),
+      at,
+      JSON.stringify(digest),
+    );
+}
+/** Take back a run whose pass never started, so its backlog members stay unjudged. */
+export function forgetStewardRun(id: string, root = stateRoot()): void {
+  stateDb(root).query("DELETE FROM steward_runs WHERE id = ?").run(id);
 }
 /**
  * Erase the output-bearing fields (each target's last-pass tail and each
@@ -461,6 +468,46 @@ export function stewardRecords(
       : [{ ...r, value: record, applied: r.applied === 1 }];
   });
 }
+/** A resume refused for a fact its ended pass fixes: the pass is settled. */
+export const STEWARD_REFUSED = "refused";
+/** A resume refused for a fact that can change (policy, an unvalidated name): the pass stays offered. */
+export const STEWARD_REFUSED_OPEN = "refused-open";
+
+/** The passes a resume record already settled, launched or refused for good: the digest offers them no more. */
+export function judgedResumes(
+  repo: string,
+  root = stateRoot(),
+): ReadonlySet<string> {
+  const digests = new Map<string, ReturnType<typeof readStewardDigest>>();
+  return new Set(
+    stewardRecords(repo, root).flatMap((r) =>
+      r.applied &&
+      r.effect !== null &&
+      r.effect !== STEWARD_REFUSED_OPEN &&
+      r.value.kind === "resume" &&
+      !namedOutsideDigest(r, root, digests)
+        ? [r.value.record]
+        : [],
+    ),
+  );
+}
+
+/** An earlier steward settled a resume naming a pass outside its own digest as refused: that pass stays offered. */
+function namedOutsideDigest(
+  r: KeptStewardRecord,
+  root: string,
+  digests: Map<string, ReturnType<typeof readStewardDigest>>,
+): boolean {
+  if (r.effect !== STEWARD_REFUSED) return false;
+  // One run's refusals share one digest: read and parse it once per call.
+  let digest = digests.get(r.run);
+  if (digest === undefined) {
+    digest = readStewardDigest(r.run, root);
+    digests.set(r.run, digest);
+  }
+  return digest.ok && !recordBelongsToDigest(r.value, digest.value);
+}
+
 /** The claim precedes any action; an interrupted application is never attempted twice. */
 export function claimStewardRecord(id: number, root = stateRoot()): boolean {
   return (

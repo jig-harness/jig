@@ -11,7 +11,7 @@ import { slotTable } from "./accounts.ts";
 import { pickupReads } from "./pickup-reads.ts";
 import { trackerConfigOf } from "./section.ts";
 import { sharedView } from "./sources/served-reads.ts";
-import { allRecords, tickDeadline, type TickContext } from "./tick-context.ts";
+import { allRecords, tickBound, type TickContext } from "./tick-context.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
 import type { OpenedRepo } from "./tick-observe.ts";
 
@@ -64,7 +64,7 @@ export async function prepareTrackers(
   opened: readonly OpenedRepo[],
   context: TickContext,
 ): Promise<void> {
-  const bound = facetBound(tickDeadline(context).deadline);
+  const bound = facetBound(tickBound(context)?.deadline);
   const needs = opened.flatMap((repo) => {
     try {
       const people = repo.stages.has("pickup")

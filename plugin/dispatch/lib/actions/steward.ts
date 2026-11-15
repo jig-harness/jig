@@ -23,17 +23,29 @@ import {
   STEWARD_HISTORY_TARGET_LIMIT,
 } from "../steward-evidence.ts";
 import {
-  digestHash,
+  backlogHash,
+  forgetStewardRun,
+  judgedResumes,
   keepStewardRun,
   STEWARD_DEADLINE_SEC,
-  stewardDue,
+  stewardBudgetSpent,
   stewardRuns,
-  stewardWaits,
   type StewardDigest,
 } from "../steward.ts";
+import {
+  type Backlog,
+  type BacklogInput,
+  judgedMembers,
+  stewardBacklog,
+  stewardTrigger,
+  type StewardTrigger,
+} from "../steward-backlog.ts";
+import { parkClassesOf } from "../steward-resume.ts";
+import type { StationContext } from "../line-station.ts";
+import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { RepoObservation, Tracked } from "../tick-observe.ts";
-import type { Action } from "../types.ts";
+import type { Action, LaunchOutcome, RepoReport } from "../types.ts";
 import {
   admitAccount,
   type ApplyState,
@@ -43,14 +55,21 @@ import {
   waits,
   replayable,
   replay,
-  accountBlocked,
+  accountBlock,
   readRoomMs,
 } from "./launch.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 
+/**
+ * Start the steward when the judgment backlog holds a member no earlier pass
+ * saw: at once, within the host's hourly budget, while no other pass holds
+ * the repository. An empty or already judged backlog starts nothing, and the
+ * receipt says which.
+ */
 export async function applySteward(
   state: ApplyState,
   observation: RepoObservation,
+  station: StationContext,
   readDigest: typeof digestOf = digestOf,
 ): Promise<void> {
   const { opened, forge } = observation;
@@ -62,18 +81,7 @@ export async function applySteward(
   if (!opened.owner) return skip("another host owns this repository");
   if (!opened.stages.has("steward") || !config?.enabled)
     return skip("steward is disabled on this host");
-  for (const record of replayable(state, repo.slug, ["steward"])) {
-    const action: Action = {
-      stage: "steward",
-      target: "the steward",
-      record: "runtime",
-      reason: "retry the pending steward launch under its existing token",
-      evidence: {},
-    };
-    report.launches.push(
-      await replay(state, record, action, await accountBlocked(state, record)),
-    );
-  }
+  await replayPending(state, repo.slug, report);
   if (
     state.records.some(
       (r) =>
@@ -85,25 +93,39 @@ export async function applySteward(
     return skip("a steward pass already holds this repository");
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
-  if (
-    stewardRuns(null, state.root).filter((r) => r.at > currentMs() - 3_600_000)
-      .length >= 3
-  )
-    return skip("the host's hourly steward budget is spent");
-  const runs = stewardRuns(repo.slug, state.root);
-  if (stewardWaits(runs, currentMs(), config.everyMs))
-    return skip("cadence has not elapsed or hourly budget is spent");
-  const read = await readDigest(state, observation);
+  if (stewardBudgetSpent(stewardRuns(null, state.root), currentMs())) {
+    report.steward = {
+      status: "the host's hourly steward budget is spent",
+      trigger: "budget",
+    };
+    return;
+  }
+  const found = await backlogOf(state, observation, station);
+  if (!found.ok) return skip(found.failure.reason);
+  const backlog = found.value.backlog;
+  const trigger = stewardTrigger(
+    backlog.members,
+    judgedMembers(
+      repo.slug,
+      state.root,
+      new Set(
+        state.records.filter((r) => holds(r.state)).map((r) => r.record.id),
+      ),
+    ),
+  );
+  if (trigger.kind !== "due") {
+    report.steward = notStarted(trigger);
+    return;
+  }
+  const read = await readDigest(state, observation, backlog, found.value.queue);
   if (!read.ok) return skip(read.failure.reason);
   const digest = read.value;
-  const hash = digestHash(digest);
-  if (!stewardDue(hash, runs, currentMs(), config.everyMs))
-    return skip("input is unchanged since the last pass");
+  const hash = backlogHash(backlog.members);
   const action: Action = {
     stage: "steward",
     target: "the steward",
     record: "runtime",
-    reason: "changed work needs the steward's judgment",
+    reason: `${trigger.unjudged} of the judgment backlog's ${trigger.members} members wait on the steward's judgment`,
     evidence: { hash },
   };
   const admitted = await admitAccount(
@@ -175,9 +197,136 @@ export async function applySteward(
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
   };
-  keepStewardRun(id, digest, currentMs(), state.root);
-  report.launches.push(await startRecord(state, record, slots));
-  report.steward = { status: "pass recorded and launch attempted", hash };
+  const launch = await startKept(state, record, slots, digest);
+  report.launches.push(launch);
+  report.steward = stewardStatus(
+    launch,
+    state.records.some((r) => r.record.id === record.id),
+    trigger,
+    hash,
+  );
+}
+
+/**
+ * What the launch left: a run taken back started nothing, a record still
+ * pending awaits a retry (the answer was lost, so a pass may or may not run),
+ * and only a launch the runtime accepted is a start.
+ */
+function stewardStatus(
+  launch: LaunchOutcome,
+  kept: boolean,
+  trigger: Extract<StewardTrigger, { kind: "due" }>,
+  hash: string,
+): NonNullable<RepoReport["steward"]> {
+  if (!kept) return { status: `not started: ${launch.detail}`, hash };
+  if (launch.outcome !== "launched" && launch.outcome !== "retried")
+    return {
+      status: `launch pending, a later tick retries it: ${launch.detail}`,
+      hash,
+    };
+  return {
+    status: `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
+    hash,
+    trigger: "started",
+  };
+}
+
+/** Retry each pending steward launch under its token; one the runtime refused started no pass, so its run is taken back. */
+async function replayPending(
+  state: ApplyState,
+  slug: string,
+  report: RepoReport,
+): Promise<void> {
+  for (const record of replayable(state, slug, ["steward"])) {
+    const action: Action = {
+      stage: "steward",
+      target: "the steward",
+      record: "runtime",
+      reason: "retry the pending steward launch under its existing token",
+      evidence: {},
+    };
+    report.launches.push(
+      await replay(state, record, action, await accountBlock(state, record)),
+    );
+    if (!state.records.some((r) => r.record.id === record.id))
+      forgetStewardRun(record.id, state.root);
+  }
+}
+
+/** The judgment backlog, derived from the whole queue: a queued item the tick did not read is read now. */
+async function backlogOf(
+  state: ApplyState,
+  observation: RepoObservation,
+  station: StationContext,
+): Promise<Outcome<{ backlog: Backlog; queue: PoolIssue[] }, QueueFailure>> {
+  const queued = await stewardQueue(observation.tracked, () =>
+    readRoomMs(state),
+  );
+  if (!queued.ok) return queued;
+  return ok({
+    backlog: stewardBacklog(
+      backlogInput(state, observation, station, queued.value),
+    ),
+    queue: queued.value,
+  });
+}
+
+/**
+ * Keep the run, then start its pass. A launch that threw or left no record
+ * behind started no pass, so nobody judged its members: the run is taken back.
+ */
+export async function startKept(
+  state: ApplyState,
+  record: LaunchRecord,
+  slots: Parameters<typeof startRecord>[2],
+  digest: StewardDigest,
+  start: typeof startRecord = startRecord,
+): Promise<LaunchOutcome> {
+  keepStewardRun(record.id, digest, currentMs(), state.root);
+  try {
+    const launch = await start(state, record, slots);
+    if (!state.records.some((r) => r.record.id === record.id))
+      forgetStewardRun(record.id, state.root);
+    return launch;
+  } catch (error) {
+    forgetStewardRun(record.id, state.root);
+    throw error;
+  }
+}
+
+/** Why a backlog that is not due starts no pass, as the receipt and the dashboard say it. */
+function notStarted(
+  trigger: Exclude<StewardTrigger, { kind: "due" }>,
+): NonNullable<RepoReport["steward"]> {
+  return trigger.kind === "empty"
+    ? { status: "the judgment backlog is empty", trigger: "empty" }
+    : {
+        status: `every member of the judgment backlog (${trigger.members}) was already judged`,
+        trigger: "judged",
+      };
+}
+
+/** The facts the tick already read that the judgment backlog is derived from. */
+function backlogInput(
+  state: ApplyState,
+  observation: RepoObservation,
+  station: StationContext,
+  queue: PoolIssue[],
+): BacklogInput {
+  const { opened, forge } = observation;
+  const labels = parseTrackerLabels(opened.values);
+  return {
+    slug: opened.repo.slug,
+    actions: opened.report.actions,
+    running: opened.report.running,
+    drives: forge.drives,
+    held: observation.held,
+    queue,
+    records: state.records,
+    parkClasses: parkClassesOf(opened.values),
+    labels: { hitl: labels.hitl, manualOps: labels.manualOps },
+    station,
+  };
 }
 
 /** Why the steward's queue could not be completed this tick. */
@@ -187,19 +336,18 @@ type QueueFailure = "out-of-time" | "unread";
 const QUEUE_READ_MS = 60_000;
 
 /**
- * Reuse the tick's evidence and keep the digest separate from launch
+ * Reuse the tick's evidence, the queue `backlogOf` completed included, and keep the digest separate from launch
  * admission. A digest that cannot be completed is a failure, since a
  * partial queue would hash as changed input.
  */
 async function digestOf(
   state: ApplyState,
   observation: RepoObservation,
+  backlog: Backlog,
+  queue: PoolIssue[],
 ): Promise<Outcome<StewardDigest, QueueFailure>> {
-  const { opened, tracked, forge } = observation;
-  const { repo, report } = opened;
-  const read = await stewardQueue(tracked, () => readRoomMs(state));
-  if (!read.ok) return read;
-  const queue = read.value;
+  const { opened, forge } = observation;
+  const { repo } = opened;
   const targets = await collectStewardEvidence(
     state.records,
     observation,
@@ -209,15 +357,21 @@ async function digestOf(
   return ok({
     version: 1,
     repo: repo.slug,
+    backlog: backlog.members,
     drives: forge.drives.map((pr) => ({
       ...pr,
       evidence: { ...pr.evidence, stewardFacts: factsOf(pr) },
     })),
-    needs: report.actions.filter((a) => a.stage === "notify"),
+    needs: backlog.needs,
+    framed: backlog.framed,
     queue,
     targets,
     targetHistoryLimit: STEWARD_HISTORY_TARGET_LIMIT,
-    passes: stewardPasses(state.records, repo.slug),
+    passes: stewardPasses(
+      state.records,
+      repo.slug,
+      judgedResumes(repo.slug, state.root),
+    ),
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
     history: (
@@ -278,13 +432,19 @@ function keptSummary(context: string | undefined): string | null {
   return summary === "" ? null : summary;
 }
 
-/** Question context remains separate from each target's latest output. */
+/**
+ * Question context remains separate from each target's latest output. A pass
+ * that framed a decision is a person's, and a pass whose resume the tick
+ * already judged (`judged`) is settled: neither is offered for a resume.
+ */
 export function stewardPasses(
   records: ReadRecord[],
   slug: string,
+  judged: ReadonlySet<string> = new Set(),
 ): StewardDigest["passes"] {
   return records.flatMap((r) => {
     if (r.record.repo !== slug || r.state.kind !== "ended") return [];
+    if (r.framed || judged.has(r.record.id)) return [];
     if (r.record.action !== "pickup" && r.record.action !== "followup")
       return [];
     const { exit } = r.state;

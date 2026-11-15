@@ -148,6 +148,15 @@ describe("a park", () => {
     expect(view.goLabel).toBe("Answer on the pull request");
   });
 
+  it("sends to its pull request on github.com, and a stop with no decision does not", () => {
+    const url = "https://github.com/example-org/web/pull/7";
+    expect(needView({ ...park, url }, CLOCK).send).toEqual({
+      to: { repo: "example-org/web", number: 7 },
+    });
+    expect("absent" in needView(park, CLOCK).send).toBe(true);
+    expect("absent" in needView({ ...NEED, url }, CLOCK).send).toBe(true);
+  });
+
   it("names each decision key a person answers, once", () => {
     expect(needView(park, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
     const twice = { ...park, decisions: [FRAMED, FRAMED] };
@@ -327,6 +336,20 @@ describe("a need's words", () => {
         CLOCK,
       ).evidence.find((r) => r.k === "notified")?.v,
     ).toBe("lost");
+  });
+
+  it("says why a notification waits", () => {
+    const detail = "the comment is full";
+    const notified = (at: string | null) =>
+      needView(
+        {
+          ...NEED,
+          notified: { at, outcome: "waits", workspace: null, detail },
+        },
+        CLOCK,
+      ).evidence.find((r) => r.k === "notified")?.v;
+    expect(notified(null)).toBe(`waits: ${detail}`);
+    expect(notified(iso(10, 5))).toBe(`10:05; now waits: ${detail}`);
   });
 });
 

@@ -440,13 +440,19 @@ assignee makes the pickup refuse without restoring anyone. Linear and Jira
 have one assignee, so they assign first and verify the assignment from history;
 when that check finds a concurrent assignee was replaced, they conditionally
 make a best-effort restoration and refuse the pickup. A tracker without either
-operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
-none while a started child still needs an agent. A child awaiting a person
-does not occupy that slot: it is in the tracker's `ops_pending` state, or
-carries `hitl`, `hitl:*`, `manual-ops` (including their configured names) or
-`jig:hold`. Nor does a child this host's ended pickup record keeps from
-starting: its next startable sibling takes the slot, and the epic reports
-the held child and why. An epic none of whose open children can start reports one reason,
+operation leaves the blocker for a person to assign. An assigned epic without
+an execution plan has its ready children started in parallel, best-ranked
+first, up to `dispatch.epic_width` of them under way at once (4 by default;
+1 starts one child at a time). A started child counts toward the width while
+it still needs an agent, and so does a child that cannot be read, since it
+may be under way. A child awaiting a person takes no part of the width: it
+is in the tracker's `ops_pending` state, or carries `hitl`, `hitl:*`,
+`manual-ops` (including their configured names) or `jig:hold`. Nor does a
+child this host's ended pickup record keeps from starting: its next
+startable sibling takes its place, and the epic reports the held child and
+why. A child that waits on the width says so, naming the epic and the width
+([ADR-0024](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)).
+An epic none of whose open children can start reports one reason,
 naming a child waiting on a person when it has one. An execution plan keeps
 its own ordering rules.
 
@@ -472,8 +478,9 @@ free slot reuses one younger than that without asking. Every repository of
 the machine file that names the same tracker, team and person shares one
 reading per tick.
 
-Every process on the host shares each tracker credential's request budget
-(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+Every process on the host shares each tracker credential's and the forge
+credential's request budget
+(`outbound_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
 While the tracker refuses the credential for its rate limit, no request
 leaves the host before the reset it named: a tick reports the tracker once
 as rate limited until then, the queue it shows is the last reading, and
@@ -615,6 +622,31 @@ who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
 left none), with `cause` and `by` as columns. A run that ends without a
 report still leaves its `Question:` line.
 
+A drive runs many passes, and most of its stops are decided by `drive.ts`
+after a pass has ended, so no pass knows it is the last. Each pass instead
+ends its round with a
+[round report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+the same fields, kept in the drive's state directory and stamped with the
+pass's launch and round. When the drive stops, `drive.ts` writes the
+closing report (`by: driver`): its `concluded` is the stop's own line
+followed by what the last round report of this launch concluded, cut to
+the 600 characters; its `cause` and next step are the ones the drive's
+[terminal-state table](protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)
+gives its exit; at a park it carries the first parked decision's question
+and framed options. `jig dispatch report` refuses a drive's record: the
+wrapper hands `drive.ts` a file in the run's own state directory
+(`runs/<record>/`), and once the drive ended it checks the report there,
+records it under the record before the exit and removes the file. A
+follow-up pass that could not start gets the wrapper's own report
+(`by: wrapper`, cause `startup`, or `usage-limit` on a vendor usage
+notice). Whatever report a run keeps, the wrapper prints as its last lines.
+As each pass of a drive starts, `drive.ts` records the session id it gave
+the pass on the launch record, round by round, so the run is found in the
+vendor's transcripts; a Codex pass takes none, and neither does a CI or
+conflict repair pass, whose transcripts `launches.sessions` does not list. The end the wrapper writes
+onto the shared claim carries the report's `cause` and who wrote it
+(`by`), never its text.
+
 #### Every need is a decision
 
 A pass that stops for a person frames what it asks, as a drive frames a
@@ -657,9 +689,11 @@ item of a tracker other than the forge are not read yet.
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
 machine file) inspects what the rules leave stopped, under the owner host's
-account and load admission. Every 20 minutes, only when the digest changed,
-it can propose a transient-stop retry, a missing issue facet, queue tie order
-and the act and ask for a human need. It can also propose one fixed resume of
+account and load admission. It starts when the repository's
+[judgment backlog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds work no earlier pass
+judged, at once rather than on a cadence, and an empty or already judged
+backlog starts none. It can propose a transient-stop retry, a missing issue
+facet, queue tie order and the act and ask for a need nothing has framed. It can also propose one fixed resume of
 an ended dispatched pass that recommended an option outside the human-decision
 registry. The follow-up lane's own routine retry runs first. The next tick
 applies its closed records under the current holds and recovery budget;
@@ -679,7 +713,9 @@ the drive launches' `opens_per_tick` and the notices workspace's reserved
 open, with at most `followup_concurrency` passes (2) running on the host at
 once, so a follow-up never waits for a drive's launch and a drive's launch
 never waits behind follow-ups. They share the accounts' slots. A follow-up
-that waits says on what: the lane's budget, the lane's cap or the accounts.
+that waits says on what: the lane's budget, the lane's cap, the accounts,
+the tick's deadline or another admission check, with the specific reason
+in its receipt and dashboard queue entry.
 The pass runs as a drive's pass does: in a
 terminal tab running the dispatcher's wrapper, as the account's vendor's
 non-interactive command (`claude -p`, `codex exec`), bound to the admitted
@@ -722,7 +758,17 @@ died during its work (its wrapper gone, or a signal or a failing exit) with
 no result and no question is run again once: the tick releases its marker,
 answered or not, and a later tick starts the follow-up again, within the pull
 request's recovery budget, while the death is under 6 hours old; a second
-death is notified. A pass that cannot finish without a person stops and
+death is notified. A pass whose result or exit this host could not write is
+run again once too (`jig dispatch result` exits `4` when the dispatcher's database refuses
+it, and keeps the evidence outside the database), whatever the pass said and
+however long ago, and never with the question it asked. Both runs again wait
+for the host's health check (`jig doctor dispatch`'s last run) to pass;
+while it fails, a death is held whatever its age and nothing is notified.
+`failures.rerun_died: 0` turns them off
+([CONFIGURATION.md](CONFIGURATION.md#the-machines-dispatch-file)). A pickup
+whose result this host could not write is never asked its own question
+either: once the health check passes, a person is asked once to settle or
+release the item. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person. A
 question that is only one of the dispatcher's fixed **routine question
@@ -839,7 +885,11 @@ counts as sent only once the workspace's comment, read back, carries its key
 line (`[jig dispatch: …]`), and is not sent again while its cause stands
 until `renotify_after` has passed;
 while a workspace is still unread, a new message is appended to its comment
-rather than replacing it. The answer to a park is never sent back through
+rather than replacing it, and the entries whose causes are settled (the pull
+request closed, the need answered) leave a comment only the dispatcher wrote
+to make room. A message that still finds no room counts as a failed delivery,
+and past `failures.notify_after` ticks a person is told it is failing. The
+answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
 
@@ -1258,7 +1308,7 @@ stage an outlined chip, a source a dashed chip. The Help view lists every
 icon with its word. The theme follows the device until the switch in the strip picks light
 or dark.
 
-The page acts on nothing: it links to the pull request a decision is answered on
+The page acts on nothing through the host: it links to the pull request a decision is answered on
 and copies what cannot open, such as a workspace path or an answer line. A
 parked need shows one short row per decision, and a person picks an option
 with a key or a tap, adds a note or writes an answer in their own words; all
@@ -1271,6 +1321,31 @@ decision under a class listed as Decide copies its approval when its recommended
 class not listed as Decide, or of an option that cannot be undone, copies only
 on the second step, which first shows what it changes and costs. When the
 server stops answering, it keeps what it last read and says when that was.
+
+**Send, from the browser.** With a GitHub token pasted under **Send from
+here** on Needs you, a parked drive's card whose pull request is on
+github.com also has **Send**. Once an option is picked on the card, it
+posts each decision's answer to the pull request through GitHub's API, from
+the browser, as the person: one comment per decision, the `drive-answer`
+record `jig send` writes, with Copy's line for that decision, any note line
+and the hidden record naming the person's login and `dashboard (browser)`
+as its writer. The card then links the comments and says they were sent
+here. With nothing picked, Send stays held back; Copy still takes the
+approval of a lone Decide decision's recommendation to paste. A guarded
+pick sends on the second step, as it copies. The page tests the token by asking GitHub
+which login it signs in as, names that login, keeps the token in that
+browser's local storage alone and forgets it on request; the dashboard's
+server never receives it and has no route that writes. Make a fine-grained
+personal access token limited to the repositories the dashboard shows, with
+Issues and Pull requests set to read and write, and a short expiry. Its
+answers count as `jig send`'s do, by the drive's rule for an author. Any
+other card says why it has no Send. The page's content security policy lets
+it reach its own server and `https://api.github.com` alone, so a pull
+request on another forge has no Send. Send is offered only when the page
+came over HTTPS, from the machine's loopback (`localhost`, 127.0.0.0/8,
+`::1`). Over any other plain-HTTP address someone on the network path who can change the page
+could read the token, so the cards say why Send is missing there. A phone
+uses the private HTTPS front ([phone-access.md](phone-access.md)).
 
 **The line as JSON.** A program beside the dispatcher (an editor's plugin, a
 status bar) reads what the newest tick found without opening the state
@@ -1438,6 +1513,10 @@ person, one line per entry. Anything else it answers in sentences.
 | `drive` | the pull request's number | the live driver: a dispatched re-arm or takeover, or a driver someone armed by hand |
 | `followup` | the merged pull request's number | the follow-up pass, or a person's run |
 
+The Jig Protocol's [Addresses chapter](protocol/addresses.md) lists the
+stations and the verbs below, generated from the code, for a program that
+forms addresses or sends verbs.
+
 The repository may be its short name where the
 [machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists
 exactly one repository of that name (`drive@jig#456`), or left out inside a
@@ -1511,6 +1590,9 @@ older parks use the PR author when the tick knows them; older snapshots without
 a named recipient remain in the unfiltered list. Each entry carries its recorded
 stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
+An entry whose notice did not reach a person at that tick (held for room in
+the notices comment, lost, or its destination out of reach) says why in
+`notice`, and as a `notice not delivered:` line in text.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this
@@ -1568,6 +1650,14 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
   stopping a drive elsewhere stays that host's act.
+
+For `rearm`, the drive listing or a drive launch supplies its tree first.
+When neither names an existing tree, a successful dispatched pickup's
+handoff and Git's worktrees on the pull request's head branch are searched
+across known local clones. That fallback must find exactly one existing
+tree: several candidates are named and refused, and an incomplete search
+is refused too. Nothing opens a replacement tree; the tick checks ownership
+again before launching.
 
 The text of an `answer` is one line of at most 500 characters, with no
 control character (no line break, no mark that reorders text) and no hidden
@@ -2039,6 +2129,7 @@ drive:
   reviews_drafts: true        # does the AI reviewer review draft pull requests
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
+  ci_repair_rounds: 2         # CI-repair passes per head and failing check on red final CI; 0 stops on red; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires

@@ -112,7 +112,7 @@ function moverReader(
     const key = `${poolScope(tracker)}:pool:${issue.identifier}`;
     const kept = cache?.get<{ updatedAt: string; by: Assigner }>(key);
     if (issue.updatedAt && kept?.updatedAt === issue.updatedAt) return kept.by;
-    const asked = stateChangedBy.call(tracker, issue.identifier);
+    const asked = stateChangedBy.call(tracker, issue.identifier, bound?.signal);
     const by = await (bound === undefined ? asked : within(asked, bound));
     if (issue.updatedAt) cache?.set(key, { updatedAt: issue.updatedAt, by });
     return by;

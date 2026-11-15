@@ -4,10 +4,17 @@
  * declares in the chapter list (`chapters.ts`), and what its data file
  * (`plugin/protocol/data/<chapter>.json`) holds.
  */
+import {
+  type JsonSchema,
+  type Shape,
+  toJsonSchema,
+} from "../../plugin/shared/shapes.ts";
+import { jsonText } from "./json.ts";
 
 /** Where the chapters, their index page and their data files live. */
 export const PROTOCOL_DIR = "plugin/protocol";
 export const DATA_DIR = `${PROTOCOL_DIR}/data`;
+export const SCHEMA_DIR = `${PROTOCOL_DIR}/schemas`;
 export const INDEX_FILE = `${PROTOCOL_DIR}/README.md`;
 /** The plan a provisional chapter's items must be open in. */
 export const PLAN_FILE = "design/plan.md";
@@ -73,6 +80,11 @@ export interface Chapter {
   takes(): readonly string[];
   /** Entries of the imported tables the chapter deliberately leaves out. */
   readonly excluded: readonly string[];
+  /** The JSON documents this chapter publishes, derived from their readers' descriptions. */
+  readonly schemas?: readonly {
+    readonly name: string;
+    readonly shape: Shape;
+  }[];
 }
 
 /** A chapter removed from the list: the version it was withdrawn at, above the last it shipped. */
@@ -90,10 +102,24 @@ export interface DataFile {
   readonly planItems?: readonly PlanItem[];
   readonly fields: Readonly<Record<string, FieldSpec>>;
   readonly values: readonly DataValue[];
+  /** The published document shapes, without publication addresses, for stable-base comparison. */
+  readonly schemas?: Readonly<Record<string, JsonSchema>>;
 }
 
 export const chapterFile = (id: string): string => `${PROTOCOL_DIR}/${id}.md`;
 export const dataFile = (id: string): string => `${DATA_DIR}/${id}.json`;
+export const schemaFile = (name: string): string =>
+  `${SCHEMA_DIR}/${name}.json`;
+
+/** A published schema's address identifies the contract's chapter and version. */
+export function schemaOf(chapter: Chapter, name: string, shape: Shape) {
+  const schema = toJsonSchema(shape);
+  return {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: `https://jig-harness.dev/protocol/${chapter.id}/v${chapter.version}/schemas/${name}.json`,
+    ...(typeof schema === "boolean" ? { allOf: [schema] } : schema),
+  };
+}
 
 /** The chapter's data file, in the order its JSON lists the keys. */
 export function dataOf(chapter: Chapter): DataFile {
@@ -107,16 +133,21 @@ export function dataOf(chapter: Chapter): DataFile {
       : {}),
     fields: chapter.fields,
     values: chapter.values(),
+    ...((chapter.schemas?.length ?? 0) > 0
+      ? {
+          schemas: Object.fromEntries(
+            (chapter.schemas ?? []).map(({ name, shape }) => [
+              name,
+              toJsonSchema(shape),
+            ]),
+          ),
+        }
+      : {}),
   };
 }
 
-/**
- * The data file as text. Every object is expanded and no array holds plain
- * values, so the layout is the one Biome formats JSON to and the formatter
- * leaves the file as written.
- */
-export const dataText = (data: DataFile): string =>
-  `${JSON.stringify(data, null, 2)}\n`;
+/** A data file in the same format as every generated schema. */
+export const dataText = (data: DataFile): string => jsonText(data);
 
 /** One value of a chapter, with the table of `file` it comes from. */
 export interface TableRow {
