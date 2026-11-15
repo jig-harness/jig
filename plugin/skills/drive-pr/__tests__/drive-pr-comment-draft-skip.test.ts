@@ -91,21 +91,36 @@ describe("a comment-only draft skip", () => {
     expect(after.state).toBe("AWAITING_REVIEWER");
   });
 
-  it("does not trust another author's skip or an unrelated heading", async () => {
-    for (const result of [
-      await gate(marker),
-      await gate(draftSkip, {}, "someone"),
-      await gate("The description says Draft PR not reviewed"),
-      await gate("## Review summary"),
-      await gate("Old notice:\n```markdown\n## Draft PR not reviewed\n```"),
-      await gate("~~~\n## Draft PR not reviewed\n~~~"),
-      await gate("    ## Draft PR not reviewed"),
-      await gate("> ## Draft PR not reviewed"),
-    ]) {
+  const untrusted: [string, string, string?][] = [
+    ["a marker with no notice", marker],
+    ["another author's notice", draftSkip, "someone"],
+    ["prose naming the notice", "The description says Draft PR not reviewed"],
+    ["an unrelated heading", "## Review summary"],
+    [
+      "a fenced example",
+      "Old notice:\n```markdown\n## Draft PR not reviewed\n```",
+    ],
+    ["a tilde fence", "~~~\n## Draft PR not reviewed\n~~~"],
+    ["indented code", "    ## Draft PR not reviewed"],
+    ["a quote", "> ## Draft PR not reviewed"],
+    [
+      "a fence closed by a non-fence",
+      "```markdown\n```typescript\n## Draft PR not reviewed\n```",
+    ],
+    [
+      "a tilde fence closed by a non-fence",
+      "~~~\n~~~ts\n## Draft PR not reviewed\n~~~",
+    ],
+    ["an HTML comment", "<!--\n## Draft PR not reviewed\n-->"],
+    ["a pre block", "<pre>\n## Draft PR not reviewed\n</pre>"],
+  ];
+  for (const [name, body, login] of untrusted) {
+    it(`does not trust ${name}`, async () => {
+      const result = await gate(body, {}, login);
       expectProbeExit(result, 4);
       expect(result.state).toBe("AWAITING_REVIEWER");
-    }
-  });
+    });
+  }
 
   it("does not use CodeRabbit's comment for another configured reviewer", async () => {
     const { dir, stateDir } = fixture(draftSkip);

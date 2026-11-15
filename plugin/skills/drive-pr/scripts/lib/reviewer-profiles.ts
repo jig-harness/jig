@@ -98,18 +98,25 @@ export function runTitleSays(title: string): RunTitleSays {
 
 /**
  * CodeRabbit's comment-only draft skip, recognized from its current body: a
- * heading line `Draft PR not reviewed` in running Markdown. Fenced code,
- * indented code and quoted text only show the notice, so they never count.
+ * heading line `Draft PR not reviewed` in visible running Markdown. Fenced
+ * code, indented code, quoted text, HTML comments and `<pre>`/`<code>` blocks
+ * only show or hide the notice, so they never count.
  */
 export function commentSaysDraftSkip(app: string, body: string): boolean {
   if (app !== "coderabbitai") return false;
   let fence: string | null = null;
   // The generated marker labels CodeRabbit's generic skip template too, so
   // only the draft notice itself can prove this was a draft skip.
-  return body.split(/\r?\n/u).some((line) => {
+  const visible = body
+    .replace(/<!--[\s\S]*?(?:-->|$)/gu, "")
+    .replace(/<(pre|code)\b[\s\S]*?(?:<\/\1\s*>|$)/giu, "");
+  return visible.split(/\r?\n/u).some((line) => {
     const open = /^ {0,3}(`{3,}|~{3,})/u.exec(line)?.[1];
     if (fence) {
-      if (open && open[0] === fence[0] && open.length >= fence.length)
+      // A closing fence is the same delimiter, at least as long, and nothing
+      // but spaces or tabs after it.
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u.exec(line)?.[1];
+      if (close && close[0] === fence[0] && close.length >= fence.length)
         fence = null;
       return false;
     }
