@@ -30,6 +30,14 @@ release: minor
   which can only make them spend less. Records an earlier release kept per
   credential stay readable, and seed the owner's record with any active
   hold kept.
+- A `gh api --paginate` read was charged one request however many pages
+  it sent, so a long read could pass the dispatcher's floor. When its
+  output is captured, the forge client now sends it a page at a time, each
+  page admitted and charged as a request of its own; the read stops as
+  `rate-limited` at the floor, keeps one deadline for all its pages and
+  fails as `too-costly` past 100 pages. A paged read the client cannot
+  page itself (streamed output, GraphQL with `--jq`) reserves 10 requests
+  before it starts and is charged them as an estimate.
 - `gh pr view` and the other GraphQL subcommands were counted against the
   core requests in the low-quota forecast; they now count against the
   GraphQL window, as estimates.

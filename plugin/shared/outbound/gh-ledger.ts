@@ -1,6 +1,7 @@
 /** Account for forge commands at their shared runner, without keeping command arguments or query variables. */
 import {
   type GhAttribution,
+  PAGINATED_RESERVE,
   apiRoute,
   conditional,
   githubCredential,
@@ -196,6 +197,13 @@ function accountAnswer(
   const reported = githubCost(body);
   // gh authenticates its API calls; 304 confirms this conditional read was free.
   const conditional = output === null ? null : conditionalCost(args, result);
+  // A read gh paged itself sent pages nobody counted: it is charged what
+  // its admission reserved, as an estimate, whether or not it was captured.
+  if (args.includes("--paginate") && observation.requests > 0) {
+    observation.cost = PAGINATED_RESERVE;
+    observation.estimated = true;
+    return body;
+  }
   observation.cost =
     reported ??
     conditional ??

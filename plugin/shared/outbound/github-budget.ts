@@ -17,6 +17,9 @@
  *   rate-limit headers (`x-ratelimit-resource`, `-limit`, `-remaining`,
  *   `-reset`, and `retry-after` on a refusal); the headers are taken off
  *   the output before the caller reads it;
+ * - a captured `gh api --paginate` read is sent a page at a time, each page
+ *   a run of its own (`gh-paginate.ts`); one gh pages itself reserves
+ *   `PAGINATED_RESERVE` requests before it starts and keeps them;
  * - a GraphQL answer that selects `rateLimit` says the GraphQL balance;
  * - the `rate_limit` endpoint, which costs nothing against the primary
  *   limits, says every limit's balance;
@@ -183,18 +186,33 @@ const VALUED = new Set([
   "--preview",
 ]);
 
-/** The route a `gh api` command line asks: its first argument that is neither a flag nor a flag's value, without a leading slash or a query. */
-export function apiRoute(args: readonly string[]): string {
+/** Where a `gh api` command line names its route: its first argument that is neither a flag nor a flag's value; `-1` when it names none. */
+export function apiRouteAt(args: readonly string[]): number {
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i] ?? "";
     if (VALUED.has(arg)) {
       i += 1;
       continue;
     }
-    if (arg.startsWith("-")) continue;
-    return arg.replace(/^\/+/, "").split("?")[0] ?? "";
+    if (!arg.startsWith("-")) return i;
   }
-  return "";
+  return -1;
+}
+
+/**
+ * The route a `gh api` command line asks, without a leading slash or a
+ * query; a full URL (the next page a paged read asks for) is read without
+ * its scheme, host and an enterprise server's `api/v3/` prefix.
+ */
+export function apiRoute(args: readonly string[]): string {
+  const at = apiRouteAt(args);
+  if (at < 0) return "";
+  return (
+    (args[at] ?? "")
+      .replace(/^https?:\/\/[^/]+\/(api\/v3\/)?/i, "")
+      .replace(/^\/+/, "")
+      .split("?")[0] ?? ""
+  );
 }
 
 /** A request GitHub answers 304 without charging it, when nothing changed; a 200 to it is charged like any other. */
@@ -241,6 +259,14 @@ function admission(
   const profile = GITHUB_PROFILE.limits[spent];
   return { windows, reserve: profile.window, rollMs: profile.periodMs };
 }
+
+/**
+ * The requests (or points) a paged read gh pages itself reserves before it
+ * starts: a read whose output is not captured whole, or whose form the
+ * forge client cannot page itself (`gh-paginate.ts`). How many pages it
+ * sent is not known, so it is charged this many, estimated.
+ */
+export const PAGINATED_RESERVE = 10;
 
 const INCLUDE = new Set(["-i", "--include"]);
 /** Flags whose output the headers cannot be taken off: several answers, none, or a trace. */
@@ -521,7 +547,7 @@ function governor(): BudgetGovernor {
 }
 
 /** Whether the forge's runs are governed in this environment. */
-function forgeBudgetOn(
+export function forgeBudgetOn(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
   return (
@@ -585,20 +611,32 @@ export function ghGovernance(
   // The window the admission actually reserved in: none when the record or
   // the balance was not known, whatever the admission asked for.
   let reservedIn: string | null = admitted.reserve ?? null;
+  // A read gh pages itself sends an unknown number of requests: it reserves
+  // `PAGINATED_RESERVE` of them, each admitted above the floor, and keeps
+  // them once it ran.
+  const reservations = args.includes("--paginate") ? PAGINATED_RESERVE : 1;
+  const taken: number[] = [];
+  const giveBack = () => {
+    for (const at of taken.splice(0))
+      if (reservedIn !== null) gov.release?.(key, reservedIn, at);
+  };
   return {
     argv,
     admit() {
       try {
-        return {
-          sentAt: gov.admit("GitHub", key, {
-            ...admitted,
-            onReserved: (name) => {
-              reservedIn = name;
-            },
-          }),
-        };
+        while (taken.length < reservations)
+          taken.push(
+            gov.admit("GitHub", key, {
+              ...admitted,
+              onReserved: (name) => {
+                reservedIn = name;
+              },
+            }),
+          );
+        return { sentAt: taken[0] as number };
       } catch (error) {
         if (!isRateLimited(error)) throw error;
+        giveBack();
         return {
           refused: outboundFailure(
             "rate-limited",
@@ -610,8 +648,9 @@ export function ghGovernance(
     },
     observe(result, sentAt, tookMs) {
       if (result.held !== undefined || result.spawnFailed === true) {
-        // Nothing was sent: the request it reserved goes back.
-        if (reservedIn !== null) gov.release?.(key, reservedIn, sentAt);
+        // Nothing was sent: the requests it reserved go back.
+        if (taken.length === 0) taken.push(sentAt);
+        giveBack();
         return result;
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";

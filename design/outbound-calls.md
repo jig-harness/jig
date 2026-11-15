@@ -183,6 +183,21 @@ process. Merging is conservative and never drops an active hold: the later
 hold, the higher count of refusals in a row, and for each window the lower
 balance when both name one reset, else the one with the later reset.
 
+**A paged `gh api --paginate` read** is charged per page. When its output
+is captured whole and the budget is on, the wrapper sends the pages itself
+(`plugin/shared/outbound/gh-paginate.ts`): each page is admitted, observed
+and recorded in the ledger as a request of its own, the next page named by
+the answer's `Link` header (REST) or the first `pageInfo` cursor (GraphQL),
+and the output assembled as the client prints it. A page the record
+refuses ends the read as `rate-limited`, the pages already sent staying
+charged, so a long read cannot pass the dispatcher's floor; a failing page
+ends it with that page's failure; the pages share the call's one deadline;
+past 100 pages the read fails as `too-costly`. A form the wrapper does not
+reproduce (streamed output, GraphQL with `--jq` or `--template`, the
+caller's own `--include`, `--input`, or REST fields without `GET`) is left
+to the client to page, after reserving 10 requests (or points) above the
+floor; it keeps them and is charged them as an estimate.
+
 The dispatcher's reads may use a share of each limit and leave the rest to
 passes and people. One setting covers every system; `tracker_share` stays
 readable as its older name.

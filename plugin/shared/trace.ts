@@ -11,9 +11,11 @@ import { guarded } from "./outbound/hold.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
 import {
   type GhAttribution,
+  forgeBudgetOn,
   forgeOwner,
   ghGovernance,
 } from "./outbound/github-budget.ts";
+import { drivePages, pagePlan } from "./outbound/gh-paginate.ts";
 import type { OutboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
@@ -205,6 +207,12 @@ function traceCommand<T extends { code: number; timedOut: boolean }>(
   });
 }
 
+/** Whether a run's output is captured whole, so its headers can be read and taken off. */
+function captured(opts: unknown): boolean {
+  const o = opts as { stdout?: string; onOutput?: unknown };
+  return (o.stdout ?? "pipe") === "pipe" && o.onOutput === undefined;
+}
+
 /**
  * One run of `gh`, admitted against the budget record of its credential's
  * quota owner and observed into it (`outbound/github-budget.ts`): a run the
@@ -219,16 +227,11 @@ async function governedRun<T extends GhRun, O>(
   send: (argv: string[]) => Promise<T>,
   attribution: GhAttribution,
 ): Promise<T> {
-  const o = opts as {
-    env?: Record<string, string | undefined>;
-    stdout?: string;
-    onOutput?: unknown;
-  };
-  const env = o.env ?? process.env;
-  const owner = await forgeOwner(args, env);
+  const env = (opts as { env?: Record<string, string | undefined> }).env;
+  const owner = await forgeOwner(args, env ?? process.env);
   const governance = ghGovernance(args, {
-    env,
-    captured: (o.stdout ?? "pipe") === "pipe" && o.onOutput === undefined,
+    env: env ?? process.env,
+    captured: captured(opts),
     ...(owner === undefined ? {} : { owner }),
     attribution,
   });
@@ -241,18 +244,18 @@ async function governedRun<T extends GhRun, O>(
 }
 
 /**
- * Shared gh boundary keeps its effective deadline and span metadata together,
- * keeps to the quota owner's budget record (`governedRun`), and sends nothing
- * to a forge this run holds (`outbound/hold.ts`): the call then answers
- * `refuse`'s result, a failed run naming the earlier failure.
+ * One request to the forge: counted for a parent reader, recorded in the
+ * ledger, kept to the quota owner's budget record (`governedRun`) and, when
+ * `held`, sent to no forge this run holds (`outbound/hold.ts`): the call
+ * then answers `refuse`'s result, a failed run naming the earlier failure.
  */
-function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
+function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
   args: string[],
   opts: O,
-  envDeadline: number,
+  timeoutSec: number,
   run: (argv: string[], options: O) => Promise<T>,
   refuse: (failure: OutboundFailure) => T,
-  held = true,
+  held: boolean,
 ): Promise<T> {
   // A parent reader counts nested forge calls at dispatch, including timed-out reads.
   if (process.env.JIG_FORGE_CALL_COUNT_FILE) {
@@ -265,73 +268,96 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
       );
     }
   }
-  const deadline =
-    opts.timeoutSec === undefined
-      ? envDeadline
-      : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
   // What governance learns of the run for its ledger row.
   const attribution: GhAttribution = {};
   if (!held)
-    return traceCommand("ghCall", "gh", deadline, () =>
-      recordGhAttempt(
-        args,
-        opts,
-        () =>
-          governedRun(
-            args,
-            opts,
-            refuse,
-            (argv) => run(argv, { ...opts, timeoutSec: deadline }),
-            attribution,
-          ),
-        attribution,
-      ),
-    );
-  return traceCommand("ghCall", "gh", deadline, () => {
-    // The run's elapsed time tells a 502/504 the forge ran out of time on
-    // (`too-costly`, which the paged reader answers with a smaller page) from
-    // a fault it answered at once (which holds the forge).
-    let tookMs = 0;
-    // A run the budget refuses never left the machine: it says nothing of the
-    // forge, so the hold does not read it as an answer.
-    const refusedHere = new WeakSet<object>();
-    const refuseHere = (failure: OutboundFailure): T => {
-      const refused = refuse(failure);
-      refusedHere.add(refused);
-      return refused;
-    };
     return recordGhAttempt(
       args,
       opts,
       () =>
-        guarded(
-          GITHUB,
-          // Admission and the answer's record sit inside the hold, so a call
-          // queued behind the probe is admitted after the probe's answer is
-          // recorded.
-          () =>
-            governedRun(
-              args,
-              opts,
-              refuseHere,
-              async (argv) => {
-                const began = currentMs();
-                try {
-                  return await run(argv, { ...opts, timeoutSec: deadline });
-                } finally {
-                  tookMs = currentMs() - began;
-                }
-              },
-              attribution,
-            ),
-          (r) => ghRunFailure(r, tookMs),
+        governedRun(
+          args,
+          opts,
           refuse,
-          undefined,
-          (r) => refusedHere.has(r),
+          (argv) => run(argv, { ...opts, timeoutSec }),
+          attribution,
         ),
       attribution,
     );
-  });
+  // The run's elapsed time tells a 502/504 the forge ran out of time on
+  // (`too-costly`, which the paged reader answers with a smaller page) from
+  // a fault it answered at once (which holds the forge).
+  let tookMs = 0;
+  // A run the budget refuses never left the machine: it says nothing of the
+  // forge, so the hold does not read it as an answer.
+  const refusedHere = new WeakSet<object>();
+  const refuseHere = (failure: OutboundFailure): T => {
+    const refused = refuse(failure);
+    refusedHere.add(refused);
+    return refused;
+  };
+  return recordGhAttempt(
+    args,
+    opts,
+    () =>
+      guarded(
+        GITHUB,
+        // Admission and the answer's record sit inside the hold, so a call
+        // queued behind the probe is admitted after the probe's answer is
+        // recorded.
+        () =>
+          governedRun(
+            args,
+            opts,
+            refuseHere,
+            async (argv) => {
+              const began = currentMs();
+              try {
+                return await run(argv, { ...opts, timeoutSec });
+              } finally {
+                tookMs = currentMs() - began;
+              }
+            },
+            attribution,
+          ),
+        (r) => ghRunFailure(r, tookMs),
+        refuse,
+        undefined,
+        (r) => refusedHere.has(r),
+      ),
+    attribution,
+  );
+}
+
+/**
+ * Shared gh boundary keeps its effective deadline and span metadata together
+ * and sends each request through `ghRequest`. A captured `gh api --paginate`
+ * read is sent a page at a time (`outbound/gh-paginate.ts`), each page a
+ * request of its own, within the call's one deadline.
+ */
+function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
+  args: string[],
+  opts: O,
+  envDeadline: number,
+  run: (argv: string[], options: O) => Promise<T>,
+  refuse: (failure: OutboundFailure) => T,
+  held = true,
+): Promise<T> {
+  const deadline =
+    opts.timeoutSec === undefined
+      ? envDeadline
+      : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
+  const request = (argv: string[], timeoutSec: number) =>
+    ghRequest(argv, opts, timeoutSec, run, refuse, held);
+  const env = (opts as { env?: Record<string, string | undefined> }).env;
+  const plan = forgeBudgetOn(env ?? process.env)
+    ? pagePlan(args, captured(opts))
+    : null;
+  return traceCommand("ghCall", "gh", deadline, () =>
+    plan === null
+      ? request(args, deadline)
+      : drivePages(plan, request, deadline, refuse),
+  );
 }
 
 /** Adapt a process runner once, preserving its options and complete result type. */
