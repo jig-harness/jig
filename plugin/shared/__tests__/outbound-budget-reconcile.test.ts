@@ -123,4 +123,43 @@ describe("an ordinary answer's reconciliation with the stored balance", () => {
     );
     expect(store.read(KEY)?.requests.remaining).toBe(3989);
   });
+
+  it("reports a requested reservation that was never created as none", () => {
+    const store = memoryBudgetStore();
+    const governor = budgetGovernor(store, {
+      clock: () => 1_000_000,
+      share: () => null,
+    });
+    store.update(KEY, () => record());
+    const seen: (string | null)[] = [];
+    governor.admit("GitHub", KEY, {
+      reserve: "requests",
+      onReserved: (name) => seen.push(name),
+    });
+    expect(seen).toEqual([null]);
+  });
+
+  it("does not take the answered request for a retained reservation once equal-millisecond ones overflowed", () => {
+    const store = memoryBudgetStore();
+    const t = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => t,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 5000, resetAt: reset, readAt: t },
+    }));
+    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
+    for (let i = 0; i < 300; i++)
+      governor.admit("GitHub", KEY, { reserve: "requests" });
+    governor.observe(
+      KEY,
+      { requests: { limit: 5000, remaining: 4000, resetAt: reset } },
+      sentAt,
+      "requests",
+    );
+    // 300 later reservations come off the answer's 4000; never more credit.
+    expect(store.read(KEY)?.requests.remaining).toBeLessThanOrEqual(3700);
+  });
 });

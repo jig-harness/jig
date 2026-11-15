@@ -168,6 +168,8 @@ export interface AdmitOptions {
    * instead of reserving nothing.
    */
   rollMs?: number;
+  /** Told the window the request actually reserved in: `null` when it reserved nothing, whatever `reserve` asked. */
+  onReserved?: (reservedIn: string | null) => void;
 }
 
 /** No request may leave for the credential before `resetAt`. */
@@ -483,19 +485,20 @@ function reconciliation(
   // Reservations at the request's own millisecond cannot be told from it:
   // when the request reserved in this window one of them is the request and
   // the rest were made after it was sent; when it reserved nothing, all were.
+  // Forgotten ones (past `PENDING_CAP`) count as later too; when some were
+  // forgotten at that millisecond the request may be one: under-credit.
+  const overflow =
+    prev.overflow !== undefined && prev.overflow.at >= sent
+      ? prev.overflow
+      : undefined;
+  const forgotten = overflow?.count ?? 0;
   const atSent = pending.filter((t) => t === sent).length;
   const later = [
     ...pending.filter((t) => t > sent),
-    ...Array<number>(Math.max(0, atSent - (requestReserved ? 1 : 0))).fill(
-      sent,
-    ),
+    ...Array<number>(
+      Math.max(0, atSent - (requestReserved && overflow === undefined ? 1 : 0)),
+    ).fill(sent),
   ];
-  // The forgotten ones (past `PENDING_CAP`) cannot be told apart either, so
-  // those after the request count as later: that under-credits at worst.
-  const forgotten =
-    prev.overflow !== undefined && prev.overflow.at > sent
-      ? prev.overflow.count
-      : 0;
   return {
     // What the answer's balance comes to once every later reservation is
     // taken from it: the figure to compare with a stored balance.
@@ -852,7 +855,10 @@ export function budgetGovernor(
   return {
     admit(adapter, key, opts = {}) {
       const now = clock();
-      const out: { refusal: TrackerRateLimited | null } = { refusal: null };
+      const out = {
+        refusal: null as TrackerRateLimited | null,
+        reservedIn: null as string | null,
+      };
       // The decision and the reservation of one request are one transaction,
       // so concurrent callers each spend their own part of the balance.
       store.update(key, (record) => {
@@ -868,14 +874,13 @@ export function budgetGovernor(
           out.refusal = refusal;
           return null;
         }
-        return reserved(
-          record,
-          now,
-          opts.reserve === undefined ? "requests" : opts.reserve,
-          opts.rollMs,
-        );
+        const name = opts.reserve === undefined ? "requests" : opts.reserve;
+        const next = reserved(record, now, name, opts.rollMs);
+        out.reservedIn = next === null ? null : name;
+        return next;
       });
       if (out.refusal !== null) throw out.refusal;
+      opts.onReserved?.(out.reservedIn);
       return now;
     },
     observe(key, answer, sentAt, reservedIn = "requests") {

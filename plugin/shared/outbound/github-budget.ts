@@ -521,11 +521,21 @@ export function ghGovernance(
     args,
     strip || (opts.captured && askedHeaders(args)),
   );
+  // The window the admission actually reserved in: none when the record or
+  // the balance was not known, whatever the admission asked for.
+  let reservedIn: string | null = admitted.reserve ?? null;
   return {
     argv,
     admit() {
       try {
-        return { sentAt: gov.admit("GitHub", key, admitted) };
+        return {
+          sentAt: gov.admit("GitHub", key, {
+            ...admitted,
+            onReserved: (name) => {
+              reservedIn = name;
+            },
+          }),
+        };
       } catch (error) {
         if (!isRateLimited(error)) throw error;
         return {
@@ -540,8 +550,7 @@ export function ghGovernance(
     observe(result, sentAt, tookMs) {
       if (result.held !== undefined || result.spawnFailed === true) {
         // Nothing was sent: the request it reserved goes back.
-        if (admitted.reserve != null)
-          gov.release?.(key, admitted.reserve, sentAt);
+        if (reservedIn !== null) gov.release?.(key, reservedIn, sentAt);
         return result;
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";
@@ -554,7 +563,7 @@ export function ghGovernance(
         key,
         forgeAnswerOf(args, headers, body, failure, now, result.stderr ?? ""),
         sentAt,
-        admitted.reserve ?? null,
+        reservedIn,
       );
       const answered =
         strip && headers !== null ? { ...result, stdout: body } : result;
