@@ -20,7 +20,8 @@ import {
   ownIdentity,
   type ProcessIdentity,
 } from "./liveness.ts";
-import { processTable } from "./process-table.ts";
+import { processTable, type ProcessRow } from "./process-table.ts";
+import { SCRATCH_OWNER_FILE } from "./scratch-owner.ts";
 import { attempt, failed, ok, type Outcome } from "./outcome.ts";
 import { isRecord } from "./guards.ts";
 import { failureFields } from "./errors.ts";
@@ -53,7 +54,7 @@ export type FixtureProof = {
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_RECORDS = 100_000;
 const MAX_RECORD_BYTES = 64 * 1024;
-function testFixtureRegistryRoot(home = homedir()): string {
+export function testFixtureRegistryRoot(home = homedir()): string {
   return join(home, ".local", "state", "jig", "test-fixtures-v1");
 }
 function scopeName(root: string): string {
@@ -296,6 +297,246 @@ export function fixtureScopeInventory(
           "Fixture inventory is malformed or exceeded its bounded scan",
         )
       : ok(read.value);
+}
+/** One registry folder as a page reads it, never as the strict inventory's all-or-nothing read. */
+export interface FixtureRegistration {
+  registry: string;
+  scopes: FixtureScope[];
+}
+export interface FixtureRegistryPage {
+  registrations: FixtureRegistration[];
+  /** Folders that are not readable registrations, each with why. */
+  malformed: { registry: string; reason: string }[];
+  /** True when this page read every folder the store held. */
+  complete: boolean;
+}
+const PAGE_REGISTRIES = 100_000;
+const PAGE_MS = 30_000;
+type PageEntry =
+  | { kind: "registration"; registration: FixtureRegistration }
+  | { kind: "malformed"; reason: string }
+  | { kind: "vanished" };
+function pageEntry(registry: string): PageEntry {
+  try {
+    if (!lstatSync(registry).isDirectory())
+      return { kind: "malformed", reason: "not a registration folder" };
+    const budget = { deadline: currentMs() + 5000, count: 0 };
+    const scopes = registryScopes(registry, budget);
+    return scopes
+      ? { kind: "registration", registration: { registry, scopes } }
+      : {
+          kind: "malformed",
+          reason: "registration holds an unreadable or unexpected entry",
+        };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return { kind: "vanished" };
+    return {
+      kind: "malformed",
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+/** One registry's scopes, refused on any unexpected entry as the strict inventory refuses it. */
+export function fixtureRegistryScopes(
+  registry: string,
+): Outcome<FixtureScope[]> {
+  const entry = pageEntry(registry);
+  if (entry.kind === "registration") return ok(entry.registration.scopes);
+  return failed(
+    "fixture-inventory",
+    entry.kind === "vanished"
+      ? "fixture registration disappeared"
+      : `malformed registration: ${entry.reason}`,
+  );
+}
+/** Where the last page stopped; a missing or unreadable cursor starts from the beginning. */
+function readCursor(file: string): string | null {
+  try {
+    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+    return typeof value === "string" && UUID.test(value) ? value : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      log.debug("Cannot read the fixture inventory cursor", {
+        file,
+        ...failureFields(error),
+      });
+    return null;
+  }
+}
+/** The folder names in a stable order, resuming after the name the last page stopped at. */
+function resumedOrder(names: string[], after: string | null): string[] {
+  const sorted = names.toSorted();
+  if (after === null) return sorted;
+  const start = sorted.findIndex((name) => name > after);
+  return start < 0
+    ? sorted
+    : [...sorted.slice(start), ...sorted.slice(0, start)];
+}
+/**
+ * Read the next bounded page of the store, resuming where the last page
+ * stopped, so a store larger than one read is still read in full over
+ * successive runs. A malformed folder is reported as itself.
+ */
+export function nextFixtureRegistryPage(
+  store = testFixtureRegistryRoot(),
+  limit = PAGE_REGISTRIES,
+): Outcome<FixtureRegistryPage> {
+  return attempt(
+    "fixture-inventory",
+    "Cannot read a page of fixture registrations",
+    () => {
+      const page: FixtureRegistryPage = {
+        registrations: [],
+        malformed: [],
+        complete: true,
+      };
+      let names: string[];
+      try {
+        names = readdirSync(store);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return page;
+        throw error;
+      }
+      const cursor = `${store}.cursor`;
+      const order = resumedOrder(names, readCursor(cursor));
+      const deadline = currentMs() + PAGE_MS;
+      let read = 0;
+      for (const name of order) {
+        if (read >= limit || currentMs() > deadline) break;
+        read++;
+        const registry = join(store, name);
+        const entry = pageEntry(registry);
+        if (entry.kind === "registration")
+          page.registrations.push(entry.registration);
+        else if (entry.kind === "malformed")
+          page.malformed.push({ registry, reason: entry.reason });
+      }
+      page.complete = read === order.length;
+      const last = order[read - 1];
+      if (page.complete || last === undefined || !UUID.test(last))
+        rmSync(cursor, { force: true });
+      else publish(cursor, last);
+      return page;
+    },
+  );
+}
+/** True only when the root is certainly absent; an unreadable path counts as present. */
+export function fixtureRootGone(root: string): boolean {
+  try {
+    return lstatSync(root, { throwIfNoEntry: false }) === undefined;
+  } catch (error) {
+    log.debug("Cannot inspect a registered fixture root", {
+      root,
+      ...failureFields(error),
+    });
+    return false;
+  }
+}
+/** Whether a scratch scope, which still counts this registration's unknown launches, encloses the root. */
+function enclosedByScratch(root: string): boolean {
+  for (let directory = dirname(root); ; directory = dirname(directory)) {
+    if (
+      lstatSync(join(directory, SCRATCH_OWNER_FILE), { throwIfNoEntry: false })
+    )
+      return true;
+    if (dirname(directory) === directory) return false;
+  }
+}
+function retirementVeto(
+  scopes: FixtureScope[],
+  nodes: NodeRecord[],
+): FixtureProof | null {
+  if (!scopes.every((scope) => fixtureRootGone(scope.root)))
+    return { state: "unverified", reason: "a registered root exists again" };
+  if (nodes.some((node) => node.state === "pending"))
+    return {
+      state: "unverified",
+      reason: "fixture launch has no child acknowledgement",
+    };
+  if (
+    nodes.some((node) => node.state === "opaque") &&
+    scopes.some((scope) => enclosedByScratch(scope.root))
+  )
+    return {
+      state: "unverified",
+      reason:
+        "an enclosing scratch scope still exists, and this registration's opaque launches still count for it",
+    };
+  return null;
+}
+function registeredProcesses(
+  nodes: NodeRecord[],
+  rows: ProcessRow[] | null,
+): FixtureProof {
+  for (const node of nodes) {
+    if (node.state !== "registered") continue;
+    const identity =
+      typeof node.identity === "string" ? decodeIdentity(node.identity) : null;
+    if (!identity?.start)
+      return {
+        state: "unverified",
+        reason: "fixture process identity is unreadable",
+      };
+    const alive = judge(identity, rows);
+    if (!alive.ok) return { state: "unverified", reason: alive.failure.reason };
+    if (alive.value.state === "alive")
+      return {
+        state: "live",
+        reason: "a registered fixture process still runs",
+      };
+  }
+  return {
+    state: "dead",
+    reason:
+      "every registered root is gone and every registered fixture process has exited",
+  };
+}
+/**
+ * Whether a registration whose roots are all gone may be retired. Nothing
+ * is left to remove, so only its writers matter: a registered process that
+ * still runs could write to it again. An opaque launch cannot write to it,
+ * but still counts against a scratch scope that encloses its root.
+ */
+export function fixtureRetirementProof(
+  registry: string,
+  rows: ProcessRow[] | null,
+): FixtureProof {
+  const read = attempt(
+    "fixture-retirement",
+    "Cannot read a fixture registration",
+    () => {
+      const budget = { deadline: currentMs() + 5000, count: 0 };
+      const scopes = registryScopes(registry, budget);
+      const nodes = scopes && registryNodes(registry);
+      if (!scopes || !nodes)
+        return {
+          state: "unverified",
+          reason: "fixture membership is unreadable or incomplete",
+        } satisfies FixtureProof;
+      return (
+        retirementVeto(scopes, [...nodes.values()]) ??
+        registeredProcesses([...nodes.values()], rows)
+      );
+    },
+  );
+  if (read.ok) return read.value;
+  return {
+    state: "unverified",
+    reason:
+      (read.failure.cause as NodeJS.ErrnoException | undefined)?.code ===
+      "ENOENT"
+        ? "fixture registration disappeared"
+        : read.failure.reason,
+  };
+}
+/** Caller holds scratch's exclusive lock and has just proved the registration retirable. */
+export function retireFixtureRegistration(registry: string): Outcome<void> {
+  return attempt(
+    "fixture-retirement",
+    "Cannot retire fixture registration",
+    () => rmSync(registry, { recursive: true, force: true }),
+  );
 }
 function linkedParents(
   nodes: Map<string, NodeRecord>,
