@@ -9,26 +9,15 @@
  * repository, so there the host and the boot id are written as digests
  * (`sha256:` and the first 16 hexadecimal characters of the SHA-256 of the
  * value): a public comment names no machine, and a host that reads it back
- * can still recognise its own.
+ * can still recognise its own. The field's shape and its reader are
+ * `writer-shape.ts`, which the dashboard's page bundles.
  */
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { bootId } from "../liveness.ts";
-import { type Infer, matches, s } from "../shapes.ts";
+import type { Writer } from "./writer-shape.ts";
 
-export const WRITER_SHAPE = s.object({
-  /** The forge login the writer is signed in as, where it knows it. */
-  login: s.optional(s.string({ minLength: 1 })),
-  /** The host's name; a digest of it on the forge and the tracker. */
-  host: s.string({ minLength: 1 }),
-  /** Linux's boot id (a digest on the forge and the tracker); absent elsewhere. */
-  bootId: s.optional(s.string()),
-  /** The writing process's id. */
-  pid: s.optional(s.integer({ minimum: 1 })),
-  /** The writing process's start time, as the process table reports it. */
-  start: s.optional(s.string()),
-});
-export type Writer = Infer<typeof WRITER_SHAPE>;
+export { readWriter, type Writer } from "./writer-shape.ts";
 
 /** Where a record is kept: on the machine, in the working tree, on the forge, on the tracker. */
 export type Medium = "machine" | "tree" | "forge" | "tracker";
@@ -60,22 +49,5 @@ export function localWriter(
     host: shown(hostname()),
     ...(boot === "" ? {} : { bootId: shown(boot) }),
     pid: process.pid,
-  };
-}
-
-/**
- * A writer read from a record, or `null` when the value is not one. Fields
- * this version does not know are left out, so a newer writer's additions do
- * not make the record unreadable.
- */
-export function readWriter(value: unknown): Writer | null {
-  if (!matches(WRITER_SHAPE, value)) return null;
-  const { login, bootId: boot, pid, start } = value;
-  return {
-    ...(login === undefined ? {} : { login }),
-    host: value.host,
-    ...(boot === undefined ? {} : { bootId: boot }),
-    ...(pid === undefined ? {} : { pid: pid as number }),
-    ...(start === undefined ? {} : { start }),
   };
 }

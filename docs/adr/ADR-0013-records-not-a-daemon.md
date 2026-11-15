@@ -4,7 +4,7 @@ type: adr
 status: draft
 description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, one resident reader per machine may serve a person's view of them, a chat bridge may turn a person's click into one request, and the record names the conditions for reopening that"
 lifecycle: permanent
-version: "1.4"
+version: "1.5"
 last_updated: 2026-11-13
 owner: maintainers
 decision_date: 2026-11-04
@@ -85,7 +85,10 @@ database read-only. It holds no request, no component reads from it, and
 the line never waits on it, so stopping it changes nothing the line does. A
 write it makes for a person is one of the records the line already reads,
 written as that person
-([ADR-0014](ADR-0014-addresses-are-derived-and-requests-are-records.md)).
+([ADR-0014](ADR-0014-addresses-are-derived-and-requests-are-records.md));
+a parked decision's answer from its page goes from the person's browser to
+the forge, never through the reader
+([ADR-0019](ADR-0019-the-dashboard-page-answers-as-the-person.md)).
 It is the dispatcher's own dashboard with more views, so Jig still has one
 kind of listening server beside the hub ([ADR-0016](ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)),
 not a second beside it.

@@ -1,7 +1,7 @@
 /** The envelope's structural fields; registry checks and calendar-time checks stay at the codec boundary. */
 import { s } from "../shapes.ts";
 import type { RecordKind } from "./registry.ts";
-import { WRITER_SHAPE } from "./writer.ts";
+import { WRITER_SHAPE } from "./writer-shape.ts";
 
 export const ENVELOPE_SHAPES = {
   kind: s.string(),

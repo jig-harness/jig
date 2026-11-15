@@ -483,6 +483,8 @@ export interface GuardedPick {
 export interface CardCommit {
   /** The one comment Copy takes. */
   text: string;
+  /** Each decision the comment answers, with its digest: what Send writes, one comment per decision. */
+  answers: { key: string; digest?: string; answer: CardAnswer }[];
   /** What it is, as Copy and the palette name it. */
   label: "answers" | "approval" | "answer line";
   /** The picks that make Copy take two steps. */
@@ -526,16 +528,16 @@ export function cardCommit(
   });
   const picked = included.filter((x) => x.answer.kind === "pick").length;
   const tally = { faults, picked, free: included.length - picked };
+  const answered = included.map((x) => ({
+    key: x.row.key,
+    ...(x.row.digest === undefined ? {} : { digest: x.row.digest }),
+    answer: x.answer,
+  }));
   if (included.length > 0)
     return {
       ...tally,
-      text: cardComment(
-        included.map((x) => ({
-          key: x.row.key,
-          ...(x.row.digest === undefined ? {} : { digest: x.row.digest }),
-          answer: x.answer,
-        })),
-      ),
+      answers: answered,
+      text: cardComment(answered),
       label: "answers",
       guarded: included.flatMap((x) =>
         x.answer.kind === "pick" && x.pick?.guarded === true
@@ -554,6 +556,8 @@ export function cardCommit(
   )
     return {
       ...tally,
+      // Nothing was picked: the approval is Copy's alone, never sent.
+      answers: [],
       text: cardComment([
         {
           key: only.key,
@@ -570,6 +574,7 @@ export function cardCommit(
     };
   return {
     ...tally,
+    answers: [],
     text: rows.map((r) => answerLine(r.key, "")).join("\n\n"),
     label: "answer line",
     guarded: [],

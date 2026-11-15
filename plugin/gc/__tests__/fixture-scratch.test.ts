@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -184,13 +185,19 @@ test("reports a dead registered scope, then collects a recreated root without an
   expect(existsSync(f.root)).toBe(false);
 });
 
-test("collects an absent registered root from its durable registration", async () => {
+test("retires the registration of an absent registered root instead of proving the root", async () => {
   const f = setup();
   rmSync(f.root, { recursive: true });
   const result = await collect(f, true);
   expect(
     result.receipt.resources.find((line) => line.resource === f.root),
+  ).toBeUndefined();
+  expect(
+    result.receipt.resources.find((line) =>
+      line.resource.startsWith("fixture-registrations:"),
+    ),
   ).toMatchObject({ outcome: "collected" });
+  expect(readdirSync(f.store)).toEqual([]);
 });
 
 test("a nested legacy owner vetoes collection of a recreated registered root", async () => {
