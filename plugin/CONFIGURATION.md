@@ -1164,7 +1164,7 @@ These are set per machine or per run, not committed:
 | `JIG_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
 | `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/jig/gh-cache` |
 | `JIG_GH_CACHE` | `off` disables that cache |
-| `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
+| <a id="gh-call-timeout"></a>`GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30. Must be a positive whole number no greater than 2147483 |
 | `JIG_MARKETPLACE` | The marketplace `jig upgrade` (and `tools/plugin/setup.ts`) installs the plugin from in an agent tool that lacks it, instead of Jig's repository; a tool registered from another source is then refused |
 | `JIG_SETUP_TIMEOUT_SECONDS` | Seconds one agent-tool command run by `jig upgrade` or `jig doctor` (and `tools/plugin/setup.ts`) may take before it is stopped; default 300 |
 | `JIG_LOG` | How much the scripts' diagnostics say on standard error: `error`, `warn` (the default), `info` or `debug`. At `debug` a failing script also prints the stack of the failure and its causes, with the last 4,096 bytes of a failed command's error output where the failure carries it (`resolve-review-comments`' `gh` calls), and an error dropped on purpose is printed with the reason |
@@ -1274,12 +1274,11 @@ test registrations permit collection only where they prove the scope's
 holders gone. Unresolved child launches and legacy scratch remain retained.
 See [test scratch](gc/README.md#test-scratch) for the ownership checks.
 
-The `worktrees` kind bounds each pull request lookup with `GH_CALL_TIMEOUT`,
-including lookups by branch, recorded pull request number and detached commit.
-It defaults to 30 seconds; set the environment variable to a positive whole
-number of seconds (at most 2147483) to change it. A lookup that exceeds its
-deadline is reported as unavailable, so the tree is retained without verified
-pull request evidence.
+The `worktrees` kind bounds each pull request lookup with
+[`GH_CALL_TIMEOUT`](#gh-call-timeout), including lookups by branch, recorded
+pull request number and detached commit. A lookup that exceeds its deadline is
+reported as unavailable, so the tree is retained without verified pull request
+evidence.
 
 ### The machine's collection policy
 
