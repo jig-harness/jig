@@ -158,7 +158,11 @@ function spendsOtherWindow(row: LedgerRow): boolean {
  */
 function quotaCost(row: LedgerRow, window: "requests" | "complexity"): number {
   if (window === "requests")
-    return row.system === "github" && spendsOtherWindow(row) ? 0 : row.requests;
+    return row.system === "github"
+      ? spendsOtherWindow(row)
+        ? 0
+        : row.cost + row.unknownCost
+      : row.requests;
   return row.unit === "points" ? row.cost : 0;
 }
 

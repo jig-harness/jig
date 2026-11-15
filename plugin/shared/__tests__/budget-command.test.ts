@@ -60,3 +60,34 @@ test("jig budget refuses a window beyond retained history", () => {
   expectSpawnExit(result, 2);
   expect(result.stderr.toString()).toContain("integer from 1 to 168");
 });
+
+test("jig budget keeps unchanged request traffic separate from primary quota cost", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-budget-unchanged-"));
+  roots.push(root);
+  const path = join(root, "budget.sqlite");
+  recordCall({
+    path,
+    system: "github",
+    credential: "github:test",
+    operation: "GET /repos/{}/{}/pulls/{}",
+    caller: "tick:one",
+    unit: "requests",
+    requests: 1,
+    cost: 0,
+    estimated: false,
+    durationMs: 1,
+  });
+  const script = `import {main} from ${JSON.stringify(jig)}; import {withLedgerPath} from ${JSON.stringify(ledger)}; process.exit(await withLedgerPath(${JSON.stringify(path)},()=>main(["budget","--json"])));`;
+  const result = Bun.spawnSync([process.execPath, "--eval", script], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(result, 0);
+  const answer = JSON.parse(result.stdout.toString());
+  expect(answer.operations[0]).toMatchObject({
+    requests: 1,
+    cost: 0,
+    unknownCost: 0,
+    estimated: 0,
+  });
+});

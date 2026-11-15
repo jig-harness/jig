@@ -137,3 +137,58 @@ test("search requests are not core spending", () => {
   };
   expect(quotaRisks(github, now)).toEqual([]);
 });
+
+test("unchanged GitHub traffic is reported without forecasting primary depletion", () => {
+  const data = report();
+  data.rows = [
+    {
+      ...row(),
+      system: "github",
+      credential: "github:test",
+      operation: "GET /repos/{}/{}/pulls/{}",
+      unit: "requests",
+      requests: 2000,
+      cost: 0,
+    },
+  ];
+  const balance = data.balances[0];
+  if (balance === undefined) throw new Error("fixture has no balance");
+  balance.key = "github:test";
+  balance.system = "github";
+  balance.record.requests = { limit: 5000, remaining: 10, resetAt: now + hour };
+  expect(quotaRisks(data, now)).toEqual([]);
+  const line = spendingLines(systemSpending(data, "tick:one", now))[0];
+  expect(line).toContain("tick spent 2000 requests, 0 requests");
+  const charged = data.rows[0];
+  if (charged === undefined) throw new Error("fixture has no spending row");
+  charged.cost = 20;
+  expect(quotaRisks(data, now)[0]).toMatchObject({
+    window: "requests",
+    spent: 20,
+  });
+});
+
+test("unknown GitHub primary spending forecasts conservatively", () => {
+  const data = report();
+  data.rows = [
+    {
+      ...row(),
+      system: "github",
+      credential: "github:test",
+      operation: "GET /repos/{}/{}/pulls/{}",
+      unit: "requests",
+      requests: 2000,
+      cost: 0,
+      unknownCost: 2000,
+    },
+  ];
+  const balance = data.balances[0];
+  if (balance === undefined) throw new Error("fixture has no balance");
+  balance.key = "github:test";
+  balance.system = "github";
+  balance.record.requests = { limit: 5000, remaining: 10, resetAt: now + hour };
+  expect(quotaRisks(data, now)[0]).toMatchObject({
+    window: "requests",
+    spent: 2000,
+  });
+});
