@@ -63,7 +63,8 @@ import { JigError } from "./errors.ts";
 import { parseInstant } from "./time.ts";
 
 /** The levels, least autonomous first. */
-export const AUTONOMY_LEVELS = ["attended", "unattended", "wide"] as const;
+import { AUTONOMY_LEVELS } from "./autonomy-values.ts";
+export { AUTONOMY_LEVELS } from "./autonomy-values.ts";
 export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
 
 /** The level a repository that sets nothing runs at: today's behaviour. */

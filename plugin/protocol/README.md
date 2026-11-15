@@ -27,6 +27,19 @@ Each chapter's values are also in a JSON file under [data/](data/), with the
 chapter's version, status and a description of each field, for a program in
 any language. These files describe the plugin release they ship in.
 
+JSON documents also have draft 2020-12 JSON Schemas in [schemas/](schemas/).
+Their `$id` identifies the owning chapter and its version. The descriptions
+that generate them also supply the readers' field checks and TypeScript
+types. Tests validate records from the writers with an independent schema
+validator. Marker lines that carry text rather than JSON have no schema.
+
+These schemas describe structural acceptance. Calendar-time validity,
+relationships between fields (such as a record's pull-request number and
+its envelope key), repository-specific names and author trust are checked
+by the readers too. Optional telemetry that a reader ignores or normalizes
+when unusable remains permissive in its schema. Passing a schema never
+authorizes an action.
+
 ## Chapters
 
 <!-- protocol:generated source=tools/protocol/chapters.ts#CHAPTERS -->

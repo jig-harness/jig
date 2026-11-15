@@ -7,6 +7,8 @@
  * exit, a line that is not such an object, a path that is not tracked, or an
  * area or kind the report does not know is an error naming the problem.
  */
+import { CLASSIFY_OUTPUT_SHAPE } from "../../../../shared/repo-command-shapes.ts";
+import { matches } from "../../../../shared/shapes.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { readTimeoutEnv, run } from "../../../../shared/proc.ts";
 import {
@@ -81,6 +83,10 @@ function parseLine(
     if (problem) throw new CodeStatsError(`${where} gives ${path} ${problem}`);
     override[field] = value[field];
   }
+  if (!matches(CLASSIFY_OUTPUT_SHAPE, value))
+    throw new CodeStatsError(
+      `${where} does not match the classification output shape`,
+    );
   return [path, override as Override];
 }
 

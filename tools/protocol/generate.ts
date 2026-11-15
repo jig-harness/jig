@@ -24,7 +24,7 @@
  * finding; 2 a usage error, or the merge base cannot be read (the message
  * names the fetch that fixes it).
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cli, strictOptions } from "../../lib/cli.ts";
 import {
@@ -40,7 +40,7 @@ import {
 } from "./base.ts";
 import { type Chapter, COMMAND, type Withdrawn } from "./chapter.ts";
 import { CHAPTERS, WITHDRAWN } from "./chapters.ts";
-import { planOutputs, RULE, staleness } from "./outputs.ts";
+import { type Output, planOutputs, RULE, staleness } from "./outputs.ts";
 
 export interface GenerateOptions {
   root: string;
@@ -62,6 +62,20 @@ export interface GenerateResult {
   comparedWith: string | null;
 }
 
+/** Publish formatted output bytes, even when an older file has equal JSON in another layout. */
+function writeOutputs(root: string, outputs: readonly Output[]): string[] {
+  const written: string[] = [];
+  for (const output of outputs) {
+    const full = join(root, output.path);
+    if (existsSync(full) && readFileSync(full, "utf8") === output.text)
+      continue;
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, output.text);
+    written.push(output.path);
+  }
+  return written;
+}
+
 /** Write or check every chapter; reports nothing itself. */
 export function generate(options: GenerateOptions): GenerateResult {
   const chapters = options.chapters ?? CHAPTERS;
@@ -70,13 +84,7 @@ export function generate(options: GenerateOptions): GenerateResult {
   const findings = [...plan.findings];
   const written: string[] = [];
   if (!options.check) {
-    for (const output of plan.outputs) {
-      if (!staleness(root, output).length) continue;
-      const full = join(root, output.path);
-      mkdirSync(dirname(full), { recursive: true });
-      writeFileSync(full, output.text);
-      written.push(output.path);
-    }
+    written.push(...writeOutputs(root, plan.outputs));
     return { findings, unreadable: null, written, comparedWith: null };
   }
   for (const output of plan.outputs)

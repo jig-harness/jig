@@ -145,6 +145,9 @@ describe("the inventory entry's sources", () => {
         ...CHAPTERS.flatMap((c) => [
           `plugin/protocol/${c.id}.md`,
           `plugin/protocol/data/${c.id}.json`,
+          ...(c.schemas ?? []).map(
+            (schema) => `plugin/protocol/schemas/${schema.name}.json`,
+          ),
         ]),
       ].sort(),
     );
