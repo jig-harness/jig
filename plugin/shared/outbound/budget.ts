@@ -423,7 +423,8 @@ function merged(
       : { snapshotSentAt: prev.snapshotSentAt }),
     // An ordinary answer settles no reservation of its own, but a balance it
     // reports below the stored one owes nothing to the reservations deducted
-    // from that one: none made before it can be given back.
+    // from that one before its request was sent, which its balance counts:
+    // those cannot be given back. Later ones it cannot count, and stay.
     ...(prev.pending === undefined
       ? {}
       : {
@@ -431,7 +432,7 @@ function merged(
             next.remaining !== null &&
             prev.remaining !== null &&
             next.remaining < prev.remaining
-              ? prev.pending.filter((t) => t > now)
+              ? prev.pending.filter((t) => t >= (sentAt ?? now))
               : prev.pending,
         }),
     ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
