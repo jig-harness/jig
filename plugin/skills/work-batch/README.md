@@ -122,7 +122,10 @@ configuration can only add to it:
 - `work_batch.solo_flags`, for flags the catalog does not project (a privacy
   label applied by hand, for example).
 
-No setting removes a label the first two sources supply.
+No setting removes a label the first two sources supply. An issue carrying
+any of them, in any case, is held out of a batch: the flags are one rule over
+the issue's labels, matched as the
+[rule matchers' chapter](../../protocol/rule-matchers.md) says.
 
 Every other read that cannot be completed holds the issue back rather than
 admitting it. An issue whose label list came back truncated is held back,
