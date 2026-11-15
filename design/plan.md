@@ -470,6 +470,27 @@ out once, or refused with why; and `jig dispatch log` reports, per
 class, how many parks were approved as recommended and how long they
 waited.
 
+### 56. Declared priorities, a progress review and the overview
+
+A person sees individual failures without seeing whether their goals are
+advancing. [The design](priorities-and-overview.md) defines one priorities record
+at site, repository and individual levels. A reproducible shortlist carries
+each epic's rank to its children. A progress review proposes systematic fixes
+and never acts, and an overview joins the facts inside the existing dashboard.
+Urgent issues stay visible, assigned bugs retain their priority, and a
+minimum share keeps peripheral goals moving. The overview pairs each issue
+with its pull request and shows the decisions owed, with confirmed actions
+made by the person's browser, phone unlock and no phone merge.
+
+The person reviews the design before implementation. Build the record and
+ranker, then trial the progress review on Jig and a consumer repository,
+then the overview after its visual design round. Browser actions wait for
+the browser write path to merge and for device probes; site-level records arrive with
+the optional hub. Done when equal input snapshots reproduce the shortlist
+and every Urgent issue appears in each review. The overview must explain
+progress and waiting from structured facts, and browser actions must preserve
+the person's authority. The trial precedes new M9 audit criteria.
+
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
 Where a piece of work stands is spread over machines and tools: the
