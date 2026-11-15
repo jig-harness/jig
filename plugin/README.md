@@ -1488,6 +1488,10 @@ person, one line per entry. Anything else it answers in sentences.
 | `drive` | the pull request's number | the live driver: a dispatched re-arm or takeover, or a driver someone armed by hand |
 | `followup` | the merged pull request's number | the follow-up pass, or a person's run |
 
+The Jig Protocol's [Addresses chapter](protocol/addresses.md) lists the
+stations and the verbs below, generated from the code, for a program that
+forms addresses or sends verbs.
+
 The repository may be its short name where the
 [machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists
 exactly one repository of that name (`drive@jig#456`), or left out inside a
