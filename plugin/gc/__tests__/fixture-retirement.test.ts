@@ -14,7 +14,11 @@ import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { encodeIdentity, ownIdentity } from "../../shared/liveness.ts";
 import { writeScratchOwner } from "../../shared/scratch-owner.ts";
-import { registerFixtureScope } from "../../shared/test-fixture-registry.ts";
+import {
+  nextFixtureRegistryPage,
+  registerFixtureScope,
+} from "../../shared/test-fixture-registry.ts";
+import { fixtureRetirement } from "../kinds/fixture-retirement.ts";
 import { scratchKind } from "../kinds/scratch.ts";
 import { runCollection } from "../runner.ts";
 import type { ReceiptLine } from "../types.ts";
@@ -311,4 +315,41 @@ test("a malformed folder is reported as itself and the rest are retired", async 
   });
   expect(retiredIn(receipt.resources)).toHaveLength(2);
   expect(readdirSync(f.store)).toEqual(["stray"]);
+});
+
+test("a scope added to a live registration between two batches' proofs still encloses the later batch", async () => {
+  const f = fixture();
+  const absent = join("/", `jig-gc-retire-absent-${crypto.randomUUID()}`);
+  const nested = (name: string) => join(absent, name);
+  registerExited(f.store, [
+    { root: nested("a"), launch: "opaque" },
+    { root: nested("b"), launch: "opaque" },
+    { root: join(f.base, "live-root") },
+  ]);
+  mkdirSync(join(f.base, "live-root"));
+  const page = nextFixtureRegistryPage(f.store);
+  if (!page.ok) throw new Error(page.failure.reason);
+  const retirement = fixtureRetirement(f.store, 1);
+  const { resources } = retirement.list(page.value);
+  expect(resources).toHaveLength(2);
+  const first = resources[0];
+  const second = resources[1];
+  if (!first || !second) throw new Error("expected two batches");
+  expect((await retirement.prove(first)).state).toBe("dead");
+  retirement.collect(first);
+  // An existing registration gains a scope without touching the store directory.
+  const live = page.value.registrations.find((entry) =>
+    entry.scopes.some((scope) => scope.root === join(f.base, "live-root")),
+  );
+  if (!live) throw new Error("expected the live registration");
+  const added = registerFixtureScope(
+    absent,
+    {
+      registry: live.registry,
+      node: readdirSync(join(live.registry, "nodes"))[0] ?? "",
+    },
+    f.store,
+  );
+  expect(added.ok).toBe(true);
+  expect((await retirement.prove(second)).state).toBe("unverified");
 });

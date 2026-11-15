@@ -1,5 +1,4 @@
 /** Registrations whose every root is gone, retired in bounded batches that name what they retired. */
-import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { processTable } from "../../shared/process-table.ts";
 import {
@@ -60,40 +59,10 @@ function keptSummary(kept: Kept[]): Proof {
   };
 }
 
-/** The store's change stamp: a registration created or removed moves it. */
-function storeStamp(store: string): bigint | null {
-  try {
-    return statSync(store, { bigint: true }).mtimeNs;
-  } catch {
-    return null;
-  }
-}
-
 export function fixtureRetirement(store: string, batchSize = BATCH) {
   const batches = new Map<string, string[]>();
   const malformed = new Map<string, string>();
   const proved = new Map<string, string[]>();
-  /**
-   * One enclosure read shared by every batch of a page, so a large store is
-   * scanned once rather than once per batch. A registration created or removed
-   * by anyone else moves the store's stamp and forces a fresh read; retirements
-   * made here are taken out of the index in place.
-   */
-  let cached: { index: FixtureEnclosureIndex; stamp: bigint } | undefined;
-  const enclosureFor = (): FixtureEnclosureIndex => {
-    const stamp = storeStamp(store);
-    if (cached && stamp !== null && cached.stamp === stamp) return cached.index;
-    const index = fixtureEnclosureIndex(store);
-    cached = stamp === null ? undefined : { index, stamp };
-    return index;
-  };
-  const forget = (retired: string[]): void => {
-    if (!cached) return;
-    for (const holders of cached.index.roots.values())
-      for (const registry of retired) holders.delete(registry);
-    const stamp = storeStamp(store);
-    cached = stamp === null ? undefined : { ...cached, stamp };
-  };
   return {
     /** List a page: its root-keeping scopes for the scratch proof, and a resource per batch and per malformed folder. */
     list(page: FixtureRegistryPage): {
@@ -103,7 +72,6 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
       batches.clear();
       malformed.clear();
       proved.clear();
-      cached = undefined;
       const { present, gone } = split(page);
       const resources: Resource[] = [];
       for (let start = 0; start < gone.length; start += batchSize) {
@@ -138,6 +106,10 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
       const rows = await processTable();
       const retirable: string[] = [];
       const kept: Kept[] = [];
+      /** Read at most once, only when a proof needs it, and not kept past this call: it is evidence of the store as this admission sees it. */
+      let enclosure: FixtureEnclosureIndex | undefined;
+      const enclosureFor = (): FixtureEnclosureIndex =>
+        (enclosure ??= fixtureEnclosureIndex(store));
       for (const registry of batches.get(resource.id) ?? []) {
         const proof = fixtureRetirementProof(registry, rows, enclosureFor);
         if (proof.state === "dead") retirable.push(registry);
@@ -158,13 +130,11 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
     },
     collect(resource: Resource): Collected {
       const retired: string[] = [];
-      const retiredPaths: string[] = [];
       const failures: { registration: string; reason: string }[] = [];
       for (const registry of proved.get(resource.id) ?? []) {
         const result = retireFixtureRegistration(registry);
         if (result.ok) {
           retired.push(basename(registry));
-          retiredPaths.push(registry);
         } else
           failures.push({
             registration: basename(registry),
@@ -172,7 +142,6 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
           });
       }
       proved.delete(resource.id);
-      forget(retiredPaths);
       return {
         outcome: failures.length > 0 ? "failed" : "collected",
         reason:
