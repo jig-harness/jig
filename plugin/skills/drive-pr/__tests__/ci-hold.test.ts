@@ -4,7 +4,6 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
-import { headWatermark } from "../scripts/lib/ci-hold-state.ts";
 import {
   ciHoldTransitions,
   completedHoldPrecondition,
@@ -17,6 +16,7 @@ import {
 } from "../scripts/lib/ci-hold.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { freshState, isUsableState } from "../scripts/lib/state/schema.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
@@ -73,23 +73,20 @@ esac
 }
 
 describe("ci:hold evidence", () => {
-  it("keeps an unreadable final watermark distinct from malformed evidence", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "ci-hold-watermark-read-"));
-    const previousPath = process.env.PATH;
-    try {
-      writeFakeProgram(
-        join(dir, "gh"),
-        "#!/bin/sh\necho temporary forge failure >&2\nexit 75\n",
-      );
-      process.env.PATH = `${dir}${delimiter}${previousPath ?? ""}`;
-      const result = await headWatermark(HEAD, "before the unlabel");
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.failure.code).toBe("unreadable");
-    } finally {
-      if (previousPath === undefined) delete process.env.PATH;
-      else process.env.PATH = previousPath;
-      rmSync(dir, { recursive: true, force: true });
-    }
+  function watermarkCode(ghBody: string): string {
+    const probe = join(import.meta.dir, "fixtures", "watermark-probe.ts");
+    const result = Bun.spawnSync([process.execPath, probe, HEAD, ghBody], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(result, 0);
+    return result.stdout.toString();
+  }
+
+  it("keeps an unreadable final watermark distinct from malformed evidence", () => {
+    expect(watermarkCode("exit 75")).toBe("unreadable");
+    expect(watermarkCode("echo 'not json'")).toBe("malformed");
+    expect(watermarkCode("echo '{\"unexpected\": true}'")).toBe("malformed");
   });
 
   it("the fake gh requires the snapshot field projection", () => {

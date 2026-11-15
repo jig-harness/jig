@@ -5,7 +5,6 @@
  * no record of.
  */
 
-import { swallow } from "../../../../shared/errors.ts";
 import {
   type CheckRunLite,
   checkRunWatermark,
@@ -127,20 +126,35 @@ export async function writeCiState(
   await store.update((current) => ({ ...current, ciHold: state }));
 }
 
-export async function checkRuns(head: string): Promise<CheckRunLite[] | null> {
+/** The check runs on `head`, or why the forge's answer could not be read. */
+export async function readCheckRuns(
+  head: string,
+): Promise<Outcome<CheckRunLite[], HoldReadFailure["code"]>> {
   const result = await ghCall([
     "api",
     "--paginate",
     "--slurp",
     `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
   ]);
-  if (result.code !== 0) return null;
-  try {
-    return parseCheckRuns(JSON.parse(result.stdout) as unknown);
-  } catch (err) {
-    swallow(err, "the check-runs answer is not JSON");
-    return null;
-  }
+  if (result.code !== 0)
+    return failed(
+      "unreadable",
+      `gh api check-runs exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
+    );
+  const decoded = attempt(
+    "malformed",
+    "the check-runs answer is not JSON",
+    (): unknown => JSON.parse(result.stdout),
+  );
+  if (!decoded.ok) return decoded;
+  const runs = parseCheckRuns(decoded.value);
+  if (runs === null)
+    return failed("malformed", "the check-runs answer has an invalid shape");
+  return ok(runs);
+}
+
+export async function checkRuns(head: string): Promise<CheckRunLite[] | null> {
+  return valueOrNull(await readCheckRuns(head));
 }
 
 /**
@@ -159,13 +173,13 @@ export async function headWatermark(
       "malformed",
       `cannot establish the check-run watermark ${why}: the head is not a SHA`,
     );
-  const runs = await checkRuns(head);
-  if (runs === null)
+  const runs = await readCheckRuns(head);
+  if (!runs.ok)
     return failed(
-      "unreadable",
-      `cannot establish the check-run watermark ${why}`,
+      runs.failure.code,
+      `cannot establish the check-run watermark ${why}: ${runs.failure.reason}`,
     );
-  return ok(checkRunWatermark(runs, head));
+  return ok(checkRunWatermark(runs.value, head));
 }
 
 /**
