@@ -530,7 +530,8 @@ async function enqueueChildren(
       ctx,
       children,
       meta,
-      planned ? undefined : { unread, found },
+      found,
+      planned ? undefined : unread,
     );
     selection = servedPlan(
       meta.description ?? "",
@@ -773,12 +774,13 @@ function nodeHold(
     : null;
 }
 
-/** The live state of an epic's children and the issues its plan names, read together; `slots` is set for an epic with no plan, where an unreadable child takes one slot. */
+/** The live state of an epic's children and the issues its plan names, read together; `unread` is set for an epic with no plan, where an unreadable child takes one slot. */
 async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
   meta: Metadata,
-  slots?: { unread: string[]; found: Found },
+  found: Found,
+  unread?: string[],
 ): Promise<Record<string, LiveIssue>> {
   const { tracker, identity, options, cache, view } = ctx;
   const live: Record<string, LiveIssue> = {};
@@ -808,18 +810,13 @@ async function childStates(
             view,
           ).catch((error: unknown) => {
             // An epic with a plan keeps the failure: its consistency needs this read.
-            if (slots === undefined) return Promise.reject(error);
-            return takeUnreadSlot(
-              slots.unread,
-              child.identifier,
-              error,
-              (e) => {
-                // Recorded when observed: a later visit may never happen.
-                if (ctx.reported.has(child.identifier)) return;
-                ctx.reported.add(child.identifier);
-                unreadable(child, failureText(e), slots.found, [e]);
-              },
-            );
+            if (unread === undefined) return Promise.reject(error);
+            return takeUnreadSlot(unread, child.identifier, error, (e) => {
+              // Recorded when observed: a later visit may never happen.
+              if (ctx.reported.has(child.identifier)) return;
+              ctx.reported.add(child.identifier);
+              unreadable(child, failureText(e), found, [e]);
+            });
           }),
     ),
   );
@@ -829,7 +826,12 @@ async function childStates(
     (r): r is PromiseRejectedResult => r.status === "rejected",
   );
   const wall = rejected.find((r) => isRateLimited(r.reason)) ?? rejected.at(0);
-  if (wall !== undefined) return Promise.reject(wall.reason);
+  if (wall !== undefined) {
+    // Only the selected wall propagates: every other ordinary failure is kept as this node's.
+    for (const r of rejected)
+      if (r !== wall && !isRateLimited(r.reason)) itemFailed(found, r.reason);
+    return Promise.reject(wall.reason);
+  }
   const infos = settledInfos.map((r) =>
     r.status === "fulfilled" ? r.value : null,
   );

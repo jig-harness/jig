@@ -676,6 +676,8 @@ describe("an assigned epic's children", () => {
       slow: ["#3"],
     }).read({ epicWidth: 2 });
     expect(read.limitedUntil).toBeDefined();
+    expect(read.incomplete).toBe(true);
+    expect(read.failures).toHaveLength(1);
   });
 
   it("keeps an epic working while its started child cannot be read", async () => {
