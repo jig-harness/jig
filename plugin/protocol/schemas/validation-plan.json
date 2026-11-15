@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/repo-commands/v1/schemas/validation-plan.json",
+  "type": "object",
+  "properties": {
+    "validation": {
+      "type": "object",
+      "properties": {
+        "testbox": {
+          "type": "object",
+          "properties": {
+            "required": {
+              "type": "boolean"
+            }
+          },
+          "required": ["required"],
+          "additionalProperties": true
+        }
+      },
+      "required": ["testbox"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["validation"],
+  "additionalProperties": true
+}

@@ -37,6 +37,8 @@ import {
 } from "../../../../shared/records/envelope.ts";
 import type { Writer } from "../../../../shared/records/writer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { matches } from "../../../../shared/shapes.ts";
+import { ANSWER_PAYLOAD_SHAPE } from "../../../../shared/records/marker-shapes.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
 import { ANSWER_TEXT_MAX } from "../../../../shared/decisions/answer-limits.ts";
@@ -118,7 +120,9 @@ export function answerComment(
 export function withoutAnswerRecord(body: string): string {
   if (!body.includes(ANSWER_OPEN)) return body;
   const text = body.replaceAll("\r", "");
-  if (!decodeMarker(text, ANSWER_MARKER, ANSWER_KIND).ok) return body;
+  const read = decodeMarker(text, ANSWER_MARKER, ANSWER_KIND);
+  if (!read.ok || !matches(ANSWER_PAYLOAD_SHAPE, read.value.payload))
+    return body;
   const start = text.indexOf(`${ANSWER_OPEN}\n`);
   const end = text.indexOf(ANSWER_CLOSE, start) + ANSWER_CLOSE.length;
   return `${text.slice(0, start)}${text.slice(end)}`.trimEnd();

@@ -152,7 +152,7 @@ The skill acts on a few labels as process signals, by role:
 
 | Role (`issue_tracker.labels.<role>`) | Default | What it signals |
 |---------------------------------------|---------|-----------------|
-| `epic` | `epic` | An issue whose sub-issues are worked one at a time; on Jira and GitHub, an issue whose own issue type `issue_tracker.labels.epic_types` lists is one too, without the label |
+| `epic` | `epic` | An issue whose sub-issues are each delivered as their own pull request, one per `do-item` session; on Jira and GitHub, an issue whose own issue type `issue_tracker.labels.epic_types` lists is one too, without the label |
 | `hitl` | `hitl` | A deliverable that is a human's judgment (human-in-the-loop, [HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)); its facets are `<hitl>:<stakeholder>` (`hitl:legal`, `hitl:product`, …) |
 | `manual_ops` | `manual-ops` | A step a person performs outside the code |
 | `followup` | `pr-followup` | An issue filed from a review finding |
@@ -1498,6 +1498,10 @@ implementation. Skip this check for issues about the repository's own code.
 **judgment** — Evaluate live dependency and merge evidence, and preserve the
 human's choice when several candidates are eligible; the selector and
 snapshot mapping are **exact**.
+
+A session takes one sub-issue. That is the scope of one session, not a limit
+on the epic: the dispatcher may start several of an epic's children at once,
+each in a session of its own (`dispatch.epic_width`).
 
 1. **exact** — **Check whether everything is complete**:
    - `sub_issue_analysis.all_complete` → Step 5a.

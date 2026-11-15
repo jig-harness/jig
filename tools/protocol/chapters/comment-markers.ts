@@ -25,9 +25,89 @@ import {
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { table } from "../markdown.ts";
 import { checkHeldPhrases } from "../held.ts";
+import { s } from "../../../plugin/shared/shapes.ts";
+import {
+  ENVELOPE_SHAPE,
+  envelopeShape,
+} from "../../../plugin/shared/records/envelope-shape.ts";
+import {
+  ANSWER_PAYLOAD_SHAPE,
+  ATTACHMENT_MARKER_SHAPE,
+  CLAIM_MARKER_PAYLOAD_SHAPE,
+  CLAIM_OUTCOME_PAYLOAD_SHAPE,
+} from "../../../plugin/shared/records/marker-shapes.ts";
+import { REFLECTION_EVENT_SHAPE } from "../../../plugin/skills/reflect/scripts/lib/event-shapes.ts";
+import {
+  LEDGER_PAYLOAD_SHAPE,
+  LEDGER_PAYLOAD_FIELDS,
+} from "../../../plugin/skills/drive-pr/scripts/lib/state/ledger-shapes.ts";
 
 const REGISTRY = "plugin/shared/records/registry.ts";
 const ENVELOPE = "plugin/shared/records/envelope.ts";
+
+function enveloped(name: string, shape: Parameters<typeof s.intersection>[1]) {
+  const kind = recordKind(name);
+  if (kind === undefined)
+    throw new Defect(`the registry holds no ${name} kind`);
+  return s.intersection(envelopeShape(kind), shape);
+}
+
+/** Stable kinds carrying JSON documents; other marker grammars are explicitly listed below. */
+export const MARKER_SCHEMAS = {
+  "drive-ledger": [
+    {
+      name: "drive-ledger",
+      shape: s.union([
+        enveloped("drive-ledger", LEDGER_PAYLOAD_SHAPE),
+        s.object({
+          ...LEDGER_PAYLOAD_FIELDS,
+          ledgerVersion: s.enum([1, 2]),
+          kind: s.optional(s.never()),
+        }),
+      ]),
+    },
+  ],
+  "drive-answer": [
+    {
+      name: "drive-answer",
+      shape: enveloped("drive-answer", ANSWER_PAYLOAD_SHAPE),
+    },
+  ],
+  "tracker-claim-marker": [
+    {
+      name: "tracker-claim-marker",
+      shape: enveloped("tracker-claim-marker", CLAIM_MARKER_PAYLOAD_SHAPE),
+    },
+    {
+      name: "tracker-claim-outcome",
+      shape: enveloped("tracker-claim-marker", CLAIM_OUTCOME_PAYLOAD_SHAPE),
+    },
+  ],
+  "tracker-attachment": [
+    { name: "tracker-attachment", shape: ATTACHMENT_MARKER_SHAPE },
+  ],
+  "reflection-github-store": [
+    { name: "reflection-record", shape: REFLECTION_EVENT_SHAPE },
+  ],
+} as const;
+
+/** These markers carry text or delimit prose, never a parsed JSON document. */
+export const NON_JSON_MARKERS: Readonly<Record<string, string>> = {
+  "summary-answer": "A fingerprint in a marker line.",
+  "thread-reply": "A marker at the end of a prose reply.",
+  "deferred-section": "A prose section with space-separated entry attributes.",
+  "ai-review-summary": "Reviewer prose and commit marker text.",
+  "ai-review-round": "Reviewer round and backlog marker text.",
+  "coderabbit-comment": "Reviewer marker text.",
+  "coderabbit-review-body": "Reviewer finding identifiers in prose.",
+  "do-item-pr-association": "A pull-request address in a comment marker.",
+  "deferred-batch": "A batch key on a marker line.",
+  "tracker-related": "Relation keys on marker lines.",
+  "tracker-blocked": "A prose state-transition marker.",
+  "issue-fields-sweep": "A prose facet-sweep marker.",
+  "fleet-health-suspicion": "A prose suspicion marker.",
+  "epic-acceptance-verdict": "A verdict word on a marker line.",
+};
 
 /** The media whose kinds the chapter covers. */
 export const MEDIA: readonly string[] = ["forge", "tracker"];
@@ -291,6 +371,10 @@ const notRecordValue = (r: (typeof NOT_RECORDS)[number]): DataValue => ({
 });
 
 export const COMMENT_MARKERS: Chapter = {
+  schemas: [
+    { name: "record-envelope", shape: ENVELOPE_SHAPE },
+    ...Object.values(MARKER_SCHEMAS).flat(),
+  ],
   id: "comment-markers",
   check: (root) =>
     checkHeldPhrases(root, "comment-markers", [

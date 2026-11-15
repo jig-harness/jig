@@ -734,11 +734,10 @@ export async function readPickups(
     once,
   );
   if (served === undefined || served.people.length === 0) return factory;
-  const extra = await readServedPickups(
-    once(),
-    served.people,
-    servedReadOptions(served),
-  );
+  const extra = await readServedPickups(once(), served.people, {
+    ...servedReadOptions(served),
+    epicWidth: section.epicWidth,
+  });
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
     read: servedRead(factory.read, extra),
