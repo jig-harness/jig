@@ -29,12 +29,15 @@
  * It also prints the implementation guidance (`lib/guidance.ts`): the
  * skills and notes of the matching `do_item.guidance` entries and of the
  * areas the item reaches, and the guidance skills nothing installed
- * answers (`missing_skills`). `--paths <file>` names the files the change
- * plans to touch, one per line, so path entries and areas match on them.
+ * answers (`missing_skills`), and the review gates (`lib/gates.ts`): the
+ * `do_item.gates` entries the item meets, and those only its paths could.
+ * `--paths <file>` names the files the change plans to touch, one per line,
+ * so path entries, gates and areas match on them. Every field is matched by
+ * the shared rule matcher (`shared/rule-matcher.ts`).
  *
  * Type: Discovery
  * Input: JSON with the issue's `labels` and `title` (from get_issue.ts)
- * Output: JSON with the agent recommendation and scouts
+ * Output: JSON with the agent recommendation, scouts, guidance and gates
  *
  * Usage:
  *     bun determine_agent.ts <issue-json-file>
@@ -71,6 +74,7 @@ import {
   parseGuidance,
   resolveGuidance,
 } from "./lib/guidance.ts";
+import { type Gate, parseGates, resolveGates } from "./lib/gates.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { failed, JigError, ok } from "../../../shared/outcome.ts";
@@ -95,6 +99,7 @@ export interface AgentRouting {
   titleKeywords: MapEntry<string>[];
   scouts: Record<string, string[]>;
   guidance: GuidanceEntry[];
+  gates: Gate[];
 }
 
 function stringMap(v: unknown, where: string): Record<string, string> {
@@ -190,6 +195,7 @@ export function parseAgentRouting(
     titleKeywords: nameMap(TITLE_KEYWORDS, agents.title_keywords),
     scouts,
     guidance: parseGuidance(section),
+    gates: parseGates(section),
   };
 }
 
@@ -381,13 +387,13 @@ export function guidanceFor(
 /** The guidance for the CLI, each skill nothing installed answers named on stderr. */
 function reportedGuidance(
   labels: string[],
-  parsed: { args: { values: Map<string, string> } },
+  paths: string[] | null,
   catalog: ChangeAreaCatalog | null,
   routing: AgentRouting,
 ): Record<string, unknown> {
   const guidance = guidanceFor(
     labels,
-    readPlannedPaths(parsed.args.values.get("paths") ?? null),
+    paths,
     catalog,
     routing,
     skillSearch(consumerRoot()),
@@ -517,7 +523,10 @@ async function main(): Promise<number> {
     const catalog = configuredCatalog(catalogPath, verbose);
 
     const result = determineAgents(labels, title, catalog, routing);
-    result.guidance = reportedGuidance(labels, parsed, catalog, routing);
+    const paths = readPlannedPaths(parsed.args.values.get("paths") ?? null);
+    result.guidance = reportedGuidance(labels, paths, catalog, routing);
+    const gates = resolveGates(routing.gates, labels, paths);
+    result.gates = { applied: gates.applied, by_path: gates.byPath };
 
     if (verbose) {
       console.error(`Primary agent: ${String(result.primary_agent)}`);

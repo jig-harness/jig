@@ -692,6 +692,14 @@ implementation. Skip this check for issues about the repository's own code.
      them, and the areas, on paths instead. `missing_skills` names each
      guidance skill nothing installed answers: name each in the status
      message (`Guidance skill not installed: <name>`), and delegate anyway.
+   - `do_item.gates` — `[{labels, paths, skill}]`: review gates. Its `gates`
+     output holds `applied`, each gate the issue's labels or the planned
+     paths meet, with its `skill` and `why`, and `by_path`, each gate only
+     paths it could not know yet would meet.
+
+   How each of these fields matches an issue (labels ignoring case, title
+   keywords, path globs, first or every match) is the
+   [rule matchers' chapter](../../protocol/rule-matchers.md)'s to say.
 
    For example, a repository might route `agent:backend` to a "Backend Agent"
    whose scouts are a schema scout and a constraint validator. Unless Step 2
@@ -900,10 +908,10 @@ implementation. Skip this check for issues about the repository's own code.
    Leave out a part that is empty, and the heading when all are. Guidance
    adds to the review gates below and never replaces one.
 
-   **Review gates — MANDATORY when declared.** Each entry of the overlay's
-   `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
-   applies when the issue carries one of its `labels`, or the change will
-   plausibly touch one of its `paths`. For every applicable gate, end the
+   **Review gates — MANDATORY when declared.** `determine_agent.ts` printed
+   the overlay's `do_item.gates` that apply under `gates`: every gate in
+   `applied`, and each gate in `by_path` whose `paths` the change will
+   plausibly touch. For every applicable gate, end the
    delegation prompt with this directive, verbatim except for the
    substitutions:
 
@@ -1991,7 +1999,7 @@ report. In such a pass:
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
 | `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
-| `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
+| `determine_agent.ts` | Route an issue to an agent and its scouts, and list its guidance and review gates | Issue JSON (path or `-`) | JSON with agent, scouts, guidance and gates |
 | `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
