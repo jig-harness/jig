@@ -53,6 +53,7 @@ import {
 import { detectHarness } from "../../../shared/harness.ts";
 import { runtimeModel } from "../../../shared/model-families.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
+import type { MapEntry } from "../../../shared/rule-matcher.ts";
 import { applyImpliedClosure } from "../../change-areas/scripts/lib/resolve.ts";
 import type { ChangeAreaCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import {
@@ -66,6 +67,7 @@ import {
   catalogPathFromOverlay,
   determineAgents,
   loadCatalog,
+  areaOfLabel,
   parseAgentRouting,
 } from "./determine_agent.ts";
 import {
@@ -466,14 +468,12 @@ function reviewSkillsOf(key: string, value: unknown): string[] {
 export function catalogFacts(
   catalog: ChangeAreaCatalog,
   labels: string[],
-  codeareaAreas: Record<string, string>,
+  codeareaAreas: readonly MapEntry<string>[],
 ): CatalogFacts {
   const flags = [...new Set([...catalog.values()].flatMap((a) => a.flags))];
   const seeds: string[] = [];
   for (const label of labels) {
-    const target = Object.hasOwn(codeareaAreas, fold(label))
-      ? codeareaAreas[fold(label)]
-      : undefined;
+    const target = areaOfLabel({ codeareaAreas }, label);
     if (target === undefined) continue;
     if (!catalog.has(target))
       throw new CatalogFieldError(

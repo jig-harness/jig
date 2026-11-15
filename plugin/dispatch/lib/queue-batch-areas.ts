@@ -1,7 +1,10 @@
 /** Catalog sensitivity flags apply before grouping, from the reviewed default branch. */
 import { isRecord } from "../../shared/guards.ts";
 import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
-import { parseAgentRouting } from "../../skills/do-item/scripts/determine_agent.ts";
+import {
+  areaOfLabel,
+  parseAgentRouting,
+} from "../../skills/do-item/scripts/determine_agent.ts";
 import { defaultBranchFile } from "./forge.ts";
 import { heldRead, type TickBound } from "./sources/bounded.ts";
 import type { RepoTarget, WantedItem } from "./types.ts";
@@ -44,7 +47,7 @@ export async function batchSafePickups(
         item.batchAllowed !== false &&
         !(item.queueIssue?.labels ?? []).some((label) => {
           if (flags.has(label)) return true;
-          const area = routing.codeareaAreas[label.toLowerCase()];
+          const area = areaOfLabel(routing, label);
           return (
             area !== undefined && (catalog.get(area)?.flags.length ?? 0) > 0
           );

@@ -73,6 +73,12 @@ import {
 } from "./lib/guidance.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import { isRecord } from "../../../shared/guards.ts";
+import { failed, ok } from "../../../shared/outcome.ts";
+import {
+  lookup,
+  type MapEntry,
+  ruleMap,
+} from "../../../shared/rule-matcher.ts";
 
 /** The agent used when the consumer declares none. */
 export const DEFAULT_AGENT = "general-purpose";
@@ -81,9 +87,12 @@ export interface AgentRouting {
   default: string;
   integrator: string;
   catalog: Record<string, string>;
-  codeareaAreas: Record<string, string>;
-  labels: Record<string, string>;
-  titleKeywords: Record<string, string>;
+  /** `do_item.agents.codearea_areas`: label → change-area key, as the rule matcher reads the map. */
+  codeareaAreas: MapEntry<string>[];
+  /** `do_item.agents.labels`: label → agent. */
+  labels: MapEntry<string>[];
+  /** `do_item.agents.title_keywords`: title keyword → agent. */
+  titleKeywords: MapEntry<string>[];
   scouts: Record<string, string[]>;
   guidance: GuidanceEntry[];
 }
@@ -101,6 +110,46 @@ function stringMap(v: unknown, where: string): Record<string, string> {
   }
   return out;
 }
+
+/** A rule field written as a map from a fact's value to a nonempty name, read by the rule matcher. */
+function nameMap(field: string, v: unknown): MapEntry<string>[] {
+  const entries = ruleMap(
+    field,
+    v,
+    (x) =>
+      typeof x === "string" && x.trim() !== ""
+        ? ok(x)
+        : failed("name", "must be a nonempty string"),
+    field.endsWith("codearea_areas")
+      ? "a label to a change-area key"
+      : field.endsWith("title_keywords")
+        ? "a title keyword to an agent"
+        : "a label to an agent",
+  );
+  if (!entries.ok) throw new Error(entries.failure.reason);
+  return entries.value;
+}
+
+/** The change area `do_item.agents.codearea_areas` maps one of the item's labels to, or `undefined`. */
+export function areaOfLabel(
+  routing: { readonly codeareaAreas: readonly MapEntry<string>[] },
+  label: string,
+): string | undefined {
+  return lookup(CODEAREA_AREAS, routing.codeareaAreas, { labels: [label] })[0]
+    ?.result;
+}
+
+/** The agent `do_item.agents.labels` maps one of the item's labels to, or `undefined`. */
+function agentOfLabel(
+  routing: AgentRouting,
+  label: string,
+): string | undefined {
+  return lookup(AGENT_LABELS, routing.labels, { labels: [label] })[0]?.result;
+}
+
+const CODEAREA_AREAS = "do_item.agents.codearea_areas";
+const AGENT_LABELS = "do_item.agents.labels";
+const TITLE_KEYWORDS = "do_item.agents.title_keywords";
 
 /** Validate `do_item.agents` and `do_item.scouts` from a parsed overlay. */
 export function parseAgentRouting(
@@ -135,15 +184,9 @@ export function parseAgentRouting(
     default: dflt,
     integrator: name(agents.integrator, "do_item.agents.integrator", dflt),
     catalog: stringMap(agents.catalog, "do_item.agents.catalog"),
-    codeareaAreas: stringMap(
-      agents.codearea_areas,
-      "do_item.agents.codearea_areas",
-    ),
-    labels: stringMap(agents.labels, "do_item.agents.labels"),
-    titleKeywords: stringMap(
-      agents.title_keywords,
-      "do_item.agents.title_keywords",
-    ),
+    codeareaAreas: nameMap(CODEAREA_AREAS, agents.codearea_areas),
+    labels: nameMap(AGENT_LABELS, agents.labels),
+    titleKeywords: nameMap(TITLE_KEYWORDS, agents.title_keywords),
     scouts,
     guidance: parseGuidance(section),
   };
@@ -155,7 +198,7 @@ export function parseAgentRouting(
  * `Object.prototype`, so `table["constructor"]` would otherwise return a
  * function and push it into the agent list.
  */
-function lookup<T>(table: Record<string, T>, key: string): T | undefined {
+function own<T>(table: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(table, key) ? table[key] : undefined;
 }
 
@@ -210,7 +253,7 @@ function catalogAgentsFromLabels(
   const hits: Array<[string, string, string]> = [];
   for (const label of labels) {
     const labelLower = label.toLowerCase();
-    const areaKey = lookup(routing.codeareaAreas, labelLower);
+    const areaKey = areaOfLabel(routing, label);
     if (areaKey === undefined) continue;
     const catalogAgent = catalog.get(areaKey)?.fields.agent;
     if (typeof catalogAgent === "string" && catalogAgent !== "")
@@ -219,7 +262,7 @@ function catalogAgentsFromLabels(
   // Ordered by area key, so the primary preference on a tie is stable.
   hits.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   for (const [, catalogAgent, labelLower] of hits) {
-    const type = lookup(routing.catalog, catalogAgent.toLowerCase());
+    const type = own(routing.catalog, catalogAgent.toLowerCase());
     if (type === undefined) continue;
     resolvedLabels.add(labelLower);
     if (!agentTypes.includes(type)) agentTypes.push(type);
@@ -238,7 +281,7 @@ export function determineAgents(
   const scouts = new Set<string>();
   const addAgent = (agent: string) => {
     agents.add(agent);
-    for (const scout of lookup(routing.scouts, agent) ?? []) scouts.add(scout);
+    for (const scout of own(routing.scouts, agent) ?? []) scouts.add(scout);
   };
 
   const { agentTypes: catalogAgents, resolvedLabels } = catalogAgentsFromLabels(
@@ -252,14 +295,14 @@ export function determineAgents(
   for (const label of labels) {
     const labelLower = label.toLowerCase();
     if (resolvedLabels.has(labelLower)) continue;
-    const agent = lookup(routing.labels, labelLower);
+    const agent = agentOfLabel(routing, label);
     if (agent !== undefined) addAgent(agent);
   }
 
-  const titleLower = title.toLowerCase();
-  for (const [word, agent] of Object.entries(routing.titleKeywords)) {
-    if (titleLower.includes(word) && !agents.has(agent)) addAgent(agent);
-  }
+  for (const { result } of lookup(TITLE_KEYWORDS, routing.titleKeywords, {
+    title,
+  }))
+    if (!agents.has(result)) addAgent(result);
 
   if (agents.size === 0) addAgent(routing.default);
 
@@ -286,7 +329,7 @@ export function determineAgents(
     scouts: [...scouts],
     coordination_needed: coordinationNeeded,
     labels_matched: labels.filter(
-      (l) => lookup(routing.labels, l.toLowerCase()) !== undefined,
+      (l) => agentOfLabel(routing, l) !== undefined,
     ),
     recommendation: `Task tool with subagent_type: "${primaryAgent}"`,
   };
@@ -309,7 +352,12 @@ export function guidanceFor(
   const areas =
     catalog === null
       ? []
-      : matchedAreas(labels, routing.codeareaAreas, catalog, paths);
+      : matchedAreas(
+          labels,
+          (label) => areaOfLabel(routing, label),
+          catalog,
+          paths,
+        );
   const g: Guidance = resolveGuidance(
     routing.guidance,
     labels,

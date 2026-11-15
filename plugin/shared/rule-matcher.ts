@@ -186,7 +186,9 @@ export function parseEntryRule(
   const rule: Partial<Record<FactName, string[]>> = {};
   for (const fact of ruleField(field).facts) {
     const raw = entry[fact];
+    // An empty list tests nothing, as an absent one does.
     if (raw === undefined || raw === null) continue;
+    if (Array.isArray(raw) && raw.length === 0) continue;
     const values = factValues(fact, raw, `${at}.${fact}`);
     if (!values.ok) return values;
     rule[fact] = values.value;

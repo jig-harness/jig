@@ -6,7 +6,10 @@ import {
 } from "../../skills/work-batch/scripts/lib/policy.ts";
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
 import { isRecord } from "../../shared/guards.ts";
-import { parseAgentRouting } from "../../skills/do-item/scripts/determine_agent.ts";
+import {
+  areaOfLabel,
+  parseAgentRouting,
+} from "../../skills/do-item/scripts/determine_agent.ts";
 import {
   parseTrackerConfig,
   facetsOf,
@@ -61,13 +64,7 @@ export function batchPickups(
     )
       continue;
     const areas = [
-      ...new Set(
-        issue.labels.flatMap((l) =>
-          typeof routing.codeareaAreas[l.toLowerCase()] === "string"
-            ? [String(routing.codeareaAreas[l.toLowerCase()])]
-            : [],
-        ),
-      ),
+      ...new Set(issue.labels.flatMap((l) => areaOfLabel(routing, l) ?? [])),
     ];
     if (areas.length !== 1) continue;
     const area = areas[0];

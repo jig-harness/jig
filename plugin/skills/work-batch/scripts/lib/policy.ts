@@ -395,12 +395,12 @@ function knownLabels(
 ): { area: string[]; context: string[] } {
   const areas = [...(catalog?.values() ?? [])];
   const area = new Set([
-    ...Object.keys(routing.codeareaAreas),
+    ...routing.codeareaAreas.map((e) => e.key.toLowerCase()),
     ...areas.flatMap((a) => a.trackerLabels.map((l) => l.toLowerCase())),
   ]);
   const context = new Set([
     ...area,
-    ...Object.keys(routing.labels),
+    ...routing.labels.map((e) => e.key.toLowerCase()),
     ...areas.flatMap((a) => a.labels.map((l) => l.toLowerCase())),
   ]);
   return { area: [...area].sort(), context: [...context].sort() };
@@ -430,10 +430,9 @@ function lookups(
   BatchPolicy,
   "areaNaming" | "areaNamingSpelling" | "areaFlags" | "stateNames"
 > {
-  const areaNaming: Record<string, string> = Object.assign(
-    Object.create(null),
-    routing.codeareaAreas,
-  );
+  const areaNaming: Record<string, string> = Object.create(null);
+  for (const { key, result } of routing.codeareaAreas)
+    areaNaming[key.toLowerCase()] = result;
   const areaNamingSpelling: Record<string, string> = Object.create(null);
   // The last spelling wins, as it does for the area the label routes to.
   for (const label of configuredLabelKeys(overlay))
@@ -484,8 +483,8 @@ export function batchPolicy(
   const repoLabel = repoLabelOf(review);
   const repos = review.taxonomy?.repos ?? [];
   const known = knownLabels(routing, catalog);
-  const prefixes = Object.keys(routing.codeareaAreas)
-    .map(labelPrefix)
+  const prefixes = routing.codeareaAreas
+    .map((e) => labelPrefix(e.key.toLowerCase()))
     .filter((p): p is string => p !== null);
 
   return {
