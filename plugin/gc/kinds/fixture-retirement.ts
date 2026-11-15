@@ -2,7 +2,7 @@
 import { basename } from "node:path";
 import { processTable } from "../../shared/process-table.ts";
 import {
-  fixtureEnclosureIndex,
+  cachedFixtureEnclosure,
   type FixtureEnclosureIndex,
   fixtureRetirementProof,
   fixtureRootGone,
@@ -63,6 +63,7 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
   const batches = new Map<string, string[]>();
   const malformed = new Map<string, string>();
   const proved = new Map<string, string[]>();
+  let cached: ReturnType<typeof cachedFixtureEnclosure> | undefined;
   return {
     /** List a page: its root-keeping scopes for the scratch proof, and a resource per batch and per malformed folder. */
     list(page: FixtureRegistryPage): {
@@ -72,6 +73,7 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
       batches.clear();
       malformed.clear();
       proved.clear();
+      cached = undefined;
       const { present, gone } = split(page);
       const resources: Resource[] = [];
       for (let start = 0; start < gone.length; start += batchSize) {
@@ -106,10 +108,15 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
       const rows = await processTable();
       const retirable: string[] = [];
       const kept: Kept[] = [];
-      /** Read at most once, only when a proof needs it, and not kept past this call: it is evidence of the store as this admission sees it. */
+      /** Read at most once a proof, only when needed. Later batches reuse it while the store's witness is unchanged, else it is read again under this admission. */
       let enclosure: FixtureEnclosureIndex | undefined;
-      const enclosureFor = (): FixtureEnclosureIndex =>
-        (enclosure ??= fixtureEnclosureIndex(store));
+      const enclosureFor = (): FixtureEnclosureIndex => {
+        if (!enclosure) {
+          cached = cachedFixtureEnclosure(store, cached);
+          enclosure = cached.index;
+        }
+        return enclosure;
+      };
       for (const registry of batches.get(resource.id) ?? []) {
         const proof = fixtureRetirementProof(registry, rows, enclosureFor);
         if (proof.state === "dead") retirable.push(registry);

@@ -24,7 +24,7 @@ import { processTable, type ProcessRow } from "./process-table.ts";
 import { SCRATCH_OWNER_FILE } from "./scratch-owner.ts";
 import { attempt, failed, ok, type Outcome } from "./outcome.ts";
 import { isRecord } from "./guards.ts";
-import { failureFields } from "./errors.ts";
+import { failureFields, swallow } from "./errors.ts";
 import { log } from "./log.ts";
 import { currentIso, currentMs, parseMs } from "./time.ts";
 
@@ -495,6 +495,61 @@ export function fixtureEnclosureIndex(
     }
   }
   return index;
+}
+/** What the store looked like when an index was read: entry count and newest registration-folder change. */
+interface StoreWitness {
+  entries: number;
+  newestNs: bigint;
+}
+const RACY_NS = 2_000_000_000n;
+/** Null when the store cannot be summarized inside its time bound. Scope files land by atomic rename, so adding one moves its folder's change time. */
+function storeWitness(store: string): StoreWitness | null {
+  try {
+    const names = readdirSync(store);
+    const deadline = currentMs() + PAGE_MS;
+    let newestNs = 0n;
+    for (const name of names) {
+      if (currentMs() > deadline) return null;
+      const stat = lstatSync(join(store, name), {
+        bigint: true,
+        throwIfNoEntry: false,
+      });
+      if (stat && stat.mtimeNs > newestNs) newestNs = stat.mtimeNs;
+    }
+    return { entries: names.length, newestNs };
+  } catch (error) {
+    swallow(
+      error,
+      "an unreadable store has no witness, so its index is read again",
+    );
+    return null;
+  }
+}
+/**
+ * An enclosure index reused across batches only while the store is provably
+ * unchanged: the same entry count and no folder changed since the read, with
+ * a guard against a change landing in the clock's last tick before it.
+ */
+export function cachedFixtureEnclosure(
+  store: string,
+  previous?: {
+    index: FixtureEnclosureIndex;
+    witness: StoreWitness | null;
+    at: bigint;
+  },
+): { index: FixtureEnclosureIndex; witness: StoreWitness | null; at: bigint } {
+  const witness = storeWitness(store);
+  if (
+    previous &&
+    witness &&
+    previous.witness &&
+    witness.entries === previous.witness.entries &&
+    witness.newestNs === previous.witness.newestNs &&
+    previous.at - witness.newestNs > RACY_NS
+  )
+    return previous;
+  const at = BigInt(currentMs()) * 1_000_000n;
+  return { index: fixtureEnclosureIndex(store), witness, at };
 }
 /**
  * Whether a scope that still counts this registration's unknown launches

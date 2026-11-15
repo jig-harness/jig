@@ -7,6 +7,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,6 +16,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { encodeIdentity, ownIdentity } from "../../shared/liveness.ts";
 import { writeScratchOwner } from "../../shared/scratch-owner.ts";
 import {
+  cachedFixtureEnclosure,
   nextFixtureRegistryPage,
   registerFixtureScope,
 } from "../../shared/test-fixture-registry.ts";
@@ -352,4 +354,24 @@ test("a scope added to a live registration between two batches' proofs still enc
   );
   expect(added.ok).toBe(true);
   expect((await retirement.prove(second)).state).toBe("unverified");
+});
+
+test("the enclosure index is reused across batches only while the store is unchanged", () => {
+  const f = fixture();
+  registerExited(f.store, [{ root: join(f.base, "a") }]);
+  const age = (path: string) =>
+    utimesSync(
+      path,
+      new Date(Date.now() - 3_600_000),
+      new Date(Date.now() - 3_600_000),
+    );
+  for (const name of readdirSync(f.store)) age(join(f.store, name));
+  const first = cachedFixtureEnclosure(f.store);
+  expect(cachedFixtureEnclosure(f.store, first)).toBe(first);
+  const registry = join(f.store, readdirSync(f.store)[0] ?? "");
+  const node = readdirSync(join(registry, "nodes"))[0] ?? "";
+  expect(
+    registerFixtureScope(join(f.base, "b"), { registry, node }, f.store).ok,
+  ).toBe(true);
+  expect(cachedFixtureEnclosure(f.store, first)).not.toBe(first);
 });
