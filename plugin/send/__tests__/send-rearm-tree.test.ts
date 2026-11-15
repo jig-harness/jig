@@ -6,6 +6,9 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { pullDoc } from "../../ask/__tests__/ask-fixtures.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { recordResult, writeRecord } from "../../dispatch/lib/launches.ts";
+import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
+import { cloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
+import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import {
   ledgerOn,
   pullRequest,
@@ -84,6 +87,23 @@ function pickup(w: SendWorld, path: string) {
   recordResult(id, "done", w.state, { address: ADDRESS });
 }
 
+function ledgerForTree(w: SendWorld, path: string) {
+  const ledger = stoppedLedger(12, 12, {
+    driver: {
+      actor: `wt-${worktreePathKey(path)}`,
+      clone: cloneId(cloneKey(join(w.repo, ".git"))),
+      heartbeat: "2026-10-30T22:00:00.000Z",
+      state: "stopped",
+      exit: 12,
+    },
+  });
+  w.api(
+    `repos/${REPO}/pulls/12`,
+    pullDoc(12, { head: { sha: "a".repeat(40), ref: "topic" } }),
+  );
+  w.api(`repos/${REPO}/issues/12/comments`, [ledgerOn(702, ledger)]);
+}
+
 describe("rearm's existing tree discovery", () => {
   it("finds the pickup result's tree without any drive launch or listing", async () => {
     const w = world();
@@ -148,7 +168,13 @@ describe("rearm tree search identity", () => {
     const other = join(w.root, "other-repository");
     mkdirSync(other);
     git(other, "init", "-q");
-    git(other, "remote", "add", "origin", `https://github.com/${REPO}.git`);
+    git(
+      other,
+      "remote",
+      "add",
+      "origin",
+      "https://github.com/example-org/other.git",
+    );
     w.env.GIT_DIR = join(other, ".git");
     w.env.GIT_COMMON_DIR = join(other, ".git");
     const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
@@ -173,6 +199,51 @@ describe("rearm tree search identity", () => {
     expectSpawnExit(r, 1);
     expect(r.stderr).toContain(unreadable);
     expect(r.stderr).toContain("repository identity");
+    expect(w.writes()).toEqual([]);
+  });
+  it("refuses selection when the forge does not provide a pull request head branch", async () => {
+    const w = world();
+    branchTree(w, "known-tree");
+    w.api(
+      `repos/${REPO}/pulls/12`,
+      pullDoc(12, { head: { sha: "a".repeat(40), ref: undefined } }),
+    );
+    const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("head branch");
+    expect(w.writes()).toEqual([]);
+  });
+  it("refuses a branch tree from another clone when it is not the stopped driver's tree", async () => {
+    const w = world();
+    ledgerForTree(w, w.repo);
+    const clone = join(w.root, "other-clone");
+    mkdirSync(clone);
+    git(clone, "init", "-q");
+    git(clone, "remote", "add", "origin", `https://github.com/${REPO}.git`);
+    git(
+      clone,
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.test",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "initial",
+    );
+    git(clone, "switch", "-c", "topic");
+    const jigHome = join(w.home, ".jig");
+    mkdirSync(jigHome, { recursive: true });
+    writeFileSync(
+      join(jigHome, "dispatch.yaml"),
+      JSON.stringify({
+        repositories: [{ path: clone, stages: ["rearm"] }],
+        accounts: [],
+      }),
+    );
+    const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("no existing worktree");
     expect(w.writes()).toEqual([]);
   });
 });

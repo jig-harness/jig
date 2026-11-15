@@ -1,11 +1,15 @@
 /** Existing re-arm trees: drive ownership first, then unambiguous local evidence. */
 import { realpathSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseAddress } from "../../shared/address.ts";
 import { remoteName } from "../../shared/consumer.ts";
 import { swallow } from "../../shared/errors.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { gitIdentityEnv, run } from "../../shared/proc.ts";
 import { parseGitWorktreeList } from "../../shared/orca-workspace/git.ts";
+import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
+import { peekCloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
+import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import type { DriveReading } from "../../ask/lib/drive.ts";
 import { launchesWhere, machineFile } from "../../ask/lib/local.ts";
 import { repoFromRemote } from "../../skills/do-item/scripts/lib/tracker/github/refs.ts";
@@ -173,12 +177,62 @@ function addCandidate(search: Search, path: string | undefined): void {
   if (found !== null) search.candidates.add(found);
 }
 
+/** A current ledger's stopped-driver identity must match a tree sent to the dispatcher. */
+async function matchesStoppedDriver(
+  ctx: AskContext,
+  d: DriveReading,
+  path: string,
+): Promise<Outcome<boolean, "refused">> {
+  const driver =
+    typeof d.ledger === "object" && d.ledger !== null ? d.ledger.driver : null;
+  // Ledgers written before clone identities included their host suffix remain
+  // readable, but cannot prove the stronger current ownership relation.
+  if (driver === null || !driver.clone.includes("@")) return ok(true);
+  if (`wt-${worktreePathKey(path)}` !== driver.actor) return ok(false);
+  const sec = ctx.reading.sourceSec();
+  if (sec === 0)
+    return unreadable(
+      "the answer's deadline passed before reading worktree identity",
+    );
+  const common = await run(
+    ["git", "-C", path, "rev-parse", "--git-common-dir"],
+    {
+      timeoutSec: sec,
+      stderr: "pipe",
+      env: gitIdentityEnv(),
+    },
+  );
+  if (common.code !== 0)
+    return unreadable(
+      `the clone identity of candidate ${path} could not be read: git exited ${common.code}${common.timedOut ? " at its deadline" : ""}; ${common.stderr.trim()}`,
+    );
+  const key = peekCloneKey(resolve(path, common.stdout.trim()));
+  if (key === null || cloneId(key) !== driver.clone) return ok(false);
+  return ok(true);
+}
+
+/** Keep only trees the dispatcher can prove are the stopped driver's own. */
+async function driverTrees(
+  ctx: AskContext,
+  d: DriveReading,
+  search: Search,
+): Promise<Outcome<void, "refused">> {
+  const candidates = new Set<string>();
+  for (const path of search.candidates) {
+    const matches = await matchesStoppedDriver(ctx, d, path);
+    if (!matches.ok) return matches;
+    if (matches.value) candidates.add(path);
+  }
+  search.candidates = candidates;
+  return ok(undefined);
+}
+
 /** One clone's complete git listing, bounded by the answer's remaining time. */
 async function branchTrees(
   ctx: AskContext,
   search: Search,
   clone: string,
-  branch: string | undefined,
+  branch: string,
 ): Promise<Outcome<void, "refused">> {
   const sec = ctx.reading.sourceSec();
   if (sec === 0) return unreadable("the answer's deadline passed");
@@ -229,9 +283,13 @@ export async function rearmTree(
   const pickups = await pickupTrees(ctx, search.value);
   if (!pickups.ok) return pickups;
   const branch = d.pull?.doc.headRef;
+  if (typeof branch !== "string" || branch === "")
+    return unreadable("the forge did not provide the pull request head branch");
   for (const clone of search.value.clones) {
     const listed = await branchTrees(ctx, search.value, clone, branch);
     if (!listed.ok) return listed;
   }
+  const matched = await driverTrees(ctx, d, search.value);
+  if (!matched.ok) return matched;
   return uniqueTree(search.value, ctx.address.key, branch);
 }
