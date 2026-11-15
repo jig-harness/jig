@@ -20,7 +20,7 @@
  * not stop every tracker read on the machine.
  */
 import type { Database } from "bun:sqlite";
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { swallow } from "../errors.ts";
@@ -202,7 +202,11 @@ export function isRateLimited(error: unknown): error is TrackerRateLimited {
 
 /** The key a credential's record is kept under: the adapter and a hash of the secret, never the secret. */
 export function credentialKey(adapter: string, secret: string): string {
-  const hash = createHash("sha256").update(secret).digest("hex").slice(0, 16);
+  // A keyed digest names the credential; it is a record key, not a stored password.
+  const hash = createHmac("sha256", "jig-credential-key")
+    .update(secret)
+    .digest("hex")
+    .slice(0, 16);
   return `${adapter}:${hash}`;
 }
 
