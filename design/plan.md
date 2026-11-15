@@ -700,49 +700,48 @@ attached to a run and took one over without Orca.
 
 ### 34. Jig in the Orca ecosystem
 
-Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
-on their own (the workspace tool behind the launcher, `do-item`'s board
-updates and workspace names, the dispatcher's session runtime, and a
-plugin Orca loads that wakes the dispatcher when an agent's status
-changes), and the rest of the execution line meets it only in part:
-collection through Orca still races an agent started between its last
-registry read and the removal, and the dispatcher cannot read an account's
-usage from Orca's command line. [design/orca-integration.md](orca-integration.md)
-has how it works, in classes built in order. Still open, on Orca 1.4.248's
-plugin hooks: the launch guard, in which `jig gc` takes its admission in a
-launch guard record before its last registry read and the plugin's
-`agent.launch.before` hook, reading that record without an awaited call,
-refuses a launch into a worktree gc holds; a spike on binding a launch to
-its account through the same hook; the plugin's status bar item; and the
-Jig panel, which stays the person's inbox, with an answer box and, on a
-merge-now entry, a button that runs the pinned merge command as the
-person. The board and each piece of work open in the dashboard (item 42), which
-the plugin's "Open the dashboard" command opens in Orca's own browser. Orca
-stays optional: every view of the dashboard works in any browser,
-and each thing the plugin adds has a Herdr or plain-text equivalent. Also
-open: what Jig asks of Orca (usage per account
-from the command line; a phone push only when an agent needs input; a hook
-before a workspace's removal; filed by a person, each with its pull request
-offered). One pull request per step, in the design's order.
+Jig's tooling reaches [Orca](https://www.onorca.dev) in the workspace tool
+behind the launcher, `do-item`'s board updates and workspace names, the
+dispatcher's session runtime, and a plugin Orca loads: it wakes the
+dispatcher when an agent's status changes, refuses a launch into a worktree
+`jig gc` is removing, shows the dispatch line in Orca's status bar, and
+opens a panel on the person's inbox, where a park is answered.
+[design/orca-integration.md](orca-integration.md) has how it works, in
+classes built in order. Still open, one pull request per step, the steps
+in parallel: the launch guard admission names only a worktree path, so it
+records the repository that owns it and the worktree's incarnation
+([#1201](https://github.com/jig-harness/jig/issues/1201)); a spike on
+binding a launch to the dispatcher's chosen account through the
+`agent.launch.before` hook, for Claude Code and for Codex
+([#1306](https://github.com/jig-harness/jig/issues/1306)); the
+dispatcher's account cap reading each account's usage from
+`orca account usage --json`, once Orca offers it
+([#1307](https://github.com/jig-harness/jig/issues/1307)); and, in the
+panel, picking a parked decision's answer as the dashboard does
+([jig-harness/orca-plugin#21](https://github.com/jig-harness/orca-plugin/issues/21))
+and a merge button on a merge-now entry that runs the pinned merge command
+as the person, once the dispatch board's Ready to merge (item 36) puts
+merge-now entries on the line
+([#1308](https://github.com/jig-harness/jig/issues/1308)). The board and
+each piece of work open in the dashboard (item 42), which the plugin's
+"Open the dashboard" command opens in Orca's own browser. Orca stays
+optional: every view of the dashboard works in any browser, and each thing
+the plugin adds has a Herdr or plain-text equivalent. Also open: what Jig
+asks of Orca (usage per account from the command line; a phone push only
+when an agent needs input; a hook before a workspace's removal; filed by a
+person, each with its pull request offered).
 
-Done when a launch Orca makes into a worktree `jig gc` is collecting is
-refused by the plugin's guard whenever the hook runs and reads the record
-(a hook that throws, runs past its deadline or whose worker is down lets the
-launch through, and a fresh heartbeat does not promise otherwise; tests cover
-each of those cases and an admission abandoned after gc submitted its
-removal), a launch the guard let through just before gc's admission
-keeps that worktree, and with a stale heartbeat gc collects as before and
-its receipt says the collection was unguarded; the plugin's status bar
-flags a tick older than twice the interval; the panel's inbox lists the
-needs, with their decisions, that the dashboard's Now view lists for the
-same tick; the dispatcher's account cap reads `orca
-account usage --json` where Orca has it; and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
-under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
-the first event after a minute of quiet starts it at once, an event during
-a running tick or the minute after a start waits for one trailing tick
-that starts once the running tick has finished and a minute has passed
-since the last start, and either stays pending while a tick's lock refuses it and survives an event that arrives while that tick
-processes the repository.
+Done when a launch guard admission is honoured only for the repository
+that owns it and the worktree incarnation it was taken on, so another
+repository's list cannot release it and a worktree recreated at the same
+path inherits no launch block; the spike's answer is recorded and, where a
+launch binds to its account, the dispatcher starts pickups through Orca on
+the account it chose; the dispatcher's account cap reads `orca account
+usage --json` where Orca has it, an `unavailable` row holding its account;
+the panel shows a parked decision's options and choice as `jig ask` and
+the dashboard do, and a Send settles it; and a merge-now entry in the
+panel runs its pinned merge command on a person's click and on nothing
+else.
 
 ## Next
 

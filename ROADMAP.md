@@ -219,15 +219,20 @@ Orca stays supported.
 [Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
 tooling supports, beside Herdr, the runtime it targets first. A small
 plugin Orca loads runs a dispatcher tick the moment an agent stops or
-waits. On an Orca host the plugin will also refuse to start an agent in a
-worktree `jig gc` is removing, for every launch Orca makes through its
-launchers, so a launch gc's last check could miss is turned away. The
-protection is best-effort: a restored session, a hook that fails and a
-plugin that is down are not covered. The plugin will show what waits on a person in Orca's
-status bar and in a panel. The panel opens on that person's inbox, and a
-command opens the dashboard in Orca's own browser for the board and each piece of
-work. The dispatcher will read each account's usage
-from Orca's command line once Orca offers it. The plugin is Orca-bound.
+waits. On an Orca host it refuses to start an agent in a worktree
+`jig gc` is removing, for every launch Orca makes through its launchers,
+so a launch gc's last check could miss is turned away. The protection is
+best-effort: a restored session, a hook that fails and a plugin that is
+down are not covered. The plugin shows the dispatch line in Orca's status
+bar, and a panel opens on what waits on that person, where a parked
+question is answered. Still to come: the guard tells apart repositories
+that share a worktree folder and a worktree recreated at the same path;
+the panel picks a parked decision's answer as the dashboard does, and
+merges a pull request that is ready to merge on that person's click; a
+command opens the dashboard in Orca's own browser for the board and each
+piece of work; the dispatcher reads each account's usage from Orca's
+command line once Orca offers it; and a trial finds whether a launch can
+be bound to the account the dispatcher chose. The plugin is Orca-bound.
 
 ## Next
 
