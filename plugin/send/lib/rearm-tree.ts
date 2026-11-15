@@ -280,7 +280,7 @@ function uniqueTree(
   branch: string | undefined,
 ): Outcome<string, "refused"> {
   if (search.faults.length > 0) return inspectionFailure(search.faults);
-  const paths = [...search.candidates].sort();
+  const paths = [...search.candidates].sort((a, b) => a.localeCompare(b));
   const [only] = paths;
   if (paths.length === 1 && only !== undefined) return ok(only);
   const detail =

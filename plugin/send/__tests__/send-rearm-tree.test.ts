@@ -90,6 +90,36 @@ function pickup(w: SendWorld, path: string) {
   recordResult(id, "done", w.state, { address: ADDRESS });
 }
 
+/** A second clone of the repository on a branch with no pickup result, listed by the machine's dispatch configuration. */
+function otherCloneOnTopic(w: SendWorld): string {
+  const clone = join(w.root, "other-clone");
+  mkdirSync(clone);
+  git(clone, "init", "-q");
+  git(clone, "remote", "add", "origin", `https://github.com/${REPO}.git`);
+  git(
+    clone,
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.test",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "initial",
+  );
+  git(clone, "switch", "-c", "topic");
+  const jigHome = join(w.home, ".jig");
+  mkdirSync(jigHome, { recursive: true });
+  writeFileSync(
+    join(jigHome, "dispatch.yaml"),
+    JSON.stringify({
+      repositories: [{ path: clone, stages: ["rearm"] }],
+      accounts: [],
+    }),
+  );
+  return clone;
+}
+
 function ledgerForTree(w: SendWorld, path: string) {
   const ledger = stoppedLedger(12, 12, {
     driver: {
@@ -133,31 +163,7 @@ describe("rearm's existing tree discovery", () => {
   });
   it("finds the branch in another clone listed by the machine", async () => {
     const w = world();
-    const clone = join(w.root, "other-clone");
-    mkdirSync(clone);
-    git(clone, "init", "-q");
-    git(clone, "remote", "add", "origin", `https://github.com/${REPO}.git`);
-    git(
-      clone,
-      "-c",
-      "user.name=Fixture",
-      "-c",
-      "user.email=fixture@example.test",
-      "commit",
-      "--allow-empty",
-      "-m",
-      "initial",
-    );
-    git(clone, "switch", "-c", "topic");
-    const jigHome = join(w.home, ".jig");
-    mkdirSync(jigHome, { recursive: true });
-    writeFileSync(
-      join(jigHome, "dispatch.yaml"),
-      JSON.stringify({
-        repositories: [{ path: clone, stages: ["rearm"] }],
-        accounts: [],
-      }),
-    );
+    const clone = otherCloneOnTopic(w);
     const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain(clone);
@@ -219,31 +225,7 @@ describe("rearm tree search identity", () => {
   it("refuses a branch tree from another clone when it is not the stopped driver's tree", async () => {
     const w = world();
     ledgerForTree(w, w.repo);
-    const clone = join(w.root, "other-clone");
-    mkdirSync(clone);
-    git(clone, "init", "-q");
-    git(clone, "remote", "add", "origin", `https://github.com/${REPO}.git`);
-    git(
-      clone,
-      "-c",
-      "user.name=Fixture",
-      "-c",
-      "user.email=fixture@example.test",
-      "commit",
-      "--allow-empty",
-      "-m",
-      "initial",
-    );
-    git(clone, "switch", "-c", "topic");
-    const jigHome = join(w.home, ".jig");
-    mkdirSync(jigHome, { recursive: true });
-    writeFileSync(
-      join(jigHome, "dispatch.yaml"),
-      JSON.stringify({
-        repositories: [{ path: clone, stages: ["rearm"] }],
-        accounts: [],
-      }),
-    );
+    otherCloneOnTopic(w);
     const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
     expectSpawnExit(r, 1);
     expect(r.stderr).toContain("no existing worktree");
