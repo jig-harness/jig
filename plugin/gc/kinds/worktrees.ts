@@ -397,6 +397,7 @@ async function collectThroughOrca(
             outcome: "failed",
             reason: retired.failure.reason,
           },
+          ...(archived === null ? {} : { archive: archived }),
         },
       };
     return {
