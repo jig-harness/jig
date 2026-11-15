@@ -364,7 +364,7 @@ claims it works until it has.
 | Forged identity header from a refused device | Not yet run |
 | `Host` allowlist: `200` for the front name, `403` for another | Passed, 2026-11-15: `200` through the front; a request with another `Host` on the loopback port answers `403` |
 | Existing Serve routes unchanged after setup and after undo | Not yet run |
-| QR code and text for the token-free address, scanned on the phone | Not yet run |
+| QR code and text for the token-free address, scanned on the phone | Passed, 2026-11-15: scanning the QR code `jig dispatch dashboard --access` printed opened the dashboard on the phone at the Tailscale Serve front's address |
 | Reading a decision, copying a command and an answer line, opening the forge link | Not yet run |
 | Copy after the clipboard permission is refused | Not yet run |
 | Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Partly run, 2026-11-15: the page installs as an app on the phone from the HTTPS front; the manifest (`start_url` `/`, `display` `standalone`) and its 192, 512 and maskable 512 icons each answer `200` through the front. Not yet observed: the installed app opening without a browser bar, showing no token in its addresses, reading the page and copying a command |
