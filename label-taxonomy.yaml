@@ -141,7 +141,7 @@ flags:
     scope: shipping-item
     fires: deferral-ledger
     # A neutral grey, so a follow-up never reads as parked work
-    # (jig:parked is orange).
+    # (jig:parked is red, d93f0b).
     color: cfd3d7
     apply_when:
       - the issue was filed from a review finding deferred on a pull request

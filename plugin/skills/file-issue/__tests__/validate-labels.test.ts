@@ -306,8 +306,12 @@ describe("an epic by its issue type", () => {
     const repo = mkdtempSync(join(tmpdir(), "validate-epic-type-"));
     mkdirSync(join(repo, ".config"));
     const overlay = join(repo, ".config", "jig.yaml");
+    // Only this overlay: no user layer or JIG__ variable lists epic types.
     const env = {
-      ...process.env,
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(([k]) => !k.startsWith("JIG__")),
+      ),
+      JIG_USER_LAYER: "off",
       JIG_CONSUMER_ROOT: repo,
       JIG_OVERLAY: overlay,
     };

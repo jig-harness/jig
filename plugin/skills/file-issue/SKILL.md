@@ -457,7 +457,7 @@ Then load the taxonomy and the label roles as in
 `validate-labels.ts` on the labels without those that spell the type or
 the size, which `get_issue.ts` keeps beside the facets and the validator
 refuses as a second input, with `--type`, `--priority` and `--size`, and
-with `--native-type` its `nativeType`, so an issue typed as an epic
+with `--native-type` its `nativeType` when it has one, so an issue typed as an epic
 (`issue_tracker.labels.epic_types`) meets a `requires` naming the epic
 label) and against what the issue describes, deriving as in
 [File, step 6](#6-derive-the-labels). A missing priority is asked for, as

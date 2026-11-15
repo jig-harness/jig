@@ -26,10 +26,10 @@
  *               (labels that must all be present whenever one of its labels is)
  *
  * Every entry may also carry `notes`, and `color`: the colour its label shows
- * in the tracker, six hex digits as a text (`cfd3d7`, no `#`), so a colour
- * meant to set one label apart is recorded where it cannot drift. Any other
- * key, at the top level or in an entry, is reported, so a misspelt rule (`requred:`) is never read as an
- * absent one. A type, flag or group label may not begin with a category's
+ * in the tracker, six hex digits written as text (`cfd3d7`, no `#`), so a
+ * colour meant to set one label apart is recorded where it cannot drift. Any
+ * other key, at the top level or in an entry, is reported, so a misspelt rule
+ * (`requred:`) is never read as an absent one. A type, flag or group label may not begin with a category's
  * prefix, so every label belongs to exactly one family.
  *
  * The file is read with a full YAML parser that rejects a repeated key, so
