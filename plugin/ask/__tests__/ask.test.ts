@@ -297,8 +297,9 @@ describe("jig ask", () => {
     expect(launches?.detail).toContain("no dispatcher state");
     expect(answer.sources.forgeCalls).toBe(3);
     expect(answer.sources.trackerCalls).toBe(0);
-    // Every forge call is a read.
-    for (const call of w.calls()) expect(call).toMatch(/^api -i /);
+    // Every forge call is a read: the budget's one lookup of the quota
+    // owner (`api user`) and the reads with their headers.
+    for (const call of w.calls()) expect(call).toMatch(/^api (-i |user$)/);
   });
 
   it("answers an address nobody holds with its last outcome", async () => {

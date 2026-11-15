@@ -88,7 +88,9 @@ describe("jig send --dry-run", () => {
       expect(r.stdout).toContain("dry run: nothing was written.");
     }
     expect(w.writes()).toEqual([]);
-    for (const call of w.calls()) expect(call).toMatch(/^api -i /);
+    // Reads only: the budget's one lookup of the quota owner (`api user`)
+    // and the reads with their headers.
+    for (const call of w.calls()) expect(call).toMatch(/^api (-i |user$)/);
   });
 
   it("prints an answer in full, says who can read it, and writes nothing", async () => {
