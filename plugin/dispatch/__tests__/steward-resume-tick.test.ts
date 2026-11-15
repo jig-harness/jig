@@ -25,10 +25,17 @@ import { withOrigin } from "./pickup-fixtures.ts";
 import { recordExit, readRecord } from "../lib/launches.ts";
 import { dispatched } from "../lib/runtime/port.ts";
 import {
+  claimStewardRecord,
+  judgedResumes,
+  markStewardEffect,
   keepStewardRun,
+  readStewardDigest,
+  stewardRecords,
   submitStewardRecords,
   STEWARD_RESUME,
 } from "../lib/steward.ts";
+import { framedResultOf } from "../lib/framed-result.ts";
+import { recordResult } from "../lib/launch-result.ts";
 import { pickupPassArgv, followupPassArgv } from "../lib/session.ts";
 import { stateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -42,7 +49,7 @@ afterEach(() => {
   current?.close();
   current = null;
 });
-function fixture(kind: "pickup" | "followup", batch = false) {
+function fixture(kind: "pickup" | "followup", batch = false, output = OUTPUT) {
   const w = world();
   current = w;
   w.setConfig(
@@ -120,8 +127,8 @@ function fixture(kind: "pickup" | "followup", batch = false) {
       at: new Date().toISOString(),
       code: 1,
       signal: null,
-      said: OUTPUT.split("\n")[1] ?? "",
-      context: OUTPUT,
+      said: output.split("\n").at(-1) ?? "",
+      context: output,
     },
     dispatchState(w),
   );
@@ -138,8 +145,8 @@ function fixture(kind: "pickup" | "followup", batch = false) {
           record: OLD,
           action: kind,
           target: kind === "pickup" ? "#12" : "PR #9",
-          question: OUTPUT.split("Question: ")[1] ?? "",
-          said: OUTPUT,
+          question: output.split("Question: ")[1] ?? "",
+          said: output,
         },
       ],
       failures: [],
@@ -221,6 +228,82 @@ describe("steward resume launch replay", () => {
     }, 60000);
 });
 
+test("a refused duplicate resume never blocks the replay of the lost one", async () => {
+  const { w } = fixture("pickup");
+  const first = await tick(w);
+  const started = first.repos[0]?.launches.find(
+    (l) => l.action === "pickup" && l.outcome === "launched",
+  );
+  expect(started?.record).toBeTruthy();
+  if (!started?.record) return;
+  const lose = () => {
+    const record = readRecord(started.record as string, dispatchState(w));
+    expect(record).toBeTruthy();
+    if (!record) return;
+    record.attempts = [
+      {
+        at: new Date().toISOString(),
+        outcome: "lost",
+        detail: "response lost",
+      },
+    ];
+    stateDb(dispatchState(w))
+      .query("UPDATE launches SET record = ? WHERE id = ?")
+      .run(JSON.stringify(record), record.id);
+  };
+  const digest = readStewardDigest("source-run", dispatchState(w));
+  expect(digest.ok).toBe(true);
+  if (!digest.ok) return;
+  keepStewardRun("duplicate-run", digest.value, Date.now(), dispatchState(w));
+  const submitted = submitStewardRecords(
+    "duplicate-run",
+    [{ kind: "resume", record: OLD, reason: "the same pass again" }],
+    dispatchState(w),
+  );
+  expect(submitted).toMatchObject({ ok: true, value: "submitted" });
+  await tick(w);
+  expect(
+    stewardRecords(SLUG, dispatchState(w)).filter(
+      (r) => r.run === "duplicate-run" && r.effect === "refused",
+    ),
+  ).toHaveLength(1);
+  lose();
+  const replayed = await tick(w);
+  expect(
+    replayed.repos[0]?.launches.some(
+      (l) => l.record === started.record && l.outcome === "retried",
+    ),
+  ).toBe(true);
+}, 90000);
+
+test("an earlier refusal of a resume naming a pass outside its digest leaves the pass offered", () => {
+  const { w } = fixture("pickup");
+  const digest = readStewardDigest("source-run", dispatchState(w));
+  expect(digest.ok).toBe(true);
+  if (!digest.ok) return;
+  keepStewardRun(
+    "older-run",
+    { ...digest.value, passes: [] },
+    Date.now(),
+    dispatchState(w),
+  );
+  expect(
+    submitStewardRecords(
+      "older-run",
+      [{ kind: "resume", record: OLD, reason: "named wrongly" }],
+      dispatchState(w),
+    ),
+  ).toMatchObject({ ok: true, value: "submitted" });
+  const [older] = stewardRecords(SLUG, dispatchState(w)).filter(
+    (r) => r.run === "older-run",
+  );
+  expect(older).toBeTruthy();
+  if (!older) return;
+  expect(claimStewardRecord(older.id, dispatchState(w))).toBe(true);
+  markStewardEffect(older.id, "refused", dispatchState(w));
+  expect(judgedResumes(SLUG, dispatchState(w)).has(OLD)).toBe(false);
+});
+
 test("a pending batch resume rechecks every member and never repeats claims", async () => {
   const { w } = fixture("pickup", true);
   const first = await tick(w);
@@ -289,4 +372,89 @@ test("a completed followup marker refuses a pending resume without deleting it",
       (l) => l.record === record.id && l.outcome === "retried",
     ),
   ).toBe(false);
+}, 60000);
+
+function resumeUnplaced(receipt: TickReceipt): string[] {
+  return (receipt.repos[0]?.unplaced ?? [])
+    .filter((u) => u.target.startsWith("steward record "))
+    .map((u) => u.reason);
+}
+
+async function refusedOnce(
+  w: World,
+  reason: string,
+  settled = true,
+): Promise<void> {
+  const first = await tick(w);
+  expect(first.repos[0]?.launches.some((l) => l.outcome === "launched")).toBe(
+    false,
+  );
+  expect(resumeUnplaced(first)).toEqual([expect.stringContaining(reason)]);
+  const [kept] = stewardRecords(SLUG, dispatchState(w));
+  expect(kept).toMatchObject({
+    applied: true,
+    effect: settled ? "refused" : "refused-open",
+  });
+  expect(judgedResumes(SLUG, dispatchState(w)).has(OLD)).toBe(settled);
+  expect(resumeUnplaced(await tick(w))).toEqual([]);
+}
+
+test("a resume whose pass recommended no option is refused once with its reason", async () => {
+  const { w } = fixture(
+    "pickup",
+    false,
+    "The scope choice needs a person.\nQuestion: Which scope should #12 take?",
+  );
+  await refusedOnce(w, "a single recommended option");
+}, 60000);
+
+test("a resume refused for the autonomy policy leaves the pass offered", async () => {
+  const { w } = fixture(
+    "pickup",
+    false,
+    "Recommended option: take the narrow scope.\nQuestion: Which scope should #12 take?",
+  );
+  await refusedOnce(w, "human-decision class", false);
+}, 60000);
+
+test("a resume of a pass that framed a decision for a person is refused once", async () => {
+  const { w } = fixture("pickup");
+  const framed = framedResultOf(
+    JSON.stringify({
+      schema: "parked-decision/v1",
+      class: "scope",
+      call: {
+        id: "a",
+        question: "Which cache key should this routine check use?",
+        options: [
+          { id: "a", name: "Reuse", summary: "Reuse the key.", pay: ["none"] },
+          {
+            id: "b",
+            name: "Wait",
+            summary: "Wait for a person.",
+            pay: ["a delay"],
+          },
+        ],
+        recommended: "a",
+        why: "The existing key already covers the check.",
+      },
+      steps: [],
+      alreadyDone: "Nothing was changed.",
+    }),
+    new Date().toISOString(),
+  );
+  expect(framed.ok).toBe(true);
+  if (!framed.ok) return;
+  expect(
+    recordResult(
+      OLD,
+      "failed",
+      dispatchState(w),
+      null,
+      null,
+      undefined,
+      framed.value,
+    ),
+  ).toBe(true);
+  await refusedOnce(w, "framed a decision");
 }, 60000);
