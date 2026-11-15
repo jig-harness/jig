@@ -382,9 +382,14 @@ function readCursor(file: string): string | null {
     return null;
   }
 }
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
 /** The folder names in a stable order, resuming after the name the last page stopped at. */
 function resumedOrder(names: string[], after: string | null): string[] {
-  const sorted = names.toSorted();
+  // Code-unit order, the order the `>` below compares in; a locale order would disagree.
+  const sorted = names.toSorted(compareCodeUnits);
   if (after === null) return sorted;
   const start = sorted.findIndex((name) => name > after);
   return start < 0
