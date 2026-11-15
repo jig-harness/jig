@@ -113,7 +113,7 @@ function lastActivity(tab: RunTab, listed: Listed): number | null {
 }
 
 /** The proof for `tab` against Orca's listing and the process table. */
-export function runTabProof(
+function runTabProof(
   tab: RunTab,
   listing: Listing,
   rows: ProcessRow[] | null,
