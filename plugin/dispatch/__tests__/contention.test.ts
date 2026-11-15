@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import { failed, ok } from "../../shared/outcome.ts";
+import { failedBy, outboundFailure } from "../../shared/outbound/failure.ts";
 import { type ContentionReads, readContention } from "../lib/contention.ts";
 import type { DrivenPr, LedgerClass } from "../lib/types.ts";
 
@@ -165,5 +166,42 @@ describe("serialization's decision", () => {
     );
     expect(parallel.report).toBeNull();
     expect(parallel.held.size).toBe(0);
+  });
+});
+
+describe("a failed read's class", () => {
+  const cut = () =>
+    failedBy(
+      "unreadable",
+      outboundFailure("unreachable", "cut"),
+      "the deadline passed",
+    );
+
+  it("rides on a cut catalog, files read or threads read", async () => {
+    const catalog = await readContention(input([drive(1)]), {
+      ...reads({}),
+      catalog: async () => cut(),
+    });
+    expect(catalog.readFailed).toEqual({ failure: { class: "unreachable" } });
+
+    const files = await readContention(input([drive(1)]), {
+      ...reads({}),
+      files: async () => cut(),
+    });
+    expect(files.readFailed).toEqual({ failure: { class: "unreachable" } });
+
+    const threads = await readContention(input([drive(1), drive(2)]), {
+      ...reads({ 1: ["db/a.sql"], 2: ["db/b.sql"] }),
+      threads: async () => cut(),
+    });
+    expect(threads.readFailed).toEqual({ failure: { class: "unreachable" } });
+  });
+
+  it("is absent when every read answered", async () => {
+    const c = await readContention(
+      input([drive(1)]),
+      reads({ 1: ["db/a.sql"] }),
+    );
+    expect(c.readFailed).toBeUndefined();
   });
 });
