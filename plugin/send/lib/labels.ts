@@ -12,7 +12,6 @@
  * known local tree and no person's stop; `hold` only where no `hold` label
  * is; `release` only where one is.
  */
-import { existsSync } from "node:fs";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { commandLabel, type LabelConfig } from "../../dispatch/lib/labels.ts";
@@ -26,6 +25,7 @@ import { type AskContext, pullFor } from "../../ask/lib/station.ts";
 import { NEXT_TICK, type Planned, refused, type TickReader } from "./plan.ts";
 import type { LabelVerb } from "./verbs.ts";
 import { openDrive } from "./open-drive.ts";
+import { rearmTree } from "./rearm-tree.ts";
 
 /** The repository's dispatch labels as the tick reads them, or why they cannot be told. */
 async function labelConfig(
@@ -96,19 +96,18 @@ async function driveFacts(
 }
 
 /** The stopped drive's local tree, after its eligibility is checked. */
-function rearmFacts(
+async function rearmFacts(
   d: DriveReading,
   ctx: AskContext,
   doc: { labels: string[]; url: string },
-): Outcome<{ labels: string[]; url: string; tree?: string }, "refused"> {
+): Promise<
+  Outcome<{ labels: string[]; url: string; tree?: string }, "refused">
+> {
   const fault = rearmFault(d, ctx);
   if (fault !== null) return refused(fault);
-  const tree = rearmTree(d);
-  if (!tree || !existsSync(tree))
-    return refused(
-      `no existing worktree of pull request ${ctx.address.key} is known on this machine: rearm never opens a replacement tree`,
-    );
-  return ok({ labels: doc.labels, url: doc.url, tree });
+  const tree = await rearmTree(d, ctx);
+  if (!tree.ok) return tree;
+  return ok({ labels: doc.labels, url: doc.url, tree: tree.value });
 }
 
 /** A stopped ledger's eligibility, before local tree selection. */
@@ -142,16 +141,6 @@ function lockFault(d: DriveReading, ctx: AskContext): string | null {
   if (d.row !== null && d.row.lock !== "empty" && d.row.lock !== "stale")
     return `the local driver lock is ${d.row.lock}: rearm requires a stopped drive with no live or uncertain lock`;
   return null;
-}
-
-/** The local listing's tree, else the most recent launch's tree. */
-function rearmTree(d: DriveReading): string | undefined {
-  if (d.row?.worktree) return d.row.worktree;
-  const launched = [...d.records].sort((a, b) =>
-    b.record.createdAt.localeCompare(a.record.createdAt),
-  );
-  return launched.find((r) => r.record.workspace !== null)?.record.workspace
-    ?.path;
 }
 
 const ACTS: Record<LabelVerb, string> = {

@@ -401,6 +401,14 @@ until a human notices. The red half of that same shape — a
 by the fresh verdict above, which is read *before* the freshness exit code
 rather than behind it.
 
+**The final status re-read sees what the gate saw, and its re-gates are
+bounded.** After the fresh CI evidence, `drive.ts` reads the status once more
+with the drive's own `--bots-only`, `--no-head-sync` and inherited head. A
+re-read on the reviewed head that is not `CONVERGED` re-gates at most
+`DRIVE_PR_FINAL_REGATE_LIMIT` times in a row (default 3), then stops with exit
+`1` naming what the re-read saw ([terminal-states.md](references/terminal-states.md)
+§ The final status re-read). A moved head re-gates uncounted.
+
 If another actor removes the hold, the drive preserves the strongest
 check-run watermark it can prove and treats the removal as external. GitHub
 timeline timestamps have one-second precision, so those external releases
@@ -517,6 +525,20 @@ as the model (`-m`, `--model`, `-c model=…`), the prompt or a subcommand (a
 word that is neither an option nor an option's value, `-`, `--`,
 `-i`/`--image`), `--yolo`, and `--dangerously-bypass-approvals-and-sandbox`, which are
 `drive.codex_bypass`'s.
+
+**Its own files stay out of the clean-tree checks.** The drive keeps its
+handoff, mailbox, foreground-wait records and scratch in `.context/`, and
+every check of a clean tree counts untracked files. So the attach, run
+alone or by `drive.ts`, checks that `.context/` is ignored in its tree
+before it checks the tree is clean, and `drive.ts` checks again after the
+attach, or in its place when the attach is off; where the repository's ignore rules do not
+cover it, it adds the line `.context/` to the clone's local exclude file
+(`info/exclude` in the clone's git directory, never committed), keeping the
+lines already there, and says so in its log. It adds nothing when the
+repository already ignores `.context/` or the line is there, never changes
+the repository's `.gitignore`, and judges every file outside `.context/` as
+before. A write it cannot make is reported and the drive goes on.
+`--dry-run` skips it.
 
 **The attach.** Once it holds the tree's driver lock and the PR's,
 `drive.ts` attaches the PR to the tree it runs in
@@ -1397,7 +1419,7 @@ command in the pass's own process group, so the pass's deadline and stop
 signals reach it. On Windows, the runner starts independently so it survives
 the launcher, and its recorded creation identity joins the pass's cancellation
 registry. The helper records its output, result and pids in one generation
-directory per launch under the gitignored
+directory per launch under the ignored
 `.context/foreground-wait/` (the directory is the atomic launch claim). Forward the round's own
 flags in the command (`--bots-only` when the round is driven `--bots-only`,
 per § 6), or a human thread on a touched file refuses the push:
@@ -3953,7 +3975,7 @@ channel from a live session — a human, the orchestrating session that
 spawned this drive, or `drives.ts`'s stop — toward a running `drive.ts`, in
 the same working tree: the one way to steer or stop a running headless drive.
 Append-only JSON Lines logs live
-under the gitignored `.context/drive-mailbox/`: `inbox.jsonl` (any sender may
+under the ignored `.context/drive-mailbox/`: `inbox.jsonl` (any sender may
 append a `note` or a `directive`) and `outbox.jsonl` (the drive's side appends
 acknowledgements and responses to it, and the driver an `ack` of each
 directive it acted on). `drive.ts` folds directive state at round

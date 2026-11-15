@@ -1601,6 +1601,14 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   which it names: a directive reaches a driver on this machine only, so
   stopping a drive elsewhere stays that host's act.
 
+For `rearm`, the drive listing or a drive launch supplies its tree first.
+When neither names an existing tree, a successful dispatched pickup's
+handoff and Git's worktrees on the pull request's head branch are searched
+across known local clones. That fallback must find exactly one existing
+tree: several candidates are named and refused, and an incomplete search
+is refused too. Nothing opens a replacement tree; the tick checks ownership
+again before launching.
+
 The text of an `answer` is one line of at most 500 characters, with no
 control character (no line break, no mark that reorders text) and no hidden
 marker (`<!--`), since it reaches the drive's passes as your verdict; any
