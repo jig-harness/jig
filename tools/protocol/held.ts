@@ -15,48 +15,105 @@ export interface HeldPhrase {
 const lineEndings = (text: string): string => text.replaceAll("\r\n", "\n");
 
 /** HTML comments are not operational Markdown, so they cannot satisfy a check. */
-const withoutHtmlComments = (text: string): string =>
-  text.replaceAll(/<!--[\s\S]*?-->/g, "");
+function withoutHtmlComments(text: string): string {
+  let visible = "";
+  let cursor = 0;
+  while (true) {
+    const start = text.indexOf("<!--", cursor);
+    if (start < 0) return visible + text.slice(cursor);
+    visible += text.slice(cursor, start);
+    const end = text.indexOf("-->", start + "<!--".length);
+    if (end < 0) return `${visible}\n`;
+    // Keep a boundary: removing a comment must not join two phrase fragments.
+    visible += "\n";
+    cursor = end + "-->".length;
+  }
+}
 
 /** An ATX heading outside code, normalized to the form declarations use. */
 function markdownHeading(line: string): { text: string; level: number } | null {
-  const match = /^ {0,3}(#{1,6})(?:[ \t]+(.*?)|[ \t]*)$/.exec(line);
-  const marks = match?.[1];
-  if (!match || marks === undefined) return null;
-  const content = (match[2] ?? "").replace(/[ \t]+#+[ \t]*$/, "").trimEnd();
+  let offset = 0;
+  while (offset < 3 && line[offset] === " ") offset += 1;
+  const start = offset;
+  while (line[offset] === "#") offset += 1;
+  const level = offset - start;
+  if (level < 1 || level > 6) return null;
+  const remainder = line.slice(offset);
+  if (remainder !== "" && !/^[ \t]/.test(remainder)) return null;
+  const content = remainder.replace(/[ \t]+#+[ \t]*$/, "").trimEnd();
   return {
-    text: `${marks}${content === "" ? "" : ` ${content}`}`,
-    level: marks.length,
+    text: `${"#".repeat(level)}${content === "" ? "" : ` ${content.trimStart()}`}`,
+    level,
   };
 }
 
+function fenceMarker(
+  line: string,
+): { char: "`" | "~"; length: number; end: number } | null {
+  let offset = 0;
+  while (offset < 3 && line[offset] === " ") offset += 1;
+  const char = line[offset];
+  if (char !== "`" && char !== "~") return null;
+  const start = offset;
+  while (line[offset] === char) offset += 1;
+  if (offset - start < 3) return null;
+  return { char, length: offset - start, end: offset };
+}
+
+function closesFence(
+  line: string,
+  fence: { char: "`" | "~"; length: number },
+): boolean {
+  const marker = fenceMarker(line);
+  return (
+    marker !== null &&
+    marker.char === fence.char &&
+    marker.length >= fence.length &&
+    /^[ \t]*$/.test(line.slice(marker.end))
+  );
+}
+
 /**
- * Visible Markdown lines, preserving headings while excluding fenced examples.
+ * Visible Markdown lines, preserving headings while excluding code examples.
  *
  * Held instructions live in prose. A command example can legitimately repeat an
  * exit code or even resemble a heading, so it must neither delimit a section
- * nor satisfy the held-value check.
+ * nor satisfy the held-value check. Empty separators prevent excluded blocks
+ * from joining phrase fragments that were not adjacent in the source.
  */
 function visibleLines(source: string): string[] {
   const lines: string[] = [];
   let fence: { char: "`" | "~"; length: number } | undefined;
+  let indentedCode = false;
+  let previousWasBlank = true;
   for (const line of source.split("\n")) {
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
     if (fence) {
-      if (
-        marker !== undefined &&
-        marker[0] === fence.char &&
-        marker.length >= fence.length &&
-        new RegExp(`^ {0,3}${fence.char}{${fence.length},}[ \\t]*$`).test(line)
-      )
-        fence = undefined;
+      if (closesFence(line, fence)) fence = undefined;
+      lines.push("");
+      previousWasBlank = true;
       continue;
     }
-    if (marker !== undefined) {
-      fence = { char: marker[0] as "`" | "~", length: marker.length };
+    const marker = fenceMarker(line);
+    if (marker !== null) {
+      fence = marker;
+      lines.push("");
+      previousWasBlank = true;
+      continue;
+    }
+    const indented = line.startsWith("    ") || line.startsWith("\t");
+    if (indentedCode && (indented || line.trim() === "")) {
+      lines.push("");
+      previousWasBlank = true;
+      continue;
+    }
+    indentedCode = previousWasBlank && indented;
+    if (indentedCode) {
+      lines.push("");
+      previousWasBlank = true;
       continue;
     }
     lines.push(line);
+    previousWasBlank = line.trim() === "";
   }
   return lines;
 }
