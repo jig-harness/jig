@@ -548,6 +548,8 @@ async function finishRun(
     console.error(
       "jig dispatch run: the pass's process tree could not be shown to have ended; no exit is recorded",
     );
+    // The driver's report is kept all the same: it never touches the exit.
+    if (isDrive(record)) recordAndSay(id, true, undefined);
     return code ?? 1;
   }
   // The wall first: once the exit is published the record no longer holds its

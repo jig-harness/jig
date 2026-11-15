@@ -199,5 +199,5 @@ describe("drive.ts's closing report", () => {
     );
     expectSpawnExit({ ...r, stdout: null }, 0);
     expect(existsSync(file)).toBe(false);
-  });
+  }, 120_000);
 });

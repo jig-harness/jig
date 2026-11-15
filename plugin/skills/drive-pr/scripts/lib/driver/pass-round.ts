@@ -58,9 +58,10 @@ export function notePassStarted(
   if (session === null || launch === null || driverReportPath(env) === null)
     return;
   try {
-    if (!recordRoundSession(launch, Number(pr), round, session))
+    const refused = recordRoundSession(launch, Number(pr), round, session);
+    if (refused !== null)
       console.error(
-        `drive.ts: round ${round}'s pass session was not recorded on launch record ${launch}: it is not this drive's record`,
+        `drive.ts: round ${round}'s pass session was not recorded on launch record ${launch}: ${refused}`,
       );
   } catch (error) {
     console.error(

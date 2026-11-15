@@ -3,12 +3,13 @@
  * column of the `launches` table, a JSON list of `{round, session, at}`, one
  * entry per pass in the order the passes started. A run is found in its
  * vendor's transcripts by its session id (design/dispatched-sessions.md §
- * How long transcripts are kept): `drive.ts` gives each Claude Code pass its
- * own (`--session-id`, minted for quota attribution) and, when the dispatcher
+ * How long transcripts are kept): `drive.ts` gives each Claude Code review
+ * pass its own (`--session-id`, minted for quota attribution) and, when the dispatcher
  * runs it, records it here as the pass starts, so a drive that dies still
  * leaves its passes findable. A pass that runs again on the same round (a
  * deadline restart) adds an entry of its own. A Codex pass takes no session
- * id and prints none the drive reads, so it adds none.
+ * id and prints none the drive reads, so it adds none; nor does a repair
+ * pass (a CI or conflict repair), which is started without one.
  *
  * The driver is the column's one writer. It writes only on a record that is
  * a drive's launch of the same pull request, so a drive armed by hand inside
@@ -59,6 +60,17 @@ export function readRoundSessions(
   return Array.isArray(value) ? value.filter(isRoundSession) : [];
 }
 
+/** Whether a record's sessions column is empty or a JSON list. */
+function sessionsRead(json: string | null): boolean {
+  if (json === null) return true;
+  try {
+    return Array.isArray(JSON.parse(json));
+  } catch (error) {
+    swallow(error, "a launch record's round sessions do not read");
+    return false;
+  }
+}
+
 /** Whether a launch record's JSON is a drive's launch of pull request `pr`. */
 function drivesPr(recordJson: string, pr: number): boolean {
   let value: unknown;
@@ -77,9 +89,10 @@ function drivesPr(recordJson: string, pr: number): boolean {
 
 /**
  * Add round `round`'s pass session `session` to record `id`, a drive's
- * launch of pull request `pr`; false when nothing was written: no state
- * database, no such record, a record that is not that drive's, or a session
- * id that is not one.
+ * launch of pull request `pr`; `null` when it was written, otherwise why
+ * nothing was: no state database, no such record, a record that is not that
+ * drive's, sessions already kept that do not read (never written over), or
+ * a session id that is not one.
  */
 export function recordRoundSession(
   id: string,
@@ -88,15 +101,19 @@ export function recordRoundSession(
   session: string,
   root = stateRoot(),
   at = currentIso(),
-): boolean {
-  if (!SESSION_ID.test(session) || !Number.isSafeInteger(round)) return false;
+): string | null {
+  if (!SESSION_ID.test(session) || !Number.isSafeInteger(round))
+    return "the pass's session id is not one";
   const db = existingStateDb(root);
-  if (db === null) return false;
+  if (db === null) return "there is no dispatch state database";
   return inTransaction(db, () => {
     const row = db
       .query("SELECT record, sessions FROM launches WHERE id = ?")
       .get(id) as { record: string; sessions: string | null } | null;
-    if (row === null || !drivesPr(row.record, pr)) return false;
+    if (row === null) return "there is no such launch record";
+    if (!drivesPr(row.record, pr)) return "it is not this drive's record";
+    if (!sessionsRead(row.sessions))
+      return "the sessions it keeps do not read, and are left as they are";
     const sessions = [
       ...readRoundSessions(row.sessions),
       { round, session, at },
@@ -105,6 +122,6 @@ export function recordRoundSession(
       JSON.stringify(sessions),
       id,
     );
-    return true;
+    return null;
   });
 }

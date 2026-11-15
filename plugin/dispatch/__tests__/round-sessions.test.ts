@@ -52,17 +52,23 @@ describe("a drive's round sessions on its launch record", () => {
     const s2 = "1c9f3a5d-2e3f-4a61-8b2c-3d4e5f6a7b8c";
     expect(
       recordRoundSession(ID, 7, 1, s1, root, "2026-11-15T09:01:00.000Z"),
-    ).toBe(true);
+    ).toBeNull();
     expect(
       recordRoundSession(ID, 7, 1, s2, root, "2026-11-15T09:20:00.000Z"),
-    ).toBe(true);
+    ).toBeNull();
     // Another pull request's drive, a pickup's record, a record that is gone, an id that is not one.
-    expect(recordRoundSession(ID, 8, 2, s1, root)).toBe(false);
-    expect(recordRoundSession(pickup, 7, 1, s1, root)).toBe(false);
+    expect(recordRoundSession(ID, 8, 2, s1, root)).toBe(
+      "it is not this drive's record",
+    );
+    expect(recordRoundSession(pickup, 7, 1, s1, root)).toBe(
+      "it is not this drive's record",
+    );
     expect(
       recordRoundSession("20261115T090000Z-ffffffff", 7, 1, s1, root),
-    ).toBe(false);
-    expect(recordRoundSession(ID, 7, 1, "two words", root)).toBe(false);
+    ).toBe("there is no such launch record");
+    expect(recordRoundSession(ID, 7, 1, "two words", root)).toBe(
+      "the pass's session id is not one",
+    );
     expect(readEnded(ID, root)).toBeNull();
     const row = stateDb(root)
       .query("SELECT sessions FROM launches WHERE id = ?")
@@ -75,6 +81,23 @@ describe("a drive's round sessions on its launch record", () => {
       .query("SELECT sessions FROM launches WHERE id = ?")
       .get(pickup) as { sessions: string | null };
     expect(other.sessions).toBeNull();
+  });
+
+  it("are never written over when the ones kept do not read", () => {
+    const w = world();
+    current = w;
+    const root = dispatchState(w);
+    earlierRecord(w, { id: ID, account: "a", token: TOKEN, pr: 7 });
+    stateDb(root)
+      .query("UPDATE launches SET sessions = ? WHERE id = ?")
+      .run("{not json", ID);
+    expect(recordRoundSession(ID, 7, 1, "session-1", root)).toBe(
+      "the sessions it keeps do not read, and are left as they are",
+    );
+    const row = stateDb(root)
+      .query("SELECT sessions FROM launches WHERE id = ?")
+      .get(ID) as { sessions: string };
+    expect(row.sessions).toBe("{not json");
   });
 
   it("keep the newest entries past their bound", () => {

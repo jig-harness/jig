@@ -25,7 +25,7 @@ import {
   type ClosingReport,
 } from "../../shared/closing-report.ts";
 import { readDriverReport } from "../../shared/driver-report.ts";
-import { swallow } from "../../shared/errors.ts";
+import { errnoCode, swallow } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
 import {
   type KeptReport,
@@ -39,14 +39,24 @@ export function driverReportFile(id: string, root = stateRoot()): string {
   return join(root, "runs", id, "drive-report.json");
 }
 
-/** Remove the report file, and the run's directory when nothing else is in it. */
-function removeReportFile(path: string): void {
+/**
+ * Remove the report file, and the run's directory when nothing else is in
+ * it; the line to print when the file itself could not be removed.
+ */
+function removeReportFile(path: string): string | null {
   try {
     rmSync(path, { force: true });
+  } catch (error) {
+    return `the driver's report file could not be removed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  try {
     rmdirSync(dirname(path));
   } catch (error) {
-    swallow(error, "the run's directory holds more than the driver's report");
+    const code = errnoCode(error);
+    if (code !== "ENOTEMPTY" && code !== "ENOENT" && code !== "EEXIST")
+      return `the run's directory could not be removed: ${error instanceof Error ? error.message : String(error)}`;
   }
+  return null;
 }
 
 /**
@@ -54,19 +64,29 @@ function removeReportFile(path: string): void {
  * the line to print when it could not be taken, `null` when it was recorded
  * or the driver wrote none.
  */
-function takeDriverReport(id: string, root = stateRoot()): string | null {
+function takeDriverReport(id: string, root = stateRoot()): string[] {
   const path = driverReportFile(id, root);
   const read = readDriverReport(path, id);
-  if (!read.ok) {
-    removeReportFile(path);
-    return `the driver's closing report was not recorded: ${read.failure.reason}`;
-  }
-  if (read.value === null) return null;
+  if (!read.ok)
+    return withRemoval(path, [
+      `the driver's closing report was not recorded: ${read.failure.reason}`,
+    ]);
+  if (read.value === null) return [];
   const recorded = recordReport(id, read.value, "driver", root);
-  removeReportFile(path);
-  return recorded
-    ? null
-    : `the driver's closing report was not recorded: ${id} is not a launch record`;
+  return withRemoval(
+    path,
+    recorded
+      ? []
+      : [
+          `the driver's closing report was not recorded: ${id} is not a launch record`,
+        ],
+  );
+}
+
+/** `lines`, and the line saying the report file could not be removed, once it is removed. */
+function withRemoval(path: string, lines: string[]): string[] {
+  const removal = removeReportFile(path);
+  return removal === null ? lines : [...lines, removal];
 }
 
 /** The report the wrapper records for a pass that could not start. */
@@ -122,10 +142,7 @@ function recordRunReport(
   root = stateRoot(),
 ): string[] {
   try {
-    if (drive) {
-      const problem = takeDriverReport(id, root);
-      return problem === null ? [] : [problem];
-    }
+    if (drive) return takeDriverReport(id, root);
     if (startup !== undefined && keptReport(id, root) === null)
       recordReport(id, startupReport(startup), "wrapper", root);
     return [];

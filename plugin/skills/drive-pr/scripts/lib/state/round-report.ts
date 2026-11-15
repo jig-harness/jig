@@ -92,5 +92,7 @@ export function readRoundReport(
   )
     return null;
   const checked = closingReportOf(JSON.stringify(value.report));
-  return checked.ok ? checked.value : null;
+  if (checked.ok) return checked.value;
+  swallow(checked.failure, "the round report does not pass the check");
+  return null;
 }

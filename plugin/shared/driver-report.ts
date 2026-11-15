@@ -26,7 +26,6 @@ import {
   closingReportOf,
   REPORT_BYTE_LIMIT,
 } from "./closing-report.ts";
-import { swallow } from "./errors.ts";
 import { isRecord } from "./guards.ts";
 import { failed, ok, type Outcome } from "./outcome.ts";
 
@@ -84,8 +83,11 @@ export function readDriverReport(
       return failed("unreadable", "the driver's report file is too large");
     value = JSON.parse(text);
   } catch (error) {
-    swallow(error, "the driver's report file does not read");
-    return failed("unreadable", "the driver's report file does not read");
+    return failed(
+      "unreadable",
+      `the driver's report file does not read: ${error instanceof Error ? error.message : String(error)}`,
+      error,
+    );
   }
   if (
     !isRecord(value) ||
