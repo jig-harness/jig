@@ -10,6 +10,7 @@ import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
 import { ghGovernance } from "./outbound/github-budget.ts";
+import { paceForge } from "./outbound/forge-pacing.ts";
 import type { OutboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
@@ -212,19 +213,32 @@ async function governedRun<T extends GhRun, O>(
   opts: O,
   refuse: (failure: OutboundFailure) => T,
   send: (argv: string[]) => Promise<T>,
+  deadlineAt: number,
 ): Promise<T> {
   const o = opts as {
     env?: Record<string, string | undefined>;
     stdout?: string;
     onOutput?: unknown;
+    signal?: AbortSignal;
   };
   const governance = ghGovernance(args, {
     ...(o.env === undefined ? {} : { env: o.env }),
     captured: (o.stdout ?? "pipe") === "pipe" && o.onOutput === undefined,
   });
   if (governance === null) return send(args);
+  const pacingFailure = await paceForge(governance.owner, deadlineAt, o.signal);
+  if (pacingFailure !== null) return refuse(pacingFailure);
   const admitted = governance.admit();
   if ("refused" in admitted) return refuse(admitted.refused);
+  if (o.signal?.aborted || currentMs() >= deadlineAt)
+    return governance.observe(
+      refuse({
+        code: currentMs() >= deadlineAt ? "too-costly" : "unreachable",
+        reason: "GitHub call ended during budget admission; nothing was sent",
+      }),
+      admitted.sentAt,
+      0,
+    );
   const began = currentMs();
   const result = await send(governance.argv);
   return governance.observe(result, admitted.sentAt, currentMs() - began);
@@ -236,7 +250,7 @@ async function governedRun<T extends GhRun, O>(
  * to a forge this run holds (`outbound/hold.ts`): the call then answers
  * `refuse`'s result, a failed run naming the earlier failure.
  */
-function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
+async function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   args: string[],
   opts: O,
   envDeadline: number,
@@ -259,49 +273,82 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
     opts.timeoutSec === undefined
       ? envDeadline
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
-  if (!held)
-    return traceCommand("ghCall", "gh", deadline, () =>
-      recordGhAttempt(args, opts, () =>
-        governedRun(args, opts, refuse, (argv) =>
-          run(argv, { ...opts, timeoutSec: deadline }),
+  const deadlineAt = currentMs() + deadline * 1000;
+  const remaining = () => Math.max(0.001, (deadlineAt - currentMs()) / 1000);
+  const controller = new AbortController();
+  const external = (opts as { signal?: AbortSignal }).signal;
+  const cancelled = () => controller.abort(external?.reason);
+  external?.addEventListener("abort", cancelled, { once: true });
+  if (external?.aborted) cancelled();
+  const timer = setTimeout(() => controller.abort(), deadline * 1000);
+  const callOpts = { ...opts, signal: controller.signal };
+  try {
+    if (!held)
+      return await traceCommand("ghCall", "gh", deadline, () =>
+        recordGhAttempt(args, opts, () =>
+          governedRun(
+            args,
+            callOpts,
+            refuse,
+            (argv) => run(argv, { ...opts, timeoutSec: remaining() }),
+            deadlineAt,
+          ),
         ),
-      ),
-    );
-  return traceCommand("ghCall", "gh", deadline, () => {
-    // The run's elapsed time tells a 502/504 the forge ran out of time on
-    // (`too-costly`, which the paged reader answers with a smaller page) from
-    // a fault it answered at once (which holds the forge).
-    let tookMs = 0;
-    // A run the budget refuses never left the machine: it says nothing of the
-    // forge, so the hold does not read it as an answer.
-    const refusedHere = new WeakSet<object>();
-    const refuseHere = (failure: OutboundFailure): T => {
-      const refused = refuse(failure);
-      refusedHere.add(refused);
-      return refused;
-    };
-    return recordGhAttempt(args, opts, () =>
-      guarded(
-        GITHUB,
-        // Admission and the answer's record sit inside the hold, so a call
-        // queued behind the probe is admitted after the probe's answer is
-        // recorded.
-        () =>
-          governedRun(args, opts, refuseHere, async (argv) => {
-            const began = currentMs();
-            try {
-              return await run(argv, { ...opts, timeoutSec: deadline });
-            } finally {
-              tookMs = currentMs() - began;
-            }
-          }),
-        (r) => ghRunFailure(r, tookMs),
-        refuse,
-        undefined,
-        (r) => refusedHere.has(r),
-      ),
-    );
-  });
+      );
+    return await traceCommand("ghCall", "gh", deadline, () => {
+      // The run's elapsed time tells a 502/504 the forge ran out of time on
+      // (`too-costly`, which the paged reader answers with a smaller page) from
+      // a fault it answered at once (which holds the forge).
+      let tookMs = 0;
+      // A run the budget refuses never left the machine: it says nothing of the
+      // forge, so the hold does not read it as an answer.
+      const refusedHere = new WeakSet<object>();
+      const refuseHere = (failure: OutboundFailure): T => {
+        const refused = refuse(failure);
+        refusedHere.add(refused);
+        return refused;
+      };
+      return recordGhAttempt(args, opts, () =>
+        guarded(
+          GITHUB,
+          // Admission and the answer's record sit inside the hold, so a call
+          // queued behind the probe is admitted after the probe's answer is
+          // recorded.
+          () =>
+            governedRun(
+              args,
+              callOpts,
+              refuseHere,
+              async (argv) => {
+                const began = currentMs();
+                try {
+                  return await run(argv, { ...opts, timeoutSec: remaining() });
+                } finally {
+                  tookMs = currentMs() - began;
+                }
+              },
+              deadlineAt,
+            ),
+          (r) => ghRunFailure(r, tookMs),
+          refuse,
+          controller.signal,
+          (r) => refusedHere.has(r),
+        ),
+      );
+    });
+  } catch (error) {
+    if (!controller.signal.aborted || error !== controller.signal.reason)
+      throw error;
+    return refuse({
+      code: external?.aborted ? "unreachable" : "too-costly",
+      reason: external?.aborted
+        ? "GitHub call cancelled while waiting; nothing was sent"
+        : "GitHub call deadline expired while waiting; nothing was sent",
+    });
+  } finally {
+    clearTimeout(timer);
+    external?.removeEventListener("abort", cancelled);
+  }
 }
 
 /** Adapt a process runner once, preserving its options and complete result type. */

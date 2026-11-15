@@ -78,11 +78,11 @@ describe("ci:hold evidence", () => {
     const result = Bun.spawnSync([process.execPath, probe, HEAD, ghBody], {
       stdout: "pipe",
       stderr: "pipe",
+      env: { ...process.env },
     });
     expectSpawnExit(result, 0);
     return result.stdout.toString();
   }
-
   it("keeps an unreadable final watermark distinct from malformed evidence", () => {
     expect(watermarkCode("exit 75")).toBe("unreadable");
     expect(watermarkCode("echo 'not json'")).toBe("malformed");

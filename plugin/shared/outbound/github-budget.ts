@@ -470,6 +470,8 @@ export function forgeAnswerOf(
 
 /** How one governed run goes: what it is admitted against, the command line it runs, and how its answer is read. */
 export interface GhGovernance {
+  /** Existing quota identity, also used for cross-process send pacing. */
+  owner: string;
   /** The failure to answer at once instead of running, or `null` with the time it was admitted. */
   admit(): { refused: OutboundFailure } | { sentAt: number };
   /** The command line to run. */
@@ -533,6 +535,7 @@ export function ghGovernance(
   // the balance was not known, whatever the admission asked for.
   let reservedIn: string | null = admitted.reserve ?? null;
   return {
+    owner: key,
     argv,
     admit() {
       try {

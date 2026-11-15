@@ -231,6 +231,16 @@ export const DISPATCHER: RecordKind[] = [
     meaning:
       "What the calls to outside systems cost, summed per hour, system, credential, operation, caller and unit: the requests, their cost, how long they took and how they failed, kept for 7 days. Each dispatch tick and the budget answer read it to report what calls cost and which quotas are at risk; a call is never refused because the ledger cannot be written.",
   },
+  {
+    name: "forge-pacing",
+    medium: "machine",
+    owner: "shared/outbound/forge-pacing.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "forge_pacing",
+    version: 3,
+    meaning:
+      "The next governed CLI send time per existing GitHub quota owner, claimed atomically without future queue reservations. A crashed sender holds others for at most 200 milliseconds.",
+  },
   plain(
     "machine",
     "dispatch-receipt",
