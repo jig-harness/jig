@@ -144,9 +144,13 @@ level, which the level itself answers.
    bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> [--native-type <issue type>] <label>...
    ```
 
-   For an existing issue, pass `--native-type` its `nativeType` (from
-   `get_issue.ts`) when it has one, so an epic typed in the tracker meets the
-   same rules it meets when filed.
+   For an existing issue, pass `--native-type` the native type it will have
+   after the change: its `nativeType` (from `get_issue.ts`) while the change
+   leaves the type as it is, or the issue type the configured type store maps
+   the new type to when the change moves it (none when the new type has no
+   issue type). A stale value would let an epic that becomes a feature still
+   meet a `requires` naming the epic label, so an epic typed in the tracker
+   meets the same rules it meets when filed.
 
    It asks for a priority as it asks for a type and a size. Exit `0`:
    valid (read any `WARNING` and act on it or say why not). Exit
@@ -461,7 +465,8 @@ Then load the taxonomy and the label roles as in
 `validate-labels.ts` on the labels without those that spell the type or
 the size, which `get_issue.ts` keeps beside the facets and the validator
 refuses as a second input, with `--type`, `--priority` and `--size`, and
-with `--native-type` its `nativeType` when it has one, so an issue typed as an epic
+with `--native-type` the native type it will have after the change (its `nativeType`
+while the type stays, the mapped issue type when the plan moves it), so an issue typed as an epic
 (`issue_tracker.labels.epic_types`) meets a `requires` naming the epic
 label) and against what the issue describes, deriving as in
 [File, step 6](#6-derive-the-labels). A missing priority is asked for, as
