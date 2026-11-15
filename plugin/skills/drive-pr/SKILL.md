@@ -401,6 +401,14 @@ until a human notices. The red half of that same shape — a
 by the fresh verdict above, which is read *before* the freshness exit code
 rather than behind it.
 
+**The final status re-read sees what the gate saw, and its re-gates are
+bounded.** After the fresh CI evidence, `drive.ts` reads the status once more
+with the drive's own `--bots-only`, `--no-head-sync` and inherited head. A
+re-read on the reviewed head that is not `CONVERGED` re-gates at most
+`DRIVE_PR_FINAL_REGATE_LIMIT` times in a row (default 3), then stops with exit
+`1` naming what the re-read saw ([terminal-states.md](references/terminal-states.md)
+§ The final status re-read). A moved head re-gates uncounted.
+
 If another actor removes the hold, the drive preserves the strongest
 check-run watermark it can prove and treats the removal as external. GitHub
 timeline timestamps have one-second precision, so those external releases
