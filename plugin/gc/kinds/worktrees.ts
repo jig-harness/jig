@@ -636,12 +636,15 @@ function selectWorktrees(
   roots: string[],
   repository: string,
 ): Listed[] {
-  const canonical = [...roots, processWorktreeRoot(repository)].map(
-    canonicalRoot,
-  );
+  const canonical = roots.map(canonicalRoot);
+  const processRoot = canonicalRoot(processWorktreeRoot(repository));
   const primary = entries[0]?.id ?? repository;
   const agentRoot = canonicalRoot(join(primary, ...AGENT_TOOL_DIR));
   return entries.slice(1).filter((entry) => {
+    if (within(canonicalWorktree(entry.id), processRoot)) {
+      entry.details.runtime = "process";
+      return true;
+    }
     if (within(entry.id, agentRoot)) {
       entry.details.runtime = AGENT_TOOL;
       return true;
