@@ -3,8 +3,8 @@
  * `jig dispatch result` whose write the state database refused (a schema out
  * of step with its version, a locked or broken file), or the wrapper that
  * could not record the stage's exit. It is a file outside the database,
- * `<dispatch>/unwritten/<record>.<token digest>.json`, so it survives the
- * fault it records,
+ * `<dispatch>/unwritten/<record>.<token digest>.<result|exit>.json`, so it
+ * survives the fault it records,
  * and the tick reads it with the record once the database reads again
  * (`readLaunches`), as the record's `unwritten`.
  *
