@@ -19,7 +19,9 @@ it:
 - `work_batch.solo_flags`, for flags the catalog does not project (a privacy
   label applied by hand, for example).
 
-No setting removes a label the first three sources supply: a safety rule a
+The flags are one rule over the issue's labels, matched as the
+[rule matchers' chapter](../../../protocol/rule-matchers.md) says (ignoring
+case). No setting removes a label the first three sources supply: a safety rule a
 setting can switch off is a suggestion. The skill's tests pin that.
 
 What batching each kind would do:

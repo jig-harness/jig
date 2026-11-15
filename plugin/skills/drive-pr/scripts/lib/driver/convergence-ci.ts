@@ -12,6 +12,11 @@ import {
 } from "./../proc.ts";
 
 import { ciHold, driveStatus } from "./paths.ts";
+import {
+  finalReadAgrees,
+  finalReadArgs,
+  finalReadDisagrees,
+} from "./final-regate.ts";
 
 import { sleep } from "./../cli.ts";
 
@@ -37,9 +42,27 @@ import { driverRuntime } from "./runtime.ts";
 import { attemptsFor, chargeRepair, repairSelection } from "./ci-attempts.ts";
 import {
   beforeRepairRecovery,
+  cancelledRunRecovery,
   pendingRetryDisposition,
 } from "./ci-recovery.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
+
+/**
+ * Why a CI-hold release failed when it printed nothing: what ended it, the
+ * step it was, and the command that shows its own error.
+ */
+function silentReleaseCause(
+  release: Awaited<ReturnType<typeof run>>,
+  pr: string,
+  head: string,
+): string {
+  const ended = release.spawnFailed
+    ? "could not be started"
+    : release.timedOut
+      ? `did not finish within its ${ciHoldTimeoutSeconds()}s deadline and was stopped`
+      : "printed no error: a process stopped from outside (a signal) ends this way, as does one that exits before it can report";
+  return `ci-hold.ts release ${ended}. The step that failed is removing the CI hold label from PR #${pr} at head ${head}. Run the release by hand ('ci-hold.ts release ${pr} --expect-head ${head}', which removes the label as this step would) to see its error, check whether something outside the drive stopped it, then re-arm.`;
+}
 
 export async function releaseAndReadFinalCi(
   context: DriveRoundContext,
@@ -65,14 +88,17 @@ export async function releaseAndReadFinalCi(
   // persisted labelled timeline-event id before removing anything, and
   // adopts a live label it holds no record of, then removes it.
   const finalCiSignals = await context.finalCiWait.prime();
+  // Captured, then written through the console, so the driver log keeps
+  // why a release failed: an inherited stream reaches the terminal only.
   const release = await run(
     tsArgv(ciHold, ["release", context.pr, "--expect-head", reviewedHead]),
-    { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
+    { timeoutSec: ciHoldTimeoutSeconds() },
   );
+  if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
   if (release.code === 4) {
     console.error(
-      "review converged, but the head moved or the CI hold label changed during its release; not reporting merge-ready",
+      "review converged, but the CI hold's release could not settle (the head moved, the label changed, or the forge could not be read); not reporting merge-ready",
     );
     return 4;
   }
@@ -80,6 +106,10 @@ export async function releaseAndReadFinalCi(
     console.error(
       `review converged, but releasing the CI hold label failed (exit ${release.code})`,
     );
+    if (release.stderr.trim() === "")
+      console.error(
+        `  ${silentReleaseCause(release, context.pr, reviewedHead)}`,
+      );
     return 1;
   }
   if (release.stdout.trim() === "removed") {
@@ -129,8 +159,11 @@ export async function releaseAndReadFinalCi(
     return 1;
   }
   const finalStatusRes = await run(
-    tsArgv(driveStatus, [context.pr, "--json", "--once", "--no-count"]),
-    { stderr: "inherit", timeoutSec: driveStatusOnceTimeoutSeconds() },
+    tsArgv(driveStatus, finalReadArgs(context)),
+    {
+      stderr: "inherit",
+      timeoutSec: driveStatusOnceTimeoutSeconds(),
+    },
   );
   let finalStatus: Record<string, unknown> = {};
   try {
@@ -226,26 +259,39 @@ export async function checkFinalCiStatus(
   const finalRemoteHead = String(
     (finalStatus.head as Record<string, unknown> | undefined)?.api ?? "",
   );
-  if (finalRemoteHead !== reviewedHead) {
+  // A head that moved is a new round's to judge: re-gate, uncounted. A head
+  // that did not read is no evidence of a move, so it counts below.
+  if (finalRemoteHead !== "" && finalRemoteHead !== reviewedHead) {
     console.error(
-      "review/head evidence changed while final CI freshness was established; re-gating",
+      `review/head evidence changed while final CI freshness was established: the re-read saw head ${finalRemoteHead}, not ${reviewedHead}; re-gating`,
     );
+    // The head changed, so the streak on the old one ended: a later return to
+    // it (a force-push back) must not inherit its count.
+    finalReadAgrees(context);
     return "continue";
   }
   // MUST be checked before interpreting or repairing the CI verdict
   // below: a live finding can land between the original convergence
   // decision and this re-read, which flips `finalStatus.state` off
   // `CONVERGED` while CI is still red from the held period. Checking
-  // this only at the bottom of the verdict-handling chain (as before)
+  // this only at the bottom of the verdict-handling chain
   // let a `failing:` verdict dispatch a `ci-repair` pass — whose
   // documented contract skips triage — over a head that actually has a
   // fresh, untriaged finding on it, leaving that finding unanswered.
-  if (finalStatusRes.code !== 3 || finalStatus.state !== "CONVERGED") {
-    console.error(
-      "review evidence changed while final CI freshness was established; re-gating",
+  // Bounded (`final-regate.ts`): a re-read that keeps disagreeing on one
+  // head would otherwise re-gate for as long as the drive lives.
+  if (
+    finalRemoteHead === "" ||
+    finalStatusRes.code !== 3 ||
+    finalStatus.state !== "CONVERGED"
+  )
+    return finalReadDisagrees(
+      context,
+      reviewedHead,
+      finalStatus,
+      finalStatusRes.code,
     );
-    return "continue";
-  }
+  finalReadAgrees(context);
   // Only the CONFIRMED-fresh case takes this short, unbounded poll:
   // `finalCi.code === 4` means final-ready could not yet witness a
   // fresh, completed REQUIRED check, and a `pending:` verdict under
@@ -441,7 +487,7 @@ async function repairConvergedCi(
     // "Never charge until certain" needs no compensating action at
     // all — this line only has to DISPLAY the attempt number the
     // dispatch below, if it happens, will actually become.
-    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (DRIVE_PR_CI_REPAIR_ROUNDS=${context.ciRepairBudget}; 0 stops here instead).`,
+    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (drive.ci_repair_rounds, or DRIVE_PR_CI_REPAIR_ROUNDS for one run; 0 stops here instead).`,
   );
   // The repair dispatches ahead of the round's own refresh: resolve the
   // policy base again, for a pull request retargeted since.
@@ -669,9 +715,18 @@ export async function evaluateFinalCi(
   // and a `/fix-ci` pass handed neither a run nor a check name has
   // nothing to work from. Those keep today's stop verbatim, below.
   //
-  // A failure every one of whose checks failed on the infrastructure is
-  // re-run first, whatever the repair budget: no code change fixes it, so it
-  // spends no repair pass (`infra-recovery.ts`).
+  // A failure only cancelled runs carry is recovered as a cancellation, and
+  // one every one of whose checks failed on the infrastructure is re-run,
+  // first and whatever the repair budget: no code change fixes either, so
+  // neither spends a repair pass (`ci-recovery.ts`, `infra-recovery.ts`).
+  const cancelled = await cancelledRunRecovery(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+  );
+  if (cancelled !== null) return cancelled;
   const recovered = await beforeRepairRecovery(
     finalVerdict,
     staleRequiredFailure,

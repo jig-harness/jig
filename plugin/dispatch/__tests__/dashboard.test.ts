@@ -467,6 +467,10 @@ describe("jig dispatch dashboard", () => {
     expect(page.headers.get("content-security-policy")).toContain(
       "script-src 'none'",
     );
+    // A page that runs no script sends nothing to GitHub.
+    expect(page.headers.get("content-security-policy")).toContain(
+      "connect-src 'self';",
+    );
     expect(await page.text()).not.toContain("<script");
     const api = await read("/state", null);
     expect(api.status).toBe(403);
@@ -483,7 +487,10 @@ describe("jig dispatch dashboard", () => {
     const read = served(fixtureLog());
     const page = await read("/");
     const policy = page.headers.get("content-security-policy") ?? "";
-    expect(policy).toContain("connect-src 'self'");
+    // Its own server, and GitHub's API for Send: no other origin.
+    expect(policy).toContain("connect-src 'self' https://api.github.com;");
+    expect(policy.match(/connect-src/g)).toHaveLength(1);
+    expect(policy).not.toContain("unsafe-eval");
     expect(policy).toMatch(/script-src 'sha256-[A-Za-z0-9+/=]+'/);
     expect(page.headers.get("referrer-policy")).toBe("no-referrer");
     // fetch asks for compression and undoes it, so the header is what shows it.

@@ -25,6 +25,11 @@
  * `tools/protocol/generate.ts`; `bun run gates` fails the build when the
  * chapter and this table disagree.
  *
+ * Each state `drive.ts` ends with also carries its `report`: the stop's own
+ * text, the `cause` and the suggested next step of the closing report
+ * `drive.ts` writes at its stop (`lib/driver/closing-report.ts`), which the
+ * chapter prints too.
+ *
  * The dispatcher names no exit code of its own: it reads `drive.ts`'s exits
  * through `DRIVE_EXIT` and the sets below it (`DRIVER_REFUSAL_EXITS`,
  * `PERSON_STOP_EXITS`, `driveExitClosesTab`), and the consistency check fails a
@@ -79,6 +84,10 @@
  * this binding against the real files as well.
  */
 
+import type {
+  ReportCause,
+  SuggestedNext,
+} from "../../../../../shared/closing-report.ts";
 import { Defect } from "../../../../../shared/errors.ts";
 
 export type TerminalStateCategory =
@@ -87,6 +96,19 @@ export type TerminalStateCategory =
   | "tombstone"
   | "driver-only"
   | "helper";
+
+/**
+ * What `drive.ts`'s closing report (`closing-report/v1`, written at its stop)
+ * says for an exit: the stop's own text, the `cause` when the drive ended
+ * short of its goal, and the next step it suggests.
+ */
+export interface DriveExitReport {
+  /** The stop in one phrase, read after "PR #<n>'s drive " (`driver/stop-text.ts`). */
+  readonly stop: string;
+  /** Why the drive fell short; absent for an exit that is not short of its goal. */
+  readonly cause?: ReportCause;
+  readonly next: SuggestedNext;
+}
 
 export interface TerminalStateEntry {
   /** The exit code `drive-status.ts` itself returns for this state. */
@@ -127,6 +149,12 @@ export interface TerminalStateEntry {
    * chapter prints it beside the value, and its gate fails an empty one.
    */
   readonly meaning: string;
+  /**
+   * What the closing report `drive.ts` writes at its stop says for this
+   * exit. Every state `drive.ts` ends with (`DriveExitName`) carries one;
+   * no other entry does.
+   */
+  readonly report?: DriveExitReport;
 }
 
 /**
@@ -189,6 +217,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "The pull request is ready to merge: the reviewer reviewed this exact head and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean.",
+    report: {
+      stop: "converged: the reviewer reviewed its head and nothing is left open",
+      next: {
+        step: "Merge the pull request once its required checks pass.",
+        owner: "person",
+        act: "Merge",
+      },
+    },
   },
   // Exit 4's family: the NOT_SETTLED class label below groups these five.
   HEAD_LAG: {
@@ -238,6 +274,13 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "The pull request was merged or closed. Stop, and push nothing to it.",
+    report: {
+      stop: "ended: the pull request was merged or closed",
+      next: {
+        step: "Nothing is left for the drive; a merge's follow-up settles what the merge owes.",
+        owner: "none",
+      },
+    },
   },
   REVIEWER_FAILED: {
     exitCode: 7,
@@ -246,6 +289,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming.",
+    report: {
+      stop: "stopped: the posting reviewer's check did not pass",
+      cause: "tool-failed",
+      next: {
+        step: "Look at the reviewer's failed check, then re-arm the drive.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
   },
   HITL_PARKED: {
     exitCode: 8,
@@ -254,6 +306,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it.",
+    report: {
+      stop: "parked: a decision waits for a person",
+      cause: "needs-person",
+      next: {
+        step: "Answer each parked decision on its thread, then re-arm the drive.",
+        owner: "person",
+        act: "Decide",
+      },
+    },
   },
   PR_CONFLICTING: {
     exitCode: 9,
@@ -262,6 +323,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm.",
+    report: {
+      stop: "stopped: it conflicts with its base and has nothing left to work",
+      cause: "needs-person",
+      next: {
+        step: "Merge the base in and resolve the conflicts, then re-arm the drive.",
+        owner: "person",
+        act: "Do",
+      },
+    },
   },
   // The reviewer skipped the PR head, and its review of an earlier head does
   // not cover it (`reviewed-sha.ts`): no review of this head will come.
@@ -272,6 +342,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms.",
+    report: {
+      stop: "stopped: the reviewer skipped its head and will not review it",
+      cause: "environment",
+      next: {
+        step: "Have this head reviewed, then re-arm the drive.",
+        owner: "person",
+        act: "Do",
+      },
+    },
   },
   INDETERMINATE: {
     exitCode: 1,
@@ -280,6 +359,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming.",
+    report: {
+      stop: "stopped on a failure; the drive's log says what failed",
+      cause: "tool-failed",
+      next: {
+        step: "Read what the drive's log says failed, then re-arm the drive.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
   },
   UNSUPPORTED_CLI: {
     exitCode: 2,
@@ -288,6 +376,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
+    report: {
+      stop: "stopped: a usage error, or a gh that cannot report the pull request",
+      cause: "environment",
+      next: {
+        step: "Read the drive's message, fix the command line, the working tree or the gh install it names, then re-arm the drive.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
   },
 
   // ── real states, set OUTSIDE evaluate() — code-bound via outOfBandExitCode()
@@ -315,6 +412,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive-state.ts, propagated by drive-status.ts and drive.ts",
     meaning:
       "Another live working tree, or a driver in another clone, is driving this pull request. Nothing was changed; that driver is the one to finish.",
+    report: {
+      stop: "refused: another working tree or clone drives this pull request",
+      cause: "refused",
+      next: {
+        step: "The driver in the other working tree or clone finishes the drive.",
+        owner: "line",
+      },
+    },
   },
 
   // ── class label: never itself emitted, groups exit 4's five states ───────
@@ -325,7 +430,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy:
       "never emitted — a class label for HEAD_LAG / AWAITING_REVIEWER / STALE_REVIEW / HEAD_MOVED / MERGEABILITY_UNKNOWN",
     meaning:
-      "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved or the CI hold label changed as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm).",
+      "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved, the CI hold label changed or the forge could not be read as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm).",
+    report: {
+      stop: "stopped before the pull request could be judged: it has not settled yet",
+      next: {
+        step: "The line drives it again once the pull request settles.",
+        owner: "line",
+      },
+    },
   },
 
   // ── tombstone: withdrawn, must never be re-emitted ────────────────────────
@@ -347,6 +459,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (MAX_ROUNDS_EXIT)",
     meaning:
       "The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming.",
+    report: {
+      stop: "used its round budget without converging",
+      cause: "deadline",
+      next: {
+        step: "Read the handoff file for what keeps the review open, then re-arm the drive or take the work over.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
   },
   // A successful pass left uncommitted fixes and current-round holds, or the
   // review converged over an unclean worktree.
@@ -357,6 +478,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (WORKTREE_UNCLEAN_EXIT)",
     meaning:
       "The working tree holds work no round shipped: uncommitted edits, an unfinished git operation or a commit nobody reviewed. Settle it, then re-arm in this tree.",
+    report: {
+      stop: "converged, but its worktree holds changes no round shipped",
+      cause: "environment",
+      next: {
+        step: "A re-armed drive settles the working tree, then reports convergence.",
+        owner: "line",
+      },
+    },
   },
   STALLED: {
     exitCode: 14,
@@ -365,6 +494,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (STALLED_EXIT)",
     meaning:
       "Rounds stopped changing anything the drive can see. Read what the passes decided, and what the tree still holds, before re-arming.",
+    report: {
+      stop: "stalled: its passes changed nothing",
+      cause: "unknown",
+      next: {
+        step: "Read what the passes decided and what the working tree holds, then re-arm the drive.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
   },
   PASS_DEADLINE: {
     exitCode: 15,
@@ -373,6 +511,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (PASS_DEADLINE_EXIT)",
     meaning:
       "A pass ran past its deadline and was stopped more often than the drive restarts one. Check the tree for the stopped pass's leftovers before re-arming.",
+    report: {
+      stop: "stopped: its passes kept running out of time",
+      cause: "deadline",
+      next: {
+        step: "Check the working tree for the stopped pass's leftovers, then re-arm the drive.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
   },
   QUOTA_PARKED: {
     exitCode: 16,
@@ -381,6 +528,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (QUOTA_PARKED_EXIT)",
     meaning:
       "A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account. `drive.ts` also exits `16` when it refuses such a re-arm while the limit holds, from a session that bills the same account or one it cannot tell.",
+    report: {
+      stop: "stopped on a usage limit",
+      cause: "usage-limit",
+      next: {
+        step: "The line re-arms the drive after the limit resets, or on an account the limit does not hold.",
+        owner: "line",
+      },
+    },
   },
   MAILBOX_STOPPED: {
     exitCode: 18,
@@ -389,6 +544,13 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (MAILBOX_STOPPED_EXIT)",
     meaning:
       "A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. A stop that names this driver's generation ends this driver alone; one that names none stops every later driver too, so resume it before re-arming.",
+    report: {
+      stop: "stopped: a person or a tool told it to stop through its mailbox",
+      next: {
+        step: "Nothing until a person re-arms the drive.",
+        owner: "none",
+      },
+    },
   },
   MAILBOX_PAUSE_TIMEOUT: {
     exitCode: 19,
@@ -397,6 +559,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (MAILBOX_PAUSE_TIMEOUT_EXIT)",
     meaning:
       "A pause sent through the drive's mailbox lasted longer than the drive waits. Resume it, then re-arm.",
+    report: {
+      stop: "stopped: a pause sent through its mailbox outlasted its wait",
+      cause: "deadline",
+      next: {
+        step: "Resume the drive through its mailbox, then re-arm it.",
+        owner: "person",
+        act: "Do",
+      },
+    },
   },
   // Its CI-repair passes spent on a fresh verdict that still names failing
   // checks.
@@ -407,6 +578,15 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (CI_REPAIR_SPENT_EXIT)",
     meaning:
       "The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again.",
+    report: {
+      stop: "stopped: CI still fails with its CI-repair passes spent",
+      cause: "tool-failed",
+      next: {
+        step: "Look at the failing checks, then re-arm the drive to repair again.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
   },
   // Every failing check failed on the infrastructure (`shared/ci-infra.ts`)
   // and its re-runs and head moves are spent.
@@ -417,6 +597,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (CI_INFRA_PERSISTED_EXIT)",
     meaning:
       "The review converged, but checks kept failing on the CI service's own infrastructure after the drive re-ran them. Nothing in the code needs repair; re-arm once the service recovers.",
+    report: {
+      stop: "stopped: checks kept failing on the CI service's own infrastructure",
+      cause: "environment",
+      next: {
+        step: "The line re-arms the drive once the CI service recovers.",
+        owner: "line",
+      },
+    },
   },
   // A newer takeover claim from another clone, found at a round boundary, or
   // a rival's earlier claim that beat this driver's (`lib/driver/ledger.ts`).
@@ -427,6 +615,13 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (TAKEN_OVER_EXIT)",
     meaning:
       "Another clone took the drive over and drives it now. Nothing to recover here.",
+    report: {
+      stop: "stopped: another clone took the drive over",
+      next: {
+        step: "The clone that took the drive over drives it now.",
+        owner: "line",
+      },
+    },
   },
   // drive.ts's own single-instance lock refusal, BEFORE drive-status.ts ever
   // runs — a distinct cause from SESSION_LEASE_HELD above, sharing the same
@@ -438,6 +633,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: "drive.ts only (SINGLE_INSTANCE_LOCK_EXIT)",
     meaning:
       "Another driver already holds this pull request's or this working tree's lock, so the drive is already armed. Nothing was changed.",
+    report: {
+      stop: "refused: another driver already holds this pull request's or this working tree's lock",
+      cause: "refused",
+      next: {
+        step: "The driver that holds the lock goes on driving.",
+        owner: "line",
+      },
+    },
   },
 
   // ── helper exits: neither drive-status.ts nor drive.ts ends with these ────
@@ -686,6 +889,25 @@ export const DRIVE_EXIT: Readonly<Record<DriveExitName, number>> =
       DRIVE_EXIT_NAMES.map((name) => [name, driveExitCode(name)]),
     ) as Record<DriveExitName, number>,
   );
+
+/**
+ * What the closing report says for `drive.ts`'s exit `code`, with the state
+ * the exit names; `null` for a code `drive.ts` never exits with. Throws when
+ * a state `drive.ts` ends with carries no report, as `driveExitCode` does.
+ */
+export function driveExitReport(
+  code: number,
+): { name: DriveExitName; report: DriveExitReport } | null {
+  const name = driveExitName(code);
+  if (name === null) return null;
+  const report = TERMINAL_STATES[name]?.report;
+  if (report === undefined) {
+    throw new Defect(
+      `driveExitReport(): '${name}' carries no report — the closing report and terminal-states.ts have drifted`,
+    );
+  }
+  return { name, report };
+}
 
 /**
  * The state a `drive.ts` exit names, as this table gives it: the first state

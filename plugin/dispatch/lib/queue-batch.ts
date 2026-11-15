@@ -1,12 +1,16 @@
 /** Small independent items sharing a configured change area use one pickup. */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { matchOne } from "../../shared/rule-matcher.ts";
 import {
   parseWorkBatchSection,
   type WorkBatchSettings,
 } from "../../skills/work-batch/scripts/lib/policy.ts";
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
 import { isRecord } from "../../shared/guards.ts";
-import { parseAgentRouting } from "../../skills/do-item/scripts/determine_agent.ts";
+import {
+  areaOfLabel,
+  parseAgentRouting,
+} from "../../skills/do-item/scripts/determine_agent.ts";
 import {
   parseTrackerConfig,
   facetsOf,
@@ -49,25 +53,23 @@ export function batchPickups(
     )
       continue;
     if (
-      issue.labels.some((l) =>
-        [
-          "security",
-          "has-migration",
-          "breaking",
-          "sensitive",
-          ...policy.soloFlags,
-        ].includes(l),
-      )
+      matchOne(
+        "work_batch.solo_flags",
+        {
+          labels: [
+            "security",
+            "has-migration",
+            "breaking",
+            "sensitive",
+            ...policy.soloFlags,
+          ],
+        },
+        { labels: issue.labels },
+      ) !== null
     )
       continue;
     const areas = [
-      ...new Set(
-        issue.labels.flatMap((l) =>
-          typeof routing.codeareaAreas[l.toLowerCase()] === "string"
-            ? [String(routing.codeareaAreas[l.toLowerCase()])]
-            : [],
-        ),
-      ),
+      ...new Set(issue.labels.flatMap((l) => areaOfLabel(routing, l) ?? [])),
     ];
     if (areas.length !== 1) continue;
     const area = areas[0];

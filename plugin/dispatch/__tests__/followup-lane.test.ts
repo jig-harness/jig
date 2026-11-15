@@ -230,7 +230,7 @@ function queued(
   w: World,
   slots: number,
   merges: number,
-  lane: Record<string, number> = {},
+  lane: Record<string, number | string> = {},
 ): void {
   machineFile(
     w,
@@ -380,8 +380,9 @@ it("names an admission refusal in the receipt and dashboard queue", async () => 
 
 it("carries a deadline wait from the receipt into the dashboard queue", async () => {
   const w = fixture();
-  queued(w, 8, 1);
-  w.env.JIG_LAUNCHER_DEADLINE_SEC = "1";
+  queued(w, 8, 1, { runtime_timeout: "1s" });
+  // A runtime timeout of 1s makes a launch need 12s settled; the 15s deadline leaves the reads their time and a launch too little.
+  w.env.JIG_LAUNCHER_DEADLINE_SEC = "15";
   const result = await w.dispatch(["--apply", "--json"]);
   expectSpawnExit(result, 0);
   const [held] = followups(JSON.parse(result.stdout) as TickReceipt);

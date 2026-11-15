@@ -122,6 +122,7 @@ import {
 import { shellQuote } from "../../../shared/cli.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import { drivenBranchName } from "./lib/driven-branch.ts";
+import { ignoreDriveContext } from "./lib/context-ignore.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
   ghCall,
@@ -780,6 +781,7 @@ async function main(): Promise<number> {
     emit({ ...base, reason: readReason });
     return 0;
   }
+  await ignoreDriveContext(root, false, "base-sync.ts");
   if (!force) {
     const pushing = await alreadyPushing(git, root, headOid, identityEnv);
     if (!pushing.ok) {
@@ -853,11 +855,7 @@ async function main(): Promise<number> {
     // validate this round's own diff and commit it BEFORE re-running this
     // script, never to commit merely to unblock the merge without having
     // validated first.
-    // `--untracked-files=normal`/`--ignore-submodules=none` for the same reason
-    // `alreadyPushing` above carries them: a plain `--porcelain` can read an
-    // untracked file or ignored submodule change as a clean tree depending on
-    // repo/user config, letting a merge start over state that is not actually
-    // clean.
+    // Explicit `--untracked-files`/`--ignore-submodules`, as in `alreadyPushing`.
     const dirty = await git(
       [
         "-C",

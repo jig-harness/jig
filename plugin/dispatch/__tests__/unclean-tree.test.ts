@@ -3,7 +3,7 @@ import { afterEach, expect, it } from "bun:test";
 import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { cloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readRecord } from "../lib/launches.ts";
@@ -15,6 +15,7 @@ import {
   stoppedLedger,
   type World,
   world,
+  checkoutOn,
 } from "./fixtures.ts";
 import {
   account,
@@ -38,18 +39,9 @@ function fixture(tree = true) {
   w.setPrs("open", [openPr(7, "feature/unclean")]);
 
   const ws = join(w.root, "original-dirty-tree");
-  mkdirSync(ws, { recursive: true });
-  const initialized = Bun.spawnSync(["git", "init", "-q", ws]);
-  expectSpawnExit(
-    {
-      exitCode: initialized.exitCode,
-      stdout: initialized.stdout.toString(),
-      stderr: initialized.stderr.toString(),
-    },
-    0,
-  );
+  checkoutOn(w.repo, ws, "feature/unclean", w.env);
   const ledger = stoppedLedger(7, 12);
-  ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
+  ledger.driver.clone = cloneId(cloneKey(join(w.repo, ".git")));
   ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
   w.setComments(7, [ledgerComment(701, ledger)]);
   w.setWorkspaces(
@@ -114,7 +106,7 @@ it("honors an explicit rearm request on a needs-person stop in the existing tree
     { ...openPr(7, "feature/unclean"), labels: [{ name: "jig:rearm" }] },
   ]);
   const ledger = stoppedLedger(7, 14);
-  ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
+  ledger.driver.clone = cloneId(cloneKey(join(w.repo, ".git")));
   ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
   w.setComments(7, [ledgerComment(701, ledger)]);
   const r = await tick(w);
@@ -163,9 +155,9 @@ it("retries a failed request-label removal without launching again", async () =>
 }, 90000);
 
 it("refuses a clean same-branch tree belonging to another driver", async () => {
-  const { w, ws } = fixture();
+  const { w } = fixture();
   const ledger = stoppedLedger(7, 12);
-  ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
+  ledger.driver.clone = cloneId(cloneKey(join(w.repo, ".git")));
   ledger.driver.actor = "wt-0000000000000000";
   w.setComments(7, [ledgerComment(701, ledger)]);
   const report = (await tick(w)).repos[0];
@@ -178,7 +170,7 @@ it("refuses the same path in another clone", async () => {
   const { w, ws } = fixture();
   const ledger = stoppedLedger(7, 12);
   ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
-  ledger.driver.clone = `another-clone@${cloneId(cloneKey(join(ws, ".git")))
+  ledger.driver.clone = `another-clone@${cloneId(cloneKey(join(w.repo, ".git")))
     .split("@")
     .at(-1)}`;
   w.setComments(7, [ledgerComment(701, ledger)]);
@@ -203,7 +195,7 @@ it("refuses an ambiguous runtime listing of the original tree", async () => {
 it("admits an explicit request after the legacy automatic no-cause attempt is spent", async () => {
   const { w, ws } = fixture();
   const ledger = stoppedLedger(7, undefined);
-  ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
+  ledger.driver.clone = cloneId(cloneKey(join(w.repo, ".git")));
   ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
   w.setComments(7, [ledgerComment(701, ledger)]);
   const first = await tick(w);

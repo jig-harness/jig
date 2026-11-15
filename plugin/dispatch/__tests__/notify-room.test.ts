@@ -1,0 +1,316 @@
+/**
+ * Room in the notices comment: an unread comment the dispatcher wrote gives
+ * up the entries whose causes are settled so a standing cause still goes,
+ * one that finds no room is counted as a failing delivery, and a tick in
+ * which every cause waited does not count as having written the workspace.
+ */
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ApplyState } from "../lib/actions/launch.ts";
+import { recordComment } from "../lib/actions/notices-content.ts";
+import { applyNotices } from "../lib/actions/notify.ts";
+import { failureCauses } from "../lib/failure-notices.ts";
+import {
+  actionBook,
+  type FailureSettings,
+  readFailures,
+} from "../lib/failures.ts";
+import { noticeComment } from "../lib/runtime/notice-comment.ts";
+import {
+  MAX_COMMENT,
+  NOTICES_BRANCH,
+  NOTICES_NAME,
+  type SessionRuntime,
+  type Workspace,
+} from "../lib/runtime/port.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
+import type { Action, RepoReport, RepoTarget } from "../lib/types.ts";
+
+const SLUG = "example/project";
+const roots: string[] = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    closeStateDb(root);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function newRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "jig-notify-room-"));
+  roots.push(root);
+  return root;
+}
+
+/** An entry as a message carries it: its key line, then `size` characters of text. */
+function entry(key: string, size: number): string {
+  return `[jig dispatch: ${key}]\n${"x".repeat(size)}`;
+}
+
+function cause(key: string, size: number, target = key): Action {
+  return {
+    stage: "notify",
+    target,
+    cause: "parked",
+    reason: "notice",
+    record: "forge",
+    evidence: {},
+    notice: { key, text: entry(key, size) },
+  } as unknown as Action;
+}
+
+function reportOf(actions: Action[]): RepoReport {
+  return {
+    path: "/repo",
+    slug: SLUG,
+    defaultBranch: "main",
+    refused: null,
+    section: null,
+    followupSince: null,
+    records: [],
+    running: [],
+    unplaced: [],
+    launches: [],
+    notifications: [],
+    quiet: [],
+    actions,
+  } as unknown as RepoReport;
+}
+
+/** A suppression record, as an earlier tick that sent the cause wrote it. */
+function sentEarlier(
+  root: string,
+  workspace: string,
+  key: string,
+  target = key,
+  lasting = false,
+): void {
+  stateDb(root)
+    .query(
+      "INSERT INTO notices (repo, key, target, workspace, at, lasting) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .run(SLUG, key, target, workspace, "2026-11-10T10:00:00.000Z", lasting);
+}
+
+/** A runtime whose `notify` merges as Orca's does: the card read under its lock, the settled entries given up only from the exact comment the sender found them in. */
+function fakeRuntime(card: { comment: string; unread: boolean }) {
+  return {
+    async notify(target, message) {
+      const merged = noticeComment(
+        card,
+        message,
+        target.dispatcherOnly === true &&
+          card.comment !== target.replaceReadComment,
+        new Set(
+          target.settled !== undefined &&
+            card.comment === target.settled.comment
+            ? target.settled.keys
+            : [],
+        ),
+      );
+      if (merged !== null && merged.length > MAX_COMMENT)
+        return { ok: false, lost: false, detail: "too long; nothing written" };
+      const owned =
+        merged !== null &&
+        (target.prepareComment?.(card.comment, merged, card.unread) ?? false);
+      if (merged !== null) {
+        card.comment = merged;
+        card.unread = true;
+      }
+      return {
+        ok: true,
+        detail: "written",
+        comment: card.comment,
+        unread: card.unread,
+        ownedComment: owned,
+      };
+    },
+  } satisfies Partial<SessionRuntime>;
+}
+
+function noticesWorkspace(root: string, comment: string): Workspace {
+  return {
+    id: "notices",
+    path: join(root, "notices"),
+    branch: NOTICES_BRANCH,
+    prs: [],
+    items: [],
+    agents: [],
+    unverifiableTerminals: 0,
+    comment,
+    unread: true,
+    name: NOTICES_NAME,
+  };
+}
+
+const REPO: RepoTarget = { path: "/repo", slug: SLUG, defaultBranch: "main" };
+const SETTINGS = { branch: null, lingerMs: 0, renotifyAfterMs: 0 };
+
+describe("an unread notices comment at the limit", () => {
+  it("gives up its settled entries so a new cause goes on the same tick, keeping every entry whose cause stands", async () => {
+    const root = newRoot();
+    const path = join(root, "notices");
+    // Six entries about pull requests long closed, one ready notice whose
+    // pull request closed, and one park that still waits.
+    const settled = Array.from({ length: 6 }, (_, i) =>
+      entry(`${SLUG} PR #${i + 1} parked at old`, 2200),
+    );
+    const ready = entry(`${SLUG} PR #9 ready at abc`, 1000);
+    const standing = entry(`${SLUG} PR #20 parked at now`, 1000);
+    const comment = [NOTICES_NAME, ...settled, ready, standing].join("\n\n");
+    expect(comment.length).toBeGreaterThan(MAX_COMMENT - 500);
+    expect(comment.length).toBeLessThanOrEqual(MAX_COMMENT);
+    const workspace = noticesWorkspace(root, comment);
+    recordComment(workspace, comment, root, SLUG);
+    sentEarlier(root, path, `${SLUG} PR #20 parked at now`, "PR #20");
+    sentEarlier(root, path, `${SLUG} PR #9 ready at abc`, "PR #9", true);
+    const card = { comment, unread: true };
+    const state = {
+      root,
+      runtime: fakeRuntime(card),
+      machine: { runtimeTimeoutMs: 1000 },
+    } as unknown as ApplyState;
+    const report = reportOf([
+      cause(`${SLUG} PR #20 parked at now`, 1000, "PR #20"),
+      cause(`${SLUG} PR #21 parked at new`, 2000, "PR #21"),
+    ]);
+    await applyNotices(
+      state,
+      REPO,
+      report,
+      { ok: true, source: "test", workspaces: [workspace] },
+      SETTINGS,
+    );
+    expect(
+      report.notifications.map((n) => [n.key, n.outcome] as const),
+    ).toEqual([
+      [`${SLUG} PR #20 parked at now`, "suppressed"],
+      [`${SLUG} PR #21 parked at new`, "sent"],
+    ]);
+    expect(card.comment).toBe(
+      [
+        NOTICES_NAME,
+        standing,
+        entry(`${SLUG} PR #21 parked at new`, 2000),
+      ].join("\n\n"),
+    );
+  });
+
+  it("keeps the whole of a comment a person added to, and lets the new cause wait", async () => {
+    const root = newRoot();
+    const settled = Array.from({ length: 7 }, (_, i) =>
+      entry(`${SLUG} PR #${i + 1} parked at old`, 2200),
+    );
+    const comment = [NOTICES_NAME, ...settled, "A note of my own"].join("\n\n");
+    // The dispatcher's record names the comment before the person's line.
+    const workspace = noticesWorkspace(root, comment);
+    recordComment(
+      workspace,
+      [NOTICES_NAME, ...settled].join("\n\n"),
+      root,
+      SLUG,
+    );
+    const card = { comment, unread: true };
+    const state = {
+      root,
+      runtime: fakeRuntime(card),
+      machine: { runtimeTimeoutMs: 1000 },
+    } as unknown as ApplyState;
+    const report = reportOf([
+      cause(`${SLUG} PR #21 parked at new`, 2000, "PR #21"),
+    ]);
+    await applyNotices(
+      state,
+      REPO,
+      report,
+      { ok: true, source: "test", workspaces: [workspace] },
+      SETTINGS,
+    );
+    expect(report.notifications.map((n) => n.outcome)).toEqual(["waits"]);
+    expect(card.comment).toBe(comment);
+  });
+});
+
+describe("a cause the comment has no room for", () => {
+  const failures: FailureSettings = {
+    backoffMs: 0,
+    backoffMaxMs: 0,
+    notifyAfter: 3,
+    rerunDied: 1,
+  };
+  const held = `${SLUG} PR #21 parked at new`;
+  // Four parks that all still wait fill the comment.
+  const keys = [1, 2, 3, 4].map((n) => `${SLUG} PR #${n} parked at now`);
+
+  /** Run `ticks` ticks against a comment the four standing parks fill; each tick's report. */
+  async function heldTicks(root: string, ticks: number): Promise<RepoReport[]> {
+    const path = join(root, "notices");
+    const comment = [NOTICES_NAME, ...keys.map((k) => entry(k, 3900))].join(
+      "\n\n",
+    );
+    expect(comment.length).toBeLessThanOrEqual(MAX_COMMENT);
+    for (const [i, k] of keys.entries())
+      sentEarlier(root, path, k, `PR #${i + 1}`);
+    const card = { comment, unread: true };
+    const state = {
+      root,
+      runtime: fakeRuntime(card),
+      machine: { runtimeTimeoutMs: 1000 },
+    } as unknown as ApplyState;
+    const reports: RepoReport[] = [];
+    for (let tick = 1; tick <= ticks; tick += 1) {
+      const workspace = noticesWorkspace(root, card.comment);
+      recordComment(workspace, card.comment, root, SLUG);
+      const report = reportOf([
+        ...keys.map((k, i) => cause(k, 3900, `PR #${i + 1}`)),
+        cause(held, 500, "PR #21"),
+      ]);
+      await applyNotices(
+        state,
+        REPO,
+        report,
+        { ok: true, source: "test", workspaces: [workspace] },
+        {
+          ...SETTINGS,
+          book: actionBook(SLUG, failures, () => undefined, root),
+        },
+      );
+      expect(report.notifications.find((n) => n.key === held)?.outcome).toBe(
+        "waits",
+      );
+      reports.push(report);
+    }
+    return reports;
+  }
+
+  it("is raised as a failing delivery once it has waited failures.notify_after ticks", async () => {
+    const root = newRoot();
+    await heldTicks(root, failures.notifyAfter);
+    const rows = readFailures(SLUG, root);
+    expect(rows).toMatchObject([
+      { key: `notice ${held}`, kind: "notice", count: failures.notifyAfter },
+    ]);
+    const raised = failureCauses(SLUG, "/repo", rows, {
+      repositories: [],
+      failures,
+    });
+    expect(raised).toMatchObject([
+      { stage: "notify", cause: "action-failing", target: "PR #21" },
+    ]);
+    expect(raised[0]?.notice?.text).toContain(
+      `Delivering the notice ${held} has failed 3 times in a row`,
+    );
+  });
+
+  it("leaves a tick in which every cause waited from reporting its notices workspace as written", async () => {
+    const root = newRoot();
+    const [report] = await heldTicks(root, 1);
+    expect(report?.noticesWorkspace).toEqual({
+      workspace: join(root, "notices"),
+      outcome: "kept",
+      detail: `unread: ${keys[0]} still stands`,
+    });
+  });
+});

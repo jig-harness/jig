@@ -80,6 +80,11 @@ flags:
     scope: container
     fires: status-roll-up
     apply_when: the issue is the unit progress is reported on
+  - id: roadmap
+    scope: container
+    fires: plan-mirror
+    apply_when: the issue mirrors an item of the plan
+    requires: [epic]
   - id: has-migration
     scope: shipping-item
     fires: migration-review

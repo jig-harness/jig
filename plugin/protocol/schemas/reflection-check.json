@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/repo-commands/v1/schemas/reflection-check.json",
+  "type": "object",
+  "properties": {
+    "ok": true,
+    "reason": true,
+    "fix": true
+  },
+  "required": [],
+  "additionalProperties": true
+}

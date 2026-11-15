@@ -7,8 +7,10 @@ import { ItemTitle, Pr, RepoLink } from "./pr.tsx";
  * to pick an answer on, and who it waits on; for any other need, the ask and
  * the recommended option with what it changes and costs. The steps and the
  * evidence are folded. Two rows show on a phone; the rest wait behind Show all.
+ * Where a parked drive's card can send its answers, the head offers Send's
+ * settings (`send.tsx`).
  */
-import { useRef, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
@@ -28,6 +30,8 @@ import {
   needRows,
 } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
+import { NoSend, SendSettings, SendSettingsToggle } from "./send.tsx";
+import { useKeptToken } from "./forge-token.ts";
 import { usePicking } from "./use-picking.ts";
 import type { Clock, SlotView } from "./view.ts";
 
@@ -225,6 +229,7 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
         ) : null}
         <NeedFold need={need} />
       </div>
+      <NoSend need={need} />
     </article>
   );
 }
@@ -273,6 +278,39 @@ function rowKeyOf(row: NeedRow): string {
   return row.type === "need" ? row.need.rowKey : `stuck ${row.slot.record}`;
 }
 
+/** The repositories of the cards that can send, for the token's scope. */
+function sendableRepos(rows: NeedRow[]): string[] {
+  const repos = rows.flatMap((row) =>
+    row.type === "need" && "to" in row.need.send ? [row.need.send.to.repo] : [],
+  );
+  return [...new Set(repos)].sort((a, b) => a.localeCompare(b));
+}
+
+/** Send's settings: the toggle in the panel's head, shown while a card can send or a token is kept, and the panel it opens. */
+function useSendSettings(
+  line: LineSnapshot,
+  clock: Clock,
+): { toggle: ReactNode; panel: ReactNode } {
+  // Every card the line holds, whoever it waits on: the token covers them all.
+  const sendable = sendableRepos(needRows(line, clock));
+  const { kept } = useKeptToken();
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return {
+    toggle:
+      sendable.length === 0 && kept === null ? null : (
+        <SendSettingsToggle
+          open={open}
+          onToggle={() => setOpen(!open)}
+          controls={id}
+        />
+      ),
+    panel: open ? (
+      <SendSettings id={id} repos={sendable} onClose={() => setOpen(false)} />
+    ) : null,
+  };
+}
+
 export function NeedsPanel({
   line,
   clock,
@@ -287,6 +325,7 @@ export function NeedsPanel({
   const person = chosen !== null && people.includes(chosen) ? chosen : null;
   const rows = needRows(line, clock, person);
   const count = rows.filter((r) => r.type !== "head").length;
+  const send = useSendSettings(line, clock);
   let seen = 0;
   return (
     <section className="panel pNeeds" aria-labelledby="h-needs" ref={panel}>
@@ -297,8 +336,10 @@ export function NeedsPanel({
           among framed options, Authorize what only a person may, Reply to a
           person or a waiting session, Do a step outside the line, or
           Investigate what the line could not recover. Oldest first in each.
-          Answer on the pull request; the next tick re-arms the drive.
+          Answer on the pull request, by pasting what a card copies or with its
+          Send; the next tick re-arms the drive.
         </PanelHelp>
+        {send.toggle}
         {people.length === 0 ? null : (
           <label className="personFilter sm">
             <span className="mut">Waits on</span>
@@ -317,6 +358,7 @@ export function NeedsPanel({
         )}
         <MoreToggle count={count} all={all} setAll={setAll} where="head" />
       </div>
+      {send.panel}
       <div className={all ? "needList all" : "needList"}>
         {rows.map((row, i) => {
           const rest = !all && seen >= SHOWN_CLOSED;

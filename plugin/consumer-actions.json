@@ -43,6 +43,80 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.244.0",
+      "actions": [
+        {
+          "id": "0.244.0#b4855f8e",
+          "strength": "advised",
+          "levels": ["configuration", "instructions"],
+          "description": "**Breaking:** the dispatcher starts an assigned epic's ready children in parallel when the epic has no execution plan, up to a per-epic width, instead of one child at a time. The width is the new `dispatch.epic_width` key of the repository's `dispatch` section, read from the default branch, and defaults to 4. A started child counts toward it while it still needs an agent, and so does a child that cannot be read; a child in `ops_pending` or waiting on a person does not. A child that waits on the width names the epic and the width. A repository that wants the old behaviour sets `dispatch.epic_width: 1`. An epic with an execution plan is unchanged, and an interactive `do-item` session still takes one child. The audit's configuration schema gains the key. Why: [ADR-0024](docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md).",
+          "instruction": "A repository whose epics must run one child at a time sets `dispatch.epic_width: 1`; runbooks that say the dispatcher works an epic one child at a time say what is true now.",
+          "hints": [
+            {
+              "kind": "text",
+              "value": "one child at a time"
+            }
+          ]
+        }
+      ],
+      "retracts": []
+    },
+    {
+      "version": "0.247.2",
+      "actions": [
+        {
+          "id": "0.247.2#7e7caef6",
+          "strength": "required",
+          "levels": ["machine"],
+          "description": "Finished worktrees are no longer kept just for the `.fallow` tool cache. Repositories can declare other rebuildable ignored paths with `gc.regenerable_paths`; undeclared content remains protected. Existing installations refresh the collector after upgrading, even without configuration changes, to confirm new default bounds.",
+          "instruction": "After upgrading, review the preview and run `jig install gc --repo <repository> --yes` for every existing installation.",
+          "hints": []
+        }
+      ],
+      "retracts": []
+    },
+    {
+      "version": "0.249.0",
+      "actions": [
+        {
+          "id": "0.249.0#9e6e3ffa",
+          "strength": "required",
+          "levels": ["configuration"],
+          "description": "**Breaking:** The shared configuration reader refuses a rule that names an unknown fact or gives a value of the wrong kind in any of these fields, naming the field and the file that set it, before any skill acts on it, and the audit reports it. A malformed rule a skill never read (such as a `do_item.gates` entry) used to be ignored; now every skill, `jig gc` and `jig dispatch` stop on it. A `do_item.gates` entry do-item refuses (no labels or paths, no skill, an unknown field, a glob that does not compile) now also stops `determine_agent.ts`, `determine_route.ts`, work-batch and the dispatcher's batch planning, where before nothing read the field. An empty key in `do_item.agents.labels`, `codearea_areas` or `title_keywords` is refused too (an empty title keyword used to match every title).",
+          "instruction": "Run the audit's configuration fit and fix each rule it refuses: `rejected:every skill (rule matcher)` and `rejected:do-item (review gates)`.",
+          "hints": []
+        },
+        {
+          "id": "0.249.0#159cbfe9",
+          "strength": "advised",
+          "levels": ["configuration"],
+          "description": "**Breaking:** `work_batch.solo_flags`, and the solo-only flags work-batch derives, match an item's labels ignoring case, as every other label rule does: an issue labelled `Privacy-Review` is now held out of a batch by `solo_flags: [privacy-review]`, where before it was batched. The dispatcher's batch grouping reads the same rule.",
+          "instruction": "Check that no label you batch differs from a solo-only flag only in case; rename it if it should stay batchable.",
+          "hints": [
+            {
+              "kind": "config",
+              "value": "work_batch.solo_flags",
+              "absent": false
+            }
+          ]
+        },
+        {
+          "id": "0.249.0#15be5060",
+          "strength": "advised",
+          "levels": ["instructions"],
+          "description": "A route's reasons name the configuration rule that matched in the matcher's wording: `tier: complex (routing.complex_flags, for the item's label has-migration)` and `effort: high (raised from medium: routing.raise.flags, for the item's label has-migration)`, where they read `flag has-migration` before.",
+          "instruction": "Update a runbook or script that reads the old reason text.",
+          "hints": [
+            {
+              "kind": "text",
+              "value": "raised medium"
+            }
+          ]
+        }
+      ],
+      "retracts": []
     }
   ]
 }

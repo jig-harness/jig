@@ -130,6 +130,14 @@ fields:
     repository_only: true
     since: 0.83.0
 
+  gc.regenerable_paths:
+    type: list
+    items: string
+    distinct: true
+    read_by: [audit, gc]
+    repository_only: true
+    since: 0.247.2
+
   dispatch.identity:
     type: string
     read_by: [dispatch]
@@ -177,6 +185,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.117.0
+  dispatch.epic_width:
+    type: integer
+    min: 1
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.244.0
   dispatch.pickup_within:
     type: string
     pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
@@ -520,6 +534,12 @@ fields:
     min: 0
     default: 2
     since: 0.98.0
+    read_by: [drive-pr]
+  drive.ci_repair_rounds:
+    type: integer
+    min: 0
+    default: 2
+    since: 0.241.0
     read_by: [drive-pr]
   drive.pass_model:
     type: string

@@ -9,8 +9,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { askCommand } from "../../../ask/cli.ts";
 import { sendCommand } from "../../../send/cli.ts";
+import { SEND_VERBS } from "../../../send/lib/verb-values.ts";
 import { isVerb, parseRequest } from "../../../send/lib/verbs.ts";
-import { checkKey, parseAddress } from "../../../shared/address.ts";
+import { checkKey, parseAddress, STATIONS } from "../../../shared/address.ts";
 import { parse } from "../../../shared/vendor/optique.mjs";
 
 const SKILL_DIR = join(import.meta.dir, "..");
@@ -146,6 +147,17 @@ describe("SKILL.md's frontmatter", () => {
   });
 });
 
+describe("its address table", () => {
+  test("names every station an address takes, and no other", () => {
+    const section =
+      /## Forming an address\n([\s\S]*?)\n## /.exec(body)?.[1] ?? "";
+    const named = [...section.matchAll(/^\| [^|]+ \| `([a-z-]+)` \|/gm)].map(
+      (m) => m[1],
+    );
+    expect(named.sort()).toEqual(Object.keys(STATIONS).sort());
+  });
+});
+
 describe("the commands it names", () => {
   test("names both commands' questions and requests", () => {
     expect(commands("ask").length).toBeGreaterThanOrEqual(5);
@@ -194,12 +206,20 @@ describe("the commands it names", () => {
   });
 
   test("send keys must match their station's form", () => {
-    for (const station of ["drive", "followup", "pickup"])
+    for (const station of Object.keys(STATIONS)) {
+      // A verb the station takes with no arguments, from the verb table.
+      const verb = Object.entries(SEND_VERBS).find(
+        ([, spec]) =>
+          spec.args === "" &&
+          (spec.stations as readonly string[]).includes(station),
+      )?.[0];
+      expect(verb, station).toBeDefined();
       expect(() =>
         validateSend(
-          `jig send ${station}@<owner>/<name> not-a-number ${station === "pickup" ? "assign" : "hold"} --dry-run`,
+          `jig send ${station}@<owner>/<name> not-a-number ${verb} --dry-run`,
         ),
       ).toThrow();
+    }
   });
 
   test("holding and releasing a follow-up name distinct verbs", () => {

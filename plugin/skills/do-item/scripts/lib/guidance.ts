@@ -9,8 +9,9 @@
  *         skills: [migration-safety]
  *         notes: "Add a rollback script beside every forward migration."
  *
- * An entry matches the way a `do_item.gates` entry does: by one of its
- * labels (any case), or by one of its paths. A change-area catalog adds the
+ * An entry is a rule over the item's labels and the change's paths, which
+ * the shared rule matcher reads (`do_item.guidance` in its `RULE_FIELDS`):
+ * every matching entry applies, as every matching `do_item.gates` entry does. A change-area catalog adds the
  * same per area (`implementation: {skills, notes}`) for the areas the item
  * reaches, and the area's own `notes` with it. The guidance is the union of
  * the matching entries, in entry order, then the matched areas in catalog
@@ -25,15 +26,18 @@ import { formatField } from "../../../../shared/config-layers.ts";
 import { JigError } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import {
-  type ChangeAreaCatalog,
-  globProblem,
-  matchesGlob,
-} from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+  matchRule,
+  parseEntryRule,
+  resolve,
+  type Rule,
+} from "../../../../shared/rule-matcher.ts";
+import type { ChangeAreaCatalog } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+
+const GUIDANCE = "do_item.guidance";
 
 export interface GuidanceEntry {
-  /** Lowercased: labels match in any case. */
-  labels: string[];
-  paths: string[];
+  /** The entry's `labels` and `paths`, as the rule matcher reads them. */
+  rule: Rule;
   skills: string[];
   notes: string | null;
 }
@@ -85,32 +89,13 @@ function parseEntry(entry: unknown, i: number): GuidanceEntry {
         "guidance-invalid",
         `${at}.${formatField([key])} is not a known field (${ENTRY_KEYS.join(", ")})`,
       );
-  const labels = textList(entry.labels, `${at}.labels`);
-  const paths = globList(entry.paths, `${at}.paths`);
+  const rule = parseEntryRule(GUIDANCE, entry, at);
+  if (!rule.ok) throw new JigError("guidance-invalid", rule.failure.reason);
   const skills = textList(entry.skills, `${at}.skills`);
   const notes = noteText(entry.notes, `${at}.notes`);
-  if (labels.length === 0 && paths.length === 0)
-    throw new JigError(
-      "guidance-invalid",
-      `${at} must name labels or paths to match on`,
-    );
   if (skills.length === 0 && notes === null)
     throw new JigError("guidance-invalid", `${at} must give skills or notes`);
-  return { labels: labels.map((l) => l.toLowerCase()), paths, skills, notes };
-}
-
-/** A list of globs, each one that compiles. */
-function globList(v: unknown, where: string): string[] {
-  const globs = textList(v, where);
-  for (const glob of globs) {
-    const problem = globProblem(glob);
-    if (problem !== null)
-      throw new JigError(
-        "guidance-invalid",
-        `${where}: ${JSON.stringify(glob)} does not compile: ${problem}`,
-      );
-  }
-  return globs;
+  return { rule: rule.value, skills, notes };
 }
 
 /** An area's `implementation` block, or `null` when it declares none. */
@@ -172,38 +157,35 @@ export interface MatchedArea {
 
 /**
  * The areas the item reaches: by a label `do_item.agents.codearea_areas`
- * maps to it, by one of the area's own tracker labels, or by a planned path
- * its globs claim; in catalog order.
+ * maps to it (`areaOf`, the rule matcher's lookup), by one of the area's own
+ * tracker labels, or by a planned path its globs claim; in catalog order.
  */
 export function matchedAreas(
   labels: readonly string[],
-  codeareaAreas: Record<string, string>,
+  areaOf: (label: string) => string | undefined,
   catalog: ChangeAreaCatalog,
   paths: readonly string[] | null,
 ): MatchedArea[] {
-  const lower = labels.map((l) => l.toLowerCase());
   const out: MatchedArea[] = [];
   for (const [key, area] of catalog) {
-    const viaMap = lower.find(
-      (l) => Object.hasOwn(codeareaAreas, l) && codeareaAreas[l] === key,
-    );
-    const viaTracker = lower.find((l) =>
-      area.trackerLabels.some((t) => t.toLowerCase() === l),
-    );
-    const viaPath = paths?.find((p) =>
-      area.globs.some((g) => matchesGlob(p, g)),
+    const viaMap = labels.find((l) => areaOf(l) === key);
+    const own = matchRule(
+      { labels: area.trackerLabels, paths: area.globs },
+      { labels, paths: paths ?? [] },
     );
     const by =
-      viaMap !== undefined
-        ? `label ${viaMap}`
-        : viaTracker !== undefined
-          ? `label ${viaTracker}`
-          : viaPath !== undefined
-            ? `path ${viaPath}`
-            : null;
+      viaMap === undefined ? ownReach(own) : `label ${viaMap.toLowerCase()}`;
     if (by !== null) out.push({ key, by });
   }
   return out;
+}
+
+/** How an area's own labels or globs reached the item, or `null`. */
+function ownReach(own: ReturnType<typeof matchRule>): string | null {
+  if (own === null || own === "unknown") return null;
+  return own.fact === "labels"
+    ? `label ${own.value.toLowerCase()}`
+    : `path ${own.value}`;
 }
 
 /** What an area brings: its implementation skills and notes, and its own notes. */
@@ -221,31 +203,6 @@ function areaGuidance(
     skills: impl?.skills ?? [],
     notes: [...(impl?.notes == null ? [] : [impl.notes]), ...own],
   };
-}
-
-/** Add `entry` to `sources` when it matches, or to `byPath` when only its paths could and none are known. */
-function matchEntry(
-  entry: GuidanceEntry,
-  from: string,
-  lower: ReadonlySet<string>,
-  paths: readonly string[] | null,
-  sources: GuidanceSource[],
-  byPath: Guidance["byPath"],
-): void {
-  const notes = entry.notes === null ? [] : [entry.notes];
-  const label = entry.labels.find((l) => lower.has(l));
-  if (label !== undefined) {
-    sources.push({ from, by: `label ${label}`, skills: entry.skills, notes });
-    return;
-  }
-  if (entry.paths.length === 0) return;
-  if (paths === null) {
-    byPath.push({ from, paths: entry.paths, skills: entry.skills, notes });
-    return;
-  }
-  const path = paths.find((p) => entry.paths.some((g) => matchesGlob(p, g)));
-  if (path !== undefined)
-    sources.push({ from, by: `path ${path}`, skills: entry.skills, notes });
 }
 
 const hasGuidance = (g: { skills: string[]; notes: string[] }): boolean =>
@@ -274,11 +231,33 @@ export function resolveGuidance(
   areas: readonly MatchedArea[],
   catalog: ChangeAreaCatalog | null,
 ): Guidance {
-  const lower = new Set(labels.map((l) => l.toLowerCase()));
   const sources: GuidanceSource[] = [];
   const byPath: Guidance["byPath"] = [];
-  for (const [i, entry] of entries.entries())
-    matchEntry(entry, `do_item.guidance[${i}]`, lower, paths, sources, byPath);
+  const { matches, undecided } = resolve(
+    GUIDANCE,
+    entries.map((e) => e.rule),
+    { labels, paths },
+  );
+  const notesOf = (e: GuidanceEntry) => (e.notes === null ? [] : [e.notes]);
+  // Matches and undecided entries, each in entry order.
+  for (const [i, entry] of entries.entries()) {
+    const from = `${GUIDANCE}[${i}]`;
+    const m = matches.find((x) => x.at === i);
+    if (m !== undefined)
+      sources.push({
+        from,
+        by: `${m.fact === "labels" ? "label" : "path"} ${m.fact === "labels" ? m.value.toLowerCase() : m.value}`,
+        skills: entry.skills,
+        notes: notesOf(entry),
+      });
+    else if (undecided.includes(i))
+      byPath.push({
+        from,
+        paths: [...(entry.rule.paths ?? [])],
+        skills: entry.skills,
+        notes: notesOf(entry),
+      });
+  }
   for (const { key, by } of areas) {
     const g = areaGuidance(key, catalog);
     if (hasGuidance(g)) sources.push({ from: `area ${key}`, by, ...g });

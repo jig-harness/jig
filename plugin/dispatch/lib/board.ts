@@ -107,6 +107,8 @@ export interface BoardInput {
   held: ReadonlySet<number>;
   serialized: Pick<Contention, "held">;
   budget: TickBudget;
+  /** Whether the tick's bound has ended: an abandoned read then starts no further query. */
+  ended?: () => boolean;
 }
 
 /** What the board read reads through, which a test replaces. */
@@ -178,6 +180,29 @@ function notRead(reason: string, pending: number[], ms = 0): BoardRead {
   };
 }
 
+/** The board read a tick did not start, with why: its converged pull requests pending. */
+export function unstartedBoard(
+  drives: BoardInput["drives"],
+  reason: string,
+): BoardRead {
+  return notRead(
+    reason,
+    convergedDrives(drives).map((d) => d.number),
+  );
+}
+
+/** Whether the wait for an uncomputed mergeability was made: not when too little time is left or the tick's bound has ended, before or during it. */
+async function waitedForCompute(
+  input: BoardInput,
+  io: BoardIo,
+  left: () => number,
+): Promise<boolean> {
+  if (left() <= UNKNOWN_WAIT_MS + 1000 || input.ended?.() === true)
+    return false;
+  await io.wait(UNKNOWN_WAIT_MS);
+  return input.ended?.() !== true;
+}
+
 /** Read the board's facts, then once more those whose head moved or whose mergeability is not computed yet, within the deadline. */
 async function readFacts(
   input: BoardInput,
@@ -199,12 +224,9 @@ async function readFacts(
   const unknown = retry.some(
     (n) => first.pulls.get(n)?.mergeable === "UNKNOWN",
   );
-  if (unknown) {
-    if (left() <= UNKNOWN_WAIT_MS + 1000) return read;
-    await io.wait(UNKNOWN_WAIT_MS);
-  }
+  if (unknown && !(await waitedForCompute(input, io, left))) return read;
   // A second read that fails leaves the first: its moved heads unplaced, its unknown mergeability where it was.
-  if (left() <= 0) return read;
+  if (left() <= 0 || input.ended?.() === true) return read;
   const reread = await io.read(input.slug, retry, left() / 1000);
   if (!reread.ok) {
     for (const n of retry)

@@ -7,6 +7,10 @@ import {
   userConfigPath,
 } from "../shared/config-layers.ts";
 import { failed, type Failure, ok, type Outcome } from "../shared/outcome.ts";
+import {
+  DEFAULT_REGENERABLE_PATHS,
+  regenerablePaths,
+} from "./regenerable-paths.ts";
 import type { KindName } from "./types.ts";
 import { DEFAULT_ARCHIVE_MAX_BYTES } from "./legacy-archive.ts";
 
@@ -17,6 +21,8 @@ export interface Declaration {
   kinds: Exclude<KindName, (typeof MACHINE_KINDS)[number]>[];
   worktree_roots: string[];
   scratch_prefixes: string[];
+  /** Literal paths relative to a worktree; absent on older machine records. */
+  regenerable_paths?: string[];
 }
 export interface RepositoryEntry {
   path: string;
@@ -113,7 +119,7 @@ export function parseDeclaration(
   if (!gc.ok) return gc;
   const known = keys(
     gc.value,
-    ["kinds", "worktree_roots", "scratch_prefixes"],
+    ["kinds", "worktree_roots", "scratch_prefixes", "regenerable_paths"],
     "gc",
   );
   if (!known.ok) return known;
@@ -133,7 +139,10 @@ export function parseDeclaration(
   if (!worktree_roots.ok) return worktree_roots;
   const scratch_prefixes = paths("scratch_prefixes");
   if (!scratch_prefixes.ok) return scratch_prefixes;
+  const regenerable = regenerablePaths(gc.value.regenerable_paths);
+  if (!regenerable.ok) return regenerable;
   return ok({
+    regenerable_paths: regenerable.value,
     kinds: kinds.value as Declaration["kinds"],
     worktree_roots: worktree_roots.value,
     scratch_prefixes: scratch_prefixes.value,
@@ -161,7 +170,16 @@ function repositoryEntry(item: unknown): Configured<RepositoryEntry> {
   const path = values.path as string;
   if (!isAbsolute(path))
     return refused("gc.repositories.path must be absolute");
-  const bounds = parseDeclaration(values.bounds, path);
+  // Older installation records predate regenerable_paths.  A missing bound
+  // grants no deletion authority; only a new repository declaration receives
+  // the repository default.
+  const legacyBounds = isMapping(values.bounds)
+    ? {
+        ...values.bounds,
+        regenerable_paths: values.bounds.regenerable_paths ?? [],
+      }
+    : values.bounds;
+  const bounds = parseDeclaration(legacyBounds, path);
   if (!bounds.ok) return bounds;
   return ok({
     path,
@@ -365,9 +383,15 @@ export function boundDeclaration(
   const scratch_prefixes = current.scratch_prefixes.filter((path) =>
     bounds.scratch_prefixes.includes(path),
   );
+  const currentPaths = current.regenerable_paths ?? DEFAULT_REGENERABLE_PATHS;
+  const boundPaths = bounds.regenerable_paths ?? DEFAULT_REGENERABLE_PATHS;
+  const regenerable_paths = currentPaths.filter((path) =>
+    boundPaths.some((bound) => path === bound || path.startsWith(`${bound}/`)),
+  );
   return {
-    declaration: { kinds, worktree_roots, scratch_prefixes },
+    declaration: { kinds, worktree_roots, scratch_prefixes, regenerable_paths },
     widened:
+      regenerable_paths.length !== currentPaths.length ||
       kinds.length !== current.kinds.length ||
       worktree_roots.length !== current.worktree_roots.length ||
       scratch_prefixes.length !== current.scratch_prefixes.length,

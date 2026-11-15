@@ -44,7 +44,7 @@ afterAll(() => {
   for (const root of made) rmSync(root, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(regenerable_paths?: string[]) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "gc-agent-")));
   made.push(root);
   const { repo, user, bin, env, command } = setupWorktreeFixture(root);
@@ -53,10 +53,14 @@ function setup() {
     kinds: ["worktrees"],
     worktree_roots: [join(root, "worktrees")],
     scratch_prefixes: [],
+    ...(regenerable_paths === undefined ? {} : { regenerable_paths }),
   };
   mkdirSync(join(repo, ".config", "worktree-hooks"), { recursive: true });
   writeFileSync(join(repo, ".config/jig.yaml"), dump({ gc: declaration }));
-  writeFileSync(join(repo, ".gitignore"), ".claude/\n");
+  writeFileSync(
+    join(repo, ".gitignore"),
+    ".claude/\n.fallow/\ndist/\nprivate-note\n",
+  );
   writeFileSync(
     join(repo, ".config/worktree-hooks/remove"),
     // With `commit-during-hook` present, the hook commits in the tree: a
@@ -137,7 +141,10 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
         remote: "origin",
         remote_url: REMOTE,
         base_branch: "main",
-        bounds: declaration,
+        bounds: {
+          ...declaration,
+          regenerable_paths: regenerable_paths ?? [".fallow"],
+        },
       },
     ],
   };
@@ -224,6 +231,52 @@ describe.skipIf(
     expect(readFileSync(join(f.root, "hook-ran"), "utf8")).toContain(f.tree);
     expect(existsSync(f.tree)).toBe(false);
     expect(f.command(["git", "worktree", "list"])).not.toContain("agent-a1");
+  }, 60_000);
+
+  test("a declared regenerable build output is collected from base configuration and its receipt names the rule", () => {
+    const f = setup(["dist"]);
+    mkdirSync(join(f.tree, "dist"));
+    writeFileSync(join(f.tree, "dist", "bundle.js"), "rebuilt output");
+    // Neither checkout's config can replace the declaration fetched from main.
+    writeFileSync(
+      join(f.repo, ".config/jig.yaml"),
+      dump({ gc: { kinds: ["worktrees"], regenerable_paths: [] } }),
+    );
+    idle(f);
+    expect(line(gc(f, ["--collect"]))).toMatchObject({
+      outcome: "collected",
+      details: { setAside: [{ path: "dist/", rule: "regenerable-path" }] },
+    });
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
+  test("an undeclared ignored note beside a declared output keeps the worktree", () => {
+    const f = setup(["dist"]);
+    mkdirSync(join(f.tree, "dist"));
+    writeFileSync(join(f.tree, "dist", "bundle.js"), "rebuilt output");
+    writeFileSync(join(f.tree, "private-note"), "keep this");
+    idle(f);
+    const kept = line(gc(f, ["--collect"]));
+    expect(kept.outcome).toBe("finding");
+    expect(kept.reason).toContain("private-note");
+    expect(kept.details).toMatchObject({
+      setAside: [{ path: "dist/", rule: "regenerable-path" }],
+    });
+    expect(readFileSync(join(f.tree, "private-note"), "utf8")).toBe(
+      "keep this",
+    );
+  }, 60_000);
+
+  test("the default tool cache needs no repository declaration", () => {
+    const f = setup();
+    mkdirSync(join(f.tree, ".fallow"));
+    writeFileSync(join(f.tree, ".fallow", "cache.bin"), "rebuilt cache");
+    idle(f);
+    expect(line(gc(f, ["--collect"]))).toMatchObject({
+      outcome: "collected",
+      details: { setAside: [{ path: ".fallow/", rule: "regenerable-path" }] },
+    });
+    expect(existsSync(f.tree)).toBe(false);
   }, 60_000);
 
   test("a detached one whose commit a merged pull request brought in is collected, its branch kept", () => {

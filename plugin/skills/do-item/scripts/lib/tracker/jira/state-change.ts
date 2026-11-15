@@ -20,12 +20,16 @@ import { JiraApiError } from "./transport.ts";
 async function creatorOf(
   client: Client,
   key: string,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown> | null> {
-  const raw = await client.transport({
-    method: "GET",
-    path: `issue/${encodeURIComponent(key)}`,
-    query: { fields: "creator" },
-  });
+  const raw = await client.transport(
+    {
+      method: "GET",
+      path: `issue/${encodeURIComponent(key)}`,
+      query: { fields: "creator" },
+    },
+    signal,
+  );
   const fields = isRecord(raw) ? raw.fields : undefined;
   if (!isRecord(fields))
     throw new JiraApiError(`issue ${key}: its creator could not be read`);
@@ -36,12 +40,12 @@ export function stateChangeOperations(
   client: Client,
 ): Pick<Tracker, "stateChangedBy"> {
   return {
-    async stateChangedBy(key) {
-      const issue = await client.mustIssue(key);
+    async stateChangedBy(key, signal) {
+      const issue = await client.mustIssue(key, signal);
       const status = issue.status.id;
       if (status === "")
         throw new JiraApiError(`issue ${issue.key}: its status has no id`);
-      const latest = (await client.changelog(issue.key))
+      const latest = (await client.changelog(issue.key, signal))
         .filter((e) =>
           e.items.some((i) => i.fieldId === "status" && i.to === status),
         )
@@ -50,8 +54,9 @@ export function stateChangeOperations(
       return authorOf(
         client,
         latest === undefined
-          ? await creatorOf(client, issue.key)
+          ? await creatorOf(client, issue.key, signal)
           : latest.author,
+        signal,
       );
     },
   };

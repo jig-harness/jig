@@ -48,7 +48,15 @@ export function incompleteness(
   if (usable(facets.size) && !epic && (issue.size ?? "").trim() === "")
     missing.push("size");
   if (taxonomy !== null)
-    missing.push(...missingGroups(issue.labels, taxonomy, [SIZE_GROUP]));
+    missing.push(
+      ...missingGroups(
+        // An epic by its issue type stands for the epic label, as it does
+        // when `validate-labels` reads the same issue.
+        epic ? [...issue.labels, facets.epic] : issue.labels,
+        taxonomy,
+        [SIZE_GROUP],
+      ),
+    );
   return missing;
 }
 

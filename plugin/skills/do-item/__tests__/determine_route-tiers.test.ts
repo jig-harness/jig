@@ -69,7 +69,9 @@ describe("the complexity tiers", () => {
     expect(plain.reasons).toContain("tier: standard (type bug, size S)");
     const flagged = route({ type: "bug", labels: ["small", "has-migration"] });
     expect(flagged.tier).toBe("complex");
-    expect(flagged.reasons).toContain("tier: complex (flag has-migration)");
+    expect(flagged.reasons).toContain(
+      "tier: complex (routing.complex_flags, for the item's label has-migration)",
+    );
   });
 
   it("reads an unknown size as M", () => {
@@ -96,7 +98,7 @@ describe("the complexity tiers", () => {
     });
     expect(r.tier).toBe("complex");
     expect(r.reasons).toContain(
-      "tier: complex (flag api-change of an area it seeds)",
+      "tier: complex (routing.complex_flags, for the label api-change of an area the item seeds)",
     );
   });
 

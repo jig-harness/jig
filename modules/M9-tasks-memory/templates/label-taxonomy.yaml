@@ -15,8 +15,11 @@
 #   categories  optional: prefixed multi-select families (`area:billing`)
 #
 # Every label name must be unique across the file (a category label's name is
-# its prefix and its id). Every entry may carry `notes`; any key not listed
-# below for its kind is rejected, so a misspelt rule never reads as absent.
+# its prefix and its id). Every entry may carry `notes`, and `color`: the
+# colour its label shows in the tracker, six hex digits as a text (`cfd3d7`,
+# no `#`; quote one that would read as a number), so a colour that sets a
+# label apart is recorded and does not drift. Any key not listed below for
+# its kind is rejected, so a misspelt rule never reads as absent.
 # `types` and `statuses` must be non-empty. Grow them
 # deliberately: a new type or status is a real change to how every issue is
 # read.
@@ -42,7 +45,10 @@
 #   requires           optional; label names (types, group labels, other flags
 #                      or category labels in this file) that must be present
 #                      whenever this flag is, for a label that only means
-#                      something beside another
+#                      something beside another. Where the tracker has issue
+#                      types, an issue of a type
+#                      `issue_tracker.labels.epic_types` lists counts as
+#                      carrying the epic label
 #   requires_category  optional; category ids of which at least one label each
 #                      must be present whenever this flag is (a flag whose
 #                      facets say who must act)

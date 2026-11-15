@@ -22,7 +22,16 @@
  * priority 1 (urgent) to 4 (low), each required (no size on an issue the
  * size group's `not_required_on` exempts); a type or size label among the
  * labels is an error, since the tracker writes those facets itself.
+ *
+ * Given the issue's own tracker type, an issue whose type the repository
+ * reads as an epic (`issue_tracker.labels.epic_types`) is checked as if it
+ * carried the epic label: a `requires` naming that label is met, and a group
+ * `not_required_on` it is not required.
  */
+import {
+  type EpicRecognition,
+  isEpic,
+} from "../../../../shared/tracker-labels.ts";
 import type { LabelCategory, LabelGroup, Taxonomy } from "./taxonomy.ts";
 
 /** The group the size facet's values come from. */
@@ -34,6 +43,13 @@ export interface IssueFacetInput {
   /** 0 (none), then 1 (urgent) to 4 (low). */
   priority?: number;
   size?: string | null;
+}
+
+/** An issue's own tracker type, and the types that make an issue an epic. */
+export interface IssueTypeInput {
+  /** The tracker's issue type (`Epic`), `null` when it has none. */
+  nativeType: string | null;
+  epics: EpicRecognition;
 }
 
 /**
@@ -297,13 +313,29 @@ function flagErrors(
 }
 
 /**
+ * The labels the rules read as present: the issue's own, and the epic label
+ * where its tracker type makes it an epic.
+ */
+function presentLabels(labels: string[], typed?: IssueTypeInput): Set<string> {
+  const present = new Set(labels);
+  if (
+    typed &&
+    isEpic({ labels: [], nativeType: typed.nativeType }, typed.epics)
+  )
+    present.add(typed.epics.epic);
+  return present;
+}
+
+/**
  * Whether `labels` is a label set the taxonomy allows on one issue; given
- * `facets`, with the type, size and priority checked as facets.
+ * `facets`, with the type, size and priority checked as facets; given
+ * `typed`, with an epic issue type standing for the epic label.
  */
 export function validateLabels(
   input: string[],
   taxonomy: Taxonomy,
   facets?: IssueFacetInput,
+  typed?: IssueTypeInput,
 ): Validation {
   const errors: string[] = [];
   if (input.some((l) => !l.trim()))
@@ -316,7 +348,7 @@ export function validateLabels(
   const labels = [...new Set(input.filter((l) => l.trim() === l && l))];
   const warnings: string[] = [];
   const parsed = parse(labels, taxonomy, errors);
-  const present = new Set(labels);
+  const present = presentLabels(labels, typed);
   const missing: string[] = [];
   if (facets === undefined) {
     errors.push(...typeErrors(parsed, taxonomy));
@@ -332,7 +364,7 @@ export function validateLabels(
   }
   const skip = facets === undefined ? [] : [SIZE_GROUP];
   errors.push(...groupErrors(parsed, taxonomy, present, skip));
-  missing.push(...missingGroups(labels, taxonomy, skip));
+  missing.push(...missingGroups([...present], taxonomy, skip));
   for (const category of taxonomy.categories) {
     const checks = categoryChecks(
       category,

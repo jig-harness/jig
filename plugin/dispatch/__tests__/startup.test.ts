@@ -80,6 +80,14 @@ it.each(["none", "stdout", "stderr", "interleaved"])(
     await waitFor("the exit", () => exitWritten(w, id));
     rmSync(join(w.dir, "claude-exit"));
     expect(wallOf("a", Date.now(), dispatchState(w))).not.toBeNull();
+    // The wrapper explains a pass that could not start in its own report.
+    const kept = existingStateDb(dispatchState(w))
+      ?.query("SELECT report FROM launches WHERE id = ?")
+      .get(id) as { report: string };
+    const report = JSON.parse(kept.report);
+    expect(report.by).toBe("wrapper");
+    expect(report.report.cause).toBe(quota ? "usage-limit" : "startup");
+    expect(report.report.suggested_next.owner).toBe("line");
     const retry = await applyTick(w, false);
     const row = existingStateDb(dispatchState(w))
       ?.query(

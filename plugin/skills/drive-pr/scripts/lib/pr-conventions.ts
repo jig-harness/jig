@@ -12,6 +12,12 @@
  */
 import { JigError } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import {
+  parseRule,
+  type Rule,
+  reason,
+  resolve,
+} from "../../../../shared/rule-matcher.ts";
 import { conventionalCommitlintConfig } from "./commitlint.ts";
 import type { PrPolicy, TitleFormat } from "./pr-policy.ts";
 import { git } from "./proc.ts";
@@ -22,9 +28,12 @@ const invalid = (message: string) => new JigError("pr-policy-invalid", message);
 // Base rules
 // ---------------------------------------------------------------------------
 
-/** One `pull_requests.base_rules` entry: the base an item carrying one of `labels` targets. */
+const BASE_RULES = "pull_requests.base_rules";
+
+/** One `pull_requests.base_rules` entry: the base an item its rule matches targets. */
 export interface BaseRule {
-  labels: string[];
+  /** The rule under `when`, read by the shared rule matcher. */
+  when: Rule;
   base: string;
 }
 
@@ -38,36 +47,28 @@ export interface BaseRule {
 const BRANCH_NAME =
   /^(?![-./])(?!.*\.\.)(?!.*\/\/)(?!.*\/\.)(?!.*\.lock(?:\/|$))[A-Za-z0-9._/-]+(?<![./])$/;
 
-const isLabelList = (v: unknown): v is string[] =>
-  Array.isArray(v) &&
-  v.length > 0 &&
-  v.every((l) => typeof l === "string" && l.trim() !== "");
-
-/** Parse `pull_requests.base_rules`: a list of `{ when: { labels }, base }`, in order. */
+/** Parse `pull_requests.base_rules`: a list of `{ when: <rule>, base }`, in order. */
 export function parseBaseRules(raw: unknown): BaseRule[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw))
     throw invalid(
-      "pull_requests.base_rules must be a list of { when: { labels: [...] }, base: <branch> }",
+      `${BASE_RULES} must be a list of { when: { labels: [...] }, base: <branch> }`,
     );
   return raw.map((entry, i) => {
-    const at = `pull_requests.base_rules[${i}]`;
+    const at = `${BASE_RULES}[${i}]`;
     if (!isRecord(entry))
       throw invalid(`${at} must be a mapping with when and base`);
     for (const key of Object.keys(entry))
       if (key !== "when" && key !== "base")
         throw invalid(`${at}.${key} is not a known field (when, base)`);
-    const when = entry.when;
-    if (!isRecord(when) || Object.keys(when).some((k) => k !== "labels"))
-      throw invalid(`${at}.when must be a mapping holding labels only`);
-    if (!isLabelList(when.labels))
-      throw invalid(`${at}.when.labels must be a nonempty list of labels`);
+    const when = parseRule(BASE_RULES, entry.when, `${at}.when`);
+    if (!when.ok) throw invalid(when.failure.reason);
     const base = entry.base;
     if (typeof base !== "string" || !BRANCH_NAME.test(base))
       throw invalid(
         `${at}.base must be a branch name without the remote's prefix (got ${JSON.stringify(base)})`,
       );
-    return { labels: when.labels, base };
+    return { when: when.value, base };
   });
 }
 
@@ -78,32 +79,38 @@ export interface ChosenBase {
 }
 
 /**
- * The base of the first rule one of whose labels the item carries (labels
- * match in any case, as `labels_from_issue` matches them), else `fallback`,
- * the integration branch.
+ * The base of the first rule that matches the item, as the rule matcher
+ * reads `pull_requests.base_rules`, with the item's label that matched; else
+ * `fallback`, the integration branch.
  */
 export function chooseBase(
   rules: readonly BaseRule[],
   issueLabels: readonly string[],
   fallback: string,
 ): ChosenBase {
-  const carried = new Map(issueLabels.map((l) => [l.toLowerCase(), l]));
-  for (const [index, rule] of rules.entries()) {
-    const label = rule.labels.find((l) => carried.has(l.toLowerCase()));
-    if (label !== undefined)
-      return {
-        base: rule.base,
-        rule: { index, label: carried.get(label.toLowerCase()) ?? label },
-      };
-  }
-  return { base: fallback, rule: null };
+  const [match] = resolve(
+    BASE_RULES,
+    rules.map((r) => r.when),
+    { labels: issueLabels },
+  ).matches;
+  const index = typeof match?.at === "number" ? match.at : null;
+  const rule = index === null ? undefined : rules[index];
+  return match === undefined || index === null || rule === undefined
+    ? { base: fallback, rule: null }
+    : { base: rule.base, rule: { index, label: match.value } };
 }
 
-/** Where a chosen base came from, for the plan's lines. */
+/** Where a chosen base came from, for the plan's lines: the matcher's reason, or the fallback. */
 export function baseSource(chosen: ChosenBase): string {
-  return chosen.rule === null
-    ? "the integration branch"
-    : `pull_requests.base_rules[${chosen.rule.index}], for the item's label ${chosen.rule.label}`;
+  if (chosen.rule === null) return "the integration branch";
+  const { index, label } = chosen.rule;
+  return reason({
+    field: BASE_RULES,
+    at: index,
+    fact: "labels",
+    ruleValue: label,
+    value: label,
+  });
 }
 
 // ---------------------------------------------------------------------------

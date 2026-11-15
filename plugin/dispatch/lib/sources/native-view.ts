@@ -1,4 +1,5 @@
 /** Shared native tracker rows, interpreted anew by each repository. */
+import { coalesce } from "../../../shared/outbound/coalesce.ts";
 import type {
   DispatchRawIssue,
   PoolIssue,
@@ -14,6 +15,7 @@ import type { PickupReads } from "../pickup-reads.ts";
 import type { ServedView, ServedViews, HeldIssue } from "./served-reads.ts";
 
 import { isRateLimited } from "../../../shared/outbound/budget.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { failureText } from "../text.ts";
 import { nativeFacts } from "./native-facts.ts";
 import { ended, within } from "./bounded.ts";
@@ -102,7 +104,9 @@ export async function nativeSharedView(
   },
 ): Promise<ServedView> {
   if (ended(options.bound))
-    return Promise.reject(new Error("stopped at the tick’s deadline"));
+    return Promise.reject(
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
   const source = tracker.dispatchSource;
   if (source === undefined)
     return Promise.reject(
@@ -142,17 +146,14 @@ export async function nativeSharedView(
                 ]),
               ];
               const probeKey = `dispatch scope probe ${options.nowMs}`;
-              let probe = reads.get(probeKey);
-              if (probe === undefined) {
-                probe = facts.guarded(() =>
+              return coalesce(reads, probeKey, () =>
+                facts.guarded(() =>
                   changedSince(
                     { ...query, since, keys, identities },
                     options.bound?.signal,
                   ),
-                );
-                reads.set(probeKey, probe);
-              }
-              return (await probe) as import("../../../skills/do-item/scripts/lib/tracker/port.ts").ChangeAnswer;
+                ),
+              );
             },
           }),
       configKey: `native-v1:${credential}`,
@@ -202,7 +203,9 @@ export async function nativeSharedView(
     if (previous !== undefined) return previous;
     const raw = (value as NativePool).nativeRow;
     if (ended(options.bound))
-      return Promise.reject(new Error("stopped at the tick’s deadline"));
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
     const read = source.project(raw, options.bound);
     const issue = await (options.bound === undefined
       ? read

@@ -24,6 +24,7 @@ import {
   optional,
   string,
   command,
+  text,
 } from "../shared/vendor/optique.mjs";
 import { dateValue } from "../shared/command-line.ts";
 import { dispatchSection } from "../dispatch/lib/section.ts";
@@ -58,7 +59,7 @@ export const askCommand = command(
   object({
     address: optional(
       argument(string({ metavar: "ADDRESS" }), {
-        description: message`station@owner/name#key, such as drive@jig-harness/jig#456. The stations are pickup, drive and followup; the repository may be its short name where the dispatch file lists one of that name, or left out inside its checkout.`,
+        description: message`station@owner/name#key, such as drive@jig-harness/jig#456. The stations are ${text(stationList())}; the repository may be its short name where the dispatch file lists one of that name, or left out inside its checkout.`,
       }),
     ),
     key: optional(

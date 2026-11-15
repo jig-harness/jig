@@ -120,9 +120,10 @@ with its question framed, a failed follow-up, an item claimed and then left
 alone. The dispatcher never merges and never answers a parked question. It
 never restarts a drive a person stopped.
 
-An agent inspects work the rules leave waiting, every 20 minutes when its
-input changes. This [steward](GLOSSARY.md) proposes routine recoveries and
-values for missing issue fields. It frames what needs a person. The
+An agent inspects work the rules leave waiting, as soon as work no earlier
+pass has judged appears. This [steward](GLOSSARY.md) proposes routine
+recoveries and values for missing issue fields. It frames what needs a
+person and does not already carry a decision. The
 dispatcher checks each proposal before acting.
 
 Every session it started leaves a row in the [outcome log](GLOSSARY.md)
