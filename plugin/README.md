@@ -851,7 +851,11 @@ counts as sent only once the workspace's comment, read back, carries its key
 line (`[jig dispatch: …]`), and is not sent again while its cause stands
 until `renotify_after` has passed;
 while a workspace is still unread, a new message is appended to its comment
-rather than replacing it. The answer to a park is never sent back through
+rather than replacing it, and the entries whose causes are settled (the pull
+request closed, the need answered) leave a comment only the dispatcher wrote
+to make room. A message that still finds no room counts as a failed delivery,
+and past `failures.notify_after` ticks a person is told it is failing. The
+answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
 
@@ -1523,6 +1527,9 @@ older parks use the PR author when the tick knows them; older snapshots without
 a named recipient remain in the unfiltered list. Each entry carries its recorded
 stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
+An entry whose notice did not reach a person at that tick (held for room in
+the notices comment, lost, or its destination out of reach) says why in
+`notice`, and as a `notice not delivered:` line in text.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this

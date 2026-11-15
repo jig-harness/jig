@@ -209,7 +209,13 @@ export async function actObserved(
       applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
       hooks
-        .guard("steward", () => applySteward(apply, observation))
+        .guard("steward", () =>
+          applySteward(
+            apply,
+            observation,
+            stationContextOf(repo.slug, context.lineInputs.get(report.path)),
+          ),
+        )
         .then(() =>
           applyStages(
             apply,

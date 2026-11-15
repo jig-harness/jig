@@ -136,6 +136,9 @@ export function renderWaiting(w: WaitingAnswer): string {
       ),
       printable(`    ${e.reason}`),
       ...e.questions.map((q) => printable(`    question: ${q}`)),
+      ...(e.notice === null
+        ? []
+        : [printable(`    notice not delivered: ${e.notice}`)]),
       ...(e.url === null ? [] : [`    ${e.url}`]),
     ]),
   ].join("\n");

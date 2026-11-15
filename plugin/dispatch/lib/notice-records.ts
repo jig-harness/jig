@@ -24,7 +24,10 @@
  */
 import type { Database } from "bun:sqlite";
 import { insertRow, type LogRow } from "./log.ts";
+import { unobservedTarget } from "./notices.ts";
+import { entryKeys } from "./runtime/notice-comment.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import type { RepoReport } from "./types.ts";
 
 /** The channel of today's Orca comment and unread mark, which every record written before channels belongs to. */
 export const ORCA_CARD = "orca-card";
@@ -208,4 +211,26 @@ export function firstSends(db: Database, repo: string): Map<string, string> {
     if (!first.has(key)) first.set(key, r.at);
   }
   return first;
+}
+
+/**
+ * The keys of the entries in `comment` whose cause is settled: on a tick
+ * that read every record whole, the tick names no cause under the key and
+ * no record that still stands carries it (a record notified once for the
+ * life of its key stands only while its target goes unobserved), the same
+ * test that retires an unread notices workspace.
+ */
+export function settledEntries(
+  comment: string,
+  report: RepoReport,
+  standing: ReadonlySet<string>,
+  records: readonly Suppression[],
+): string[] {
+  if (!report.records.every((r) => r.ok)) return [];
+  const kept = new Set(
+    records
+      .filter((r) => !r.lasting || unobservedTarget(report, r.target))
+      .map((r) => r.key),
+  );
+  return entryKeys(comment).filter((k) => !standing.has(k) && !kept.has(k));
 }
