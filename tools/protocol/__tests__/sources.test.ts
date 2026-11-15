@@ -47,9 +47,9 @@ function inventoryEntry(): Entry {
 }
 
 /** The repository files a module imports by relative path, directly. */
-function directImports(module: string): string[] {
+function directImports(module: string, source = read): string[] {
   const scanned = new Bun.Transpiler({ loader: "ts" }).scanImports(
-    read(module),
+    source(module),
   );
   return scanned
     .map((i) => i.path)
@@ -59,15 +59,19 @@ function directImports(module: string): string[] {
     );
 }
 
+/** Script files whose imports are followed; data files such as JSON are leaves. */
+const CODE_FILE = /\.[cm]?[jt]sx?$/;
+
 /**
- * Every repository file a module imports, followed through the files it
- * imports in turn, so a table that imports another table is reached too.
+ * Every repository file a module imports, followed through the code files it
+ * imports in turn, so a table that imports another table, or a re-exporting
+ * `.mjs` bridge, is reached too.
  */
-function importsOf(module: string): string[] {
+function importsOf(module: string, source = read): string[] {
   const seen = new Set<string>();
   const visit = (path: string) => {
-    if (!path.endsWith(".ts")) return;
-    for (const next of directImports(path))
+    if (!CODE_FILE.test(path)) return;
+    for (const next of directImports(path, source))
       if (!seen.has(next)) {
         seen.add(next);
         visit(next);
@@ -110,6 +114,21 @@ describe("the inventory entry's sources", () => {
     expect(
       unlisted(DRIVE_EXITS.module, ["tools/protocol/**", table]),
     ).toContain("plugin/shared/errors.ts");
+  });
+
+  test("follow a non-.ts code module but not a data file", () => {
+    const files: Record<string, string> = {
+      "a/chapter.ts": 'import "./bridge.mjs"; import "./data.json";',
+      "a/bridge.mjs": 'export * from "./values.ts";',
+      "a/values.ts": "export const v = 1;",
+      "a/data.json": '{"x": 1}',
+    };
+    const source = (path: string) => files[path] ?? "";
+    expect(importsOf("a/chapter.ts", source)).toEqual([
+      "a/bridge.mjs",
+      "a/data.json",
+      "a/values.ts",
+    ]);
   });
 
   test("are the files the pre-commit hook regenerates the chapters for", () => {
