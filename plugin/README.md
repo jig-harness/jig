@@ -615,6 +615,30 @@ who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
 left none), with `cause` and `by` as columns. A run that ends without a
 report still leaves its `Question:` line.
 
+A drive runs many passes, and most of its stops are decided by `drive.ts`
+after a pass has ended, so no pass knows it is the last. Each pass instead
+ends its round with a
+[round report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+the same fields, kept in the drive's state directory and stamped with the
+pass's launch and round. When the drive stops, `drive.ts` writes the
+closing report (`by: driver`): its `concluded` is the stop's own line
+followed by what the last round report of this launch concluded, cut to
+the 600 characters; its `cause` and next step are the ones the drive's
+[terminal-state table](protocol/drive-exits.md#what-drivets-closing-report-says-at-each-exit)
+gives its exit; at a park it carries the first parked decision's question
+and framed options. `jig dispatch report` refuses a drive's record: the
+wrapper hands `drive.ts` a file in the run's own state directory
+(`runs/<record>/`), and once the drive ended it checks the report there,
+records it under the record before the exit and removes the file. A
+follow-up pass that could not start gets the wrapper's own report
+(`by: wrapper`, cause `startup`, or `usage-limit` on a vendor usage
+notice). Whatever report a run keeps, the wrapper prints as its last lines.
+As each pass of a drive starts, `drive.ts` records the session id it gave
+the pass on the launch record, round by round, so the run is found in the
+vendor's transcripts; a Codex pass takes none. The end the wrapper writes
+onto the shared claim carries the report's `cause` and who wrote it
+(`by`), never its text.
+
 #### Every need is a decision
 
 A pass that stops for a person frames what it asks, as a drive frames a
