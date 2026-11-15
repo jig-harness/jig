@@ -6,7 +6,6 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { errnoCode, swallow } from "./errors.ts";
-import { systemClock } from "./clock.ts";
 import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
@@ -219,13 +218,18 @@ function endedFailure(
   };
 }
 
-/** Budget admission, retrying store contention until the deadline or a cancel. */
+/**
+ * Pace, then admit, again after each store contention until the deadline or a
+ * cancel: a retry never sends on a pacing slot that has since expired.
+ */
 async function admitBefore(
   governance: Governance,
   deadlineAt: number,
   signal: AbortSignal | undefined,
 ): Promise<ReturnType<Governance["admit"]> | { failure: OutboundFailure }> {
   for (;;) {
+    const paced = await paceForge(governance.owner, deadlineAt, signal);
+    if (paced !== null) return { failure: paced };
     const failure = endedFailure(
       deadlineAt,
       signal,
@@ -236,7 +240,6 @@ async function admitBefore(
       return governance.admit();
     } catch (error) {
       if (errnoCode(error) !== "SQLITE_BUSY") throw error;
-      await systemClock.sleep(Math.min(25, deadlineAt - currentMs()), signal);
     }
   }
 }
@@ -265,8 +268,6 @@ async function governedRun<T extends GhRun, O>(
     captured: (o.stdout ?? "pipe") === "pipe" && o.onOutput === undefined,
   });
   if (governance === null) return send(args);
-  const pacingFailure = await paceForge(governance.owner, deadlineAt, o.signal);
-  if (pacingFailure !== null) return refuse(pacingFailure);
   const admitted = await admitBefore(governance, deadlineAt, o.signal);
   if ("failure" in admitted) return refuse(admitted.failure);
   if ("refused" in admitted) return refuse(admitted.refused);

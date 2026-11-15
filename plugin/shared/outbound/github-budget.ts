@@ -497,8 +497,7 @@ function governor(): BudgetGovernor {
   const path = defaultLedgerPath();
   let found = governors.get(path);
   if (found === undefined) {
-    // `trace.ts` retries this nonblocking admission with the call's deadline.
-    found = budgetGovernor(sqliteBudgetStore(path, 0));
+    found = budgetGovernor(sqliteBudgetStore(path));
     governors = new Map([[path, found]]);
   }
   return found;
@@ -543,6 +542,8 @@ export function ghGovernance(
         return {
           sentAt: gov.admit("GitHub", key, {
             ...admitted,
+            // `trace.ts` retries contention within the call's deadline.
+            nonblocking: true,
             onReserved: (name) => {
               reservedIn = name;
             },

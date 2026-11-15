@@ -444,7 +444,23 @@ export function databaseInstance(db: Database): string {
   return metaRow(db)?.instance ?? "";
 }
 
-/** Run `fn` in one write transaction: everything it writes lands, or none of it does. */
-export function inTransaction<T>(db: Database, fn: () => T): T {
-  return db.transaction(fn).immediate();
+/**
+ * Run `fn` in one write transaction: everything it writes lands, or none of it
+ * does. `busyMs` waits that long for another writer for this transaction only.
+ */
+export function inTransaction<T>(
+  db: Database,
+  fn: () => T,
+  busyMs?: number,
+): T {
+  if (busyMs === undefined) return db.transaction(fn).immediate();
+  const { timeout } = db.query("PRAGMA busy_timeout").get() as {
+    timeout: number;
+  };
+  db.run(`PRAGMA busy_timeout = ${busyMs}`);
+  try {
+    return db.transaction(fn).immediate();
+  } finally {
+    db.run(`PRAGMA busy_timeout = ${timeout}`);
+  }
 }
