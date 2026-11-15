@@ -1,5 +1,6 @@
 /** A tick's native metadata answers, shared only within one credential and scope. */
 import { isUnavailable } from "./unavailable.ts";
+import { coalesce } from "../../../../../shared/outbound/coalesce.ts";
 const failures = new WeakMap<Map<string, Promise<unknown>>, unknown>();
 
 /** The scope's synchronous wall, for reports after a later fact failed. */
@@ -37,17 +38,15 @@ export function sharedDispatchRead(
 ): Promise<unknown> {
   if (reads === undefined) return send();
   const key = JSON.stringify(ordered(request));
-  const previous = reads.get(key);
-  if (previous !== undefined) return previous;
-  const failure = reads.get("dispatch scope failure");
-  const answer =
-    failure === undefined
-      ? send()
-      : failure.then((error) => Promise.reject(error));
-  const settled = answer.catch((error) => {
-    if (isUnavailable(error)) recordDispatchScopeFailure(reads, error);
-    return Promise.reject(error);
+  return coalesce(reads, key, () => {
+    const failure = reads.get("dispatch scope failure");
+    const answer =
+      failure === undefined
+        ? send()
+        : failure.then((error) => Promise.reject(error));
+    return answer.catch((error) => {
+      if (isUnavailable(error)) recordDispatchScopeFailure(reads, error);
+      return Promise.reject(error);
+    });
   });
-  reads.set(key, settled);
-  return settled;
 }

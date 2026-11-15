@@ -122,7 +122,7 @@ function operation(args: string[], stdin: string | undefined): string {
       (arg) => arg === "--method" || arg === "-X",
     );
     const method = methodAt < 0 ? "GET" : (args[methodAt + 1] ?? "GET");
-    return restOperation(method, args[1] ?? "");
+    return restOperation(method, apiRoute(args));
   }
   return (
     [args[0], args[1]]

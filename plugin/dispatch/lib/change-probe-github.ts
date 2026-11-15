@@ -10,9 +10,10 @@
  *   or closed: a comment, a review, a label, a push, a merge and a close
  *   each move a pull request's `updatedAt`;
  * - `is:open` — every open pull request's head commit, the state of its
- *   checks (`statusCheckRollup`) and each check's name and result (the first
- *   100), since a check that ends does not move `updatedAt` and the
- *   aggregate state can stay while one of several checks ends.
+ *   checks (`statusCheckRollup`) and counts in each check state, since a
+ *   check that ends does not move `updatedAt` and the aggregate state can
+ *   stay while one of several checks ends. Individual check names wait
+ *   for the tick's authoritative read.
  *
  * Beside them it looks each repository up, so one the signed-in account
  * cannot see is named (`unseen`) rather than read as a repository where
@@ -52,7 +53,7 @@ type Search = "changed" | "open";
 
 const FIELDS: Record<Search, string> = {
   changed: "number updatedAt repository { nameWithOwner }",
-  open: "number repository { nameWithOwner } commits(last: 1) { nodes { commit { oid statusCheckRollup { state contexts(first: 100) { totalCount nodes { __typename ... on CheckRun { name status conclusion } ... on StatusContext { context state } } } } } } }",
+  open: "number repository { nameWithOwner } commits(last: 1) { nodes { commit { oid statusCheckRollup { state contexts(first: 1) { totalCount checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }",
 };
 
 /** One call's query: the searches still to read, after their cursors, and on the first call each repository's lookup. */
@@ -246,34 +247,28 @@ function byCode(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/**
- * A short digest of each check's name and result in a rollup, and of how many
- * there are; `-` without any. It covers the first hundred checks the query
- * reads: a rollup with more says so (`+n` omitted checks) and a change only
- * among the omitted ones is left to the sweep's own timer.
- */
+/** A digest of summary counts, covering every check without fetching each check's document. */
 function checkDigest(roll: Record<string, unknown> | null): string {
   const contexts =
     roll !== null && isRecord(roll.contexts) ? roll.contexts : null;
-  const nodes =
-    contexts !== null && Array.isArray(contexts.nodes) ? contexts.nodes : [];
-  const lines = nodes.flatMap((node) => {
-    if (!isRecord(node)) return [];
-    const name = String(node.name ?? node.context ?? "");
-    return [
-      `${name}=${String(node.status ?? "")}/${String(node.conclusion ?? node.state ?? "")}`,
-    ];
-  });
+  if (contexts === null) return "-";
+  const lines = ["checkRunCountsByState", "statusContextCountsByState"].flatMap(
+    (kind) => {
+      const counts = contexts[kind];
+      return (Array.isArray(counts) ? counts : []).flatMap((entry) =>
+        isRecord(entry) &&
+        typeof entry.state === "string" &&
+        typeof entry.count === "number"
+          ? [`${kind}:${entry.state}=${entry.count}`]
+          : [],
+      );
+    },
+  );
   if (lines.length === 0) return "-";
-  const total =
-    typeof contexts?.totalCount === "number"
-      ? contexts.totalCount
-      : lines.length;
-  const digest = createHash("sha256")
-    .update(`${total}\n${lines.sort(byCode).join("\n")}`)
+  return createHash("sha256")
+    .update(`${contexts.totalCount}\n${lines.sort(byCode).join("\n")}`)
     .digest("hex")
     .slice(0, 12);
-  return total > lines.length ? `${digest}+${total - lines.length}` : digest;
 }
 
 /** Runs one call; `gh` exits 1 for an answer with errors, which `readPage` still reads. */
