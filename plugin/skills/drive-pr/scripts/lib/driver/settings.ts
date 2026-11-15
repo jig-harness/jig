@@ -410,6 +410,20 @@ export function finalCiWitnessPolls(): number {
   );
 }
 
+const FINAL_REGATE_LIMIT_DEFAULT = 3;
+
+/**
+ * How many times in a row, on one head, a converged round re-gates because its
+ * final status re-read disagrees with the round gate, before the drive stops
+ * with exit `1` (`final-regate.ts`). `0` stops on the first disagreement.
+ */
+export function finalRegateLimit(): number {
+  return wholeEnv(
+    process.env.DRIVE_PR_FINAL_REGATE_LIMIT,
+    FINAL_REGATE_LIMIT_DEFAULT,
+  );
+}
+
 /**
  * CI-repair passes per head and failing check: `DRIVE_PR_CI_REPAIR_ROUNDS`
  * for one run, else the repository's `drive.ci_repair_rounds`, else the
