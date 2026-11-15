@@ -63,14 +63,14 @@ function nextUnescapedBacktick(text: string, from: number): number {
   return -1;
 }
 
-/** Find an unescaped inline-code closer with exactly the opening delimiter. */
+/** Find an inline-code closer with exactly the opening delimiter. */
 function closingDelimiter(
   text: string,
   delimiter: string,
   from: number,
 ): number {
   for (let cursor = from; cursor < text.length; cursor += 1) {
-    if (text.startsWith(delimiter, cursor) && !isEscaped(text, cursor)) {
+    if (text.startsWith(delimiter, cursor)) {
       const beforeMatches = text[cursor - 1] === "`";
       const afterMatches = text[cursor + delimiter.length] === "`";
       if (!beforeMatches && !afterMatches) return cursor;
@@ -91,6 +91,20 @@ function listContentIndent(line: string): number | null {
   return match === null ? null : indentationColumns(match[0]);
 }
 
+/** Drop the optional whitespace-delimited closing hash sequence of an ATX heading. */
+function withoutClosingHeadingHashes(text: string): string {
+  const trimmed = text.trimEnd();
+  let start = trimmed.length;
+  while (start > 0 && trimmed[start - 1] === "#") start -= 1;
+  if (
+    start === trimmed.length ||
+    start === 0 ||
+    !/[ \t]/.test(trimmed.charAt(start - 1))
+  )
+    return trimmed;
+  return trimmed.slice(0, start).trimEnd();
+}
+
 /** An ATX heading outside code, normalized to the form declarations use. */
 function markdownHeading(line: string): { text: string; level: number } | null {
   let offset = 0;
@@ -101,7 +115,7 @@ function markdownHeading(line: string): { text: string; level: number } | null {
   if (level < 1 || level > 6) return null;
   const remainder = line.slice(offset);
   if (remainder !== "" && !/^[ \t]/.test(remainder)) return null;
-  const content = remainder.replace(/[ \t]+#+[ \t]*$/, "").trimEnd();
+  const content = withoutClosingHeadingHashes(remainder);
   return {
     text: `${"#".repeat(level)}${content === "" ? "" : ` ${content.trimStart()}`}`,
     level,
@@ -144,17 +158,30 @@ function closesFence(
   );
 }
 
-/** Carry a list's content indent across blank lines and continuations. */
-function nextListIndent(
+interface ListContainer {
+  readonly contentIndent: number;
+  readonly markerIndent: number;
+}
+
+/** Carry nested list containers across blank lines and continuations. */
+function nextListContainers(
   line: string,
-  current: number | undefined,
-): number | undefined {
+  current: readonly ListContainer[],
+): readonly ListContainer[] {
   const listed = listContentIndent(line);
-  if (listed !== null) return listed;
   const leading = indentationColumns(/^[ \t]*/.exec(line)?.[0] ?? "");
-  return line.trim() !== "" && (current === undefined || leading < current)
-    ? undefined
-    : current;
+  if (listed !== null) {
+    const retained = current.filter(
+      ({ markerIndent }) => markerIndent < leading,
+    );
+    return [...retained, { markerIndent: leading, contentIndent: listed }];
+  }
+  if (line.trim() === "") return current;
+  return current.filter(({ contentIndent }) => leading >= contentIndent);
+}
+
+function activeListIndent(containers: readonly ListContainer[]): number {
+  return containers.at(-1)?.contentIndent ?? 0;
 }
 
 function isIndentedCode(line: string, listIndent: number | undefined): boolean {
@@ -177,7 +204,7 @@ function visibleLines(source: string): string[] {
     | undefined;
   let indentedCode = false;
   let previousWasBlank = true;
-  let listIndent: number | undefined;
+  let listContainers: readonly ListContainer[] = [];
   for (const line of source.split("\n")) {
     if (fence) {
       if (closesFence(line, fence, fence.containerIndent)) fence = undefined;
@@ -185,10 +212,11 @@ function visibleLines(source: string): string[] {
       previousWasBlank = true;
       continue;
     }
-    listIndent = nextListIndent(line, listIndent);
-    const marker = fenceMarker(line, listIndent ?? 0);
+    listContainers = nextListContainers(line, listContainers);
+    const listIndent = activeListIndent(listContainers);
+    const marker = fenceMarker(line, listIndent);
     if (marker !== null) {
-      fence = { ...marker, containerIndent: listIndent ?? 0 };
+      fence = { ...marker, containerIndent: listIndent };
       lines.push("");
       previousWasBlank = true;
       continue;

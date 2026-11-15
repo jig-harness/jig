@@ -172,6 +172,42 @@ test("held phrases ignore escaped delimiters, nested fences, and tab-indented co
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
 });
 
+test("held phrases parse code-span closers and nested-list dedents as prose", () => {
+  const root = tempDir("held-nested-markdown");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nThe token is `\\\\`.\n\n<!-- Exit `11` on the lock -->\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n10. Parent\n    - Child\n\n    Exit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+});
+
+test("held phrases recognize headings without backtracking over closing hashes", () => {
+  const root = tempDir("held-heading-hashes");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction ###\n\nExit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+});
+
 test("held phrases reject duplicate visible copies in an operational section", () => {
   const root = tempDir("held-duplicate");
   const phrase = {
