@@ -249,6 +249,20 @@ test("an opaque launch keeps its registration while another registration's root 
   expect(readdirSync(f.store)).toHaveLength(1);
 });
 
+test("an opaque launch keeps its registration while another registration holds the same root", async () => {
+  const f = fixture();
+  // No ancestor of an absent top-level path holds a scratch owner record.
+  const shared = join("/", `jig-gc-retire-absent-${crypto.randomUUID()}`);
+  registerExited(f.store, [
+    { root: shared, launch: "opaque" },
+    { root: shared },
+  ]);
+  const { receipt } = await run(f, true);
+  // The plain registration holds the root for its sibling; the opaque one is kept.
+  expect(retiredIn(receipt.resources)).toHaveLength(1);
+  expect(readdirSync(f.store)).toHaveLength(1);
+});
+
 test("a malformed folder is reported as itself and the rest are retired", async () => {
   const f = fixture();
   registerExited(f.store, [

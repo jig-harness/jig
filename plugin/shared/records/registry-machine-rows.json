@@ -185,7 +185,7 @@
       "test-fixture-inventory-cursor",
       "shared/test-fixture-registry.ts",
       "~/.local/state/jig/test-fixtures-v1.cursor",
-      1,
+      0,
       "Where gc's last bounded page of the fixture registry stopped, so the next collecting run resumes after it."
     ],
     [

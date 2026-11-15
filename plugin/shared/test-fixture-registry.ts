@@ -453,26 +453,67 @@ export function fixtureRootGone(root: string): boolean {
     return false;
   }
 }
+/** Every registered root and the registrations holding it, read once for a proof batch. */
+export interface FixtureEnclosureIndex {
+  roots: Map<string, Set<string>>;
+  /** False when a folder could not be read as a registration, so some root is unknown. */
+  complete: boolean;
+}
+/**
+ * Read the roots every registration holds without the strict inventory's
+ * count ceiling and all-or-nothing rejection, so a store larger than one
+ * strict read can still show which roots enclose which. A folder that is not
+ * a readable registration, or a read past its time bound, leaves the index
+ * incomplete rather than guessing.
+ */
+export function fixtureEnclosureIndex(
+  store = testFixtureRegistryRoot(),
+): FixtureEnclosureIndex {
+  const index: FixtureEnclosureIndex = { roots: new Map(), complete: true };
+  let names: string[];
+  try {
+    names = readdirSync(store);
+  } catch (error) {
+    index.complete = (error as NodeJS.ErrnoException).code === "ENOENT";
+    return index;
+  }
+  const deadline = currentMs() + PAGE_MS;
+  for (const name of names) {
+    if (currentMs() > deadline) {
+      index.complete = false;
+      break;
+    }
+    const registry = join(store, name);
+    const entry = pageEntry(registry);
+    if (entry.kind === "malformed") index.complete = false;
+    if (entry.kind !== "registration") continue;
+    for (const scope of entry.registration.scopes) {
+      const root = resolve(scope.root);
+      const holders = index.roots.get(root) ?? new Set<string>();
+      holders.add(registry);
+      index.roots.set(root, holders);
+    }
+  }
+  return index;
+}
 /**
  * Whether a scope that still counts this registration's unknown launches
- * encloses the root: a legacy scratch owner, or another registration's root.
- * Null when the registered roots cannot be read.
+ * encloses the root: a legacy scratch owner, or another registration's root,
+ * the root itself included. Null when the registered roots cannot be read.
  */
 function enclosedByCountingScope(
   roots: string[],
   registry: string,
+  index: FixtureEnclosureIndex,
 ): boolean | null {
-  const registered = fixtureScopeInventory(dirname(registry));
-  if (!registered.ok) return null;
-  const others = new Set(
-    registered.value
-      .filter((scope) => scope.registry !== registry)
-      .map((scope) => resolve(scope.root)),
-  );
+  const others = (directory: string): boolean =>
+    [...(index.roots.get(resolve(directory)) ?? [])].some(
+      (holder) => holder !== registry,
+    );
   for (const root of roots) {
-    for (let directory = dirname(root); ; directory = dirname(directory)) {
+    for (let directory = root; ; directory = dirname(directory)) {
       if (
-        others.has(resolve(directory)) ||
+        others(directory) ||
         lstatSync(join(directory, SCRATCH_OWNER_FILE), {
           throwIfNoEntry: false,
         })
@@ -481,12 +522,13 @@ function enclosedByCountingScope(
       if (dirname(directory) === directory) break;
     }
   }
-  return false;
+  return index.complete ? false : null;
 }
 function retirementVeto(
   registry: string,
   scopes: FixtureScope[],
   nodes: NodeRecord[],
+  enclosure: () => FixtureEnclosureIndex,
 ): FixtureProof | null {
   if (!scopes.every((scope) => fixtureRootGone(scope.root)))
     return { state: "unverified", reason: "a registered root exists again" };
@@ -499,6 +541,7 @@ function retirementVeto(
     const enclosed = enclosedByCountingScope(
       scopes.map((scope) => scope.root),
       registry,
+      enclosure(),
     );
     if (enclosed === null)
       return {
@@ -551,7 +594,11 @@ function registeredProcesses(
 export function fixtureRetirementProof(
   registry: string,
   rows: ProcessRow[] | null,
+  enclosure?: () => FixtureEnclosureIndex,
 ): FixtureProof {
+  const enclosureIndex =
+    enclosure ??
+    ((): FixtureEnclosureIndex => fixtureEnclosureIndex(dirname(registry)));
   const read = attempt(
     "fixture-retirement",
     "Cannot read a fixture registration",
@@ -565,7 +612,7 @@ export function fixtureRetirementProof(
           reason: "fixture membership is unreadable or incomplete",
         } satisfies FixtureProof;
       return (
-        retirementVeto(registry, scopes, [...nodes.values()]) ??
+        retirementVeto(registry, scopes, [...nodes.values()], enclosureIndex) ??
         registeredProcesses([...nodes.values()], rows)
       );
     },

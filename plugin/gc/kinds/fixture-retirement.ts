@@ -2,6 +2,8 @@
 import { basename } from "node:path";
 import { processTable } from "../../shared/process-table.ts";
 import {
+  fixtureEnclosureIndex,
+  type FixtureEnclosureIndex,
   fixtureRetirementProof,
   fixtureRootGone,
   retireFixtureRegistration,
@@ -104,8 +106,11 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
       const rows = await processTable();
       const retirable: string[] = [];
       const kept: Kept[] = [];
+      let index: FixtureEnclosureIndex | undefined;
+      const enclosure = (): FixtureEnclosureIndex =>
+        (index ??= fixtureEnclosureIndex(store));
       for (const registry of batches.get(resource.id) ?? []) {
-        const proof = fixtureRetirementProof(registry, rows);
+        const proof = fixtureRetirementProof(registry, rows, enclosure);
         if (proof.state === "dead") retirable.push(registry);
         else
           kept.push({
