@@ -25,8 +25,9 @@ const headingMid = "\u0004";
 const headingClose = "\u0005";
 const codeOpen = "\u0001";
 const codeClose = "\u0002";
+const excludedBoundary = "\u0006";
 const markerCharacters = new RegExp(
-  `[${codeOpen}${codeClose}${headingOpen}${headingMid}${headingClose}]`,
+  `[${codeOpen}${codeClose}${headingOpen}${headingMid}${headingClose}${excludedBoundary}]`,
   "g",
 );
 
@@ -127,14 +128,15 @@ function sectionOf(
       block.kind === "heading" &&
       (block.level ?? 0) <= (start.level ?? 0),
   );
+  // An excluded block leaves a boundary no phrase contains, so prose on either
+  // side of it cannot join into one phrase.
   return blocks
     .slice(from, next < 0 ? undefined : next)
-    .filter(
-      (block) =>
-        block.kind === "prose" ||
-        (includeCodeExamples && block.kind === "code"),
+    .map((block) =>
+      block.kind === "prose" || (includeCodeExamples && block.kind === "code")
+        ? block.text
+        : excludedBoundary,
     )
-    .map((block) => block.text)
     .join("\n");
 }
 

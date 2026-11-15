@@ -113,6 +113,12 @@ test("held phrases ignore indented code and preserve excluded-block boundaries",
   put(
     root,
     "skill.md",
+    "## Operational instruction\n\nExit `11` on\n\n~~~text\nexample\n~~~\n\nthe lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
     "## Operational instruction\n\nExit `11` on the lock\n\n    example\n",
   );
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
