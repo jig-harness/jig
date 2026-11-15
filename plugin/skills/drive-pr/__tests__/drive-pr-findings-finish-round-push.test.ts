@@ -3,7 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
 import {
   existsSync,
@@ -193,11 +193,18 @@ describe("finish-round.ts", () => {
 
   // A repository that does not ignore `.context/`, once the drive has
   // excluded it: the round's own handoff and mailbox live in the tree.
+  const ctxHomes: string[] = [];
+  afterEach(() => {
+    for (const dir of ctxHomes.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   const ownContext = async () => {
     const repo = scratchWithOrigin();
     // No user-level rule (`$XDG_CONFIG_HOME/git/ignore`, `core.excludesFile`)
     // may stand in for the clone-local exclusion the drive writes.
     const home = mkdtempSync(join(tmpdir(), "ctx-home-"));
+    ctxHomes.push(home);
     const config = join(home, "gitconfig");
     writeFileSync(config, "");
     const isolated = {
