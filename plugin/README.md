@@ -451,7 +451,7 @@ is in the tracker's `ops_pending` state, or carries `hitl`, `hitl:*`,
 child this host's ended pickup record keeps from starting: its next
 startable sibling takes its place, and the epic reports the held child and
 why. A child that waits on the width says so, naming the epic and the width
-([ADR-0023](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0023-epic-children-are-admitted-in-parallel.md)).
+([ADR-0024](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)).
 An epic none of whose open children can start reports one reason,
 naming a child waiting on a person when it has one. An execution plan keeps
 its own ordering rules.

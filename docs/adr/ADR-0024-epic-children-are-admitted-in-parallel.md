@@ -1,5 +1,5 @@
 ---
-title: "ADR-0023: An epic's ready children are admitted in parallel"
+title: "ADR-0024: An epic's ready children are admitted in parallel"
 type: adr
 status: draft
 description: "The dispatcher admits an epic's ready children in parallel by default; overlap between pieces of work is a cost weighed against waiting, never an absolute; until overlap-aware admission exists, a per-epic width (dispatch.epic_width, default 4) bounds the children of an epic with no execution plan under way at once"
@@ -13,7 +13,7 @@ superseded_by: ~
 tags: [adr, dispatcher, epics, admission, parallelism]
 ---
 
-# ADR-0023: An epic's ready children are admitted in parallel
+# ADR-0024: An epic's ready children are admitted in parallel
 
 **Status:** Draft · **Date:** 2026-11-14 · **Deciders:** Jig's maintainers through pull-request review
 

@@ -686,7 +686,7 @@ is never started on the strength of the relation, since anyone with write
 access to the tracker can add one: the blocked item waits, and its reason
 names the blocker and why it was left. An epic's ready children are started
 in parallel
-([ADR-0023](../docs/adr/ADR-0023-epic-children-are-admitted-in-parallel.md)):
+([ADR-0024](../docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)):
 without an execution plan, its best-ranked ready children are wanted until
 `dispatch.epic_width` of them (4 by default) are under way, counting a
 started child that still needs an agent and a child that cannot be read, and
