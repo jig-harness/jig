@@ -3,18 +3,23 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { parseMachine } from "../config.ts";
 import { orcaTerminalsKind } from "../kinds/orca-terminals.ts";
 import type { OrcaRunner } from "../../shared/orca.ts";
 import type { RunTab, RunTabDeps } from "../../shared/orca-tabs.ts";
-import type { ProcessRow } from "../../shared/process-table.ts";
+import { type ProcessRow, processTable } from "../../shared/process-table.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
-import type { CollectionKind, Resource } from "../types.ts";
+import { dump } from "../../shared/yaml.ts";
+import type { CollectionKind, Receipt, Resource } from "../types.ts";
 
 const ORCA = "/opt/orca/orca-ide";
 const SHELL = 4242;
@@ -314,5 +319,112 @@ describe("the machine's orca entry", () => {
   test("the kind can be disabled", () => {
     const parsed = parseMachine({ disabled: ["orca-terminals"] });
     expect(parsed.ok && parsed.value.disabled).toEqual(["orca-terminals"]);
+  });
+});
+
+const JIG = resolve(import.meta.dir, "../../jig.ts");
+
+describe.skipIf(
+  skipsOnWindows("process-lifecycle", "the tab's shell is read through ps"),
+)("jig gc --kind orca-terminals", () => {
+  test("reports an idle run tab without closing it, then closes its terminal when collecting", async () => {
+    const home = join(root, "home");
+    const bin = join(root, "bin");
+    const log = join(root, "orca-calls.log");
+    mkdirSync(join(home, ".jig"), { recursive: true });
+    mkdirSync(bin);
+    const orca = join(bin, "orca-ide");
+    writeFakeProgram(
+      orca,
+      `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, args.join(" ") + "\\n");
+const result = args[1] === "list"
+  ? { terminals: [{ handle: "term_old", lastOutputAt: null }], hostScope: { hostIds: ["local"], omittedHostIds: [] }, truncated: false }
+  : {};
+console.log(JSON.stringify({ ok: true, result }));
+`,
+    );
+    writeFileSync(
+      join(home, ".jig", "jig.yaml"),
+      dump({ gc: { orca: { command: orca } } }),
+    );
+    // A process with no child stands for the tab's idle shell, as a run
+    // killed outright leaves it.
+    const idle = Bun.spawn(["sleep", "120"], { stdout: "ignore" });
+    try {
+      const rows = await processTable();
+      const start = rows?.find((r) => r.pid === idle.pid)?.start ?? "";
+      expect(start).not.toBe("");
+      const tabs = join(home, ".local", "state", "jig", "orca-tabs");
+      const old = "2026-01-01T00:00:00.000Z";
+      mkdirSync(tabs, { recursive: true });
+      writeFileSync(
+        join(tabs, "term_old.json"),
+        JSON.stringify({
+          version: 1,
+          handle: "term_old",
+          tabId: "tab-old",
+          shellPid: idle.pid,
+          shellStart: start,
+          worktree: root,
+          subject: "pr:42",
+          title: "drive #42",
+          orca: "/elsewhere/orca",
+          openedAt: old,
+        }),
+      );
+      const gc = (args: string[]) =>
+        Bun.spawnSync(
+          [
+            process.execPath,
+            "--no-env-file",
+            `--config=${join(dirname(JIG), "gc", "bunfig.toml")}`,
+            JIG,
+            "gc",
+            "--kind",
+            "orca-terminals",
+            "--json",
+            ...args,
+          ],
+          {
+            cwd: root,
+            env: {
+              PATH: process.env.PATH,
+              HOME: home,
+              USERPROFILE: home,
+              JIG_HOME: join(home, ".jig"),
+              JIG_ORCA_TABS_DIR: join(root, "elsewhere"),
+              RESOURCE_LOCK_BYPASS: "1",
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: 30000,
+          },
+        );
+      const report = gc([]);
+      expectSpawnExit(report, 0);
+      const reported = JSON.parse(report.stdout.toString()) as Receipt;
+      expect(reported.resources).toHaveLength(1);
+      expect(reported.resources[0]).toMatchObject({
+        kind: "orca-terminals",
+        resource: "term_old",
+        outcome: "would-collect",
+      });
+      expect(readFileSync(log, "utf8")).not.toContain("close");
+      expect(existsSync(join(tabs, "term_old.json"))).toBe(true);
+
+      const collected = gc(["--collect"]);
+      expectSpawnExit(collected, 0);
+      const receipt = JSON.parse(collected.stdout.toString()) as Receipt;
+      expect(receipt.resources[0]?.outcome).toBe("collected");
+      expect(readFileSync(log, "utf8")).toContain(
+        "terminal close --terminal term_old --json",
+      );
+      expect(existsSync(join(tabs, "term_old.json"))).toBe(false);
+    } finally {
+      idle.kill();
+    }
   });
 });

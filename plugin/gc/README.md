@@ -235,7 +235,7 @@ it is judged as a tree without a pull request.
 A run Jig starts in an Orca terminal tab closes its own tab when it ends
 with nothing left for a person, and records the tab under
 `~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`). A run
-killed before its end (killed outright, or by a host reboot) leaves the tab and its record
+killed before its end leaves the tab and its record
 behind, and a tab parked for a person stays until someone closes it. The
 `orca-terminals` kind joins those records to `orca terminal list --json`,
 read with the machine entry's `orca.command`, and proves each tab:
@@ -256,8 +256,12 @@ read with the machine entry's `orca.command`, and proves each tab:
   short proves nothing about a tab it does not name, which stays
   `unverified`.
 
-A report (`jig gc --kind orca-terminals`) lists every recorded tab with its
-proof and closes nothing. A tab Jig did not record is never touched.
+A tab whose shell is gone keeps its record until Orca stops listing the
+tab; closing the tab by hand lets the next run delete the record. A report
+(`jig gc --kind orca-terminals`) lists every recorded tab with its proof and
+closes nothing. The records are read from the machine's Jig state, never
+from a directory the environment names, so a tab Jig did not record is never
+touched. With no records, Orca is not called.
 
 ### Worktrees Orca manages
 

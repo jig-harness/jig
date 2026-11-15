@@ -1,7 +1,7 @@
 /**
  * Run tabs as a collection kind: the Orca terminal tabs Jig opened for a run
  * (`shared/orca-tabs.ts`) whose run was killed before it could close its own
- * tab (killed outright, or by a host reboot), and parked run tabs nobody returned to.
+ * tab, and parked run tabs nobody returned to.
  *
  * The inventory is the run-tab records joined to `orca terminal list`. A tab
  * is kept while its shell is gone or was reused (the record no longer proves
@@ -14,12 +14,15 @@
  * Removal closes the recorded terminal (`orca terminal close --terminal`),
  * never its whole tab, so a pane a person added beside it stays; Orca
  * refusing the close is recorded as live. Every Orca call uses the command
- * the machine's configuration names, never the one a record carries.
+ * the machine's configuration names, never the one a record carries, and the
+ * records are read from the machine's Jig state, never from a directory the
+ * environment names: neither may widen what gc closes.
  */
 import { isRecord } from "../../shared/guards.ts";
 import {
   orcaEnvelope,
   orcaErrorText,
+  orcaFailure,
   type OrcaRunner,
 } from "../../shared/orca.ts";
 import {
@@ -90,11 +93,9 @@ async function listTerminals(
   if (done.code !== 0 || envelope?.ok !== true)
     return failed(
       "orca-failed",
-      `orca terminal list failed (exit ${done.code}): ${
-        envelope?.ok === false
-          ? orcaErrorText(envelope)
-          : (done.stdout || done.stderr).trim().slice(0, 200)
-      }`,
+      envelope?.ok === false
+        ? `orca terminal list failed: ${orcaErrorText(envelope)}`
+        : `orca terminal list failed ${orcaFailure(done)}`,
     );
   const listing = readListing(envelope.result);
   return typeof listing === "string"
@@ -178,7 +179,7 @@ function runTabProof(
 export function orcaTerminalsKind(
   command: string,
   idleHours: number,
-  deps: RunTabDeps = defaultRunTabDeps(),
+  deps: RunTabDeps = defaultRunTabDeps({}),
 ): CollectionKind {
   const guardMs = idleHours * 3_600_000;
   const tabs = new Map<string, RunTab>();
@@ -193,12 +194,15 @@ export function orcaTerminalsKind(
     name: "orca-terminals",
     declaration: "machine gc.orca.command",
     inventory: async () => {
+      // Records first: a tab recorded after the listing is then one the
+      // listing may name, never one it seems to have dropped.
+      tabs.clear();
+      for (const tab of readRunTabs(deps.root)) tabs.set(tab.handle, tab);
+      if (tabs.size === 0) return ok([]);
       const listed = await listTerminals(command, deps.orca);
       if (!listed.ok) return listed;
       listing = listed.value;
       rows = await deps.table(TABLE_CALL_SEC);
-      tabs.clear();
-      for (const tab of readRunTabs(deps.root)) tabs.set(tab.handle, tab);
       return ok(
         [...tabs.values()].map((tab) => ({
           id: tab.handle,
