@@ -23,6 +23,7 @@ import { stateRoot } from "../receipts.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { failureFields } from "../../shared/errors.ts";
 import { log } from "../../shared/log.ts";
+import type { TickOutcome } from "../../shared/records/followup-values.ts";
 import type { ReadRecord } from "./launches.ts";
 import { routineClassOf, routineQuestion } from "./routine-questions.ts";
 import { questionOf } from "./session.ts";
@@ -40,7 +41,8 @@ export interface FollowupOutcome {
   pr: number;
   /** The launch record of the follow-up that ended. */
   record: string;
-  outcome: "done" | "failed";
+  /** The follow-up's answer, as the tick's marker carries it (`shared/records/followup-values.ts`). */
+  outcome: TickOutcome;
   at: string;
   /** When that launch record was created. */
   created: string;
@@ -148,7 +150,7 @@ export function askedBy(r: ReadRecord): Asked {
 }
 
 /** How an ended follow-up record ended: its session's recorded result, else failed; `null` while it holds, or for a retry (a startup that never began, a first death). */
-export function outcomeOf(r: ReadRecord): "done" | "failed" | null {
+export function outcomeOf(r: ReadRecord): TickOutcome | null {
   if (retryableFollowup(r)) return null;
   if (r.state.kind !== "ended" && r.state.kind !== "died") return null;
   return r.result === "done" ? "done" : "failed";
