@@ -670,11 +670,11 @@ export async function readPickups(
 
 /**
  * The aggregate record with the served lane's reading in it: a served queue,
- * or an item in it, whose read a failed call stopped makes the record not ok,
- * with the failure's class, so settlement treats it as it does the identity's
- * own failed read. An item no call failed to read (an answer that names no
- * assigner, a read the tracker cut short) is its own unplaced row and leaves
- * the record ok. The record keeps one failure for the identity's read and
+ * or an item in it, whose read threw makes the record not ok, with the
+ * failure's class, so settlement treats it as it does the identity's own
+ * failed read. An item no read threw for (an answer that names no assigner, a
+ * read the tracker cut short) is its own unplaced row and leaves the record
+ * ok. The record keeps one failure for the identity's read and
  * every failed served read (`combinedFailure`), so it waits only when every
  * one of them clears by waiting.
  */

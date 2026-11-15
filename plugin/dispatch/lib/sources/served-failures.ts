@@ -3,7 +3,6 @@ import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.t
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
 import type { TrackerRateLimited } from "../../../shared/outbound/budget.ts";
 import { isoFromMs } from "../../../shared/time.ts";
-import { readFailureOf } from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import type { Unplaced } from "../types.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
@@ -38,20 +37,15 @@ export function readFailureRow(
 }
 
 /**
- * An item's read failed: the claims below it are unknown. Only a failure a
- * call caused fails the record, with that call's class; one no call caused (an
- * answer that names no assigner, a read the tracker cut short) is the item's
- * row alone.
+ * An item's read failed: the claims below it are unknown. A thrown failure
+ * fails the record, with its class; an item no read threw for (an answer that
+ * names no assigner, a read the tracker cut short, a missing description) is
+ * its row alone.
  */
 export function itemFailed(
   found: { failures: unknown[]; partial: boolean },
   cause: unknown,
 ): void {
   found.partial = true;
-  if (
-    cause !== undefined &&
-    readFailureOf({ code: "unreadable", reason: failureText(cause), cause }) !==
-      undefined
-  )
-    found.failures.push(cause);
+  if (cause !== undefined) found.failures.push(cause);
 }
