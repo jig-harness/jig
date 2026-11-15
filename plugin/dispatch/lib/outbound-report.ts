@@ -4,6 +4,7 @@ import type {
   BudgetWindow,
 } from "../../shared/outbound/budget.ts";
 import type { LedgerReport, LedgerRow } from "../../shared/outbound/ledger.ts";
+import { GITHUB_WINDOW_NAMES } from "../../shared/outbound/github-budget.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
 
@@ -146,10 +147,28 @@ function hourShare(row: LedgerRow, now: number): number {
     : Math.max(0, end - Math.max(row.hour, now - HOUR)) / duration;
 }
 
-/** Spending in a quota's own unit, never inferred from missing complexity headers. */
+/** A GitHub row that spends a limit of its own, not the core requests: GraphQL points, or a REST search. */
+function spendsOtherWindow(row: LedgerRow): boolean {
+  return row.unit === "points" || /^[A-Z]+ \/search(\/|$)/.test(row.operation);
+}
+
+/**
+ * Spending in a quota's own unit, never inferred from missing complexity
+ * headers. A GitHub GraphQL request spends points, not the core requests.
+ */
 function quotaCost(row: LedgerRow, window: "requests" | "complexity"): number {
-  if (window === "requests") return row.requests;
+  if (window === "requests")
+    return row.system === "github" && spendsOtherWindow(row) ? 0 : row.requests;
   return row.unit === "points" ? row.cost : 0;
+}
+
+/** What a system calls each window of its record. */
+function windowLabel(
+  system: string,
+  window: "requests" | "complexity",
+): string {
+  if (system === "github") return GITHUB_WINDOW_NAMES[window] ?? window;
+  return window === "requests" ? "requests" : "points";
 }
 
 function quotaOperations(
@@ -257,6 +276,11 @@ export function lowQuotaNeeds(
   });
 }
 
+/** A balance as a whole count; a refilling window's is fractional. */
+function shown(remaining: number | null): string {
+  return remaining === null ? "unknown" : String(Math.floor(remaining));
+}
+
 /** One terminal line per system, with units kept separate. */
 export function spendingLines(systems: readonly SystemSpending[]): string[] {
   return systems.map((s) => {
@@ -264,7 +288,7 @@ export function spendingLines(systems: readonly SystemSpending[]): string[] {
       s.balances
         .map(
           (b) =>
-            `${b.key}: requests ${b.requests.remaining ?? "unknown"}/${b.requests.limit ?? "unknown"}, points ${b.complexity.remaining ?? "unknown"}/${b.complexity.limit ?? "unknown"}`,
+            `${b.key}: ${windowLabel(s.system, "requests")} ${shown(b.requests.remaining)}/${b.requests.limit ?? "unknown"}, ${windowLabel(s.system, "complexity")} ${shown(b.complexity.remaining)}/${b.complexity.limit ?? "unknown"}`,
         )
         .join("; ") || "balance unknown";
     const costs =

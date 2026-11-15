@@ -472,8 +472,9 @@ free slot reuses one younger than that without asking. Every repository of
 the machine file that names the same tracker, team and person shares one
 reading per tick.
 
-Every process on the host shares each tracker credential's request budget
-(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+Every process on the host shares each tracker credential's and the forge
+credential's request budget
+(`outbound_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
 While the tracker refuses the credential for its rate limit, no request
 leaves the host before the reset it named: a tick reports the tracker once
 as rate limited until then, the queue it shows is the last reading, and

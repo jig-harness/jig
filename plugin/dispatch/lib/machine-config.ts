@@ -44,7 +44,7 @@
  *   shared: forge
  * send: true
  * change_probe: true
- * tracker_share: 0.5
+ * outbound_share: 0.5   # was tracker_share, which still reads
  * preflight: [tracker]   # the checks run on each account before a tracker stage: preflight-config.ts
  * load:
  *   enforce: false          # the gauges' lines and reservations: load-config.ts
@@ -163,8 +163,8 @@ export interface MachineConfig {
   changeProbe: boolean;
   /** The host's gauges' lines, the kinds' default reservations and whether the load factor holds launches (`load`). */
   load: LoadSettings;
-  /** The share of each tracker credential's rate-limit window the tick's own reads may use (`tracker_share`); `DEFAULT_DISPATCHER_SHARE` when absent. */
-  trackerShare?: number;
+  /** The share of each rate-limit window, a tracker's or the forge's, the tick's own calls may use (`outbound_share`, or its older name `tracker_share`); `DEFAULT_DISPATCHER_SHARE` when absent. */
+  outboundShare?: number;
   /** The checks the tick runs on each account before a stage that needs them (`preflight`); `[tracker]` when absent. */
   preflight?: PreflightProbe[];
 }
@@ -203,6 +203,7 @@ const TOP_KEYS = [
   "send",
   "change_probe",
   "load",
+  "outbound_share",
   "tracker_share",
   "preflight",
 ];
@@ -636,15 +637,23 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   });
 }
 
-/** The tracker's share of each credential's budget, and the checks run on each account before a tracker stage. */
+/** The tick's share of each credential's budget, and the checks run on each account before a tracker stage. */
 function trackerSettings(
   top: Record<string, unknown>,
-): Checked<Pick<MachineConfig, "trackerShare" | "preflight">> {
-  const trackerShare = share(top.tracker_share, "tracker_share");
-  if (!trackerShare.ok) return trackerShare;
+): Checked<Pick<MachineConfig, "outboundShare" | "preflight">> {
+  const named = top.outbound_share !== undefined && top.outbound_share !== null;
+  const older = top.tracker_share !== undefined && top.tracker_share !== null;
+  if (named && older)
+    return invalid(
+      "outbound_share and tracker_share name one setting: keep outbound_share and remove tracker_share",
+    );
+  const outboundShare = older
+    ? share(top.tracker_share, "tracker_share")
+    : share(top.outbound_share, "outbound_share");
+  if (!outboundShare.ok) return outboundShare;
   const preflight = preflightSetting(top.preflight);
   if (!preflight.ok) return preflight;
-  return ok({ trackerShare: trackerShare.value, preflight: preflight.value });
+  return ok({ outboundShare: outboundShare.value, preflight: preflight.value });
 }
 
 /**

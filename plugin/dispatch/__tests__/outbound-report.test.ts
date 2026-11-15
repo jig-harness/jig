@@ -108,3 +108,32 @@ test("a window whose refill keeps pace is safe and a fixed window predicts exhau
   delete balance.record.complexity.refillMs;
   expect(quotaRisks(data, now)).toHaveLength(1);
 });
+
+test("search requests are not core spending", () => {
+  const search: LedgerRow = {
+    ...row(),
+    system: "github",
+    credential: "github:test",
+    operation: "GET /search/issues",
+    unit: "requests",
+    requests: 500,
+    cost: 500,
+  };
+  const github: LedgerReport = {
+    rows: [search],
+    balances: [
+      {
+        key: "github:test",
+        system: "github",
+        record: {
+          requests: { limit: 5000, remaining: 100, resetAt: now + hour },
+          complexity: { limit: 5000, remaining: 4000, resetAt: now + hour },
+          limitedUntil: null,
+          why: null,
+          observedAt: now,
+        },
+      },
+    ],
+  };
+  expect(quotaRisks(github, now)).toEqual([]);
+});

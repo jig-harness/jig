@@ -2231,11 +2231,11 @@ make, use the entry's term instead.
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
   ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
-  tracker adapters' transports keep the budget and the deadline, and they
-  and the forge's `gh` calls fail as the failure classes; a tracker read
+  tracker adapters' transports and the forge's `gh` calls keep the budget
+  and the deadline and fail as the failure classes; a tracker read
   is sent once more after a failure that may clear, a forge call is not;
-  the transports record each attempt in the cost ledger. Shared caching,
-  GitHub budget windows and the boundary gates remain planned
+  the transports record each attempt in the cost ledger. Shared caching
+  and the boundary gates remain planned
   ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
@@ -2244,7 +2244,7 @@ make, use the entry's term instead.
   starts and a person's skills spend one allowance knowingly. A *governed
   transport* asks it before each request and tells it what each answer
   said; the dispatcher's own reads keep to a share of each limit
-  (`tracker_share`,
+  (`outbound_share`,
   [configuration reference](plugin/CONFIGURATION.md)).
 - **Cost ledger** — the record of what Jig's calls to outside systems
   cost: for each hour, system, credential, named operation and caller, the
