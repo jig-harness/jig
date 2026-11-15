@@ -308,7 +308,10 @@
             },
             "body": {
               "type": "string"
-            }
+            },
+            "command": false,
+            "target": false,
+            "generation": false
           },
           "required": ["id", "ts", "from", "pr", "kind", "body"],
           "additionalProperties": true

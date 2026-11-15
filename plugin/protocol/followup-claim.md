@@ -52,7 +52,7 @@ How a follow-up command claims, checks and ends its marker with
 follow-ups. The runs and their outcomes, for a program in any language:
 [data/followup-claim.json](data/followup-claim.json), whose `field` entries
 also give each payload field's type and the runs whose markers carry it;
-schemas for them are a later step.
+the JSON Schemas below publish the claim and result forms those records use.
 
 ## The record
 

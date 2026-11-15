@@ -26,6 +26,9 @@ export const NOTE_MESSAGE_SHAPE = s.object({
   ...inboxBase,
   kind: s.literal("note"),
   body: s.string(),
+  command: absent,
+  target: absent,
+  generation: absent,
 });
 
 /** Fields available to a directive's callers, with command-specific rules below. */

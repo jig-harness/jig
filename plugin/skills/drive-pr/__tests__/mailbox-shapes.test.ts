@@ -67,6 +67,18 @@ test("a shared directive description refuses impossible command fields", () => {
   }
 });
 
+test("a note cannot carry directive-only fields", () => {
+  for (const fields of [
+    { command: "stop" },
+    { target: "stop" },
+    { generation: 1 },
+  ]) {
+    const message = { ...base, kind: "note", body: "context", ...fields };
+    expect(matches(MAILBOX_MESSAGE_SHAPE, message)).toBe(false);
+    expect(parseInboxMessage(message)).toBeNull();
+  }
+});
+
 test("outbox descriptions keep completed answers and driver acknowledgements distinct", () => {
   const good = [
     { ...base, status: "received" },
