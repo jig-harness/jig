@@ -77,6 +77,17 @@ answered. Next are GitHub's limits in the shared budget, reuse of unchanged
 answers and identical reads, and gates that enforce the transport boundary
 and query cost ceilings.
 
+### 57. Starting work that will not collide first
+
+When several pieces of work change the same files, each merge puts the
+others in conflict. Every conflict costs another agent session and another
+test run. Each item gets a record of the files it is expected to change.
+The dispatcher compares those files with every open pull request and every
+item already in progress. It starts work that collides with nothing first,
+and starts colliding work when nothing else is ready. It starts no more
+work than the machine can test in time. Each item that waits says what it
+waits on.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The dispatch dashboard leads with a Ready to merge list of the converged
@@ -131,6 +142,27 @@ Jig also reports how often each kind of decision follows the
 recommendation, so a team can see which decisions still need a person.
 Later, decisions that cannot be undone, such as a release, will need proof
 that a person answered.
+
+### 58. Declared priorities, a progress review and the overview
+
+A person sees individual failures without seeing whether their goals are
+advancing. [The design](design/priorities-and-overview.md) defines one priorities record
+at site, repository and individual levels. A reproducible shortlist carries
+each epic's rank to its children. A progress review proposes systematic fixes
+and never acts, and an overview joins the facts inside the existing dashboard.
+Urgent issues stay visible, assigned bugs retain their priority, and a
+minimum share keeps peripheral goals moving. The overview pairs each issue
+with its pull request and shows the decisions owed, with confirmed actions
+made by the person's browser, phone unlock and no phone merge.
+
+The person reviews the design before implementation. Build the record and
+ranker, then trial the progress review on Jig and a consumer repository,
+then the overview after its visual design round. Browser actions wait for
+the browser write path to merge and for device probes; site-level records arrive with
+the optional hub. Done when equal input snapshots reproduce the shortlist
+and every Urgent issue appears in each review. The overview must explain
+progress and waiting from structured facts, and browser actions must preserve
+the person's authority. The trial precedes new M9 audit criteria.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
