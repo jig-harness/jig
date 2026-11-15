@@ -17,20 +17,66 @@ import { basename, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   CONTEXT_PATTERN,
-  ensureContextIgnored,
+  type ContextIgnore,
 } from "../scripts/lib/context-ignore.ts";
 import { type Clone, makeClone } from "./attach-pr-fixtures.ts";
+
+const MODULE = join(
+  import.meta.dir,
+  "..",
+  "scripts",
+  "lib",
+  "context-ignore.ts",
+);
 
 const roots: string[] = [];
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
+/**
+ * Git's settings with no user's ignore rules in them: a person's global
+ * `core.excludesFile` or `~/.config/git/ignore` may well ignore `.context/`.
+ */
+const isolated = (() => {
+  const home = realpathSync(
+    mkdtempSync(join(tmpdir(), "context-ignore-home-")),
+  );
+  roots.push(home);
+  const config = join(home, "gitconfig");
+  writeFileSync(config, "");
+  return {
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
+    GIT_CONFIG_GLOBAL: config,
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+})();
+
 function gitEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env))
     if (v !== undefined && !k.startsWith("GIT_")) env[k] = v;
-  return { ...env, GIT_CONFIG_NOSYSTEM: "1" };
+  return { ...env, ...isolated };
+}
+
+/** `ensureContextIgnored(tree)`, run in a child under the isolated settings. */
+function ensureContextIgnored(tree: string): ContextIgnore {
+  const script = `const { ensureContextIgnored } = await import(${JSON.stringify(MODULE)});
+console.log(JSON.stringify(await ensureContextIgnored(process.argv[1])));`;
+  const r = Bun.spawnSync([process.execPath, "-e", script, tree], {
+    env: gitEnv(),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const ran = {
+    exitCode: r.exitCode,
+    stdout: r.stdout.toString(),
+    stderr: r.stderr.toString(),
+  };
+  expectSpawnExit(ran, 0, "ensureContextIgnored");
+  return JSON.parse(ran.stdout) as ContextIgnore;
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -74,33 +120,33 @@ function untracked(tree: string): string {
 }
 
 describe("ensureContextIgnored", () => {
-  test("adds .context/ to the exclude file, once, keeping its lines", async () => {
+  test("adds .context/ to the exclude file, once, keeping its lines", () => {
     const tree = repo();
     writeFileSync(join(tree, ".git", "info", "exclude"), "# local\n*.swp");
-    const first = await ensureContextIgnored(tree);
+    const first = ensureContextIgnored(tree);
     expect(first.kind).toBe("excluded");
-    const second = await ensureContextIgnored(tree);
+    const second = ensureContextIgnored(tree);
     expect(second.kind).toBe("ignored");
     expect(excludeOf(tree)).toBe(`# local\n*.swp\n${CONTEXT_PATTERN}\n`);
   });
 
-  test("creates the exclude file when the clone has none", async () => {
+  test("creates the exclude file when the clone has none", () => {
     const tree = repo();
     rmSync(join(tree, ".git", "info"), { recursive: true, force: true });
-    expect((await ensureContextIgnored(tree)).kind).toBe("excluded");
+    expect(ensureContextIgnored(tree).kind).toBe("excluded");
     expect(excludeOf(tree)).toBe(`${CONTEXT_PATTERN}\n`);
   });
 
-  test("leaves a repository whose .gitignore covers .context/ alone", async () => {
+  test("leaves a repository whose .gitignore covers .context/ alone", () => {
     const tree = repo();
     writeFileSync(join(tree, ".gitignore"), ".context\n");
     const before = excludeOf(tree);
-    expect((await ensureContextIgnored(tree)).kind).toBe("ignored");
+    expect(ensureContextIgnored(tree).kind).toBe("ignored");
     expect(excludeOf(tree)).toBe(before);
     expect(contextLines(excludeOf(tree))).toBe(0);
   });
 
-  test("writes the clone's exclude file from a linked working tree", async () => {
+  test("writes the clone's exclude file from a linked working tree", () => {
     const tree = repo();
     writeFileSync(join(tree, "seed.txt"), "seed\n");
     git(tree, "add", "-A");
@@ -119,18 +165,18 @@ describe("ensureContextIgnored", () => {
     const linked = join(tree, "..", `${basename(tree)}-linked`);
     roots.push(linked);
     git(tree, "worktree", "add", "-q", "--detach", linked);
-    expect((await ensureContextIgnored(linked)).kind).toBe("excluded");
+    expect(ensureContextIgnored(linked).kind).toBe("excluded");
     expect(contextLines(excludeOf(tree))).toBe(1);
   });
 
-  test("hides the drive's files and nothing else", async () => {
+  test("hides the drive's files and nothing else", () => {
     const tree = repo();
     mkdirSync(join(tree, ".context", "drive-mailbox"), { recursive: true });
     writeFileSync(join(tree, ".context", "pr-drive-42.md"), "handoff\n");
     writeFileSync(join(tree, ".context", "drive-mailbox", "inbox.jsonl"), "");
     writeFileSync(join(tree, "stray.txt"), "left over\n");
     expect(untracked(tree)).toContain(".context/");
-    await ensureContextIgnored(tree);
+    ensureContextIgnored(tree);
     expect(untracked(tree)).toBe("?? stray.txt");
   });
 });
@@ -139,6 +185,10 @@ describe("drive.ts in a repository that does not ignore .context/", () => {
   function fresh(): Clone {
     const c = makeClone();
     roots.push(c.root);
+    Object.assign(c.env, isolated, {
+      HOME: c.env.HOME,
+      USERPROFILE: c.env.HOME,
+    });
     // The fixture's own exclude stands in for a repository's rule; drop it.
     writeFileSync(join(c.primary, ".git", "info", "exclude"), "");
     return c;
@@ -164,6 +214,14 @@ describe("drive.ts in a repository that does not ignore .context/", () => {
     expect(first.stderr).not.toContain("uncommitted changes");
     expect(first.stderr).toContain(`does not ignore ${CONTEXT_PATTERN}`);
     drive(c, tree);
+    expect(contextLines(excludeOf(c.primary))).toBe(1);
+  });
+
+  test("attaches alone over its own files", () => {
+    const c = fresh();
+    const tree = treeWithDriveFiles(c);
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 0, "attach-pr.ts");
     expect(contextLines(excludeOf(c.primary))).toBe(1);
   });
 

@@ -35,6 +35,7 @@
  */
 import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { ignoreDriveContext } from "./context-ignore.ts";
 import {
   type DrivenTree,
   detachedTreeRecord,
@@ -681,6 +682,9 @@ export async function attachPr(
   }
   const locks = locksHeld ? [] : await takeDriverLocks(number);
   try {
+    // Before any clean-tree check: the drive's own `.context/` files are
+    // not uncommitted changes.
+    await ignoreDriveContext(tree, false, "attach");
     await requireOrigin(tree, head, number, remote);
     const fetched = await fetchHead(tree, head.branch, remote);
     if (fetched !== null) refuse(1, fetched);

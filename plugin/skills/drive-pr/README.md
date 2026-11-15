@@ -112,9 +112,9 @@ Every field of the file, for every skill, is in the plugin's
 **Ignore `.context/`.** The drive keeps working files (its handoff note,
 mailbox, foreground-wait records) in `.context/` at the root of the working
 tree, and it refuses to push or certify a tree with untracked files. Where
-the repository does not ignore `.context/`, `drive.ts` adds it to the
-clone's local exclude file (`.git/info/exclude`, never committed) when it
-starts, so its own files never stop it; adding `.context/` to the
+the repository does not ignore `.context/`, the drive's attach and
+`drive.ts` add it to the clone's local exclude file (`.git/info/exclude`,
+never committed), so the drive's own files never stop it; adding `.context/` to the
 repository's `.gitignore` covers every clone and a round worked by hand
 without `drive.ts` too. Throwaway working files go
 under `.context/scratch/`, and the mailbox and foreground-wait directories

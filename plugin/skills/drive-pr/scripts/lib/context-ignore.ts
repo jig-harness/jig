@@ -23,12 +23,12 @@ export type ContextIgnore =
   | { kind: "excluded"; file: string }
   | { kind: "failed"; reason: string };
 
-function readExclude(file: string): string | null {
+function readExclude(file: string): { text: string } | { error: string } {
   try {
-    return readFileSync(file, "utf8");
+    return { text: readFileSync(file, "utf8") };
   } catch (error) {
-    if (errnoCode(error) === "ENOENT") return "";
-    return null;
+    if (errnoCode(error) === "ENOENT") return { text: "" };
+    return { error: errnoCode(error) ?? String(error) };
   }
 }
 
@@ -66,9 +66,10 @@ export async function ensureContextIgnored(
       reason: `cannot locate the clone's exclude file: ${where.stderr.trim()}`,
     };
   const file = resolve(tree, relative);
-  const current = readExclude(file);
-  if (current === null)
-    return { kind: "failed", reason: `cannot read ${file}` };
+  const read = readExclude(file);
+  if ("error" in read)
+    return { kind: "failed", reason: `cannot read ${file}: ${read.error}` };
+  const current = read.text;
   const lines = current.split(/\r?\n/).map((line) => line.trim());
   if (lines.includes(CONTEXT_PATTERN)) return { kind: "ignored" };
   const separator = current === "" || current.endsWith("\n") ? "" : "\n";
@@ -85,21 +86,23 @@ export async function ensureContextIgnored(
 }
 
 /**
- * `ensureContextIgnored` for the driver: report what it did, never stop. A
- * dry run, which moves nothing, writes nothing here either.
+ * `ensureContextIgnored` for the drive and its attach: report what it did on
+ * standard error under `who`, never stop. A dry run, which moves nothing,
+ * writes nothing here either.
  */
 export async function ignoreDriveContext(
   tree: string,
   dryRun: boolean,
+  who = "drive.ts",
 ): Promise<void> {
   if (dryRun || tree === "") return;
   const outcome = await ensureContextIgnored(tree);
   if (outcome.kind === "excluded")
     console.error(
-      `drive.ts: the repository does not ignore ${CONTEXT_PATTERN}; added it to ${outcome.file} so the drive's own files leave the tree clean`,
+      `${who}: the repository does not ignore ${CONTEXT_PATTERN}; added it to ${outcome.file} so the drive's own files leave the tree clean`,
     );
   else if (outcome.kind === "failed")
     console.error(
-      `drive.ts: could not make sure ${CONTEXT_PATTERN} is ignored (${outcome.reason}); the drive's own files there may make the tree read as unclean`,
+      `${who}: could not make sure ${CONTEXT_PATTERN} is ignored (${outcome.reason}); the drive's own files there may make the tree read as unclean`,
     );
 }

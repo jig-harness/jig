@@ -520,9 +520,10 @@ word that is neither an option nor an option's value, `-`, `--`,
 
 **Its own files stay out of the clean-tree checks.** The drive keeps its
 handoff, mailbox, foreground-wait records and scratch in `.context/`, and
-every check of a clean tree counts untracked files. So once it holds both
-locks, and again after the attach, `drive.ts` checks that `.context/` is
-ignored in the tree it drives; where the repository's ignore rules do not
+every check of a clean tree counts untracked files. So the attach, run
+alone or by `drive.ts`, checks that `.context/` is ignored in its tree
+before it checks the tree is clean, and `drive.ts` checks again after the
+attach, or in its place when the attach is off; where the repository's ignore rules do not
 cover it, it adds the line `.context/` to the clone's local exclude file
 (`info/exclude` in the clone's git directory, never committed), keeping the
 lines already there, and says so in its log. It adds nothing when the
