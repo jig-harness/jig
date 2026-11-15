@@ -19,12 +19,14 @@ and whether it was applied written on the pull request, where the review
 loop's report joins it to how the work went; and a person's choice always
 wins.
 
-This is the design of [plan.md](plan.md) item 31, a change to `do-item` and
+This is the design of the routing work whose open steps are the backlog
+issues [#1319](https://github.com/jig-harness/jig/issues/1319), [#1320](https://github.com/jig-harness/jig/issues/1320) and [#1321](https://github.com/jig-harness/jig/issues/1321), a change to `do-item` and
 `work-batch`, with one line added to the
 [workspace launcher](../tools/launcher/README.md)'s first prompt. The
 derivation and the complexity tiers ([build order](#build-order) steps 1
-and 2) are built, and of step 4 the known-families list, `routing.family_tiers`
-and the loader's checks; the rest is not.
+and 2) are built, of step 4 the known-families list, `routing.family_tiers`
+and the loader's checks, and of step 5 the forwarding behind a declared
+`routing` section; the rest is not.
 It builds on the agent selection that exists
 (`plugin/skills/do-item/scripts/determine_agent.ts`) and on the
 [work type](../GLOSSARY.md) derivation of item 27

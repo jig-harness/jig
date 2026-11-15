@@ -750,8 +750,7 @@ Next starts with delegated merge, once item 40 holds. Then come what lets a
 second team adopt Jig, the hub for a team on several hosts, the Protocol
 that readers outside the skills can trust, the line in a team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
-measurement. Last come the developer machine and its runtimes, and the runs
-a person owes.
+measurement. Last come the developer machine and the runs a person owes.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -1175,94 +1174,6 @@ Done when a task-typed issue reaches its pull request with the depth its
 row gives, a feature keeps every gate it has today, and the three former
 conditions have no reader outside the table.
 
-### 29. The spec a work item links
-
-A work item carries or links its requirements, and the link is prose:
-`do-item` hands the agent the body, the reviewer is told to check "the
-acceptance criteria" wherever they are, and the pull request never says
-which were met. [design/spec-link.md](spec-link.md) has how it works, on
-the [spec ecosystems research note](spec-ecosystems-research.md): a
-read-only resolver with one adapter per layout (the item's own body first,
-then the common repository layouts by convention, then the tracker's
-attachments) that returns requirements,
-acceptance criteria and tasks with their ids; the result handed to the
-implementing agent and the reviewer; a pull-request section accounting for
-every criterion as met with an evidence record (item 28), deferred to a
-filed item, or not applicable. The delivery loop writes no spec and
-dictates no format.
-What it will build, one pull request per step:
-
-- **The repository adapters**, two or three layouts per pull request, each
-  with its fixture folder; M6's audit criterion with the last of them.
-- **`do-item` reads and requires**: the `spec` pre-scout by work type
-  (item 27), the delegation prompt and the reviewer's list, the policy
-  refusal for an unaccounted criterion, the recommended-skills page naming
-  the spec-writing tools with the adapter that reads each.
-- **The required check** that refuses an unlinked pull request or an
-  unaccounted criterion, honouring an exception only when a member of
-  `specs.exception_approvers` other than the author and the implementing
-  agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
-  still on, reading its script and policy from the base branch rather than
-  the head, with a workflow template and the setup that makes it required.
-- **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
-- **The tracker source**: the documents and attachments the tracker
-  interface lists on the item.
-- **A verification section**: the commands a work item lists under
-  `Verification`, fenced blocks included, handed to the implementer and
-  recorded as evidence records the pull request's acceptance section cites.
-
-Done when a feature whose body links a spec in any supported layout
-reaches its pull request with every acceptance criterion accounted for,
-one with none stops, saying so, before any code is written, and the stance (a work
-item links its requirements; the delivery loop writes no spec) is a decision record.
-
-### 31. Routing work to an agent, a model and an effort
-
-`do-item` chooses which agent implements an issue, from the change-area
-catalog, the issue's labels and its title (`determine_agent.ts`), but
-nothing chooses the model or the effort that agent runs on, and nothing
-records why: a bug fix in one file and an epic's architecture spike are
-implemented on whatever model the session runs, the one the launcher's
-settings or a person picked. [design/agent-routing.md](agent-routing.md)
-has how it works, decided in
-[ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md): a
-route (agent, complexity tier, effort) for the implementer, derived from
-the work type (item 27), the size and flag labels and the catalog's flags and
-mandatory reviews, by rules as data with defaults a repository overrides;
-complexity tiers, simple, standard and complex, from the type, the
-size and the flags a repository marks complex at any size
-(`routing.complex_flags`), each mapped to a model per vendor with Claude's
-and OpenAI's defaults (simple and standard on `sonnet` or `terra`, complex
-on `opus` or `sol`); raises that move the effort up, and only a configured
-complex flag that sets the tier; the strictest value on every
-conflict; a pinned agent keeping its pin; the reason, the source and
-whether it was applied on the pull request, where the drive's loop-cost
-report joins them to the outcome; a person's choice always winning; opt-in
-until a repository declares its rules; no model asked to route, and no
-model or tier written on an issue. The design
-is written and decided, and its first two steps are built:
-`determine_route.ts` derives the route from the `routing` section and its
-defaults, on the complexity tiers with Claude's and OpenAI's families
-known (`plugin/shared/model-families.ts`, which the loader checks every
-`routing.models` row against), and `do-item` prints it and forwards
-nothing. What stays open is the rest of the build, its own epic, one pull
-request per step:
-
-- **The record**: the `## Route` section written and parsed from
-  `plugin/shared/`, and the loop-cost report reading it.
-- **M0's declaration point**: the policy's invariant and table, and the
-  criterion's statement.
-- **`do-item` forwards**, behind a declared `routing` section: the model
-  and effort to the subagent tool, the launcher's `route:` prompt line
-  honoured, the pinned agent kept.
-- **`work-batch` and the audit criterion** at M0 Standard.
-
-The build epic is done when an S bug routes standard and the same bug
-labelled `has-migration` routes complex, a flagged bug is delegated on a higher effort
-than an unflagged one with the `## Route` section saying why, a `route: yours` prompt
-delegates with nothing forwarded, and a loop-cost report shows the route
-beside the rounds.
-
 ### 23. Seed review lenses
 
 `review` runs [review lenses](../GLOSSARY.md) from one file each, and
@@ -1281,23 +1192,6 @@ Done when `review` runs every seed lens a diff triggers and says why it
 skipped the others, each seed lens's eval fixtures have passed live, and the
 tallying script turns a fixture set of threads into one parity row per lens
 version.
-
-### 30. Scanner findings block convergence
-
-`resolve-review-comments` lists the findings a static-analysis app reports as
-check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
-to work them, but the drive's verdict reads threads and summary comments
-only, so a drive with annotations as its only findings can end `CONVERGED`
-without starting a round. What it will
-build: the annotation listing as a third source of open work beside threads
-and summary findings, read by `drive-status`, `round-plan` and `converge`,
-so the verdict withholds `CONVERGED` while a scanner check is running on the
-head or lists a finding no round has answered; a way to record a finding
-that stands (rejected, won't fix, deferred) against the head so it stops
-counting; and the dismissal in the tool for the apps that expose one
-(SonarQube Cloud's issue transitions), as an adapter beside the listing.
-Done when a pull request whose scanner check holds a warning does not
-converge until a round fixes it or records why it stands.
 
 ### 25. Dependency-review feedback
 
@@ -1509,22 +1403,6 @@ Done when a working repository's weekly sweep is the installed `jig gc`
 job, its own reapers and installers are gone, and the report names each
 resource's proof before anything is collected.
 
-### 19. Herdr as the primary workspace runtime
-
-[Herdr](https://herdr.dev) is the workspace runtime Jig's tooling targets
-first ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-The [Herdr workspace tool](../tools/herdr/README.md), the launcher's `herdr`
-provider and M12's worktree lifecycle in Herdr are in place. What is left
-waits on a consumer repository that runs its agents in Herdr; the hosts
-that run Jig's own line run Orca. Done when:
-
-- each consumer repository's own Herdr launch and worktree commands call the
-  workspace tool, and their copies of what it does are deleted, keeping only
-  the repository's own setup as its `.config/worktree-hooks/create`;
-- `drive-pr`, `do-item` and `review`'s reading of a delegated agent's output
-  are run in a Herdr workspace on macOS and on Linux, and what differs is
-  fixed or written down.
-
 ### 7. The Notion store, run against Notion
 
 The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
@@ -1638,7 +1516,7 @@ conditions for considering a tap without adopting one ahead of that evidence.
     M12's mappings how a repository's `orca.yaml` setup script and Orca's
     branch-prefix setting approximate them, once validated in a consumer;
   - the drive, pickup and review skills checked inside Orca worktrees on a
-    server, as item 19 does for Herdr;
+    server, as [#1310](https://github.com/jig-harness/jig/issues/1310) does for Herdr;
   - the tool and the launcher's Orca provider on Windows: the tool drives
     its host with `sh`, `test` and `mkdir` and, on this machine, supervises
     its hooks through `/proc` or `ps`
