@@ -667,6 +667,13 @@ const TREE: RecordKind[] = [
   ),
   plain(
     "tree",
+    "process-worktree-owner",
+    "shared/process-worktree-owner.ts",
+    "<git dir>/jig-process-owner.json",
+    1,
+  ),
+  plain(
+    "tree",
     "driven-tree",
     "shared/driven-tree.ts",
     "<git dir>/jig-driven-pr.json",

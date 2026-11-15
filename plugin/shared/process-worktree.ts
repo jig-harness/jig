@@ -66,7 +66,10 @@ export async function openProcessWorktree(
             if (path === null) return null;
             assertLinkedWorktree(port.host, path, `reattach to ${branch}`);
             const owner = readWorktreeOwner(gitDirOf(port, path));
-            if (!owner.ok) throw new OrcaError(owner.failure.reason);
+            if (!owner.ok)
+              throw new OrcaError(owner.failure.reason, {
+                cause: owner.failure.cause ?? owner.failure,
+              });
             if (owner.value !== null) {
               if (
                 owner.value.repository !== repository ||
@@ -96,7 +99,10 @@ export async function openProcessWorktree(
           prepare: (worktree) => {
             const admin = gitDirOf(port, worktree.path);
             const previous = readWorktreeOwner(admin);
-            if (!previous.ok) throw new OrcaError(previous.failure.reason);
+            if (!previous.ok)
+              throw new OrcaError(previous.failure.reason, {
+                cause: previous.failure.cause ?? previous.failure,
+              });
             const owner = previous.value ?? {
               version: 1 as const,
               runtime: "process" as const,
@@ -109,7 +115,10 @@ export async function openProcessWorktree(
               ...owner,
               launches: [...new Set([...owner.launches, options.launch])],
             });
-            if (!written.ok) throw new OrcaError(written.failure.reason);
+            if (!written.ok)
+              throw new OrcaError(written.failure.reason, {
+                cause: written.failure.cause ?? written.failure,
+              });
           },
           create: (branch, from, start) => {
             mkdirSync(root, { recursive: true, mode: 0o700 });

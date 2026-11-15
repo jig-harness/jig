@@ -216,7 +216,9 @@ The collector includes the runs root even when the host uses another runtime.
 A process owner is collectible only when every launch it names, and every
 other launch naming the checkout, has a readable recorded exit and every
 recorded wrapper, supervisor and child identity is dead. Missing or malformed
-records keep the checkout. Git, pull request, ignored-content, process-holder
+records keep the checkout. A process-owned checkout also listed by Orca is kept
+as unverified until its runtime ownership is reconciled, so neither runtime's
+session evidence can be skipped. Git, pull request, ignored-content, process-holder
 and idleness checks still apply. A checkout without a pull request may be
 collected only when its commits are already on the base branch.
 

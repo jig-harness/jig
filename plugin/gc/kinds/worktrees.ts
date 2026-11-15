@@ -656,12 +656,12 @@ function markManaged(
 ): void {
   for (const entry of selected) {
     const row = managed.get(canonicalWorktree(entry.id));
+    if (entry.details.runtime === "process") {
+      if (row !== undefined) entry.details.dualManaged = true;
+      continue;
+    }
     if (row === undefined) {
-      if (
-        entry.details.runtime !== AGENT_TOOL &&
-        entry.details.runtime !== "process"
-      )
-        entry.details.runtime = "none";
+      if (entry.details.runtime !== AGENT_TOOL) entry.details.runtime = "none";
       continue;
     }
     entry.details.runtime = "orca";
@@ -735,6 +735,12 @@ export function worktreesKind(
           state: "live",
           reason: "worktree is locked",
         });
+      if (isMapping(resource.details) && resource.details.dualManaged === true)
+        return {
+          state: "unverified",
+          reason:
+            "process-owned worktree is also listed by Orca; reconcile its runtime ownership before collection",
+        };
       const resolved =
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)

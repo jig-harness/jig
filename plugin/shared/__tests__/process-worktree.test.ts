@@ -42,7 +42,7 @@ test("plain worktrees keep branch identity, upstream and shared admission throug
   writeFileSync(config, "");
   const shared = resolve(import.meta.dir, "..");
   const program = `
-    import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+    import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
     import { join } from "node:path";
     import { openProcessWorktree } from ${JSON.stringify(join(shared, "process-worktree.ts"))};
     import { localContext } from ${JSON.stringify(join(shared, "orca-workspace/runner.ts"))};
@@ -82,6 +82,16 @@ test("plain worktrees keep branch identity, upstream and shared admission throug
       if (run("git", "-C", answer.value.worktree.path, "rev-parse", "--abbrev-ref", "@{upstream}") !== "origin/topic") throw Error("wrong upstream");
     }
     if (seen[0] !== seen[1]) throw Error("duplicate worktree");
+    const admin = run("git", "-C", seen[0], "rev-parse", "--git-dir");
+    const ownerPath = join(admin, "jig-process-owner.json");
+    rmSync(ownerPath); mkdirSync(ownerPath);
+    const unreadable = await openProcessWorktree(port, { repository: repo, branch: "topic", launch: "20261114T234950Z-470fe362", createHook: false }, publish);
+    if (unreadable.ok || unreadable.failure.cause?.cause?.code !== "owner-unreadable") throw Error("read failure cause lost");
+    rmSync(ownerPath, { recursive: true });
+    const writePort = { ...port, host: { ...ctx, run: (argv, options) => argv.at(-1) === "--absolute-git-dir" ? { status: 0, stdout: join(root, "absent", "admin"), stderr: "" } : ctx.run(argv, options) } };
+    const unwritable = await openProcessWorktree(writePort, { repository: repo, branch: "failure", launch: "20261114T234951Z-470fe362", createHook: false }, publish);
+    if (unwritable.ok || unwritable.failure.cause?.cause?.code !== "ENOENT") throw Error("write failure cause lost");
+
     await exclusiveGcLock("worktrees", async () => {});
     console.log(JSON.stringify(seen));
   `;
