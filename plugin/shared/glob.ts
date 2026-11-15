@@ -4,6 +4,7 @@
  * changed paths read them: one compiler, so a glob means the same wherever a
  * repository writes it.
  */
+import { JigError } from "./outcome.ts";
 const globCache = new Map<string, RegExp>();
 
 // Each helper reads the token starting at `i` and returns its regular
@@ -93,7 +94,11 @@ export function globTokens(glob: string): GlobToken[] {
     tokens.push(token);
     i += width;
   }
-  if (depth > 0) throw new Error(`"${glob}" is not a valid glob: unclosed {`);
+  if (depth > 0)
+    throw new JigError(
+      "glob-invalid",
+      `"${glob}" is not a valid glob: unclosed {`,
+    );
   return tokens;
 }
 
@@ -112,8 +117,10 @@ function compileGlob(glob: string): RegExp {
   try {
     return new RegExp(`^${re}$`);
   } catch (err) {
-    throw new Error(
+    throw new JigError(
+      "glob-invalid",
       `"${glob}" is not a valid glob: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 }
