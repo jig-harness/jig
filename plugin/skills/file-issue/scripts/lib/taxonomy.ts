@@ -25,9 +25,11 @@
  *               may set `max` and `recommended` (warnings) and `requires`
  *               (labels that must all be present whenever one of its labels is)
  *
- * Every entry may also carry `notes`; any other key, at the top level or in
- * an entry, is reported, so a misspelt rule (`requred:`) is never read as an
- * absent one. A type, flag or group label may not begin with a category's
+ * Every entry may also carry `notes`, and `color`: the colour its label shows
+ * in the tracker, six hex digits written as text (`cfd3d7`, no `#`), so a
+ * colour meant to set one label apart is recorded where it cannot drift. Any
+ * other key, at the top level or in an entry, is reported, so a misspelt rule
+ * (`requred:`) is never read as an absent one. A type, flag or group label may not begin with a category's
  * prefix, so every label belongs to exactly one family.
  *
  * The file is read with a full YAML parser that rejects a repeated key, so
@@ -50,11 +52,12 @@ const TAXONOMY_KEYS = [
 const SCHEMA = TAXONOMY_KEYS.join("/");
 /** The keys an entry of each kind may carry. */
 const ENTRY_KEYS: Record<string, string[]> = {
-  types: ["id", "notes"],
-  statuses: ["id", "notes"],
+  types: ["id", "notes", "color"],
+  statuses: ["id", "notes", "color"],
   flags: [
     "id",
     "notes",
+    "color",
     "fires",
     "scope",
     "apply_when",
@@ -62,10 +65,11 @@ const ENTRY_KEYS: Record<string, string[]> = {
     "requires",
     "requires_category",
   ],
-  groups: ["id", "notes", "required", "not_required_on", "labels"],
+  groups: ["id", "notes", "color", "required", "not_required_on", "labels"],
   categories: [
     "id",
     "notes",
+    "color",
     "prefix",
     "labels",
     "open",
@@ -73,8 +77,10 @@ const ENTRY_KEYS: Record<string, string[]> = {
     "recommended",
     "requires",
   ],
-  label: ["id", "notes"],
+  label: ["id", "notes", "color"],
 };
+/** A label colour as the tracker takes it: six hex digits, no `#`. */
+const COLOR = /^[0-9a-fA-F]{6}$/;
 const FLAG_SCOPES = ["shipping-item", "container"];
 
 /** A single-select family: at most one of its labels per issue. */
@@ -167,8 +173,23 @@ function unknownKeys(where: string, { id, entry }: Entry, kind: string) {
 }
 
 /**
- * A list's entries with their ids, and the problems of those without one or
- * with a key their kind does not allow.
+ * An entry's `color:`, when it has one, that is not six hex digits as a
+ * text. A number is refused rather than read back: YAML reads `012345` as
+ * octal, so its digits are already lost.
+ */
+function colorProblems(where: string, { id, entry }: Entry): string[] {
+  if (!Object.hasOwn(entry, "color")) return [];
+  const color = entry.color;
+  return typeof color === "string" && COLOR.test(color)
+    ? []
+    : [
+        `'${where}' entry '${id}' has a 'color:' that is not six hex digits (a text such as cfd3d7, without '#'; quote one YAML would read as a number)`,
+      ];
+}
+
+/**
+ * A list's entries with their ids, and the problems of those without one,
+ * with a key their kind does not allow, or with a malformed colour.
  */
 function entriesOf(where: string, list: unknown[], kind: string) {
   const found = list.map((entry) => taxonomyEntry(where, entry));
@@ -177,7 +198,10 @@ function entriesOf(where: string, list: unknown[], kind: string) {
     entries,
     problems: [
       ...found.filter((f): f is string => typeof f === "string"),
-      ...entries.flatMap((e) => unknownKeys(where, e, kind)),
+      ...entries.flatMap((e) => [
+        ...unknownKeys(where, e, kind),
+        ...colorProblems(where, e),
+      ]),
     ],
   };
 }

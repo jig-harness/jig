@@ -1,4 +1,5 @@
 /** The walk's native facts are shared; interpreted child facets stay local to the repository. */
+import { cacheByVersion } from "../../../shared/outbound/cache.ts";
 import type {
   Assigner,
   IssueRelation,
@@ -105,38 +106,38 @@ export async function metadata(
     trackerStateMaps(tracker),
   ]);
   const key = `${trackerScope(tracker)}:${credential}:${interpretation}:item:${issue.identifier}:${identity}:${issue.isEpic ? "epic" : ""}`;
-  const kept = cache.get<Metadata>(key);
-  if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
-    return carried === null
-      ? kept
-      : {
-          ...kept,
-          relations: relationsOf(carried),
-        };
-  const assigned = await assigner(tracker, issue, identity, view);
-  // An item no user assigned is not placed, so its relations are not read.
-  const relations =
-    carried !== null
-      ? relationsOf(carried)
-      : assigned.noAssigner === undefined
-        ? await issueRelations(tracker, issue, view)
-        : [];
-  const children = await childrenOf(tracker, issue, view, assigned);
-  const description =
-    children.length > 0
-      ? await view.once(
-          `description ${issue.identifier}`,
-          async () =>
-            (await tracker.getIssue(issue.identifier))?.description ?? null,
-        )
-      : "";
-  const value = {
-    updatedAt: issue.updatedAt ?? "",
-    ...assigned,
-    relations,
-    children,
-    description,
-  };
-  if (issue.updatedAt && description !== null) cache.set(key, value);
-  return value;
+  const kept = await cacheByVersion<Metadata>(
+    cache,
+    `versioned:${key}`,
+    issue.updatedAt,
+    async () => {
+      const assigned = await assigner(tracker, issue, identity, view);
+      // An item no user assigned is not placed, so its relations are not read.
+      const relations =
+        carried !== null
+          ? relationsOf(carried)
+          : assigned.noAssigner === undefined
+            ? await issueRelations(tracker, issue, view)
+            : [];
+      const children = await childrenOf(tracker, issue, view, assigned);
+      const description =
+        children.length > 0
+          ? await view.once(
+              `description ${issue.identifier}`,
+              async () =>
+                (await tracker.getIssue(issue.identifier))?.description ?? null,
+            )
+          : "";
+      const value = {
+        updatedAt: issue.updatedAt ?? "",
+        ...assigned,
+        relations,
+        children,
+        description,
+      };
+      return value;
+    },
+    (value) => value.description !== null,
+  );
+  return carried === null ? kept : { ...kept, relations: relationsOf(carried) };
 }
