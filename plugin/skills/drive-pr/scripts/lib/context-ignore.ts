@@ -15,8 +15,11 @@ import { dirname, resolve } from "node:path";
 import { errnoCode } from "../../../../shared/errors.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "./proc.ts";
 
-/** The directory the drive's working files live in, as an exclude pattern. */
-export const CONTEXT_PATTERN = ".context/";
+/** The drive's working directory, as the path git is asked about. */
+export const CONTEXT_PATH = ".context/";
+
+/** The exclude pattern for it, anchored: only the root `.context/` is the drive's. */
+export const CONTEXT_PATTERN = "/.context/";
 
 export type ContextIgnore =
   | { kind: "ignored" }
@@ -49,7 +52,7 @@ export async function ensureContextIgnored(
   };
   // `--no-index`: a tracked file under `.context/` must not hide the rule.
   const probe = await git(
-    ["check-ignore", "-q", "--no-index", CONTEXT_PATTERN],
+    ["check-ignore", "-q", "--no-index", CONTEXT_PATH],
     opts,
   );
   if (probe.code === 0) return { kind: "ignored" };
@@ -70,19 +73,32 @@ export async function ensureContextIgnored(
   if ("error" in read)
     return { kind: "failed", reason: `cannot read ${file}: ${read.error}` };
   const current = read.text;
-  const lines = current.split(/\r?\n/).map((line) => line.trim());
-  if (lines.includes(CONTEXT_PATTERN)) return { kind: "ignored" };
-  const separator = current === "" || current.endsWith("\n") ? "" : "\n";
-  try {
-    mkdirSync(dirname(file), { recursive: true });
-    appendFileSync(file, `${separator}${CONTEXT_PATTERN}\n`);
-  } catch (error) {
+  const present = current
+    .split("\n")
+    .some((line) => line.replace(/\r$/, "") === CONTEXT_PATTERN);
+  if (!present) {
+    const separator = current === "" || current.endsWith("\n") ? "" : "\n";
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      appendFileSync(file, `${separator}${CONTEXT_PATTERN}\n`);
+    } catch (error) {
+      return {
+        kind: "failed",
+        reason: `cannot write ${file}: ${errnoCode(error) ?? String(error)}`,
+      };
+    }
+  }
+  // The rule's presence is not its effect: a later negation can defeat it.
+  const after = await git(
+    ["check-ignore", "-q", "--no-index", CONTEXT_PATH],
+    opts,
+  );
+  if (after.code !== 0)
     return {
       kind: "failed",
-      reason: `cannot write ${file}: ${errnoCode(error) ?? String(error)}`,
+      reason: `${CONTEXT_PATTERN} is in ${file}, but git still does not ignore ${CONTEXT_PATH} (a negation in a higher-priority rule?)`,
     };
-  }
-  return { kind: "excluded", file };
+  return present ? { kind: "ignored" } : { kind: "excluded", file };
 }
 
 /**

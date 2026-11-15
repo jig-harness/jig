@@ -122,6 +122,7 @@ import {
 import { shellQuote } from "../../../shared/cli.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import { drivenBranchName } from "./lib/driven-branch.ts";
+import { ignoreDriveContext } from "./lib/context-ignore.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
   ghCall,
@@ -327,6 +328,7 @@ export async function alreadyPushing(
   env?: Record<string, string | undefined>,
 ): Promise<PushingProbe> {
   const timeoutSec = gitCallTimeoutSeconds();
+  await ignoreDriveContext(root, false, "base-sync.ts");
   // `--untracked-files=normal` and `--ignore-submodules=none` are explicit, not
   // decorative: a plain `--porcelain` inherits `status.showUntrackedFiles` from
   // repo/user config and `submodule.<name>.ignore` from `.gitmodules`, either
@@ -858,6 +860,7 @@ async function main(): Promise<number> {
     // untracked file or ignored submodule change as a clean tree depending on
     // repo/user config, letting a merge start over state that is not actually
     // clean.
+    await ignoreDriveContext(root, false, "base-sync.ts");
     const dirty = await git(
       [
         "-C",

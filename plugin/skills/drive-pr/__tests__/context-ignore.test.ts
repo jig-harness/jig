@@ -169,6 +169,24 @@ describe("ensureContextIgnored", () => {
     expect(contextLines(excludeOf(tree))).toBe(1);
   });
 
+  test("leaves a nested .context/ visible", () => {
+    const tree = repo();
+    mkdirSync(join(tree, "pkg", ".context"), { recursive: true });
+    writeFileSync(join(tree, "pkg", ".context", "note.md"), "mine\n");
+    ensureContextIgnored(tree);
+    expect(untracked(tree)).toBe("?? pkg/");
+  });
+
+  test("reports a rule a later negation defeats", () => {
+    const tree = repo();
+    writeFileSync(
+      join(tree, ".git", "info", "exclude"),
+      `${CONTEXT_PATTERN}\n!${CONTEXT_PATTERN}\n`,
+    );
+    const outcome = ensureContextIgnored(tree);
+    expect(outcome.kind).toBe("failed");
+  });
+
   test("hides the drive's files and nothing else", () => {
     const tree = repo();
     mkdirSync(join(tree, ".context", "drive-mailbox"), { recursive: true });

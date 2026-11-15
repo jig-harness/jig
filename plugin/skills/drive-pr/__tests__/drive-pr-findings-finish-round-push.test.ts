@@ -36,7 +36,7 @@ import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-ro
 
 import { readState, writeState } from "./state-rows.ts";
 
-import { ensureContextIgnored } from "../scripts/lib/context-ignore.ts";
+import { CONTEXT_PATTERN } from "../scripts/lib/context-ignore.ts";
 
 useDrivePrSuite();
 describe("finish-round.ts", () => {
@@ -195,7 +195,33 @@ describe("finish-round.ts", () => {
   // excluded it: the round's own handoff and mailbox live in the tree.
   const ownContext = async () => {
     const repo = scratchWithOrigin();
-    await ensureContextIgnored(repo.dir);
+    // Under the environment the push subprocess sees, not this process's:
+    // a user-level rule ignoring `.context/` must not stand in for the
+    // clone-local exclusion the drive writes.
+    const setup = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `const m = await import(${JSON.stringify(
+          join(import.meta.dir, "..", "scripts", "lib", "context-ignore.ts"),
+        )}); console.log(JSON.stringify(await m.ensureContextIgnored(process.argv[1])));`,
+        repo.dir,
+      ],
+      { env: gitCleanEnv(), stdout: "pipe", stderr: "pipe" },
+    );
+    expectSpawnExit(
+      {
+        exitCode: setup.exitCode,
+        stdout: setup.stdout.toString(),
+        stderr: setup.stderr.toString(),
+      },
+      0,
+      "ensureContextIgnored",
+    );
+    expect(JSON.parse(setup.stdout.toString()).kind).toBe("excluded");
+    expect(
+      readFileSync(join(repo.dir, ".git", "info", "exclude"), "utf8"),
+    ).toContain(CONTEXT_PATTERN);
     const context = join(repo.dir, ".context");
     mkdirSync(context, { recursive: true });
     writeFileSync(join(context, "pr-drive-999.md"), "handoff\n");
