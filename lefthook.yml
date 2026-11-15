@@ -35,6 +35,7 @@ pre-commit:
         - "plugin/shared/records/envelope.ts"
         - "plugin/shared/records/followup-values.ts"
         - "plugin/shared/records/writer.ts"
+        - "plugin/shared/records/writer-shape.ts"
         - "plugin/shared/errors.ts"
         - "plugin/shared/fixture-observer.ts"
         - "plugin/shared/guards.ts"
