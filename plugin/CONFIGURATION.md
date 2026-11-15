@@ -1246,7 +1246,7 @@ command can be registered as a collection kind.
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
-| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root. A root that does not exist on the machine that runs the audit is not reported: a repository names the roots of every machine it is worked on. The agent tool's directory in the primary checkout (`.claude/worktrees`) is inspected whatever this lists, and needs no entry | audit, gc, drive-pr |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root. A root that does not exist on the machine that runs the audit is not reported: a repository names the roots of every machine it is worked on. The agent tool's directory in the primary checkout (`.claude/worktrees`) is inspected whatever this lists, and needs no entry. The process opener's clone-specific root under `$JIG_HOME/worktrees` is also derived and inspected whenever present, even after switching runtimes | audit, gc, drive-pr |
 | `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
 
 A collecting run fetches `.config/jig.yaml` from the remote URL and base branch

@@ -46,12 +46,18 @@ import {
   unchangedSinceProof,
   worktreeIdentity,
   worktreePolicy,
-  worktreeProof,
   type WorktreeIdentity,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 import { currentMs } from "../../shared/time.ts";
+import {
+  processWorktreeRoot,
+  readWorktreeOwner,
+} from "../../shared/process-worktree-owner.ts";
+import { exclusiveGcLock } from "../../shared/gc-lock.ts";
+import { processWorktreeIdle } from "../process-worktrees.ts";
+import { ownedCheckoutProof } from "./worktree-owned-proof.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
 /** Seconds `orca worktree rm` may take: it deletes the checkout's files. */
@@ -441,6 +447,7 @@ async function collectAgentWorktree(
   declaration: string,
   legacy: LegacyPolicy | undefined,
   identity: WorktreeIdentity | undefined,
+  checkOwner?: () => Promise<Outcome<void>>,
 ): Promise<Collected> {
   let archived: Archived | null = null;
   const log = (line: string): void => {
@@ -476,6 +483,8 @@ async function collectAgentWorktree(
             // The holder read can take half a minute, so the identity
             // comparison goes last: nothing slow stands between it and removal.
             async () => {
+              const owner = await checkOwner?.();
+              if (owner !== undefined && !owner.ok) return owner;
               const held = await unheld(worktree);
               return held.ok ? unchangedSinceProof(worktree, identity) : held;
             },
@@ -627,7 +636,9 @@ function selectWorktrees(
   roots: string[],
   repository: string,
 ): Listed[] {
-  const canonical = roots.map(canonicalRoot);
+  const canonical = [...roots, processWorktreeRoot(repository)].map(
+    canonicalRoot,
+  );
   const primary = entries[0]?.id ?? repository;
   const agentRoot = canonicalRoot(join(primary, ...AGENT_TOOL_DIR));
   return entries.slice(1).filter((entry) => {
@@ -646,7 +657,11 @@ function markManaged(
   for (const entry of selected) {
     const row = managed.get(canonicalWorktree(entry.id));
     if (row === undefined) {
-      if (entry.details.runtime !== AGENT_TOOL) entry.details.runtime = "none";
+      if (
+        entry.details.runtime !== AGENT_TOOL &&
+        entry.details.runtime !== "process"
+      )
+        entry.details.runtime = "none";
       continue;
     }
     entry.details.runtime = "orca";
@@ -701,6 +716,13 @@ export function worktreesKind(
           "Git worktree inventory was empty or malformed",
         );
       const selected = selectWorktrees(entries, roots, repository);
+      for (const entry of selected) {
+        const identity = await worktreeIdentity(entry.id);
+        if (!identity.ok) continue;
+        const owner = readWorktreeOwner(identity.value.admin);
+        if (!owner.ok || owner.value !== null)
+          entry.details.runtime = "process";
+      }
       if (orca === undefined || selected.length === 0) return ok(selected);
       const managed = await orcaWorktrees(orca, repository);
       if (!managed.ok) return managed;
@@ -718,36 +740,36 @@ export function worktreesKind(
       if (!resolved.ok)
         return { state: "unverified", reason: resolved.failure.reason };
       const proving = { ...resolved.value, legacy: legacy() };
-      const agentTool = isAgentTool(resource);
       proved.delete(resource.id);
-      // Read before the proof, so the proof's own reads run inside it.
-      const seen = agentTool ? await worktreeIdentity(resource.id) : null;
-      if (seen !== null && !seen.ok)
-        return { state: "unverified", reason: seen.failure.reason };
-      const result =
-        orca !== undefined && orcaId(resource) !== null
-          ? await runtimeWorktreeProof(resource.id, proving, idleDays, {
-              orca,
-            })
-          : await worktreeProof(
-              resource.id,
-              proving,
-              idleDays,
-              false,
-              agentTool,
-            );
+      if (orca !== undefined && orcaId(resource) !== null) {
+        const result = await runtimeWorktreeProof(
+          resource.id,
+          proving,
+          idleDays,
+          { orca },
+        );
+        return result.ok
+          ? withHeldBranch(resource, result.value)
+          : { state: "unverified", reason: result.failure.reason };
+      }
+      const result = await ownedCheckoutProof(
+        resource.id,
+        repository,
+        proving,
+        idleDays,
+        isAgentTool(resource),
+        isMapping(resource.details) && resource.details.runtime === "process",
+      );
       if (!result.ok)
         return { state: "unverified", reason: result.failure.reason };
-      if (seen !== null && result.value.state === "dead") {
-        const same = await unchangedSinceProof(resource.id, seen.value);
-        if (!same.ok)
-          return { state: "unverified", reason: same.failure.reason };
-        proved.set(resource.id, seen.value);
-      }
-      return withHeldBranch(resource, result.value);
+      if (result.value.identity !== null)
+        proved.set(resource.id, result.value.identity);
+      return withHeldBranch(resource, result.value.proof);
     },
     collect: async (resource) => {
-      if (isAgentTool(resource)) {
+      const processOwned =
+        isMapping(resource.details) && resource.details.runtime === "process";
+      if (isAgentTool(resource) || processOwned) {
         const final = proved.get(resource.id);
         proved.delete(resource.id);
         return collectAgentWorktree(
@@ -756,6 +778,9 @@ export function worktreesKind(
           declaration,
           legacy(),
           final,
+          processOwned && final !== undefined
+            ? () => processWorktreeIdle(resource.id, repository, final)
+            : undefined,
         );
       }
       const id = orcaId(resource);
@@ -776,6 +801,6 @@ export function worktreesKind(
       };
     },
     describe: (resource) => resource.id,
-    exclusive: (body) => body(),
+    exclusive: (body) => exclusiveGcLock("worktrees", body),
   };
 }
