@@ -81,20 +81,7 @@ export async function applySteward(
   if (!opened.owner) return skip("another host owns this repository");
   if (!opened.stages.has("steward") || !config?.enabled)
     return skip("steward is disabled on this host");
-  for (const record of replayable(state, repo.slug, ["steward"])) {
-    const action: Action = {
-      stage: "steward",
-      target: "the steward",
-      record: "runtime",
-      reason: "retry the pending steward launch under its existing token",
-      evidence: {},
-    };
-    report.launches.push(
-      await replay(state, record, action, await accountBlock(state, record)),
-    );
-    if (!state.records.some((r) => r.record.id === record.id))
-      forgetStewardRun(record.id, state.root);
-  }
+  await replayPending(state, repo.slug, report);
   if (
     state.records.some(
       (r) =>
@@ -236,6 +223,28 @@ function stewardStatus(
     hash,
     trigger: "started",
   };
+}
+
+/** Retry each pending steward launch under its token; one the runtime refused started no pass, so its run is taken back. */
+async function replayPending(
+  state: ApplyState,
+  slug: string,
+  report: RepoReport,
+): Promise<void> {
+  for (const record of replayable(state, slug, ["steward"])) {
+    const action: Action = {
+      stage: "steward",
+      target: "the steward",
+      record: "runtime",
+      reason: "retry the pending steward launch under its existing token",
+      evidence: {},
+    };
+    report.launches.push(
+      await replay(state, record, action, await accountBlock(state, record)),
+    );
+    if (!state.records.some((r) => r.record.id === record.id))
+      forgetStewardRun(record.id, state.root);
+  }
 }
 
 /** The judgment backlog, derived from the whole queue: a queued item the tick did not read is read now. */
