@@ -1,16 +1,15 @@
 /** Standalone Ready completion releases only its own session leases. */
 import { describe, expect, it } from "bun:test";
-import { join, delimiter } from "node:path";
+import { join } from "node:path";
 import {
   SCRIPTS,
-  binDir,
   scratchClean,
   writeFixture as rawFixture,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
+import { markReady } from "./mark-ready-harness.ts";
 import { PASS_NOOP, runDriveIn } from "./drive-loop-harness.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { worktreePathKey } from "../scripts/lib/state/actor.ts";
 import { leaseRef, treeLeaseRef } from "../scripts/lib/state/lease.ts";
 import {
@@ -26,35 +25,6 @@ useDrivePrSuite();
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
 
-async function markReady(
-  dir: string,
-  stateDir: string,
-  args: string[] = [],
-  env: Record<string, string> = {},
-) {
-  const proc = Bun.spawn(
-    scriptArgv(join(SCRIPTS, "mark-ready.ts"), "999", ...args),
-    {
-      cwd: scratchClean.dir,
-      env: {
-        ...process.env,
-        PATH: `${binDir}${delimiter}${process.env.PATH}`,
-        DRIVE_PR_FIXTURES: dir,
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
-        ...env,
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { outcome: stdout.trim(), stderr, exitCode };
-}
 const readyClaim = (stateDir: string) => claimRow(stateDir, "999", "ready");
 
 describe("standalone mark-ready session leases", () => {
