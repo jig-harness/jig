@@ -399,6 +399,29 @@ async function collectThroughOrca(
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
 }
+/** The `failed` result of an evidence retirement that failed after a removal, or null. */
+function retirementFailure(
+  resource: Resource,
+  removed: { hook: string | null },
+  retired: Outcome<void> | undefined,
+  how: { phrase: string; method: string },
+  archived: Archived | null,
+): Collected | null {
+  if (retired === undefined || retired.ok) return null;
+  return {
+    outcome: "failed",
+    reason: `removed ${how.phrase}, but completion evidence retirement failed: ${retired.failure.reason}`,
+    details: {
+      ...(isMapping(resource.details) ? resource.details : {}),
+      removal: { method: how.method, hook: removed.hook, parked: true },
+      completionEvidence: {
+        outcome: "failed",
+        reason: retired.failure.reason,
+      },
+      ...(archived === null ? {} : { archive: archived }),
+    },
+  };
+}
 /** A failed evidence retirement does not erase the fact that Orca removed the checkout. */
 function orcaCompletionRetirementResult(
   resource: Resource,
@@ -406,25 +429,14 @@ function orcaCompletionRetirementResult(
   archived: Archived | null,
   retireCompletions: (() => Outcome<void>) | undefined,
 ): Collected {
-  const retired = retireCompletions?.();
-  if (retired !== undefined && !retired.ok)
-    return {
-      outcome: "failed",
-      reason: `removed through Orca, but completion evidence retirement failed: ${retired.failure.reason}`,
-      details: {
-        ...(isMapping(resource.details) ? resource.details : {}),
-        removal: {
-          method: "orca worktree rm",
-          hook: removed.hook,
-          parked: true,
-        },
-        completionEvidence: {
-          outcome: "failed",
-          reason: retired.failure.reason,
-        },
-        ...(archived === null ? {} : { archive: archived }),
-      },
-    };
+  const failure = retirementFailure(
+    resource,
+    removed,
+    retireCompletions?.(),
+    { phrase: "through Orca", method: "orca worktree rm" },
+    archived,
+  );
+  if (failure !== null) return failure;
   return {
     outcome: "collected",
     reason: `removed through Orca: ${removed.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} orca worktree rm`,
@@ -579,24 +591,14 @@ function completionRetirementResult(
   archived: Archived | null,
   retireCompletions: (() => Outcome<void>) | undefined,
 ): Collected {
-  const retired = retireCompletions?.();
-  if (retired !== undefined && !retired.ok)
-    return {
-      outcome: "failed",
-      reason: `removed with git, but completion evidence retirement failed: ${retired.failure.reason}`,
-      details: {
-        ...(isMapping(resource.details) ? resource.details : {}),
-        removal: {
-          method: "git worktree remove",
-          hook: removed.hook,
-          parked: true,
-        },
-        completionEvidence: {
-          outcome: "failed",
-          reason: retired.failure.reason,
-        },
-      },
-    };
+  const failure = retirementFailure(
+    resource,
+    removed,
+    retireCompletions?.(),
+    { phrase: "with git", method: "git worktree remove" },
+    null,
+  );
+  if (failure !== null) return failure;
   return {
     outcome: "collected",
     reason: `removed with git: ${removed.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} git worktree remove`,
