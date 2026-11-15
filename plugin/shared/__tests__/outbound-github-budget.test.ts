@@ -22,6 +22,7 @@ import {
 } from "../outbound/github-budget.ts";
 import type { OutboundFailure } from "../outbound/failure.ts";
 import { ghRunFailure } from "../outbound/github.ts";
+import { seededBudget } from "./outbound-budget-fixture.ts";
 import { closeDatabase } from "../records/db.ts";
 import { currentMs } from "../time.ts";
 import { traceGhRunner } from "../trace.ts";
@@ -563,239 +564,100 @@ describe("the accounting of runs whose answers say little of the balance", () =>
   });
 
   it("gives back an unsent request the snapshot did not count, even after an overlapping snapshot", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, () => ({
-      ...record(),
-      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
-    }));
-    now += 10;
-    const a = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 20;
-    const b = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      {
-        snapshot: true,
-        requests: { limit: 5000, remaining: 4000, resetAt: reset },
-      },
-      now - 15,
-    );
-    expect(store.read(KEY)?.requests.remaining).toBe(3999);
-    governor.release?.(KEY, "requests", a);
-    expect(store.read(KEY)?.requests.remaining).toBe(3999);
-    governor.release?.(KEY, "requests", b);
-    expect(store.read(KEY)?.requests.remaining).toBe(4000);
+    const b = seededBudget(KEY, 4000);
+    b.clock.now += 10;
+    const a = b.reserve();
+    b.clock.now += 20;
+    const second = b.reserve();
+    b.clock.now += 10;
+    b.snapshot(4000, b.clock.now - 15);
+    expect(b.remaining()).toBe(3999);
+    b.release(a);
+    expect(b.remaining()).toBe(3999);
+    b.release(second);
+    expect(b.remaining()).toBe(4000);
   });
 
   it("gives nothing back for a request a later snapshot already settled", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, record);
-    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      {
-        snapshot: true,
-        requests: { limit: 5000, remaining: 4001, resetAt: reset },
-      },
-      now,
-    );
-    now += 10;
-    governor.release?.(KEY, "requests", sentAt);
-    expect(store.read(KEY)?.requests.remaining).toBe(4001);
+    const b = seededBudget(KEY, 4000, false);
+    const sentAt = b.reserve();
+    b.clock.now += 10;
+    b.snapshot(4001, b.clock.now);
+    b.clock.now += 10;
+    b.release(sentAt);
+    expect(b.remaining()).toBe(4001);
   });
 
   it("keeps a snapshot's settlement through an ordinary answer, so a later release gives nothing back", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, record);
-    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      {
-        snapshot: true,
-        requests: { limit: 5000, remaining: 4001, resetAt: reset },
-      },
-      now,
-    );
-    now += 10;
-    governor.observe(
-      KEY,
-      { requests: { limit: 5000, remaining: 4000, resetAt: reset } },
-      now - 1,
-    );
-    now += 10;
-    governor.release?.(KEY, "requests", sentAt);
-    expect(store.read(KEY)?.requests.remaining).toBe(4000);
+    const b = seededBudget(KEY, 4000, false);
+    const sentAt = b.reserve();
+    b.clock.now += 10;
+    b.snapshot(4001, b.clock.now);
+    b.clock.now += 10;
+    b.answer(4000, b.clock.now - 1);
+    b.clock.now += 10;
+    b.release(sentAt);
+    expect(b.remaining()).toBe(4000);
   });
 
   it("keeps an ordinary answer's lower balance when a delayed snapshot arrives", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, () => ({
-      ...record(),
-      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
-    }));
-    now += 10;
-    governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      { requests: { limit: 5000, remaining: 0, resetAt: reset } },
-      now - 1,
-    );
-    now += 10;
-    governor.observe(
-      KEY,
-      {
-        snapshot: true,
-        requests: { limit: 5000, remaining: 4000, resetAt: reset },
-      },
-      1_000_005,
-    );
-    expect(store.read(KEY)?.requests.remaining).toBe(0);
+    const b = seededBudget(KEY, 4000);
+    b.clock.now += 10;
+    b.reserve();
+    b.clock.now += 10;
+    b.answer(0, b.clock.now - 1);
+    b.clock.now += 10;
+    b.snapshot(4000, 1_000_005);
+    expect(b.remaining()).toBe(0);
   });
 
   it("keeps the reservations an ordinary answer's retained balance counted, so a release still gives one back", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, () => ({
-      ...record(),
-      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
-    }));
-    now += 10;
-    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      { requests: { limit: 5000, remaining: 4000, resetAt: reset } },
-      1_000_005,
-    );
-    now += 10;
-    governor.observe(
-      KEY,
-      {
-        snapshot: true,
-        requests: { limit: 5000, remaining: 4000, resetAt: reset },
-      },
-      1_000_015,
-    );
-    expect(store.read(KEY)?.requests.remaining).toBe(3999);
-    governor.release?.(KEY, "requests", sentAt);
-    expect(store.read(KEY)?.requests.remaining).toBe(4000);
+    const b = seededBudget(KEY, 4000);
+    b.clock.now += 10;
+    const sentAt = b.reserve();
+    b.clock.now += 10;
+    b.answer(4000, 1_000_005);
+    b.clock.now += 10;
+    b.snapshot(4000, 1_000_015);
+    expect(b.remaining()).toBe(3999);
+    b.release(sentAt);
+    expect(b.remaining()).toBe(4000);
   });
 
   it("gives nothing back for a reservation an ordinary answer's lower balance outlasts a delayed snapshot", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, () => ({
-      ...record(),
-      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
-    }));
-    now += 10;
-    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      { requests: { limit: 5000, remaining: 0, resetAt: reset } },
-      now - 1,
-    );
-    now += 10;
-    governor.observe(
-      KEY,
-      {
-        snapshot: true,
-        requests: { limit: 5000, remaining: 4000, resetAt: reset },
-      },
-      1_000_015,
-    );
-    governor.release?.(KEY, "requests", sentAt);
-    expect(store.read(KEY)?.requests.remaining).toBe(0);
+    const b = seededBudget(KEY, 4000);
+    b.clock.now += 10;
+    const sentAt = b.reserve();
+    b.clock.now += 10;
+    b.answer(0, b.clock.now - 1);
+    b.clock.now += 10;
+    b.snapshot(4000, 1_000_015);
+    b.release(sentAt);
+    expect(b.remaining()).toBe(0);
   });
 
   it("keeps a reservation made after an ordinary answer's request was sent, for a later snapshot to subtract", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, () => ({
-      ...record(),
-      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
-    }));
-    now += 10;
-    governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      { requests: { limit: 5000, remaining: 3990, resetAt: reset } },
-      1_000_005,
-    );
-    now += 10;
-    governor.observe(
-      KEY,
-      {
-        snapshot: true,
-        requests: { limit: 5000, remaining: 3990, resetAt: reset },
-      },
-      1_000_005,
-    );
-    expect(store.read(KEY)?.requests.remaining).toBe(3989);
+    const b = seededBudget(KEY, 4000);
+    b.clock.now += 10;
+    b.reserve();
+    b.clock.now += 10;
+    b.answer(3990, 1_000_005);
+    b.clock.now += 10;
+    b.snapshot(3990, 1_000_005);
+    expect(b.remaining()).toBe(3989);
   });
 
   it("deducts a reservation made after an ordinary answer's request was sent, so releasing it gives back only that one", () => {
-    const store = memoryBudgetStore();
-    let now = 1_000_000;
-    const governor = budgetGovernor(store, {
-      clock: () => now,
-      share: () => null,
-    });
-    store.update(KEY, () => ({
-      ...record(),
-      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
-    }));
-    now += 5;
-    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 5;
-    const unsentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
-    now += 10;
-    governor.observe(
-      KEY,
-      { requests: { limit: 5000, remaining: 0, resetAt: reset } },
-      sentAt,
-    );
-    expect(store.read(KEY)?.requests.remaining).toBe(0);
-    governor.release?.(KEY, "requests", unsentAt);
-    expect(store.read(KEY)?.requests.remaining).toBe(0);
+    const b = seededBudget(KEY, 4000);
+    b.clock.now += 5;
+    const sentAt = b.reserve();
+    b.clock.now += 5;
+    const unsentAt = b.reserve();
+    b.clock.now += 10;
+    b.answer(0, sentAt);
+    expect(b.remaining()).toBe(0);
+    b.release(unsentAt);
+    expect(b.remaining()).toBe(0);
   });
 
   it("reads a stored window with a negative or fractional overflow count as none", () => {
