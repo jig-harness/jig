@@ -59,6 +59,7 @@ import { driveState, captureIntentChain, driveTs } from "./paths.ts";
 import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
+import { ignoreDriveContext } from "./../context-ignore.ts";
 
 import { clearDeadlineRetries } from "./restart.ts";
 
@@ -396,6 +397,10 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
         `drive.ts: PR #${pr} is not open; its restart count still stands`,
       );
   });
+  // The drive's own `.context/` files must not read as uncommitted changes
+  // to any later check (`context-ignore.ts`): the attach made sure of it
+  // before it moved the tree, and the branch it left may ignore less.
+  await ignoreDriveContext(diag.worktree, dryRun);
   // The base-branch commit the autonomy policy is read from, before
   // anything below reads the level (the re-arm does); every round refreshes it.
   await announcePolicyBase(pr);
