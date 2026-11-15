@@ -7,7 +7,7 @@ import { describe, expect, it } from "bun:test";
 import {
   checkRules,
   FACT_NAMES,
-  FACTS,
+  RULE_FACTS,
   LIST_SEMANTICS,
   lookup,
   matchOne,
@@ -126,7 +126,7 @@ describe("list semantics", () => {
   it("names a meaning for every semantics, fact and field", () => {
     for (const s of Object.values(LIST_SEMANTICS))
       expect(s.meaning).not.toBe("");
-    for (const f of FACT_NAMES) expect(FACTS[f].meaning).not.toBe("");
+    for (const f of FACT_NAMES) expect(RULE_FACTS[f].meaning).not.toBe("");
     for (const f of Object.values(RULE_FIELDS)) expect(f.meaning).not.toBe("");
   });
 });

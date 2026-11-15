@@ -48,7 +48,7 @@ A rule's facts are tried in this order, and a rule's values for one fact in
 the order written; the first value that matches one of the item's values is
 the one a reason names.
 
-<!-- protocol:generated source=plugin/shared/rule-matcher-values.ts#FACTS -->
+<!-- protocol:generated source=plugin/shared/rule-matcher-values.ts#RULE_FACTS -->
 
 | Fact | The item holds | A rule lists | Compared | Meaning |
 | --- | --- | --- | --- | --- |
@@ -61,7 +61,7 @@ the one a reason names.
 
 ## How a rule combines its values
 
-<!-- protocol:generated source=plugin/shared/rule-matcher-values.ts#COMBINATION -->
+<!-- protocol:generated source=plugin/shared/rule-matcher-values.ts#RULE_COMBINATION -->
 
 | Combination | Meaning |
 | --- | --- |

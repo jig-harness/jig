@@ -31,7 +31,7 @@ export interface FactSpec {
   readonly meaning: string;
 }
 
-export const FACTS: Readonly<Record<FactName, FactSpec>> = {
+export const RULE_FACTS: Readonly<Record<FactName, FactSpec>> = {
   labels: {
     holds: "a list of label names",
     ruleValue: "a list of label names",
@@ -70,7 +70,7 @@ export const FACTS: Readonly<Record<FactName, FactSpec>> = {
 };
 
 /** How a rule's facts and values combine. */
-export const COMBINATION = {
+export const RULE_COMBINATION = {
   name: "any",
   meaning:
     "A rule matches when any one value it lists, for any one fact it tests, matches the item: one label of several is enough, and a label or a path is enough. A rule cannot yet say that every value, or none, must match.",

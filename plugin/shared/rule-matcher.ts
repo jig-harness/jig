@@ -7,7 +7,7 @@
  *
  *   { labels: [hotfix, urgent], paths: ["db/**"] }
  *
- * and matches when any one listed value matches the item (`COMBINATION`).
+ * and matches when any one listed value matches the item (`RULE_COMBINATION`).
  * A field's simple forms (a list of labels, a map from a label to a result)
  * are read as such rules by `ruleList` and `ruleMap`, and a field's list of
  * rules resolves as its `RULE_FIELDS` entry says. Each match carries the
@@ -24,7 +24,7 @@ import { isRecord } from "./guards.ts";
 import { Defect, failed, ok, type Outcome } from "./outcome.ts";
 import {
   FACT_NAMES,
-  FACTS,
+  RULE_FACTS,
   type FactName,
   RULE_FIELDS,
   type RuleField,
@@ -69,7 +69,7 @@ export function compare(
   ruleValue: string,
   value: string,
 ): boolean {
-  switch (FACTS[fact].comparison) {
+  switch (RULE_FACTS[fact].comparison) {
     case "equal-ignoring-case":
       return fold(ruleValue) === fold(value);
     case "contained-ignoring-case":
@@ -110,7 +110,7 @@ function factValues(
   )
     return failed(
       "rule-invalid",
-      `${at} must be a nonempty list of ${FACTS[fact].ruleValue.replace(/^a list of /, "")}`,
+      `${at} must be a nonempty list of ${RULE_FACTS[fact].ruleValue.replace(/^a list of /, "")}`,
     );
   if (fact === "paths")
     for (const glob of raw as string[]) {
@@ -235,7 +235,7 @@ export function ruleList(
       .join("");
     return failed(
       "rule-invalid",
-      `${field} must be a list of distinct nonempty ${FACTS[fact].ruleValue.replace(/^a list of /, "")}${alternatives}`,
+      `${field} must be a list of distinct nonempty ${RULE_FACTS[fact].ruleValue.replace(/^a list of /, "")}${alternatives}`,
     );
   }
   if (raw.length === 0) return ok({ [fact]: [] });

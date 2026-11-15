@@ -6,9 +6,9 @@
  * that selects by an item's or a change's facts.
  */
 import {
-  COMBINATION,
+  RULE_COMBINATION,
   FACT_NAMES,
-  FACTS,
+  RULE_FACTS,
   LIST_SEMANTICS,
   type ListSemantics,
   RULE_FIELDS,
@@ -47,9 +47,9 @@ const code = (text: string) => `\`${text}\``;
 function rows(): TableRow[] {
   return [
     ...FACT_NAMES.map((name) => {
-      const f = FACTS[name];
+      const f = RULE_FACTS[name];
       return {
-        table: "FACTS",
+        table: "RULE_FACTS",
         value: {
           kind: "fact",
           name,
@@ -62,12 +62,12 @@ function rows(): TableRow[] {
       };
     }),
     {
-      table: "COMBINATION",
+      table: "RULE_COMBINATION",
       value: {
         kind: "combination",
-        name: COMBINATION.name,
+        name: RULE_COMBINATION.name,
         ...none,
-        meaning: COMBINATION.meaning,
+        meaning: RULE_COMBINATION.meaning,
       },
     },
     ...(Object.keys(LIST_SEMANTICS) as ListSemantics[]).map((name) => ({
@@ -224,8 +224,8 @@ export const RULE_MATCHERS_CHAPTER: Chapter = {
   planItems: [],
   module: "tools/protocol/chapters/rule-matchers.ts",
   sections: [
-    { source: source("FACTS"), render: factsTable },
-    { source: source("COMBINATION"), render: combinationTable },
+    { source: source("RULE_FACTS"), render: factsTable },
+    { source: source("RULE_COMBINATION"), render: combinationTable },
     { source: source("LIST_SEMANTICS"), render: listTable },
     { source: source("RULE_FORMS"), render: formsTable },
     { source: source("RULE_FIELDS"), render: fieldsTable },
