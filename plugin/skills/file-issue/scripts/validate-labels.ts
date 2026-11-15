@@ -8,6 +8,7 @@
  *     bun validate-labels.ts --type bug --priority 2 --size small [<label>...]
  *     echo '["bug", "small"]' | bun validate-labels.ts [--json]
  *     bun validate-labels.ts [--json] --input issue.json
+ *     bun validate-labels.ts --native-type Epic <label>...
  *
  * Given the issue's facets (`--type`, `--priority`, `--size`, or the issue
  * `tracker.ts create` takes, `{ labels, type, priority, size }`, on stdin or
@@ -17,6 +18,11 @@
  * priority 1 (urgent) to 4 (low), and a type or size label among the labels
  * refused, since the tracker writes those facets itself.
  *
+ * Given the issue's own tracker type (`--native-type`, or the `nativeType`
+ * `get_issue.ts` prints, in the issue on stdin or in `--input`), an issue
+ * whose type `issue_tracker.labels.epic_types` lists is checked as if it
+ * carried the epic label, so a `requires` naming that label is met by it.
+ *
  * The taxonomy is `--taxonomy`, else the repository's `issue_tracker.taxonomy`
  * (relative to the repository root), else `label-taxonomy.yaml` at the root.
  * `--check-tracker` also requires every label to name exactly one tracker
@@ -24,18 +30,22 @@
  * `--json` prints `{ valid, labels, errors, warnings, parsed }`.
  *
  * Exit codes: 0 the labels are valid (warnings may be printed), 3 they are
- * not, 1 the taxonomy is missing, unreadable or fails its lint, or the tracker
- * could not be read, 2 usage.
+ * not, 1 the taxonomy is missing, unreadable or fails its lint, the tracker
+ * could not be read, or, given an issue type, the label roles could not be
+ * read, 2 usage.
  */
 import { existsSync, readFileSync } from "node:fs";
 import {
   openTracker,
   type Tracker,
 } from "../../do-item/scripts/lib/tracker/index.ts";
+import { readConfig } from "../../../shared/consumer.ts";
+import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import { taxonomyPath } from "./lib/config.ts";
 import { lintTaxonomyFile } from "./lib/taxonomy.ts";
 import {
   type IssueFacetInput,
+  type IssueTypeInput,
   type Validation,
   validateLabels,
 } from "./lib/validate.ts";
@@ -43,7 +53,8 @@ import type { Taxonomy } from "./lib/taxonomy.ts";
 
 const USAGE =
   "usage: validate-labels.ts [--taxonomy <path>] [--json] [--check-tracker]\n" +
-  "                          [--type <type>] [--priority <1-4>] [--size <size>] <label>...\n" +
+  "                          [--type <type>] [--priority <1-4>] [--size <size>]\n" +
+  "                          [--native-type <issue type>] <label>...\n" +
   "       (or the labels as a JSON array, or the issue as a JSON object, on stdin or in --input <file>)";
 
 export interface Deps {
@@ -75,10 +86,12 @@ interface Options {
   facets?: IssueFacetInput;
   /** A file holding what standard input would: the labels, or the issue. */
   input?: string;
+  /** The issue's own tracker type, read beside the label roles. */
+  nativeType?: string;
 }
 
 /** The options that take a value, as `--name value` or `--name=value`. */
-const VALUED = /^--(taxonomy|input|type|priority|size)(?:=(.*))?$/;
+const VALUED = /^--(taxonomy|input|type|priority|size|native-type)(?:=(.*))?$/;
 
 /** Set the option `name` to `value`, or say why it cannot be. */
 function setOption(
@@ -89,6 +102,7 @@ function setOption(
   if (value === undefined || value.trim() === "")
     return `--${name} needs a ${name === "taxonomy" || name === "input" ? "path" : "value"}`;
   if (name === "taxonomy" || name === "input") options[name] = value;
+  else if (name === "native-type") options.nativeType = value;
   else if (name !== "priority")
     options.facets = { ...options.facets, [name]: value };
   else if (/^[1-4]$/.test(value))
@@ -122,12 +136,17 @@ function parseArgs(argv: string[]): Options | string {
 }
 
 const STDIN_SHAPE =
-  "standard input is not a JSON array of label names, or an issue ({ labels, type, priority, size })";
+  "standard input is not a JSON array of label names, or an issue ({ labels, type, priority, size, nativeType })";
 
-/** The labels, and with an issue its facets, that stdin names; or a usage message. */
-function stdinIssue(
-  text: string,
-): { labels: string[]; facets?: IssueFacetInput } | string {
+/** What is checked: the labels, and with an issue its facets and its own type. */
+interface IssueRead {
+  labels: string[];
+  facets?: IssueFacetInput;
+  nativeType?: string | null;
+}
+
+/** The labels, and with an issue its facets and type, that stdin names; or a usage message. */
+function stdinIssue(text: string): IssueRead | string {
   if (text.trim() === "") return "no labels given";
   let value: unknown;
   try {
@@ -147,6 +166,7 @@ function stdinIssue(
     !names(labels) ||
     !optionalText(issue.type) ||
     !optionalText(issue.size) ||
+    !optionalText(issue.nativeType) ||
     !(issue.priority === undefined || Number.isInteger(issue.priority))
   )
     return STDIN_SHAPE;
@@ -157,6 +177,7 @@ function stdinIssue(
       size: (issue.size as string | null | undefined) ?? null,
       priority: (issue.priority as number | undefined) ?? 0,
     },
+    nativeType: (issue.nativeType as string | null | undefined) ?? null,
   };
 }
 
@@ -185,15 +206,15 @@ class Stop extends Error {
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** The labels to check, and the facets: the arguments, else stdin. */
-async function readIssue(
-  options: Options,
-  deps: Deps,
-): Promise<{ labels: string[]; facets?: IssueFacetInput }> {
+/** The labels to check, the facets and the type: the arguments, else stdin. */
+async function readIssue(options: Options, deps: Deps): Promise<IssueRead> {
+  const typed =
+    options.nativeType === undefined ? {} : { nativeType: options.nativeType };
   if (options.labels.length || options.facets !== undefined)
     return {
       labels: options.labels,
       ...(options.facets === undefined ? {} : { facets: options.facets }),
+      ...typed,
     };
   const read = stdinIssue(
     options.input === undefined
@@ -201,7 +222,22 @@ async function readIssue(
       : readFileSync(options.input, "utf8"),
   );
   if (typeof read === "string") throw new Stop(2, `${read}\n${USAGE}`);
-  return read;
+  return { ...read, ...typed };
+}
+
+/** The issue's type beside the repository's epic types; none without a type. */
+function issueType(
+  nativeType: string | null | undefined,
+): IssueTypeInput | undefined {
+  if (nativeType === undefined || nativeType === null) return undefined;
+  try {
+    return { nativeType, epics: parseTrackerLabels(readConfig()) };
+  } catch (e) {
+    throw new Stop(
+      1,
+      `ERROR: the label roles (issue_tracker.labels) could not be read: ${reason(e)}`,
+    );
+  }
 }
 
 /** The taxonomy at `--taxonomy`, else the configured one, if it passes its lint. */
@@ -263,8 +299,13 @@ async function unresolvedInTracker(
 async function run(argv: string[], deps: Deps): Promise<number> {
   const options = parseArgs(argv);
   if (typeof options === "string") throw new Stop(2, `${options}\n${USAGE}`);
-  const { labels, facets } = await readIssue(options, deps);
-  const result = validateLabels(labels, loadTaxonomy(options.taxonomy), facets);
+  const { labels, facets, nativeType } = await readIssue(options, deps);
+  const result = validateLabels(
+    labels,
+    loadTaxonomy(options.taxonomy),
+    facets,
+    issueType(nativeType),
+  );
   if (options.checkTracker) {
     const { missing, ambiguous } = await unresolvedInTracker(
       result.labels,

@@ -1,0 +1,18 @@
+# BAD — the `pr-followup` flag declares a colour with a leading `#`; a
+# colour is six hex digits and nothing else, as the tracker takes it.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: pr-followup
+    scope: shipping-item
+    fires: deferral-ledger
+    apply_when: the issue was filed from a review finding deferred on a pull request
+    color: "#cfd3d7"

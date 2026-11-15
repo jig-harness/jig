@@ -141,8 +141,15 @@ level, which the level itself answers.
 
    ```bash
    bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --input .context/scratch/file-issue/<n>.json
-   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> <label>...
+   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> [--native-type <issue type>] <label>...
    ```
+
+   For an existing issue, pass `--native-type` the native type it will have
+   after the change: its `nativeType` (from `get_issue.ts`) unless the change
+   sets the native issue type itself; then the issue type the adapter
+   resolves for the destination. Changing the type facet through labels or a
+   field leaves the native type as it is, so an epic keeps meeting a
+   `requires` naming the epic label when its label-backed type changes.
 
    It asks for a priority as it asks for a type and a size. Exit `0`:
    valid (read any `WARNING` and act on it or say why not). Exit
@@ -456,7 +463,11 @@ Then load the taxonomy and the label roles as in
 `priority` and `size` `get_issue.ts` prints) against the taxonomy (run
 `validate-labels.ts` on the labels without those that spell the type or
 the size, which `get_issue.ts` keeps beside the facets and the validator
-refuses as a second input, with `--type`, `--priority` and `--size`) and against what the issue describes, deriving as in
+refuses as a second input, with `--type`, `--priority` and `--size`, and
+with `--native-type` the native type it will have after the change (its `nativeType`
+unless the plan sets the native issue type, then the adapter's resolved destination), so an issue typed as an epic
+(`issue_tracker.labels.epic_types`) meets a `requires` naming the epic
+label) and against what the issue describes, deriving as in
 [File, step 6](#6-derive-the-labels). A missing priority is asked for, as
 when filing. Keep each
 existing label unless the assessment replaces it; replacing a group's

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { load } from "../../../shared/yaml.ts";
 import { lintTaxonomyText } from "../scripts/lib/taxonomy.ts";
 
 const script = join(
@@ -34,6 +35,11 @@ const cases: [string, number, string][] = [
   ["bad/flag-requires-unknown.yaml", 1, "requires 'legal'"],
   ["bad/flag-requires-self.yaml", 1, "requires itself"],
   ["bad/unknown-key.yaml", 1, "unknown top-level key"],
+  [
+    "bad/entry-bad-color.yaml",
+    1,
+    "'flags' entry 'pr-followup' has a 'color:' that is not six hex digits",
+  ],
   [
     "bad/group-misspelt-key.yaml",
     1,
@@ -244,6 +250,38 @@ test("every YAML spelling of an entry is read, and what is not text is rejected"
     });
     if (expected) expect(problems.join("\n")).toContain(expected);
   }
+});
+
+test("any entry may carry a colour of six hex digits, and nothing else", () => {
+  const head = "statuses:\n  - id: todo\n";
+  const typed = (color: string) =>
+    lintTaxonomyText(`types:\n  - id: feature\n    color: ${color}\n${head}`)
+      .problems;
+  for (const good of ["cfd3d7", "CFD3D7", '"d93f0b"', '"123456"'])
+    expect({ good, problems: typed(good) }).toEqual({ good, problems: [] });
+  for (const bad of ['"#cfd3d7"', "cfd3d", "cfd3d7a", "gggggg", "123456", "~"])
+    expect({ bad, problems: typed(bad) }).toEqual({
+      bad,
+      problems: [
+        "'types' entry 'feature' has a 'color:' that is not six hex digits (a text such as cfd3d7, without '#'; quote one YAML would read as a number)",
+      ],
+    });
+  const nested = lintTaxonomyText(
+    `types:\n  - id: feature\n${head}groups:\n  - id: size\n    color: c2e0c6\n    labels:\n      - { id: small, color: nope }\n`,
+  ).problems;
+  expect(nested).toEqual([
+    "'groups.size.labels' entry 'small' has a 'color:' that is not six hex digits (a text such as cfd3d7, without '#'; quote one YAML would read as a number)",
+  ]);
+});
+
+test("the repository's own taxonomy passes, with pr-followup a neutral grey", () => {
+  const path = join(import.meta.dir, "../../../../label-taxonomy.yaml");
+  expectSpawnExit(lint(path), 0);
+  const doc = load(readFileSync(path, "utf8")) as {
+    flags: { id: string; color?: string }[];
+  };
+  const color = (id: string) => doc.flags.find((f) => f.id === id)?.color;
+  expect(color("pr-followup")).toBe("cfd3d7");
 });
 
 test("a requires may name any label of the file, a closed category label included", () => {

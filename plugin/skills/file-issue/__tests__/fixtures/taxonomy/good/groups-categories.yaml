@@ -22,6 +22,7 @@ groups:
     labels:
       - id: xs
         notes: under an hour
+        color: C2E0C6
       - id: small
       - id: medium
       - id: large
@@ -33,6 +34,7 @@ groups:
 categories:
   - id: area
     prefix: "area:"
+    color: "1d76db"
     recommended: true
     max: 3
     labels:

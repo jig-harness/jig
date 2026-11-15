@@ -11,6 +11,10 @@ import {
   facetInputs,
   parseTrackerConfig,
 } from "../scripts/lib/tracker/config.ts";
+import {
+  lintTaxonomyText,
+  type Taxonomy,
+} from "../../file-issue/scripts/lib/taxonomy.ts";
 import { incompleteness } from "../scripts/lib/tracker/facets/complete.ts";
 import { resolveFacets } from "../scripts/lib/tracker/facets/config.ts";
 import { numberKeys, teamKeys } from "../scripts/lib/tracker/keys.ts";
@@ -253,5 +257,33 @@ describe("the filing check", () => {
       );
     expect(filed("epic")).toEqual([]);
     expect(filed("feature")).toEqual(["size"]);
+    const group = lintTaxonomyText(
+      [
+        "version: 1",
+        "types: [{ id: feature }, { id: initiative }]",
+        "statuses: [{ id: todo }]",
+        "flags:",
+        "  - { id: epic, scope: container, fires: roll-up, apply_when: a container }",
+        "groups:",
+        "  - { id: repo, required: true, not_required_on: [epic], labels: [{ id: app }] }",
+      ].join("\n"),
+    ).taxonomy as Taxonomy;
+    // The facet type `epic` maps to the tracker's Epic type; the taxonomy's flag
+    // of the same name is the label the issue type stands for.
+    const withGroup = (type: string) =>
+      incompleteness(
+        {
+          title: "t",
+          description: "",
+          labels: [],
+          type,
+          priority: 2,
+          size: "small",
+        },
+        facets,
+        group,
+      );
+    expect(withGroup("epic")).toEqual([]);
+    expect(withGroup("feature")).toEqual(["repo"]);
   });
 });
