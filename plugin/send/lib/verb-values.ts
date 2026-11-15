@@ -69,7 +69,7 @@ export const SEND_VERBS = {
     person: true,
     args: ANSWER_ARGS,
     meaning:
-      "Answer a parked question or a need's decision by approving or choosing one of its options, at any of these stations; a drive also takes the person's own words, and --all to approve every parked question it may at once, which the other stations refuse. One answer comment per item, read by the re-arm or the dispatcher's next tick",
+      "Answer a parked question or a need's decision by approving or choosing one of its options, at any of these stations; a drive also takes the person's own words, and --all to approve every parked question it may at once, which the other stations refuse. The bracketed --decision and --decision-set can be left out only on a dry run and, for an individual answer, on a park framed without a digest: a real structured answer to a framed decision needs its digest, and a real --all approval needs the set token the dry run printed. One answer comment per item, read by the re-arm or the dispatcher's next tick",
   },
   pause: {
     stations: ["drive"],
