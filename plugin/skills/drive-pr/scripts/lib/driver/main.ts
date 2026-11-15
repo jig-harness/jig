@@ -386,7 +386,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // The drive's own `.context/` files must not read as uncommitted changes,
   // to the attach's check below or to any later one (`context-ignore.ts`);
   // checked again after the attach, whose branch may ignore less.
-  if (!dryRun) await ignoreDriveContext(diag.worktree);
+  await ignoreDriveContext(diag.worktree, dryRun);
 
   // Once both the tree and the PR are ours: the tree is put on the PR's head
   // (its branch, or the head commit detached when another working tree holds
@@ -402,7 +402,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
         `drive.ts: PR #${pr} is not open; its restart count still stands`,
       );
   });
-  if (!dryRun) await ignoreDriveContext(diag.worktree);
+  await ignoreDriveContext(diag.worktree, dryRun);
   // The base-branch commit the autonomy policy is read from, before
   // anything below reads the level (the re-arm does); every round refreshes it.
   await announcePolicyBase(pr);

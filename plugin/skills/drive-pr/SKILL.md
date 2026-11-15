@@ -524,7 +524,7 @@ every check of a clean tree counts untracked files. So once it holds both
 locks, and again after the attach, `drive.ts` checks that `.context/` is
 ignored in the tree it drives; where the repository's ignore rules do not
 cover it, it adds the line `.context/` to the clone's local exclude file
-(`git rev-parse --git-path info/exclude`, never committed), keeping the
+(`info/exclude` in the clone's git directory, never committed), keeping the
 lines already there, and says so in its log. It adds nothing when the
 repository already ignores `.context/` or the line is there, never changes
 the repository's `.gitignore`, and judges every file outside `.context/` as

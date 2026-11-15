@@ -84,9 +84,15 @@ export async function ensureContextIgnored(
   return { kind: "excluded", file };
 }
 
-/** `ensureContextIgnored` for the driver: report what it did, never stop. */
-export async function ignoreDriveContext(tree: string): Promise<void> {
-  if (tree === "") return;
+/**
+ * `ensureContextIgnored` for the driver: report what it did, never stop. A
+ * dry run, which moves nothing, writes nothing here either.
+ */
+export async function ignoreDriveContext(
+  tree: string,
+  dryRun: boolean,
+): Promise<void> {
+  if (dryRun || tree === "") return;
   const outcome = await ensureContextIgnored(tree);
   if (outcome.kind === "excluded")
     console.error(
