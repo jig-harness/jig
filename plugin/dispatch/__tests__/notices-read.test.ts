@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApplyState } from "../lib/actions/launch.ts";
 import { applyNotices } from "../lib/actions/notify.ts";
-import { type EventRow, readRows } from "../lib/log.ts";
+import { stewardHistory } from "../lib/actions/steward.ts";
+import { type EventRow, readRows, writeRow } from "../lib/log.ts";
 import { NOTICES_READ, noticesReadRow } from "../lib/notices-read.ts";
 import type {
   SessionRuntime,
@@ -173,5 +174,42 @@ describe("the notices_read event", () => {
       expect(row.read).toBeNull();
       expect(row.reason).toContain(says);
     }
+  });
+});
+
+describe("the steward's history", () => {
+  it("leaves the notices_read rows out, so a tick's observation never crowds out what ended", () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-notices-steward-"));
+    roots.push(root);
+    const sessions: SessionsReport = {
+      ok: true,
+      source: "test",
+      workspaces: [workspace(root, false)],
+    };
+    for (let i = 0; i < 60; i++)
+      writeRow(
+        noticesReadRow(
+          SLUG,
+          sessions,
+          null,
+          `2026-11-05T10:${String(i).padStart(2, "0")}:00.000Z`,
+        ),
+        root,
+      );
+    const outlived: EventRow = {
+      kind: "event",
+      key: `outlived ${SLUG} PR #7`,
+      at: "2026-11-05T09:00:00.000Z",
+      repo: SLUG,
+      stage: "pickup",
+      target: "PR #7",
+      event: "outlived",
+      account: null,
+      class: null,
+      reason: "the run outlived its tick",
+    };
+    writeRow(outlived, root);
+    const history = stewardHistory(SLUG, root) as EventRow[];
+    expect(history.map((r) => r.event)).toEqual(["outlived"]);
   });
 });

@@ -26,6 +26,18 @@ import { WorkRuns } from "./work-runs.tsx";
 /** The window a piece of work's page opens on, so its earlier runs show too. */
 const WORK_WINDOW = "30d";
 
+/** The filters a piece of work's page clears, so it lists every run of that work. */
+const WORK_PAGE_CLEARS: Partial<LogFilter> = {
+  from: "",
+  to: "",
+  stage: "",
+  account: "",
+  class: "",
+  reason: "",
+  cause: "",
+  by: "",
+};
+
 const REASON_WAIT_MS = 300;
 
 function FilterSelect({
@@ -203,13 +215,19 @@ function Recurring({
   );
 }
 
-/** Opens a piece of work's page: the log filtered to its target, over a window wide enough for its earlier runs; `null` while the page cannot ask the host. */
+/** Opens a piece of work's page: the log filtered to its target alone, over a window wide enough for its earlier runs; `null` while the page cannot ask the host. */
 function openWork(
   setFilter: (patch: Partial<LogFilter>) => void,
   offline: boolean,
 ): ((repo: string, target: string) => void) | null {
   if (offline) return null;
-  return (repo, target) => setFilter({ repo, target, window: WORK_WINDOW });
+  return (repo, target) =>
+    setFilter({
+      ...WORK_PAGE_CLEARS,
+      repo,
+      target,
+      window: WORK_WINDOW,
+    });
 }
 
 /** The log's filter controls. */

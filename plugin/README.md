@@ -1130,7 +1130,9 @@ tick's own notice marks it unread (`read`: `true`, `false`, or `null`
 when no workspace is open, the runtime reports no mark or the listing did
 not read). It is the observation the stage's retirement measure reads,
 so the dashboard's log leaves these rows out unless its class filter
-names `event: notices_read`.
+names `event: notices_read`, and the steward's digest leaves them out of
+the history it judges from. `jig dispatch log` and its text copy list
+them, one a tick.
 
 **The log as text.** The log prints as text, one line a row, or with
 `--jsonl` as JSON lines:

@@ -17,6 +17,7 @@ import { durableSummary, passOutput } from "../pass-output.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { questionIn, sessionIdFor } from "../session.ts";
 import { stateDb } from "../state.ts";
+import { NOTICES_READ } from "../notices-read.ts";
 import { dispatched } from "../runtime/port.ts";
 import {
   collectStewardEvidence,
@@ -374,14 +375,23 @@ async function digestOf(
     ),
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
-    history: (
-      stateDb(state.root)
-        .query(
-          "SELECT row FROM log WHERE repo = ? AND stage != 'steward' ORDER BY seq DESC LIMIT 50",
-        )
-        .all(repo.slug) as Array<{ row: string }>
-    ).map((r) => JSON.parse(r.row)),
+    history: stewardHistory(repo.slug, state.root),
   });
+}
+
+/**
+ * The repository's latest outcome-log rows the steward judges from: the
+ * steward's own rows and the `notices_read` rows, a measure's observation
+ * that lands every tick, are left out, so they never crowd out what ended.
+ */
+export function stewardHistory(repo: string, root?: string): unknown[] {
+  return (
+    stateDb(root)
+      .query(
+        "SELECT row FROM log WHERE repo = ? AND stage != 'steward' AND bucket != ? ORDER BY seq DESC LIMIT 50",
+      )
+      .all(repo, `event: ${NOTICES_READ}`) as Array<{ row: string }>
+  ).map((r) => JSON.parse(r.row));
 }
 
 /**

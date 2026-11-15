@@ -64,6 +64,11 @@ function lastLine(last: Last | null): string {
     : `${last.class} at ${last.at}: ${last.reason} (from the ${last.from})`;
 }
 
+/** A report's free text on one line, since the card prints one field per line. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 /** The *Last run* line: the stage, when it ended, what it concluded and the next step it suggests. */
 function lastRunLine(last: Last, station: string): string {
   const head = `${last.stage ?? station}, ended ${last.at}`;
@@ -81,8 +86,10 @@ function lastRunLine(last: Last, station: string): string {
         ? `person, ${next.act}`
         : next.owner;
   return [
-    `${head}: ${report.concluded ?? "concluded nothing"}`,
-    next === undefined ? null : `suggested next: ${next.step} (${owner})`,
+    `${head}: ${oneLine(report.concluded ?? "concluded nothing")}`,
+    next === undefined
+      ? null
+      : `suggested next: ${oneLine(next.step)} (${owner})`,
   ]
     .filter((p): p is string => p !== null)
     .join(" · ");
