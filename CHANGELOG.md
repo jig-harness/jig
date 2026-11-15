@@ -396,6 +396,20 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.238.7] - 2026-11-15
+
+### Fixed
+
+- `jig dispatch` no longer fails a repository's whole tracker record when one
+  served item cannot be placed though no read of it failed: an item whose
+  history holds no assignment of the served person, an item or child the
+  tracker read cut short, or an epic whose description is missing. The item
+  is reported as its own unplaced row with its reason, the record stays ok,
+  and the claims stay unknown, so no ended pickup is released on that
+  reading. A served queue whose listing failed, and an item whose read
+  failed, still fail the record with the failure's class.
+  **Consumer action:** none.
+
 ## [0.238.6] - 2026-11-15
 
 ### Fixed
@@ -8397,7 +8411,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.6...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.7...HEAD
+[0.238.7]: https://github.com/jig-harness/jig/compare/v0.238.6...v0.238.7
 [0.238.6]: https://github.com/jig-harness/jig/compare/v0.238.5...v0.238.6
 [0.238.5]: https://github.com/jig-harness/jig/compare/v0.238.4...v0.238.5
 [0.238.4]: https://github.com/jig-harness/jig/compare/v0.238.3...v0.238.4
