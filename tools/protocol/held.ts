@@ -18,12 +18,21 @@ const lineEndings = (text: string): string => text.replaceAll("\r\n", "\n");
 
 /** HTML comments are not operational Markdown, so they cannot satisfy a check. */
 function withoutHtmlComments(text: string): string {
+  return scanHtmlComments(text).visible;
+}
+
+/**
+ * The one recognizer of inline code and HTML comments: the text with comments
+ * blanked, and whether a comment is still open at its end.
+ */
+function scanHtmlComments(text: string): { visible: string; open: boolean } {
   let visible = "";
   let cursor = 0;
   while (true) {
     const codeStart = nextUnescapedBacktick(text, cursor);
     const start = text.indexOf("<!--", cursor);
-    if (start < 0 && codeStart < 0) return visible + text.slice(cursor);
+    if (start < 0 && codeStart < 0)
+      return { visible: visible + text.slice(cursor), open: false };
     if (codeStart >= 0 && (start < 0 || codeStart < start)) {
       let end = codeStart;
       while (text[end] === "`") end += 1;
@@ -31,7 +40,8 @@ function withoutHtmlComments(text: string): string {
       const close = closingDelimiter(text, delimiter, end);
       if (close < 0) {
         const boundary = text.slice(end).search(/\n[ \t]*\n/);
-        if (boundary < 0) return visible + text.slice(cursor);
+        if (boundary < 0)
+          return { visible: visible + text.slice(cursor), open: false };
         // This unmatched opener is literal text in its paragraph. Resume at
         // it so comments in the following block remain comments.
         visible += text.slice(cursor, end);
@@ -51,7 +61,7 @@ function withoutHtmlComments(text: string): string {
     // Preserve every line boundary so section locations stay aligned with the
     // source while comments cannot join phrase fragments or satisfy a check.
     visible += hidden.replaceAll(/[^\n]/g, " ");
-    if (end < 0) return visible;
+    if (end < 0) return { visible, open: true };
     cursor = end + "-->".length;
   }
 }
@@ -78,6 +88,8 @@ function nextUnescapedBacktick(text: string, from: number): number {
   return -1;
 }
 
+const blankLine = /\n[ \t]*\n/y;
+
 /** Find an inline-code closer with exactly the opening delimiter. */
 function closingDelimiter(
   text: string,
@@ -88,7 +100,10 @@ function closingDelimiter(
     // An inline code span cannot make a later Markdown block part of its
     // context. In particular, an unmatched delimiter in one paragraph must
     // not shield an HTML comment after a blank line.
-    if (/^\n[ \t]*\n/.test(text.slice(cursor))) return -1;
+    if (text[cursor] === "\n") {
+      blankLine.lastIndex = cursor;
+      if (blankLine.test(text)) return -1;
+    }
     if (text.startsWith(delimiter, cursor)) {
       const beforeMatches = text[cursor - 1] === "`";
       const afterMatches = text[cursor + delimiter.length] === "`";
@@ -215,20 +230,6 @@ interface ClassifiedLine {
   readonly code: string | null;
 }
 
-/** Whether an HTML comment is still open at the end of `line`. */
-function commentOpenAfter(line: string, open: boolean): boolean {
-  // Matched inline code spans on one line cannot open or close a comment.
-  let rest = line.replaceAll(/(`+)[^`]*?\1(?!`)/g, "");
-  let isOpen = open;
-  while (true) {
-    const token = isOpen ? "-->" : "<!--";
-    const at = rest.indexOf(token);
-    if (at < 0) return isOpen;
-    rest = rest.slice(at + token.length);
-    isOpen = !isOpen;
-  }
-}
-
 /**
  * Markdown lines classified once: prose, or a code example kept apart.
  *
@@ -246,10 +247,21 @@ function classifyLines(source: string): ClassifiedLine[] {
   let indentedCode = false;
   let previousWasBlank = true;
   let inComment = false;
+  // Prose since the last block boundary, so the shared scanner sees inline
+  // code and comments that span lines exactly as it does for the whole text.
+  let proseRun = "";
+  const prose = (line: string) => {
+    proseRun = proseRun === "" ? line : `${proseRun}\n${line}`;
+    inComment = scanHtmlComments(proseRun).open;
+    if (!inComment && line.trim() === "") proseRun = "";
+    lines.push({ prose: line, code: null });
+    previousWasBlank = line.trim() === "";
+  };
   let listContainers: readonly ListContainer[] = [];
   const codeLine = (line: string) => {
     lines.push({ prose: "", code: line });
     previousWasBlank = true;
+    proseRun = "";
   };
   for (const line of source.split("\n")) {
     if (fence) {
@@ -258,9 +270,7 @@ function classifyLines(source: string): ClassifiedLine[] {
       continue;
     }
     if (inComment) {
-      inComment = commentOpenAfter(line, true);
-      lines.push({ prose: line, code: null });
-      previousWasBlank = line.trim() === "";
+      prose(line);
       continue;
     }
     listContainers = nextListContainers(line, listContainers);
@@ -281,9 +291,7 @@ function classifyLines(source: string): ClassifiedLine[] {
       codeLine(line);
       continue;
     }
-    inComment = commentOpenAfter(line, false);
-    lines.push({ prose: line, code: null });
-    previousWasBlank = line.trim() === "";
+    prose(line);
   }
   return lines;
 }

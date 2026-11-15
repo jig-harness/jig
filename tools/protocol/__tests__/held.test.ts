@@ -390,3 +390,34 @@ test("the drive exit gate checks immediate arm, finish-round, tree lease and pus
     expect(checkDriveExitPhrases(root)).toHaveLength(1);
   }
 });
+
+test("held phrases classify comments and fences with one inline-code recognizer", () => {
+  const root = tempDir("held-one-recognizer");
+  const phrase = {
+    file: "skill.md",
+    text: "run --command stop",
+    section: "## Operational instruction",
+    includeCodeExamples: true,
+  };
+  // Backticks cannot shield a closer inside an open comment.
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n<!--\n`-->`\n\n~~~text\nrun --command stop\n~~~\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
+  // An escaped backtick opens no span, so the comment is real and hides the fence.
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n\\`<!--\n~~~text\nrun --command stop\n~~~\n-->\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
+  // A span running across lines shields a comment opener inside it.
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nToken `first\n<!--\nlast`.\n\n~~~text\nrun --command stop\n~~~\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
+});
