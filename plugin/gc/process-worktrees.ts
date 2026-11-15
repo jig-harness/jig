@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { isAlive, type ProcessIdentity } from "../shared/liveness.ts";
 import { parseMs } from "../shared/time.ts";
-import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { readWorktreeOwner } from "../shared/process-worktree-owner.ts";
 import { asClaim } from "../dispatch/lib/launch-supervision.ts";
 import {
@@ -11,7 +11,7 @@ import {
   type LaunchRecord,
   type LaunchRow,
 } from "../dispatch/lib/launches.ts";
-import { readOnlyStateDb, stateDb } from "../dispatch/lib/state.ts";
+import { readOnlyStateDb } from "../dispatch/lib/state.ts";
 import type { WorktreeIdentity } from "./kinds/worktree-proof.ts";
 
 type Launch = { row: LaunchRow; record: LaunchRecord };
@@ -186,39 +186,4 @@ export async function processWorktreeIdle(
   } finally {
     db.close();
   }
-}
-
-/**
- * Retire the completed-launch evidence for a process-owned checkout that has
- * just been removed. The evidence is needed to prove the checkout idle, but
- * cannot be useful once that checkout no longer exists.
- */
-export function retireProcessWorktreeCompletions(
-  path: string,
-  repository: string,
-): Outcome<void> {
-  return attempt(
-    "completion-retire",
-    "the removed process worktree's completion evidence cannot be retired",
-    () => {
-      const db = stateDb();
-      const rows = db
-        .query("SELECT id, record FROM process_worktree_completions")
-        .all() as { id: string; record: string }[];
-      const remove = db.query(
-        "DELETE FROM process_worktree_completions WHERE id = ?",
-      );
-      for (const row of rows) {
-        const record: unknown = JSON.parse(row.record);
-        if (
-          !isLaunchRecord(record) ||
-          record.workspace === null ||
-          resolve(record.repoPath) !== resolve(repository) ||
-          resolve(record.workspace.path) !== resolve(path)
-        )
-          continue;
-        remove.run(row.id);
-      }
-    },
-  );
 }

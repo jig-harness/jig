@@ -56,10 +56,7 @@ import {
   readWorktreeOwner,
 } from "../../shared/process-worktree-owner.ts";
 import { exclusiveGcLock } from "../../shared/gc-lock.ts";
-import {
-  processWorktreeIdle,
-  retireProcessWorktreeCompletions,
-} from "../process-worktrees.ts";
+import { processWorktreeIdle } from "../process-worktrees.ts";
 import { ownedCheckoutProof } from "./worktree-owned-proof.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
@@ -451,7 +448,6 @@ async function collectAgentWorktree(
   legacy: LegacyPolicy | undefined,
   identity: WorktreeIdentity | undefined,
   checkOwner?: () => Promise<Outcome<void>>,
-  retireCompletions?: () => Outcome<void>,
 ): Promise<Collected> {
   let archived: Archived | null = null;
   const log = (line: string): void => {
@@ -501,14 +497,6 @@ async function collectAgentWorktree(
     });
     if (!removed.ok)
       return withArchive({ outcome: "failed", reason: removed.failure.reason });
-    if (retireCompletions !== undefined) {
-      const retired = retireCompletions();
-      if (!retired.ok)
-        return withArchive({
-          outcome: "failed",
-          reason: retired.failure.reason,
-        });
-    }
     return withArchive({
       outcome: "collected",
       reason: `removed with git: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} git worktree remove`,
@@ -818,9 +806,6 @@ export function worktreesKind(
           legacy(),
           final,
           processOwned && final !== undefined ? checkProcessOwner : undefined,
-          processOwned && final !== undefined
-            ? () => retireProcessWorktreeCompletions(resource.id, repository)
-            : undefined,
         );
       }
       const id = orcaId(resource);

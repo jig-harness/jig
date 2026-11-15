@@ -65,6 +65,7 @@ import {
 export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
@@ -870,7 +871,8 @@ export function pruneLaunches(
       if (
         record.workspace !== null &&
         state.kind === "ended" &&
-        state.process !== null
+        state.process !== null &&
+        existsSync(record.workspace.path)
       )
         preserveProcessCompletion.run(
           record.id,

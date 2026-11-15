@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
@@ -220,6 +220,38 @@ it("prunes a latest re-arm that ended with exit 0, which can never hold its driv
       dir,
     ),
   ).toEqual([done.id]);
+});
+
+it("keeps completion evidence only while its process-owned checkout exists", () => {
+  const dir = root();
+  const existing = join(dir, "existing");
+  mkdirSync(existing);
+  const gone = join(dir, "gone");
+  const current = record("20260101T000000Z-aaaaaaaa", {
+    workspace: { id: existing, path: existing },
+  });
+  const removed = record("20260102T000000Z-bbbbbbbb", {
+    workspace: { id: gone, path: gone },
+  });
+  writeRecord(current, dir);
+  writeRecord(removed, dir);
+
+  expect(
+    pruneLaunches(
+      [
+        ended(current, 0, current.createdAt),
+        ended(removed, 0, removed.createdAt),
+      ],
+      Date.parse("2027-01-01"),
+      7,
+      dir,
+    ),
+  ).toEqual([current.id, removed.id]);
+  expect(
+    stateDb(dir)
+      .query("SELECT id FROM process_worktree_completions ORDER BY id")
+      .all(),
+  ).toEqual([{ id: current.id }]);
 });
 
 it("keeps nothing of an older failed re-arm that a newer ended record without heads supersedes", () => {
