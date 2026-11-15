@@ -119,12 +119,12 @@ No justification in the round report, no individual issue.
 
 The batch key and contract:
 
-- **One batch issue per repository, PR and Type**, keyed on a marker the
-  helper writes as the **first line** of the issue's description:
-
-  ```markdown
-  <!-- defer-batch-key: repo=project pr=4374 type=bug -->
-  ```
+- **One batch issue per repository, PR and Type**, keyed on the
+  `deferred-batch` marker in the
+  [hidden comment markers chapter](../../../protocol/comment-markers.md#the-kinds-that-carry-markers).
+  The helper writes it as the **first line** of the issue's description,
+  with payload `repo=<repository> pr=<number> type=<type>`; that key is how
+  the helper finds the batch again.
 
   The rest of the description lists every batched finding: the thread URL, the
   reviewer's finding quoted, and the deferral reason — each entry

@@ -21,10 +21,8 @@ import { tmpdir } from "node:os";
 
 import { join } from "node:path";
 
-import {
-  closeTypeScriptService,
-  runCheck,
-} from "./terminal-states-consistency.ts";
+import { closeTypeScriptService } from "./terminal-states-consistency.ts";
+import { runChapterCheck as runCheck } from "./protocol-test.ts";
 
 afterAll(closeTypeScriptService);
 

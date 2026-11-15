@@ -1,3 +1,4 @@
+import { CHECKER_PATH as CHECK } from "./protocol-check.ts";
 /**
  * The dispatcher's part of the terminal-state drift check: a dispatcher file
  * that restates a drive exit as a number, or stops reading the registry,
@@ -25,7 +26,6 @@ afterAll(closeTypeScriptService);
 
 const TOOLS = { program: createSingleFileProgram, resolveLiteral };
 const PLUGIN = resolve(import.meta.dir, "..", "..", "..");
-const CHECK = join(import.meta.dir, "terminal-states-consistency.ts");
 
 const valuesIn = async (source: string) =>
   (await findDispatchExitLiterals(source, "fixture.ts", TOOLS)).map((f) =>

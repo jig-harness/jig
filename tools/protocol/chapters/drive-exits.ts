@@ -14,6 +14,8 @@ import {
   type TerminalStateCategory,
   type TerminalStateEntry,
 } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { checkHeldPhrases } from "../held.ts";
+import { checkDriveExitChapter } from "../drive-exit-gate.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { code, flag, table } from "../markdown.ts";
 
@@ -214,4 +216,38 @@ export const DRIVE_EXITS: Chapter = {
     })),
   takes: () => rows().map((r) => `${SOURCE_FILE}#TERMINAL_STATES.${r.name}`),
   excluded: EXCLUDED,
+  check: (root) => [
+    ...checkDriveExitChapter(root),
+    ...checkDriveExitPhrases(root),
+  ],
 };
+
+/** The operational copies outside the terminal-state table and its parser. */
+export function checkDriveExitPhrases(root: string) {
+  return checkHeldPhrases(root, "drive-exits", [
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **per-PR** lock`,
+    },
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **worktree** lock`,
+    },
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.CONVERGED}\` → the drive already reached a terminal state`,
+    },
+    ...[
+      `exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` (single-instance lock)`,
+      `Proceed only on exit \`${TERMINAL_STATES.ROUND_READY?.exitCode}\`. Anything else is the answer for *this* gate's own`,
+      `For a driver pass carrying a \`WORKTREE_UNCLEAN\` notice, exit \`${TERMINAL_STATES.CONVERGED?.exitCode}\``,
+      `**exit \`${DRIVE_EXIT.QUOTA_PARKED}\`,\n  QUOTA_PARKED**`,
+      `\`drive.ts\` refuses that re-arm itself (exit \`${DRIVE_EXIT.QUOTA_PARKED}\`)`,
+      `exit \`${DRIVE_EXIT.CONVERGED}\` inside the window → the drive already reached a terminal state`,
+      `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live **session in your tree** holds the drive lease`,
+      `| \`${TERMINAL_STATES.DRIVE_HELD_BY_OTHER_WORKTREE?.exitCode}\` | Another live **working tree** is driving this PR`,
+      `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live session holds this working tree's tree lease`,
+      `also refuses (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\`) while a mailbox \`hold-push\` directive`,
+    ].map((text) => ({ file: "plugin/skills/drive-pr/SKILL.md", text })),
+  ]);
+}

@@ -17,6 +17,8 @@ import {
   type FieldSpec,
   fromRows,
 } from "../chapter.ts";
+import { checkHeldPhrases } from "../held.ts";
+import { TERMINAL_STATES } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { flag, table } from "../markdown.ts";
 
 const SOURCE_FILE =
@@ -211,6 +213,47 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
 
 export const MAILBOX: Chapter = {
   id: "mailbox",
+  check: (root) =>
+    checkHeldPhrases(root, "mailbox", [
+      ...(
+        [
+          "hold-push",
+          "stop",
+        ] as const satisfies readonly (keyof typeof MAILBOX_DIRECTIVES)[]
+      ).map((command) => ({
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `--kind ${"directive" satisfies keyof typeof MESSAGE_KINDS} --from <you> --command ${command}`,
+      })),
+      ...(
+        [
+          "hold-push",
+          "stop",
+        ] as const satisfies readonly (keyof typeof MAILBOX_DIRECTIVES)[]
+      ).map((command) => ({
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `--command ${"resume" satisfies keyof typeof MAILBOX_DIRECTIVES} --${"target" satisfies keyof typeof INBOX_FIELDS} ${command}`,
+      })),
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `--command ${"stop" satisfies keyof typeof MAILBOX_DIRECTIVES} --${"generation" satisfies keyof typeof INBOX_FIELDS} <n>`,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `an \`${"ack" satisfies keyof typeof OUTBOX_STATUSES}\` of each\ndirective it acted on`,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `directive refuses the push (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\``,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `drive exits \`${TERMINAL_STATES.MAILBOX_PAUSE_TIMEOUT?.exitCode}\` and releases its`,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `A graceful stop exits \`${TERMINAL_STATES.MAILBOX_STOPPED?.exitCode}\``,
+      },
+    ]),
   title: "The drive mailbox",
   summary:
     "What a person or a tool may tell a running drive, and how the drive answers: the messages, directives and acknowledgements in a working tree's mailbox files.",

@@ -5,6 +5,8 @@
  * (`plugin/protocol/data/<chapter>.json`) holds.
  */
 
+import type { Finding } from "../../lib/findings.ts";
+
 /** Where the chapters, their index page and their data files live. */
 export const PROTOCOL_DIR = "plugin/protocol";
 export const DATA_DIR = `${PROTOCOL_DIR}/data`;
@@ -73,6 +75,8 @@ export interface Chapter {
   takes(): readonly string[];
   /** Entries of the imported tables the chapter deliberately leaves out. */
   readonly excluded: readonly string[];
+  /** Held restatements and code bindings this chapter checks beside its generated values. */
+  check?(root: string): readonly Finding[];
 }
 
 /** A chapter removed from the list: the version it was withdrawn at, above the last it shipped. */

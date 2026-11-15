@@ -62,6 +62,11 @@ export interface GenerateResult {
   comparedWith: string | null;
 }
 
+/** Held operational copies are checked beside generated output. */
+function heldFindings(root: string, chapters: readonly Chapter[]): Finding[] {
+  return chapters.flatMap((chapter) => chapter.check?.(root) ?? []);
+}
+
 /** Write or check every chapter; reports nothing itself. */
 export function generate(options: GenerateOptions): GenerateResult {
   const chapters = options.chapters ?? CHAPTERS;
@@ -87,6 +92,7 @@ export function generate(options: GenerateOptions): GenerateResult {
         problem: part,
         remedy: `run ${COMMAND}`,
       });
+  findings.push(...heldFindings(root, chapters));
   const base = mergeBase(root, options.base ?? null, options.env);
   if (!base.ok)
     return { findings, unreadable: base.reason, written, comparedWith: null };
