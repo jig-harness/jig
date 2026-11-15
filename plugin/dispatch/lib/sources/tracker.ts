@@ -23,8 +23,8 @@ import { type PickupReads, pickupReads } from "../pickup-reads.ts";
 import { within } from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
+import { limitedRow } from "./served-failures.ts";
 import {
-  limitedRow,
   readServedPickups,
   type ServedPolicy,
   type ServedOptions,

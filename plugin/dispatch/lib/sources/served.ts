@@ -14,6 +14,7 @@ import type {
 import { metadata, type Metadata } from "./served-metadata.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
+import { itemFailed, limitedRow, readFailureRow } from "./served-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -61,7 +62,6 @@ import {
   rankQueue,
   type QueueItem,
 } from "../queue-rank.ts";
-import { readFailureOf } from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
@@ -112,21 +112,6 @@ const itemOf = (i: PoolIssue) => ({
   url: i.url,
 });
 
-/** The single row a rate-limited tracker leaves on the receipt. */
-export function limitedRow(
-  tracker: Pick<Tracker, "adapter" | "team">,
-  limited: TrackerRateLimited,
-  view: Pick<ServedView, "readAt" | "scope"> | null = null,
-): Unplaced {
-  const until = isoFromMs(limited.resetAt);
-  const row: Unplaced = {
-    target: `${tracker.adapter} ${tracker.team}`,
-    record: "tracker",
-    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
-  };
-  return view === null ? row : scopeFailureRow(tracker, view, row.reason);
-}
-
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
@@ -156,19 +141,6 @@ function servedClaim(i: PoolIssue) {
     ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
     served: true as const,
   };
-}
-
-/** The one unplaced row an identity's failed read leaves. */
-function readFailureRow(
-  tracker: Tracker,
-  identity: string,
-  view: ServedView | null,
-  error: unknown,
-): Unplaced {
-  const reason = `the served assignments could not be read: ${failureText(error)}`;
-  return view?.scope !== undefined && isUnavailable(error)
-    ? scopeFailureRow(tracker, view, reason)
-    : { target: identity, record: "tracker", reason };
 }
 
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
@@ -659,22 +631,6 @@ function unreadable(
     record: "tracker",
     reason: `the queue metadata could not be read: ${why}`,
   });
-}
-
-/**
- * An item's read failed: the claims below it are unknown. Only a failure a
- * call caused fails the record, with that call's class; one no call caused (an
- * answer that names no assigner, a read the tracker cut short) is the item's
- * row alone.
- */
-function itemFailed(found: Found, cause: unknown): void {
-  found.partial = true;
-  if (
-    cause !== undefined &&
-    readFailureOf({ code: "unreadable", reason: failureText(cause), cause }) !==
-      undefined
-  )
-    found.failures.push(cause);
 }
 
 /** Read what a node needs and place it: held with why, a candidate, or an epic whose children come next. */
