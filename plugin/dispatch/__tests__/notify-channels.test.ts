@@ -450,7 +450,8 @@ describe("a channel's answers", () => {
 describe("a delivery that outlasts its time", () => {
   it("has stopped by the time its batch is answered lost", async () => {
     const h = host();
-    h.state.machine.runtimeTimeoutMs = 20;
+    h.state.machine.runtimeTimeoutMs = 10;
+    h.state.machine.workspaceTimeoutMs = 0;
     const slow = fakeChannel("slow");
     let stopped = false;
     slow.deliver = async (_due, time) => {
@@ -472,7 +473,8 @@ describe("a delivery that outlasts its time", () => {
 describe("a delivery that settles while it is being cancelled", () => {
   it("keeps the receipt it returns", async () => {
     const h = host();
-    h.state.machine.runtimeTimeoutMs = 20;
+    h.state.machine.runtimeTimeoutMs = 10;
+    h.state.machine.workspaceTimeoutMs = 0;
     const slow = fakeChannel("slow");
     slow.deliver = async (due, time) => {
       await new Promise<void>((resolve) =>

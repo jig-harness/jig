@@ -422,7 +422,9 @@ export async function applyNotices(
     causes,
     standing,
     timeLeftMs: () => timeLeftMs(state),
-    deliveryTimeoutMs: state.machine.runtimeTimeoutMs,
+    // One delivery opens the destination, lists it, then writes.
+    deliveryTimeoutMs:
+      state.machine.workspaceTimeoutMs + 2 * state.machine.runtimeTimeoutMs,
   };
   const due = channels.map((channel) => ({
     channel,
@@ -462,7 +464,7 @@ interface SendScope {
   standing: ReadonlySet<string>;
   /** Milliseconds the tick has left; `null` without a deadline. */
   timeLeftMs: () => number | null;
-  /** The longest one channel delivery may take without a tick deadline. */
+  /** The longest one channel delivery may take without a tick deadline: its preparation and its write. */
   deliveryTimeoutMs: number;
 }
 

@@ -46,6 +46,7 @@ import type {
   DrivenPr,
   Evidence,
   LaunchOutcome,
+  NotifyOutcome,
   RepoReport,
   Unplaced,
 } from "./types.ts";
@@ -382,6 +383,17 @@ function sightedSince(
   return firstSeen(previous, repo, action.target, action.cause) ?? nowIso;
 }
 
+/** The one outcome a need shows when several channels answered for its key: one that delivered, else the failure, else the wait. */
+function aggregateNotification(
+  outcomes: NotifyOutcome[],
+): NotifyOutcome | undefined {
+  for (const kind of ["sent", "already", "lost", "waits"] as const) {
+    const found = outcomes.find((n) => n.outcome === kind);
+    if (found !== undefined) return found;
+  }
+  return outcomes[0];
+}
+
 function needsOf(
   view: RepoView,
   nowIso: string,
@@ -390,8 +402,8 @@ function needsOf(
   const planned = view.report.actions.filter(isNeed).map((action): LineNeed => {
     const pr = prNumber(action.target);
     const { act, decisions } = needDecisions(view, action, pr);
-    const notification = view.report.notifications.find(
-      (n) => n.key === action.notice?.key,
+    const notification = aggregateNotification(
+      view.report.notifications.filter((n) => n.key === action.notice?.key),
     );
     const at =
       action.notice === undefined

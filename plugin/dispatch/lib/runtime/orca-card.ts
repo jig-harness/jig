@@ -374,6 +374,7 @@ async function sendTo(
   workspace: Workspace,
   causes: Cause[],
   signal: AbortSignal,
+  mayHaveWritten: () => void,
 ): Promise<Delivery[]> {
   const dispatcherOnly = branch !== null;
   // Reconcile an interrupted delivery even when every cause is already present.
@@ -413,6 +414,8 @@ async function sendTo(
       return known;
     },
   });
+  // A refusal that wrote nothing is `lost: false`; only an answer that may have written counts.
+  if (receipt.ok || receipt.lost === true) mayHaveWritten();
   if (
     receipt.ok &&
     receipt.ownedComment === true &&
@@ -471,13 +474,10 @@ export function orcaCard(
         target,
         due.map((c) => located(c, listed, target)),
         time.signal,
+        () => written.add(target.path),
       );
-      // A lost answer may have written the comment; a cause that waited wrote nothing.
-      if (
-        !listed.some((w) => w.path === target.path) ||
-        out.some((d) => d.outcome === "sent" || d.outcome === "lost")
-      )
-        written.add(target.path);
+      // An opened workspace counts as written; a refusal that wrote nothing does not.
+      if (!listed.some((w) => w.path === target.path)) written.add(target.path);
       return out;
     },
   };
