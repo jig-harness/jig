@@ -25,15 +25,40 @@
  */
 import { failed, ok, type Outcome } from "./outcome.ts";
 
-/** The stations of the line that leave records keyed by a piece of work. */
-const STATIONS = ["pickup", "drive", "followup"] as const;
-export type Station = (typeof STATIONS)[number];
+/** What a station's key names: a tracker item, or a pull request by its number. */
+export type StationKey = "item" | "pull-request";
 
-/** The stations whose key is a pull request's number. */
-const PULL_REQUEST_STATIONS: ReadonlySet<Station> = new Set([
-  "drive",
-  "followup",
-]);
+/** One station: what its key names, and what holding it means. */
+export interface StationSpec {
+  readonly key: StationKey;
+  readonly meaning: string;
+}
+
+/**
+ * The stations of the line that leave records keyed by a piece of work, in
+ * the order a usage error lists them. The Jig Protocol's Addresses chapter
+ * is generated from this table (`plugin/protocol/addresses.md`).
+ */
+export const STATIONS = {
+  pickup: {
+    key: "item",
+    meaning:
+      "The pick-up of a tracker item: held by the session that claimed the item to start its work",
+  },
+  drive: {
+    key: "pull-request",
+    meaning:
+      "The drive of an open pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand",
+  },
+  followup: {
+    key: "pull-request",
+    meaning:
+      "The follow-up of a merged pull request: the pass, a dispatcher's tick or a person's run, that settles what the merge still owes",
+  },
+} as const satisfies Record<string, StationSpec>;
+export type Station = keyof typeof STATIONS;
+
+const STATION_NAMES = Object.keys(STATIONS) as Station[];
 
 /** An address resolved: its repository in full and its key in canonical form. */
 export interface Address {
@@ -77,11 +102,11 @@ const PR_NUMBER = /^#?([1-9][0-9]*)$/;
 
 /** The valid stations, for a usage error. */
 export function stationList(): string {
-  return STATIONS.join(", ");
+  return STATION_NAMES.join(", ");
 }
 
 function isStation(value: string): value is Station {
-  return (STATIONS as readonly string[]).includes(value);
+  return Object.hasOwn(STATIONS, value);
 }
 
 const malformed = (input: string, why: string) =>
@@ -178,7 +203,7 @@ export function checkKey(
   key: string,
   tracker: TrackerKeyForm | null,
 ): Outcome<string, "malformed-key"> {
-  if (PULL_REQUEST_STATIONS.has(station)) {
+  if (STATIONS[station].key === "pull-request") {
     const m = PR_NUMBER.exec(key);
     return m !== null && Number.isSafeInteger(Number(m[1]))
       ? ok(m[1] as string)

@@ -22,7 +22,7 @@ the generator, its gate and the chapter on the drive's end states and exit
 codes; the records chapters, on hidden comment markers and on the
 follow-up claim and its result; the chapters on the drive mailbox and on
 the pull-request labels; and the chapter on the commands a repository
-supplies, with JSON Schemas generated from the readers' shape descriptions; the site renders the chapters at `/protocol/`. The steps after
+supplies, with JSON Schemas generated from the readers' shape descriptions; the site renders the chapters at `/protocol/`. Of the provisional chapters, the one on addresses and the verbs of `jig send` is in place. The steps after
 them in § Build order are open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
@@ -158,7 +158,7 @@ free while it is in use.
 | Hidden comment markers on the forge and the tracker | stable | the forge and tracker kinds of `shared/records/registry.ts` except the claims below, `NOT_RECORDS`, and the marker codec in `shared/records/envelope.ts` | — |
 | Commands a repository supplies | stable | `REPO_COMMANDS` in `shared/repo-commands.ts`: each command's contract (the preflight's exit `3`, a reflection store's JSON), which the runner in `shared/repo-command.ts` and each caller read | — |
 | The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and its runs, outcomes and fields (`shared/records/followup-values.ts`) | — |
-| Addresses and the verbs of `jig ask` and `jig send` | provisional | `shared/address.ts` and `send/` | 39, 42 |
+| Addresses and the verbs of `jig send` | provisional | `STATIONS` in `shared/address.ts` and `SEND_VERBS` in `send/lib/verb-values.ts` | 39, 42 |
 | Needs and structured answers | provisional | the decision record (`parked-decision/v1`) and the need classes | 46, 50 |
 | Steward records | provisional | the steward's record kinds and their closed fields | 50 |
 | Forge claims: takeover, launch and merge-ready | provisional | the `drive-takeover-claim`, `dispatch-launch-claim` and `drive-merge-ready` kinds of the records registry | 40, 49 |

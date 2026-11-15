@@ -43,7 +43,8 @@ conversation.
 
 An address names one station on one piece of work: `station@owner/name#key`.
 Write the key as a second argument, never after a `#`, since some shells
-read `#` as the start of a comment.
+read `#` as the start of a comment. The stations and the verbs of `jig send`
+are listed in the Jig Protocol's [Addresses chapter](../../protocol/addresses.md).
 
 | The person names | The station | The key |
 | --- | --- | --- |

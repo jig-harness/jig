@@ -1,0 +1,186 @@
+{
+  "chapter": "addresses",
+  "title": "Addresses and the verbs of `jig send`",
+  "version": 1,
+  "status": "provisional",
+  "planItems": [
+    {
+      "item": 39,
+      "epic": 485
+    },
+    {
+      "item": 42,
+      "epic": 541
+    }
+  ],
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "station for a station an address names, verb for a verb of jig send."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The station as an address writes it before its @, or the verb as jig send takes it after the address."
+    },
+    "key": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a station, what its address's key is: item for the tracker's item key, pull-request for a pull request's number. Null for a verb."
+    },
+    "stations": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a verb, the stations whose addresses take it, comma-separated. Null for a station."
+    },
+    "person": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a verb, whether it is a person's command, which jig send refuses in a session the line started. Null for a station."
+    },
+    "args": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a verb, the arguments it takes after the verb, as its usage names them; null for a verb that takes none, and for a station."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What holding the station means, or what sending the verb asks for."
+    }
+  },
+  "values": [
+    {
+      "kind": "station",
+      "name": "pickup",
+      "key": "item",
+      "stations": null,
+      "person": null,
+      "args": null,
+      "meaning": "The pick-up of a tracker item: held by the session that claimed the item to start its work"
+    },
+    {
+      "kind": "station",
+      "name": "drive",
+      "key": "pull-request",
+      "stations": null,
+      "person": null,
+      "args": null,
+      "meaning": "The drive of an open pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand"
+    },
+    {
+      "kind": "station",
+      "name": "followup",
+      "key": "pull-request",
+      "stations": null,
+      "person": null,
+      "args": null,
+      "meaning": "The follow-up of a merged pull request: the pass, a dispatcher's tick or a person's run, that settles what the merge still owes"
+    },
+    {
+      "kind": "verb",
+      "name": "assign",
+      "key": null,
+      "stations": "pickup",
+      "person": true,
+      "args": null,
+      "meaning": "Hand the item to the line: assign it to the factory identity and move it into the first dispatch state, for the dispatcher's next tick to pick up"
+    },
+    {
+      "kind": "verb",
+      "name": "drive",
+      "key": null,
+      "stations": "drive",
+      "person": true,
+      "args": null,
+      "meaning": "Ask for a drive on a pull request that has none: the drive command label, which the dispatcher's next tick arms a drive for"
+    },
+    {
+      "kind": "verb",
+      "name": "rearm",
+      "key": null,
+      "stations": "drive",
+      "person": true,
+      "args": null,
+      "meaning": "Ask for a stopped drive to be re-armed in its existing working tree: the rearm command label, which the dispatcher's next tick reads"
+    },
+    {
+      "kind": "verb",
+      "name": "hold",
+      "key": null,
+      "stations": "drive, followup",
+      "person": true,
+      "args": null,
+      "meaning": "Keep the line off a pull request: add the hold command label, which every stage of the dispatcher respects"
+    },
+    {
+      "kind": "verb",
+      "name": "release",
+      "key": null,
+      "stations": "drive, followup",
+      "person": true,
+      "args": null,
+      "meaning": "Withdraw a hold: remove the hold command label, so the dispatcher's next tick takes the pull request up again"
+    },
+    {
+      "kind": "verb",
+      "name": "answer",
+      "key": null,
+      "stations": "drive, followup, pickup",
+      "person": true,
+      "args": "<key> <text> | <key> --approve|--choose <option> [--note <text>] [--decision <digest>] | --all --approve [--decision-set <token>]",
+      "meaning": "Answer a parked question or a need's decision, in the person's own words or by approving or choosing one of its options: one answer comment per item, which the re-arm or the dispatcher's next tick reads"
+    },
+    {
+      "kind": "verb",
+      "name": "pause",
+      "key": null,
+      "stations": "drive",
+      "person": false,
+      "args": null,
+      "meaning": "Pause a running drive at its next round boundary: a directive in the mailbox of the working tree that holds the drive on this machine"
+    },
+    {
+      "kind": "verb",
+      "name": "resume",
+      "key": null,
+      "stations": "drive",
+      "person": false,
+      "args": "<hold-push|pause|stop>",
+      "meaning": "Withdraw the mailbox directive it names, so the drive goes on past it"
+    },
+    {
+      "kind": "verb",
+      "name": "stop",
+      "key": null,
+      "stations": "drive",
+      "person": false,
+      "args": null,
+      "meaning": "Stop a running drive at its next round boundary: a mailbox directive"
+    },
+    {
+      "kind": "verb",
+      "name": "hold-push",
+      "key": null,
+      "stations": "drive",
+      "person": false,
+      "args": null,
+      "meaning": "Hold a running drive's pushes: a mailbox directive the driver checks before each push"
+    }
+  ]
+}
