@@ -1,5 +1,6 @@
 /** Small independent items sharing a configured change area use one pickup. */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { matchOne } from "../../shared/rule-matcher.ts";
 import {
   parseWorkBatchSection,
   type WorkBatchSettings,
@@ -52,15 +53,19 @@ export function batchPickups(
     )
       continue;
     if (
-      issue.labels.some((l) =>
-        [
-          "security",
-          "has-migration",
-          "breaking",
-          "sensitive",
-          ...policy.soloFlags,
-        ].includes(l),
-      )
+      matchOne(
+        "work_batch.solo_flags",
+        {
+          labels: [
+            "security",
+            "has-migration",
+            "breaking",
+            "sensitive",
+            ...policy.soloFlags,
+          ],
+        },
+        { labels: issue.labels },
+      ) !== null
     )
       continue;
     const areas = [

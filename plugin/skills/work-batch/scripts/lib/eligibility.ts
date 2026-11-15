@@ -21,6 +21,7 @@ import {
   type IssueState,
   type PoolIssue,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
+import { matchOne } from "../../../../shared/rule-matcher.ts";
 import { type BatchPolicy, labelPrefix } from "./policy.ts";
 
 export type ExclusionReason =
@@ -52,13 +53,20 @@ export interface EligibilityOptions {
   claimed: ReadonlySet<string>;
 }
 
-/** The solo-only flag an issue carries, or `null`. */
+const SOLO_FLAGS = "work_batch.solo_flags";
+
+/**
+ * The solo-only flag an issue carries, as the list spells it, or `null`: the
+ * solo-only flags are one rule the rule matcher reads
+ * (`work_batch.solo_flags`, joined to the derived flags), matched ignoring
+ * case; the human-in-the-loop label's facets by their prefix.
+ */
 export function soloFlagOf(
   labels: readonly string[],
   policy: BatchPolicy,
 ): string | null {
   return (
-    policy.soloFlags.find((f) => labels.includes(f)) ??
+    matchOne(SOLO_FLAGS, { labels: policy.soloFlags }, { labels })?.ruleValue ??
     labels.find((l) => policy.soloFlagPrefixes.some((p) => l.startsWith(p))) ??
     null
   );

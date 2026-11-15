@@ -46,6 +46,7 @@ import {
 } from "../../../../shared/consumer.ts";
 import { formatField } from "../../../../shared/config-layers.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { ruleList } from "../../../../shared/rule-matcher.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
 import {
   catalogPathFromOverlay,
@@ -204,6 +205,13 @@ function labelList(value: unknown, field: string): string[] {
   return value as string[];
 }
 
+/** `work_batch.solo_flags`, read by the rule matcher as one rule over the item's labels. */
+function soloFlagList(value: unknown): string[] {
+  const rule = ruleList("work_batch.solo_flags", value);
+  if (!rule.ok) throw new WorkBatchConfigError(rule.failure.reason);
+  return typeof rule.value === "string" ? [] : [...(rule.value.labels ?? [])];
+}
+
 /** A map from batchable size to a whole number, keys checked against `batchSizes`. */
 function sizeMap(
   value: unknown,
@@ -350,7 +358,7 @@ export function parseWorkBatchSection(
     soloFlags:
       section.solo_flags === undefined || section.solo_flags === null
         ? []
-        : labelList(section.solo_flags, "work_batch.solo_flags"),
+        : soloFlagList(section.solo_flags),
     sizes,
     ranking: parseRanking(section.ranking, batchSizes, sizeOf),
   };

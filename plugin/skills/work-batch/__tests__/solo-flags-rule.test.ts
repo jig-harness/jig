@@ -29,7 +29,7 @@ describe("work_batch.solo_flags", () => {
     expect(solo(["bug", "privacy"])).toBeNull();
   });
 
-  it("compares a label exactly, case included", () => {
-    expect(solo(["Privacy-Review"])).toBeNull();
+  it("compares a label ignoring case, naming the flag as the list spells it", () => {
+    expect(solo(["Privacy-Review"])).toBe("privacy-review");
   });
 });
