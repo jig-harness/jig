@@ -73,6 +73,33 @@ interface Fence {
   len: number;
 }
 
+/** HTML comments are invisible Markdown content, never entry records. */
+function commentLine(
+  line: string,
+  inComment: boolean,
+): {
+  inComment: boolean;
+  consumed: boolean;
+} {
+  let cursor = 0;
+  let open = inComment;
+  while (cursor < line.length) {
+    if (open) {
+      const end = line.indexOf("-->", cursor);
+      if (end < 0) return { inComment: true, consumed: true };
+      cursor = end + 3;
+      open = false;
+      continue;
+    }
+    const start = line.indexOf("<!--", cursor);
+    if (start < 0) break;
+    const end = line.indexOf("-->", start + 4);
+    if (end < 0) return { inComment: true, consumed: true };
+    cursor = end + 3;
+  }
+  return { inComment: open, consumed: inComment || line.includes("<!--") };
+}
+
 function openingFence(line: string): { fence: Fence; info: string } | null {
   let start = 0;
   while (line[start] === " " && start < 4) start += 1;
@@ -106,10 +133,14 @@ function fenceLine(
 export function entryHeadings(description: string): string[] {
   const found: string[] = [];
   let fence: Fence | null = null;
+  let inComment = false;
   for (const line of description.split("\n")) {
     const state = fenceLine(line, fence);
     fence = state.fence;
     if (state.consumed) continue;
+    const comment = commentLine(line, inComment);
+    inComment = comment.inComment;
+    if (comment.consumed) continue;
     const key = headingEntryKey(line);
     if (key !== null) found.push(key);
   }
@@ -136,10 +167,14 @@ function indentedCodeLine(line: string): boolean {
 export function authoritativeLines(description: string): string[] {
   const found: string[] = [];
   let fence: Fence | null = null;
+  let inComment = false;
   for (const line of description.split("\n")) {
     const state = fenceLine(line, fence);
     fence = state.fence;
-    if (!state.consumed && !indentedCodeLine(line)) found.push(line);
+    if (state.consumed) continue;
+    const comment = commentLine(line, inComment);
+    inComment = comment.inComment;
+    if (!comment.consumed && !indentedCodeLine(line)) found.push(line);
   }
   return found;
 }

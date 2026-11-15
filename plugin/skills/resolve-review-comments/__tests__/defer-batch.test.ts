@@ -74,6 +74,7 @@ import {
   priorityReflectsSeverity,
   SEVERITY_TO_PRIORITY,
 } from "../scripts/lib/severity-priority.ts";
+import { authoritativeLines } from "../scripts/lib/deferred-identity.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import {
   CANONICAL_SEVERITIES,
@@ -308,6 +309,19 @@ describe("appendEntry", () => {
     const doc = ["```", "code", "```", "", `### ${url}`].join("\n");
     expect(entryHeadings(doc)).toEqual([url]);
     expect(hasEntry(doc, url)).toBe(true);
+  });
+
+  it("does NOT count a heading or identity inside an HTML comment", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = [
+      "<!-- Markdown example",
+      `### ${url}`,
+      identity,
+      "-->",
+      "real content",
+    ].join("\n");
+    expect(entryHeadings(doc)).toEqual([]);
+    expect(authoritativeLines(doc)).toEqual(["real content"]);
   });
 
   it("is not fooled by a non-heading line or a deeper heading", () => {
