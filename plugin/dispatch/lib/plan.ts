@@ -59,7 +59,8 @@ import {
   type ForeignHold,
   foreignHold,
 } from "./shared-launches.ts";
-import { failed } from "../../shared/outcome.ts";
+import { failed, type Outcome } from "../../shared/outcome.ts";
+import type { SharedClaim } from "../../shared/records/shared.ts";
 import { readFailureOf } from "./read-failures.ts";
 import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
@@ -443,6 +444,22 @@ const FOREIGN_QUIET: ReadonlyMap<ForeignHold["kind"], LedgerClass> = new Map([
   ["armed", "unarmed"],
 ]);
 
+/** The row of a drive whose launch claims did not read: a listing a failed call stopped carries that call's class, a claim that does not read none. */
+function unreadClaims(
+  target: string,
+  why: string,
+  claims: Outcome<SharedClaim[], "unreadable">,
+): Unplaced {
+  const failure = claims.ok ? undefined : readFailureOf(claims.failure);
+  return {
+    target,
+    record: "forge",
+    reason: why,
+    readFailed: true,
+    ...(failure === undefined ? {} : { failure }),
+  };
+}
+
 /**
  * Another host's claims beside a drive this host's records leave open:
  * `true` when they placed it (held, quiet or unplaced), else the takeover of
@@ -468,15 +485,7 @@ function planForeign(
   )
     return null;
   if (hold.kind === "unread") {
-    // A listing a failed call stopped carries that call's class; a claim that does not read carries none.
-    const failure = claims.ok ? undefined : readFailureOf(claims.failure);
-    plan.unplaced.push({
-      target,
-      record: "forge",
-      reason: hold.why,
-      readFailed: true,
-      ...(failure === undefined ? {} : { failure }),
-    });
+    plan.unplaced.push(unreadClaims(target, hold.why, claims));
     return true;
   }
   const says = hold.claim.says.value;
