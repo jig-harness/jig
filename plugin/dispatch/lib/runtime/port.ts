@@ -117,6 +117,12 @@ export interface NotifyTarget {
   signal?: AbortSignal;
   /** Exact dispatcher-owned read comment that may be replaced; rechecked under the lock. */
   replaceReadComment?: string;
+  /**
+   * The entries of an unread comment whose causes are settled, by key, and
+   * the exact dispatcher-only comment they were found in: an unread comment
+   * still exactly `comment` under the lock gives them up to make room.
+   */
+  settled?: { comment: string; keys: readonly string[] };
   /** Persist the actual locked projection before writing; return whether it is dispatcher-only. */
   prepareComment?: (
     before: string,
@@ -231,6 +237,21 @@ export interface SessionRuntime {
     repo: RepoTarget,
     target: ItemTarget | PullRequestTarget | NoticesTarget,
   ): Promise<RuntimeReceipt>;
+  /**
+   * Prove that a workspace `openWorkspace` did not just open for this launch
+   * (one joined to the pull request, a recovery's tree, a pending launch's
+   * recorded workspace) is still the pull request's checkout before anything
+   * runs in it: a checkout of the repository's clone, its origin the head
+   * repository at the head the forge reports, and its commit on that head's
+   * line of history. Why it is refused, or `null` once proven, within
+   * `timeoutMs` when given. The proof changes no work in the workspace.
+   */
+  verifyWorkspace(
+    repo: RepoTarget,
+    workspace: { id: string; path: string },
+    target: { pr: number; head: string },
+    timeoutMs?: number,
+  ): Promise<string | null>;
   /**
    * A session in the workspace that runs the stage, billed to `account`.
    * `key` is the launch record's token: a second call with a key already

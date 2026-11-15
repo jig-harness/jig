@@ -1,20 +1,11 @@
-import { afterAll, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import {
-  applySteward,
-  stewardQueue,
-  stewardPasses,
-} from "../lib/actions/steward.ts";
+import { describe, expect, spyOn, test } from "bun:test";
+import { stewardQueue, stewardPasses } from "../lib/actions/steward.ts";
 import type { ReadRecord } from "../lib/launches.ts";
 import {
   readRoomMs,
   settleMs,
   type ApplyState,
 } from "../lib/actions/launch.ts";
-import { keepStewardRun, type StewardDigest } from "../lib/steward.ts";
-import { closeStateDb } from "../lib/state.ts";
 import type { Tracked } from "../lib/tick-observe.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { WantedItem } from "../lib/types.ts";
@@ -169,87 +160,7 @@ describe("the steward's queue", () => {
   });
 });
 
-function digest(repo: string): StewardDigest {
-  return {
-    version: 1,
-    repo,
-    drives: [],
-    needs: [],
-    queue: [],
-    passes: [],
-    failures: [],
-    load: null,
-  };
-}
-
-describe("the scheduler reads nothing before cadence and cap rule a run out", () => {
-  const roots: string[] = [];
-  const freshRoot = () => {
-    const root = mkdtempSync(join(tmpdir(), "steward-order-"));
-    roots.push(root);
-    return root;
-  };
-  afterAll(() => {
-    closeStateDb();
-    for (const root of roots) rmSync(root, { recursive: true, force: true });
-  });
-  function stateAt(root: string): Parameters<typeof applySteward>[0] {
-    return {
-      root,
-      records: [],
-      machine: { steward: { enabled: true, everyMs: 1_200_000 } },
-    } as unknown as Parameters<typeof applySteward>[0];
-  }
-  function observation(): Parameters<typeof applySteward>[1] {
-    return {
-      forge: { ok: true },
-      opened: {
-        owner: true,
-        stages: new Set(["steward"]),
-        repo: { slug: "example-org/order" },
-        report: { launches: [], records: [] },
-      },
-    } as unknown as Parameters<typeof applySteward>[1];
-  }
-  test("an unelapsed cadence reads no digest", async () => {
-    const root = freshRoot();
-    keepStewardRun(
-      "recent",
-      digest("example-org/order"),
-      Date.now() - 1_000,
-      root,
-    );
-    let reads = 0;
-    const seen = observation();
-    await applySteward(stateAt(root), seen, async () => {
-      reads++;
-      throw new Error("digest read");
-    });
-    expect(reads).toBe(0);
-    expect(seen.opened.report.steward?.status).toContain("cadence");
-  });
-  test("a spent host-wide hourly cap reads no digest", async () => {
-    // Its own root: the repository has no run, so only the host-wide cap can stop it.
-    const root = freshRoot();
-    for (const i of [1, 2, 3])
-      keepStewardRun(
-        `other-${i}`,
-        digest(`example-org/other-${i}`),
-        Date.now() - 1_000,
-        root,
-      );
-    let reads = 0;
-    const seen = observation();
-    await applySteward(stateAt(root), seen, async () => {
-      reads++;
-      throw new Error("digest read");
-    });
-    expect(reads).toBe(0);
-    expect(seen.opened.report.steward?.status).toBe(
-      "the host's hourly steward budget is spent",
-    );
-  });
-
+describe("the steward's digest reads", () => {
   test("the read room reserves an identity check for every account admission may try", () => {
     // A frozen clock, so only the account-dependent reserve moves the room.
     const clock = spyOn(Temporal.Now, "instant").mockImplementation(() =>

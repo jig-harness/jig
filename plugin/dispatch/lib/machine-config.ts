@@ -120,7 +120,7 @@ const SHARED_MEDIA = ["forge"] as const;
 export type SharedMedium = (typeof SHARED_MEDIA)[number];
 
 export interface MachineConfig {
-  steward?: { enabled: boolean; everyMs: number };
+  steward?: { enabled: boolean };
   path: string;
   /** People authorized by this host, never by a repository overlay. */
   serve?: ServedPerson[];
@@ -656,19 +656,21 @@ function trackerSettings(
   return ok({ outboundShare: outboundShare.value, preflight: preflight.value });
 }
 
-function stewardSettings(
-  value: unknown,
-): Checked<{ enabled: boolean; everyMs: number }> {
-  if (value === undefined || value === null)
-    return ok({ enabled: false, everyMs: 20 * 60_000 });
+/**
+ * The steward's settings. `every` is still accepted, as a duration, so a
+ * file that sets it keeps reading; the judgment backlog starts a pass, and
+ * no cadence is waited on.
+ */
+function stewardSettings(value: unknown): Checked<{ enabled: boolean }> {
+  if (value === undefined || value === null) return ok({ enabled: false });
   if (!isMapping(value)) return invalid("steward must be a mapping");
   const known = only(value, ["enabled", "every"], "steward");
   if (!known.ok) return known;
   const enabled = flag(value.enabled, "steward.enabled", false);
   if (!enabled.ok) return enabled;
-  const every = optionalDuration(value.every, "steward.every", 20 * 60_000);
+  const every = optionalDuration(value.every, "steward.every", 0);
   if (!every.ok) return every;
-  return ok({ enabled: enabled.value, everyMs: every.value });
+  return ok({ enabled: enabled.value });
 }
 
 /** The tick's interval, backoff, timeouts, opens and retention, with defaults. */

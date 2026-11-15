@@ -2767,16 +2767,24 @@ make, use the entry's term instead.
   repository; the pickup's claim assigns it to the *factory identity*, and
   the claim marker decides between hosts that take the same item
   ([dispatch.pool](plugin/CONFIGURATION.md#dispatch)).
-- **Steward** — the agent pass a *dispatcher*'s host starts every 20
-  minutes, when its input changed, to read what is stopped and waiting on
-  the line and propose what to do about it: re-arm a drive once when its
-  logs show a passing cause, frame each need that stays a person's with
-  its *act*, fill in a missing priority, size or type, and order the queue.
+- **Steward** — the agent pass a *dispatcher*'s host starts when a
+  repository's *judgment backlog* holds work no pass has judged, to read
+  what is stopped and waiting on the line and propose what to do about it:
+  re-arm a drive once when its logs show a passing cause, frame a need that
+  arrived with no framing with its *act*, fill in a missing priority, size
+  or type, and order the queue.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
   text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
+- **Judgment backlog** — the work in one repository that no rule of the
+  *tick* settles and no *steward* pass has judged yet: a stalled pickup or
+  failed follow-up with no running session, a stopped drive a re-arm could
+  resolve, an ended pass that recommends a resume, a queued item missing a
+  facet, a need with no framing. The steward starts only when it holds a
+  member no earlier pass saw
+  ([the steward's trigger](design/dark-factory-dispatch.md#the-stewards-trigger)).
 - **Steward remit** — the record kinds a *steward* may submit for a
   repository on a host: today, a re-arm, a resume, a need, a facet and an
   order. The planned widening lets a host add record kinds that settle a

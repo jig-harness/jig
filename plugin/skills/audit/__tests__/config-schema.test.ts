@@ -58,6 +58,7 @@ import {
   codexPassArgsProblem,
   DEFAULT_CODEX_PASS_ARGS,
 } from "../../drive-pr/scripts/lib/codex-pass-args.ts";
+import { CI_REPAIR_ROUNDS_DEFAULT } from "../../drive-pr/scripts/lib/driver/settings.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
@@ -416,6 +417,7 @@ describe("the reading skills", () => {
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
+      "drive.ci_repair_rounds": CI_REPAIR_ROUNDS_DEFAULT,
       "drive.pass_model": DEFAULT_PASS_MODEL,
       "drive.pass_args": DEFAULT_PASS_ARGS,
       "drive.codex_bypass": DEFAULT_CODEX_BYPASS,
