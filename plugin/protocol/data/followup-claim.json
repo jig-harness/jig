@@ -221,6 +221,26 @@
       "version": null,
       "key": null,
       "meaning": "When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome."
+    },
+    {
+      "kind": "field",
+      "name": "by",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "Who wrote the follow-up run's closing report (agent, driver, wrapper, steward or person), or none when it left none, written by its host with the outcome. The report's own text stays on that host."
+    },
+    {
+      "kind": "field",
+      "name": "cause",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "Why the follow-up run fell short, from the closing report's closed list of causes, written by its host with the outcome when the report named one."
     }
   ]
 }
