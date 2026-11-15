@@ -31,6 +31,8 @@ export interface LineLinks {
 
 /** One option of a framed decision, as the drive recorded it. */
 export interface LineOption {
+  /** Its stable typed identity; absent from a line recorded before option IDs were kept. */
+  id?: string;
   details?: import("../../shared/decisions/model.ts").OptionDetail[];
   name: string;
   /** Its `Changes:`; `null` when the record gives none. */

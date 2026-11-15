@@ -10,9 +10,10 @@ import { sendTargetOf } from "./send-target.ts";
 import { NoSendReason } from "./send.tsx";
 import { ActedAnswers, AnsweredHolds } from "./needs.tsx";
 import { confirmationSignature } from "./confirmation.ts";
-import { rowAnswer } from "./picking.ts";
+import { decisionRows, rowAnswer, withText } from "./picking.ts";
 import { needView } from "./needs-view.ts";
 import { fixture } from "../fixtures.ts";
+import { decisionOf } from "../../plugin/dispatch/lib/line-decision.ts";
 
 const HOLD = "I'll handle it — hide this card";
 test("hold tells the person the work stays undone and accepts both labels", () => {
@@ -53,6 +54,26 @@ test("hold tells the person the work stays undone and accepts both labels", () =
       () => false,
     )?.option.id,
   ).toBe("leave");
+});
+
+test("station-card own words recognize the retired hold label as a choice", () => {
+  const { decision } = frameStationDecision({
+    kind: "drive",
+    pr: 7,
+    exit: "1",
+    started: null,
+    failedRearm: null,
+  });
+  const [row] = decisionRows([
+    decisionOf({ key: "drive", kind: "finding", lines: [], decision }),
+  ]);
+  assert(row);
+  const answer = rowAnswer(
+    row,
+    withText(row, null, "free", "choose Leave it to me", 0),
+  );
+  expect(answer.fault).toContain("choosing");
+  expect(answer.fault).toContain(HOLD);
 });
 test("station cards target the comment reader's issue or pull request", () => {
   for (const [on, url, pr] of [
