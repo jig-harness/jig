@@ -36,7 +36,9 @@ import { definedFields } from "./defined-fields.ts";
  * `$GH_REPO` and `gh repo set-default` — the same resolution `gh repo view`
  * performs, with no API call. The cache key therefore has to carry that
  * identity (`repoScope`), or two clones of different repositories would share
- * the literal string `{owner}/{repo}`.
+ * the literal string `{owner}/{repo}`. It carries the credential the call
+ * sends too (its hashed key, `outbound/github-credential.ts`), so an answer
+ * one credential may read is never handed to another, even of the same user.
  *
  * FAIL CLOSED. Every failure — an unreadable cache entry, an unparseable
  * response, a 304 with nothing cached — degrades to "no answer", which every
@@ -64,6 +66,7 @@ import {
   git as defaultGit,
   type RunResult,
 } from "./proc.ts";
+import { githubCredential } from "./outbound/github-credential.ts";
 import { currentMs } from "./time.ts";
 
 export interface CallContext {
@@ -190,6 +193,8 @@ export function createConditionalCache({
       ) {
         return null;
       }
+      // The credential, never its quota owner: two tokens of one user may
+      // read different repositories, so neither reads the other's answers.
       return createHash("sha256")
         .update(
           [
@@ -197,6 +202,7 @@ export function createConditionalCache({
             env.GH_REPO ?? "",
             remotes.stdout,
             resolved.stdout,
+            githubCredential(env),
           ].join("\n--\n"),
         )
         .digest("hex");

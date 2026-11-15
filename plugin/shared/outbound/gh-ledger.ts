@@ -1,5 +1,10 @@
 /** Account for forge commands at their shared runner, without keeping command arguments or query variables. */
-import { apiRoute, conditional, githubCredential } from "./github-budget.ts";
+import {
+  type GhAttribution,
+  apiRoute,
+  conditional,
+  githubCredential,
+} from "./github-budget.ts";
 import { isRecord } from "../guards.ts";
 import { swallow } from "../errors.ts";
 import {
@@ -214,11 +219,100 @@ function bodyFailure(body: unknown) {
   );
 }
 
-/** Captured conditional status or query points determine cost; opaque commands remain estimated. Local credential operations send none. */
+/**
+ * The window of the quota owner's record each subcommand the client runs
+ * spends, from what the client sends for it: GraphQL queries (`complexity`)
+ * or REST requests (`requests`). A subcommand that sends both in equal part
+ * (`pr diff`), or whose requests this table does not know, is left out, and
+ * its window is unknown; an option that adds a request of the other kind
+ * (`pr merge --delete-branch`) does not move the entry.
+ */
+const SUBCOMMAND_WINDOWS: Readonly<Record<string, "requests" | "complexity">> =
+  {
+    "pr view": "complexity",
+    "pr list": "complexity",
+    "pr status": "complexity",
+    "pr checks": "complexity",
+    "pr create": "complexity",
+    "pr edit": "complexity",
+    "pr ready": "complexity",
+    "pr merge": "complexity",
+    "pr comment": "complexity",
+    "pr review": "complexity",
+    "pr close": "complexity",
+    "pr reopen": "complexity",
+    "issue view": "complexity",
+    "issue list": "complexity",
+    "issue status": "complexity",
+    "issue create": "complexity",
+    "issue edit": "complexity",
+    "issue comment": "complexity",
+    "issue close": "complexity",
+    "issue reopen": "complexity",
+    "repo view": "complexity",
+    "repo list": "complexity",
+    "label list": "complexity",
+    "release list": "complexity",
+    "project *": "complexity",
+    "label create": "requests",
+    "label edit": "requests",
+    "label delete": "requests",
+    "run *": "requests",
+    "workflow *": "requests",
+    "release view": "requests",
+    "release edit": "requests",
+    "release delete": "requests",
+    "release upload": "requests",
+    "release download": "requests",
+    "secret *": "requests",
+    "variable *": "requests",
+    "cache *": "requests",
+  };
+
+/** What the window names of the limits GitHub's headers name are in the record. */
+const RESOURCE_WINDOWS: Readonly<Record<string, string>> = {
+  core: "requests",
+  graphql: "complexity",
+  search: "search",
+};
+
+/**
+ * The window of the quota owner's record a run spends, from the best
+ * evidence there is: the limit its answer's headers named, else the route
+ * of a `gh api` call (`none` for the `rate_limit` endpoint, which spends
+ * nothing), else the subcommand's entry in `SUBCOMMAND_WINDOWS`; `unknown`
+ * when none of them says.
+ */
+function quotaWindowOf(args: readonly string[], resource?: string): string {
+  if (resource !== undefined && resource !== "")
+    return RESOURCE_WINDOWS[resource] ?? resource;
+  if (args[0] === "api") {
+    const route = apiRoute(args);
+    if (route === "graphql") return "complexity";
+    if (route === "rate_limit") return "none";
+    if (route === "search" || route.startsWith("search/")) return "search";
+    return "requests";
+  }
+  if (args[0] === "search") return "search";
+  const [command = "", sub = ""] = args;
+  return (
+    SUBCOMMAND_WINDOWS[`${command} ${sub}`] ??
+    SUBCOMMAND_WINDOWS[`${command} *`] ??
+    "unknown"
+  );
+}
+
+/**
+ * Captured conditional status or query points determine cost; opaque commands
+ * remain estimated. Local credential operations send none. `attribution` is
+ * what governance learnt of the run: the quota owner's record it was kept
+ * under and the limit its answer named.
+ */
 export function recordGhAttempt<T extends GhRun, O>(
   args: string[],
   options: O,
   send: () => Promise<T>,
+  attribution: GhAttribution = {},
 ): Promise<T> {
   if (args[0] === "auth" || args[0] === "--help" || args[0] === "--version")
     return send();
@@ -233,12 +327,16 @@ export function recordGhAttempt<T extends GhRun, O>(
     unit:
       args[0] === "api" && apiRoute(args) === "graphql" ? "points" : "requests",
     estimated: true,
+    owner: null,
+    window: quotaWindowOf(args),
   };
   return recordAttempt(
     observation,
     async () => {
       const began = currentMs();
       const result = await send();
+      observation.owner = attribution.owner ?? null;
+      observation.window = quotaWindowOf(args, attribution.resource);
       const body = accountAnswer(observation, args, result, opts);
       const run =
         typeof result.stderr === "string" && typeof result.code === "number"

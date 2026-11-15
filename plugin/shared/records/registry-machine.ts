@@ -231,6 +231,26 @@ export const DISPATCHER: RecordKind[] = [
     meaning:
       "What the calls to outside systems cost, summed per hour, system, credential, operation, caller and unit: the requests, their cost, how long they took and how they failed, kept for 7 days. Each dispatch tick and the budget answer read it to report what calls cost and which quotas are at risk; a call is never refused because the ledger cannot be written.",
   },
+  {
+    name: "github-owner",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "github_owner",
+    version: 1,
+    meaning:
+      "Which quota owner a GitHub credential's runs are admitted against, per hashed credential and host: the hashed user or installation, whether it was verified, the login GitHub answered with, and when to ask again. Every process reads it, so a credential is asked who it is at most once a check period.",
+  },
+  {
+    name: "outbound-cost-quota",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "outbound_cost_quota",
+    version: 1,
+    meaning:
+      "For each hourly cost-ledger row, the quota owner whose record it spent and the window it spent (core, GraphQL, search, none or unknown). The reports read it to match spending to the owner's balance and its window; a row without one is read with its window inferred.",
+  },
   plain(
     "machine",
     "dispatch-receipt",

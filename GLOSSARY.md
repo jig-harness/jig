@@ -2269,6 +2269,13 @@ make, use the entry's term instead.
   them, what a refusal looks like and who owns the quota. It holds no
   number the system reports; those are read from each answer. Planned
   ([ROADMAP.md](ROADMAP.md) item 55).
+- **Quota owner** — whose allowance a call to an outside system spends,
+  which is not always the credential that sends it: GitHub counts its
+  limits per user across all of a user's personal tokens, and per
+  installation across all of an installation's tokens. The machine's
+  budget record is kept per quota owner, so several tokens of one user
+  share one balance and one hold, while ledger rows and cached answers stay
+  per credential.
 - **Cost ceiling** — the most a query may cost in total, declared beside
   the query with its unit: objects (the sum over its paths of the nested
   page sizes' product) or, where the system's formula can be computed from

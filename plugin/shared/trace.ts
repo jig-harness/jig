@@ -9,7 +9,11 @@ import { errnoCode, swallow } from "./errors.ts";
 import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
-import { ghGovernance } from "./outbound/github-budget.ts";
+import {
+  type GhAttribution,
+  forgeOwner,
+  ghGovernance,
+} from "./outbound/github-budget.ts";
 import type { OutboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
@@ -202,25 +206,31 @@ function traceCommand<T extends { code: number; timedOut: boolean }>(
 }
 
 /**
- * One run of `gh`, admitted against the credential's budget record and
- * observed into it (`outbound/github-budget.ts`): a run the record refuses
- * is not started and answers `refuse`'s result, a failed run naming when
- * the limit clears.
+ * One run of `gh`, admitted against the budget record of its credential's
+ * quota owner and observed into it (`outbound/github-budget.ts`): a run the
+ * record refuses is not started and answers `refuse`'s result, a failed run
+ * naming when the limit clears. `attribution` is told the owner and the
+ * limit the answer named, for the run's ledger row.
  */
 async function governedRun<T extends GhRun, O>(
   args: string[],
   opts: O,
   refuse: (failure: OutboundFailure) => T,
   send: (argv: string[]) => Promise<T>,
+  attribution: GhAttribution,
 ): Promise<T> {
   const o = opts as {
     env?: Record<string, string | undefined>;
     stdout?: string;
     onOutput?: unknown;
   };
+  const env = o.env ?? process.env;
+  const owner = await forgeOwner(args, env);
   const governance = ghGovernance(args, {
-    ...(o.env === undefined ? {} : { env: o.env }),
+    env,
     captured: (o.stdout ?? "pipe") === "pipe" && o.onOutput === undefined,
+    ...(owner === undefined ? {} : { owner }),
+    attribution,
   });
   if (governance === null) return send(args);
   const admitted = governance.admit();
@@ -232,7 +242,7 @@ async function governedRun<T extends GhRun, O>(
 
 /**
  * Shared gh boundary keeps its effective deadline and span metadata together,
- * keeps to the credential's budget record (`governedRun`), and sends nothing
+ * keeps to the quota owner's budget record (`governedRun`), and sends nothing
  * to a forge this run holds (`outbound/hold.ts`): the call then answers
  * `refuse`'s result, a failed run naming the earlier failure.
  */
@@ -259,12 +269,22 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
     opts.timeoutSec === undefined
       ? envDeadline
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
+  // What governance learns of the run for its ledger row.
+  const attribution: GhAttribution = {};
   if (!held)
     return traceCommand("ghCall", "gh", deadline, () =>
-      recordGhAttempt(args, opts, () =>
-        governedRun(args, opts, refuse, (argv) =>
-          run(argv, { ...opts, timeoutSec: deadline }),
-        ),
+      recordGhAttempt(
+        args,
+        opts,
+        () =>
+          governedRun(
+            args,
+            opts,
+            refuse,
+            (argv) => run(argv, { ...opts, timeoutSec: deadline }),
+            attribution,
+          ),
+        attribution,
       ),
     );
   return traceCommand("ghCall", "gh", deadline, () => {
@@ -280,26 +300,36 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
       refusedHere.add(refused);
       return refused;
     };
-    return recordGhAttempt(args, opts, () =>
-      guarded(
-        GITHUB,
-        // Admission and the answer's record sit inside the hold, so a call
-        // queued behind the probe is admitted after the probe's answer is
-        // recorded.
-        () =>
-          governedRun(args, opts, refuseHere, async (argv) => {
-            const began = currentMs();
-            try {
-              return await run(argv, { ...opts, timeoutSec: deadline });
-            } finally {
-              tookMs = currentMs() - began;
-            }
-          }),
-        (r) => ghRunFailure(r, tookMs),
-        refuse,
-        undefined,
-        (r) => refusedHere.has(r),
-      ),
+    return recordGhAttempt(
+      args,
+      opts,
+      () =>
+        guarded(
+          GITHUB,
+          // Admission and the answer's record sit inside the hold, so a call
+          // queued behind the probe is admitted after the probe's answer is
+          // recorded.
+          () =>
+            governedRun(
+              args,
+              opts,
+              refuseHere,
+              async (argv) => {
+                const began = currentMs();
+                try {
+                  return await run(argv, { ...opts, timeoutSec: deadline });
+                } finally {
+                  tookMs = currentMs() - began;
+                }
+              },
+              attribution,
+            ),
+          (r) => ghRunFailure(r, tookMs),
+          refuse,
+          undefined,
+          (r) => refusedHere.has(r),
+        ),
+      attribution,
     );
   });
 }

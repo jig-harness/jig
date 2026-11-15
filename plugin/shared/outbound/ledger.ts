@@ -15,6 +15,10 @@ const HOUR = 3_600_000;
 export interface CallRecord {
   system: string;
   credential: string;
+  /** The quota owner's record key, where the system keeps one apart from the credential (GitHub). */
+  owner?: string | null;
+  /** The window of the owner's record spent: `requests`, `complexity`, `search`, `none` or `unknown`. */
+  window?: string | null;
   operation: string;
   caller?: string;
   requests?: number;
@@ -39,6 +43,14 @@ export interface LedgerRow {
   estimated: number;
   durationMs: number;
   failures: Partial<Record<FailureClass, number>>;
+  /**
+   * The quota owner's record the row's calls spent: as recorded, else the
+   * owner the machine knows for the credential; `null` when neither names
+   * one (the credential's own record).
+   */
+  owner?: string | null;
+  /** The window of that record they spent, as recorded; `null` for a row written without one, whose window a reader infers. */
+  window?: string | null;
 }
 export interface LedgerReport {
   rows: LedgerRow[];
@@ -184,6 +196,15 @@ export function recordCall(input: CallRecord): void {
           (prior?.duration_ms ?? 0) + duration,
           JSON.stringify(failures),
         );
+        // The row's quota owner and window sit beside it, in a table of their
+        // own, so a copy that writes the row's columns by position still can.
+        db.query("DELETE FROM outbound_cost_quota WHERE hour < ?").run(
+          Math.ceil((at - LEDGER_RETENTION_MS) / HOUR) * HOUR,
+        );
+        if (input.owner != null || input.window != null)
+          db.query(
+            "INSERT OR REPLACE INTO outbound_cost_quota VALUES (?,?,?,?,?,?,?,?)",
+          ).run(...keys, input.owner ?? null, input.window ?? null);
       });
     } finally {
       db.run("PRAGMA busy_timeout = 10000");
@@ -205,6 +226,8 @@ interface RawRow {
   estimated: number;
   duration_ms: number;
   failures: string;
+  owner?: string | null;
+  quota_window?: string | null;
 }
 /** Read without creating or migrating a database; absent storage is an empty report. */
 export function ledgerReport(
@@ -230,16 +253,36 @@ export function ledgerReport(
           "SELECT 1 FROM sqlite_master WHERE type='table' AND name='outbound_cost'",
         )
         .get() !== null;
+    const has = (table: string) =>
+      db
+        .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
+        .get(table) !== null;
+    // A database an earlier copy created has no quota table: its rows name
+    // no owner or window, and a reader infers them.
+    const quota = has("outbound_cost_quota")
+      ? "SELECT c.*, q.owner AS owner, q.quota_window AS quota_window FROM outbound_cost c LEFT JOIN outbound_cost_quota q ON q.hour=c.hour AND q.system=c.system AND q.credential=c.credential AND q.operation=c.operation AND q.caller=c.caller AND q.unit=c.unit"
+      : "SELECT c.*, NULL AS owner, NULL AS quota_window FROM outbound_cost c";
     const rows = hasLedger
       ? (db
           .query(
-            "SELECT * FROM outbound_cost WHERE hour >= ? AND hour <= ? ORDER BY hour,system,operation,caller",
+            `${quota} WHERE c.hour >= ? AND c.hour <= ? ORDER BY c.hour,c.system,c.operation,c.caller`,
           )
           .all(
             Math.floor(since / HOUR) * HOUR,
             Math.floor(until / HOUR) * HOUR,
           ) as RawRow[])
       : [];
+    // The owners the machine knows for credentials, for rows that name none.
+    const owners = new Map(
+      has("github_owner")
+        ? (
+            db.query("SELECT credential, owner FROM github_owner").all() as {
+              credential: string;
+              owner: string;
+            }[]
+          ).map((r) => [r.credential, r.owner])
+        : [],
+    );
     const balances = (
       db.query("SELECT key,value FROM tracker_budget").all() as {
         key: string;
@@ -254,12 +297,23 @@ export function ledgerReport(
     return {
       rows: rows
         .filter((r) => opts.caller === undefined || r.caller === opts.caller)
-        .map(({ unknown_cost, duration_ms, failures, ...row }) => ({
-          ...row,
-          unknownCost: unknown_cost,
-          durationMs: duration_ms,
-          failures: JSON.parse(failures),
-        })),
+        .map(
+          ({
+            unknown_cost,
+            duration_ms,
+            failures,
+            owner,
+            quota_window,
+            ...row
+          }) => ({
+            ...row,
+            unknownCost: unknown_cost,
+            durationMs: duration_ms,
+            failures: JSON.parse(failures),
+            owner: owner ?? owners.get(row.credential) ?? null,
+            window: quota_window ?? null,
+          }),
+        ),
       balances,
     };
   } catch (error) {

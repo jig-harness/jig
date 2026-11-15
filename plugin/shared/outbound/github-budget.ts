@@ -4,7 +4,10 @@
  * the governance every run of the `gh` command-line client goes through at
  * the forge client's wrapper (`shared/trace.ts`).
  *
- * Before a run, the wrapper admits it against the credential's record: while
+ * Before a run, the wrapper admits it against the record of the credential's
+ * quota owner (`github-owner.ts`: the user every personal token of that
+ * user spends, the installation every token of it spends, or the host's
+ * shared record for a credential whose owner is not established): while
  * GitHub refuses the credential (a primary or a secondary limit), or while
  * the dispatcher's share of the limit the run spends is used, the run is not
  * started and fails at once as `rate-limited`, naming when it clears. After
@@ -40,12 +43,23 @@ import {
   type BudgetAnswer,
   type BudgetGovernor,
   type BudgetRecord,
+  type BudgetStore,
   type BudgetWindow,
   budgetGovernor,
-  credentialKey,
   isRateLimited,
   sqliteBudgetStore,
 } from "./budget.ts";
+import {
+  githubCredential,
+  githubHost,
+  legacyGithubCredential,
+  unverifiedOwner,
+} from "./github-credential.ts";
+import {
+  type GithubOwnerResolver,
+  githubOwnerResolver,
+  sqliteOwnerStore,
+} from "./github-owner.ts";
 import { swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import {
@@ -56,6 +70,8 @@ import {
 import { type GhRun, ghResponseStatus, ghRunFailure } from "./github.ts";
 import { defaultLedgerPath } from "./ledger.ts";
 import { currentMs, parseMs } from "../time.ts";
+
+export { githubCredential } from "./github-credential.ts";
 
 /** One of GitHub's primary limits, as `x-ratelimit-resource` names it. */
 export type GitHubLimit = "core" | "graphql" | "search";
@@ -74,12 +90,12 @@ interface LimitProfile {
 
 /**
  * GitHub's profile: its primary limits, each kept in a window of the
- * credential's record, and what its refusals look like. The quota owner is
- * the credential.
+ * quota owner's record, and what its refusals look like. The quota owner is
+ * the user or the installation the credential belongs to.
  */
 const GITHUB_PROFILE = {
   system: "github",
-  owner: "credential",
+  owner: "user or installation",
   limits: {
     core: {
       unit: "requests",
@@ -119,39 +135,6 @@ export const GITHUB_WINDOW_NAMES: Readonly<Record<string, GitHubLimit>> = {
   complexity: "graphql",
   search: "search",
 };
-
-/**
- * The key the credential's record and its ledger rows are kept under: a
- * hash of the token the client sends, or for the client's own stored login,
- * of the host and configuration it reads it from. A stored login is opaque:
- * the same token supplied through the environment keys a separate record, and
- * a host named only on a command line is not an input here.
- */
-export function githubCredential(
-  env: Record<string, string | undefined> = process.env,
-): string {
-  const host = env.GH_HOST?.trim() ?? "";
-  // The client reads the Enterprise variables for an Enterprise Server host,
-  // and the others for github.com and its cloud and local tenancies.
-  const name = host.toLowerCase();
-  const enterprise =
-    host !== "" &&
-    name !== "github.com" &&
-    !name.endsWith(".ghe.com") &&
-    !name.endsWith(".github.localhost") &&
-    name !== "github.localhost";
-  const token = enterprise
-    ? env.GH_ENTERPRISE_TOKEN?.trim() || env.GITHUB_ENTERPRISE_TOKEN?.trim()
-    : env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim();
-  if (token) return credentialKey("github", token);
-  const config = env.GH_CONFIG_DIR?.trim() ?? "";
-  return credentialKey(
-    "github",
-    host === "" && config === ""
-      ? "opaque-cli-credential"
-      : `opaque-cli-credential:${host}:${config}`,
-  );
-}
 
 /** Which limits a run of `gh` with `args` spends: `[]` for one that spends none, `null` for one that sends nothing. */
 export function limitsOf(args: readonly string[]): GitHubLimit[] | null {
@@ -468,6 +451,12 @@ export function forgeAnswerOf(
   return answer;
 }
 
+/** What a governed run learnt for its ledger row: the record it was kept under, and the limit its answer's headers named. */
+export interface GhAttribution {
+  owner?: string;
+  resource?: string;
+}
+
 /** How one governed run goes: what it is admitted against, the command line it runs, and how its answer is read. */
 export interface GhGovernance {
   /** The failure to answer at once instead of running, or `null` with the time it was admitted. */
@@ -482,23 +471,53 @@ export interface GhGovernance {
   ): T;
 }
 
-let governors = new Map<string, BudgetGovernor>();
-let override: BudgetGovernor | null = null;
+interface Machine {
+  governor: BudgetGovernor;
+  store: BudgetStore;
+  owners: GithubOwnerResolver;
+}
 
-/** Govern the forge's runs with `governor` instead of the machine's record; `null` restores the machine's. For tests. */
-export function setForgeGovernor(governor: BudgetGovernor | null): void {
+let machines = new Map<string, Machine>();
+let override: BudgetGovernor | null = null;
+let overrideOwners: GithubOwnerResolver | null = null;
+
+/**
+ * Govern the forge's runs with `governor` instead of the machine's record;
+ * `null` restores the machine's. `owners` finds each credential's quota
+ * owner; left out, a credential's runs are kept under its own key, as a
+ * test of one credential reads them. For tests.
+ */
+export function setForgeGovernor(
+  governor: BudgetGovernor | null,
+  owners: GithubOwnerResolver | null = null,
+): void {
   override = governor;
+  overrideOwners = governor === null ? null : owners;
+}
+
+/** The machine's governor, store and owners over the budget database this process writes. */
+function machine(): Machine {
+  const path = defaultLedgerPath();
+  let found = machines.get(path);
+  if (found === undefined) {
+    const store = sqliteBudgetStore(path);
+    const governor = budgetGovernor(store);
+    found = {
+      governor,
+      store,
+      owners: githubOwnerResolver({
+        owners: sqliteOwnerStore(path),
+        budget: store,
+        governor,
+      }),
+    };
+    machines = new Map([[path, found]]);
+  }
+  return found;
 }
 
 function governor(): BudgetGovernor {
-  if (override !== null) return override;
-  const path = defaultLedgerPath();
-  let found = governors.get(path);
-  if (found === undefined) {
-    found = budgetGovernor(sqliteBudgetStore(path));
-    governors = new Map([[path, found]]);
-  }
-  return found;
+  return override ?? machine().governor;
 }
 
 /** Whether the forge's runs are governed in this environment. */
@@ -510,18 +529,52 @@ function forgeBudgetOn(
   );
 }
 
+/** A plain `gh api user`: the discovery's own request, which finds no owner first. */
+function asksOwnIdentity(args: readonly string[]): boolean {
+  if (args[0] !== "api" || apiRoute(args) !== "user") return false;
+  const at = args.findIndex((a) => a === "-X" || a === "--method");
+  return at < 0 || (args[at + 1] ?? "").toUpperCase() === "GET";
+}
+
+/**
+ * The key of the record a run of `gh` with `args` is admitted against: its
+ * credential's quota owner, found once and remembered (`github-owner.ts`);
+ * `undefined` for a run that is not governed. A plain `gh api user` asks no
+ * owner first: it uses the owner already known, else the host's unverified
+ * record.
+ */
+export async function forgeOwner(
+  args: readonly string[],
+  env: Record<string, string | undefined> = process.env,
+): Promise<string | undefined> {
+  if (limitsOf(args) === null || !forgeBudgetOn(env)) return undefined;
+  const owners = override === null ? machine().owners : overrideOwners;
+  if (owners === null) return githubCredential(env);
+  if (asksOwnIdentity(args))
+    return owners.known(env)?.owner ?? unverifiedOwner(githubHost(env));
+  return (await owners.resolve(env)).owner;
+}
+
 /**
  * The governance of one run of `gh` with `args`; `null` for a run that sends
  * nothing to GitHub, or while the budget is off. `captured` says the run's
- * output is captured whole, so headers added to it can be taken off.
+ * output is captured whole, so headers added to it can be taken off. `owner`
+ * is the record the run is admitted against (`forgeOwner`), the credential's
+ * own key when left out; `attribution` is told what the ledger row needs.
  */
 export function ghGovernance(
   args: readonly string[],
-  opts: { env?: Record<string, string | undefined>; captured: boolean },
+  opts: {
+    env?: Record<string, string | undefined>;
+    captured: boolean;
+    owner?: string;
+    attribution?: GhAttribution;
+  },
 ): GhGovernance | null {
   const limits = limitsOf(args);
   if (limits === null || !forgeBudgetOn(opts.env ?? process.env)) return null;
-  const key = githubCredential(opts.env ?? process.env);
+  const key = opts.owner ?? githubCredential(opts.env ?? process.env);
+  if (opts.attribution !== undefined) opts.attribution.owner = key;
   const gov = governor();
   const { argv, strip } = withHeaders(args, opts.captured);
   const admitted = admission(
@@ -563,6 +616,9 @@ export function ghGovernance(
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";
       const { headers, body } = splitHeaders(stdout);
+      const resource = headers?.get("x-ratelimit-resource")?.trim();
+      if (opts.attribution !== undefined && resource)
+        opts.attribution.resource = resource.toLowerCase();
       const status =
         opts.captured && (strip || askedHeaders(args))
           ? ghResponseStatus(result)
@@ -590,13 +646,24 @@ export function ghGovernance(
   };
 }
 
-/** GitHub's balances in the credential's record: core and GraphQL as their windows hold them now, with when the record was last read. */
+/**
+ * GitHub's balances in the record of the credential's quota owner, as the
+ * machine knows it without asking (the credential's own record or its
+ * earlier one when no owner is known yet): core and GraphQL as their
+ * windows hold them now, with when the record was last read.
+ */
 export function githubBalances(
   env: Record<string, string | undefined> = process.env,
   read: (key: string) => BudgetRecord | null = (key) =>
-    sqliteBudgetStore(defaultLedgerPath()).read(key),
+    machine().store.read(key),
+  owner: (env: Record<string, string | undefined>) => string | null = (e) =>
+    machine().owners.known(e)?.owner ?? null,
 ): { core: BudgetWindow; graphql: BudgetWindow; observedAt: number } | null {
-  const record = read(githubCredential(env));
+  const known = owner(env);
+  const record =
+    (known === null ? null : read(known)) ??
+    read(githubCredential(env)) ??
+    read(legacyGithubCredential(env));
   if (record === null) return null;
   return {
     core: record.requests,
