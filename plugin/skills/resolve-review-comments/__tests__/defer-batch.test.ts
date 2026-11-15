@@ -338,6 +338,31 @@ describe("appendEntry", () => {
     expect(authoritativeLines(doc)).toEqual(["`<!--`", `### ${url}`, identity]);
   });
 
+  it("requires complete equal-length backtick runs before seeing a comment", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: ``x```<!--`", identity, "-->", `### ${url}`].join(
+      "\n",
+    );
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual([
+      "Example: ``x```<!--`",
+      `### ${url}`,
+    ]);
+  });
+
+  it("carries an inline code span across lines in one paragraph", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: `<!--", "literal`", "", identity, `### ${url}`].join(
+      "\n",
+    );
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual([
+      "Example: `<!--",
+      identity,
+      `### ${url}`,
+    ]);
+  });
+
   it("is not fooled by a non-heading line or a deeper heading", () => {
     expect(headingEntryKey(`> ### ${url}`)).toBe(null);
     expect(headingEntryKey(`text ${url}`)).toBe(null);

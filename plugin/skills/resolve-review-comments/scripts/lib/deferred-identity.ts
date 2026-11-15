@@ -73,46 +73,120 @@ interface Fence {
   len: number;
 }
 
-/** HTML comments are invisible Markdown content, never entry records. */
-function commentLine(
-  line: string,
-  inComment: boolean,
-): {
+/** The inline Markdown constructs that can hide a record across lines. */
+interface InlineState {
   inComment: boolean;
-  consumed: boolean;
-} {
+  codeDelimiter: string | null;
+}
+
+function backtickRun(line: string, start: number): number {
+  let end = start;
+  while (line[end] === "`") end += 1;
+  return end;
+}
+
+/** Find a complete closing run, never a prefix inside a longer run. */
+function closingRun(
+  line: string,
+  start: number,
+  delimiter: string,
+): number | null {
+  for (let cursor = start; cursor < line.length; cursor += 1) {
+    if (line[cursor] !== "`") continue;
+    const end = backtickRun(line, cursor);
+    if (end - cursor === delimiter.length) return end;
+    cursor = end - 1;
+  }
+  return null;
+}
+
+function hasClosingRun(
+  lines: readonly string[],
+  afterLine: number,
+  delimiter: string,
+): boolean {
+  for (let index = afterLine + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.trim() === "") return false;
+    if (closingRun(line, 0, delimiter) !== null) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a line has record-bearing text outside HTML comments and inline
+ * code. Inline code spans can cross line endings within one paragraph, so the
+ * delimiter is retained until its complete, equal-length closing run.
+ */
+function inlineLine(
+  line: string,
+  state: InlineState,
+  hasFutureClosing: (delimiter: string) => boolean,
+): { state: InlineState; consumed: boolean } {
+  let { inComment, codeDelimiter } = state;
+  if (!inComment && codeDelimiter !== null && line.trim() === "") {
+    codeDelimiter = null;
+  }
+
   let cursor = 0;
-  let open = inComment;
+  let visible = false;
   while (cursor < line.length) {
-    if (open) {
+    if (inComment) {
       const end = line.indexOf("-->", cursor);
-      if (end < 0) return { inComment: true, consumed: true };
+      if (end < 0) {
+        return {
+          state: { inComment: true, codeDelimiter },
+          consumed: !visible,
+        };
+      }
+      inComment = false;
       cursor = end + 3;
-      open = false;
+      continue;
+    }
+    if (codeDelimiter !== null) {
+      const close = closingRun(line, cursor, codeDelimiter);
+      if (close === null) {
+        return { state: { inComment, codeDelimiter }, consumed: !visible };
+      }
+      codeDelimiter = null;
+      cursor = close;
       continue;
     }
     if (line[cursor] === "\\") {
+      visible = true;
       cursor += 2;
       continue;
     }
-    if (line[cursor] === "`") {
-      let end = cursor;
-      while (line[end] === "`") end += 1;
-      const fence = line.slice(cursor, end);
-      const close = line.indexOf(fence, end);
-      if (close >= 0) {
-        cursor = close + fence.length;
-        continue;
-      }
-    }
     if (line.startsWith("<!--", cursor)) {
-      open = true;
+      inComment = true;
       cursor += 4;
       continue;
     }
+    if (line[cursor] === "`") {
+      const end = backtickRun(line, cursor);
+      const delimiter = line.slice(cursor, end);
+      const close = closingRun(line, end, delimiter);
+      if (close === null) {
+        if (!hasFutureClosing(delimiter)) {
+          visible = true;
+          cursor = end;
+          continue;
+        }
+        return {
+          state: { inComment, codeDelimiter: delimiter },
+          consumed: !visible,
+        };
+      }
+      // Preserve ordinary text that happens to contain an inline-code example.
+      // The callers still reject records hidden by a span that crosses lines.
+      visible = true;
+      cursor = close;
+      continue;
+    }
+    if (!/\s/.test(line[cursor] ?? "")) visible = true;
     cursor += 1;
   }
-  return { inComment: open, consumed: inComment || open };
+  return { state: { inComment, codeDelimiter }, consumed: !visible };
 }
 
 function openingFence(line: string): { fence: Fence; info: string } | null {
@@ -148,20 +222,24 @@ function fenceLine(
 export function entryHeadings(description: string): string[] {
   const found: string[] = [];
   let fence: Fence | null = null;
-  let inComment = false;
-  for (const line of description.split("\n")) {
-    if (fence === null && inComment) {
-      const comment = commentLine(line, inComment);
-      inComment = comment.inComment;
+  let inline: InlineState = { inComment: false, codeDelimiter: null };
+  const lines = description.split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (fence === null && (inline.inComment || inline.codeDelimiter !== null)) {
+      inline = inlineLine(line, inline, (delimiter) =>
+        hasClosingRun(lines, index, delimiter),
+      ).state;
       continue;
     }
     if (fence === null && indentedCodeLine(line)) continue;
     const state = fenceLine(line, fence);
     fence = state.fence;
     if (state.consumed) continue;
-    const comment = commentLine(line, inComment);
-    inComment = comment.inComment;
-    if (comment.consumed) continue;
+    const lineState = inlineLine(line, inline, (delimiter) =>
+      hasClosingRun(lines, index, delimiter),
+    );
+    inline = lineState.state;
+    if (lineState.consumed) continue;
     const key = headingEntryKey(line);
     if (key !== null) found.push(key);
   }
@@ -188,20 +266,24 @@ function indentedCodeLine(line: string): boolean {
 export function authoritativeLines(description: string): string[] {
   const found: string[] = [];
   let fence: Fence | null = null;
-  let inComment = false;
-  for (const line of description.split("\n")) {
-    if (fence === null && inComment) {
-      const comment = commentLine(line, inComment);
-      inComment = comment.inComment;
+  let inline: InlineState = { inComment: false, codeDelimiter: null };
+  const lines = description.split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (fence === null && (inline.inComment || inline.codeDelimiter !== null)) {
+      inline = inlineLine(line, inline, (delimiter) =>
+        hasClosingRun(lines, index, delimiter),
+      ).state;
       continue;
     }
     if (fence === null && indentedCodeLine(line)) continue;
     const state = fenceLine(line, fence);
     fence = state.fence;
     if (state.consumed) continue;
-    const comment = commentLine(line, inComment);
-    inComment = comment.inComment;
-    if (!comment.consumed && !indentedCodeLine(line)) found.push(line);
+    const lineState = inlineLine(line, inline, (delimiter) =>
+      hasClosingRun(lines, index, delimiter),
+    );
+    inline = lineState.state;
+    if (!lineState.consumed && !indentedCodeLine(line)) found.push(line);
   }
   return found;
 }
