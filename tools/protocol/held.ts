@@ -39,11 +39,8 @@ function scanHtmlComments(text: string): { visible: string; open: boolean } {
       const delimiter = text.slice(codeStart, end);
       const close = closingDelimiter(text, delimiter, end);
       if (close < 0) {
-        const boundary = text.slice(end).search(/\n[ \t]*\n/);
-        if (boundary < 0)
-          return { visible: visible + text.slice(cursor), open: false };
-        // This unmatched opener is literal text in its paragraph. Resume at
-        // it so comments in the following block remain comments.
+        // An unmatched opener is literal text and shields nothing after it,
+        // with or without a later blank line.
         visible += text.slice(cursor, end);
         cursor = end;
         continue;
