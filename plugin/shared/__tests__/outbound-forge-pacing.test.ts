@@ -10,7 +10,8 @@ import {
 import { expectSpawnExited } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { currentMs } from "../time.ts";
 import { systemClock } from "../clock.ts";
-import { closeDatabase } from "../records/db.ts";
+import { closeDatabase, openDatabase } from "../records/db.ts";
+import { BUDGET_MIGRATIONS } from "../outbound/schema.ts";
 
 const directories: string[] = [];
 function temporaryDirectory(prefix: string): string {
@@ -99,6 +100,20 @@ it("spaces the same owner, keeps other owners independent, and expires abandoned
   expect(claimForgeSlot("b", now, path)).toEqual({ ok: true, value: 0 });
   now += FORGE_SPACING_MS;
   expect(claimForgeSlot("a", now, path)).toEqual({ ok: true, value: 0 });
+});
+
+it("does not change the budget connection's contention policy", () => {
+  const path = join(temporaryDirectory("jig-pacing-timeout-"), "budget.sqlite");
+  const budget = openDatabase({ path, migrations: BUDGET_MIGRATIONS });
+  expect(budget.ok).toBe(true);
+  if (!budget.ok) return;
+  expect(claimForgeSlot("owner", 1_000_000, path)).toEqual({
+    ok: true,
+    value: 0,
+  });
+  expect(budget.value.query("PRAGMA busy_timeout").get()).toEqual({
+    timeout: 10_000,
+  });
 });
 
 it("does not claim after cancellation or the caller deadline", async () => {

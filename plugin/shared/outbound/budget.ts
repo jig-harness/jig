@@ -23,7 +23,7 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { swallow } from "../errors.ts";
+import { errnoCode, swallow } from "../errors.ts";
 import { JigError } from "../outcome.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
@@ -275,11 +275,18 @@ export function parseRecord(text: string): BudgetRecord | null {
 }
 
 /** The SQLite store at `path`; one that cannot be opened governs nothing. */
-export function sqliteBudgetStore(path = budgetPath()): BudgetStore {
+export function sqliteBudgetStore(
+  path = budgetPath(),
+  busyMs?: number,
+): BudgetStore {
   let db: Database | null | undefined;
   const open = (): Database | null => {
     if (db !== undefined) return db;
-    const opened = openDatabase({ path, migrations: BUDGET_MIGRATIONS });
+    const opened = openDatabase({
+      path,
+      migrations: BUDGET_MIGRATIONS,
+      ...(busyMs === undefined ? {} : { busyMs }),
+    });
     if (!opened.ok) swallow(opened.failure, "the tracker budget store");
     db = opened.ok ? opened.value : null;
     return db;
@@ -312,6 +319,7 @@ export function sqliteBudgetStore(path = budgetPath()): BudgetStore {
           ).run(key, JSON.stringify(next));
         });
       } catch (error) {
+        if (busyMs === 0 && errnoCode(error) === "SQLITE_BUSY") throw error;
         swallow(error, "write the tracker budget");
       }
     },

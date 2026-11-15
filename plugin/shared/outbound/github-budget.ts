@@ -497,7 +497,8 @@ function governor(): BudgetGovernor {
   const path = defaultLedgerPath();
   let found = governors.get(path);
   if (found === undefined) {
-    found = budgetGovernor(sqliteBudgetStore(path));
+    // `trace.ts` retries this nonblocking admission with the call's deadline.
+    found = budgetGovernor(sqliteBudgetStore(path, 0));
     governors = new Map([[path, found]]);
   }
   return found;

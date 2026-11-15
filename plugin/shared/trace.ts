@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { errnoCode, swallow } from "./errors.ts";
+import { systemClock } from "./clock.ts";
 import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
@@ -202,6 +203,44 @@ function traceCommand<T extends { code: number; timedOut: boolean }>(
   });
 }
 
+type Governance = NonNullable<ReturnType<typeof ghGovernance>>;
+
+/** The failure of a call whose deadline passed or that was cancelled `when`. */
+function endedFailure(
+  deadlineAt: number,
+  signal: AbortSignal | undefined,
+  when: string,
+): OutboundFailure | null {
+  const late = currentMs() >= deadlineAt;
+  if (!late && !signal?.aborted) return null;
+  return {
+    code: late ? "too-costly" : "unreachable",
+    reason: `GitHub call ended ${when}; nothing was sent`,
+  };
+}
+
+/** Budget admission, retrying store contention until the deadline or a cancel. */
+async function admitBefore(
+  governance: Governance,
+  deadlineAt: number,
+  signal: AbortSignal | undefined,
+): Promise<ReturnType<Governance["admit"]> | { failure: OutboundFailure }> {
+  for (;;) {
+    const failure = endedFailure(
+      deadlineAt,
+      signal,
+      "while waiting for budget admission",
+    );
+    if (failure !== null) return { failure };
+    try {
+      return governance.admit();
+    } catch (error) {
+      if (errnoCode(error) !== "SQLITE_BUSY") throw error;
+      await systemClock.sleep(Math.min(25, deadlineAt - currentMs()), signal);
+    }
+  }
+}
+
 /**
  * One run of `gh`, admitted against the credential's budget record and
  * observed into it (`outbound/github-budget.ts`): a run the record refuses
@@ -228,17 +267,12 @@ async function governedRun<T extends GhRun, O>(
   if (governance === null) return send(args);
   const pacingFailure = await paceForge(governance.owner, deadlineAt, o.signal);
   if (pacingFailure !== null) return refuse(pacingFailure);
-  const admitted = governance.admit();
+  const admitted = await admitBefore(governance, deadlineAt, o.signal);
+  if ("failure" in admitted) return refuse(admitted.failure);
   if ("refused" in admitted) return refuse(admitted.refused);
-  if (o.signal?.aborted || currentMs() >= deadlineAt)
-    return governance.observe(
-      refuse({
-        code: currentMs() >= deadlineAt ? "too-costly" : "unreachable",
-        reason: "GitHub call ended during budget admission; nothing was sent",
-      }),
-      admitted.sentAt,
-      0,
-    );
+  const late = endedFailure(deadlineAt, o.signal, "during budget admission");
+  if (late !== null)
+    return governance.observe(refuse(late), admitted.sentAt, 0);
   const began = currentMs();
   const result = await send(governance.argv);
   return governance.observe(result, admitted.sentAt, currentMs() - began);

@@ -354,6 +354,21 @@ export function openDatabase(spec: DatabaseSpec): Outcome<Database, OpenCode> {
   return opened;
 }
 
+/**
+ * A short-lived database connection that does not alter the process's cached
+ * connection. Callers own the returned connection and must close it.
+ *
+ * This is for best-effort probes whose nonblocking timeout must not change a
+ * stateful component's normal contention policy.
+ */
+export function openTransientDatabase(
+  spec: DatabaseSpec,
+): Outcome<Database, OpenCode> {
+  const sourceRefusal = sourceDatabaseRefusal(spec.path);
+  if (sourceRefusal !== null) return sourceRefusal;
+  return connect(spec);
+}
+
 /** A database opened for reading only, and whether its owner's next open would write to it. */
 export interface ReadOnlyDatabase {
   readonly db: Database;
