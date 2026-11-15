@@ -326,6 +326,27 @@ function outsideScope(
   return null;
 }
 
+/** Quiets an item whose latest pickup ended without a result the host could write, while the host's health check fails; `true` when it did. */
+function heldForHost(
+  item: ClaimedItem,
+  input: PickupInput,
+  plan: PickupPlan,
+): boolean {
+  const latestPickup = latestPickupFor(item.key, input.launches);
+  if (
+    input.rerunsHeld === null ||
+    latestPickup === undefined ||
+    !unwrittenResult(latestPickup)
+  )
+    return false;
+  plan.quiet.push({
+    target: item.key,
+    class: "pickup-ended",
+    why: `its pickup ended without a result this host could write; held while ${input.rerunsHeld}`,
+  });
+  return true;
+}
+
 /** One claimed item: a double claim, running, idle, or stalled. */
 function planClaimed(
   item: ClaimedItem,
@@ -384,19 +405,7 @@ function planClaimed(
     return;
   }
   if (settledByPr(item.key, pr.step, plan)) return;
-  const latestPickup = latestPickupFor(item.key, input.launches);
-  const hostHeld =
-    input.rerunsHeld !== null &&
-    latestPickup !== undefined &&
-    unwrittenResult(latestPickup);
-  if (hostHeld) {
-    plan.quiet.push({
-      target: item.key,
-      class: "pickup-ended",
-      why: `its pickup ended without a result this host could write; held while ${input.rerunsHeld}`,
-    });
-    return;
-  }
+  if (heldForHost(item, input, plan)) return;
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
