@@ -18,7 +18,7 @@ import {
 } from "../contention.ts";
 import { defaultBranchFile, pullRequestFiles } from "../forge.ts";
 import type { ReadRecord } from "../launches.ts";
-import { heldRead, type TickBound } from "./bounded.ts";
+import { CUT_AT_BOUND, ended, heldRead, type TickBound } from "./bounded.ts";
 import { settleHolds } from "../serial-holds.ts";
 import type { DrivenPr, RepoReport, RepoTarget } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
@@ -54,6 +54,48 @@ function repositoryPath(value: string): Outcome<string, "invalid"> {
   return ok(value.replace(/^(\.\/)+/, ""));
 }
 
+/** Every drive unplaced because the reads were skipped; a deadline's skip is also a failed read, a low budget's stays quiet. */
+function skippedContention(
+  repo: RepoTarget,
+  report: RepoReport,
+  drives: readonly DrivenPr[],
+  path: string,
+  skipped: string,
+  bound: TickBound | undefined,
+): Contention {
+  const cut = ended(bound);
+  if (cut)
+    report.records.push({
+      record: "forge",
+      source: `gh ${repo.slug}@${repo.defaultBranch}:${path}`,
+      ok: false,
+      detail: `the change-area catalog was not read, so no re-arm starts on a pull request whose serialized areas cannot be told: ${skipped}`,
+      failure: CUT_AT_BOUND,
+    });
+  return catalogFailed({ drives }, skipped, cut ? CUT_AT_BOUND : undefined);
+}
+
+/** The catalog's record on the report: its own failure, or a failed read of a pull request's files or threads. */
+function catalogRecord(
+  where: string,
+  contention: Contention,
+): RepoReport["records"][number] {
+  const failure = contention.readFailed?.failure;
+  const detail =
+    contention.failure !== undefined
+      ? `the change-area catalog cannot be read, so no re-arm starts on a pull request whose serialized areas cannot be told: ${contention.failure}`
+      : contention.readFailed !== undefined
+        ? "a pull request's changed files or review threads cannot be read, so its place in a serialized area cannot be told this tick"
+        : `the change-area catalog serializes ${contention.report?.areas.join(", ") || "no area"}`;
+  return {
+    record: "forge",
+    source: `gh ${where}`,
+    ok: contention.failure === undefined && contention.readFailed === undefined,
+    detail,
+    ...(failure === undefined ? {} : { failure }),
+  };
+}
+
 /**
  * Decide serialization for one repository, report it, and keep its holds.
  * Only the host that owns the repository writes the holds and their rows in
@@ -79,7 +121,7 @@ export async function observeContention(
   const drives = forge.drives.filter((d) => !merged.has(d.number));
   const path = configuredCatalog(values);
   if (skipped !== null && path !== null)
-    return catalogFailed({ drives }, skipped);
+    return skippedContention(repo, report, drives, path, skipped, bound);
   const where = `${repo.slug}@${repo.defaultBranch}:${path ?? ""}`;
   const contention = await readContention(
     {
@@ -108,16 +150,7 @@ export async function observeContention(
       threads,
     },
   );
-  if (path !== null)
-    report.records.push({
-      record: "forge",
-      source: `gh ${where}`,
-      ok: contention.failure === undefined,
-      detail:
-        contention.failure === undefined
-          ? `the change-area catalog serializes ${contention.report?.areas.join(", ") || "no area"}`
-          : `the change-area catalog cannot be read, so no re-arm starts on a pull request whose serialized areas cannot be told: ${contention.failure}`,
-    });
+  if (path !== null) report.records.push(catalogRecord(where, contention));
   if (contention.report !== null) report.serialized = contention.report;
   if (forge.owner === false) return contention;
   for (const reason of settleHolds(repo.slug, contention, isoFromMs(nowMs)))

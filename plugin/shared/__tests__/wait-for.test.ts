@@ -18,3 +18,20 @@ test("an abort while pending rejects, and an answer resolves", async () => {
     3,
   );
 });
+
+test("an already-aborted signal still observes the pending rejection", async () => {
+  const unhandled: unknown[] = [];
+  const catcher = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", catcher);
+  try {
+    const controller = new AbortController();
+    controller.abort(new Error("cut"));
+    await expect(
+      waitFor(Promise.reject(new Error("request failed")), controller.signal),
+    ).rejects.toThrow("cut");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", catcher);
+  }
+});

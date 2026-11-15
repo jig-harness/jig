@@ -5,6 +5,7 @@ export function waitFor<T>(
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     if (signal.aborted) {
+      pending.catch(() => undefined);
       reject(signal.reason);
       return;
     }

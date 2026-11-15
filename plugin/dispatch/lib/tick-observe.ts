@@ -650,6 +650,21 @@ async function observeRunning(
     });
 }
 
+/** The tracker's failed record, carrying the class of the call that failed it. */
+function trackerFailure(
+  where: string,
+  error: unknown,
+): RepoReport["records"][number] {
+  const failure = readFailureOfError(error);
+  return {
+    record: "tracker",
+    source: where,
+    ok: false,
+    detail: `the tracker cannot be opened: ${failureText(error)}`,
+    ...(failure === undefined ? {} : { failure }),
+  };
+}
+
 /** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
 async function readTracker(
   values: Record<string, unknown>,
@@ -730,15 +745,11 @@ async function readTracker(
       values,
       reading.wanted,
       !lowBudget(await reads.budget()),
+      bound,
     );
     if (reading.read.ok) tracked.claimed = reading.claimed;
   } catch (error) {
-    report.records.push({
-      record: "tracker",
-      source: where,
-      ok: false,
-      detail: `the tracker cannot be opened: ${failureText(error)}`,
-    });
+    report.records.push(trackerFailure(where, error));
   }
   return tracked;
 }
