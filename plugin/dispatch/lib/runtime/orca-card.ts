@@ -368,6 +368,56 @@ const SPENT = "the delivery time was spent before the write";
 export const NO_ROOM =
   "the comment is full: its unread entries still stand, or a person added to it; read the unread notices or shorten personal additions so a later tick can deliver it";
 
+/** What one workspace's write is allowed to replace, and how it reads the comment it finds. */
+function writePolicy(
+  workspace: Workspace,
+  {
+    root,
+    slug,
+    dispatcherOnly,
+    owned,
+    settled,
+  }: {
+    root: string;
+    slug: string;
+    dispatcherOnly: boolean;
+    owned: boolean;
+    settled: readonly string[];
+  },
+): Parameters<typeof write>[4] {
+  return {
+    dispatcherOnly,
+    ...(owned ? { replaceReadComment: workspace.comment } : {}),
+    ...(settled.length === 0
+      ? {}
+      : { settled: { comment: workspace.comment, keys: [...settled] } }),
+    prepareComment: (before, projected, unread) => {
+      const known =
+        ownsComment({ ...workspace, comment: before }, root) ||
+        (!dispatcherOnly && !unread);
+      if (known) intendComment(workspace, projected, root, slug);
+      return known;
+    },
+  };
+}
+
+/** What a write's receipt changes: whether a write may have happened, and the comment now on the workspace. */
+function afterWrite(
+  workspace: Workspace,
+  receipt: RuntimeReceipt,
+  root: string,
+  slug: string,
+  mayHaveWritten: () => void,
+): void {
+  // A refusal that wrote nothing is `lost: false`; only an answer that may have written counts.
+  if (receipt.ok || receipt.lost === true) mayHaveWritten();
+  if (!receipt.ok || receipt.comment === undefined) return;
+  if (receipt.ownedComment === true)
+    recordComment(workspace, receipt.comment, root, slug);
+  workspace.comment = receipt.comment;
+  workspace.unread = receipt.unread ?? null;
+}
+
 /** One workspace's causes, joined into one message and sent. */
 async function sendTo(
   { state, root, repo, report, branch, standing }: CardContext,
@@ -399,33 +449,20 @@ async function sendTo(
   const { send, later } = fitting(workspace, fresh, preserveRead, settled);
   out.push(...later.map((c) => answer(c, "waits", null, NO_ROOM)));
   if (send.length === 0) return out;
-  const message = messageFor(send);
-  const receipt = await write(state, workspace, message, signal, {
-    dispatcherOnly,
-    ...(owned ? { replaceReadComment: workspace.comment } : {}),
-    ...(settled.length === 0
-      ? {}
-      : { settled: { comment: workspace.comment, keys: settled } }),
-    prepareComment: (before, projected, unread) => {
-      const known =
-        ownsComment({ ...workspace, comment: before }, root) ||
-        (!dispatcherOnly && !unread);
-      if (known) intendComment(workspace, projected, root, repo.slug);
-      return known;
-    },
-  });
-  // A refusal that wrote nothing is `lost: false`; only an answer that may have written counts.
-  if (receipt.ok || receipt.lost === true) mayHaveWritten();
-  if (
-    receipt.ok &&
-    receipt.ownedComment === true &&
-    receipt.comment !== undefined
-  )
-    recordComment(workspace, receipt.comment, root, repo.slug);
-  if (receipt.ok && receipt.comment !== undefined) {
-    workspace.comment = receipt.comment;
-    workspace.unread = receipt.unread ?? null;
-  }
+  const receipt = await write(
+    state,
+    workspace,
+    messageFor(send),
+    signal,
+    writePolicy(workspace, {
+      root,
+      slug: repo.slug,
+      dispatcherOnly,
+      owned,
+      settled,
+    }),
+  );
+  afterWrite(workspace, receipt, root, repo.slug, mayHaveWritten);
   for (const c of send) out.push(delivered(receipt, c, workspace.path, signal));
   return out;
 }
