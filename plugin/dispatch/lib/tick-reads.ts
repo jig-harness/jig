@@ -54,7 +54,6 @@ import type { ServedViews } from "./sources/served-reads.ts";
 import { failureText } from "./text.ts";
 import { type TickComments, tickComments } from "./tick-comments.ts";
 import type { SharedReport } from "./types.ts";
-import { currentMs } from "../../shared/time.ts";
 
 /** The forge's budget as the tick started, or why it did not read. */
 export type TickBudget = SharedBudget | { unreadable: string };
