@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeScratchOwner } from "../../shared/scratch-owner.ts";
 import { registerFixtureScope } from "../../shared/test-fixture-registry.ts";
 import { scratchKind } from "../kinds/scratch.ts";
 import { runCollection } from "../runner.ts";
@@ -123,6 +124,33 @@ test("a store larger than one run's bound is retired over successive runs", asyn
   expect(readdirSync(f.store).toSorted()).toEqual(kept);
 });
 
+test("a report run reads the next page without moving past it", async () => {
+  const f = fixture();
+  registerExited(
+    f.store,
+    Array.from({ length: 3 }, (_, i) => ({ root: join(f.base, `gone-${i}`) })),
+  );
+  const first = readdirSync(f.store).toSorted()[0];
+  const report = scratchKind(
+    f.base,
+    [join(f.base, "scope-")],
+    "fixture declaration",
+    0,
+    f.store,
+    { pageSize: 1, advance: false },
+  );
+  for (let runs = 0; runs < 2; runs++) {
+    const { receipt } = await runCollection([report], {
+      collect: false,
+      receiptRoot: join(f.base, "receipts"),
+    });
+    expect(batchLines(receipt.resources)).toMatchObject([
+      { resource: expect.stringContaining(`:${first}..`) },
+    ]);
+  }
+  expect(existsSync(`${f.store}.cursor`)).toBe(false);
+});
+
 test("a report names what would be retired and keeps it", async () => {
   const f = fixture();
   registerExited(f.store, [{ root: join(f.base, "gone") }]);
@@ -185,11 +213,13 @@ test("an unacknowledged launch keeps its registration", async () => {
 
 test("an opaque launch keeps its registration only while a scratch scope encloses its root", async () => {
   const f = fixture();
-  // This suite runs inside its own scratch scope, so a root under the
-  // temporary directory is enclosed; one under an absent top-level path is not.
+  const enclosing = join(f.base, "enclosing");
+  mkdirSync(enclosing);
+  writeScratchOwner(enclosing);
+  // No ancestor of an absent top-level path holds a scratch owner record.
   const unenclosed = join("/", `jig-gc-retire-absent-${crypto.randomUUID()}`);
   registerExited(f.store, [
-    { root: join(f.base, "gone-opaque"), launch: "opaque" },
+    { root: join(enclosing, "gone-opaque"), launch: "opaque" },
     { root: join(unenclosed, "gone-opaque"), launch: "opaque" },
   ]);
   const { receipt } = await run(f, true);

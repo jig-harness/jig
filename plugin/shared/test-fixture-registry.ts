@@ -331,6 +331,10 @@ function pageEntry(registry: string): PageEntry {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
       return { kind: "vanished" };
+    log.warn("Cannot read a fixture registration", {
+      registry,
+      ...failureFields(error),
+    });
     return {
       kind: "malformed",
       reason: error instanceof Error ? error.message : String(error),
@@ -350,11 +354,15 @@ export function fixtureRegistryScopes(
       : `malformed registration: ${entry.reason}`,
   );
 }
+/** A name `readdir` could have returned for a folder of the store. */
+function folderName(name: string): boolean {
+  return name !== "" && name !== "." && name !== ".." && !/[\\/\0]/.test(name);
+}
 /** Where the last page stopped; a missing or unreadable cursor starts from the beginning. */
 function readCursor(file: string): string | null {
   try {
     const value: unknown = JSON.parse(readFileSync(file, "utf8"));
-    return typeof value === "string" && UUID.test(value) ? value : null;
+    return typeof value === "string" && folderName(value) ? value : null;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT")
       log.debug("Cannot read the fixture inventory cursor", {
@@ -376,12 +384,14 @@ function resumedOrder(names: string[], after: string | null): string[] {
 /**
  * Read the next bounded page of the store, resuming where the last page
  * stopped, so a store larger than one read is still read in full over
- * successive runs. A malformed folder is reported as itself.
+ * successive runs. A malformed folder is reported as itself. Without
+ * `advance`, the page is read and the cursor stays where it was.
  */
 export function nextFixtureRegistryPage(
   store = testFixtureRegistryRoot(),
-  limit = PAGE_REGISTRIES,
+  options: { limit?: number | undefined; advance?: boolean | undefined } = {},
 ): Outcome<FixtureRegistryPage> {
+  const limit = options.limit ?? PAGE_REGISTRIES;
   return attempt(
     "fixture-inventory",
     "Cannot read a page of fixture registrations",
@@ -414,8 +424,8 @@ export function nextFixtureRegistryPage(
       }
       page.complete = read === order.length;
       const last = order[read - 1];
-      if (page.complete || last === undefined || !UUID.test(last))
-        rmSync(cursor, { force: true });
+      if (options.advance === false) return page;
+      if (page.complete || last === undefined) rmSync(cursor, { force: true });
       else publish(cursor, last);
       return page;
     },
@@ -521,14 +531,14 @@ export function fixtureRetirementProof(
     },
   );
   if (read.ok) return read.value;
-  return {
-    state: "unverified",
-    reason:
-      (read.failure.cause as NodeJS.ErrnoException | undefined)?.code ===
-      "ENOENT"
-        ? "fixture registration disappeared"
-        : read.failure.reason,
-  };
+  if (!lstatSync(registry, { throwIfNoEntry: false }))
+    return { state: "unverified", reason: "fixture registration disappeared" };
+  if (read.failure.cause !== undefined)
+    log.warn("Cannot read a fixture registration for retirement", {
+      registry,
+      ...failureFields(read.failure.cause),
+    });
+  return { state: "unverified", reason: read.failure.reason };
 }
 /** Caller holds scratch's exclusive lock and has just proved the registration retirable. */
 export function retireFixtureRegistration(registry: string): Outcome<void> {

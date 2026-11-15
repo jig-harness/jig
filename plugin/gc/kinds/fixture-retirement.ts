@@ -11,8 +11,14 @@ import {
 import type { Proof, Resource } from "../types.ts";
 import { recordFixtureFailure } from "./fixture-scratch.ts";
 
-/** Enough registrations per receipt line to keep up with a busy host, few enough to hold the exclusive lock briefly. */
-const BATCH = 1000;
+/**
+ * Registrations per receipt line. Each line's proof runs again under the
+ * exclusive lock, which refuses every new test registration meanwhile: on a
+ * warm cache that is a process-table read and about 0.3 ms a registration.
+ */
+const BATCH = 500;
+/** Kept registrations a line names; the rest are counted, so a line stays small. */
+const KEPT_NAMED = 20;
 const BATCH_PREFIX = "fixture-registrations:";
 const MALFORMED_PREFIX = "fixture-registration:";
 
@@ -37,6 +43,9 @@ function split(page: FixtureRegistryPage): {
   return { present, gone };
 }
 
+function keptDetails(kept: Kept[]): { kept: Kept[]; keptCount: number } {
+  return { kept: kept.slice(0, KEPT_NAMED), keptCount: kept.length };
+}
 function keptSummary(kept: Kept[]): Proof {
   const first = kept[0];
   return {
@@ -44,7 +53,7 @@ function keptSummary(kept: Kept[]): Proof {
     reason: first
       ? `no registration in this batch can be retired; first: ${first.reason}`
       : "the batch holds no registration",
-    details: { kept },
+    details: keptDetails(kept),
   };
 }
 
@@ -110,7 +119,7 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
       return {
         state: "dead",
         reason: `${retirable.length} registration(s) whose roots are gone have no running registered process`,
-        ...(kept.length > 0 ? { details: { kept } } : {}),
+        ...(kept.length > 0 ? { details: keptDetails(kept) } : {}),
       };
     },
     collect(resource: Resource): Collected {

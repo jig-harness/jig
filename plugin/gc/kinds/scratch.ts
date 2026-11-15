@@ -243,7 +243,7 @@ export function scratchKind(
   declaration: string,
   idleDays: number,
   registryRoot?: string,
-  bounds: { pageSize?: number; batchSize?: number } = {},
+  bounds: { pageSize?: number; batchSize?: number; advance?: boolean } = {},
 ): CollectionKind {
   let memberships = new Map<string, FixtureScope[]>();
   let processResources = new Map<string, FixtureScope>();
@@ -261,7 +261,10 @@ export function scratchKind(
       const resources = new Map<string, Resource>();
       // A bounded page, resumed by the next run: removing a root that exists
       // still proves against the whole inventory, read again in `prove`.
-      const page = nextFixtureRegistryPage(registryRoot, bounds.pageSize);
+      const page = nextFixtureRegistryPage(registryRoot, {
+        limit: bounds.pageSize,
+        advance: bounds.advance,
+      });
       if (!page.ok) {
         recordFixtureFailure(page.failure);
         return page;

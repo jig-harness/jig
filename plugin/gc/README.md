@@ -161,8 +161,10 @@ scratch admission before each action. It does not sweep at test startup or
 use age as ownership evidence.
 
 The registrations themselves are read in bounded pages: each run reads up to
-100,000 registration folders and resumes the next run where it stopped, so a
-store of any size is read in full over successive runs. A folder that cannot
+100,000 registration folders, or as many as it reads in 30 seconds, and a
+collecting run resumes the next one where it stopped, so a store of any size
+is read in full over successive collecting runs. A report run reads the page
+the next collecting run will start from and leaves that position alone. A folder that cannot
 be read as a registration gets an `unverified` receipt line of its own, and
 the rest of the page goes on. Removing a root that still exists needs the
 whole store read in one bounded pass, as before; until the store fits one,
@@ -173,7 +175,7 @@ retired on lighter evidence than a root: every registered process has exited
 and no launch still waits for its child's acknowledgement. An opaque launch
 does not keep it, unless a scratch scope that still exists encloses its root,
 whose own proof still counts that launch. Retirement runs under the same
-exclusive scratch admission, at most 1,000 registrations per receipt line,
+exclusive scratch admission, at most 500 registrations per receipt line,
 and the line names each registration it retired.
 
 ### Worktrees an agent tool makes
