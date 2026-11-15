@@ -458,9 +458,12 @@ async function readChildren(
   const read = await Promise.all(
     meta.children.map(async (kept) => {
       try {
-        return { child: await view.pool(kept.identifier), error: undefined };
+        return {
+          child: await view.pool(kept.identifier),
+          threw: false as const,
+        };
       } catch (error) {
-        return { child: null, error };
+        return { child: null, threw: true as const, error };
       }
     }),
   );
@@ -468,21 +471,24 @@ async function readChildren(
   const unread: string[] = [];
   const limits: unknown[] = [];
   meta.children.forEach((kept, i) => {
-    const { child, error } = read[i] ?? { child: null, error: undefined };
+    const got = read[i];
+    const child = got?.child ?? null;
+    const threw = got?.threw === true;
+    const error = got !== undefined && got.threw ? got.error : undefined;
     if (isRateLimited(error)) {
       limits.push(error);
       return;
     }
     if (child === null || child.truncated.length) {
       unread.push(kept.identifier);
-      itemFailed(found, error);
+      if (threw) itemFailed(found, error);
+      else itemFailed(found);
       found.unplaced.push({
         ...itemOf(kept),
         record: "tracker",
-        reason:
-          error === undefined
-            ? "the child cannot be read completely"
-            : `the child cannot be read: ${failureText(error)}`,
+        reason: threw
+          ? `the child cannot be read: ${failureText(error)}`
+          : "the child cannot be read completely",
       });
     } else children.push(child);
   });
@@ -600,7 +606,7 @@ async function visitNode(
   if (ancestor !== undefined && issue.assignee !== null) return found;
   seen.add(issue.identifier);
   if (issue.truncated.length) {
-    itemFailed(found, undefined);
+    itemFailed(found);
     found.unplaced.push({
       ...itemOf(issue),
       record: "tracker",
@@ -613,7 +619,7 @@ async function visitNode(
   } catch (error) {
     if (isRateLimited(error)) throw error;
     if (ctx.view.scope !== undefined && isUnavailable(error)) throw error;
-    unreadable(issue, failureText(error), found, error);
+    unreadable(issue, failureText(error), found, [error]);
   }
   return found;
 }
@@ -623,9 +629,9 @@ function unreadable(
   issue: PoolIssue,
   why: string,
   found: Found,
-  cause?: unknown,
+  thrown: [] | [cause: unknown] = [],
 ): void {
-  itemFailed(found, cause);
+  itemFailed(found, ...thrown);
   found.unplaced.push({
     ...itemOf(issue),
     record: "tracker",
@@ -650,7 +656,7 @@ async function placeNode(
   const initialHold = nodeHold(node, meta, identity, options, tracker);
   if (initialHold !== null) {
     // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
-    if (meta.description === null) itemFailed(found, undefined);
+    if (meta.description === null) itemFailed(found);
     return void unplace(initialHold);
   }
   const open = await openBlockers(

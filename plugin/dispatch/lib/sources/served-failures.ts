@@ -40,12 +40,13 @@ export function readFailureRow(
  * An item's read failed: the claims below it are unknown. A thrown failure
  * fails the record, with its class; an item no read threw for (an answer that
  * names no assigner, a read the tracker cut short, a missing description) is
- * its row alone.
+ * its row alone. A cause is passed only when a read threw, so a rejection
+ * whose value is `undefined` still fails the record.
  */
 export function itemFailed(
   found: { failures: unknown[]; partial: boolean },
-  cause: unknown,
+  ...thrown: [] | [cause: unknown]
 ): void {
   found.partial = true;
-  if (cause !== undefined) found.failures.push(cause);
+  if (thrown.length > 0) found.failures.push(thrown[0]);
 }

@@ -148,6 +148,22 @@ describe("served pickups", () => {
     expect(read.read.ok).toBe(false);
     expect(read.claimed).toBeNull();
   });
+  it("fails the record for a child read that threw an error with no value", async () => {
+    const f = fake();
+    const poolIssue = f.tracker.poolIssue.bind(f.tracker);
+    f.tracker.poolIssue = async (k: string) => {
+      if (k === "#2") return Promise.reject(undefined);
+      return poolIssue(k);
+    };
+    const read = await readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      { people, cache: f.cache, nowMs: 1, headroom: true },
+    );
+    expect(read.read.ok).toBe(false);
+    expect(read.claimed).toBeNull();
+  });
   it("keeps the record ok for an item no read threw for, and leaves the claims unknown", async () => {
     const f = fake();
     const poolIssue = f.tracker.poolIssue.bind(f.tracker);
