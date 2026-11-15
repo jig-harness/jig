@@ -118,6 +118,33 @@ test("held phrases ignore indented code and preserve excluded-block boundaries",
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
 });
 
+test("held phrases retain list continuations and inline-code comment tokens", () => {
+  const root = tempDir("held-markdown-context");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nExit `11` on the lock\n\n1. Handle the refusal:\n\n    Exit `13` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nThe opening token is `<!--`.\n\nExit `13` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n1. Handle the refusal:\n\n    Exit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+});
+
 test("held phrases reject duplicate visible copies in an operational section", () => {
   const root = tempDir("held-duplicate");
   const phrase = {

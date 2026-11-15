@@ -19,8 +19,19 @@ function withoutHtmlComments(text: string): string {
   let visible = "";
   let cursor = 0;
   while (true) {
+    const codeStart = text.indexOf("`", cursor);
     const start = text.indexOf("<!--", cursor);
-    if (start < 0) return visible + text.slice(cursor);
+    if (start < 0 && codeStart < 0) return visible + text.slice(cursor);
+    if (codeStart >= 0 && (start < 0 || codeStart < start)) {
+      let end = codeStart;
+      while (text[end] === "`") end += 1;
+      const delimiter = text.slice(codeStart, end);
+      const close = text.indexOf(delimiter, end);
+      if (close < 0) return visible + text.slice(cursor);
+      visible += text.slice(cursor, close + delimiter.length);
+      cursor = close + delimiter.length;
+      continue;
+    }
     visible += text.slice(cursor, start);
     const end = text.indexOf("-->", start + "<!--".length);
     if (end < 0) return `${visible}\n`;
@@ -28,6 +39,11 @@ function withoutHtmlComments(text: string): string {
     visible += "\n";
     cursor = end + "-->".length;
   }
+}
+
+function listContentIndent(line: string): number | null {
+  const match = /^( *)(?:[-+*]|\d+[.)])[ \t]+/.exec(line);
+  return match === null ? null : match[0].length;
 }
 
 /** An ATX heading outside code, normalized to the form declarations use. */
@@ -86,6 +102,7 @@ function visibleLines(source: string): string[] {
   let fence: { char: "`" | "~"; length: number } | undefined;
   let indentedCode = false;
   let previousWasBlank = true;
+  let listIndent: number | undefined;
   for (const line of source.split("\n")) {
     if (fence) {
       if (closesFence(line, fence)) fence = undefined;
@@ -100,7 +117,16 @@ function visibleLines(source: string): string[] {
       previousWasBlank = true;
       continue;
     }
-    const indented = line.startsWith("    ") || line.startsWith("\t");
+    const listed = listContentIndent(line);
+    if (listed !== null) listIndent = listed;
+    else if (
+      line.trim() !== "" &&
+      !line.startsWith(" ") &&
+      !line.startsWith("\t")
+    )
+      listIndent = undefined;
+    const leading = line.length - line.trimStart().length;
+    const indented = leading >= (listIndent === undefined ? 4 : listIndent + 4);
     if (indentedCode && (indented || line.trim() === "")) {
       lines.push("");
       previousWasBlank = true;
