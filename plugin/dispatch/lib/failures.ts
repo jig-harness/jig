@@ -9,8 +9,8 @@
  * | Kind | One row per | Its key | Backs off |
  * | --- | --- | --- | --- |
  * | `label` | pull request whose dispatch labels the projection writes | `label PR #<n>`, `label markers PR #<n>` for its markers | yes |
- * | `notice` | notification cause | `notice <its key>` | yes |
- * | `failure-notice` | notification of a failure below | `notice <its key>` | yes, and never notified itself |
+ * | `notice` | notification cause and channel | `notice <its key>` on `orca-card`, `notice <channel> <its key>` on another channel (`notice-records.ts`) | yes |
+ * | `failure-notice` | notification of a failure below, and channel | as `notice` | yes, and never notified itself |
  * | `nudge` | session and waiting episode | `nudge <record> <episode>` | yes |
  * | `claim-end` | this host's launch claim whose end is owed | `claim-end PR #<n> comment <id>` | yes |
  * | `marker-answer` | follow-up marker whose answer is owed | `marker-answer PR #<n> comment <id>` | yes |

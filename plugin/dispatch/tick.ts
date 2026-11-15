@@ -99,9 +99,11 @@ import { loadReport } from "./lib/load.ts";
 import { readTickLoad } from "./lib/tick-load.ts";
 import {
   allRecords,
+  deadlineOf,
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
+import { boundAt } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
@@ -216,6 +218,8 @@ async function startTick(
   // A system that does not answer is not asked again in this tick, and the next tick probes it once first.
   holdUnanswered(join(stateRoot(), UNANSWERED_FILE));
   const runtime = options.runtime ?? defaultRuntime(machine);
+  // One bound for every read the tick makes, from the launcher's deadline; none when no launcher bounds it.
+  const bound = boundAt(deadlineOf(machine, startedMs));
   const read = await readLaunches();
   const receipt: TickReceipt = {
     version: 1,
@@ -234,12 +238,13 @@ async function startTick(
     runtime,
     nowMs: now.epochMilliseconds,
     startedMs,
+    ...(bound === undefined ? {} : { bound }),
     launches: read.records,
     apply: null,
     lineInputs: new Map(),
     reflections: [],
     pending: [],
-    reads: tickReads(runtime, options.poolSize),
+    reads: tickReads(runtime, options.poolSize, bound),
     rerunsHeld: rerunsHeld(),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };

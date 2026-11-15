@@ -16,6 +16,7 @@ import type { RepoLineInput } from "./line.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { RepoReflection } from "./reflection-route.ts";
 import type { SessionRuntime } from "./runtime/port.ts";
+import { boundAt, type TickBound } from "./sources/bounded.ts";
 import type { TickReads } from "./tick-reads.ts";
 import type { RepoReport } from "./types.ts";
 
@@ -41,6 +42,8 @@ export interface TickContext {
   nowMs: number;
   /** When this invocation began, on the clock the launcher's deadline runs on; the apply state counts its deadline from here. */
   startedMs: number;
+  /** The tick's one bound, made the first time it is asked for (`tickBound`); absent for a tick no launcher bounds. */
+  bound?: TickBound;
   launches: ReadRecord[];
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
@@ -63,16 +66,25 @@ export interface TickContext {
   tickSettledExit?: number;
 }
 
-/** The launcher's deadline, leaving time for the tick to write its receipt. */
-export function tickDeadline(context: TickContext): { deadline?: number } {
-  const machine = context.options.machine;
-  if (machine == null) return {};
-  return {
-    deadline:
-      context.startedMs +
-      enforcedDeadlineMs(machine) -
-      machine.runtimeTimeoutMs,
-  };
+/** The launcher's deadline for a tick `machine` bounds that began at `startedMs` (epoch milliseconds), leaving time for the tick to write its receipt; none without a machine file. */
+export function deadlineOf(
+  machine: MachineConfig | null | undefined,
+  startedMs: number,
+): number | undefined {
+  if (machine == null) return undefined;
+  return startedMs + enforcedDeadlineMs(machine) - machine.runtimeTimeoutMs;
+}
+
+/**
+ * The tick's bound: its deadline (`deadlineOf`) and the signal that fires
+ * there, made once and shared by every phase that reads; none for a tick no
+ * launcher bounds.
+ */
+export function tickBound(context: TickContext): TickBound | undefined {
+  if (context.bound !== undefined) return context.bound;
+  const bound = boundAt(deadlineOf(context.options.machine, context.startedMs));
+  if (bound !== undefined) context.bound = bound;
+  return bound;
 }
 
 /**
