@@ -6,6 +6,7 @@ import {
   hasEntry,
 } from "./lib/deferred-identity.ts";
 export { summaryEntryKey, headingEntryKey, entryHeadings, hasEntry };
+import { deferBatchCommand } from "./lib/defer-batch-command.ts";
 import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
 /**
  * File deferred findings through the configured tracker interface. One open
@@ -62,19 +63,13 @@ import {
   scaffoldPortion,
 } from "./lib/batch-description.ts";
 
-import {
-  deferralClient,
-  type LinearClient,
-} from "../../do-item/scripts/lib/tracker/linear-deferral.ts";
+import type { LinearClient } from "../../do-item/scripts/lib/tracker/linear-deferral.ts";
 export type { LinearClient } from "../../do-item/scripts/lib/tracker/linear-deferral.ts";
 /**
  * Bound the whole workflow, including retries and backoff. The adapter also
  * caps each request, while the workflow checks this signal before each call.
  */
 export const RUN_DEADLINE_MS = 5 * 60_000;
-
-const USAGE =
-  "usage: defer-batch.ts <PR> <type> --thread-url <url> --reason <text> --severity <severity> --category <category> --originating <key|none>; finding body is required on stdin";
 
 /**
  * Consumer-declared taxonomy: live workspace groups are also validated before
@@ -1915,26 +1910,7 @@ export async function appendWithRetry(
 
 async function main(): Promise<number> {
   if (consumerError !== undefined) fail(2, `defer-batch: ${consumerError}`);
-  const parsed = parseArgs(process.argv.slice(2));
-  if (typeof parsed === "string") fail(2, `defer-batch: ${parsed}`, "", USAGE);
-  const args = parsed;
-
-  const finding = (await readStdinAll()).trim();
-  if (finding === "") {
-    fail(2, "defer-batch: the finding body on stdin was empty", "", USAGE);
-  }
-
-  if (
-    ![process.env.LINEAR_API_TOKEN, process.env.LINEAR_API_KEY].some((v) =>
-      v?.trim(),
-    )
-  )
-    fail(
-      1,
-      "defer-batch: LINEAR_API_TOKEN (or LINEAR_API_KEY) is required — the batch issue lives in Linear.",
-    );
-  const linear = deferralClient();
-  return runDeferBatch(linear, args, finding);
+  return deferBatchCommand(process.argv.slice(2), await readStdinAll());
 }
 
 /**

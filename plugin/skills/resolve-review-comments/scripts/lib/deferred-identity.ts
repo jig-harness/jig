@@ -73,30 +73,6 @@ interface Fence {
   len: number;
 }
 
-/** Strip inline-code spans and escaped characters before looking for comments. */
-function commentSyntax(line: string): string {
-  let out = "";
-  let ticks = 0;
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i] ?? "";
-    if (char === "\\") {
-      i += 1;
-      continue;
-    }
-    if (char === "`") {
-      let end = i;
-      while (line[end] === "`") end += 1;
-      const length = end - i;
-      if (ticks === 0) ticks = length;
-      else if (ticks === length) ticks = 0;
-      i = end - 1;
-      continue;
-    }
-    if (ticks === 0) out += char;
-  }
-  return out;
-}
-
 /** HTML comments are invisible Markdown content, never entry records. */
 function commentLine(
   line: string,
@@ -105,24 +81,38 @@ function commentLine(
   inComment: boolean;
   consumed: boolean;
 } {
-  const syntax = commentSyntax(line);
   let cursor = 0;
   let open = inComment;
-  while (cursor < syntax.length) {
+  while (cursor < line.length) {
     if (open) {
-      const end = syntax.indexOf("-->", cursor);
+      const end = line.indexOf("-->", cursor);
       if (end < 0) return { inComment: true, consumed: true };
       cursor = end + 3;
       open = false;
       continue;
     }
-    const start = syntax.indexOf("<!--", cursor);
-    if (start < 0) break;
-    const end = syntax.indexOf("-->", start + 4);
-    if (end < 0) return { inComment: true, consumed: true };
-    cursor = end + 3;
+    if (line[cursor] === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (line[cursor] === "`") {
+      let end = cursor;
+      while (line[end] === "`") end += 1;
+      const fence = line.slice(cursor, end);
+      const close = line.indexOf(fence, end);
+      if (close >= 0) {
+        cursor = close + fence.length;
+        continue;
+      }
+    }
+    if (line.startsWith("<!--", cursor)) {
+      open = true;
+      cursor += 4;
+      continue;
+    }
+    cursor += 1;
   }
-  return { inComment: open, consumed: inComment || syntax.includes("<!--") };
+  return { inComment: open, consumed: inComment || open };
 }
 
 function openingFence(line: string): { fence: Fence; info: string } | null {
