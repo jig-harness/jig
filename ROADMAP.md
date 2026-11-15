@@ -77,7 +77,7 @@ answered. Next are GitHub's limits in the shared budget, reuse of unchanged
 answers and identical reads, and gates that enforce the transport boundary
 and query cost ceilings.
 
-### 56. Starting work that will not collide first
+### 57. Starting work that will not collide first
 
 When several pieces of work change the same files, each merge puts the
 others in conflict. Every conflict costs another agent session and another
@@ -143,7 +143,7 @@ recommendation, so a team can see which decisions still need a person.
 Later, decisions that cannot be undone, such as a release, will need proof
 that a person answered.
 
-### 56. Declared priorities, a progress review and the overview
+### 58. Declared priorities, a progress review and the overview
 
 A person sees individual failures without seeing whether their goals are
 advancing. [The design](design/priorities-and-overview.md) defines one priorities record
