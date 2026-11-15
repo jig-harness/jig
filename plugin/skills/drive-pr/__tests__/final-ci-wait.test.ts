@@ -184,8 +184,8 @@ describe("final CI keep-waiting gate", () => {
       "const stage = await waitForRoundBoundary(context);\n    if (stage !== null) return stage;\n  }\n  const readRoundStatusResult = await readRoundStatus(",
     );
     const convergence = driver("convergence-ci");
-    expect(convergence).toContain(
-      "const finalCiSignals = await context.finalCiWait.prime();\n  const release = await run(",
+    expect(convergence).toMatch(
+      /const finalCiSignals = await context\.finalCiWait\.prime\(\);\n(?: {2}\/\/[^\n]*\n)* {2}const release = await run\(/,
     );
     expect(convergence).toContain(
       'context.finalCiWait.remember(reviewedHead, finalCiSignals, false);\n    await sleep(FINAL_CI_POLL_SECONDS);\n    return "continue";',

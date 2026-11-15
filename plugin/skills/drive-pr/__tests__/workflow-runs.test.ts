@@ -359,7 +359,12 @@ describe("a true failure beside a cancelled sibling", () => {
     ];
     expect(verdict(runs, workflowRuns)).toBe("failing: gates, unit");
     expect(failingRunsOf(runs, workflowRuns)).toEqual([
-      { id: 41, createdAt: T1, jobNames: ["gates", "unit"] },
+      {
+        id: 41,
+        createdAt: T1,
+        conclusion: "failure",
+        jobNames: ["gates", "unit"],
+      },
     ]);
   });
 

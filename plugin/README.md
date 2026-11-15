@@ -2051,6 +2051,7 @@ drive:
   reviews_drafts: true        # does the AI reviewer review draft pull requests
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
+  ci_repair_rounds: 2         # CI-repair passes per head and failing check on red final CI; 0 stops on red; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
