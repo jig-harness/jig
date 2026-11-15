@@ -242,13 +242,13 @@ export function sweepFindings(
       isMapping(fileIssue) &&
       isMapping(fileIssue.sweep) &&
       fileIssue.sweep.move === false;
-    if (!commentOnly || sweepRunners(root, tracked, true).length > 0) return [];
+    if (!commentOnly) return [];
     return [
       {
         id: "suggestion:issue_tracker.sweep.position",
         severity: "suggestion",
         message:
-          "this repository sets `file_issue.sweep.move: false`, but no confirmed scheduled sweep passes `--position <file>`: without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass the flag and keep its file between runs (file-issue's README, The weekly sweep)",
+          "this repository sets `file_issue.sweep.move: false`, but durable scheduled sweep position storage could not be confirmed: without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass `--position <file>` and keep that file between runs (file-issue's README, The weekly sweep)",
       },
     ];
   }

@@ -56,18 +56,26 @@ it("flags a comment-only sweep that never advances past the read cap", () => {
   }
 });
 
-it("certifies positioned comment-only sweeps and moving sweeps", () => {
+it("keeps comment-only sweeps advisory until durable position storage is confirmed", () => {
   for (const move of [false, true, undefined]) {
     const config = { ...tracker, file_issue: { sweep: { move } } };
     const command = `bun check-fields.ts check --yes${move === false ? " --position state/sweep.json" : ""}`;
     for (const files of schedulerFixtures(command)) {
       const { root, tracked } = repo(files);
-      expect(sweepFindings(config, root, tracked)).toEqual([]);
+      expect(sweepFindings(config, root, tracked)).toEqual(
+        move === false
+          ? [
+              expect.objectContaining({
+                id: "suggestion:issue_tracker.sweep.position",
+              }),
+            ]
+          : [],
+      );
     }
   }
 });
 
-it("requires a position value and accepts any confirmed positioned schedule", () => {
+it("requires durable position storage for comment-only sweeps", () => {
   const config = { ...tracker, file_issue: { sweep: { move: false } } };
   const { root, tracked } = repo({
     "missing.cron": "37 5 * * 1 bun check-fields.ts check --yes --position\n",
@@ -87,7 +95,7 @@ it("requires a position value and accepts any confirmed positioned schedule", ()
   expect(
     sweepFindings(config, root, ["missing.cron", "plain.cron"])[0]?.id,
   ).toBe("suggestion:issue_tracker.sweep.position");
-  expect(sweepFindings(config, root, tracked)).toEqual([]);
+  expect(sweepFindings(config, root, tracked)).toHaveLength(1);
 });
 
 describe("the audit's sweep finding", () => {
