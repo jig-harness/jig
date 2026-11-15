@@ -424,23 +424,7 @@ function merged(
     ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
     answeredOrdinarilyAt: now,
   };
-  // The answer's balance counts the reservations made before its request was
-  // sent, and none made since: it stands only with those deducted and kept
-  // pending, so a release gives back exactly what was taken. A balance that
-  // is not the answer's already holds every deduction, and keeps them all.
-  const adopted = (count: number | null): BudgetWindow => {
-    const later = (prev.pending ?? []).filter((t) => t > (sentAt ?? now));
-    // A balance cannot go below zero: a reservation it has no room to deduct
-    // is not kept pending, so its release gives back nothing.
-    const deducted = count === null ? 0 : Math.min(later.length, count);
-    return {
-      ...read,
-      remaining: count === null ? null : count - deducted,
-      ...(prev.pending === undefined
-        ? {}
-        : { pending: later.slice(later.length - deducted) }),
-    };
-  };
+  const { settled, adopted } = reconciliation(prev, read, sentAt ?? now);
   const kept = (remaining: number | null): BudgetWindow => ({
     ...read,
     remaining,
@@ -457,11 +441,63 @@ function merged(
     return adopted(count);
   if (count === null) return olderWindow(prev, next) ? prev : kept(null);
   if (sameResetWindow(prev, next) && prev.remaining !== null)
-    return count < prev.remaining ? adopted(count) : kept(prev.remaining);
+    return settled(count) < prev.remaining
+      ? adopted(count)
+      : kept(prev.remaining);
   if (olderWindow(prev, next)) return prev;
   const carried = carriedBalance(prev, next, now, sentAt);
   if (carried === null) return adopted(count);
-  return count < carried ? adopted(count) : kept(carried);
+  return settled(count) < carried ? adopted(count) : kept(carried);
+}
+
+/**
+ * How an ordinary answer's balance is reconciled with a stored window. The
+ * answer's balance counts the reservations made before its request was sent,
+ * and none made since: it stands only with those deducted and kept pending,
+ * so a release gives back exactly what was taken. A balance that is not the
+ * answer's already holds every deduction, and keeps them all.
+ */
+function reconciliation(
+  prev: BudgetWindow,
+  read: BudgetWindow,
+  sent: number,
+): {
+  settled: (count: number) => number;
+  adopted: (count: number | null) => BudgetWindow;
+} {
+  const pending = prev.pending ?? [];
+  // Reservations at the request's own millisecond cannot be told from it:
+  // one of them is the request, the rest were made after it was sent.
+  const atSent = pending.filter((t) => t === sent).length;
+  const later = [
+    ...pending.filter((t) => t > sent),
+    ...Array<number>(Math.max(0, atSent - 1)).fill(sent),
+  ];
+  // The forgotten ones (past `PENDING_CAP`) cannot be told apart either, so
+  // those after the request count as later: that under-credits at worst.
+  const forgotten =
+    prev.overflow !== undefined && prev.overflow.at > sent
+      ? prev.overflow.count
+      : 0;
+  return {
+    // What the answer's balance comes to once every later reservation is
+    // taken from it: the figure to compare with a stored balance.
+    settled: (count) => count - later.length - forgotten,
+    adopted: (count) => {
+      // A balance cannot go below zero: a reservation it has no room to
+      // deduct is not kept pending, so its release gives back nothing.
+      const deducted =
+        count === null ? 0 : Math.min(later.length + forgotten, count);
+      const keep = Math.min(later.length, deducted);
+      return {
+        ...read,
+        remaining: count === null ? null : count - deducted,
+        ...(prev.pending === undefined
+          ? {}
+          : { pending: later.slice(later.length - keep) }),
+      };
+    },
+  };
 }
 
 /** Both readings are of one window that resets whole, with counts. */
