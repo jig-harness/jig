@@ -1233,7 +1233,8 @@ function legacyFields(findings: Finding[]): Finding[] {
 
 /**
  * `.context/` not ignored by git. A drive keeps working files there and
- * refuses to push or certify a tree with untracked files.
+ * excludes it in its own clone, but every other clone, and a round worked
+ * without the drive, still reads those files as untracked.
  */
 function contextDirFindings(root: string): Finding[] {
   const probe = run("git", ["check-ignore", "-q", ".context/jig-probe"], {
@@ -1253,7 +1254,7 @@ function contextDirFindings(root: string): Finding[] {
       id: "context-dir-not-ignored",
       severity: "warning",
       message:
-        "git does not ignore .context/: a drive keeps working files there and refuses to push or certify a tree with untracked files. Add `.context/` to .gitignore",
+        "git does not ignore .context/: a drive keeps working files there and excludes the folder only in the clone it runs in, so elsewhere they are untracked files that stop a push or a clean-tree check. Add `.context/` to .gitignore",
     },
   ];
 }
