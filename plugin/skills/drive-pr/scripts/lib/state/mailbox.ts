@@ -3,7 +3,7 @@
  * human, the orchestrating session that spawned this drive, or `drives.ts
  * --stop`) and a headless `drive.ts` run in the same working tree. It is the
  * one way to steer or stop a running drive: append-only JSONL logs under
- * `.context/drive-mailbox/` (gitignored, tagged disposable with a
+ * `.context/drive-mailbox/` (ignored, `context-ignore.ts`; tagged disposable with a
  * `CACHEDIR.TAG` for `jig gc`, workspace-scoped — the same
  * granularity as the worktree lock in `store.ts`'s `worktreeLockName`, and NOT
  * the clone-wide state dir: a mailbox is a conversation with THIS tree's

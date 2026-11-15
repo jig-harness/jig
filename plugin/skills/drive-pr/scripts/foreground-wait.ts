@@ -41,7 +41,7 @@
  * naming Codex's own long-running command session as the way to run the step.
  *
  * STATE. Every launch owns one generation directory,
- * `.context/foreground-wait/gen-<n>/` (gitignored, and tagged disposable with a
+ * `.context/foreground-wait/gen-<n>/` (ignored, `context-ignore.ts`; tagged disposable with a
  * `CACHEDIR.TAG` beside the generations), holding that launch's log,
  * pids and result. The directory is the launch claim: `mkdir` is atomic, so of
  * two concurrent launches exactly one creates `gen-<n+1>`, and no launch can

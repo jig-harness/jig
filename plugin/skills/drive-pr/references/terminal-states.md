@@ -226,6 +226,27 @@ reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
 If any parked item remains while 3 and 4 are otherwise satisfied, the state is
 `HITL_PARKED`, not `CONVERGED`.
 
+### The final status re-read
+
+Once the CI hold is released and its fresh evidence is established,
+`drive.ts` reads the status once more (`--once --no-count`) before it trusts
+the CI verdict, because a finding can land while CI runs. That re-read judges
+the same view as the round gate: the drive's own `--bots-only` and
+`--no-head-sync`, and its inherited head. A thread the view leaves out (a
+person's, under `--bots-only`) is outside both reads, so it never reads as a
+change between them. `--timeout` and `--interval` pace a polling read and are
+not passed to a single one.
+
+A re-read that reports a different head re-gates: the new head is the next
+round's to judge. A re-read on the reviewed head (or one whose head did not
+read) that is not `CONVERGED` re-gates too, as a new finding is owed a round,
+but at most `DRIVE_PR_FINAL_REGATE_LIMIT` times in a row (default 3, `0` stops
+on the first). The count starts again on a new head, after a pass, and once a
+re-read agrees. Past the limit the drive stops with exit `1`, naming the
+re-read's state and reason and the `drive-status.ts` command that shows it:
+the two reads keep disagreeing, so the drive cannot tell which holds, and
+another re-gate would only repeat them.
+
 ## The reviewer is identified by app slug, not by check name
 
 The repository's `review.reviewer_app`

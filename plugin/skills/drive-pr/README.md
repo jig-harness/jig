@@ -111,8 +111,12 @@ Every field of the file, for every skill, is in the plugin's
 
 **Ignore `.context/`.** The drive keeps working files (its handoff note,
 mailbox, foreground-wait records) in `.context/` at the root of the working
-tree, and it refuses to push or certify a tree with untracked files. Add
-`.context/` to the repository's `.gitignore`. Throwaway working files go
+tree, and it refuses to push or certify a tree with untracked files. Where
+the repository does not ignore `.context/`, the drive's attach and
+`drive.ts` add it to the clone's local exclude file (`.git/info/exclude`,
+never committed), so the drive's own files never stop it; adding `.context/` to the
+repository's `.gitignore` covers every clone and a round worked by hand
+without `drive.ts` too. Throwaway working files go
 under `.context/scratch/`, and the mailbox and foreground-wait directories
 carry a `CACHEDIR.TAG` file, since nothing needs them once the work is
 finished; `jig gc` keeps anything else under `.context/` until it is
@@ -360,6 +364,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_CI_INFRA_HEAD_MOVES` | Integer from 0 through 100; otherwise the default. Head moves (a base merge, or an empty commit) per drive to run such checks again, before the drive stops with [`CI_INFRA_PERSISTED`](../../protocol/drive-exits.md) | `2` |
 | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once) | `1` |
 | `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | How long to wait for the required checks to report on the final commit, in 10-second polls (`0`: wait forever) | `180` (30 minutes) |
+| `DRIVE_PR_FINAL_REGATE_LIMIT` | Re-gates in a row on one commit when the converged round's final status re-read disagrees with the round's own read, before the drive stops with exit `1` (`0`: stop on the first) | `3` |
 | `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with [`STALLED`](../../protocol/drive-exits.md) (`0`: off) | `2` |
 | `DRIVE_PR_PASS_TIMEOUT` | One round's agent pass, in seconds; also `bun "<skill-dir>/scripts/drive.ts" --pass-timeout` (`0`: off) | `5400` (90 minutes) |
 | `DRIVE_PR_ARM_CONFIRM_SEC` | How long `arm-drive.ts` waits for a drive it started in a terminal tab to be listed | `45` |
