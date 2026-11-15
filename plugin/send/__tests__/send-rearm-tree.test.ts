@@ -7,7 +7,10 @@ import { pullDoc } from "../../ask/__tests__/ask-fixtures.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { recordResult, writeRecord } from "../../dispatch/lib/launches.ts";
 import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
-import { cloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
+import {
+  CLONE_ID_FILE,
+  cloneKey,
+} from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import {
   ledgerOn,
@@ -273,6 +276,26 @@ describe("rearm tree search refusals and stale records", () => {
     const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain(tree);
+  });
+  it("skips a listed tree that is not the stopped driver's own", async () => {
+    const w = world();
+    w.stoppedDriver(12);
+    const tree = branchTree(w, "ledger-tree");
+    ledgerForTree(w, tree);
+    const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain(tree);
+    expect(r.stdout).not.toContain(w.tree);
+  });
+  it("refuses, rather than failing as a usage error, when a clone identity file is corrupt", async () => {
+    const w = world();
+    const tree = branchTree(w, "corrupt-id");
+    ledgerForTree(w, tree);
+    writeFileSync(join(w.repo, ".git", CLONE_ID_FILE), "not a uuid\n");
+    const r = await w.send([ADDRESS, "rearm", "--dry-run"]);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("clone identity");
+    expect(w.writes()).toEqual([]);
   });
   it("refuses and names two worktrees holding the branch", async () => {
     const w = world();

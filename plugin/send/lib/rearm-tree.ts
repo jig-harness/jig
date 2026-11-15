@@ -92,7 +92,10 @@ function inspectionFailure(
 }
 
 /** Existing ownership records keep precedence over the fallback search. */
-function ownedTree(d: DriveReading): Outcome<string | null, "refused"> {
+async function ownedTree(
+  ctx: AskContext,
+  d: DriveReading,
+): Promise<Outcome<string | null, "refused">> {
   const faults: InspectionFault[] = [];
   const launches = [...d.records].sort((a, b) =>
     b.record.createdAt.localeCompare(a.record.createdAt),
@@ -104,7 +107,10 @@ function ownedTree(d: DriveReading): Outcome<string | null, "refused"> {
   for (const path of paths) {
     const found = directory(path, faults);
     if (faults.length > 0) return inspectionFailure(faults);
-    if (found !== null) return ok(found);
+    if (found === null) continue;
+    const matches = await matchesStoppedDriver(ctx, d, found);
+    if (!matches.ok) return matches;
+    if (matches.value) return ok(found);
   }
   return ok(null);
 }
@@ -206,7 +212,15 @@ async function matchesStoppedDriver(
     return unreadable(
       `the clone identity of candidate ${path} could not be read: git exited ${common.code}${common.timedOut ? " at its deadline" : ""}; ${common.stderr.trim()}`,
     );
-  const key = peekCloneKey(resolve(path, common.stdout.trim()));
+  let key: string | null;
+  try {
+    key = peekCloneKey(resolve(path, common.stdout.trim()));
+  } catch (error) {
+    return unreadable(
+      `the clone identity file of candidate ${path} could not be read: ${String(error)}`,
+      error,
+    );
+  }
   if (key === null || cloneId(key) !== driver.clone) return ok(false);
   return ok(true);
 }
@@ -275,7 +289,7 @@ export async function rearmTree(
   d: DriveReading,
   ctx: AskContext,
 ): Promise<Outcome<string, "refused">> {
-  const owned = ownedTree(d);
+  const owned = await ownedTree(ctx, d);
   if (!owned.ok) return owned;
   if (owned.value !== null) return ok(owned.value);
   const search = await searchFor(ctx);
