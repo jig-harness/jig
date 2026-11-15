@@ -89,13 +89,10 @@ and confusing them sends the wrong signal:
 Because each outcome is written down when the thread is answered, the replies
 are data that these readers can use:
 
-- **Planning.** Deferred findings arrive in the tracker as follow-up issues
-  with the repository's `followup` label, by default grouped into one issue
-  per pull request and type of work (a finding that needs its own design
-  decision, whose fix sizes above `small`, or that belongs to another owner
-  or domain gets an issue of its own, with the reason recorded), linked to the pull
-  request. A follow-up is filed under the epic its work item belongs to when
-  that epic shares the finding's domain, and with no parent otherwise
+- **Planning.** Deferred findings arrive in the backlog with the repository's
+  `followup` label, grouped into one open issue per pull request and type of
+  work. Native related links preserve the originating issue and its epic;
+  the follow-up is never their child
   ([deferral protocol](references/deferral-protocol.md)). M7's
   [post-merge stage](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#core-pieces)
   checks after the merge that each one was filed. Deferrals that keep landing on the same area point
@@ -161,7 +158,7 @@ tooling can carry more.
 | `review.bots`                                      | The repository's reviewer logins, named to the agent. Absent: threads are worked whoever wrote them                                                                                                                                                                                                                                                                                                 |
 | `review.job_pattern`                               | Regular expression selecting checks to wait on; requires `review.required_checks`. Absent or `null`: reviewer checks are recognised by name                                                                                                                                                                                                                                                         |
 | `review.required_checks`                           | Distinct exact check names that must each complete; missing or skipped members cannot settle                                                                                                                                                                                                                                                                                                        |
-| `review.deferral_team`                             | Linear team used by the deferral adapter. Absent: a deferral with no originating issue needs `--team`                                                                                                                                                                                                                                                                                               |
+| `review.deferral_team`                             | Linear team used by the deferral adapter, falling back to `issue_tracker.team`; `--team` overrides it on Linear and is refused on other adapters                                                                                                                                                                                                                                                                                               |
 | `review.repo_slug`                                 | GitHub repository (`owner/name`) used to validate finding permalinks; a deferral without it needs `--repo-slug`                                                                                                                                                                                                                                                                                     |
 | `review.repo_label`                                | Repository label used on follow-up issues, one of `review.taxonomy.repos`; a deferral without it needs `--repo-label`                                                                                                                                                                                                                                                                               |
 | `review.taxonomy`                                  | Consumer label sets used when filing deferred findings: `types`, `repos`, `sizes` (default `xs`, `small`), `categories`, `context_prefixes`, and `ownership_prefixes` (required once `types`, `repos` or `context_prefixes` is set). `provenance_label` and `epic_label` are older spellings of the `followup` and `epic` roles in `issue_tracker.labels`; set either one, or both to the same name |
@@ -234,21 +231,20 @@ thread filter; consumer bot names do not silently widen it to human threads.
 [triage rubric](references/triage-rubric.md) determines materiality and scope;
 the [deferral protocol](references/deferral-protocol.md) requires a tracked
 follow-up before a deferred thread resolves. The executable deferral adapter
-files those follow-ups in Linear directly, through Linear's GraphQL API, with
-the credential in `LINEAR_API_TOKEN` or `LINEAR_API_KEY`. It does not go
-through the [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that `do-item` and `drive-pr` use. Where it
-cannot file (another tracker, or no Linear credential), `defer-in-pr.ts`
-records the finding in a `## Deferred` section of the pull request body, by
-read-modify-write against the body's update time so a person's edit there
-survives, and the thread resolves with `**deferred**` linking that section.
-`file-deferred.ts`, run from the repository's post-merge step or on a
-pull request closed without merging, files each entry through the tracker
-interface where an adapter can, with the type, severity and size the entry
-records as its type, priority and size, and a label of each other group
-the label taxonomy requires, from the change-area catalog's areas covering
-the file the finding's thread is on, and replaces it with its issue's link.
-An entry whose group it cannot derive with certainty stays in the section
-for a person, and the run's output names the group it lacks.
+files those follow-ups through the configured tracker interface on GitHub,
+Linear and Jira. Every pull request and type has one open backlog batch;
+its priority is the highest of its findings and its categories are their
+union. Later findings append to it. Native related links preserve the
+originating issue and epic, and no follow-up is parented to either.
+Where no adapter can file, `defer-in-pr.ts` records the finding in the pull
+request's `## Deferred` section and the thread links that section.
+`file-deferred.ts`, run from the repository's post-merge step or on a pull
+request closed without merging, groups those entries by the same batch key,
+files or appends through the tracker interface and replaces each entry with
+its issue's link. It derives required labels beyond size from the change-area
+catalog's areas covering the file the thread is on. An entry whose group it
+cannot derive with certainty stays in the section for a person, and the
+run's output names the group it lacks.
 
 A review bot's follow-up to a reply (a confirmation, or a chat
 acknowledgement with no outcome token and no finding) is transparent: it is

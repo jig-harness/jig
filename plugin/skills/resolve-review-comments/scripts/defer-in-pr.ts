@@ -2,9 +2,9 @@
 /**
  * Defer a review finding into the pull request's own `## Deferred` section,
  * for a repository where no tracker adapter can file it: the deferral batch
- * step (`defer-batch.ts`) files on Linear only, so a repository whose tracker
- * is another, or a machine with no Linear credential, records the finding
- * here, and `file-deferred.ts` files it later where an adapter can
+ * step (`defer-batch.ts`) uses the configured tracker interface. When no
+ * adapter can file, record the finding here; `file-deferred.ts` batches it
+ * later where the adapter can file
  * (references/deferral-protocol.md § Deferral without a tracker).
  *
  * Usage:
@@ -60,10 +60,12 @@ export function deferralRoute(
   env: Env = process.env,
 ): { route: "defer-batch" } | { route: "pr-body"; why: string } {
   const adapter = valueAt(values, "issue_tracker.adapter") ?? "github";
+  if (adapter === "github" || adapter === "jira")
+    return { route: "defer-batch" };
   if (adapter !== "linear")
     return {
       route: "pr-body",
-      why: `the batch step files on Linear only, and issue_tracker.adapter is ${String(adapter)}`,
+      why: `no tracker adapter can file for ${String(adapter)}`,
     };
   if (
     [env.LINEAR_API_TOKEN, env.LINEAR_API_KEY].every(

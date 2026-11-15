@@ -5,6 +5,7 @@
  * and the filing check inside `createIssue` accepts it; one it cannot derive
  * stays in the `## Deferred` section for a person, naming the group.
  */
+import { persistedTracker } from "./persisted-tracker.ts";
 import { describe, expect, test } from "bun:test";
 import {
   conn,
@@ -153,7 +154,7 @@ function checkedGitHub(tax: Taxonomy) {
     { taxonomy: JIG_TAXONOMY },
   );
   const asked: NewIssue[] = [];
-  const checked = checkedTracker(t, FACETS, tax);
+  const checked = checkedTracker(persistedTracker(t), FACETS, tax);
   return {
     tracker: {
       ...checked,

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { deferralTrackerConfig } from "./lib/deferral-config.ts";
 /**
  * File the findings a pull request deferred into its own `## Deferred`
  * section, where a tracker adapter can, and replace each entry with the
@@ -54,13 +55,21 @@
  * or a person files them, 4 a `**deferred**` answer links an entry the
  * section lacks.
  */
+import {
+  deferToTracker,
+  findingIdentityLines,
+} from "./lib/tracker-defer-batch.ts";
+import { leadingKeyLine } from "./lib/batch-description.ts";
+import { JigError } from "../../../shared/outcome.ts";
 import { createHash } from "node:crypto";
 import { fail, runMain } from "../../../shared/cli.ts";
-import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import {
-  facetsOf,
-  parseTrackerConfig,
-} from "../../do-item/scripts/lib/tracker/config.ts";
+  consumerRoot,
+  readConfig,
+  reviewConfig,
+  parseReviewConfig,
+} from "../../../shared/consumer.ts";
+import { facetsOf } from "../../do-item/scripts/lib/tracker/config.ts";
 import {
   type Facets,
   type FacetSlot,
@@ -71,6 +80,7 @@ import { readTaxonomy } from "../../do-item/scripts/lib/tracker/facets/complete.
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import type {
   NewIssue,
+  Issue,
   Tracker,
 } from "../../do-item/scripts/lib/tracker/port.ts";
 import type { Taxonomy } from "../../file-issue/scripts/lib/taxonomy.ts";
@@ -242,6 +252,7 @@ const message = (err: unknown): string =>
 
 /** An issue the tracker holds for an entry, which then needs only recording. */
 interface Held {
+  issue: Issue;
   identifier: string;
   url: string | null;
   /** The issue body's lines, to compare against the entry's text as it stands when recorded. */
@@ -263,12 +274,10 @@ async function alreadyFiled(
     includeClosed: true,
   })) {
     const issue = await tracker.getIssue(hit.identifier);
-    const lines = (issue?.description ?? "")
-      .replaceAll("\r", "")
-      .split("\n")
-      .map((l) => l.trim());
+    const lines = findingIdentityLines(issue?.description ?? "");
     if (issue !== null && lines.includes(identity))
       return {
+        issue,
         identifier: issue.identifier,
         url: issue.url,
         lines,
@@ -353,6 +362,44 @@ const heldIssue = (found: Held, entry: DeferredEntry): Got => ({
   stale: !found.lines.includes(textLine(entry)),
 });
 
+/** Repair the setup of an existing open batch before its entry is recorded as filed. */
+async function readyHeld(
+  tracker: Tracker,
+  found: Held,
+  entry: DeferredEntry,
+  context: { pr: string; originating?: string | undefined },
+): Promise<Got> {
+  const got = heldIssue(found, entry);
+  if (
+    got.stale ||
+    ["completed", "canceled", "duplicate"].includes(found.issue.state.type)
+  )
+    return got;
+  const marker = leadingKeyLine(found.issue.description);
+  const key = /^<!-- defer-batch-key: repo=(\S+) pr=(\d+) type=(\S+) -->$/.exec(
+    marker ?? "",
+  );
+  if (key === null) return got;
+  const [, repo, pr, type] = key;
+  if (!repo || !pr || !type || pr !== context.pr)
+    throw new JigError(
+      "deferral",
+      "The held batch key does not name this pull request",
+    );
+  await deferToTracker(tracker, {
+    repo,
+    pr,
+    type,
+    identity: identityLine(entry),
+    text: `${entry.text}\n\n${identityLine(entry)}\n${textLine(entry)}`,
+    category: entry.category ?? "unknown",
+    priority: severityPriority(entry.severity ?? "unknown"),
+    labels: found.issue.labels,
+    originating: context.originating,
+  });
+  return got;
+}
+
 /**
  * The issue for `entry` when none was held: one a fresh search finds (the
  * guard against a duplicate), else `draft` filed.
@@ -361,12 +408,26 @@ async function issueOf(
   tracker: Tracker,
   entry: DeferredEntry,
   draft: ReturnType<typeof issueFor>,
+  context: { pr: string; url: string; originating?: string | undefined },
 ): Promise<Got> {
   const found = await alreadyFiled(tracker, entry);
   return found !== null
-    ? heldIssue(found, entry)
+    ? readyHeld(tracker, found, entry, context)
     : {
-        issue: await tracker.createIssue(draft),
+        issue: await deferToTracker(tracker, {
+          repo:
+            reviewConfig().repo_label ??
+            new URL(context.url).pathname.split("/").slice(1, 3).join("/"),
+          pr: context.pr,
+          type: draft.type ?? entry.type ?? "unknown",
+          identity: identityLine(entry),
+          text: draft.description,
+          category: entry.category ?? "unknown",
+          priority: draft.priority ?? 3,
+          size: draft.size,
+          labels: draft.labels,
+          originating: context.originating,
+        }),
         reused: false,
         stale: false,
       };
@@ -409,6 +470,7 @@ export async function fileDeferred(
     dryRun?: boolean;
     noTrackerWhy?: string;
     onFiled?: (f: Filing) => void;
+    originating?: string | undefined;
   },
 ): Promise<FileDeferredResult> {
   const { body, url } = await forge.read(pr);
@@ -439,6 +501,7 @@ export async function fileDeferred(
       ...opts,
       url,
       how,
+      originating: opts.originating ?? originatingFromBody(body),
     });
     if (step.why === null) {
       result.filed.push(step.filing);
@@ -551,6 +614,7 @@ async function fileOne(
     url: string;
     /** The issue the tracker holds, or how a new one is filed. */
     how: How;
+    originating?: string | undefined;
     onFiled?: (f: Filing) => void;
   },
 ): Promise<
@@ -560,7 +624,10 @@ async function fileOne(
   try {
     got =
       opts.how.held !== null
-        ? heldIssue(opts.how.held, entry)
+        ? await readyHeld(tracker, opts.how.held, entry, {
+            pr,
+            originating: opts.originating,
+          })
         : await issueOf(
             tracker,
             entry,
@@ -571,6 +638,7 @@ async function fileOne(
               opts.how.plan.labels,
               opts.how.plan.facets,
             ),
+            { pr, url: opts.url, originating: opts.originating },
           );
   } catch (err) {
     return { filing: null, why: `the tracker refused: ${message(err)}` };
@@ -626,13 +694,22 @@ export async function missingEntries(
   );
 }
 
+/** The issue explicitly linked by the pull request, independent of its tracker. */
+export function originatingFromBody(body: string): string | undefined {
+  return /^\s*(?:closes|fixes|resolves|refs)\s+((?:#[1-9]\d*)|(?:[A-Za-z][A-Za-z0-9]*-\d+))\b/im.exec(
+    body,
+  )?.[1];
+}
+
 /** What a missing entry's answer was deferring. */
 function answered(m: DeferredReply): string {
   return "thread" in m ? m.thread : `the summary finding ${m.fingerprint}`;
 }
 
 /** The configured tracker, its follow-up label, facets and label taxonomy, or why none can file. */
-function configuredTracker(): {
+export function configuredTracker(
+  values: Record<string, unknown> = readConfig(),
+): {
   tracker: Tracker | null;
   label: string;
   facets: Facets | null;
@@ -640,7 +717,10 @@ function configuredTracker(): {
   why?: string;
 } {
   try {
-    const config = parseTrackerConfig(readConfig());
+    const config = deferralTrackerConfig(
+      values,
+      parseReviewConfig(values.review),
+    );
     return {
       tracker: openTracker(config),
       label: config.labels.followup,
