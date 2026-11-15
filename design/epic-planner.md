@@ -83,7 +83,12 @@ Its workflow, which moves unchanged:
    issue's own `updatedAt` is optional on the tracker port and no aggregate
    epic version covers a child's change, so a target whose evidence is
    missing or has moved stops the run: it fails closed rather than writing
-   over a stale closure, priority or relation. It stops at the first
+   over a stale closure, priority or relation. Each write the run itself
+   completes advances the expected state of what it touched: `apply` reads
+   the target back after the write and takes that read as the new expected
+   evidence, so a child's relation write followed by its priority write is
+   not mistaken for a concurrent edit, while a change `apply` did not make
+   still mismatches. It stops at the first
    mismatch and reports what it wrote and what is left. A run stopped halfway is
    recovered by running the planner again, whose proposal reads the tracker
    as it now is. The approval is a digest, a hash of the rows
