@@ -7,6 +7,9 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { readBoundedText } from "../../../shared/driver-report.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   ROUND_REPORT_SCHEMA,
@@ -200,4 +203,23 @@ describe("drive.ts's closing report", () => {
     expectSpawnExit({ ...r, stdout: null }, 0);
     expect(existsSync(file)).toBe(false);
   }, 120_000);
+});
+
+describe("readBoundedText", () => {
+  it.skipIf(skipsOnWindows("file-system", "a FIFO is a POSIX file type"))(
+    "refuses a FIFO at the path instead of blocking on it",
+    () => {
+      const fifo = join(mkdtempSync(join(tmpRoot, "fifo-")), "report.json");
+      const made = spawnSync("mkfifo", [fifo]);
+      expectSpawnExit({ ...made, exitCode: made.status }, 0);
+      expect(() => readBoundedText(fifo, 1024)).toThrow("not a regular file");
+    },
+  );
+
+  it("reads a regular file and refuses one over the limit", () => {
+    const file = join(mkdtempSync(join(tmpRoot, "bounded-")), "report.json");
+    writeFileSync(file, "abcd");
+    expect(readBoundedText(file, 4)).toBe("abcd");
+    expect(readBoundedText(file, 3)).toBeNull();
+  });
 });

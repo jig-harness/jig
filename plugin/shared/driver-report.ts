@@ -14,7 +14,9 @@
  * from inside a dispatched session never writes onto that session's record.
  */
 import {
+  constants,
   existsSync,
+  fstatSync,
   mkdirSync,
   closeSync,
   openSync,
@@ -29,16 +31,21 @@ import {
   REPORT_BYTE_LIMIT,
 } from "./closing-report.ts";
 import { isRecord } from "./guards.ts";
-import { failed, ok, type Outcome } from "./outcome.ts";
+import { failed, JigError, ok, type Outcome } from "./outcome.ts";
 
 /**
  * The text of the file at `path`, read no further than `max` bytes; `null`
  * when the file holds more, so an oversized file is refused without being
- * held whole in memory.
+ * held whole in memory. The file is opened without blocking and must be a
+ * regular file: a FIFO or device at the path would otherwise stall the
+ * synchronous open or read with no timeout able to interrupt it, so it is
+ * refused (throws) instead.
  */
 export function readBoundedText(path: string, max: number): string | null {
-  const fd = openSync(path, "r");
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
+    if (!fstatSync(fd).isFile())
+      throw new JigError("unreadable", "not a regular file");
     const buffer = Buffer.alloc(max + 1);
     let length = 0;
     while (length < buffer.length) {

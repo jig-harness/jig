@@ -24,6 +24,7 @@ import {
 import { readBoundedText } from "../../../../../shared/driver-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 import { atomicWrite } from "./fsutil.ts";
 
 export const ROUND_REPORT_SCHEMA = "drive-round-report/v1";
@@ -99,7 +100,7 @@ export function readRoundReport(
     String(value.pr) !== pr ||
     value.launch !== launch ||
     value.round !== round ||
-    (notBefore !== null && !(Date.parse(value.at) >= Date.parse(notBefore)))
+    (notBefore !== null && !(parseMs(value.at) >= parseMs(notBefore)))
   )
     return null;
   const checked = closingReportOf(JSON.stringify(value.report));

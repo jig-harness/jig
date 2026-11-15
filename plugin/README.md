@@ -642,7 +642,8 @@ follow-up pass that could not start gets the wrapper's own report
 notice). Whatever report a run keeps, the wrapper prints as its last lines.
 As each pass of a drive starts, `drive.ts` records the session id it gave
 the pass on the launch record, round by round, so the run is found in the
-vendor's transcripts; a Codex pass takes none. The end the wrapper writes
+vendor's transcripts; a Codex pass takes none, and neither does a CI or
+conflict repair pass, whose transcripts `launches.sessions` does not list. The end the wrapper writes
 onto the shared claim carries the report's `cause` and who wrote it
 (`by`), never its text.
 
