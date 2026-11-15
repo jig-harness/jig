@@ -1,9 +1,9 @@
 /** Bounded Git and forge observations; no checkout-provided commands run. */
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
-import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { run } from "../../shared/proc.ts";
+import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { readTimeoutEnv, run } from "../../shared/proc.ts";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import type { WorktreeRequest } from "./worktree-evidence.ts";
 import { currentMs } from "../../shared/time.ts";
@@ -163,20 +163,44 @@ async function remoteRepository(
   const url = await git(root, ["remote", "get-url", remote]);
   return url.ok ? forgeRepository(url.value) : url;
 }
+/** GH_CALL_TIMEOUT as an outcome: a bad value is a failure, never a throw. */
+function lookupDeadline(): Outcome<number> {
+  const read = readTimeoutEnv("GH_CALL_TIMEOUT", 30);
+  return read.ok
+    ? ok(read.seconds)
+    : failed(
+        "configuration",
+        `GH_CALL_TIMEOUT must be a positive whole number of seconds no greater than 2147483 (got '${read.raw}')`,
+      );
+}
+
+/** The forge repository a lookup asks and its deadline, as one outcome. */
+async function lookupTarget(
+  root: string,
+  remote: string,
+): Promise<Outcome<{ repository: string; deadline: number }>> {
+  const repository = await remoteRepository(root, remote);
+  if (!repository.ok) return repository;
+  const deadline = lookupDeadline();
+  if (!deadline.ok) return deadline;
+  return ok({ repository: repository.value, deadline: deadline.value });
+}
+
 export async function requests(
   root: string,
   remote: string,
   branch: string,
 ): Promise<Outcome<WorktreeRequest[]>> {
-  const repository = await remoteRepository(root, remote);
-  if (!repository.ok) return repository;
+  const lookup = await lookupTarget(root, remote);
+  if (!lookup.ok) return lookup;
+  const { repository, deadline } = lookup.value;
   const result = await run(
     [
       "gh",
       "pr",
       "list",
       "--repo",
-      repository.value,
+      repository,
       "--head",
       branch,
       "--state",
@@ -186,18 +210,18 @@ export async function requests(
       "--json",
       "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   if (result.code !== 0)
     return failed(
       "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
+      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
     );
   const values: unknown = JSON.parse(result.stdout);
   if (!Array.isArray(values) || values.length >= 200)
     return failed("incomplete", "Pull request inventory is incomplete");
   // --head matches branch names in forks too; only this remote is evidence.
-  const source = repository.value.slice(repository.value.indexOf("/") + 1);
+  const source = repository.slice(repository.indexOf("/") + 1);
   const matched: WorktreeRequest[] = [];
   for (const value of values) {
     const one = request(value, source);
@@ -216,8 +240,9 @@ export async function requestByNumber(
   remote: string,
   pr: number,
 ): Promise<Outcome<WorktreeRequest[]>> {
-  const repository = await remoteRepository(root, remote);
-  if (!repository.ok) return repository;
+  const lookup = await lookupTarget(root, remote);
+  if (!lookup.ok) return lookup;
+  const { repository, deadline } = lookup.value;
   const result = await run(
     [
       "gh",
@@ -225,20 +250,20 @@ export async function requestByNumber(
       "view",
       String(pr),
       "--repo",
-      repository.value,
+      repository,
       "--json",
       "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   if (result.code !== 0)
     return failed(
       "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
+      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
     );
   const matched = request(
     JSON.parse(result.stdout),
-    repository.value.slice(repository.value.indexOf("/") + 1),
+    repository.slice(repository.indexOf("/") + 1),
   );
   if (!matched.ok) return matched;
   return ok(matched.value ? [matched.value] : []);
@@ -300,10 +325,11 @@ export async function requestsForCommit(
 ): Promise<Outcome<WorktreeRequest[]>> {
   if (!COMMIT.test(commit))
     return failed("malformed", "Malformed worktree commit");
-  const repository = await remoteRepository(root, remote);
-  if (!repository.ok) return repository;
-  const host = repository.value.slice(0, repository.value.indexOf("/"));
-  const source = repository.value.slice(host.length + 1);
+  const lookup = await lookupTarget(root, remote);
+  if (!lookup.ok) return lookup;
+  const { repository, deadline } = lookup.value;
+  const host = repository.slice(0, repository.indexOf("/"));
+  const source = repository.slice(host.length + 1);
   const result = await run(
     [
       "gh",
@@ -312,14 +338,19 @@ export async function requestsForCommit(
       host,
       `repos/${source}/commits/${commit}/pulls?per_page=${COMMIT_REQUESTS_PAGE}`,
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   // A commit only this machine has is in no pull request.
-  if (result.code !== 0 && UNKNOWN_COMMIT.test(result.stderr)) return ok([]);
+  if (
+    result.code !== 0 &&
+    !result.timedOut &&
+    UNKNOWN_COMMIT.test(result.stderr)
+  )
+    return ok([]);
   if (result.code !== 0)
     return failed(
       "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
+      `Forge inventory unavailable: ${result.timedOut ? "pull request lookup exceeded its deadline" : result.stderr}`,
     );
   let values: unknown;
   try {
@@ -337,12 +368,65 @@ export async function requestsForCommit(
   }
   return ok(matched);
 }
+
+/** The warning `lsof` prints for each mount it cannot stat, whatever it was asked about. */
+const UNSTATTABLE_MOUNT =
+  /^lsof: WARNING: can't stat\(\) \S+ file system (\/.*)$/;
+const INCOMPLETE = "Output information may be incomplete.";
+
+/** Whether `inner` is `outer` or lies under it. */
+function within(inner: string, outer: string): boolean {
+  return (
+    inner === outer ||
+    inner.startsWith(outer.endsWith("/") ? outer : `${outer}/`)
+  );
+}
+
+/**
+ * Whether `lsof`'s standard error holds nothing but warnings about mounts it
+ * could not stat that neither hold the worktree nor lie inside it, each
+ * optionally followed by its "may be incomplete" line. A warning about the
+ * worktree's own mount, or one inside it, could hide a holder; so could any
+ * other line, and a mount name `lsof` printed escaped cannot be compared.
+ * `paths` are the worktree as given and as resolved.
+ */
+export function onlyUnrelatedMountWarnings(
+  stderr: string,
+  paths: readonly string[],
+): boolean {
+  let afterWarning = false;
+  for (const line of stderr.split("\n").map((one) => one.replace(/\r$/, ""))) {
+    if (line === "") continue;
+    if (afterWarning && line.trim() === INCOMPLETE) {
+      afterWarning = false;
+      continue;
+    }
+    const mount = UNSTATTABLE_MOUNT.exec(line)?.[1];
+    if (mount === undefined || mount.includes("\\")) return false;
+    if (paths.some((path) => within(path, mount) || within(mount, path)))
+      return false;
+    afterWarning = true;
+  }
+  return true;
+}
+
 export async function processHolder(path: string): Promise<boolean | null> {
   const result = await run(["lsof", "-nP", "-F", "pfn", "+D", path], {
     timeoutSec: 30,
     env: gitEnvironment(),
   });
-  if (result.stderr.trim()) return null;
+  // A killed or cut-off run may have stopped before it read any process.
+  if (result.signal !== undefined || result.bufferExceeded) return null;
+  if (result.stderr.trim()) {
+    const resolved = attempt("unreadable", "Cannot resolve the worktree", () =>
+      realpathSync.native(path),
+    );
+    if (
+      !resolved.ok ||
+      !onlyUnrelatedMountWarnings(result.stderr, [path, resolved.value])
+    )
+      return null;
+  }
   if (result.code === 0 && result.stdout.trim()) return true;
   return result.code === 1 && !result.stdout.trim() ? false : null;
 }

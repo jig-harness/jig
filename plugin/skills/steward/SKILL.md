@@ -56,7 +56,11 @@ A resume asks the tick to use exactly:
 It supplies no free text to the session. The follow-up lane's own routine
 retry runs first; propose a resume only for the residue it leaves. The tick
 checks current facts, account admission, holds and recovery budgets again;
-it may refuse a record whose evidence no longer holds. Existing failure
+it may refuse a record whose evidence no longer holds. The digest lists no pass
+that framed a decision for a person, nor one whose resume the tick already
+launched or refused for a fact its ended record fixes, output with no recommended option included. A resume refused for
+a fact that can change (the autonomy policy, a pass the steward named wrongly)
+leaves the pass in the digest. Existing failure
 counts are in the digest: read them rather than count them again. A cause
 re-armed three times in a week becomes a reflection finding proposing a rule.
 

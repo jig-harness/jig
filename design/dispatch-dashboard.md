@@ -72,8 +72,10 @@ for the conversation record.
   the pinned merge command. No dashboard server writes for a person: the
   page's Send posts a parked decision's answer from the person's browser to
   the forge with a token kept in that browser alone, and a laptop's further
-  writes come from stage 3
-  ([When the dashboard writes](#when-the-dashboard-writes)).
+  server writes come from stage 3
+  ([When the dashboard writes](#when-the-dashboard-writes)). The page's own
+  acts, which the person's browser sends straight to the forge or tracker, do
+  not wait for it ([ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)).
 - **The dashboard stores no copy of the line.** Each read derives its views from
   the records the line keeps ([plugin/RECORDS.md](../plugin/RECORDS.md)).
   What it holds in memory, each source's last snapshot and a minute of
@@ -84,7 +86,7 @@ for the conversation record.
 flowchart LR
   LB[any browser on the laptop,<br/>Orca's included] --> LH[jig dashboard on the laptop:<br/>loopback]
   OB[Orca's browser in a<br/>host workspace, optional] -.->|loopback, through the paired host| HH[jig dashboard on the host:<br/>loopback, read-only]
-  PH[a phone's browser] -->|private-network front:<br/>HTTPS, read-only| HH
+  PH[a phone's browser] -->|private-network front:<br/>HTTPS, reads; its own acts go straight to the forge| HH
   HH -.->|the host calls it:<br/>reports| HB[the hub, optional:<br/>every enrolled host]
   LH -.->|source feed over HTTPS| HB
   PH -.->|or the hub's front:<br/>every host, read-only| HD[jig dashboard on the hub's machine]
@@ -438,6 +440,14 @@ the writer and its host, with no plan and no proof. Once item 40 tells a
 person's answer from a pass's, the panel's and the page's answers are held
 to the same rule as every other answer.
 
+**The page's own acts are a different path.** Under [ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md) and
+[ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md), the person's browser sends an act straight to the
+forge or tracker with the person's own token, never through the host, and an
+act is trusted as `jig send` from the person's terminal is. Item 40 is no
+prerequisite of them; the overview's physical-device probes must pass before
+any action code beyond Send is built, and item 40 only gives a class that
+needs proof its proof.
+
 **If item 40 never settles**, the server never writes. Stage 3 still builds its
 steps 2 and 3, not step 1: the runner, `plan` and the chat, which explains
 and drafts without writing. Its plan cards offer the command to copy, and a
@@ -749,7 +759,7 @@ own machine only.
 | Hub, optional | `jig hub serve` ([control-plane.md](control-plane.md)), serving the source feed of every enrolled host | the hosts' calls; a dashboard's source feed; a phone through the hub's front | none for a person |
 | Laptop | `jig dashboard`, on demand or installed, reading its own records and, where the person runs one, the hub's source feed | any browser on the laptop, Orca's included | from stage 3, commits as the person |
 | Orca, optional | the plugin's inbox panel and status bar, and an "Open the dashboard" command | the person's Orca app | the panel's answer box and merge button, as the person |
-| Phone | any browser through a private-network front; private HTTP fallback during stage 1; Orca's paired-host path only once verified | the printed address, with a QR code when sharing is built | Send of a parked decision's answer, with the person's token in that browser; nothing else, including after desktop writes arrive |
+| Phone | any browser through a private-network front; private HTTP fallback during stage 1; Orca's paired-host path only once verified | the printed address, with a QR code when sharing is built | Send of a parked decision's answer, with the person's token in that browser; the page's further acts from the person's own browser over the HTTPS front under [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md) (no merge), never through the host |
 
 **A host's dashboard** puts no token in its page's address: every way in from
 another machine (Orca's paired host, a front) authenticates the person
@@ -802,19 +812,26 @@ rules, timestamps and failure states serve desktop and phone.
 | An opened Work card and its decisions | Read the status, ask, recommended option, costs, alternatives and evidence. Stage 1 shows one item or pull request; stage 2 adds the joined thread. Expand details with a visible control. |
 | Copy the pinned merge command or an answer line | Carry the proposed act to the person's terminal without executing it. Copy success must be confirmed; when browser clipboard access fails, select the complete text for manual copying. |
 | Send a parked decision's answer | Once an option is picked, post each decision's answer as the comment `jig send` writes, from the phone's browser to GitHub with a token kept in that browser, over the HTTPS front ([When the dashboard writes](#when-the-dashboard-writes)); a guarded pick sends on the second step, by tap. |
-| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server remains read-only. |
+| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server stays read-only; the page's own writes are described below the table. |
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
 The phone excludes operator chat, command palettes and advanced filter
 composition: reading and deciding have priority over composing and
 investigating on a small screen. It excludes session chat and steering,
-which need the workspace and its context. Its one write is Send, which
-answers a parked decision as the person from the phone's own browser, the
-comment `jig send` writes, record included. It offers no dashboard
-merge, request or other write, even when desktop writes arrive: those need
-a separate phone design and proof of presence. Copying text is not sending
-it. All supported acts have visible buttons or links; no hover or keyboard
-shortcut is required.
+which need the workspace and its context. Its one write today is Send, which
+answers a parked decision as the person from the phone's own browser, over the
+HTTPS front, as the comment `jig send` writes, record included ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). The
+[priorities and overview design](priorities-and-overview.md#phone-unlock-and-browser-evidence)
+and [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md) are the phone's design and its proof of presence. On top of
+Send, they widen the phone's writes to every act the desktop page gets except
+merging, after the physical-device probes pass, each with a confirmation of
+exactly what will be sent. The phone keeps its token encrypted at rest under an
+optional local unlock, on for a phone by default; with the unlock off, the token
+is kept as Send's record keeps it. On the plain HTTP fallback the phone stays
+read-only. The unlock shows the page that the person is at the device; it
+proves nothing to the forge or the line. Every write is made by the person's
+browser, never by the host. Copying text is not sending it. All supported acts
+have visible buttons or links; no hover or keyboard shortcut is required.
 
 **First run, using today's dashboard.** On the host, start
 `jig dispatch dashboard` with `dashboard.listen` set to its private address
@@ -1011,10 +1028,9 @@ its 1.104 command line, not yet with the dashboard.
   scope are returned. Without `fleet` a viewer gets public facts only, as
   above.
 - **It does not unblock writes.** Tailscale says who is looking, not whose
-  forge login writes. Phone access does not write through the host; the page
-  may post a parked decision's answer from the browser (Send, [When the
-  dashboard writes](#when-the-dashboard-writes)), and every other write waits
-  for item 40.
+  forge login writes. Every write is the person's browser acting with the
+  person's own token (Send, [When the dashboard writes](#when-the-dashboard-writes),
+  and the acts [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md) adds); no write goes through the host.
 - **Derived, not declared.** `jig doctor dashboard` reads `tailscale serve status
   --json` and fails on Tailscale Funnel, which publishes to the open
   internet; on `--tcp` mode, which passes the encrypted connection through
