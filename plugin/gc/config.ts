@@ -164,7 +164,16 @@ function repositoryEntry(item: unknown): Configured<RepositoryEntry> {
   const path = values.path as string;
   if (!isAbsolute(path))
     return refused("gc.repositories.path must be absolute");
-  const bounds = parseDeclaration(values.bounds, path);
+  // Older installation records predate regenerable_paths.  A missing bound
+  // grants no deletion authority; only a new repository declaration receives
+  // the repository default.
+  const legacyBounds = isMapping(values.bounds)
+    ? {
+        ...values.bounds,
+        regenerable_paths: values.bounds.regenerable_paths ?? [],
+      }
+    : values.bounds;
+  const bounds = parseDeclaration(legacyBounds, path);
   if (!bounds.ok) return bounds;
   return ok({
     path,
@@ -359,7 +368,7 @@ export function boundDeclaration(
   const currentPaths = current.regenerable_paths ?? DEFAULT_REGENERABLE_PATHS;
   const boundPaths = bounds.regenerable_paths ?? DEFAULT_REGENERABLE_PATHS;
   const regenerable_paths = currentPaths.filter((path) =>
-    boundPaths.includes(path),
+    boundPaths.some((bound) => path === bound || path.startsWith(`${bound}/`)),
   );
   return {
     declaration: { kinds, worktree_roots, scratch_prefixes, regenerable_paths },

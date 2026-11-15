@@ -634,6 +634,16 @@ test("regenerable declarations are contained literal paths and protect durable c
     widened: true,
     declaration: { regenerable_paths: ["build/cache"] },
   });
+  const installedRoot = value(
+    parseDeclaration({ regenerable_paths: ["build"] }, "/repo"),
+  );
+  const narrowedDescendant = value(
+    parseDeclaration({ regenerable_paths: ["build/cache"] }, "/repo"),
+  );
+  expect(boundDeclaration(narrowedDescendant, installedRoot)).toMatchObject({
+    widened: false,
+    declaration: { regenerable_paths: ["build/cache"] },
+  });
 });
 
 test("regenerable defaults cannot widen installed authority and an empty list disables them", () => {
@@ -650,6 +660,23 @@ test("regenerable defaults cannot widen installed authority and an empty list di
     widened: false,
     declaration: { regenerable_paths: [] },
   });
+});
+
+test("legacy install bounds without regenerable paths grant no path authority", () => {
+  const machine = value(
+    parseMachine({
+      repositories: [
+        {
+          path: "/repo",
+          remote: "origin",
+          remote_url: "https://example.invalid/repo.git",
+          base_branch: "main",
+          bounds: { kinds: [], worktree_roots: [], scratch_prefixes: [] },
+        },
+      ],
+    }),
+  );
+  expect(machine.repositories[0]?.bounds.regenerable_paths).toEqual([]);
 });
 
 test("regenerable collection authority ignores environment overrides and refuses the user file", () => {
