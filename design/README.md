@@ -82,6 +82,7 @@ with the review.
 | [The Jig Protocol, chapters generated from the code and held to it by a gate](protocol.md) | 53 |
 | [What a dispatched session leaves and where it runs](dispatched-sessions.md) | 51 |
 | [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 55 |
+| [Overlap-aware admission, each item's footprint weighed against all work in flight](overlap-aware-admission.md) | 56 |
 
 ## Starting a design
 

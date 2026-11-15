@@ -77,6 +77,17 @@ answered. Next are GitHub's limits in the shared budget, reuse of unchanged
 answers and identical reads, and gates that enforce the transport boundary
 and query cost ceilings.
 
+### 56. Starting work that will not collide first
+
+When several pieces of work change the same files, each merge puts the
+others in conflict. Every conflict costs another agent session and another
+test run. Each item gets a record of the files it is expected to change.
+The dispatcher compares those files with every open pull request and every
+item already in progress. It starts work that collides with nothing first,
+and starts colliding work when nothing else is ready. It starts no more
+work than the machine can test in time. Each item that waits says what it
+waits on.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The dispatch dashboard leads with a Ready to merge list of the converged
