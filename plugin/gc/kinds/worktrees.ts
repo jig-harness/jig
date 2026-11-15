@@ -578,7 +578,7 @@ async function collectAgentWorktree(
         outcome: "failed",
         reason: "kept: no final proof recorded the tree's commit and branch",
       };
-    const refusal = await headHoldRefusal(resource.id, identity);
+    const refusal = await headHoldRefusal(resource.id);
     if (!refusal.ok)
       return { outcome: "failed", reason: refusal.failure.reason };
     if (refusal.value !== null)

@@ -966,6 +966,10 @@ make, use the entry's term instead.
   branch. A missing linked working directory does not prove its commits
   disappeared from the clone's shared Git storage; inspect the surviving
   branch references and reflogs before reconstructing work.
+- **Reftable** — Git's newer format for storing references (branches, tags and
+  `HEAD`) in compact binary tables instead of one file per reference. A
+  repository chooses it at creation with `--ref-format=reftable`; tools that
+  rely on a reference's lock file, such as `HEAD.lock`, find none there.
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a

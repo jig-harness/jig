@@ -228,10 +228,10 @@ holds keeps the tree. When the removal does not happen, gc deletes its lock,
 and the receipt says when it could not; a run stopped by a signal before
 then can leave the lock behind, and the file names `jig gc` and its process,
 so a person can tell it from git's own and delete it. A repository that keeps
-its refs in git's newer reftable format rather than as files has no
-`HEAD.lock` to hold: there gc keeps a detached tree before running its hook,
-and collects a tree on a branch without the hold, since the branch keeps any
-commit made on it. Then it removes the tree with `git worktree remove`
+its refs in [reftable](../../GLOSSARY.md), git's newer reference storage, has no
+`HEAD.lock` to hold: there gc keeps the tree, on a branch or detached, before
+running its hook, since a tree on a branch can be detached and committed on
+after the last comparison. Then it removes the tree with `git worktree remove`
 without `--force`, which deletes ignored content such as dependency
 directories, under a deadline of its own; a
 removal cut short leaves the tree partly deleted, and the receipt says so.

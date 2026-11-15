@@ -129,28 +129,25 @@ describe("holding a worktree's head", () => {
       env: gitEnvironment(),
     }).exitCode === 0;
   test.skipIf(!reftable)(
-    "a repository keeping its refs in reftable keeps a detached tree, and leaves a branched one unheld",
+    "a repository keeping its refs in reftable keeps every tree, detached or on a branch",
     async () => {
-      const branched = setup(["--ref-format=reftable"], "topic");
-      const onBranch = await identity(branched.tree);
-      expect(await headHoldRefusal(branched.tree, onBranch)).toEqual({
-        ok: true,
-        value: null,
-      });
-      const unheld = await holdHead(branched.tree, onBranch);
-      expect(unheld.ok).toBe(true);
-      expect(existsSync(join(onBranch.admin, "HEAD.lock"))).toBe(false);
-      const { tree } = setup(["--ref-format=reftable"]);
-      const seen = await identity(tree);
-      const held = await holdHead(tree, seen);
-      expect(held).toMatchObject({
-        ok: false,
-        failure: {
-          code: "head-unheld",
-          reason: expect.stringContaining("reftable ref store"),
-        },
-      });
-      expect(existsSync(join(seen.admin, "HEAD.lock"))).toBe(false);
+      for (const branch of ["topic", undefined]) {
+        const { tree } = setup(["--ref-format=reftable"], branch);
+        const seen = await identity(tree);
+        expect(await headHoldRefusal(tree)).toEqual({
+          ok: true,
+          value: expect.stringContaining("reftable ref store"),
+        });
+        const held = await holdHead(tree, seen);
+        expect(held).toMatchObject({
+          ok: false,
+          failure: {
+            code: "head-unheld",
+            reason: expect.stringContaining("reftable ref store"),
+          },
+        });
+        expect(existsSync(join(seen.admin, "HEAD.lock"))).toBe(false);
+      }
     },
   );
 });

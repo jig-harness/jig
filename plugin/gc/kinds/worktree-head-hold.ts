@@ -21,29 +21,23 @@ export interface HeadHold {
   release(): Outcome<undefined, "release-failed">;
 }
 
-const NOTHING_HELD: HeadHold = { release: () => ok(undefined) };
-
 /**
- * Null when the tree's head can be held, or the reason it is kept: a detached
- * tree in a repository that keeps its refs in a store other than files, where
- * `HEAD.lock` holds nothing. A tree on a branch is collected there without a
- * hold, as its branch keeps a commit made on it. Read before the remove hook,
- * so a tree that would be kept anyway is not torn down on every run.
+ * Null when the tree's head can be held, or the reason it is kept: the
+ * repository keeps its refs in a store other than files, where `HEAD.lock`
+ * holds nothing. A tree on a branch is kept too, since it can be detached and
+ * committed on after the final comparison. Read before the remove hook, so a
+ * tree that would be kept anyway is not torn down on every run.
  */
 export async function headHoldRefusal(
   path: string,
-  identity: WorktreeIdentity,
 ): Promise<Outcome<string | null, "git-failed">> {
   const store = await refStore(path);
-  return store.ok ? ok(refusalUnder(store.value, identity)) : store;
+  return store.ok ? ok(refusalUnder(store.value)) : store;
 }
-function refusalUnder(
-  store: string,
-  identity: WorktreeIdentity,
-): string | null {
-  return store === "files" || identity.name !== "HEAD"
+function refusalUnder(store: string): string | null {
+  return store === "files"
     ? null
-    : `kept: a detached head cannot be held through removal under git's ${store} ref store`;
+    : `kept: a worktree's head cannot be held through removal under git's ${store} ref store`;
 }
 
 /**
@@ -59,9 +53,8 @@ export async function holdHead(
 ): Promise<Outcome<HeadHold, "head-unheld" | "git-failed">> {
   const store = await refStore(path);
   if (!store.ok) return store;
-  const refusal = refusalUnder(store.value, identity);
+  const refusal = refusalUnder(store.value);
   if (refusal !== null) return failed("head-unheld", refusal);
-  if (store.value !== "files") return ok(NOTHING_HELD);
   const dir = await git(path, ["rev-parse", "--git-dir"]);
   if (!dir.ok) return dir;
   const admin = isAbsolute(dir.value) ? dir.value : resolve(path, dir.value);
@@ -72,15 +65,23 @@ export async function holdHead(
     );
   const lock = join(admin, "HEAD.lock");
   const token = `jig gc ${process.pid} ${randomUUID()}\n`;
+  let created = false;
   try {
-    writeFileSync(lock, token, { flag: "wx" });
+    writeFileSync(lock, "", { flag: "wx" });
+    created = true;
+    writeFileSync(lock, token);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
+    if (!created && code === "EEXIST")
+      return failed(
+        "head-unheld",
+        "kept: a git process holds the worktree's HEAD (HEAD.lock exists)",
+        error,
+      );
+    const stranded = created ? discard(lock) : "";
     return failed(
       "head-unheld",
-      code === "EEXIST"
-        ? "kept: a git process holds the worktree's HEAD (HEAD.lock exists)"
-        : `kept: the worktree's HEAD cannot be held: ${error instanceof Error ? error.message : String(error)}`,
+      `kept: the worktree's HEAD cannot be held: ${error instanceof Error ? error.message : String(error)}${stranded}`,
       error,
     );
   }
@@ -101,6 +102,16 @@ export async function holdHead(
       }
     },
   });
+}
+
+/** Remove a lock this call created; the sentence to append when that fails. */
+function discard(lock: string): string {
+  try {
+    rmSync(lock, { force: true });
+    return "";
+  } catch (error) {
+    return `; gc could not remove ${lock}, which keeps git from moving the tree's HEAD, remove it by hand: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 /** The repository's ref store, `files` unless `extensions.refStorage` names another. */
