@@ -94,7 +94,7 @@ whose API snapshot still lags (wait), a local head behind (update the tree),
 and diverged history (inspect and reconcile). An unreadable ancestry or push
 probe is reported as unknown rather than asserted as lag.
 
-The [pull-request labels chapter](../../../protocol/pr-labels.md) defines
+The [pull-request labels chapter](../../../protocol/pr-labels.md#which-stop-earns-which-label) defines
 the stop-to-label mapping the drive and dispatcher share. Use it when
 interpreting a pull request's state label.
 

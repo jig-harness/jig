@@ -224,6 +224,20 @@ test("held phrases keep comments in separate Markdown blocks from code spans", (
     "## Operational instruction\n\nAn unmatched `` delimiter.\n<!-- Exit `11` on the lock -->\n",
   );
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  for (const boundary of [
+    "### Details",
+    "> quote",
+    "- item",
+    "~~~text\n~~~",
+    "---",
+  ]) {
+    put(
+      root,
+      "skill.md",
+      `## Operational instruction\n\nAn unmatched \` delimiter.\n${boundary}\n<!-- Exit \`11\` on the lock -->\n`,
+    );
+    expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  }
 });
 
 test("held phrases preserve comment syntax in opted-in fenced examples", () => {

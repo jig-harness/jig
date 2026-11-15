@@ -87,6 +87,10 @@ function nextUnescapedBacktick(text: string, from: number): number {
 
 const blankLine = /\n[ \t]*\n/y;
 
+/** A line that starts a block, ending the paragraph an inline span lives in. */
+const blockStart =
+  /\n {0,3}(?:#{1,6}(?:[ \t]|\n|$)|`{3,}|~{3,}|>|(?:[-+*]|\d{1,9}[.)])[ \t]|(?:[-*_][ \t]*){3,}(?:\n|$))/y;
+
 /** Find an inline-code closer with exactly the opening delimiter. */
 function closingDelimiter(
   text: string,
@@ -94,12 +98,14 @@ function closingDelimiter(
   from: number,
 ): number {
   for (let cursor = from; cursor < text.length; cursor += 1) {
-    // An inline code span cannot make a later Markdown block part of its
-    // context. In particular, an unmatched delimiter in one paragraph must
-    // not shield an HTML comment after a blank line.
+    // An inline code span ends with its paragraph: a blank line or any line
+    // that starts another block (heading, fence, quote, list item, thematic
+    // break). An unmatched delimiter must not shield a comment after one.
     if (text[cursor] === "\n") {
       blankLine.lastIndex = cursor;
       if (blankLine.test(text)) return -1;
+      blockStart.lastIndex = cursor;
+      if (blockStart.test(text)) return -1;
     }
     if (text.startsWith(delimiter, cursor)) {
       const beforeMatches = text[cursor - 1] === "`";
