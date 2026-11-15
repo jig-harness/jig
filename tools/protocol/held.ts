@@ -16,287 +16,96 @@ export interface HeldPhrase {
 /** Checkout line endings do not change an operational phrase's value. */
 const lineEndings = (text: string): string => text.replaceAll("\r\n", "\n");
 
-/** HTML comments are not operational Markdown, so they cannot satisfy a check. */
-function withoutHtmlComments(text: string): string {
-  return scanHtmlComments(text).visible;
+/** Line wrapping and list indentation do not change an operational phrase. */
+const collapsed = (text: string): string => text.replaceAll(/\s+/g, " ");
+
+/** Control characters that mark blocks in the rendered text; none occur in prose. */
+const headingOpen = "\u0003";
+const headingMid = "\u0004";
+const headingClose = "\u0005";
+const codeOpen = "\u0001";
+const codeClose = "\u0002";
+const markerCharacters = new RegExp(
+  `[${codeOpen}${codeClose}${headingOpen}${headingMid}${headingClose}]`,
+  "g",
+);
+
+/** An HTML comment is not operational Markdown, so it cannot satisfy a check. */
+const htmlComment = /<!--[\s\S]*?(?:-->|$)/g;
+
+interface Block {
+  readonly kind: "heading" | "prose" | "code";
+  readonly text: string;
+  readonly level?: number;
 }
 
-/**
- * The one recognizer of inline code and HTML comments: the text with comments
- * blanked, and whether a comment is still open at its end.
- */
-function scanHtmlComments(text: string): { visible: string; open: boolean } {
-  let visible = "";
-  let cursor = 0;
-  while (true) {
-    const codeStart = nextUnescapedBacktick(text, cursor);
-    const start = text.indexOf("<!--", cursor);
-    if (start < 0 && codeStart < 0)
-      return { visible: visible + text.slice(cursor), open: false };
-    if (codeStart >= 0 && (start < 0 || codeStart < start)) {
-      let end = codeStart;
-      while (text[end] === "`") end += 1;
-      const delimiter = text.slice(codeStart, end);
-      const close = closingDelimiter(text, delimiter, end);
-      if (close < 0) {
-        // An unmatched opener is literal text and shields nothing after it,
-        // with or without a later blank line.
-        visible += text.slice(cursor, end);
-        cursor = end;
-        continue;
-      }
-      visible += text.slice(cursor, close + delimiter.length);
-      cursor = close + delimiter.length;
-      continue;
-    }
-    visible += text.slice(cursor, start);
-    const end = text.indexOf("-->", start + "<!--".length);
-    const hidden = text.slice(
-      start,
-      end < 0 ? text.length : end + "-->".length,
-    );
-    // Preserve every line boundary so section locations stay aligned with the
-    // source while comments cannot join phrase fragments or satisfy a check.
-    visible += hidden.replaceAll(/[^\n]/g, " ");
-    if (end < 0) return { visible, open: true };
-    cursor = end + "-->".length;
-  }
-}
-
-/** A backslash escapes a delimiter when it is preceded by an odd backslash run. */
-function isEscaped(text: string, index: number): boolean {
-  let slashes = 0;
-  for (
-    let cursor = index - 1;
-    cursor >= 0 && text[cursor] === "\\";
-    cursor -= 1
-  )
-    slashes += 1;
-  return slashes % 2 === 1;
-}
-
-function nextUnescapedBacktick(text: string, from: number): number {
-  for (
-    let index = text.indexOf("`", from);
-    index >= 0;
-    index = text.indexOf("`", index + 1)
-  )
-    if (!isEscaped(text, index)) return index;
-  return -1;
-}
-
-const blankLine = /\n[ \t]*\n/y;
-
-/** A line that starts a block, ending the paragraph an inline span lives in. */
-const blockStart =
-  /\n {0,3}(?:#{1,6}(?:[ \t]|\n|$)|`{3,}|~{3,}|>|(?:[-+*]|\d{1,9}[.)])[ \t]|(?:[-*_][ \t]*){3,}(?:\n|$))/y;
-
-/** Find an inline-code closer with exactly the opening delimiter. */
-function closingDelimiter(
-  text: string,
-  delimiter: string,
-  from: number,
-): number {
-  for (let cursor = from; cursor < text.length; cursor += 1) {
-    // An inline code span ends with its paragraph: a blank line or any line
-    // that starts another block (heading, fence, quote, list item, thematic
-    // break). An unmatched delimiter must not shield a comment after one.
-    if (text[cursor] === "\n") {
-      blankLine.lastIndex = cursor;
-      if (blankLine.test(text)) return -1;
-      blockStart.lastIndex = cursor;
-      if (blockStart.test(text)) return -1;
-    }
-    if (text.startsWith(delimiter, cursor)) {
-      const beforeMatches = text[cursor - 1] === "`";
-      const afterMatches = text[cursor + delimiter.length] === "`";
-      if (!beforeMatches && !afterMatches) return cursor;
-    }
-  }
-  return -1;
-}
-
-/** Render indentation as Markdown columns, where a tab moves to the next stop. */
-function indentationColumns(text: string): number {
-  let columns = 0;
-  for (const char of text) columns += char === "\t" ? 4 - (columns % 4) : 1;
-  return columns;
-}
-
-function listContentIndent(line: string): number | null {
-  const match = /^(?:[ \t]*)(?:[-+*]|\d+[.)])[ \t]+/.exec(line);
-  return match === null ? null : indentationColumns(match[0]);
-}
-
-/** Drop the optional whitespace-delimited closing hash sequence of an ATX heading. */
-function withoutClosingHeadingHashes(text: string): string {
-  const trimmed = text.trimEnd();
-  let start = trimmed.length;
-  while (start > 0 && trimmed[start - 1] === "#") start -= 1;
-  if (
-    start === trimmed.length ||
-    start === 0 ||
-    !/[ \t]/.test(trimmed.charAt(start - 1))
-  )
-    return trimmed;
-  return trimmed.slice(0, start).trimEnd();
-}
-
-/** An ATX heading outside code, normalized to the form declarations use. */
-function markdownHeading(line: string): { text: string; level: number } | null {
-  let offset = 0;
-  while (offset < 3 && line[offset] === " ") offset += 1;
-  const start = offset;
-  while (line[offset] === "#") offset += 1;
-  const level = offset - start;
-  if (level < 1 || level > 6) return null;
-  const remainder = line.slice(offset);
-  if (remainder !== "" && !/^[ \t]/.test(remainder)) return null;
-  const content = withoutClosingHeadingHashes(remainder);
-  return {
-    text: `${"#".repeat(level)}${content === "" ? "" : ` ${content.trimStart()}`}`,
-    level,
-  };
-}
-
-function fenceMarker(
-  line: string,
-  containerIndent = 0,
-): { char: "`" | "~"; length: number; end: number } | null {
-  let offset = 0;
-  let columns = 0;
-  while (
-    offset < line.length &&
-    (line[offset] === " " || line[offset] === "\t")
-  ) {
-    columns += line[offset] === "\t" ? 4 - (columns % 4) : 1;
-    offset += 1;
-  }
-  if (columns > containerIndent + 3) return null;
-  const char = line[offset];
-  if (char !== "`" && char !== "~") return null;
-  const start = offset;
-  while (line[offset] === char) offset += 1;
-  if (offset - start < 3) return null;
-  return { char, length: offset - start, end: offset };
-}
-
-function closesFence(
-  line: string,
-  fence: { char: "`" | "~"; length: number },
-  containerIndent: number,
-): boolean {
-  const marker = fenceMarker(line, containerIndent);
-  return (
-    marker !== null &&
-    marker.char === fence.char &&
-    marker.length >= fence.length &&
-    /^[ \t]*$/.test(line.slice(marker.end))
+function flattenHeadings(content: string): string {
+  return content.replaceAll(
+    new RegExp(
+      `${headingOpen}\\d${headingMid}([^${headingClose}]*)${headingClose}`,
+      "g",
+    ),
+    "$1\n",
   );
 }
 
-interface ListContainer {
-  readonly contentIndent: number;
-  readonly markerIndent: number;
-}
-
-/** Carry nested list containers across blank lines and continuations. */
-function nextListContainers(
-  line: string,
-  current: readonly ListContainer[],
-): readonly ListContainer[] {
-  const listed = listContentIndent(line);
-  const leading = indentationColumns(/^[ \t]*/.exec(line)?.[0] ?? "");
-  if (listed !== null) {
-    const retained = current.filter(
-      ({ markerIndent }) => markerIndent < leading,
-    );
-    return [...retained, { markerIndent: leading, contentIndent: listed }];
-  }
-  if (line.trim() === "") return current;
-  return current.filter(({ contentIndent }) => leading >= contentIndent);
-}
-
-function activeListIndent(containers: readonly ListContainer[]): number {
-  return containers.at(-1)?.contentIndent ?? 0;
-}
-
-function isIndentedCode(line: string, listIndent: number | undefined): boolean {
-  const leading = indentationColumns(/^[ \t]*/.exec(line)?.[0] ?? "");
-  return leading >= (listIndent === undefined ? 4 : listIndent + 4);
-}
-
-interface ClassifiedLine {
-  /** The line as prose sees it: empty where a code example stood. */
-  readonly prose: string;
-  /** The original line when it belongs to a code example. */
-  readonly code: string | null;
-}
-
 /**
- * Markdown lines classified once: prose, or a code example kept apart.
+ * The document's blocks in order, from Bun's CommonMark parser.
  *
- * Held instructions live in prose. A command example can legitimately repeat an
- * exit code or even resemble a heading, so it must neither delimit a section
- * nor satisfy the held-value check. A fence marker inside an HTML comment is
- * comment text, so it opens no example. Empty prose lines prevent excluded
- * blocks from joining phrase fragments that were not adjacent in the source.
+ * Block structure (what ends a paragraph, where a code span or an HTML comment
+ * can start) comes from the parser, never from patterns here. Prose keeps its
+ * inline code, emphasis and links in source form; comments become a space so
+ * they cannot join phrase fragments; code examples stay apart.
  */
-function classifyLines(source: string): ClassifiedLine[] {
-  const lines: ClassifiedLine[] = [];
-  let fence:
-    | { char: "`" | "~"; length: number; containerIndent: number }
-    | undefined;
-  let indentedCode = false;
-  let previousWasBlank = true;
-  let inComment = false;
-  // Prose since the last block boundary, so the shared scanner sees inline
-  // code and comments that span lines exactly as it does for the whole text.
-  let proseRun = "";
-  const prose = (line: string) => {
-    proseRun = proseRun === "" ? line : `${proseRun}\n${line}`;
-    inComment = scanHtmlComments(proseRun).open;
-    if (!inComment && line.trim() === "") proseRun = "";
-    lines.push({ prose: line, code: null });
-    previousWasBlank = line.trim() === "";
-  };
-  let listContainers: readonly ListContainer[] = [];
-  const codeLine = (line: string) => {
-    lines.push({ prose: "", code: line });
-    previousWasBlank = true;
-    proseRun = "";
-  };
-  for (const line of source.split("\n")) {
-    if (fence) {
-      if (closesFence(line, fence, fence.containerIndent)) fence = undefined;
-      codeLine(line);
-      continue;
+function parseBlocks(source: string): Block[] {
+  const lines = (content: string): string =>
+    content.endsWith("\n") ? content : `${content}\n`;
+  const rendered = Bun.markdown.render(
+    source.replaceAll(markerCharacters, ""),
+    {
+      text: (content: string) =>
+        /^<!--[\s\S]*-->$/.test(content) ? " " : content,
+      codespan: (content: string) => `\`${content}\``,
+      emphasis: (content: string) => `*${content}*`,
+      strong: (content: string) => `**${content}**`,
+      link: (content: string, meta?: { href?: string }) =>
+        `[${content}](${meta?.href ?? ""})`,
+      paragraph: lines,
+      // A heading inside a quote or list item is that container's text, not a
+      // section boundary of the document.
+      listItem: (content: string) => lines(flattenHeadings(content)),
+      blockquote: (content: string) => lines(flattenHeadings(content)),
+      tr: (content: string) => lines(`${content}|`),
+      td: (content: string) => `| ${content} `,
+      th: (content: string) => `| ${content} `,
+      html: (content: string) => lines(content.replaceAll(htmlComment, " ")),
+      code: (content: string) => `${codeOpen}${content}${codeClose}`,
+      heading: (content: string, meta?: { level?: number }) =>
+        `${headingOpen}${meta?.level ?? 1}${headingMid}${content}${headingClose}`,
+    } as never,
+  );
+  const pattern = new RegExp(
+    `${headingOpen}(\\d)${headingMid}([^${headingClose}]*)${headingClose}|${codeOpen}([^${codeClose}]*)${codeClose}`,
+    "g",
+  );
+  const blocks: Block[] = [];
+  let cursor = 0;
+  for (const match of rendered.matchAll(pattern)) {
+    blocks.push({ kind: "prose", text: rendered.slice(cursor, match.index) });
+    cursor = match.index + match[0].length;
+    if (match[1] === undefined)
+      blocks.push({ kind: "code", text: match[3] ?? "" });
+    else {
+      const level = Number(match[1]);
+      blocks.push({
+        kind: "heading",
+        level,
+        text: `${"#".repeat(level)} ${(match[2] ?? "").trim()}`,
+      });
     }
-    if (inComment) {
-      prose(line);
-      continue;
-    }
-    listContainers = nextListContainers(line, listContainers);
-    const listIndent = activeListIndent(listContainers);
-    const marker = fenceMarker(line, listIndent);
-    if (marker !== null) {
-      fence = { ...marker, containerIndent: listIndent };
-      codeLine(line);
-      continue;
-    }
-    const indented = isIndentedCode(line, listIndent);
-    if (indentedCode && (indented || line.trim() === "")) {
-      codeLine(line);
-      continue;
-    }
-    indentedCode = previousWasBlank && indented;
-    if (indentedCode) {
-      codeLine(line);
-      continue;
-    }
-    prose(line);
   }
-  return lines;
+  blocks.push({ kind: "prose", text: rendered.slice(cursor) });
+  return blocks;
 }
 
 /** The one prose section named by `heading`, through its next peer or parent heading. */
@@ -305,36 +114,27 @@ function sectionOf(
   heading: string,
   includeCodeExamples = false,
 ): string | null {
-  // Remove block-code contexts before looking for comments. A literal comment
-  // token in a fenced example is data, not an HTML comment in this document.
-  const classified = classifyLines(source);
-  const lines = withoutHtmlComments(
-    classified.map(({ prose }) => prose).join("\n"),
-  ).split("\n");
-  const headings = lines
-    .map((line, index) => ({ index, parsed: markdownHeading(line) }))
-    .filter(
-      (
-        entry,
-      ): entry is { index: number; parsed: { text: string; level: number } } =>
-        entry.parsed !== null,
-    );
-  const matches = headings.filter(({ parsed }) => parsed.text === heading);
+  const blocks = parseBlocks(source);
+  const matches = blocks.filter(
+    (block) => block.kind === "heading" && block.text === heading,
+  );
   const start = matches[0];
   if (matches.length !== 1 || start === undefined) return null;
-  const next = headings.find(
-    ({ index, parsed }) =>
-      index > start.index && parsed.level <= start.parsed.level,
+  const from = blocks.indexOf(start);
+  const next = blocks.findIndex(
+    (block, index) =>
+      index > from &&
+      block.kind === "heading" &&
+      (block.level ?? 0) <= (start.level ?? 0),
   );
-  // Every source line keeps its position, so the section's lines can take
-  // their code examples back from the classification without a second parse.
-  return lines
-    .slice(start.index, next?.index)
-    .map((line, offset) =>
-      includeCodeExamples
-        ? (classified[start.index + offset]?.code ?? line)
-        : line,
+  return blocks
+    .slice(from, next < 0 ? undefined : next)
+    .filter(
+      (block) =>
+        block.kind === "prose" ||
+        (includeCodeExamples && block.kind === "code"),
     )
+    .map((block) => block.text)
     .join("\n");
 }
 
@@ -385,12 +185,13 @@ export function checkHeldPhrases(
         },
       ];
     }
-    const expected = lineEndings(text);
+    const expected = collapsed(lineEndings(text));
     const actual = lineEndings(source);
-    const operational =
+    const scope =
       phrase.section === undefined
         ? actual
         : sectionOf(actual, phrase.section, phrase.includeCodeExamples);
+    const operational = scope === null ? null : collapsed(scope);
     return operational !== null &&
       (phrase.section === undefined
         ? operational.includes(expected)

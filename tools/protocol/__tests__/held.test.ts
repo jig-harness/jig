@@ -426,18 +426,58 @@ test("held phrases classify comments and fences with one inline-code recognizer"
     "## Operational instruction\n\n<!--\n`-->`\n\n~~~text\nrun --command stop\n~~~\n",
   );
   expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  // An escaped backtick opens no span, so the comment is real and hides the fence.
+  // A fence ends the paragraph, so an inline comment opener before it cannot
+  // reach past it and the fence stays a code example.
   put(
     root,
     "skill.md",
     "## Operational instruction\n\n\\`<!--\n~~~text\nrun --command stop\n~~~\n-->\n",
   );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
   // A span running across lines shields a comment opener inside it.
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nToken `first\nthen <!--\nlast`.\n\n~~~text\nrun --command stop\n~~~\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
+  // A comment opener at a line start is an HTML block that ends the paragraph,
+  // so it hides what follows until its closer.
   put(
     root,
     "skill.md",
     "## Operational instruction\n\nToken `first\n<!--\nlast`.\n\n~~~text\nrun --command stop\n~~~\n",
   );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
+});
+
+test("held phrases follow CommonMark paragraph interruption for code spans and HTML blocks", () => {
+  const root = tempDir("held-commonmark-blocks");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  // A list that does not start at 1 cannot interrupt a paragraph, so the
+  // multiline span keeps its comment opener and the instruction stays visible.
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nToken `first\n2. <!--\nlast`.\n\nExit `11` on the lock\n",
+  );
   expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
+  // Mixed characters are no thematic break, so the span is not ended.
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nToken `first\n-_* <!--\nlast`.\n\nExit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
+  // An HTML block hides its comment from an unmatched delimiter before it.
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nAn unmatched ` delimiter.\n<div>\n<!-- Exit `11` on the lock -->\n</div>\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
 });
