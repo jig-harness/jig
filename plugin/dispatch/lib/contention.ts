@@ -33,10 +33,8 @@
  * area: what is serialized is the catalog's to say, through a person.
  */
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
-import {
-  loadCatalogText,
-  matchesGlob,
-} from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
+import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
+import { matchesGlob } from "../../shared/glob.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { holds, isDrive, type ReadRecord } from "./launches.ts";
 import { failureText } from "./text.ts";

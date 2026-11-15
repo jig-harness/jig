@@ -44,7 +44,8 @@ add none. Labels must already exist in the repository. An unreadable history
 or configured catalog stops planning.
 
 A repository can also carry the issue's own signals onto the pull request:
-`pull_requests.labels_from_issue` maps an issue label (in any case) to a
+`pull_requests.labels_from_issue` maps an issue label (matched as the
+[rule matchers' chapter](../../protocol/rule-matchers.md) says) to a
 pull-request label, and `pull_requests.reviewers_from_issue` to the
 reviewers to request, logins or `org/team`, with or without `@`. A change
 area's `pr: { labels, reviewers }` does the same for every pull request that

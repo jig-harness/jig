@@ -89,6 +89,7 @@ pre-commit:
         - "plugin/shared/records/writer.ts"
         - "plugin/shared/repo-command-shapes.ts"
         - "plugin/shared/repo-commands.ts"
+        - "plugin/shared/rule-matcher-values.ts"
         - "plugin/shared/shapes.ts"
         - "plugin/shared/time.ts"
         - "plugin/skills/drive-pr/scripts/lib/state/ledger-shapes.ts"
