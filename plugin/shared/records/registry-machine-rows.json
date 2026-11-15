@@ -182,6 +182,13 @@
       "The scratch a working tree's test runs created, and the runs it belongs to, so the collector removes it only once its runs are proved finished."
     ],
     [
+      "test-fixture-inventory-cursor",
+      "shared/test-fixture-registry.ts",
+      "~/.local/state/jig/test-fixtures-v1.cursor",
+      1,
+      "Where gc's last bounded page of the fixture registry stopped, so the next collecting run resumes after it."
+    ],
+    [
       "upgrade-setting",
       "runtime/upgrade-record.ts",
       "~/.jig/jig.yaml, its upgrade section",

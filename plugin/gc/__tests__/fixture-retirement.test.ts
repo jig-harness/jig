@@ -234,6 +234,21 @@ test("an opaque launch keeps its registration only while a scratch scope enclose
   expect(readdirSync(f.store)).toHaveLength(1);
 });
 
+test("an opaque launch keeps its registration while another registration's root encloses its root", async () => {
+  const f = fixture();
+  const outer = join(f.base, "outer");
+  registerExited(f.store, [
+    { root: outer },
+    { root: join(outer, "gone-opaque"), launch: "opaque" },
+  ]);
+  const { receipt } = await run(f, true);
+  expect(retiredIn(receipt.resources)).toHaveLength(1);
+  expect(batchLines(receipt.resources)[0]?.details).toMatchObject({
+    kept: [{ reason: expect.stringContaining("registered root") }],
+  });
+  expect(readdirSync(f.store)).toHaveLength(1);
+});
+
 test("a malformed folder is reported as itself and the rest are retired", async () => {
   const f = fixture();
   registerExited(f.store, [

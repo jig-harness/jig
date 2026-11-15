@@ -329,7 +329,10 @@ function pageEntry(registry: string): PageEntry {
           reason: "registration holds an unreadable or unexpected entry",
         };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+    if (
+      (error as NodeJS.ErrnoException).code === "ENOENT" &&
+      lstatSync(registry, { throwIfNoEntry: false }) === undefined
+    )
       return { kind: "vanished" };
     log.warn("Cannot read a fixture registration", {
       registry,
@@ -356,7 +359,14 @@ export function fixtureRegistryScopes(
 }
 /** A name `readdir` could have returned for a folder of the store. */
 function folderName(name: string): boolean {
-  return name !== "" && name !== "." && name !== ".." && !/[\\/\0]/.test(name);
+  return (
+    name !== "" &&
+    name !== "." &&
+    name !== ".." &&
+    !name.includes("/") &&
+    !name.includes("\0") &&
+    (process.platform !== "win32" || !name.includes("\\"))
+  );
 }
 /** Where the last page stopped; a missing or unreadable cursor starts from the beginning. */
 function readCursor(file: string): string | null {
@@ -443,17 +453,38 @@ export function fixtureRootGone(root: string): boolean {
     return false;
   }
 }
-/** Whether a scratch scope, which still counts this registration's unknown launches, encloses the root. */
-function enclosedByScratch(root: string): boolean {
-  for (let directory = dirname(root); ; directory = dirname(directory)) {
-    if (
-      lstatSync(join(directory, SCRATCH_OWNER_FILE), { throwIfNoEntry: false })
-    )
-      return true;
-    if (dirname(directory) === directory) return false;
+/**
+ * Whether a scope that still counts this registration's unknown launches
+ * encloses the root: a legacy scratch owner, or another registration's root.
+ * Null when the registered roots cannot be read.
+ */
+function enclosedByCountingScope(
+  roots: string[],
+  registry: string,
+): boolean | null {
+  const registered = fixtureScopeInventory(dirname(registry));
+  if (!registered.ok) return null;
+  const others = new Set(
+    registered.value
+      .filter((scope) => scope.registry !== registry)
+      .map((scope) => resolve(scope.root)),
+  );
+  for (const root of roots) {
+    for (let directory = dirname(root); ; directory = dirname(directory)) {
+      if (
+        others.has(resolve(directory)) ||
+        lstatSync(join(directory, SCRATCH_OWNER_FILE), {
+          throwIfNoEntry: false,
+        })
+      )
+        return true;
+      if (dirname(directory) === directory) break;
+    }
   }
+  return false;
 }
 function retirementVeto(
+  registry: string,
   scopes: FixtureScope[],
   nodes: NodeRecord[],
 ): FixtureProof | null {
@@ -464,15 +495,24 @@ function retirementVeto(
       state: "unverified",
       reason: "fixture launch has no child acknowledgement",
     };
-  if (
-    nodes.some((node) => node.state === "opaque") &&
-    scopes.some((scope) => enclosedByScratch(scope.root))
-  )
-    return {
-      state: "unverified",
-      reason:
-        "an enclosing scratch scope still exists, and this registration's opaque launches still count for it",
-    };
+  if (nodes.some((node) => node.state === "opaque")) {
+    const enclosed = enclosedByCountingScope(
+      scopes.map((scope) => scope.root),
+      registry,
+    );
+    if (enclosed === null)
+      return {
+        state: "unverified",
+        reason:
+          "the registered roots enclosing this registration are unreadable",
+      };
+    if (enclosed)
+      return {
+        state: "unverified",
+        reason:
+          "an enclosing scratch scope or registered root still exists, and this registration's opaque launches still count for it",
+      };
+  }
   return null;
 }
 function registeredProcesses(
@@ -525,14 +565,21 @@ export function fixtureRetirementProof(
           reason: "fixture membership is unreadable or incomplete",
         } satisfies FixtureProof;
       return (
-        retirementVeto(scopes, [...nodes.values()]) ??
+        retirementVeto(registry, scopes, [...nodes.values()]) ??
         registeredProcesses([...nodes.values()], rows)
       );
     },
   );
   if (read.ok) return read.value;
-  if (!lstatSync(registry, { throwIfNoEntry: false }))
-    return { state: "unverified", reason: "fixture registration disappeared" };
+  try {
+    if (!lstatSync(registry, { throwIfNoEntry: false }))
+      return {
+        state: "unverified",
+        reason: "fixture registration disappeared",
+      };
+  } catch {
+    // An unreadable registration is reported with the read's own cause below.
+  }
   if (read.failure.cause !== undefined)
     log.warn("Cannot read a fixture registration for retirement", {
       registry,
