@@ -114,7 +114,7 @@ export const ADAPTER_FACET_STORES = {
       label: {
         held: true,
         meaning:
-          "A label per priority, priority: urgent to priority: low unless labels or a prefix names them",
+          "A label per priority, priority: urgent to priority: low unless issue_tracker.github.priority_labels or the entry's labels or prefix names them",
       },
     },
     size: {
@@ -144,7 +144,7 @@ export const ADAPTER_FACET_STORES = {
       native: {
         held: true,
         meaning:
-          "The priority field, its names given by issue_tracker.jira.priorities",
+          "The priority field, each priority by the names issue_tracker.facets.priority.values or issue_tracker.jira.priorities gives it, else Highest, High, Medium and Low",
       },
       field: {
         held: false,
@@ -205,7 +205,10 @@ export const ADAPTER_FACET_STORES = {
 
 /** Why `facetStores` reports a facet's store as the one in force (`FacetStoreReport.why`). */
 export const FACET_STORE_REASONS = {
-  configured: { meaning: "Named by issue_tracker.facets" },
+  configured: {
+    meaning:
+      "Named by issue_tracker.facets, or on Jira by an issue_tracker.jira.field_labels entry whose labels are the facet's values, which keeps the facet in that field",
+  },
   "kept in labels": {
     meaning:
       "Kept in labels because a setting names the facet's labels (issue_tracker.types, issue_tracker.github.priority_labels) or, on GitHub Issues, an issue carries one",
@@ -216,7 +219,7 @@ export const FACET_STORE_REASONS = {
   },
   default: {
     meaning:
-      "The adapter's default, with nothing named and nothing detected to move it",
+      "The adapter's default, with nothing named and nothing detected to move it. On GitHub Issues it is also the reason for a facet left to the default whose detection could choose no store (no answer, a failed read, a Priority field whose options do not name the priorities, values in the tracker's own field that cannot be read as the facet): store is then null, problem says why, and the facet's reads and writes fail until the configuration names a store",
   },
   conflict: {
     meaning:

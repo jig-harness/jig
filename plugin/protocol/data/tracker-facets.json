@@ -236,7 +236,7 @@
       "facet": "priority",
       "store": "label",
       "held": true,
-      "meaning": "A label per priority, priority: urgent to priority: low unless labels or a prefix names them"
+      "meaning": "A label per priority, priority: urgent to priority: low unless issue_tracker.github.priority_labels or the entry's labels or prefix names them"
     },
     {
       "kind": "adapter-store",
@@ -306,7 +306,7 @@
       "facet": "priority",
       "store": "native",
       "held": true,
-      "meaning": "The priority field, its names given by issue_tracker.jira.priorities"
+      "meaning": "The priority field, each priority by the names issue_tracker.facets.priority.values or issue_tracker.jira.priorities gives it, else Highest, High, Medium and Low"
     },
     {
       "kind": "adapter-store",
@@ -456,7 +456,7 @@
       "facet": null,
       "store": null,
       "held": null,
-      "meaning": "Named by issue_tracker.facets"
+      "meaning": "Named by issue_tracker.facets, or on Jira by an issue_tracker.jira.field_labels entry whose labels are the facet's values, which keeps the facet in that field"
     },
     {
       "kind": "reason",
@@ -486,7 +486,7 @@
       "facet": null,
       "store": null,
       "held": null,
-      "meaning": "The adapter's default, with nothing named and nothing detected to move it"
+      "meaning": "The adapter's default, with nothing named and nothing detected to move it. On GitHub Issues it is also the reason for a facet left to the default whose detection could choose no store (no answer, a failed read, a Priority field whose options do not name the priorities, values in the tracker's own field that cannot be read as the facet): store is then null, problem says why, and the facet's reads and writes fail until the configuration names a store"
     },
     {
       "kind": "reason",

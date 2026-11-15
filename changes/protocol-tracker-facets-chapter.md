@@ -6,7 +6,7 @@ release: minor
 
 - The Jig Protocol has a provisional chapter on tracker facets
   ([plugin/protocol/tracker-facets.md](../plugin/protocol/tracker-facets.md)):
-  the three facts every issue carries beside its labels (type, priority and
+  the facts every issue carries beside its labels (type, priority and
   size), the number of each priority, the stores a facet may be kept in,
   which stores each tracker adapter holds for each facet and why it refuses
   the others, and the reasons `tracker.ts facet-stores` gives for the store

@@ -2,7 +2,7 @@
 
 Version 1 · provisional, moved by [plan item 41](https://github.com/jig-harness/jig/issues/518)
 
-Every issue carries three facts beside its labels: what kind of work it is
+Every issue carries facts beside its labels: what kind of work it is
 (its type), how soon it matters (its priority) and how much work it is (its
 size). Jig calls each an
 [issue facet](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
@@ -20,14 +20,17 @@ them, or that reads which store a repository keeps each facet in: a
 dashboard, a script of a repository's own, another tracker adapter. Such a
 program reads the canonical value and never parses the place it is kept.
 
-Three answers carry the facets:
+These answers carry the facets:
 
 - **An issue**, as `do-item`'s `get_issue.ts` prints it,
   holds `type` and `size`, each a value or `null` for none, and `priority`,
   a number from the table below.
-- **`tracker.ts facet-stores`** prints, for each facet, its store, why that
-  store is the one in force, the values it keeps and, for a facet kept in
-  labels, the field it could move to. It moves nothing.
+- **`tracker.ts facet-stores`** prints, for each facet, its store and why
+  that store is the one in force. A facet with a store also carries the
+  values it keeps; one with none (`store` is `null`) carries neither and
+  says why in `problem`. On GitHub Issues, a facet kept in labels also
+  carries the store it could move to (`moveTo`): the tracker's own field or
+  an issue field of the organization, or `null` for none. It moves nothing.
 - **The dispatcher's tick record** carries each facet's store and why, and
   the assigned items that lack a facet the repository keeps.
 
@@ -79,7 +82,9 @@ that meets a number this table does not list reads it as no priority.
 the store takes: `values` for a `native` or `field` store, `field` for a
 `field` store, and `labels` or a `prefix` for a `label` store. A map may
 list several names for one value, matched ignoring case: each is read as
-that value and the first is written. No name may stand for two values.
+that value and the first is written; only Linear's `native` priority takes
+no list, since its numbers are Linear's own. No name may stand for two
+values.
 
 <!-- protocol:generated source=plugin/skills/do-item/scripts/lib/tracker/facets/facet-values.ts#FACET_STORES -->
 
@@ -99,20 +104,21 @@ it is read, with the reason this table gives.
 
 A facet the configuration leaves out keeps its adapter's default: on Jira
 and Linear, type and size in labels and priority in the tracker's own
-priority field; on GitHub Issues, each facet where detection finds it, in
-labels when a setting names its labels or any issue carries one. The full
-rules are in
-[the configuration reference](../CONFIGURATION.md#issue_tracker).
+priority field, except that on Jira a type or a size whose labels an
+`issue_tracker.jira.field_labels` entry gives is kept in that entry's
+field; on GitHub Issues, each facet where detection finds it, in labels
+when a setting names its labels or any issue carries one. The full rules
+are in [the configuration reference](../CONFIGURATION.md#issue_tracker).
 
 <!-- protocol:generated source=plugin/skills/do-item/scripts/lib/tracker/facets/facet-values.ts#ADAPTER_FACET_STORES -->
 
 | Adapter | Facet | `native` | `field` | `label` |
 | --- | --- | --- | --- | --- |
 | GitHub Issues (`github`) | `type` | The issue type | An issue field of the repository's organization, by name | A label per type |
-| GitHub Issues (`github`) | `priority` | The organization's Priority issue field | An issue field of the repository's organization, by name | A label per priority, priority: urgent to priority: low unless labels or a prefix names them |
+| GitHub Issues (`github`) | `priority` | The organization's Priority issue field | An issue field of the repository's organization, by name | A label per priority, priority: urgent to priority: low unless issue_tracker.github.priority_labels or the entry's labels or prefix names them |
 | GitHub Issues (`github`) | `size` | refused: an Effort issue field is a field store (store: field, field: Effort) | An issue field of the repository's organization, by name, such as Effort | A label per size |
 | Jira (`jira`) | `type` | The issue type | A custom field of the site, by its name or its id | A label per type |
-| Jira (`jira`) | `priority` | The priority field, its names given by issue_tracker.jira.priorities | refused: Jira keeps priority in its own priority field (store: native, with issue_tracker.jira.priorities) | A label per priority, named by labels or a prefix |
+| Jira (`jira`) | `priority` | The priority field, each priority by the names issue_tracker.facets.priority.values or issue_tracker.jira.priorities gives it, else Highest, High, Medium and Low | refused: Jira keeps priority in its own priority field (store: native, with issue_tracker.jira.priorities) | A label per priority, named by labels or a prefix |
 | Jira (`jira`) | `size` | refused: each site's estimate is a custom field: store: field, field: &lt;its name or id> | A custom field of the site, by its name or its id | A label per size |
 | Linear (`linear`) | `type` | refused: Linear has no issue types | refused: the Linear adapter has no custom field to name | A label per type |
 | Linear (`linear`) | `priority` | The priority field | refused: the Linear adapter has no custom field to name | A label per priority, named by labels or a prefix |
@@ -123,18 +129,24 @@ rules are in
 ## Why a store is in force
 
 `tracker.ts facet-stores` and the dispatcher's tick record give each facet's
-store with one of these reasons. A reader that meets a reason this table
-does not list shows the store as reported and decides nothing from the
-reason.
+store with one of these reasons. The store is `null` for `no facet` and
+`conflict`, and on GitHub Issues for `default` too where detection could
+choose no store. When detection fails as a whole, `facet-stores` answers
+with what the configuration alone gives: a facet left to the default shows
+the store and reason it has without detection, beside a detection whose
+`status` is `failed`, and its reads and writes fail until detection
+answers or the configuration names a store. A reader that meets a reason
+this table does not list shows the store as reported and decides nothing
+from the reason.
 
 <!-- protocol:generated source=plugin/skills/do-item/scripts/lib/tracker/facets/facet-values.ts#FACET_STORE_REASONS -->
 
 | Why | Meaning |
 | --- | --- |
-| `configured` | Named by issue_tracker.facets |
+| `configured` | Named by issue_tracker.facets, or on Jira by an issue_tracker.jira.field_labels entry whose labels are the facet's values, which keeps the facet in that field |
 | `kept in labels` | Kept in labels because a setting names the facet's labels (issue_tracker.types, issue_tracker.github.priority_labels) or, on GitHub Issues, an issue carries one |
 | `detected` | Selected on GitHub Issues from what detection read: an issue's value in the tracker's own field, or, with no labels or values at all, the field the organization has |
-| `default` | The adapter's default, with nothing named and nothing detected to move it |
+| `default` | The adapter's default, with nothing named and nothing detected to move it. On GitHub Issues it is also the reason for a facet left to the default whose detection could choose no store (no answer, a failed read, a Priority field whose options do not name the priorities, values in the tracker's own field that cannot be read as the facet): store is then null, problem says why, and the facet's reads and writes fail until the configuration names a store |
 | `conflict` | The facet's labels and values in the tracker's own field are both present and no store is named: store is null, and the facet's reads and writes fail, naming both stores, until the configuration names one |
 | `no facet` | The repository has no such facet, as size with no size group, or its taxonomy cannot be read: store is null |
 
