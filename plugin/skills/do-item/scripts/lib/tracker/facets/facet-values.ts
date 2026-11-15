@@ -65,7 +65,7 @@ export const NO_PRIORITY = {
 export const FACET_STORES = {
   native: {
     meaning:
-      "The tracker's own field for the fact: an issue type, a priority field or an estimate, each canonical value kept as the tracker's value of its own name unless the entry's values map names another",
+      "The tracker's own field for the fact: an issue type, a priority field or an estimate, each canonical value kept as the tracker's value of its own name unless the entry's values map names another; the exceptions are Linear's priority, kept as its number from 1 to 4, and Linear's size, kept as the team's estimate scale",
   },
   field: {
     meaning:

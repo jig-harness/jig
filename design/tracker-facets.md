@@ -119,13 +119,13 @@ A store is where a tracker keeps one facet:
 
 What each tracker can hold:
 
-| Store             | GitHub Issues                                   | Jira                                            | Linear                                                     |
-| ----------------- | ----------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
-| `native` type     | the issue type                                  | the issue type                                  | refused: Linear has no issue types                         |
-| `native` priority | the organization's Priority issue field         | the priority field                              | the priority field                                         |
-| `native` size     | refused: an Effort issue field is a `field`     | refused: each site's estimate is a custom field | the estimate                                               |
-| `field`           | an issue field of the repository's organization | a custom field, by name or id                   | refused: the adapter has no custom field to name on Linear |
-| `label`           | any facet                                       | any facet                                       | any facet                                                  |
+| Store             | GitHub Issues                                   | Jira                                                                                   | Linear                                                     |
+| ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `native` type     | the issue type                                  | the issue type                                                                         | refused: Linear has no issue types                         |
+| `native` priority | the organization's Priority issue field         | the priority field                                                                     | the priority field                                         |
+| `native` size     | refused: an Effort issue field is a `field`     | refused: each site's estimate is a custom field                                        | the estimate                                               |
+| `field`           | an issue field of the repository's organization | a custom field, by name or id (not for priority: refused, the priority field holds it) | refused: the adapter has no custom field to name on Linear |
+| `label`           | any facet                                       | any facet                                                                              | any facet                                                  |
 
 A store the adapter cannot hold is refused when the configuration is read,
 naming the facet and the stores that adapter has. The stores each adapter

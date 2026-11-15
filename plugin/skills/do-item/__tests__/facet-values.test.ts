@@ -18,6 +18,7 @@ import {
   priorityName,
   priorityNumber,
 } from "../scripts/lib/tracker/facets/values.ts";
+import { knownAdapters } from "../scripts/lib/tracker/index.ts";
 import { FACETS, type Facet } from "../scripts/lib/tracker/port.ts";
 
 type Store = keyof typeof FACET_STORES;
@@ -47,6 +48,12 @@ describe("the stores each adapter holds", () => {
         })),
       ),
   );
+
+  it("has an entry for every adapter the tracker registry knows, and no other", () => {
+    expect(Object.keys(ADAPTER_FACET_STORES).sort()).toEqual(
+      knownAdapters().sort(),
+    );
+  });
 
   it("lists every facet and every store for each adapter", () => {
     expect(Object.keys(FACET_TABLE)).toEqual([...FACETS]);

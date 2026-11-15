@@ -466,5 +466,23 @@ describe("tracker facets", () => {
     expect(rows).toHaveLength(cells.length / stores.length);
     const refused = cells.filter((c) => !c.held).length;
     expect(section.split("| refused: ").length - 1).toBe(refused);
+    // Each row's cells are the source entry's, in the order of the stores.
+    for (const [adapter, byFacet] of Object.entries(table))
+      for (const [facet, byStore] of Object.entries(byFacet)) {
+        const row = rows.filter((r) =>
+          r.includes(`(\`${adapter}\`) | \`${facet}\` |`),
+        );
+        expect(row).toHaveLength(1);
+        const rendered = (row[0] ?? "").split(" | ").slice(2);
+        const expected = stores.map((s) => byStore[s]);
+        expect(rendered).toHaveLength(expected.length);
+        expected.forEach((hold, i) => {
+          const text = (rendered[i] ?? "").replace(/^\s+|[\s|]+$/g, "");
+          expect(text.startsWith("refused: ")).toBe(!hold?.held);
+          expect(text).toContain(
+            (hold?.meaning ?? "").replaceAll("<", "&lt;").slice(0, 20),
+          );
+        });
+      }
   });
 });

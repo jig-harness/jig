@@ -92,7 +92,7 @@ values.
 
 | Name | Meaning |
 | --- | --- |
-| `native` | The tracker's own field for the fact: an issue type, a priority field or an estimate, each canonical value kept as the tracker's value of its own name unless the entry's values map names another |
+| `native` | The tracker's own field for the fact: an issue type, a priority field or an estimate, each canonical value kept as the tracker's value of its own name unless the entry's values map names another; the exceptions are Linear's priority, kept as its number from 1 to 4, and Linear's size, kept as the team's estimate scale |
 | `field` | A custom field the entry's field names, each canonical value kept as the option, text or number of its own name unless the entry's values map names another |
 | `label` | A label per value: the value's own name (on GitHub Issues, a priority's is priority: followed by it), unless the entry's labels map names each value's label or its prefix comes before the value |
 
