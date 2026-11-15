@@ -38,7 +38,10 @@ describe("work_batch.solo_flags", () => {
   });
 
   it("matches a facet of a configured prefix written with surrounding space", () => {
-    const spaced = policy({ issue_tracker: { labels: { hitl: " hitl" } } });
-    expect(soloFlagOf([" hitl:security"], spaced)).toBe(" hitl:security");
+    for (const hitl of [" hitl", "hitl ", " hitl "]) {
+      const spaced = policy({ issue_tracker: { labels: { hitl } } });
+      expect(soloFlagOf([" hitl:security"], spaced)).toBe(" hitl:security");
+      expect(soloFlagOf(["hitl:security"], spaced)).toBe("hitl:security");
+    }
   });
 });

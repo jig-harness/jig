@@ -523,7 +523,7 @@ export function batchPolicy(
       ]),
     ],
     soloFlags,
-    soloFlagPrefixes: [`${labels.hitl}:`],
+    soloFlagPrefixes: [`${labels.hitl.trim()}:`],
     epicLabel: labels.epic,
     epicTypes: labels.epicTypes,
     followupLabel: labels.followup,
