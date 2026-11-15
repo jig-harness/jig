@@ -7,6 +7,7 @@ import {
   type BudgetRecord,
   budgetGovernor,
   memoryBudgetStore,
+  parseRecord,
   sqliteBudgetStore,
 } from "../outbound/budget.ts";
 import {
@@ -673,6 +674,55 @@ describe("the accounting of runs whose answers say little of the balance", () =>
       1_000_005,
     );
     expect(store.read(KEY)?.requests.remaining).toBe(0);
+  });
+
+  it("keeps the reservations an ordinary answer's retained balance counted, so a release still gives one back", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
+    }));
+    now += 10;
+    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.observe(
+      KEY,
+      { requests: { limit: 5000, remaining: 4000, resetAt: reset } },
+      1_000_005,
+    );
+    now += 10;
+    governor.observe(
+      KEY,
+      {
+        snapshot: true,
+        requests: { limit: 5000, remaining: 4000, resetAt: reset },
+      },
+      1_000_015,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(3999);
+    governor.release?.(KEY, "requests", sentAt);
+    expect(store.read(KEY)?.requests.remaining).toBe(4000);
+  });
+
+  it("reads a stored window with a negative or fractional overflow count as none", () => {
+    const window = { limit: 5000, remaining: 4000, resetAt: 2_000_000 };
+    const text = (overflow: unknown) =>
+      JSON.stringify({
+        requests: { ...window, overflow },
+        complexity: { limit: null, remaining: null, resetAt: null },
+        limitedUntil: null,
+        why: null,
+        observedAt: 1,
+      });
+    expect(parseRecord(text({ count: -5000, at: 5 }))).toBeNull();
+    expect(parseRecord(text({ count: 1.5, at: 5 }))).toBeNull();
+    expect(parseRecord(text({ count: 2, at: -1 }))).toBeNull();
+    expect(parseRecord(text({ count: 2, at: 5 }))).not.toBeNull();
   });
 
   it("never credits a reservation the cap forgot", () => {

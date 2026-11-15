@@ -267,8 +267,10 @@ function validWindow(w: unknown): w is BudgetWindow {
     (overflow === undefined ||
       (typeof overflow === "object" &&
         overflow !== null &&
-        Number.isFinite((overflow as { count?: unknown }).count) &&
-        Number.isFinite((overflow as { at?: unknown }).at))) &&
+        Number.isSafeInteger((overflow as { count?: unknown }).count) &&
+        (overflow as { count: number }).count >= 0 &&
+        orNull((overflow as { at?: unknown }).at, (n) => n >= 0) &&
+        (overflow as { at?: unknown }).at !== null)) &&
     (answeredOrdinarilyAt === undefined ||
       orNull(answeredOrdinarilyAt, (n) => n >= 0)) &&
     (estimated === undefined || typeof estimated === "boolean")
@@ -743,9 +745,20 @@ function snapshotOf(
     next.resetAt === prev.resetAt;
   if (!newer || prev.answeredOrdinarilyAt === undefined)
     return { ...read, remaining: counted };
+  // The balance kept is the one whose deductions are kept with it: when the
+  // ordinary answer's lower balance stands, so do the reservations it counted,
+  // or a release could no longer give one back.
+  if ((prev.remaining as number) < counted)
+    return {
+      ...read,
+      remaining: prev.remaining as number,
+      answeredOrdinarilyAt: prev.answeredOrdinarilyAt,
+      pending: prev.pending ?? [],
+      ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
+    };
   return {
     ...read,
-    remaining: Math.min(counted, prev.remaining as number),
+    remaining: counted,
     answeredOrdinarilyAt: prev.answeredOrdinarilyAt,
   };
 }
