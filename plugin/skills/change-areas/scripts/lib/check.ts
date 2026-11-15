@@ -7,7 +7,7 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { globMatchesUnder } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { globMatchesUnder } from "../../../../shared/glob.ts";
 import { Defect } from "../../../../shared/errors.ts";
 import type { Area, Catalog } from "./catalog.ts";
 import { defaultGitRunner, matchesGlob, matchSeedAreas } from "./resolve.ts";
