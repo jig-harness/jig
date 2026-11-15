@@ -176,6 +176,18 @@ describe("checkFinalCiStatus on a re-read that disagrees", () => {
     expect(c.finalRegates).toBe(0);
   });
 
+  it("ends the streak on a head that moved, so a return to it starts again", async () => {
+    const c = context(2);
+    expect(await quietly(() => check(c, ROUND_READY, 0))).toBe("continue");
+    expect(await quietly(() => check(c, ROUND_READY, 0))).toBe("continue");
+    expect(c.finalRegates).toBe(2);
+    const moved = { ...ROUND_READY, head: { api: MOVED } };
+    expect(await quietly(() => check(c, moved, 0))).toBe("continue");
+    expect(c.finalRegates).toBe(0);
+    expect(await quietly(() => check(c, ROUND_READY, 0))).toBe("continue");
+    expect(c.finalRegates).toBe(1);
+  });
+
   it("counts a re-read whose head did not read", async () => {
     const c = context(0);
     expect(await quietly(() => check(c, {}, 1))).toBe(1);

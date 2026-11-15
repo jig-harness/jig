@@ -265,6 +265,9 @@ export async function checkFinalCiStatus(
     console.error(
       `review/head evidence changed while final CI freshness was established: the re-read saw head ${finalRemoteHead}, not ${reviewedHead}; re-gating`,
     );
+    // The head changed, so the streak on the old one ended: a later return to
+    // it (a force-push back) must not inherit its count.
+    finalReadAgrees(context);
     return "continue";
   }
   // MUST be checked before interpreting or repairing the CI verdict
