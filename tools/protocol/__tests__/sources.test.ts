@@ -21,8 +21,11 @@ import {
   NOT_RECORDS,
   RECORD_KINDS,
 } from "../../../plugin/shared/records/registry.ts";
+import { SEND_VERBS } from "../../../plugin/send/lib/verb-values.ts";
+import { STATIONS } from "../../../plugin/shared/address.ts";
 import { TERMINAL_STATES } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { CHAPTERS } from "../chapters.ts";
+import { ADDRESSES } from "../chapters/addresses.ts";
 import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
@@ -343,5 +346,48 @@ describe("the follow-up claim and its result", () => {
       Object.keys(outcomes).map((o) => `| \`${o}\` | \`${run}\` |`),
     );
     expect(pairs.filter((p) => !rows.some((r) => r.startsWith(p)))).toEqual([]);
+  });
+});
+
+describe("addresses and the verbs of jig send", () => {
+  // Enumerated from the two tables on their own, not through the chapter.
+  const stations = Object.keys(STATIONS);
+  const verbs = Object.keys(SEND_VERBS);
+  const values = ADDRESSES.values();
+  const of = (kind: string) =>
+    values.filter((v) => v.kind === kind).map((v) => String(v.name));
+
+  test("renders every station and every verb, in the tables' order, and nothing else", () => {
+    expect(of("station")).toEqual(stations);
+    expect(of("verb")).toEqual(verbs);
+    expect(values).toHaveLength(stations.length + verbs.length);
+    expect(ADDRESSES.excluded).toEqual([]);
+  });
+
+  test("carries each verb's stations, person flag and arguments as the table holds them", () => {
+    for (const [name, spec] of Object.entries(SEND_VERBS)) {
+      const v = values.find((x) => x.kind === "verb" && x.name === name);
+      expect(v).toMatchObject({
+        stations: spec.stations.join(", "),
+        person: spec.person,
+        args: spec.args === "" ? null : spec.args,
+      });
+    }
+    for (const [name, spec] of Object.entries(STATIONS))
+      expect(
+        values.find((x) => x.kind === "station" && x.name === name)?.key,
+      ).toBe(spec.key);
+  });
+
+  test("shows every station in the stations section and every verb in the verbs section", () => {
+    // Each section on its own: a station also appears in the verbs table's
+    // To column, and the verb drive shares its name with the station.
+    const [stationsSection, verbsSection] = ADDRESSES.sections.map((s) =>
+      s.render(),
+    );
+    const missing = (text: string | undefined, names: readonly string[]) =>
+      names.filter((n) => !(text ?? "").includes(`\n| \`${n}\` |`));
+    expect(missing(stationsSection, stations)).toEqual([]);
+    expect(missing(verbsSection, verbs)).toEqual([]);
   });
 });

@@ -622,6 +622,31 @@ who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
 left none), with `cause` and `by` as columns. A run that ends without a
 report still leaves its `Question:` line.
 
+A drive runs many passes, and most of its stops are decided by `drive.ts`
+after a pass has ended, so no pass knows it is the last. Each pass instead
+ends its round with a
+[round report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+the same fields, kept in the drive's state directory and stamped with the
+pass's launch and round. When the drive stops, `drive.ts` writes the
+closing report (`by: driver`): its `concluded` is the stop's own line
+followed by what the last round report of this launch concluded, cut to
+the 600 characters; its `cause` and next step are the ones the drive's
+[terminal-state table](protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)
+gives its exit; at a park it carries the first parked decision's question
+and framed options. `jig dispatch report` refuses a drive's record: the
+wrapper hands `drive.ts` a file in the run's own state directory
+(`runs/<record>/`), and once the drive ended it checks the report there,
+records it under the record before the exit and removes the file. A
+follow-up pass that could not start gets the wrapper's own report
+(`by: wrapper`, cause `startup`, or `usage-limit` on a vendor usage
+notice). Whatever report a run keeps, the wrapper prints as its last lines.
+As each pass of a drive starts, `drive.ts` records the session id it gave
+the pass on the launch record, round by round, so the run is found in the
+vendor's transcripts; a Codex pass takes none, and neither does a CI or
+conflict repair pass, whose transcripts `launches.sessions` does not list. The end the wrapper writes
+onto the shared claim carries the report's `cause` and who wrote it
+(`by`), never its text.
+
 #### Every need is a decision
 
 A pass that stops for a person frames what it asks, as a drive frames a
@@ -1283,7 +1308,7 @@ stage an outlined chip, a source a dashed chip. The Help view lists every
 icon with its word. The theme follows the device until the switch in the strip picks light
 or dark.
 
-The page acts on nothing: it links to the pull request a decision is answered on
+The page acts on nothing through the host: it links to the pull request a decision is answered on
 and copies what cannot open, such as a workspace path or an answer line. A
 parked need shows one short row per decision, and a person picks an option
 with a key or a tap, adds a note or writes an answer in their own words; all
@@ -1296,6 +1321,31 @@ decision under a class listed as Decide copies its approval when its recommended
 class not listed as Decide, or of an option that cannot be undone, copies only
 on the second step, which first shows what it changes and costs. When the
 server stops answering, it keeps what it last read and says when that was.
+
+**Send, from the browser.** With a GitHub token pasted under **Send from
+here** on Needs you, a parked drive's card whose pull request is on
+github.com also has **Send**. Once an option is picked on the card, it
+posts each decision's answer to the pull request through GitHub's API, from
+the browser, as the person: one comment per decision, the `drive-answer`
+record `jig send` writes, with Copy's line for that decision, any note line
+and the hidden record naming the person's login and `dashboard (browser)`
+as its writer. The card then links the comments and says they were sent
+here. With nothing picked, Send stays held back; Copy still takes the
+approval of a lone Decide decision's recommendation to paste. A guarded
+pick sends on the second step, as it copies. The page tests the token by asking GitHub
+which login it signs in as, names that login, keeps the token in that
+browser's local storage alone and forgets it on request; the dashboard's
+server never receives it and has no route that writes. Make a fine-grained
+personal access token limited to the repositories the dashboard shows, with
+Issues and Pull requests set to read and write, and a short expiry. Its
+answers count as `jig send`'s do, by the drive's rule for an author. Any
+other card says why it has no Send. The page's content security policy lets
+it reach its own server and `https://api.github.com` alone, so a pull
+request on another forge has no Send. Send is offered only when the page
+came over HTTPS, from the machine's loopback (`localhost`, 127.0.0.0/8,
+`::1`). Over any other plain-HTTP address someone on the network path who can change the page
+could read the token, so the cards say why Send is missing there. A phone
+uses the private HTTPS front ([phone-access.md](phone-access.md)).
 
 **The line as JSON.** A program beside the dispatcher (an editor's plugin, a
 status bar) reads what the newest tick found without opening the state
@@ -1462,6 +1512,10 @@ person, one line per entry. Anything else it answers in sentences.
 | `pickup` | the tracker's item key (`#12` on GitHub Issues, `ENG-4` on Linear or Jira) | the session that claimed the item |
 | `drive` | the pull request's number | the live driver: a dispatched re-arm or takeover, or a driver someone armed by hand |
 | `followup` | the merged pull request's number | the follow-up pass, or a person's run |
+
+The Jig Protocol's [Addresses chapter](protocol/addresses.md) lists the
+stations and the verbs below, generated from the code, for a program that
+forms addresses or sends verbs.
 
 The repository may be its short name where the
 [machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists

@@ -19,6 +19,8 @@ import { resolveAccountIdentity } from "./../identity.ts";
 
 import { passEnv } from "./repair.ts";
 
+import { notePassStarted, withPassRound } from "./pass-round.ts";
+
 import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
 
 import type { RunHandle } from "../proc.ts";
@@ -39,7 +41,10 @@ import { span } from "./../../../../../shared/trace.ts";
 
 import { requireDriverPassRegistrations } from "./lifecycle.ts";
 
-export async function prepareReviewPass(context: DriveRoundContext): Promise<
+export async function prepareReviewPass(
+  context: DriveRoundContext,
+  round: number,
+): Promise<
   | number
   | "continue"
   | {
@@ -143,7 +148,7 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
   // residual, which is why nothing is interposed between them.
   const preexistingSnapshot = snapshotQuotaSessions();
   const preexistingSessions = preexistingSnapshot.files;
-  const baseEnv = passEnv();
+  const baseEnv = withPassRound(passEnv(), round);
   // A stop the driver recovered from (a killed pass, a stall, a takeover, a
   // re-arm with answers) is told to every review pass until one completes,
   // and the commits the last gate found unpushed to every pass they remain
@@ -284,6 +289,11 @@ export async function dispatchReviewPass(
       ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
       onSpawn: (handle) => {
         driverRuntime.activePass = handle;
+        notePassStarted(
+          context.pr,
+          round,
+          prepared?.correlation.sessionId ?? null,
+        );
         passSpawnProgressStamp = run(
           tsArgv(driveState, [
             "progress",

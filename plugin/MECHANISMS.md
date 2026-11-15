@@ -416,7 +416,11 @@ development and shipped as a version.
   pass, goes through `jig dispatch report <record> <token> <file>`
   (`dispatch/report-command.ts`), which redacts and checks it
   (`shared/closing-report.ts`) and keeps the last one that passes beside
-  the result, never touching it. Nothing
+  the result, never touching it. A drive's report is its driver's:
+  each pass writes a round report (`skills/drive-pr/scripts/round-report.ts`),
+  `drive.ts` composes the closing report at its stop
+  (`lib/driver/closing-report.ts`) into the file the wrapper names, and
+  the wrapper records it (`dispatch/lib/run-report.ts`). Nothing
   else reasoned writes these records. A completed pickup names its pull
   request with `--pr <number>`, or `--none "<reason>"` when none was needed;
   a pickup the tracker's rate limit stopped before it claimed the item

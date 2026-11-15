@@ -47,6 +47,7 @@ function repositoryKinds(
   declaration: Declaration,
   source: string,
   machine: MachineConfig,
+  collecting: boolean,
   policy?: { remote: string; base: string },
 ): CollectionKind[] {
   return declaration.kinds
@@ -59,6 +60,10 @@ function repositoryKinds(
           declaration.scratch_prefixes,
           source,
           days,
+          undefined,
+          // A report run reads the page the next collecting run will start
+          // from, and leaves the cursor where it is.
+          { advance: collecting },
         );
       if (name === "tool-state") return toolStateKind(repository, source, days);
       return worktreesKind(
@@ -117,10 +122,17 @@ async function confirmedPlan(
       ),
     );
   kinds.push(
-    ...repositoryKinds(entry.path, declaration, current.value.source, machine, {
-      remote: entry.remote,
-      base: entry.base_branch,
-    }),
+    ...repositoryKinds(
+      entry.path,
+      declaration,
+      current.value.source,
+      machine,
+      true,
+      {
+        remote: entry.remote,
+        base: entry.base_branch,
+      },
+    ),
   );
   return ok(kinds);
 }
@@ -136,6 +148,7 @@ function checkoutPlan(
       current.value.declaration,
       `${entry.path}/.config/jig.yaml (checkout; report only)`,
       machine,
+      false,
     ),
   );
 }
