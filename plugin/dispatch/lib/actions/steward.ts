@@ -45,7 +45,7 @@ import type { StationContext } from "../line-station.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { RepoObservation, Tracked } from "../tick-observe.ts";
-import type { Action, RepoReport } from "../types.ts";
+import type { Action, LaunchOutcome, RepoReport } from "../types.ts";
 import {
   admitAccount,
   type ApplyState,
@@ -92,6 +92,8 @@ export async function applySteward(
     report.launches.push(
       await replay(state, record, action, await accountBlock(state, record)),
     );
+    if (!state.records.some((r) => r.record.id === record.id))
+      forgetStewardRun(record.id, state.root);
   }
   if (
     state.records.some(
@@ -202,8 +204,34 @@ export async function applySteward(
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
   };
-  report.launches.push(await startKept(state, record, slots, digest));
-  report.steward = {
+  const launch = await startKept(state, record, slots, digest);
+  report.launches.push(launch);
+  report.steward = stewardStatus(
+    launch,
+    state.records.some((r) => r.record.id === record.id),
+    trigger,
+    hash,
+  );
+}
+
+/**
+ * What the launch left: a run taken back started nothing, a record still
+ * pending awaits a retry (the answer was lost, so a pass may or may not run),
+ * and only a launch the runtime accepted is a start.
+ */
+function stewardStatus(
+  launch: LaunchOutcome,
+  kept: boolean,
+  trigger: Extract<StewardTrigger, { kind: "due" }>,
+  hash: string,
+): NonNullable<RepoReport["steward"]> {
+  if (!kept) return { status: `not started: ${launch.detail}`, hash };
+  if (launch.outcome !== "launched" && launch.outcome !== "retried")
+    return {
+      status: `launch pending, a later tick retries it: ${launch.detail}`,
+      hash,
+    };
+  return {
     status: `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
     hash,
     trigger: "started",
@@ -229,15 +257,16 @@ async function backlogOf(
  * Keep the run, then start its pass. A launch that threw or left no record
  * behind started no pass, so nobody judged its members: the run is taken back.
  */
-async function startKept(
+export async function startKept(
   state: ApplyState,
   record: LaunchRecord,
   slots: Parameters<typeof startRecord>[2],
   digest: StewardDigest,
-): Promise<Awaited<ReturnType<typeof startRecord>>> {
+  start: typeof startRecord = startRecord,
+): Promise<LaunchOutcome> {
   keepStewardRun(record.id, digest, currentMs(), state.root);
   try {
-    const launch = await startRecord(state, record, slots);
+    const launch = await start(state, record, slots);
     if (!state.records.some((r) => r.record.id === record.id))
       forgetStewardRun(record.id, state.root);
     return launch;

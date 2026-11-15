@@ -9,7 +9,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applySteward } from "../lib/actions/steward.ts";
+import { applySteward, startKept } from "../lib/actions/steward.ts";
 import type { ReadRecord } from "../lib/launches.ts";
 import type { StationContext } from "../lib/line-station.ts";
 import { closeStateDb } from "../lib/state.ts";
@@ -25,7 +25,7 @@ import {
   stewardBacklog,
   stewardTrigger,
 } from "../lib/steward-backlog.ts";
-import type { Action } from "../lib/types.ts";
+import type { Action, LaunchOutcome } from "../lib/types.ts";
 
 const REPO = "example-org/backlog";
 const STATION: StationContext = {
@@ -327,5 +327,69 @@ describe("the judgment backlog's needs", () => {
       ],
     });
     expect(backlog.members).toEqual([]);
+  });
+});
+
+describe("a launch that starts no pass", () => {
+  const SEEN = stalled("#12", "2026-11-14T08:00:00Z");
+  const launchRecord = { id: "run-1", repo: REPO } as never;
+  const refusal: LaunchOutcome = {
+    target: "the steward",
+    action: "steward",
+    outcome: "failed",
+    account: null,
+    record: "run-1",
+    detail: "the runtime started nothing",
+  };
+
+  test("a definitive refusal that removes the record takes the run back, so the backlog stays unjudged and due", async () => {
+    const root = freshRoot();
+    const state = stateAt(root);
+    const launch = await startKept(
+      state,
+      launchRecord,
+      {} as never,
+      digest(REPO, [SEEN]),
+      async () => refusal,
+    );
+    expect(launch.outcome).toBe("failed");
+    expect(judgedMembers(REPO, root).size).toBe(0);
+    const again = stewardBacklog(input([SEEN])).members;
+    expect(stewardTrigger(again, judgedMembers(REPO, root)).kind).toBe("due");
+  });
+
+  test("a launch that throws takes the run back too", async () => {
+    const root = freshRoot();
+    await expect(
+      startKept(
+        stateAt(root),
+        launchRecord,
+        {} as never,
+        digest(REPO, [SEEN]),
+        async () => {
+          throw new Error("boom");
+        },
+      ),
+    ).rejects.toThrow("boom");
+    expect(judgedMembers(REPO, root).size).toBe(0);
+  });
+
+  test("a record that stays pending keeps the run reserved", async () => {
+    const root = freshRoot();
+    const state = stateAt(root);
+    await startKept(
+      state,
+      launchRecord,
+      {} as never,
+      digest(REPO, [SEEN]),
+      async (s) => {
+        s.records.push({
+          record: launchRecord,
+          state: { kind: "pending" },
+        } as never);
+        return { ...refusal, outcome: "lost" };
+      },
+    );
+    expect(judgedMembers(REPO, root).size).toBe(1);
   });
 });
