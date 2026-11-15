@@ -105,6 +105,7 @@ import {
 } from "./lib/tick-context.ts";
 import { boundAt } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
+import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
   fillBudgets,
   lowBudget,
@@ -244,6 +245,7 @@ async function startTick(
     reflections: [],
     pending: [],
     reads: tickReads(runtime, options.poolSize, bound),
+    rerunsHeld: rerunsHeld(),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };
 }

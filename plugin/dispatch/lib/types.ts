@@ -138,6 +138,7 @@ import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
 /** How a pickup that needs nothing reads: the repository's start rules refused its claim, its claimed item is idle but not yet stalled, or a served person started the item themselves. */
 export type PickupClass =
+  | "pickup-ended"
   | "pickup-refused"
   | "claimed-idle"
   | "claimed"
