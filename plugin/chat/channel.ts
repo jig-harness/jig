@@ -1,5 +1,6 @@
 /**
- * The notification channel port: one way the line's notices reach a person.
+ * The notification channel port: one way the line's notices reach a person
+ * (a [notification channel](../../GLOSSARY.md)).
  * The tick sends each cause it notifies through every channel it enables,
  * and keeps, for each channel apart, the record that the cause was sent
  * (`dispatch/lib/notice-records.ts`): a cause delivered on one channel and

@@ -547,7 +547,8 @@ function recordSent(
           c.cause === "drifting" ||
           c.cause === "ready" ||
           (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
-          typeof c.evidence.failedRearm === "string",
+          typeof c.evidence.failedRearm === "string" ||
+          typeof c.evidence.usageRefusal === "string",
       },
       // A cause about a stage this machine launched has its ended row instead.
       c.launched === true ? null : eventRow(repo.slug, c, at, settings.about),

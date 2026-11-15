@@ -266,7 +266,10 @@ function parkText(slug: string, pr: DrivenPr): Notice {
 /** A drive stopped on an exit only a person settles, or with no exit at all. */
 export function stopNotice(slug: string, pr: DrivenPr): Notice {
   if (typeof pr.evidence.usageRefusal === "string")
-    return usageRefusalNotice(slug, pr);
+    return {
+      ...usageRefusalNotice(slug, pr),
+      ...driveFields(slug, pr, [`/jig:drive-pr ${pr.number}`]),
+    };
   if (pr.class === "silent")
     return { ...silentText(slug, pr), ...driveFields(slug, pr) };
   if (typeof pr.evidence.failedRearm === "string")
