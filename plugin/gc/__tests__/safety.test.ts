@@ -593,3 +593,105 @@ test("an unfinished or failed-inventory run never displaces the last completed r
     "live",
   );
 });
+
+test("regenerable declarations are contained literal paths and protect durable context", () => {
+  expect(parseDeclaration(undefined, "/repo")).toMatchObject({
+    ok: true,
+    value: { regenerable_paths: [".fallow"] },
+  });
+  expect(
+    parseDeclaration({ regenerable_paths: ["dist/", "build/cache"] }, "/repo"),
+  ).toMatchObject({
+    ok: true,
+    value: { regenerable_paths: ["dist", "build/cache"] },
+  });
+  for (const path of [
+    "/outside",
+    "../outside",
+    "build/../notes",
+    ".",
+    "build//cache",
+    "build/*",
+    "C:/cache",
+    "build\\cache",
+    ".context",
+    ".context/notes",
+    ".CONTEXT/notes",
+    ".context./notes",
+    ".git",
+  ]) {
+    expect(
+      parseDeclaration({ regenerable_paths: [path] }, "/repo"),
+    ).toMatchObject({ ok: false, failure: { code: "configuration" } });
+  }
+  const installed = value(
+    parseDeclaration({ regenerable_paths: ["build/cache"] }, "/repo"),
+  );
+  const current = value(
+    parseDeclaration({ regenerable_paths: ["build", "build/cache"] }, "/repo"),
+  );
+  expect(boundDeclaration(current, installed)).toMatchObject({
+    widened: true,
+    declaration: { regenerable_paths: ["build/cache"] },
+  });
+});
+
+test("regenerable defaults cannot widen installed authority and an empty list disables them", () => {
+  const installed = value(parseDeclaration(undefined, "/repo"));
+  const current = value(
+    parseDeclaration({ regenerable_paths: [".fallow", "dist"] }, "/repo"),
+  );
+  expect(boundDeclaration(current, installed)).toMatchObject({
+    widened: true,
+    declaration: { regenerable_paths: [".fallow"] },
+  });
+  const disabled = value(parseDeclaration({ regenerable_paths: [] }, "/repo"));
+  expect(boundDeclaration(disabled, installed)).toMatchObject({
+    widened: false,
+    declaration: { regenerable_paths: [] },
+  });
+});
+
+test("regenerable collection authority ignores environment overrides and refuses the user file", () => {
+  const scope = root();
+  const home = join(scope, "home");
+  const repo = join(scope, "repo");
+  mkdirSync(home);
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  mkdirSync(join(repo, ".config"));
+  writeFileSync(
+    join(repo, ".config/jig.yaml"),
+    "gc:\n  regenerable_paths: []\n",
+  );
+  const program = `import { gcConfiguration } from ${JSON.stringify(join(import.meta.dir, "../config.ts"))}; console.log(JSON.stringify(gcConfiguration(${JSON.stringify(repo)})));`;
+  const read = () => {
+    const child = Bun.spawnSync([process.execPath, "-e", program], {
+      env: {
+        ...process.env,
+        JIG_HOME: home,
+        JIG_CONSUMER_ROOT: repo,
+        JIG_OVERLAY: undefined,
+        JIG_USER_LAYER: undefined,
+        JIG__GC__REGENERABLE_PATHS: "[dist]",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    });
+    expectSpawnExit(child, 0);
+    return JSON.parse(child.stdout.toString());
+  };
+  expect(read()).toMatchObject({
+    ok: true,
+    value: { declaration: { regenerable_paths: [] } },
+  });
+  writeFileSync(join(home, "jig.yaml"), "gc:\n  regenerable_paths: [dist]\n");
+  expect(read()).toMatchObject({
+    ok: false,
+    failure: {
+      reason: expect.stringContaining(
+        "gc.regenerable_paths describes one repository",
+      ),
+    },
+  });
+});

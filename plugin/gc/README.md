@@ -78,12 +78,19 @@ the holders unknown and the worktree `unverified`.
 Ignored content is the one part of a worktree git cannot give back: an
 environment file or a note may be the only copy. A worktree with ignored
 content no rule accounts for is a `finding`, and its reason names the paths.
-A rule accounts for content only by a mark the writer left, never by a name
-alone:
+A rule accounts for content through a rebuildable dependency, a mark the
+writer left, or a repository declaration:
 
 - **`dependency`**: a detected package manager's dependency directory
   (`node_modules`, wherever it sits in the tree), rebuilt from the root
   `package.json` and the tracked lockfile; listed as `rebuildable`.
+- **`regenerable-path`**: a literal path in `gc.regenerable_paths`, read from
+  the base branch and bounded by the installed declaration. It covers only
+  that path and its descendants. The default is `[.fallow]`, the unused-code
+  tool cache Jig's gates create. An explicit list replaces the default; add
+  a build output such as `dist` only when it can be rebuilt. Refresh the
+  installed collector after widening this list. Absolute paths, traversal,
+  globs, Git metadata and `.context/` outside `.context/scratch/` are refused.
 - **`cache-tag`**: a directory holding a `CACHEDIR.TAG` file that starts with
   the [cache directory tag](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   signature. Other tools tag their caches this way, and so do Jig's scripts
@@ -100,7 +107,7 @@ alone:
 A link is never followed, so a link named like a marked directory, or a tag
 that is a link, marks nothing. Anything else under `.context/`, such as a
 facet move's record a procedure tells a person to keep, still vetoes. The
-receipt's `details.setAside` lists each path a mark set aside with its rule,
+receipt's `details.setAside` lists each path a rule set aside with its rule,
 and `details.rebuildable` the dependency directories.
 
 **Worktrees made before marking.** Marking covers what was written after

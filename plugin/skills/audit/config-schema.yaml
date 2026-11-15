@@ -130,6 +130,14 @@ fields:
     repository_only: true
     since: 0.83.0
 
+  gc.regenerable_paths:
+    type: list
+    items: string
+    distinct: true
+    read_by: [audit, gc]
+    repository_only: true
+    since: next
+
   dispatch.identity:
     type: string
     read_by: [dispatch]

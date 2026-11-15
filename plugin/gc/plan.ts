@@ -69,6 +69,7 @@ function repositoryKinds(
         policy,
         machineOrca(machine),
         { root: stateRoot(), maxBytes: machine.archive_max_bytes },
+        declaration.regenerable_paths,
       );
     });
 }
