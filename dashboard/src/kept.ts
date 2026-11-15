@@ -1,9 +1,11 @@
 /**
- * What the page keeps in this browser alone: the theme a person chose and the
- * answers they pick or draft on a card. Nothing here reaches the host. A
+ * What the page keeps in this browser alone: the theme a person chose, the
+ * answers they pick or draft on a card, the GitHub token Send uses and what
+ * it sent. Nothing here reaches the host. A
  * browser that refuses storage (a private window, a policy) keeps nothing,
  * and the page works as before.
  */
+import { isRecord } from "../../plugin/shared/guards.ts";
 
 const PREFIX = "jig-dispatch-dashboard:";
 
@@ -54,4 +56,18 @@ export function keptKeys(prefix: string): string[] {
     if (key?.startsWith(PREFIX + prefix)) keys.push(key.slice(PREFIX.length));
   }
   return keys;
+}
+
+/** The fields kept under `key` as JSON; `null` when none is, storage is refused, or something else wrote it. */
+export function readKeptRecord(key: string): Record<string, unknown> | null {
+  const raw = readKept(key);
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    return isRecord(value) ? value : null;
+  } catch (cause) {
+    // Something else wrote this key; it holds nothing of this page's.
+    if (!(cause instanceof SyntaxError)) throw cause;
+    return null;
+  }
 }
