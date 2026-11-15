@@ -265,7 +265,7 @@ export function ruleMap<T>(
     return failed("rule-invalid", `${field} must map ${describe}`);
   const byKey = new Map<string, MapEntry<T>>();
   for (const [key, value] of Object.entries(raw)) {
-    const at = `${field}.${formatField([key])}`;
+    const at = `${field}.${key}`;
     if (key.trim() === "")
       return failed("rule-invalid", `${field} must not have an empty key`);
     const checked = result(value);
