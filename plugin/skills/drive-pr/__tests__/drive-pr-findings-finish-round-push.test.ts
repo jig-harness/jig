@@ -7,6 +7,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -34,6 +35,8 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
 
 import { readState, writeState } from "./state-rows.ts";
+
+import { ensureContextIgnored } from "../scripts/lib/context-ignore.ts";
 
 useDrivePrSuite();
 describe("finish-round.ts", () => {
@@ -186,6 +189,40 @@ describe("finish-round.ts", () => {
     // that ordering that the script cannot self-report.
     expect(r.pushed).toBe("");
     expect(r.stderr).toContain("uncommitted.txt");
+  });
+
+  // A repository that does not ignore `.context/`, once the drive has
+  // excluded it: the round's own handoff and mailbox live in the tree.
+  const ownContext = async () => {
+    const repo = scratchWithOrigin();
+    await ensureContextIgnored(repo.dir);
+    const context = join(repo.dir, ".context");
+    mkdirSync(context, { recursive: true });
+    writeFileSync(join(context, "pr-drive-999.md"), "handoff\n");
+    return {
+      repo,
+      env: {
+        DRIVE_PR_HANDOFF_DIR: context,
+        DRIVE_PR_MAILBOX_DIR: join(context, "drive-mailbox"),
+      },
+    };
+  };
+
+  it("pushes over the drive's own .context/ files once the drive excluded them", async () => {
+    const { repo, env } = await ownContext();
+    const r = await finishRound({ repo, env });
+    expect(r.report.state).not.toBe("REFUSED_UNCLEAN");
+    expect(r.pushed).not.toBe("");
+  });
+
+  it("still refuses an untracked file outside .context/", async () => {
+    const { repo, env } = await ownContext();
+    writeFileSync(join(repo.dir, "stray.txt"), "left over\n");
+    const r = await finishRound({ repo, env });
+    expect(r.report.state).toBe("REFUSED_UNCLEAN");
+    expect(r.pushed).toBe("");
+    expect(r.stderr).toContain("stray.txt");
+    expect(r.stderr).not.toContain("?? .context/");
   });
 
   it("refuses an unconcluded merge whose worktree reads CLEAN, and pushes nothing", async () => {
