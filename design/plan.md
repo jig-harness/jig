@@ -270,7 +270,7 @@ fifty at a time is read on every tick; a steady tick with nothing changed
 sends one tracker request per team; and both gates run in
 `bun run gates`, their counts of calls that predate the rule only falling.
 
-### 56. Overlap-aware admission: each item's footprint weighed against all work in flight
+### 57. Overlap-aware admission: each item's footprint weighed against all work in flight
 
 The dispatcher starts work when a slot is free without telling work that
 will collide from work that will not, inside an epic or across epics. A
@@ -502,7 +502,7 @@ out once, or refused with why; and `jig dispatch log` reports, per
 class, how many parks were approved as recommended and how long they
 waited.
 
-### 56. Declared priorities, a progress review and the overview
+### 58. Declared priorities, a progress review and the overview
 
 A person sees individual failures without seeing whether their goals are
 advancing. [The design](priorities-and-overview.md) defines one priorities record
