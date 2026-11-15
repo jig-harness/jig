@@ -73,7 +73,7 @@ import {
 } from "./lib/guidance.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import { isRecord } from "../../../shared/guards.ts";
-import { failed, ok } from "../../../shared/outcome.ts";
+import { failed, JigError, ok } from "../../../shared/outcome.ts";
 import {
   lookup,
   type MapEntry,
@@ -126,7 +126,8 @@ function nameMap(field: string, v: unknown): MapEntry<string>[] {
         ? "a title keyword to an agent"
         : "a label to an agent",
   );
-  if (!entries.ok) throw new Error(entries.failure.reason);
+  if (!entries.ok)
+    throw new JigError("agent-routing-invalid", entries.failure.reason);
   return entries.value;
 }
 

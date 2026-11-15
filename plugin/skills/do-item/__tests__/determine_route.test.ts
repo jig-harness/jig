@@ -138,7 +138,7 @@ describe("the raises", () => {
     });
     expect(r.effort).toBe("high");
     expect(r.reasons).toContain(
-      "effort: high (flag has-migration raised medium)",
+      "effort: high (raised from medium: routing.raise.flags, for the item's label has-migration)",
     );
   });
 
@@ -162,7 +162,7 @@ describe("the raises", () => {
     });
     expect(r.effort).toBe("high");
     expect(r.reasons).toContain(
-      "effort: high (area payments's mandatory review (security-review) raised medium)",
+      "effort: high (raised from medium: area payments's mandatory review (security-review))",
     );
   });
 
@@ -185,7 +185,9 @@ describe("the raises", () => {
       knownSizes: ["xs", "small", "medium", "large", "xl"],
     });
     expect(r.effort).toBe("high");
-    expect(r.reasons).toContain("effort: high (size xl raised medium)");
+    expect(r.reasons).toContain(
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
+    );
   });
 
   it("never raises on a batchable size", () => {
@@ -198,7 +200,7 @@ describe("the raises", () => {
       "medium",
     );
     expect(route({ ...sized, sizes: ["xl"] }).reasons).toContain(
-      "effort: high (size xl raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
     );
   });
 
@@ -222,7 +224,7 @@ describe("the raises", () => {
     });
     expect(r.effort).toBe("high");
     expect(r.reasons).toContain(
-      "effort: high (human-in-the-loop label hitl raised medium)",
+      "effort: high (raised from medium: human-in-the-loop label hitl)",
     );
   });
 
@@ -245,9 +247,9 @@ describe("the raises", () => {
     });
     expect(r.reasons.filter((x) => x.startsWith("effort:"))).toEqual([
       "effort: low (type task)",
-      "effort: medium (flag security raised low)",
-      "effort: high (area auth's mandatory review (sec) raised medium)",
-      "effort: max (size large raised high)",
+      "effort: medium (raised from low: routing.raise.flags, for the item's label security)",
+      "effort: high (raised from medium: area auth's mandatory review (sec))",
+      "effort: max (raised from high: routing.raise.sizes, for the item's size large)",
       "effort: max (human-in-the-loop label hitl: already the highest effort)",
     ]);
   });
@@ -266,7 +268,7 @@ describe("the raises", () => {
     const r = route({ catalog: null });
     expect(r.effort).toBe("max");
     expect(r.reasons).toContain(
-      "effort: high (the catalog cannot be read, so its flags are taken to apply raised medium)",
+      "effort: high (raised from medium: the catalog cannot be read, so its flags are taken to apply)",
     );
   });
 });
@@ -669,7 +671,7 @@ describe("determine_route.ts", () => {
     );
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).reasons).toContain(
-      "effort: high (size xl raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
     );
   });
 
@@ -688,7 +690,7 @@ describe("determine_route.ts", () => {
     );
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).reasons).toContain(
-      "effort: high (size xl raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
     );
   });
 
@@ -702,7 +704,7 @@ describe("determine_route.ts", () => {
     );
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).reasons).toContain(
-      "effort: high (size medium raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size medium)",
     );
   });
 

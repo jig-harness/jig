@@ -53,7 +53,11 @@ import {
 import { detectHarness } from "../../../shared/harness.ts";
 import { runtimeModel } from "../../../shared/model-families.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
-import type { MapEntry } from "../../../shared/rule-matcher.ts";
+import {
+  type MapEntry,
+  matchOne,
+  reason,
+} from "../../../shared/rule-matcher.ts";
 import { applyImpliedClosure } from "../../change-areas/scripts/lib/resolve.ts";
 import type { ChangeAreaCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import {
@@ -170,6 +174,10 @@ export interface Route {
 
 const fold = (label: string) => label.trim().toLowerCase();
 
+const COMPLEX_FLAGS = "routing.complex_flags";
+const RAISE_FLAGS = "routing.raise.flags";
+const RAISE_SIZES = "routing.raise.sizes";
+
 /**
  * The default size raise: the known sizes outside `batch_sizes`, else
  * `[large]`; a size `batch_sizes` names never raises, the fallback included.
@@ -182,12 +190,6 @@ export function defaultRaiseSizes(
   const large = knownSizes.filter((s) => !batchable.has(fold(s)));
   if (large.length > 0) return large;
   return batchable.has("large") ? [] : ["large"];
-}
-
-/** The first of `labels` that `list` names, ignoring case. */
-function firstIn(labels: string[], list: string[]): string | undefined {
-  const wanted = new Set(list.map(fold));
-  return labels.find((l) => wanted.has(fold(l)));
 }
 
 /** Whether `label` is the human-in-the-loop label or one of its facets. */
@@ -205,8 +207,8 @@ function flagRaise(facts: RouteFacts, rules: RoutingRules): string | null {
   // The human-in-the-loop label raises once, in its own class, even where
   // the catalog also lists it as a flag.
   const labels = facts.labels.filter((l) => !isHitl(l, facts.hitl));
-  const flag = firstIn(labels, flags);
-  return flag === undefined ? null : `flag ${flag}`;
+  const match = matchOne(RAISE_FLAGS, { labels: flags }, { labels });
+  return match === null ? null : reason(match);
 }
 
 /** The mandatory-review raise, or `null`. */
@@ -224,8 +226,12 @@ function reviewRaise(facts: RouteFacts, rules: RoutingRules): string | null {
 function sizeRaise(facts: RouteFacts, rules: RoutingRules): string | null {
   const sizes =
     rules.raise.sizes ?? defaultRaiseSizes(facts.knownSizes, facts.batchSizes);
-  const size = firstIn(facts.sizes ?? facts.labels, sizes);
-  return size === undefined ? null : `size ${size}`;
+  const match = matchOne(
+    RAISE_SIZES,
+    { size: sizes },
+    { size: facts.sizes ?? facts.labels },
+  );
+  return match === null ? null : reason(match);
 }
 
 /** The human-in-the-loop raise, or `null`. */
@@ -274,12 +280,15 @@ function sizeOf(facts: RouteFacts): { step: SizeStep; why: string } {
 /** The complex flag the item carries or an area it seeds declares, or `null`. */
 function complexFlag(facts: RouteFacts, rules: RoutingRules): string | null {
   if (rules.complexFlags.length === 0) return null;
-  const label = firstIn(facts.labels, rules.complexFlags);
-  if (label !== undefined) return `flag ${label}`;
+  const rule = { labels: rules.complexFlags };
+  const own = matchOne(COMPLEX_FLAGS, rule, { labels: facts.labels });
+  if (own !== null) return reason(own);
   if (facts.catalog === null)
     return "the catalog cannot be read, so a complex flag is taken to apply";
-  const seeded = firstIn(facts.catalog.seededFlags ?? [], rules.complexFlags);
-  return seeded === undefined ? null : `flag ${seeded} of an area it seeds`;
+  const seeded = matchOne(COMPLEX_FLAGS, rule, {
+    labels: facts.catalog.seededFlags ?? [],
+  });
+  return seeded === null ? null : reason(seeded, "an area the item seeds");
 }
 
 /** The base tier and effort, and the reason for each. */
@@ -331,7 +340,7 @@ function raisedEffort(
       continue;
     }
     step += 1;
-    reasons.push(`effort: ${EFFORTS[step]} (${raise} raised ${before})`);
+    reasons.push(`effort: ${EFFORTS[step]} (raised from ${before}: ${raise})`);
   }
   return EFFORTS[step] as Effort;
 }

@@ -710,10 +710,12 @@ implementation. Skip this check for issues about the repository's own code.
    `routing.types` raised one step each by a flag label, an area's mandatory
    review, a size too large to batch and the `hitl` label, capped at `max`,
    and the tier's family alias for the runtime; `reasons` names the rule
-   behind each part ([configuration reference](../../CONFIGURATION.md#routing)).
+   behind each part, a configuration rule in the wording of
+   [the rule matchers' chapter](../../protocol/rule-matchers.md)
+   ([configuration reference](../../CONFIGURATION.md#routing)).
    Put the tier, the effort, the model and the effort's reasons (its base
    row and every raise in `reasons`) in the status message, e.g.
-   `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
+   `Route: standard, high, sonnet (type bug: medium; raised from medium: routing.raise.flags, for the item's label has-migration)`.
    The route is forwarded only in a [dispatched pass](#dispatched-passes),
    whose first prompt carries the line `route: rules`, and only when
    `declared` is `true`: item 4's delegation then passes `runtime_model` as
