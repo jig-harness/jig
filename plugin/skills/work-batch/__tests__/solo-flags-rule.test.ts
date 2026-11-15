@@ -36,4 +36,9 @@ describe("work_batch.solo_flags", () => {
   it("matches the human-in-the-loop facets ignoring case", () => {
     expect(solo(["HITL:Security"])).toBe("HITL:Security");
   });
+
+  it("matches a facet of a configured prefix written with surrounding space", () => {
+    const spaced = policy({ issue_tracker: { labels: { hitl: " hitl" } } });
+    expect(soloFlagOf([" hitl:security"], spaced)).toBe(" hitl:security");
+  });
 });

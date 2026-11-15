@@ -69,7 +69,7 @@ export function soloFlagOf(
     matchOne(SOLO_FLAGS, { labels: policy.soloFlags }, { labels })?.ruleValue ??
     labels.find((l) =>
       policy.soloFlagPrefixes.some((p) =>
-        l.trim().toLowerCase().startsWith(p.toLowerCase()),
+        l.trim().toLowerCase().startsWith(p.trim().toLowerCase()),
       ),
     ) ??
     null
