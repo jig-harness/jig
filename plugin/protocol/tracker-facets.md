@@ -27,10 +27,12 @@ These answers carry the facets:
   a number from the table below.
 - **`tracker.ts facet-stores`** prints, for each facet, its store and why
   that store is the one in force. A facet with a store also carries the
-  values it keeps; one with none (`store` is `null`) carries neither and
-  says why in `problem`. On GitHub Issues, a facet kept in labels also
-  carries the store it could move to (`moveTo`): the tracker's own field or
-  an issue field of the organization, or `null` for none. It moves nothing.
+  values it keeps; one with none (`store` is `null`) carries no values and,
+  where a cause applies, says why in `problem`. On GitHub Issues, a facet
+  kept in labels also carries the store it could move to (`moveTo`): the
+  tracker's own field or an issue field of the organization, or `null` for
+  none; `moveTo` is absent where neither detection nor the organization's
+  field discovery was read. It moves nothing.
 - **The dispatcher's tick record** carries each facet's store and why, and
   the assigned items that lack a facet the repository keeps.
 
