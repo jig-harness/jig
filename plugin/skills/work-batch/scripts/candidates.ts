@@ -615,9 +615,8 @@ async function runIssueAnchor(
   }
 
   const poolLabels = seedPoolLabels(key, seed, policy, opts);
-  const areas = [
-    ...new Set(poolLabels.map((l) => areaNamedBy(policy, l))),
-  ].filter((a): a is string => a !== undefined);
+  const named = poolLabels.flatMap((l) => areaNamedBy(policy, l) ?? []);
+  const areas = [...new Set(named)];
   const anchor: Anchor = {
     kind: "issue",
     input: key,
