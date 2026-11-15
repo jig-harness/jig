@@ -4,6 +4,7 @@
  * starts on it alone: an empty backlog, or one whose every member an earlier
  * pass saw, starts no pass.
  */
+import type { Database } from "bun:sqlite";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { factsOf } from "./actions/drive-hold.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -205,6 +206,38 @@ export function stewardTrigger(
 /** How many of a repository's latest passes the judged set reads: a member still waiting is in every one since it appeared. */
 const JUDGED_RUNS = 20;
 
+type JudgedRow = { id: string; submitted: number; backlog: string | null };
+
+/** The resumes a pass proposed that the policy refused for now, each only for a pass that was shown it. */
+function refusedOpen(
+  db: Database,
+  rows: readonly JudgedRow[],
+): Set<string | null> {
+  const marks = rows.map(() => "?").join(",");
+  const refused = db
+    .query(
+      `SELECT run, json_extract(value, '$.record') AS record FROM steward_records WHERE run IN (${marks}) AND effect = ? AND json_extract(value, '$.kind') = 'resume'`,
+    )
+    .all(...rows.map((r) => r.id), STEWARD_REFUSED_OPEN) as Array<{
+    run: string;
+    record: string | null;
+  }>;
+  const proposable = new Set<string>();
+  for (const row of rows) {
+    const own: unknown = row.backlog === null ? null : JSON.parse(row.backlog);
+    if (!Array.isArray(own)) continue;
+    for (const m of own)
+      if (m?.kind === "resume" && typeof m.target === "string")
+        proposable.add(`${row.id}\u0000${m.target}`);
+  }
+  // A refusal waits on policy only for a resume its own pass was shown.
+  return new Set(
+    refused
+      .filter((r) => proposable.has(`${r.run}\u0000${r.record}`))
+      .map((r) => r.record),
+  );
+}
+
 /**
  * The members the repository's latest steward passes saw in their backlogs:
  * a pass that submitted, or whose launch (`live`) still holds. A pass that
@@ -227,29 +260,7 @@ export function judgedMembers(
     submitted: number;
     backlog: string | null;
   }>;
-  const marks = rows.map(() => "?").join(",");
-  const refused = db
-    .query(
-      `SELECT run, json_extract(value, '$.record') AS record FROM steward_records WHERE run IN (${marks}) AND effect = ? AND json_extract(value, '$.kind') = 'resume'`,
-    )
-    .all(...rows.map((r) => r.id), STEWARD_REFUSED_OPEN) as Array<{
-    run: string;
-    record: string | null;
-  }>;
-  const proposable = new Set<string>();
-  for (const row of rows) {
-    const own: unknown = row.backlog === null ? null : JSON.parse(row.backlog);
-    if (!Array.isArray(own)) continue;
-    for (const m of own)
-      if (m?.kind === "resume" && typeof m.target === "string")
-        proposable.add(`${row.id}\u0000${m.target}`);
-  }
-  // A refusal waits on policy only for a resume its own pass was shown.
-  const open = new Set(
-    refused
-      .filter((r) => proposable.has(`${r.run}\u0000${r.record}`))
-      .map((r) => r.record),
-  );
+  const open = refusedOpen(db, rows);
   const judged = new Set<string>();
   for (const row of rows) {
     if (row.backlog === null) continue;
