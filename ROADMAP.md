@@ -532,10 +532,9 @@ See the [distribution design](design/distribution.md).
   start it twice; reflection findings parked on a server's host before a
   removal, which today refuses while unsent ones are there; hooks on a
   server's host supervised as they are on a machine; the drive, pickup and
-  review skills checked inside Orca worktrees on a server, as they will be
-  inside Herdr; and the tool and the launcher's Orca provider on Windows, where
-  the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell
-  first.
+  review skills checked inside Orca worktrees on a server; and the tool and
+  the launcher's Orca provider on Windows, where the tool's host steps
+  (`sh`, `test`, `mkdir`) need the host's own shell first.
 - **The mailbox as every session's inbox.** Open the drive mailbox to every
   session the execution line starts once a second mechanical nudge needs it.
 - **Change-area consumer lint.** The

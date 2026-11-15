@@ -90,8 +90,7 @@ restarts the drive.
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a converged drive arming the merge it certified
-  (roadmap item 9); the drive's CI-repair round running `fix-ci`
-  (Later)
+  (roadmap item 9); the drive's CI-repair round running `fix-ci` (Later)
 
 ## A line that runs with nobody at the keyboard
 
@@ -376,8 +375,7 @@ report for each repository and kind.
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
 - **On the roadmap:** a runnable workspace lifecycle for other runtimes
-  (Later); collecting what is
-  only reported, and more kinds (roadmap item 24)
+  (Later); collecting what is only reported, and more kinds (roadmap item 24)
 
 ## One configuration file, read in layers
 
