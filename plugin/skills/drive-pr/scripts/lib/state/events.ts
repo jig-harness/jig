@@ -34,16 +34,8 @@ import type { StateStore } from "./store.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
 import { recordCiAction } from "./ci-actions.ts";
 
-export const EVENT_CAUSES = {
-  restart: ["pass-deadline", "stall"],
-  rearm: [
-    "quota-account",
-    "quota-reset",
-    "window-reopened",
-    "answered",
-    "provisional",
-  ],
-} as const;
+import { EVENT_CAUSES } from "./ledger-values.ts";
+export { EVENT_CAUSES } from "./ledger-values.ts";
 export type EventKind = keyof typeof EVENT_CAUSES | "stop";
 
 export interface DriveEvent {

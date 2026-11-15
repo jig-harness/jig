@@ -23,6 +23,9 @@ import {
   INDEX_SOURCE,
   PLAN_FILE,
   PROTOCOL_DIR,
+  SCHEMA_DIR,
+  schemaFile,
+  schemaOf,
 } from "./chapter.ts";
 import {
   renderChapter,
@@ -30,6 +33,7 @@ import {
   type Splice,
   statusLine,
 } from "./render.ts";
+import { jsonText } from "./json.ts";
 
 export const RULE = "protocol";
 
@@ -45,7 +49,7 @@ export type Output =
       sections: readonly string[];
       current: readonly string[];
     }
-  | { kind: "json"; path: string; data: DataFile; text: string };
+  | { kind: "json"; path: string; data: unknown; text: string };
 
 export interface Plan {
   outputs: Output[];
@@ -221,6 +225,49 @@ function orphanFindings(root: string, chapters: readonly Chapter[]) {
           "add the chapter to tools/protocol/chapters.ts, or remove the file",
         ),
       );
+  const schemas = new Set(
+    chapters.flatMap((chapter) =>
+      (chapter.schemas ?? []).map((schema) => `${schema.name}.json`),
+    ),
+  );
+  for (const name of filesIn(root, SCHEMA_DIR, ".json"))
+    if (!schemas.has(name))
+      out.push(
+        finding(
+          `${SCHEMA_DIR}/${name}`,
+          "a schema file with no declaration in a chapter",
+          "declare the schema with its reader's shape description, or remove the file",
+        ),
+      );
+  return out;
+}
+
+/** A schema filename has one owner and cannot escape the schema directory. */
+function schemaFindings(chapters: readonly Chapter[]): Finding[] {
+  const schemaOwners = new Map<string, string>();
+  const out: Finding[] = [];
+  for (const chapter of chapters) {
+    for (const schema of chapter.schemas ?? []) {
+      if (!/^[a-z][a-z0-9-]*$/.test(schema.name))
+        out.push(
+          finding(
+            chapterFile(chapter.id),
+            `schema ${schema.name} is not a lowercase name`,
+            "give the schema a lowercase filename stem using letters, digits and hyphens",
+          ),
+        );
+      const first = schemaOwners.get(schema.name);
+      if (first !== undefined)
+        out.push(
+          finding(
+            chapterFile(chapter.id),
+            `schema ${schema.name} is declared by ${first} and ${chapter.id}`,
+            "give every published schema one declaration and one owner",
+          ),
+        );
+      schemaOwners.set(schema.name, chapter.id);
+    }
+  }
   return out;
 }
 
@@ -309,6 +356,15 @@ function chapterOutputs(
   return {
     outputs: [
       { kind: "json", path: dataFile(chapter.id), data, text: dataText(data) },
+      ...(chapter.schemas ?? []).map(({ name, shape }) => {
+        const schema = schemaOf(chapter, name, shape);
+        return {
+          kind: "json" as const,
+          path: schemaFile(name),
+          data: schema,
+          text: jsonText(schema),
+        };
+      }),
       ...(markdown.output ? [markdown.output] : []),
     ],
     findings: [
@@ -326,6 +382,7 @@ export function planOutputs(root: string, chapters: readonly Chapter[]): Plan {
   const findings: Finding[] = [
     ...orphanFindings(root, chapters),
     ...takenTwice(chapters),
+    ...schemaFindings(chapters),
   ];
   const outputs: Output[] = [];
   const data = new Map<string, DataFile>();

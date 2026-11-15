@@ -306,7 +306,10 @@ test.skipIf(onWindows)(
       ),
     });
 
-    const report = upgradesSince(started, { gc: gcState(m) });
+    const report = upgradesSince(started, {
+      gc: gcState(m),
+      dispatch: join(m.root, "dispatch"),
+    });
     expect(report.unread).toEqual([]);
     expect(report.entries.map((entry) => entry.outcome)).toEqual([
       "updated",

@@ -29,7 +29,11 @@
  * `drive`, its generation the attempt it claims, and its record names the
  * action, the claiming host's launch record, the host, whether that host owns
  * the repository, the ledger facts the launch acts on and, for a re-drive,
- * the change it re-drives. Its host writes the launch's end onto it (`end`).
+ * the change it re-drives. Its host writes the launch's end onto it (`end`):
+ * the exit, or why it died, with who wrote the run's closing report (`by`,
+ * `none` when it left none) and the report's `cause` when it named one,
+ * never the report's own text, which stays on that host. A follow-up
+ * marker's answer carries the same two beside its outcome.
  *
  *   <!-- jig-dispatch-launch-claim -->
  *   <!-- jig-dispatch-launch-claim-data
@@ -60,6 +64,14 @@ import type {
   SharedStage,
 } from "./shared.ts";
 import { parseMs } from "../time.ts";
+import {
+  REPORT_CAUSES,
+  REPORT_WRITERS,
+  type ReportCause,
+  type ReportWriter,
+} from "../closing-report.ts";
+import { matches } from "../shapes.ts";
+import { FOLLOWUP_RUN_SHAPE } from "./followup-shapes.ts";
 
 /** The shape of a dispatcher's launch record id (`dispatch/lib/launches.ts`). */
 export const LAUNCH_RECORD_ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
@@ -119,6 +131,21 @@ function endedFault(end: Record<string, unknown>): string | null {
     : "its end's exit or outcome does not read";
 }
 
+/** The closing report's writer and cause a launch's end carries, those that read; none on an older end. */
+function reportOfEnd(e: Record<string, unknown>): {
+  by?: ReportWriter;
+  cause?: ReportCause;
+} {
+  return {
+    ...((REPORT_WRITERS as readonly unknown[]).includes(e.by)
+      ? { by: e.by as ReportWriter }
+      : {}),
+    ...((REPORT_CAUSES as readonly unknown[]).includes(e.cause)
+      ? { cause: e.cause as ReportCause }
+      : {}),
+  };
+}
+
 /** A launch's end as written; `null` when it has none. */
 function endOf(end: unknown): LaunchEnd | null {
   if (endFault(end) !== null || end === undefined) return null;
@@ -135,6 +162,16 @@ function endOf(end: unknown): LaunchEnd | null {
     at: String(e.at),
     exit: (e.exit as number | null) ?? null,
     outcome: (e.outcome as TickOutcome | null | undefined) ?? null,
+    ...reportOfEnd(e),
+  };
+}
+
+/** The closing report's writer and cause, as an end or a marker's payload carries them. */
+function writtenReport(end: LaunchEnd): Record<string, unknown> {
+  if (end.state !== "ended") return {};
+  return {
+    ...(end.by === undefined ? {} : { by: end.by }),
+    ...(end.cause === undefined ? {} : { cause: end.cause }),
   };
 }
 
@@ -147,15 +184,22 @@ function writtenEnd(end: LaunchEnd): Record<string, unknown> {
         reason: end.reason,
         ...(end.executed === false ? { executed: false } : {}),
       }
-    : { state: "ended", at: end.at, exit: end.exit, outcome: end.outcome };
+    : {
+        state: "ended",
+        at: end.at,
+        exit: end.exit,
+        outcome: end.outcome,
+        ...writtenReport(end),
+      };
 }
 
 /** The end a person reads on the claim's last line. */
 function endLine(end: LaunchEnd | null): string {
   if (end === null) return "";
   if (end.state === "died") return ` · died: ${end.reason}`;
-  if (end.outcome !== null) return ` · outcome: ${end.outcome}`;
-  return ` · ended ${end.exit === null ? "on a signal" : `exit ${end.exit}`}`;
+  const cause = end.cause === undefined ? "" : ` · cause: ${end.cause}`;
+  if (end.outcome !== null) return ` · outcome: ${end.outcome}${cause}`;
+  return ` · ended ${end.exit === null ? "on a signal" : `exit ${end.exit}`}${cause}`;
 }
 
 // ---------------------------------------------------------------- follow-up
@@ -168,6 +212,7 @@ const NOT_A_RUN = "its record is neither a tick's nor a manual run's";
  * carries one of its own.
  */
 function runFault(payload: Record<string, unknown>): string | null {
+  if (matches(FOLLOWUP_RUN_SHAPE, payload)) return null;
   const { run, record, outcome } = payload;
   if (!isFollowupRun(run)) return NOT_A_RUN;
   if (run === "manual")
@@ -308,7 +353,13 @@ export function manualClaim(done: boolean, post: MarkerPost): ClaimDraft {
 function followupEnd(p: Record<string, unknown>): LaunchEnd | null {
   if (!isOutcomeOf("tick", p.outcome)) return null;
   const at = isTime(p.endedAt) ? p.endedAt : "";
-  return { state: "ended", at, exit: null, outcome: p.outcome };
+  return {
+    state: "ended",
+    at,
+    exit: null,
+    outcome: p.outcome,
+    ...reportOfEnd(p),
+  };
 }
 
 /** What a follow-up marker's record says as a shared record. */
@@ -508,6 +559,7 @@ export function endedClaim(
       ...(p.host === undefined && host !== undefined ? { host } : {}),
       outcome,
       endedAt: end.at,
+      ...writtenReport(end),
     },
     text: `jig dispatch follow-up · record: ${String(p.record)} · outcome: ${outcome}`,
   };

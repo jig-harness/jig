@@ -134,6 +134,18 @@ export const FOLLOWUP_FIELDS = {
     meaning:
       "When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome.",
   },
+  by: {
+    type: "string",
+    carriedBy: { tick: "sometimes" },
+    meaning:
+      "Who wrote the follow-up run's closing report (agent, driver, wrapper, steward or person), or none when it left none, written by its host with the outcome. The report's own text stays on that host.",
+  },
+  cause: {
+    type: "string",
+    carriedBy: { tick: "sometimes" },
+    meaning:
+      "Why the follow-up run fell short, from the closing report's closed list of causes, written by its host with the outcome when the report named one.",
+  },
 } as const satisfies Readonly<Record<string, FollowupField>>;
 
 export type FollowupFieldName = keyof typeof FOLLOWUP_FIELDS;

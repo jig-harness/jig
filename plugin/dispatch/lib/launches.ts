@@ -56,6 +56,7 @@ import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
 import { type KeptReport, readKeptReport } from "./closing-report-store.ts";
+import { readRoundSessions, type RoundSession } from "./round-sessions.ts";
 import {
   type PickupRefusal,
   readRefusal,
@@ -313,6 +314,8 @@ export interface ReadRecord {
   unwritten?: string;
   /** The run's closing report (`closing-report-store.ts`); absent or `null` when it left none. */
   report?: KeptReport | null;
+  /** A drive's pass session ids, round by round (`round-sessions.ts`); absent or empty when it recorded none. */
+  sessions?: RoundSession[];
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -508,6 +511,7 @@ export interface LaunchRow {
   /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
   result_decision?: string | null;
   report?: string | null;
+  sessions?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -579,6 +583,7 @@ function answerOf(
     ...framedOf(row.result_decision),
     ...unwrittenOf(root, row.id, record.token),
     report: readKeptReport(row.report),
+    sessions: readRoundSessions(row.sessions),
   };
 }
 

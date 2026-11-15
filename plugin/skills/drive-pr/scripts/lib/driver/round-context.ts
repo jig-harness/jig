@@ -51,6 +51,18 @@ export interface DriveRoundContext {
   held: DriveLock[];
   witnessWaitHead: string;
   witnessWaitLimit: number;
+  /**
+   * The drive's forwarded status flags that shape what `drive-status.ts`
+   * judges (`--bots-only`, `--no-head-sync`), without the polling ones: the
+   * final re-read sees what the round gate saw (`final-regate.ts`).
+   */
+  statusView: readonly string[];
+  /** Consecutive final re-reads that disagreed with the gate, keyed by `finalRegateKey`. */
+  finalRegates: number;
+  /** The head and pass count `finalRegates` is counting on; `''` before the first. */
+  finalRegateKey: string;
+  /** `DRIVE_PR_FINAL_REGATE_LIMIT`, read once at the start of the drive. */
+  finalRegateLimit: number;
   maxRoundsN: number;
   /** `drive.pass_deadline_retries`, read once at the start of the drive. */
   deadlineRetryBudget: number;

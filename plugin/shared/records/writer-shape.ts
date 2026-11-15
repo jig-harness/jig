@@ -4,20 +4,21 @@
  * which writes a person's answer from the browser, bundles it; the writer a
  * process names for itself is `writer.ts`'s.
  */
-import { isRecord } from "../guards.ts";
+import { type Infer, matches, s } from "../shapes.ts";
 
-export interface Writer {
+export const WRITER_SHAPE = s.object({
   /** The forge login the writer is signed in as, where it knows it. */
-  login?: string;
+  login: s.optional(s.string({ minLength: 1 })),
   /** The host's name; a digest of it on the forge and the tracker. */
-  host: string;
+  host: s.string({ minLength: 1 }),
   /** Linux's boot id (a digest on the forge and the tracker); absent elsewhere. */
-  bootId?: string;
+  bootId: s.optional(s.string()),
   /** The writing process's id. */
-  pid?: number;
+  pid: s.optional(s.integer({ minimum: 1 })),
   /** The writing process's start time, as the process table reports it. */
-  start?: string;
-}
+  start: s.optional(s.string()),
+});
+export type Writer = Infer<typeof WRITER_SHAPE>;
 
 /**
  * The host a record names when a person's browser wrote it, through the
@@ -25,21 +26,14 @@ export interface Writer {
  */
 export const BROWSER_HOST = "dashboard (browser)";
 
-const isText = (v: unknown): v is string => typeof v === "string";
-
 /**
  * A writer read from a record, or `null` when the value is not one. Fields
  * this version does not know are left out, so a newer writer's additions do
  * not make the record unreadable.
  */
 export function readWriter(value: unknown): Writer | null {
-  if (!isRecord(value) || !isText(value.host) || value.host === "") return null;
+  if (!matches(WRITER_SHAPE, value)) return null;
   const { login, bootId: boot, pid, start } = value;
-  if (login !== undefined && (!isText(login) || login === "")) return null;
-  if (boot !== undefined && !isText(boot)) return null;
-  if (pid !== undefined && !(Number.isSafeInteger(pid) && Number(pid) > 0))
-    return null;
-  if (start !== undefined && !isText(start)) return null;
   return {
     ...(login === undefined ? {} : { login }),
     host: value.host,

@@ -1,27 +1,15 @@
 /**
- * The verbs of `jig send`, a closed list in code: for each, the stations
- * that take it, whether it is a person's command, and the arguments it
- * takes. A verb names one record the line already reads; which record, and
- * whose writer writes it, is the planner's (`assign.ts`, `labels.ts`,
- * `answer.ts`, `mailbox.ts`).
+ * Parsing a request to `jig send`: the verb and its arguments, checked
+ * against the verb table (`verb-values.ts`), which says which stations take
+ * each verb, whether it is a person's command and what arguments it takes.
+ * The Jig Protocol's Addresses chapter lists the verbs
+ * (`plugin/protocol/addresses.md`).
  *
- * | Verb | To | The record |
- * | --- | --- | --- |
- * | `assign` | `pickup` | the item assigned to the factory identity, in a dispatch state |
- * | `drive` | `drive` | the `drive` command label |
- * | `rearm` | `drive` | the `rearm` command label for a stopped drive |
- * | `hold`, `release` | `drive`, `followup` | the `hold` command label, added or removed |
- * | `answer <key> <text>`, `answer <key> --approve\|--choose <option>`, `answer --all --approve` | `drive`, `followup`, `pickup` | a comment `answer <key>: <text>` per item (`answer-request.ts`); to a need's decision other than a park's, `--approve` or `--choose` on its pull request or forge issue (`answer-station.ts`) |
- * | `pause`, `resume <directive>`, `stop`, `hold-push` | `drive` | a mailbox directive |
- *
- * A person's command (every verb but the mailbox's) is refused in a session
- * the line started (`shared/launched-session.ts`). An unknown verb, a verb
- * the station does not take, or arguments the verb does not take are usage
- * errors that list the verbs the station takes.
+ * An unknown verb, a verb the station does not take, or arguments the verb
+ * does not take are usage errors that list the verbs the station takes.
  */
 import type { Station } from "../../shared/address.ts";
 import {
-  ANSWER_ARGS,
   type AnswerFlags,
   answerFlagsSet,
   type AnswerRequest,
@@ -31,54 +19,15 @@ import {
   GATE_NAMES,
   type GateName,
 } from "../../skills/drive-pr/scripts/lib/state/mailbox-values.ts";
+import { SEND_VERBS } from "./verb-values.ts";
 
-const VERBS = [
-  "assign",
-  "drive",
-  "rearm",
-  "hold",
-  "release",
-  "answer",
-  "pause",
-  "resume",
-  "stop",
-  "hold-push",
-] as const;
-export type Verb = (typeof VERBS)[number];
+export type Verb = keyof typeof SEND_VERBS;
+const VERBS = Object.keys(SEND_VERBS) as Verb[];
 
 /** The verbs that write a mailbox directive. */
 export type MailboxVerb = "pause" | "resume" | "stop" | "hold-push";
 /** The verbs that write a dispatch label. */
 export type LabelVerb = "drive" | "rearm" | "hold" | "release";
-
-interface VerbSpec {
-  stations: readonly Station[];
-  /** A person's command: refused in a session the line started. */
-  person: boolean;
-  /** Its arguments, as the usage names them. */
-  args: string;
-}
-
-const SPECS: Record<Verb, VerbSpec> = {
-  assign: { stations: ["pickup"], person: true, args: "" },
-  drive: { stations: ["drive"], person: true, args: "" },
-  rearm: { stations: ["drive"], person: true, args: "" },
-  hold: { stations: ["drive", "followup"], person: true, args: "" },
-  release: { stations: ["drive", "followup"], person: true, args: "" },
-  answer: {
-    stations: ["drive", "followup", "pickup"],
-    person: true,
-    args: ANSWER_ARGS,
-  },
-  pause: { stations: ["drive"], person: false, args: "" },
-  resume: {
-    stations: ["drive"],
-    person: false,
-    args: `<${GATE_NAMES.join("|")}>`,
-  },
-  stop: { stations: ["drive"], person: false, args: "" },
-  "hold-push": { stations: ["drive"], person: false, args: "" },
-};
 
 /** One request, its arguments parsed. */
 export type Request =
@@ -89,18 +38,20 @@ export type Request =
   | { verb: "resume"; target: GateName };
 
 export function isVerb(word: string | undefined): word is Verb {
-  return (VERBS as readonly string[]).includes(word ?? "");
+  return Object.hasOwn(SEND_VERBS, word ?? "");
 }
 
 /** Whether `verb` is a person's command, refused in a session the line started. */
 export function isPersonVerb(verb: Verb): boolean {
-  return SPECS[verb].person;
+  return SEND_VERBS[verb].person;
 }
 
 /** The verbs a station takes, with their arguments, for a usage error. */
 function verbsOf(station: Station): string {
-  return VERBS.filter((v) => SPECS[v].stations.includes(station))
-    .map((v) => (SPECS[v].args === "" ? v : `${v} ${SPECS[v].args}`))
+  return VERBS.filter((v) =>
+    (SEND_VERBS[v].stations as readonly Station[]).includes(station),
+  )
+    .map((v) => (SEND_VERBS[v].args === "" ? v : `${v} ${SEND_VERBS[v].args}`))
     .join(", ");
 }
 
@@ -123,7 +74,7 @@ export function parseRequest(
   if (verb === undefined) usage(`name a verb: ${takes}`);
   if (!isVerb(verb))
     usage(`${JSON.stringify(verb)} is not a verb of jig send; ${takes}`);
-  if (!SPECS[verb].stations.includes(station))
+  if (!(SEND_VERBS[verb].stations as readonly Station[]).includes(station))
     usage(`a ${station} address does not take ${verb}; ${takes}`);
   if (verb === "answer") return answerRequest(args, flags, usage);
   const answerOnly = answerFlagsSet(flags);
@@ -136,7 +87,7 @@ export function parseRequest(
       !(GATE_NAMES as readonly string[]).includes(target ?? "")
     )
       usage(
-        `resume names the directive it withdraws: resume ${SPECS.resume.args}`,
+        `resume names the directive it withdraws: resume ${SEND_VERBS.resume.args}`,
       );
     return { verb, target: target as GateName };
   }

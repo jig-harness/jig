@@ -55,16 +55,11 @@ import {
   type Outcome,
 } from "../outcome.ts";
 import { type RecordKind, recordKind } from "./registry.ts";
-import { readWriter, type Writer } from "./writer-shape.ts";
+import { readWriter } from "./writer-shape.ts";
+import { type Infer, matches } from "../shapes.ts";
+import { type ENVELOPE_SHAPE, ENVELOPE_SHAPES } from "./envelope-shape.ts";
 
-export interface Envelope {
-  kind: string;
-  v: number;
-  key: string;
-  writer: Writer;
-  at: string;
-  generation?: number;
-}
+export type Envelope = Infer<typeof ENVELOPE_SHAPE>;
 
 /** One field of the envelope, as a reader outside Jig meets it in the JSON. */
 export interface EnvelopeField {
@@ -170,9 +165,6 @@ function validTime(at: string): boolean {
 /** A hidden marker's name: lowercase words joined by `-`, in `:`-separated parts. */
 const MARKER_NAME = /^[a-z][a-z0-9-]*(?::[a-z0-9-]+)*$/;
 
-const isCount = (v: unknown): v is number =>
-  typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
-
 /** A registered kind whose records carry the envelope. */
 type EnvelopedKind = RecordKind & { key: RegExp };
 
@@ -204,7 +196,7 @@ function kindOf(
 
 /** Why a version is not one `kind` reads, or `null`. */
 function versionFault(v: unknown, kind: RecordKind): Failure<ReadCode> | null {
-  if (!isCount(v) || v < 1)
+  if (!matches(ENVELOPE_SHAPES.v, v))
     return {
       code: "bad-version",
       reason: `version ${shown(v)} is not a positive integer`,
@@ -228,12 +220,13 @@ function fieldFault(
       code: "bad-key",
       reason: `key ${shown(key)} is not a ${kind.name} key`,
     };
-  if (typeof at !== "string" || !validTime(at))
+  if (!matches(ENVELOPE_SHAPES.at, at) || !validTime(at))
     return {
       code: "bad-time",
       reason: `the time ${shown(at)} is not an ISO 8601 time`,
     };
-  return generation === undefined || isCount(generation)
+  return generation === undefined ||
+    matches(ENVELOPE_SHAPES.generation, generation)
     ? null
     : {
         code: "bad-generation",
