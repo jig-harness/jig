@@ -405,6 +405,16 @@ function reportedGuidance(
   return guidance;
 }
 
+/** The review gates for the CLI: those the item's labels meet, and those only its paths could. */
+function reportedGates(
+  labels: string[],
+  paths: string[] | null,
+  routing: AgentRouting,
+): Record<string, unknown> {
+  const gates = resolveGates(routing.gates, labels, paths);
+  return { applied: gates.applied, by_path: gates.byPath };
+}
+
 /** The planned paths `--paths` names, one per line; `null` without it. */
 function readPlannedPaths(file: string | null): string[] | null {
   if (file === null) return null;
@@ -525,8 +535,7 @@ async function main(): Promise<number> {
     const result = determineAgents(labels, title, catalog, routing);
     const paths = readPlannedPaths(parsed.args.values.get("paths") ?? null);
     result.guidance = reportedGuidance(labels, paths, catalog, routing);
-    const gates = resolveGates(routing.gates, labels, paths);
-    result.gates = { applied: gates.applied, by_path: gates.byPath };
+    result.gates = reportedGates(labels, paths, routing);
 
     if (verbose) {
       console.error(`Primary agent: ${String(result.primary_agent)}`);
