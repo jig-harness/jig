@@ -14,6 +14,7 @@ import {
 import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
 import { orcaCommand } from "../shared/orca.ts";
 import { baseDeclaration } from "./git.ts";
+import { orcaTerminalsKind } from "./kinds/orca-terminals.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
 import { stateRoot } from "./receipts.ts";
 import { scratchKind } from "./kinds/scratch.ts";
@@ -262,9 +263,9 @@ export async function collectionPlan(options: {
   if (!configuration.ok) return configuration;
   const { machine } = configuration.value;
   const selected = options.repository ? resolve(options.repository) : undefined;
-  // Receipts are machine-local: planning them must not fetch any base.
+  // Machine kinds are machine-local: planning them must not fetch any base.
   const chosen =
-    options.kind === "receipts"
+    options.kind === "receipts" || options.kind === "orca-terminals"
       ? []
       : selected
         ? await selection(selected, options.collect, machine)
@@ -287,6 +288,14 @@ export async function collectionPlan(options: {
   }
   if (!selected && machine.receipts && !machine.disabled.includes("receipts"))
     kinds.push(receiptsKind(machine.receipts_days));
+  const orca = machineOrca(machine);
+  if (
+    !selected &&
+    orca !== undefined &&
+    machine.orca !== undefined &&
+    !machine.disabled.includes("orca-terminals")
+  )
+    kinds.push(orcaTerminalsKind(orca, machine.orca.terminal_idle_hours));
   return ok(
     kinds.filter((kind) => !options.kind || kind.name === options.kind),
   );

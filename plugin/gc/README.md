@@ -53,6 +53,7 @@ user's own fetches. See
 | `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Registered test scopes can be collected only when their persistent registration proves every holder gone; incomplete registrations and other scratch remain report-only.                                                                                                                                                                                                                                                                                                                  |
 | `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded, except the worktrees an agent tool makes inside the clone ([below](#worktrees-an-agent-tool-makes)). Ignored local content needs preservation evidence unless a rule accounts for it ([below](#ignored-content)); the receipt lists every path set aside and the rule that set it aside. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); an agent tool's worktree is marked `runtime: agent-tool` and collected with git; any other eligible worktree remains report-only until the opener shares session admission. |
 | `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. Removes the one-time archives of collected worktrees' ignored content past the same retention.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `orca-terminals` | Machine kind, planned when the machine entry names Orca's command (`orca.command`); closes [run tabs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) whose run was killed before it closed its own tab, and parked run tabs nobody returned to ([below](#run-tabs)). |
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
@@ -228,6 +229,35 @@ so one with commits of its own is kept. A tree detached at a commit of the
 base branch is judged by the pull request the forge lists as bringing that
 commit in, whose commits a remote branch keeps; where the forge lists none,
 it is judged as a tree without a pull request.
+
+### Run tabs
+
+A run Jig starts in an Orca terminal tab closes its own tab when it ends
+with nothing left for a person, and records the tab under
+`~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`). A run
+killed before its end (SIGKILL, a host reboot) leaves the tab and its record
+behind, and a tab parked for a person stays until someone closes it. The
+`orca-terminals` kind joins those records to `orca terminal list --json`,
+read with the machine entry's `orca.command`, and proves each tab:
+
+- **kept** while its shell is gone or its PID was reused (the record no
+  longer proves the tab is the run's), while the shell has any child process
+  (a command someone typed into it), or while its last output in Orca's
+  listing, or its opening when Orca has no output time, falls inside the
+  guard: `orca.terminal_idle_hours`, 24 hours by default, which the machine
+  can lengthen and never shorten. A process table that cannot be read counts
+  every tab as busy.
+- **closed** once it is idle past the guard. Collection reads Orca's listing
+  and the process table again, then closes the recorded terminal with
+  `orca terminal close --terminal <handle>`, never the whole tab, so a pane a
+  person added beside it stays. Orca refusing the close is recorded as live.
+- **forgotten** when Orca's listing no longer names it: only the record is
+  deleted, and Orca is not called. A listing that leaves out a host or is cut
+  short proves nothing about a tab it does not name, which stays
+  `unverified`.
+
+A report (`jig gc --kind orca-terminals`) lists every recorded tab with its
+proof and closes nothing. A tab Jig did not record is never touched.
 
 ### Worktrees Orca manages
 

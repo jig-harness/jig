@@ -41,6 +41,7 @@ const KINDS = [
   "tool-state",
   "scratch",
   "receipts",
+  "orca-terminals",
 ] as const satisfies readonly KindName[];
 
 /** A day's receipts (`2026-10-31`) or one run's id, as `receiptPaths` names them. */

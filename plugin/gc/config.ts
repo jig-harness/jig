@@ -11,8 +11,10 @@ import type { KindName } from "./types.ts";
 import { DEFAULT_ARCHIVE_MAX_BYTES } from "./legacy-archive.ts";
 
 const REPOSITORY_KINDS = ["worktrees", "tool-state", "scratch"] as const;
+/** The kinds that belong to the machine, not to a repository. */
+const MACHINE_KINDS = ["receipts", "orca-terminals"] as const;
 export interface Declaration {
-  kinds: Exclude<KindName, "receipts">[];
+  kinds: Exclude<KindName, (typeof MACHINE_KINDS)[number]>[];
   worktree_roots: string[];
   scratch_prefixes: string[];
 }
@@ -34,8 +36,12 @@ export interface MachineConfig {
   min_free_bytes: number;
   /** The most the one-time archive of one worktree's ignored content may hold; 0 archives nothing. */
   archive_max_bytes: number;
-  /** Orca's command, for a run no Orca terminal started (the scheduler's). */
-  orca?: { command: string };
+  /**
+   * Orca's command, for a run no Orca terminal started (the scheduler's),
+   * and the hours a run tab must be idle before the `orca-terminals` kind
+   * closes it.
+   */
+  orca?: { command: string; terminal_idle_hours: number };
 }
 /** A configuration gc refuses: the run collects nothing and exits 2. */
 type Configured<T> = Outcome<T, "configuration">;
@@ -93,7 +99,7 @@ function kindList(value: unknown, machine: boolean): Configured<KindName[]> {
   const result = list(value, "gc.kinds");
   if (!result.ok) return result;
   const allowed: readonly string[] = machine
-    ? [...REPOSITORY_KINDS, "receipts"]
+    ? [...REPOSITORY_KINDS, ...MACHINE_KINDS]
     : REPOSITORY_KINDS;
   if (result.value.some((kind) => !allowed.includes(kind)))
     return refused(`gc.kinds supports ${allowed.join(", ")}`);
@@ -283,16 +289,28 @@ export function parseMachine(value: unknown): Configured<MachineConfig> {
  * Orca's command as an absolute path: the scheduler's `PATH` is not the
  * shell's, so a bare name could find another program or none.
  */
-function orcaEntry(value: unknown): Configured<{ command: string }> {
+function orcaEntry(
+  value: unknown,
+): Configured<NonNullable<MachineConfig["orca"]>> {
   const orca = mapping(value, "gc.orca");
   if (!orca.ok) return orca;
-  const known = keys(orca.value, ["command"], "gc.orca");
+  const known = keys(orca.value, ["command", "terminal_idle_hours"], "gc.orca");
   if (!known.ok) return known;
   const command = orca.value.command;
   if (typeof command !== "string" || !isAbsolute(command))
     return refused("gc.orca.command must be an absolute path");
-  return ok({ command });
+  // The default is the shortest guard: machine policy can only lengthen it.
+  const hours = integer(
+    orca.value.terminal_idle_hours ?? DEFAULT_TERMINAL_IDLE_HOURS,
+    "gc.orca.terminal_idle_hours",
+    DEFAULT_TERMINAL_IDLE_HOURS,
+    8760,
+  );
+  if (!hours.ok) return hours;
+  return ok({ command, terminal_idle_hours: hours.value });
 }
+/** Hours a run tab stays idle before the `orca-terminals` kind closes it. */
+const DEFAULT_TERMINAL_IDLE_HOURS = 24;
 /** The configuration gc runs with: the machine's policy and the repository's declaration. */
 export interface GcConfiguration {
   machine: MachineConfig;
