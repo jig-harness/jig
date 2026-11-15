@@ -2,7 +2,7 @@
  * What an ended pickup record still holds: a batch pass that claimed some of
  * its members holds only those, whatever its result, so the members it never
  * claimed are wanted again; an item an ended record holds with no rule to
- * release it is a framed need; and an epic's one-child slot is never given
+ * release it is a framed need; and a slot of an epic's width is never given
  * to a child an ended record keeps from starting.
  */
 import { afterEach, describe, expect, it } from "bun:test";

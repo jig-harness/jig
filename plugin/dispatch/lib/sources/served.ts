@@ -35,6 +35,7 @@ import {
   type PassedChild,
   type PassOver,
   parkedOnPerson,
+  takeUnreadSlot,
   serializeEpics,
   summarizeEpics,
   type EpicWalk,
@@ -47,6 +48,7 @@ import {
   type UnlabeledMode,
   unlabeledOutcome,
 } from "./served-repo.ts";
+import { freshAuthority } from "./served-authority.ts";
 import { planKeys, servedPlan, type ServedPlan } from "./served-plan.ts";
 import {
   type ServedView,
@@ -102,6 +104,8 @@ export interface ServedOptions extends ServedPolicy {
   bound?: import("./tracker-facets.ts").FacetBound;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
+  /** `dispatch.epic_width`: how many children of an epic with no execution plan are under way at once. */
+  epicWidth?: number;
   /** Why this machine's launch records keep an item from starting, so it takes no epic's slot. */
   passOver?: PassOver;
 }
@@ -115,8 +119,10 @@ const itemOf = (i: PoolIssue) => ({
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
-  /** The one-at-a-time constraint of each child of an epic with no execution plan, whoever reaches the child first. */
+  /** The width constraint of each child of an epic with no execution plan, whoever reaches the child first. */
   serials: Map<string, Serial>;
+  /** Items whose failed read is already recorded, so a later visit does not report it again. */
+  reported: Set<string>;
 }
 
 /** What one served identity's queue gave: its claims, its holds and candidates, and the limit that stopped it. */
@@ -220,7 +226,11 @@ export async function readServedPickups(
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
-  const shared: EpicState = { walks: [], serials: new Map() };
+  const shared: EpicState = {
+    walks: [],
+    serials: new Map(),
+    reported: new Set(),
+  };
   let limited: PersonReading["limited"] = null;
   if (options.repoScope?.invalid !== undefined)
     out.unplaced.push({
@@ -258,6 +268,7 @@ export async function readServedPickups(
   const ranked = serializeEpics(
     rankQueue(candidates),
     out.unplaced,
+    options.epicWidth,
     options.passOver,
     passed,
   );
@@ -380,6 +391,7 @@ interface WalkContext {
   seen: Set<string>;
   walks: EpicWalk[];
   serials: Map<string, Serial>;
+  reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
 interface Found {
@@ -393,10 +405,9 @@ interface Found {
 }
 
 /**
- * Visit the roots, then each generation of children, every node of a
- * generation at once so the reads they ask for leave together; what each
- * found is merged in node order into `all`. A rate-limited read ends the walk,
- * leaving what the earlier generations found in `all`.
+ * Visit the roots, then each generation of children at once so their reads
+ * leave together, merging each node's finds in order into `all`. A
+ * rate-limited read ends the walk with the earlier generations' finds in `all`.
  */
 async function walk(
   ctx: WalkContext,
@@ -509,7 +520,19 @@ async function enqueueChildren(
   let serial: Serial | undefined;
   let selection: ServedPlan;
   try {
-    const live = await childStates(ctx, children, meta);
+    const planned = servedPlan(
+      meta.description ?? "",
+      issue.identifier,
+      {},
+      options.executionPlanBlock,
+    ).present;
+    const live = await childStates(
+      ctx,
+      children,
+      meta,
+      found,
+      planned ? undefined : unread,
+    );
     selection = servedPlan(
       meta.description ?? "",
       issue.identifier,
@@ -519,26 +542,34 @@ async function enqueueChildren(
     const parked = selection.present
       ? []
       : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
-    const busy = children.find(
-      (c) => c.state.type === "started" && !parked.includes(c),
-    );
+    const busy = children
+      .filter(
+        (c) =>
+          c.state.type === "started" &&
+          !parked.includes(c) &&
+          !unread.includes(c.identifier),
+      )
+      .map((c) => c.identifier);
     ctx.walks.push({
       key: issue.identifier,
       children: children.map((c) => c.identifier),
       unread,
-      working: busy !== undefined,
+      working: children.some(
+        (c) => c.state.type === "started" && !parked.includes(c),
+      ),
       parked: parked.map((c) => c.identifier),
     });
     serial = selection.present
       ? undefined
-      : { epic: issue.identifier, busy: busy?.identifier, unread: unread[0] };
+      : { epic: issue.identifier, busy, unread };
   } catch (error) {
     // Setup failed: no sibling starts on a guess, and a directly assigned child is held too.
     for (const kept of meta.children)
       ctx.serials.set(kept.identifier, {
         epic: issue.identifier,
-        busy: undefined,
-        unread: meta.children[0]?.identifier ?? issue.identifier,
+        busy: [],
+        unread: [],
+        unknown: meta.children[0]?.identifier ?? issue.identifier,
       });
     throw error;
   }
@@ -552,16 +583,15 @@ async function enqueueChildren(
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
-      planHold: childPlanHold(selection, child.identifier, unread),
+      planHold: childPlanHold(selection, child.identifier),
     });
   }
 }
 
 /**
- * Whether the walk passes this node by: already seen, nothing to start and no
- * epic to walk, another repository's item, or an item no label places that
- * the team's default repository starts (an epic is still walked, its
- * children carry their own labels).
+ * Whether the walk passes this node by: seen, nothing to start and no epic to
+ * walk, another repository's item, or one no label places that the default
+ * repository starts (an epic is still walked; its children carry labels).
  */
 function leavesNode(
   issue: PoolIssue,
@@ -619,7 +649,8 @@ async function visitNode(
   } catch (error) {
     if (isRateLimited(error)) throw error;
     if (ctx.view.scope !== undefined && isUnavailable(error)) throw error;
-    unreadable(issue, failureText(error), found, [error]);
+    if (!ctx.reported.has(issue.identifier))
+      unreadable(issue, failureText(error), found, [error]);
   }
   return found;
 }
@@ -743,11 +774,13 @@ function nodeHold(
     : null;
 }
 
-/** The live state of an epic's children and the issues its plan names, read together. */
+/** The live state of an epic's children and the issues its plan names, read together; `unread` is set for an epic with no plan, where an unreadable child takes one slot. */
 async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
   meta: Metadata,
+  found: Found,
+  unread?: string[],
 ): Promise<Record<string, LiveIssue>> {
   const { tracker, identity, options, cache, view } = ctx;
   const live: Record<string, LiveIssue> = {};
@@ -762,7 +795,9 @@ async function childStates(
         children.find((c) => c.identifier === key) ?? (await view.pool(key)),
     ),
   );
-  const infos = await Promise.all(
+  // Every read settles, and each failure is recorded as observed, before a
+  // wall rejects: a sibling's slower failure is not lost to a faster limit.
+  const settledInfos = await Promise.allSettled(
     read.map((child) =>
       child === null || child.truncated.length
         ? null
@@ -773,8 +808,32 @@ async function childStates(
             cache,
             view.held(child.identifier)?.relations ?? null,
             view,
-          ),
+          ).catch((error: unknown) => {
+            // An epic with a plan keeps the failure: its consistency needs this read.
+            if (unread === undefined) return Promise.reject(error);
+            return takeUnreadSlot(unread, child.identifier, error, (e) => {
+              // Recorded when observed: a later visit may never happen.
+              if (ctx.reported.has(child.identifier)) return;
+              ctx.reported.add(child.identifier);
+              unreadable(child, failureText(e), found, [e]);
+            });
+          }),
     ),
+  );
+  // A rate limit outranks an ordinary failure, whichever child rejected first:
+  // only the limit carries the reset time the walk must stop on.
+  const rejected = settledInfos.filter(
+    (r): r is PromiseRejectedResult => r.status === "rejected",
+  );
+  const wall = rejected.find((r) => isRateLimited(r.reason)) ?? rejected.at(0);
+  if (wall !== undefined) {
+    // Only the selected wall propagates: every other ordinary failure is kept as this node's.
+    for (const r of rejected)
+      if (r !== wall && !isRateLimited(r.reason)) itemFailed(found, r.reason);
+    return Promise.reject(wall.reason);
+  }
+  const infos = settledInfos.map((r) =>
+    r.status === "fulfilled" ? r.value : null,
   );
   const blockersOf = new Map<string, string[]>();
   keys.forEach((key, i) => {
@@ -802,71 +861,6 @@ async function childStates(
   return live;
 }
 
-async function freshAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  ancestor?: string,
-): Promise<string | null> {
-  return ancestor === undefined
-    ? directAuthority(tracker, issue, identity)
-    : inheritedAuthority(tracker, issue, identity, ancestor);
-}
-
-async function directAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-): Promise<string | null> {
-  const user = await tracker.user(identity);
-  if (issue.assignee?.id !== user.id) return "the served assignment changed";
-  if (!(await tracker.assignedBy(issue.identifier, identity)).trusted)
-    return "the assigner cannot write";
-  return null;
-}
-
-async function inheritedAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  ancestor: string,
-): Promise<string | null> {
-  if (issue.assignee !== null)
-    return "the inherited item has acquired an assignee";
-  const user = await tracker.user(identity);
-  const seen = new Set<string>();
-  let current: PoolIssue | null = issue;
-  for (;;) {
-    if (current === null || current.truncated.length)
-      return "the inherited ancestry cannot be read completely";
-    if (seen.has(current.identifier) || seen.size >= 100)
-      return "the inherited ancestry is cyclic or too deep";
-    seen.add(current.identifier);
-    if (current.identifier === ancestor)
-      return ancestorChanged(tracker, current, user.id, identity);
-    if (current.assignee !== null)
-      return "the inherited ancestry assignment changed";
-    const full = await tracker.getIssue(current.identifier);
-    if (full === null || full.parent === null)
-      return "the inherited ancestor is no longer live";
-    current = await tracker.poolIssue(full.parent.identifier);
-  }
-}
-
-async function ancestorChanged(
-  tracker: Tracker,
-  ancestor: PoolIssue,
-  userId: string,
-  identity: string,
-): Promise<string | null> {
-  if (
-    ancestor.assignee?.id !== userId ||
-    !(await tracker.assignedBy(ancestor.identifier, identity)).trusted
-  )
-    return "the inherited assignment changed";
-  return null;
-}
-
 function candidateOf(
   node: Pending,
   meta: Metadata,
@@ -886,10 +880,7 @@ function candidateOf(
   };
 }
 
-/**
- * Why a node starts nothing now. A node held only by open blockers queues
- * the blockers it may pull forward, so the item waits on work that runs.
- */
+/** Why a node starts nothing now; one held only by open blockers queues the blockers it may pull forward. */
 async function heldReason(
   ctx: WalkContext,
   node: Pending,
