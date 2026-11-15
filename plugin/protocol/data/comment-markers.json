@@ -577,5 +577,2649 @@
       "writtenBy": null,
       "meaning": "For a record rewritten in place, or a claim on one round of something, a count: one past the highest the writer had read, or the round it claims."
     }
-  ]
+  ],
+  "schemas": {
+    "record-envelope": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "v": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "key": {
+          "type": "string"
+        },
+        "writer": {
+          "type": "object",
+          "properties": {
+            "login": {
+              "type": "string",
+              "minLength": 1
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bootId": {
+              "type": "string"
+            },
+            "pid": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "start": {
+              "type": "string"
+            }
+          },
+          "required": ["host"],
+          "additionalProperties": true
+        },
+        "at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["kind", "v", "key", "writer", "at"],
+      "additionalProperties": true
+    },
+    "drive-ledger": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "drive-ledger"
+                },
+                "v": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2
+                },
+                "key": {
+                  "type": "string",
+                  "pattern": "^[1-9]\\d*$"
+                },
+                "writer": {
+                  "type": "object",
+                  "properties": {
+                    "login": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "host": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "bootId": {
+                      "type": "string"
+                    },
+                    "pid": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "start": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["host"],
+                  "additionalProperties": true
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["kind", "v", "key", "writer", "at"],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ledgerVersion": {
+                  "enum": [1, 2]
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1.7976931348623157e308
+                },
+                "pr": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "round": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "attempts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "attemptsHead": {
+                  "type": "string"
+                },
+                "deadlineRetries": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "lastCountedHead": {
+                  "type": "string"
+                },
+                "verifiedSha": {
+                  "type": "string"
+                },
+                "readyMarkedRound": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "parked": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "kind": {
+                        "enum": ["thread", "finding"]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "person": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "class": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]*$"
+                      },
+                      "record": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "decision": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": true
+                      },
+                      "digest": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{12}$"
+                      }
+                    },
+                    "required": ["key", "kind", "reason", "round"],
+                    "additionalProperties": true
+                  }
+                },
+                "held": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "kind": {
+                        "enum": ["thread", "finding"]
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": -1,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "actor": {
+                        "type": "string"
+                      },
+                      "outcome": {
+                        "enum": ["accepted", "moot"]
+                      },
+                      "commentUrl": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "verifiedSha": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["key", "kind", "round", "actor"],
+                    "additionalProperties": true
+                  }
+                },
+                "quotaPark": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {},
+                      "required": [],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "takeovers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "fromActor": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^wt-[0-9a-f]{16}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "toActor": {
+                        "type": "string",
+                        "pattern": "^wt-[0-9a-f]{16}$"
+                      },
+                      "verdict": {
+                        "enum": ["WEDGED", "DEAD", "STALE"]
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "reopened": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[^\\r\\n]+$"
+                        }
+                      },
+                      "reopenFailed": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[^\\r\\n]+$"
+                        }
+                      },
+                      "reconciled": {
+                        "type": "boolean"
+                      },
+                      "vanishedTree": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "fromActor",
+                      "toActor",
+                      "verdict",
+                      "round",
+                      "reopened"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "claims": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "clone": {
+                        "type": "string"
+                      },
+                      "generation": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      }
+                    },
+                    "required": ["id", "clone", "generation"],
+                    "additionalProperties": true
+                  }
+                },
+                "decisions": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1.7976931348623157e308
+                          },
+                          "level": {
+                            "enum": ["attended", "unattended", "wide"]
+                          },
+                          "what": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "record": {
+                            "type": "string"
+                          },
+                          "reverse": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "class": {
+                            "enum": [
+                              "file-issue",
+                              "defer-without-tracker",
+                              "decide-reversible",
+                              "decide-underdetermined"
+                            ]
+                          },
+                          "key": false,
+                          "outcome": false,
+                          "reversed": false
+                        },
+                        "required": [
+                          "at",
+                          "round",
+                          "level",
+                          "what",
+                          "record",
+                          "reverse",
+                          "class"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1.7976931348623157e308
+                          },
+                          "level": {
+                            "enum": ["attended", "unattended", "wide"]
+                          },
+                          "what": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "record": {
+                            "type": "string"
+                          },
+                          "reverse": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "class": {
+                            "const": "decide-provisional"
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^\\S+$"
+                          },
+                          "outcome": false,
+                          "reversed": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "by": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["at", "by", "url"],
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "round",
+                          "level",
+                          "what",
+                          "record",
+                          "reverse",
+                          "class",
+                          "key"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1.7976931348623157e308
+                          },
+                          "level": {
+                            "enum": ["attended", "unattended", "wide"]
+                          },
+                          "what": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "record": {
+                            "type": "string"
+                          },
+                          "reverse": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "class": {
+                            "const": "provisional-reply"
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^\\S+$"
+                          },
+                          "outcome": {
+                            "enum": ["rejected", "wont-fix", "deferred"]
+                          },
+                          "reversed": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "by": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["at", "by", "url"],
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "round",
+                          "level",
+                          "what",
+                          "record",
+                          "reverse",
+                          "class",
+                          "key",
+                          "outcome"
+                        ],
+                        "additionalProperties": true
+                      }
+                    ]
+                  }
+                },
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "kind": {
+                            "const": "restart"
+                          },
+                          "cause": {
+                            "enum": ["pass-deadline", "stall"]
+                          },
+                          "leftWork": false,
+                          "tree": false
+                        },
+                        "required": ["at", "round", "kind", "cause"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "kind": {
+                            "const": "rearm"
+                          },
+                          "cause": {
+                            "enum": [
+                              "quota-account",
+                              "quota-reset",
+                              "window-reopened",
+                              "answered",
+                              "provisional"
+                            ]
+                          },
+                          "leftWork": false,
+                          "tree": false
+                        },
+                        "required": ["at", "round", "kind", "cause"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "kind": {
+                            "const": "stop"
+                          },
+                          "cause": {
+                            "type": "string",
+                            "pattern": "^(\\d+|unknown)$"
+                          },
+                          "leftWork": {
+                            "type": "boolean"
+                          },
+                          "tree": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": ["at", "round", "kind", "cause"],
+                        "additionalProperties": true
+                      }
+                    ]
+                  }
+                },
+                "ciActions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "action": {
+                        "enum": ["rerun", "repair"]
+                      },
+                      "detail": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      }
+                    },
+                    "required": ["at", "round", "action", "detail"],
+                    "additionalProperties": true
+                  },
+                  "maxItems": 10
+                },
+                "rulings": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$"
+                          },
+                          "contextAt": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "number"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "verdict": {
+                            "enum": ["fix-now", "rejected", "wont-fix", "defer"]
+                          },
+                          "class": false,
+                          "humanDecision": {
+                            "const": false
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "round",
+                          "at",
+                          "verdict",
+                          "humanDecision"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$"
+                          },
+                          "contextAt": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "number"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "verdict": {
+                            "const": "escalate"
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "humanDecision": {
+                            "const": false
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "round",
+                          "at",
+                          "verdict",
+                          "class",
+                          "humanDecision"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$"
+                          },
+                          "contextAt": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "number"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "verdict": {
+                            "const": "escalate"
+                          },
+                          "class": {
+                            "const": "human-decision"
+                          },
+                          "humanDecision": {
+                            "const": true
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "round",
+                          "at",
+                          "verdict",
+                          "class",
+                          "humanDecision"
+                        ],
+                        "additionalProperties": true
+                      }
+                    ]
+                  }
+                },
+                "resolvedParks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "kind": {
+                        "enum": ["thread", "finding"]
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "class": {
+                        "type": "string"
+                      },
+                      "digest": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{12}$"
+                      },
+                      "parkedAt": {
+                        "type": "string"
+                      },
+                      "outcome": {
+                        "enum": ["answered", "provisional"]
+                      },
+                      "answers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "author": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "type": "string"
+                            },
+                            "bodyHash": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{12}$"
+                            },
+                            "stale": {
+                              "const": true
+                            },
+                            "choice": {
+                              "type": "object",
+                              "properties": {
+                                "option": {
+                                  "type": "string"
+                                },
+                                "recommended": {
+                                  "type": "boolean"
+                                },
+                                "form": {
+                                  "enum": ["approve", "choose"]
+                                },
+                                "digest": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{12}$"
+                                },
+                                "note": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["option", "recommended", "form"],
+                              "additionalProperties": true
+                            }
+                          },
+                          "required": ["author", "at", "url"],
+                          "additionalProperties": true
+                        }
+                      },
+                      "answeredAt": {
+                        "type": "string"
+                      },
+                      "resolvedAt": {
+                        "type": "string"
+                      },
+                      "repairStartedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "kind",
+                      "reason",
+                      "parkedAt",
+                      "outcome",
+                      "answers",
+                      "resolvedAt"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "driver": {
+                  "type": "object",
+                  "properties": {
+                    "actor": {
+                      "type": "string"
+                    },
+                    "clone": {
+                      "type": "string"
+                    },
+                    "heartbeat": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": ["running", "stopped"]
+                    },
+                    "exit": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1.7976931348623157e308
+                    },
+                    "personStop": {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["at", "reason"],
+                      "additionalProperties": true
+                    },
+                    "recoveryVersion": {
+                      "const": 1
+                    },
+                    "started": {
+                      "type": "string"
+                    },
+                    "position": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1.7976931348623157e308
+                    }
+                  },
+                  "required": ["actor", "clone", "heartbeat", "state"],
+                  "additionalProperties": true
+                },
+                "narrative": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cut": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "generation",
+                "pr",
+                "round",
+                "attempts",
+                "attemptsHead",
+                "deadlineRetries",
+                "phase",
+                "lastCountedHead",
+                "verifiedSha",
+                "readyMarkedRound",
+                "parked",
+                "held",
+                "quotaPark",
+                "takeovers",
+                "claims",
+                "decisions",
+                "driver",
+                "narrative",
+                "cut"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ledgerVersion": {
+              "enum": [1, 2]
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1.7976931348623157e308
+            },
+            "pr": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "round": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "attempts": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "attemptsHead": {
+              "type": "string"
+            },
+            "deadlineRetries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "phase": {
+              "type": "string"
+            },
+            "lastCountedHead": {
+              "type": "string"
+            },
+            "verifiedSha": {
+              "type": "string"
+            },
+            "readyMarkedRound": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "parked": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\r\\n]+$"
+                  },
+                  "kind": {
+                    "enum": ["thread", "finding"]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "person": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "class": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "record": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "decision": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": true
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{12}$"
+                  }
+                },
+                "required": ["key", "kind", "reason", "round"],
+                "additionalProperties": true
+              }
+            },
+            "held": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "enum": ["thread", "finding"]
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": -1,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "actor": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": ["accepted", "moot"]
+                  },
+                  "commentUrl": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "verifiedSha": {
+                    "type": "string"
+                  }
+                },
+                "required": ["key", "kind", "round", "actor"],
+                "additionalProperties": true
+              }
+            },
+            "quotaPark": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "takeovers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "fromActor": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^wt-[0-9a-f]{16}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "toActor": {
+                    "type": "string",
+                    "pattern": "^wt-[0-9a-f]{16}$"
+                  },
+                  "verdict": {
+                    "enum": ["WEDGED", "DEAD", "STALE"]
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "reopened": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\r\\n]+$"
+                    }
+                  },
+                  "reopenFailed": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\r\\n]+$"
+                    }
+                  },
+                  "reconciled": {
+                    "type": "boolean"
+                  },
+                  "vanishedTree": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "at",
+                  "fromActor",
+                  "toActor",
+                  "verdict",
+                  "round",
+                  "reopened"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "clone": {
+                    "type": "string"
+                  },
+                  "generation": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  }
+                },
+                "required": ["id", "clone", "generation"],
+                "additionalProperties": true
+              }
+            },
+            "decisions": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "level": {
+                        "enum": ["attended", "unattended", "wide"]
+                      },
+                      "what": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "record": {
+                        "type": "string"
+                      },
+                      "reverse": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "class": {
+                        "enum": [
+                          "file-issue",
+                          "defer-without-tracker",
+                          "decide-reversible",
+                          "decide-underdetermined"
+                        ]
+                      },
+                      "key": false,
+                      "outcome": false,
+                      "reversed": false
+                    },
+                    "required": [
+                      "at",
+                      "round",
+                      "level",
+                      "what",
+                      "record",
+                      "reverse",
+                      "class"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "level": {
+                        "enum": ["attended", "unattended", "wide"]
+                      },
+                      "what": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "record": {
+                        "type": "string"
+                      },
+                      "reverse": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "class": {
+                        "const": "decide-provisional"
+                      },
+                      "key": {
+                        "type": "string",
+                        "pattern": "^\\S+$"
+                      },
+                      "outcome": false,
+                      "reversed": {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "by": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["at", "by", "url"],
+                        "additionalProperties": true
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "round",
+                      "level",
+                      "what",
+                      "record",
+                      "reverse",
+                      "class",
+                      "key"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "level": {
+                        "enum": ["attended", "unattended", "wide"]
+                      },
+                      "what": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "record": {
+                        "type": "string"
+                      },
+                      "reverse": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "class": {
+                        "const": "provisional-reply"
+                      },
+                      "key": {
+                        "type": "string",
+                        "pattern": "^\\S+$"
+                      },
+                      "outcome": {
+                        "enum": ["rejected", "wont-fix", "deferred"]
+                      },
+                      "reversed": {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "by": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["at", "by", "url"],
+                        "additionalProperties": true
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "round",
+                      "level",
+                      "what",
+                      "record",
+                      "reverse",
+                      "class",
+                      "key",
+                      "outcome"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "const": "restart"
+                      },
+                      "cause": {
+                        "enum": ["pass-deadline", "stall"]
+                      },
+                      "leftWork": false,
+                      "tree": false
+                    },
+                    "required": ["at", "round", "kind", "cause"],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "const": "rearm"
+                      },
+                      "cause": {
+                        "enum": [
+                          "quota-account",
+                          "quota-reset",
+                          "window-reopened",
+                          "answered",
+                          "provisional"
+                        ]
+                      },
+                      "leftWork": false,
+                      "tree": false
+                    },
+                    "required": ["at", "round", "kind", "cause"],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "const": "stop"
+                      },
+                      "cause": {
+                        "type": "string",
+                        "pattern": "^(\\d+|unknown)$"
+                      },
+                      "leftWork": {
+                        "type": "boolean"
+                      },
+                      "tree": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["at", "round", "kind", "cause"],
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            },
+            "ciActions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "action": {
+                    "enum": ["rerun", "repair"]
+                  },
+                  "detail": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "required": ["at", "round", "action", "detail"],
+                "additionalProperties": true
+              },
+              "maxItems": 10
+            },
+            "rulings": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "contextAt": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "number"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "enum": ["fix-now", "rejected", "wont-fix", "defer"]
+                      },
+                      "class": false,
+                      "humanDecision": {
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "round",
+                      "at",
+                      "verdict",
+                      "humanDecision"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "contextAt": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "number"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "const": "escalate"
+                      },
+                      "class": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "humanDecision": {
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "round",
+                      "at",
+                      "verdict",
+                      "class",
+                      "humanDecision"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "contextAt": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "number"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "const": "escalate"
+                      },
+                      "class": {
+                        "const": "human-decision"
+                      },
+                      "humanDecision": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "round",
+                      "at",
+                      "verdict",
+                      "class",
+                      "humanDecision"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            },
+            "resolvedParks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "enum": ["thread", "finding"]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "class": {
+                    "type": "string"
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{12}$"
+                  },
+                  "parkedAt": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": ["answered", "provisional"]
+                  },
+                  "answers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "author": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "bodyHash": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{12}$"
+                        },
+                        "stale": {
+                          "const": true
+                        },
+                        "choice": {
+                          "type": "object",
+                          "properties": {
+                            "option": {
+                              "type": "string"
+                            },
+                            "recommended": {
+                              "type": "boolean"
+                            },
+                            "form": {
+                              "enum": ["approve", "choose"]
+                            },
+                            "digest": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{12}$"
+                            },
+                            "note": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["option", "recommended", "form"],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": ["author", "at", "url"],
+                      "additionalProperties": true
+                    }
+                  },
+                  "answeredAt": {
+                    "type": "string"
+                  },
+                  "resolvedAt": {
+                    "type": "string"
+                  },
+                  "repairStartedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "reason",
+                  "parkedAt",
+                  "outcome",
+                  "answers",
+                  "resolvedAt"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "driver": {
+              "type": "object",
+              "properties": {
+                "actor": {
+                  "type": "string"
+                },
+                "clone": {
+                  "type": "string"
+                },
+                "heartbeat": {
+                  "type": "string"
+                },
+                "state": {
+                  "enum": ["running", "stopped"]
+                },
+                "exit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "personStop": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["at", "reason"],
+                  "additionalProperties": true
+                },
+                "recoveryVersion": {
+                  "const": 1
+                },
+                "started": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                }
+              },
+              "required": ["actor", "clone", "heartbeat", "state"],
+              "additionalProperties": true
+            },
+            "narrative": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cut": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": false
+          },
+          "required": [
+            "ledgerVersion",
+            "generation",
+            "pr",
+            "round",
+            "attempts",
+            "attemptsHead",
+            "deadlineRetries",
+            "phase",
+            "lastCountedHead",
+            "verifiedSha",
+            "readyMarkedRound",
+            "parked",
+            "held",
+            "quotaPark",
+            "takeovers",
+            "claims",
+            "decisions",
+            "driver",
+            "narrative",
+            "cut"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "drive-answer": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "drive-answer"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^answer:\\S+$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pr": true,
+            "decision": true,
+            "choice": true
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tracker-claim-marker": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tracker-claim-marker"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^claim$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "attempt": true,
+            "session": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "claimant": {
+              "type": "string"
+            }
+          },
+          "required": ["session", "branch", "claimant"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tracker-claim-outcome": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tracker-claim-marker"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^claim$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "attempt": {
+              "type": "string"
+            },
+            "outcome": {
+              "enum": ["claimed", "released", "unresolved"]
+            }
+          },
+          "required": ["attempt", "outcome"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tracker-attachment": {
+      "type": "object",
+      "properties": {
+        "form": {
+          "enum": ["comment", "link"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "subtitle": true,
+        "contentType": true,
+        "size": true,
+        "sha256": true,
+        "url": true
+      },
+      "required": ["form", "title", "filename"],
+      "additionalProperties": true
+    },
+    "reflection-record": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "const": 1
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "session": {
+              "type": "object",
+              "properties": {
+                "jig_version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "skills": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                },
+                "harness": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "entrypoint": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "wrapper": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["name", "version", "entrypoint", "wrapper"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stated": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "jig_version",
+                "skills",
+                "harness",
+                "model",
+                "mode",
+                "stated"
+              ],
+              "additionalProperties": true
+            },
+            "type": {
+              "const": "finding"
+            },
+            "change": {
+              "type": "object",
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "branch": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "issue": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["repository", "branch", "pull_request", "issue"],
+              "additionalProperties": true
+            },
+            "kind": {
+              "enum": ["error", "opportunity", "unhelpful-content"]
+            },
+            "severity": {
+              "enum": ["high", "medium", "low"]
+            },
+            "class": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "repository"
+                    },
+                    "name": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": ["scope", "name"],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "tool"
+                    },
+                    "tool": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    },
+                    "name": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": ["scope", "tool", "name"],
+                  "additionalProperties": true
+                }
+              ]
+            },
+            "title": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "suggested_fix": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "time_cost_minutes": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "v",
+            "id",
+            "at",
+            "session",
+            "type",
+            "change",
+            "kind",
+            "severity",
+            "class",
+            "target",
+            "title",
+            "description",
+            "suggested_fix"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "const": 1
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                },
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "jig_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    },
+                    "harness": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "entrypoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "wrapper": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version",
+                            "entrypoint",
+                            "wrapper"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "jig_version",
+                    "skills",
+                    "harness",
+                    "model",
+                    "mode",
+                    "stated"
+                  ],
+                  "additionalProperties": true
+                },
+                "type": {
+                  "const": "decision"
+                },
+                "finding": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "reason": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decision": {
+                  "enum": ["approved", "implemented", "deferred", "dismissed"]
+                },
+                "issue": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "v",
+                "id",
+                "at",
+                "session",
+                "type",
+                "finding",
+                "reason",
+                "decision"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "const": 1
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                },
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "jig_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    },
+                    "harness": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "entrypoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "wrapper": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version",
+                            "entrypoint",
+                            "wrapper"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "jig_version",
+                    "skills",
+                    "harness",
+                    "model",
+                    "mode",
+                    "stated"
+                  ],
+                  "additionalProperties": true
+                },
+                "type": {
+                  "const": "decision"
+                },
+                "finding": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "reason": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decision": {
+                  "const": "escalated"
+                },
+                "issue": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "v",
+                "id",
+                "at",
+                "session",
+                "type",
+                "finding",
+                "reason",
+                "decision",
+                "issue"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        }
+      ]
+    }
+  }
 }

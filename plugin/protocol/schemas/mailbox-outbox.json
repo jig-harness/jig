@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/mailbox/v1/schemas/mailbox-outbox.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ts": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "received"
+        },
+        "response": false
+      },
+      "required": ["id", "ts", "pr", "status"],
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ts": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "done"
+        },
+        "response": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["id", "ts", "pr", "status", "response"],
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ts": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "ack"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "response": false
+      },
+      "required": ["id", "ts", "pr", "status", "generation"],
+      "additionalProperties": true
+    }
+  ]
+}

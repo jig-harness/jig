@@ -60,6 +60,8 @@ import type {
   SharedStage,
 } from "./shared.ts";
 import { parseMs } from "../time.ts";
+import { matches } from "../shapes.ts";
+import { FOLLOWUP_RUN_SHAPE } from "./followup-shapes.ts";
 
 /** The shape of a dispatcher's launch record id (`dispatch/lib/launches.ts`). */
 export const LAUNCH_RECORD_ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
@@ -168,6 +170,7 @@ const NOT_A_RUN = "its record is neither a tick's nor a manual run's";
  * carries one of its own.
  */
 function runFault(payload: Record<string, unknown>): string | null {
+  if (matches(FOLLOWUP_RUN_SHAPE, payload)) return null;
   const { run, record, outcome } = payload;
   if (!isFollowupRun(run)) return NOT_A_RUN;
   if (run === "manual")

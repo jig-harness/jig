@@ -8,80 +8,40 @@
  * holds them, the order they come back in, or how many copies of one event a
  * store keeps.
  */
-import type { Harness } from "../../../../shared/harness.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { isoOf, parseInstant } from "../../../../shared/time.ts";
 
-export const EVENT_VERSION = 1;
-
-export const KINDS = ["error", "opportunity", "unhelpful-content"] as const;
-export const SEVERITIES = ["high", "medium", "low"] as const;
-export const DECISIONS = [
-  "approved",
-  "implemented",
-  "deferred",
-  "dismissed",
-  "escalated",
-] as const;
-
+import { matches } from "../../../../shared/shapes.ts";
+import {
+  EVENT_CLASS_SHAPE,
+  EVENT_ID_SHAPE,
+  EVENT_TIME_SHAPE,
+  EVENT_VERSION,
+  KINDS,
+  SEVERITIES,
+  DECISIONS,
+  REFLECTION_EVENT_SHAPE,
+  type Session,
+  type Change,
+  type Target,
+  type FindingEvent,
+  type DecisionEvent,
+  type ReflectionEvent,
+} from "./event-shapes.ts";
+export { EVENT_VERSION, KINDS, SEVERITIES, DECISIONS };
+export type {
+  Session,
+  Change,
+  Target,
+  FindingEvent,
+  DecisionEvent,
+  ReflectionEvent,
+};
 export type Kind = (typeof KINDS)[number];
 export type Severity = (typeof SEVERITIES)[number];
 export type DecisionKind = (typeof DECISIONS)[number];
 export type Status = "open" | DecisionKind;
-
-export interface Session {
-  jig_version: string | null;
-  skills: string[];
-  harness: Harness | null;
-  model: string | null;
-  mode: string | null;
-  stated: string[];
-}
-
-export interface Change {
-  repository: string;
-  branch: string | null;
-  pull_request: number | null;
-  issue: string | null;
-}
-
-export type Target =
-  | { scope: "repository"; name: string }
-  | { scope: "tool"; tool: string; name: string };
-
-export interface FindingEvent {
-  v: number;
-  type: "finding";
-  id: string;
-  at: string;
-  session: Session;
-  change: Change;
-  kind: Kind;
-  severity: Severity;
-  class: string;
-  target: Target;
-  title: string;
-  description: string;
-  suggested_fix: string;
-  time_cost_minutes?: number;
-}
-
-export interface DecisionEvent {
-  v: number;
-  type: "decision";
-  id: string;
-  at: string;
-  session: Session;
-  finding: string;
-  decision: DecisionKind;
-  reason: string;
-  commit?: string;
-  pull_request?: number;
-  issue?: string;
-}
-
-export type ReflectionEvent = FindingEvent | DecisionEvent;
 
 /** An event as `list` returns it: the parsed value and its stored text. */
 export interface StoredEvent {
@@ -90,12 +50,10 @@ export interface StoredEvent {
 }
 
 const TIME_ID = /^\d{8}T\d{6}Z-[0-9a-f]{16}$/;
-const DERIVED_ID = /^drv-[0-9a-f]{32}$/;
-const AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 /** A real instant in the one form `nowAt` writes, so times sort as strings. */
 function isAt(value: unknown): value is string {
-  if (typeof value !== "string" || !AT.test(value)) return false;
+  if (!matches(EVENT_TIME_SHAPE, value)) return false;
   try {
     return nowAt(parseInstant(value)) === value;
   } catch (error) {
@@ -103,7 +61,6 @@ function isAt(value: unknown): value is string {
     throw error;
   }
 }
-const CLASS = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** The current time, to the second, in Coordinated Universal Time. */
 export function nowAt(instant = Temporal.Now.instant()): string {
@@ -163,13 +120,11 @@ export function derivedId(fact: readonly string[]): string {
 }
 
 export function isId(value: unknown): value is string {
-  return (
-    typeof value === "string" && (TIME_ID.test(value) || DERIVED_ID.test(value))
-  );
+  return matches(EVENT_ID_SHAPE, value);
 }
 
 export function isClassName(value: unknown): value is string {
-  return typeof value === "string" && CLASS.test(value);
+  return matches(EVENT_CLASS_SHAPE, value);
 }
 
 function text(value: unknown): value is string {
@@ -359,7 +314,9 @@ export function parseObject(
 }
 
 function isEvent(value: unknown): value is ReflectionEvent {
-  return eventProblems(value).length === 0;
+  return (
+    matches(REFLECTION_EVENT_SHAPE, value) && eventProblems(value).length === 0
+  );
 }
 
 /** Parse one stored line; throws with every problem when it is not an event. */
