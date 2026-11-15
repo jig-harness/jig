@@ -27,6 +27,7 @@ import { swallow } from "../errors.ts";
 import { JigError } from "../outcome.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
+import { orNull, validWindow } from "./budget-shape.ts";
 
 /** How long a credential stays limited when the refusal named no reset. */
 export const FALLBACK_LIMIT_MS = 15 * 60_000;
@@ -237,48 +238,6 @@ export function budgetPath(home = homedir()): string {
   return join(home, ".local", "state", "jig", "tracker", "budget.sqlite");
 }
 
-const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
-  v === null || (typeof v === "number" && Number.isFinite(v) && ok(v));
-
-function validWindow(w: unknown): w is BudgetWindow {
-  if (typeof w !== "object" || w === null) return false;
-  const {
-    limit,
-    remaining,
-    resetAt,
-    refillMs,
-    readAt,
-    answeredAt,
-    estimated,
-    snapshotSentAt,
-    pending,
-    overflow,
-    answeredOrdinarilyAt,
-  } = w as Record<string, unknown>;
-  return (
-    orNull(limit, (n) => n >= 0) &&
-    orNull(remaining, () => true) &&
-    orNull(resetAt, (n) => n >= 0) &&
-    (refillMs === undefined || orNull(refillMs, (n) => n > 0)) &&
-    (readAt === undefined || orNull(readAt, (n) => n >= 0)) &&
-    (answeredAt === undefined || orNull(answeredAt, (n) => n >= 0)) &&
-    (snapshotSentAt === undefined || orNull(snapshotSentAt, (n) => n >= 0)) &&
-    (pending === undefined ||
-      (Array.isArray(pending) &&
-        pending.every((t) => typeof t === "number" && Number.isFinite(t)))) &&
-    (overflow === undefined ||
-      (typeof overflow === "object" &&
-        overflow !== null &&
-        Number.isSafeInteger((overflow as { count?: unknown }).count) &&
-        (overflow as { count: number }).count >= 0 &&
-        orNull((overflow as { at?: unknown }).at, (n) => n >= 0) &&
-        (overflow as { at?: unknown }).at !== null)) &&
-    (answeredOrdinarilyAt === undefined ||
-      orNull(answeredOrdinarilyAt, (n) => n >= 0)) &&
-    (estimated === undefined || typeof estimated === "boolean")
-  );
-}
-
 function validWindows(w: unknown): boolean {
   if (w === undefined) return true;
   return (
@@ -414,17 +373,17 @@ const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
  * stored balance carried to `now` (reservations included); an answer with
  * nothing recorded since its request was sent is the newest.
  */
-function merged(
+/**
+ * An ordinary answer as the stored window holds it. The settlement watermark
+ * of the last snapshot stays: `release` relies on it to give back nothing a
+ * snapshot already credited.
+ */
+function ordinaryRead(
   prev: BudgetWindow,
-  next: BudgetWindow | undefined,
+  next: BudgetWindow,
   now: number,
-  sentAt: number | undefined,
-  requestReserved = true,
 ): BudgetWindow {
-  if (next === undefined) return prev;
-  // The settlement watermark of the last snapshot stays: `release` relies on
-  // it to give back nothing a snapshot already credited.
-  const read: BudgetWindow = {
+  return {
     ...next,
     readAt: now,
     answeredAt: now,
@@ -434,6 +393,31 @@ function merged(
     ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
     answeredOrdinarilyAt: now,
   };
+}
+
+/**
+ * A guessed reset yields to an answer that reports the current window, not to
+ * one from a window that has already ended.
+ */
+function yieldsEstimate(
+  prev: BudgetWindow,
+  next: BudgetWindow,
+  now: number,
+): boolean {
+  return (
+    prev.estimated === true && (next.resetAt === null || next.resetAt > now)
+  );
+}
+
+function merged(
+  prev: BudgetWindow,
+  next: BudgetWindow | undefined,
+  now: number,
+  sentAt: number | undefined,
+  requestReserved = true,
+): BudgetWindow {
+  if (next === undefined) return prev;
+  const read = ordinaryRead(prev, next, now);
   const { settled, adopted } = reconciliation(
     prev,
     read,
@@ -446,14 +430,7 @@ function merged(
     ...(prev.pending === undefined ? {} : { pending: prev.pending }),
   });
   const count = next.remaining;
-  // A guessed reset yields to an answer that reports the current window,
-  // not to one from a window that has already ended.
-  if (
-    prev.estimated === true &&
-    count !== null &&
-    (next.resetAt === null || next.resetAt > now)
-  )
-    return adopted(count);
+  if (count !== null && yieldsEstimate(prev, next, now)) return adopted(count);
   if (count === null) return olderWindow(prev, next) ? prev : kept(null);
   if (sameResetWindow(prev, next) && prev.remaining !== null)
     return settled(count) < prev.remaining
@@ -785,19 +762,56 @@ function holdOf(
  * sent. Spending recorded since (`readAt` at or after `sentAt`) is not in
  * it, so within one window the lower count stands.
  */
+/** A snapshot delayed across a reset says nothing of the window since. */
+function delayedAcrossReset(
+  prev: BudgetWindow,
+  next: BudgetWindow,
+  now: number,
+): boolean {
+  return prev.estimated === true
+    ? next.resetAt !== null && next.resetAt <= now
+    : olderWindow(prev, next);
+}
+
+/**
+ * The snapshot's window `read`, with the balance of an ordinary answer
+ * recorded since its request was sent when that answer holds spending the
+ * snapshot cannot know of: the lower balance of one window stands.
+ */
+function keepNewerOrdinary(
+  prev: BudgetWindow,
+  read: BudgetWindow,
+  counted: number,
+  since: number,
+): BudgetWindow {
+  const ordinaryAt = prev.answeredOrdinarilyAt;
+  const newer =
+    ordinaryAt !== undefined &&
+    ordinaryAt >= since &&
+    prev.remaining !== null &&
+    read.resetAt === prev.resetAt;
+  if (!newer) return { ...read, remaining: counted };
+  // The balance kept is the one whose deductions are kept with it: when the
+  // ordinary answer's lower balance stands, so do the reservations it counted,
+  // or a release could no longer give one back.
+  if ((prev.remaining as number) < counted)
+    return {
+      ...read,
+      remaining: prev.remaining as number,
+      answeredOrdinarilyAt: ordinaryAt,
+      pending: prev.pending ?? [],
+      ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
+    };
+  return { ...read, remaining: counted, answeredOrdinarilyAt: ordinaryAt };
+}
+
 function snapshotOf(
   prev: BudgetWindow,
   next: BudgetWindow | undefined,
   now: number,
   sentAt: number | undefined,
 ): BudgetWindow {
-  // A snapshot delayed across a reset says nothing of the window since.
-  if (
-    next === undefined ||
-    (prev.estimated !== true && olderWindow(prev, next)) ||
-    (prev.estimated === true && next.resetAt !== null && next.resetAt <= now)
-  )
-    return prev;
+  if (next === undefined || delayedAcrossReset(prev, next, now)) return prev;
   const since = sentAt ?? now;
   // An older snapshot than the one the record holds says less than it does.
   if (prev.snapshotSentAt != null && since < prev.snapshotSentAt) return prev;
@@ -818,31 +832,7 @@ function snapshotOf(
   };
   if (next.remaining === null) return read;
   const counted = next.remaining - pending.length - (forgotten?.count ?? 0);
-  // An ordinary answer recorded since the snapshot's request was sent holds
-  // spending the snapshot cannot know of: the lower balance of one window stands.
-  const newer =
-    prev.answeredOrdinarilyAt !== undefined &&
-    prev.answeredOrdinarilyAt >= since &&
-    prev.remaining !== null &&
-    next.resetAt === prev.resetAt;
-  if (!newer || prev.answeredOrdinarilyAt === undefined)
-    return { ...read, remaining: counted };
-  // The balance kept is the one whose deductions are kept with it: when the
-  // ordinary answer's lower balance stands, so do the reservations it counted,
-  // or a release could no longer give one back.
-  if ((prev.remaining as number) < counted)
-    return {
-      ...read,
-      remaining: prev.remaining as number,
-      answeredOrdinarilyAt: prev.answeredOrdinarilyAt,
-      pending: prev.pending ?? [],
-      ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
-    };
-  return {
-    ...read,
-    remaining: counted,
-    answeredOrdinarilyAt: prev.answeredOrdinarilyAt,
-  };
+  return keepNewerOrdinary(prev, read, counted, since);
 }
 
 /** A governor over `store`; `clock` and `share` are for tests. */
