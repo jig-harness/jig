@@ -558,6 +558,34 @@ function retirementVeto(
   }
   return null;
 }
+/**
+ * An opaque child that inherited membership registers its scopes under its own
+ * identity, which no node records. Such a writer, still running, can write the
+ * registration again after every root is gone.
+ */
+function unrecordedWriters(
+  scopes: FixtureScope[],
+  nodes: NodeRecord[],
+  rows: ProcessRow[] | null,
+): FixtureProof | null {
+  const recorded = new Set(nodes.map((node) => node.identity));
+  for (const scope of scopes) {
+    if (recorded.has(encodeIdentity(scope.registeredBy))) continue;
+    if (!scope.registeredBy.start)
+      return {
+        state: "unverified",
+        reason: "a scope's registering process identity is unreadable",
+      };
+    const alive = judge(scope.registeredBy, rows);
+    if (!alive.ok) return { state: "unverified", reason: alive.failure.reason };
+    if (alive.value.state === "alive")
+      return {
+        state: "live",
+        reason: "a process that registered a scope without a node still runs",
+      };
+  }
+  return null;
+}
 function registeredProcesses(
   nodes: NodeRecord[],
   rows: ProcessRow[] | null,
@@ -588,8 +616,10 @@ function registeredProcesses(
 /**
  * Whether a registration whose roots are all gone may be retired. Nothing
  * is left to remove, so only its writers matter: a registered process that
- * still runs could write to it again. An opaque launch cannot write to it,
- * but still counts against a scratch scope that encloses its root.
+ * still runs could write to it again, and so could a process that registered
+ * a scope under no node. An opaque launch that has registered nothing is not
+ * visible as a writer, but still counts against a scratch scope that
+ * encloses its root.
  */
 export function fixtureRetirementProof(
   registry: string,
@@ -613,6 +643,7 @@ export function fixtureRetirementProof(
         } satisfies FixtureProof;
       return (
         retirementVeto(registry, scopes, [...nodes.values()], enclosureIndex) ??
+        unrecordedWriters(scopes, [...nodes.values()], rows) ??
         registeredProcesses([...nodes.values()], rows)
       );
     },

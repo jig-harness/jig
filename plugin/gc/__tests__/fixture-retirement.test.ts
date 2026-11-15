@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -11,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { encodeIdentity, ownIdentity } from "../../shared/liveness.ts";
 import { writeScratchOwner } from "../../shared/scratch-owner.ts";
 import { registerFixtureScope } from "../../shared/test-fixture-registry.ts";
 import { scratchKind } from "../kinds/scratch.ts";
@@ -261,6 +263,35 @@ test("an opaque launch keeps its registration while another registration holds t
   // The plain registration holds the root for its sibling; the opaque one is kept.
   expect(retiredIn(receipt.resources)).toHaveLength(1);
   expect(readdirSync(f.store)).toHaveLength(1);
+});
+
+test("a registration whose scope was written by a running unrecorded process is kept", async () => {
+  const f = fixture();
+  registerExited(f.store, [{ root: join(f.base, "gone-a") }]);
+  const [name] = readdirSync(f.store);
+  const registry = join(f.store, name ?? "");
+  const scopeFile = readdirSync(registry).find((entry) => entry !== "nodes");
+  const path = join(registry, scopeFile ?? "");
+  const record = JSON.parse(readFileSync(path, "utf8"));
+  record.registeredBy = encodeIdentity(ownIdentity());
+  writeFileSync(path, JSON.stringify(record));
+  const { receipt } = await run(f, true);
+  expect(retiredIn(receipt.resources)).toEqual([]);
+  expect(readdirSync(f.store)).toEqual([name ?? ""]);
+});
+
+test("opaque registrations spread over several batches are all retired", async () => {
+  const f = fixture();
+  registerExited(
+    f.store,
+    Array.from({ length: 3 }, (_, i) => ({
+      root: join("/", `jig-gc-retire-absent-${crypto.randomUUID()}-${i}`),
+      launch: "opaque" as const,
+    })),
+  );
+  const { receipt } = await run(f, true, { batchSize: 1 });
+  expect(retiredIn(receipt.resources)).toHaveLength(3);
+  expect(readdirSync(f.store)).toEqual([]);
 });
 
 test("a malformed folder is reported as itself and the rest are retired", async () => {
