@@ -378,9 +378,10 @@ areas:
     # The chapters ship in the plugin; the generator that writes them from the
     # code's own tables runs in this repository only. Its chapters are
     # generated from drive-pr's terminal-state table, the drive mailbox's
-    # tables, the pull-request label projection and the table of commands a
-    # repository supplies, and its base comparison reads change notes through
-    # the changelog skill's scripts.
+    # tables, the pull-request label projection, the table of commands a
+    # repository supplies, the records registry, the record envelope's codec
+    # and the follow-up marker's tables, and its base comparison reads change
+    # notes through the changelog skill's scripts.
     category: tooling
     paths: ["plugin/protocol/**", "tools/protocol/**"]
     workspace: []
@@ -397,15 +398,29 @@ areas:
           - "plugin/protocol/data/pr-labels.json"
           - "plugin/protocol/repo-commands.md"
           - "plugin/protocol/data/repo-commands.json"
+          - "plugin/protocol/comment-markers.md"
+          - "plugin/protocol/data/comment-markers.json"
+          - "plugin/protocol/followup-claim.md"
+          - "plugin/protocol/data/followup-claim.json"
         source:
           - "tools/protocol/**"
           - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
           - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
           - "plugin/shared/pr-labels/projection.ts"
           - "plugin/shared/repo-commands.ts"
+          - "plugin/shared/records/registry*.ts"
+          - "plugin/shared/records/registry-machine-rows.json"
+          - "plugin/shared/records/not-records.ts"
+          - "plugin/shared/records/envelope.ts"
+          - "plugin/shared/records/followup-values.ts"
+          - "plugin/shared/records/writer.ts"
           - "plugin/shared/errors.ts"
+          - "plugin/shared/fixture-observer.ts"
+          - "plugin/shared/guards.ts"
+          - "plugin/shared/liveness.ts"
           - "plugin/shared/log.ts"
           - "plugin/shared/outcome.ts"
+          - "plugin/shared/process-table.ts"
           - "plugin/shared/time.ts"
         command: "bun tools/protocol/generate.ts"
         check: "bun tools/protocol/generate.ts --check"

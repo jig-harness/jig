@@ -119,6 +119,51 @@ describe("the comparison with the integration branch", () => {
     ]);
   });
 
+  test("passes a value added with the meaning another value carries", () => {
+    const shared = fixtureChapter({
+      values: [
+        ...VALUES,
+        { name: "ALPHA", code: 3, meaning: "the first thing happened" },
+      ],
+    });
+    const root = scratchRepo([fixtureChapter()], [shared]);
+    expect(check(root, [shared]).problems).toEqual([]);
+  });
+
+  test("fails a value added with the meaning of a value the change withdraws, which renames it", () => {
+    const kinded = {
+      ...FIELDS,
+      kind: {
+        type: "string" as const,
+        nullable: false,
+        required: true,
+        identifies: false,
+        description: "Its kind.",
+      },
+    };
+    const base = fixtureChapter({
+      fields: kinded,
+      values: VALUES.map((v) => ({ ...v, kind: "state" })),
+    });
+    const renamed = fixtureChapter({
+      fields: kinded,
+      values: [
+        { ...VALUES[0], kind: "tombstone" },
+        { ...VALUES[1], kind: "state" },
+        {
+          name: "GAMMA",
+          code: 3,
+          meaning: "the first thing happened",
+          kind: "state",
+        },
+      ] as never,
+    });
+    const root = scratchRepo([base], [renamed]);
+    expect(check(root, [renamed]).problems).toEqual([
+      'plugin/protocol/data/fixture.json: the value name "GAMMA", code 3 now carries the meaning the base gives name "ALPHA", code 1',
+    ]);
+  });
+
   test("passes a meaning reworded in place", () => {
     const reworded = fixtureChapter({
       values: [
@@ -178,6 +223,112 @@ describe("the comparison with the integration branch", () => {
     expect(check(fourth, [revived]).problems).toEqual([
       'plugin/protocol/data/fixture.json: the value name "ALPHA", code 1 changed its exit from null to 5',
     ]);
+  });
+
+  test("compares the runs that carry a payload field by run, and refuses a new value that is required of every writer", () => {
+    const spec = (type: "string" | "boolean") => ({
+      type,
+      nullable: true,
+      required: true,
+      identifies: false,
+      description: "A payload shape.",
+    });
+    const fields = {
+      ...FIELDS,
+      carriedBy: spec("string"),
+      fieldRequired: spec("boolean"),
+    };
+    const chapter = (rows: Record<string, unknown>[]) =>
+      fixtureChapter({
+        fields,
+        values: rows.map((r) => ({
+          carriedBy: null,
+          fieldRequired: null,
+          ...r,
+        })) as never,
+      });
+    const first = {
+      name: "ALPHA",
+      code: 1,
+      meaning: "the first thing happened",
+    };
+    const second = { ...first, name: "BETA", code: 2 };
+    const base = chapter([
+      { ...first, carriedBy: "tick (always), manual (sometimes)" },
+      second,
+    ]);
+    const problems = (rows: Record<string, unknown>[]) => {
+      const now = chapter(rows);
+      return check(scratchRepo([base], [now]), [now]).problems;
+    };
+    // Order, a run added as sometimes and a sometimes run dropped all widen.
+    expect(
+      problems([
+        {
+          ...first,
+          carriedBy: "manual (sometimes), tick (always), run3 (sometimes)",
+        },
+        second,
+      ]),
+    ).toEqual([]);
+    expect(
+      problems([{ ...first, carriedBy: "tick (always)" }, second]),
+    ).toEqual([]);
+    // An always run that stops being always, or a sometimes run that becomes always, breaks.
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (sometimes), manual (sometimes)" },
+        second,
+      ]),
+    ).toHaveLength(1);
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (always)" },
+        second,
+      ]),
+    ).toHaveLength(1);
+    // A new value that every writer must carry breaks; an optional one does not.
+    const added = { ...first, name: "GAMMA", code: 3 };
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (sometimes)" },
+        second,
+        { ...added, carriedBy: "tick (always)" },
+      ]),
+    ).toHaveLength(1);
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (sometimes)" },
+        second,
+        { ...added, fieldRequired: true },
+      ]),
+    ).toHaveLength(1);
+    expect(
+      problems([
+        { ...first, carriedBy: "tick (always), manual (sometimes)" },
+        second,
+        { ...added, carriedBy: "tick (sometimes)", fieldRequired: false },
+      ]),
+    ).toEqual([]);
+    // No carriers at all is an empty set: it widens to an optional carrier and narrows from one.
+    const sometimesOnly = chapter([
+      { ...first, carriedBy: "manual (sometimes)" },
+      second,
+    ]);
+    const emptied = chapter([{ ...first, carriedBy: "" }, second]);
+    expect(
+      check(scratchRepo([sometimesOnly], [emptied]), [emptied]).problems,
+    ).toEqual([]);
+    expect(
+      check(scratchRepo([emptied], [sometimesOnly]), [sometimesOnly]).problems,
+    ).toEqual([]);
+    const alwaysOnly = chapter([
+      { ...first, carriedBy: "tick (always)" },
+      second,
+    ]);
+    expect(
+      check(scratchRepo([emptied], [alwaysOnly]), [alwaysOnly]).problems,
+    ).toHaveLength(1);
   });
 
   test("fails a field that is new and identifies a value, which would let two values share the base's identity", () => {

@@ -8,9 +8,24 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { load } from "../../../lib/vendor/js-yaml.mjs";
+import {
+  ENVELOPE_FIELDS,
+  encode,
+} from "../../../plugin/shared/records/envelope.ts";
+import {
+  FOLLOWUP_FIELDS,
+  FOLLOWUP_OUTCOMES,
+  FOLLOWUP_RUNS,
+} from "../../../plugin/shared/records/followup-values.ts";
+import {
+  NOT_RECORDS,
+  RECORD_KINDS,
+} from "../../../plugin/shared/records/registry.ts";
 import { TERMINAL_STATES } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { CHAPTERS } from "../chapters.ts";
+import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
+import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
 
 const root = join(import.meta.dir, "..", "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -32,9 +47,9 @@ function inventoryEntry(): Entry {
 }
 
 /** The repository files a module imports by relative path, directly. */
-function directImports(module: string): string[] {
+function directImports(module: string, source = read): string[] {
   const scanned = new Bun.Transpiler({ loader: "ts" }).scanImports(
-    read(module),
+    source(module),
   );
   return scanned
     .map((i) => i.path)
@@ -44,14 +59,19 @@ function directImports(module: string): string[] {
     );
 }
 
+/** Script files whose imports are followed; data files such as JSON are leaves. */
+const CODE_FILE = /\.[cm]?[jt]sx?$/;
+
 /**
- * Every repository file a module imports, followed through the files it
- * imports in turn, so a table that imports another table is reached too.
+ * Every repository file a module imports, followed through the code files it
+ * imports in turn, so a table that imports another table, or a re-exporting
+ * `.mjs` bridge, is reached too.
  */
-function importsOf(module: string): string[] {
+function importsOf(module: string, source = read): string[] {
   const seen = new Set<string>();
   const visit = (path: string) => {
-    for (const next of directImports(path))
+    if (!CODE_FILE.test(path)) return;
+    for (const next of directImports(path, source))
       if (!seen.has(next)) {
         seen.add(next);
         visit(next);
@@ -94,6 +114,21 @@ describe("the inventory entry's sources", () => {
     expect(
       unlisted(DRIVE_EXITS.module, ["tools/protocol/**", table]),
     ).toContain("plugin/shared/errors.ts");
+  });
+
+  test("follow a non-.ts code module but not a data file", () => {
+    const files: Record<string, string> = {
+      "a/chapter.ts": 'import "./bridge.mjs"; import "./data.json";',
+      "a/bridge.mjs": 'export * from "./values.ts";',
+      "a/values.ts": "export const v = 1;",
+      "a/data.json": '{"x": 1}',
+    };
+    const source = (path: string) => files[path] ?? "";
+    expect(importsOf("a/chapter.ts", source)).toEqual([
+      "a/bridge.mjs",
+      "a/data.json",
+      "a/values.ts",
+    ]);
   });
 
   test("are the files the pre-commit hook regenerates the chapters for", () => {
@@ -140,5 +175,170 @@ describe("the drive's end states and exit codes", () => {
   test("shows every entry it renders in one of its generated sections", () => {
     const text = DRIVE_EXITS.sections.map((s) => s.render()).join("\n");
     expect(rendered.filter((n) => !text.includes(`| \`${n}\` |`))).toEqual([]);
+  });
+});
+
+/** Every generated section of a chapter, as one text. */
+const sectionsOf = (chapter: typeof DRIVE_EXITS) =>
+  chapter.sections.map((s) => s.render()).join("\n");
+
+/** The names a chapter's sections show in a table's first column. */
+const missingRows = (chapter: typeof DRIVE_EXITS, names: readonly string[]) => {
+  const text = sectionsOf(chapter);
+  return names.filter((n) => !text.includes(`| \`${n}\` |`));
+};
+
+describe("the hidden comment markers", () => {
+  // Enumerated from the registry on its own, not through the chapter: every
+  // kind on the forge or the tracker is the chapter's to list or leave out.
+  const eligible = RECORD_KINDS.filter(
+    (k) => k.medium === "forge" || k.medium === "tracker",
+  ).map((k) => k.name);
+  const all = COMMENT_MARKERS.values();
+  const values = all.filter((v) => v.part !== "envelope-field");
+  const rendered = values
+    .filter((v) => v.name !== null)
+    .map((v) => String(v.name));
+  const excluded = COMMENT_MARKERS.excluded;
+
+  test("renders or explicitly leaves out every forge and tracker kind of the registry", () => {
+    expect(
+      eligible.filter((n) => !rendered.includes(n) && !excluded.includes(n)),
+    ).toEqual([]);
+  });
+
+  test("renders and leaves out only forge and tracker kinds, and none both", () => {
+    expect(
+      [...rendered, ...excluded].filter((n) => !eligible.includes(n)),
+    ).toEqual([]);
+    expect(rendered.filter((n) => excluded.includes(n))).toEqual([]);
+  });
+
+  test("renders one value for each marker of a kind, each marker once, and leaves the follow-up claim to its own chapter", () => {
+    for (const v of values) expect(v.marker).not.toBe("");
+    const markers = values.map((v) => v.marker);
+    expect(new Set(markers).size).toBe(markers.length);
+    for (const name of new Set(rendered))
+      expect(
+        values.filter((v) => v.name === name).map((v) => v.marker),
+      ).toEqual([
+        ...(RECORD_KINDS.find((k) => k.name === name)?.markers ?? []),
+      ]);
+    expect(excluded).toContain("dispatch-followup");
+    expect(FOLLOWUP_CLAIM_CHAPTER.takes()).toContain(
+      "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-followup",
+    );
+  });
+
+  test("renders every field of the envelope as a value of its own, with its type and requiredness", () => {
+    expect(
+      all
+        .filter((v) => v.part === "envelope-field")
+        .map((v) => [v.marker, v.fieldType, v.fieldRequired]),
+    ).toEqual(
+      Object.entries(ENVELOPE_FIELDS).map(([name, f]) => [
+        name,
+        f.type,
+        f.required,
+      ]),
+    );
+  });
+
+  test("keeps a value's identity apart from its kind, so a withdrawal to a tombstone stays representable", () => {
+    expect(COMMENT_MARKERS.fields.kind?.identifies).toBe(false);
+    for (const v of all) expect(v.kind).toBe("active");
+    const identities = all.map((v) => JSON.stringify([v.part, v.marker]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("renders every marker that is not a record, and no other value without a kind", () => {
+    expect(values.filter((v) => v.name === null).map((v) => v.marker)).toEqual(
+      NOT_RECORDS.map((r) => r.marker),
+    );
+  });
+
+  test("carries each kind's meaning as the registry holds it, so an empty one reaches the gate", () => {
+    for (const v of values.filter((v) => v.name !== null))
+      expect(v.meaning).toBe(
+        RECORD_KINDS.find((k) => k.name === v.name)?.meaning ?? "(none)",
+      );
+  });
+
+  test("shows every kind it renders or leaves out, every non-record and every envelope field in its sections", () => {
+    // The envelope's fields as the codec writes them, generation included.
+    const written = Object.keys(
+      JSON.parse(
+        encode(
+          {
+            kind: "drive-ledger",
+            v: 1,
+            key: "1",
+            writer: { host: "h" },
+            at: "2026-01-01T00:00:00.000Z",
+            generation: 1,
+          },
+          {},
+        ),
+      ) as object,
+    );
+    expect(
+      missingRows(COMMENT_MARKERS, [
+        ...rendered,
+        ...excluded,
+        ...NOT_RECORDS.map((r) => r.marker),
+        ...written,
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("the follow-up claim and its result", () => {
+  const values = FOLLOWUP_CLAIM_CHAPTER.values();
+  const of = (kind: string) =>
+    values
+      .filter((v) => v.kind === kind || String(v.kind).endsWith(`-${kind}`))
+      .map((v) => String(v.name));
+
+  test("renders the registry's follow-up kind and its markers, every run, every run's outcomes and every payload field, and nothing else", () => {
+    const kind = RECORD_KINDS.find((k) => k.name === "dispatch-followup");
+    expect(of("record")).toEqual(kind === undefined ? [] : [kind.name]);
+    expect(of("marker")).toEqual([...(kind?.markers ?? [])]);
+    expect(of("run")).toEqual(Object.keys(FOLLOWUP_RUNS));
+    expect(of("outcome")).toEqual(
+      Object.entries(FOLLOWUP_OUTCOMES).flatMap(([run, outcomes]) =>
+        Object.keys(outcomes).map((o) => `${run}.${o}`),
+      ),
+    );
+    expect(of("field")).toEqual(Object.keys(FOLLOWUP_FIELDS));
+    expect(values).toHaveLength(
+      ["record", "marker", "run", "outcome", "field"].reduce(
+        (n, k) => n + of(k).length,
+        0,
+      ),
+    );
+    expect(FOLLOWUP_CLAIM_CHAPTER.excluded).toEqual([]);
+  });
+
+  test("keeps a value's identity apart from its kind, so a withdrawal to a tombstone stays representable", () => {
+    expect(FOLLOWUP_CLAIM_CHAPTER.fields.kind?.identifies).toBe(false);
+    const identities = values.map((v) => JSON.stringify([v.name]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("shows the kind, every run, every field and each run's own outcomes in its sections", () => {
+    expect(
+      missingRows(FOLLOWUP_CLAIM_CHAPTER, [
+        "dispatch-followup",
+        ...Object.keys(FOLLOWUP_RUNS),
+        ...Object.keys(FOLLOWUP_FIELDS),
+      ]),
+    ).toEqual([]);
+    // Each outcome with its run: a row for one run's outcome does not
+    // stand in for the same name under another run.
+    const rows = sectionsOf(FOLLOWUP_CLAIM_CHAPTER).split("\n");
+    const pairs = Object.entries(FOLLOWUP_OUTCOMES).flatMap(([run, outcomes]) =>
+      Object.keys(outcomes).map((o) => `| \`${o}\` | \`${run}\` |`),
+    );
+    expect(pairs.filter((p) => !rows.some((r) => r.startsWith(p)))).toEqual([]);
   });
 });

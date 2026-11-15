@@ -9,6 +9,7 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { NoticeFields } from "../../chat/channel.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
+import type { TickOutcome } from "../../shared/records/followup-values.ts";
 import type { FailureClass } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
@@ -289,7 +290,7 @@ export interface FollowupMarker {
         host?: string;
         /** Whether that host says it owns the repository. */
         owner?: boolean;
-        outcome?: "done" | "failed";
+        outcome?: TickOutcome;
       }
     | { kind: "manual"; done: boolean }
     | { kind: "unreadable"; reason: string };

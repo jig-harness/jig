@@ -869,11 +869,12 @@ turned into links, or kept as held restatements the gate checks; and the
 chapters rendered on the site. Built in steps, one pull request each;
 built so far: the generator, its gate, the chapter on the drive's end
 states and exit codes, and the chapters on the drive mailbox, on the
-pull-request labels and on the commands a repository supplies
+pull-request labels, on hidden comment markers, on the commands a
+repository supplies and on the follow-up claim and its result
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
-Open, in order: the other stable chapters, their schemas, their
-restatements as links and the provisional chapters.
+Open, in order: the stable chapters' schemas, their restatements as links
+and the provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the

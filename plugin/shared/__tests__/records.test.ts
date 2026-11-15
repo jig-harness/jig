@@ -205,6 +205,13 @@ describe("the registry", () => {
     }
   });
 
+  it("says what every kind means to a reader, as one or more whole sentences", () => {
+    const unsaid = RECORD_KINDS.filter(
+      (k) => !/^[A-Z`].*[.)]$/s.test(k.meaning.trim()),
+    ).map((k) => k.name);
+    expect(unsaid).toEqual([]);
+  });
+
   it("gives every kind that carries the envelope an anchored key shape and a version", () => {
     const enveloped = RECORD_KINDS.filter((k) => k.key !== undefined);
     expect(enveloped.map((k) => k.name).sort()).toEqual([
