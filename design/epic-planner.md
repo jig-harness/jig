@@ -259,14 +259,17 @@ same function.
 ### Footprints and the steps that wait on a person
 
 Each step can declare its [footprint](../GLOSSARY.md): the paths it is
-expected to touch, as globs. The planner is one of the writers of the
+expected to touch, written as that record's `paths` are: files, and
+directories ending in `/`. The planner is one of the writers of the
 footprint record that the design of #1179 defines, and writes it where that
 design keeps it. A footprint never goes into the block, whose reader refuses
 a field it does not know, and this design adds no store of its own.
 
-A step that waits on a person is a human gate. A `hitl` label always makes
-one, and `plan.json` adds one, with its reason, for a child without the
-label. A plan cannot cancel a `hitl` label.
+A step that waits on a person is a human gate. The configured
+human-in-the-loop label (`issue_tracker.labels.hitl`) or any of its
+`<label>:<stakeholder>` facets always makes one, and `plan.json` adds one,
+with its reason, for a child carrying neither. A plan cannot cancel such a
+label.
 
 ### Keeping a plan current
 

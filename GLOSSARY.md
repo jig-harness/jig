@@ -922,8 +922,9 @@ make, use the entry's term instead.
   dispatcher read it; the *epic planner* writes it
   ([design](design/epic-planner.md)).
 - **Human gate** — a step of an *execution plan* that waits on a person before
-  an agent may start it: a child carrying the `hitl` label, or one the plan
-  marks with its reason. A plan cannot cancel a `hitl` label
+  an agent may start it: a child carrying the configured human-in-the-loop
+  label or one of its facets (such as `<label>:legal`), or one the plan
+  marks with its reason. A plan cannot cancel such a label
   ([design](design/epic-planner.md)).
 - **Epic planner** — the skill that writes and keeps an *epic*'s *execution
   plan*: it records each real dependency as a native tracker relation,
@@ -933,9 +934,6 @@ make, use the entry's term instead.
 - **Critical path** — the longest chain of an *epic*'s open children that
   must land one after another, each child weighted by its size. Its children
   take the epic's priority in the *epic planner*'s priority rule.
-- **Footprint** — the paths a piece of work is expected to touch, declared
-  before it starts, so that work that would collide can be told from work
-  that would not.
 - **Relation statement** — a hold or an order stated as data rather than a
   sentence: subject references, a relation word from a closed list (such as
   "waits on"), object references, a count and an optional reason. Each reference carries its
