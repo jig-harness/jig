@@ -37,6 +37,7 @@ import {
   type Withdrawn,
 } from "./chapter.ts";
 import { RULE } from "./outputs.ts";
+import { schemaFindings } from "./schema-compatibility.ts";
 
 /** Where the change notes live, each a file a pull request adds. */
 const NOTES_DIR = "changes";
@@ -555,6 +556,7 @@ function keptFindings(
   const breaks = [
     ...fieldFindings(file, base, now),
     ...valueFindings(file, base, now),
+    ...schemaFindings(file, base, now),
   ];
   if (!raised) return [...out, ...breaks];
   if (breaks.length > 0 && !breaking)

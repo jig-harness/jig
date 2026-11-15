@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/comment-markers/v1/schemas/tracker-attachment.json",
+  "type": "object",
+  "properties": {
+    "form": {
+      "enum": ["comment", "link"]
+    },
+    "title": {
+      "type": "string"
+    },
+    "filename": {
+      "type": "string"
+    },
+    "subtitle": true,
+    "contentType": true,
+    "size": true,
+    "sha256": true,
+    "url": true
+  },
+  "required": ["form", "title", "filename"],
+  "additionalProperties": true
+}

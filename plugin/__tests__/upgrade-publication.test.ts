@@ -13,6 +13,8 @@ import { upgradesSince } from "../skills/drive-pr/scripts/lib/morning-report-upg
 test("a dispatch receipt is new to a report from when it was written, not from when its tick started", () => {
   const root = mkdtempSync(join(tmpdir(), "jig-publication-"));
   try {
+    const gc = join(root, "gc");
+    mkdirSync(gc);
     const started = "2026-11-07T06:00:00.000Z";
     const runId = "2026-11-07T06-00-00-000Z-1234-abcdef12";
     const dir = join(root, "receipts", "2026-11-07");

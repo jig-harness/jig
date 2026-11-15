@@ -65,6 +65,8 @@ export interface DispatchSection {
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */
   adopt: AdoptRule;
+  /** How many children of an epic with no execution plan are under way at once (`epic_width`). */
+  epicWidth: number;
   /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
   pool?: {
     states: import("../../skills/do-item/scripts/lib/tracker/port.ts").CanonicalState[];

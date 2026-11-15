@@ -259,6 +259,13 @@ person's recorded stop and a missing local tree. An exit `12` recovery gets
 one automatic attempt per head; its repeated stop names `rearm` for the
 person's next attempt after inspecting the handoff.
 
+Tree discovery first reads the drive listing and drive launches. When neither
+names an existing tree, it reads successful pickups that handed off to this
+pull request and Git's worktrees on its head branch across the known local
+clones. That fallback requires exactly one existing tree; several candidates
+are named and refused, as are incomplete reads. The tick checks the selected
+tree's ownership again before launching; the command never creates one.
+
 ### The rules for sending
 
 1. **Only on the person's instruction, in this conversation.** A command

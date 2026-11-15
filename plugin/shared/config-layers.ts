@@ -93,6 +93,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.adopt.authors",
   "dispatch.adopt.within",
   "dispatch.pool.states",
+  "dispatch.epic_width",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",

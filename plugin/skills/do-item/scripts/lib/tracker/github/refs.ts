@@ -10,6 +10,7 @@
 
 import { consumerRoot, remoteName } from "../../../../../../shared/consumer.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
+import { gitIdentityEnv } from "../../../../../../shared/proc.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { TrackerRequestError } from "../port.ts";
 
@@ -103,6 +104,7 @@ export function remoteUrl(cwd?: string): string | null {
       ["git", "config", "--get", `remote.${remote}.url`],
       {
         ...(cwd === undefined ? {} : { cwd }),
+        env: gitIdentityEnv(),
         stdout: "pipe",
         stderr: "pipe",
       },
