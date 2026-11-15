@@ -421,23 +421,31 @@ function merged(
     ...(prev.snapshotSentAt == null
       ? {}
       : { snapshotSentAt: prev.snapshotSentAt }),
-    // An ordinary answer settles no reservation of its own, but a balance it
-    // reports below the stored one owes nothing to the reservations deducted
-    // from that one before its request was sent, which its balance counts:
-    // those cannot be given back. Later ones it cannot count, and stay.
-    ...(prev.pending === undefined
-      ? {}
-      : {
-          pending:
-            next.remaining !== null &&
-            prev.remaining !== null &&
-            next.remaining < prev.remaining
-              ? prev.pending.filter((t) => t >= (sentAt ?? now))
-              : prev.pending,
-        }),
     ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
     answeredOrdinarilyAt: now,
   };
+  // The answer's balance counts the reservations made before its request was
+  // sent, and none made since: it stands only with those deducted and kept
+  // pending, so a release gives back exactly what was taken. A balance that
+  // is not the answer's already holds every deduction, and keeps them all.
+  const adopted = (count: number | null): BudgetWindow => {
+    const later = (prev.pending ?? []).filter((t) => t > (sentAt ?? now));
+    // A balance cannot go below zero: a reservation it has no room to deduct
+    // is not kept pending, so its release gives back nothing.
+    const deducted = count === null ? 0 : Math.min(later.length, count);
+    return {
+      ...read,
+      remaining: count === null ? null : count - deducted,
+      ...(prev.pending === undefined
+        ? {}
+        : { pending: later.slice(later.length - deducted) }),
+    };
+  };
+  const kept = (remaining: number | null): BudgetWindow => ({
+    ...read,
+    remaining,
+    ...(prev.pending === undefined ? {} : { pending: prev.pending }),
+  });
   const count = next.remaining;
   // A guessed reset yields to an answer that reports the current window,
   // not to one from a window that has already ended.
@@ -446,15 +454,14 @@ function merged(
     count !== null &&
     (next.resetAt === null || next.resetAt > now)
   )
-    return read;
-  if (count === null) return olderWindow(prev, next) ? prev : read;
+    return adopted(count);
+  if (count === null) return olderWindow(prev, next) ? prev : kept(null);
   if (sameResetWindow(prev, next) && prev.remaining !== null)
-    return { ...read, remaining: Math.min(prev.remaining, count) };
+    return count < prev.remaining ? adopted(count) : kept(prev.remaining);
   if (olderWindow(prev, next)) return prev;
   const carried = carriedBalance(prev, next, now, sentAt);
-  return carried === null
-    ? read
-    : { ...read, remaining: Math.min(carried, count) };
+  if (carried === null) return adopted(count);
+  return count < carried ? adopted(count) : kept(carried);
 }
 
 /** Both readings are of one window that resets whole, with counts. */

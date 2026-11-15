@@ -772,6 +772,32 @@ describe("the accounting of runs whose answers say little of the balance", () =>
     expect(store.read(KEY)?.requests.remaining).toBe(3989);
   });
 
+  it("deducts a reservation made after an ordinary answer's request was sent, so releasing it gives back only that one", () => {
+    const store = memoryBudgetStore();
+    let now = 1_000_000;
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    store.update(KEY, () => ({
+      ...record(),
+      requests: { limit: 5000, remaining: 4000, resetAt: reset, readAt: now },
+    }));
+    now += 5;
+    const sentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 5;
+    const unsentAt = governor.admit("GitHub", KEY, { reserve: "requests" });
+    now += 10;
+    governor.observe(
+      KEY,
+      { requests: { limit: 5000, remaining: 0, resetAt: reset } },
+      sentAt,
+    );
+    expect(store.read(KEY)?.requests.remaining).toBe(0);
+    governor.release?.(KEY, "requests", unsentAt);
+    expect(store.read(KEY)?.requests.remaining).toBe(0);
+  });
+
   it("reads a stored window with a negative or fractional overflow count as none", () => {
     const window = { limit: 5000, remaining: 4000, resetAt: 2_000_000 };
     const text = (overflow: unknown) =>
