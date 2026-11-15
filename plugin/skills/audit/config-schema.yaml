@@ -525,7 +525,7 @@ fields:
     type: integer
     min: 0
     default: 2
-    since: next
+    since: 0.241.0
     read_by: [drive-pr]
   drive.pass_model:
     type: string
