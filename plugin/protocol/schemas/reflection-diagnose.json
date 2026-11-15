@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/repo-commands/v1/schemas/reflection-diagnose.json",
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "additionalProperties": true
+}

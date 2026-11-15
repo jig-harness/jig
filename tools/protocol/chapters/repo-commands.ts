@@ -11,6 +11,8 @@ import {
 } from "../../../plugin/shared/repo-commands.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { flag, table } from "../markdown.ts";
+import { COMMAND_OUTPUT_SHAPES } from "../../../plugin/shared/repo-command-shapes.ts";
+import { REFLECTION_EVENT_SHAPE } from "../../../plugin/skills/reflect/scripts/lib/event-shapes.ts";
 
 const SOURCE_FILE = "plugin/shared/repo-commands.ts";
 const SOURCE = `${SOURCE_FILE}#REPO_COMMANDS`;
@@ -203,6 +205,13 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
 };
 
 export const REPO_COMMANDS_CHAPTER: Chapter = {
+  schemas: [
+    ...Object.entries(COMMAND_OUTPUT_SHAPES).map(([name, shape]) => ({
+      name,
+      shape,
+    })),
+    { name: "reflection-event", shape: REFLECTION_EVENT_SHAPE },
+  ],
   id: "repo-commands",
   title: "Commands a repository supplies",
   summary:

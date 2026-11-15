@@ -25,7 +25,8 @@ import {
   type IssueAttachment,
   type TrackerAttachments,
 } from "../attachment.ts";
-import { isRecord } from "../../../../../../shared/guards.ts";
+import { matches } from "../../../../../../shared/shapes.ts";
+import { ATTACHMENT_MARKER_SHAPE } from "../../../../../../shared/records/marker-shapes.ts";
 import { attempt } from "../../../../../../shared/outcome.ts";
 import type { Client } from "./client.ts";
 import { PAGE, record, str } from "./read.ts";
@@ -214,13 +215,7 @@ export function markerOf(body: string): Marker | null {
     JSON.parse(body.slice(ATTACHMENT_MARKER.length, end)),
   );
   const m = read.ok ? read.value : null;
-  if (
-    !isRecord(m) ||
-    (m.form !== "comment" && m.form !== "link") ||
-    typeof m.title !== "string" ||
-    typeof m.filename !== "string"
-  )
-    return null;
+  if (!matches(ATTACHMENT_MARKER_SHAPE, m)) return null;
   return m as unknown as Marker;
 }
 
