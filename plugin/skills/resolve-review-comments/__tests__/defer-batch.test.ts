@@ -363,6 +363,18 @@ describe("appendEntry", () => {
     ]);
   });
 
+  it("does not carry inline code across a heading boundary", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["### Note `", `### ${url}`, identity, "`"].join("\n");
+    expect(entryHeadings(doc)).toEqual(["Note `", url]);
+    expect(authoritativeLines(doc)).toEqual([
+      "### Note `",
+      `### ${url}`,
+      identity,
+      "`",
+    ]);
+  });
+
   it("is not fooled by a non-heading line or a deeper heading", () => {
     expect(headingEntryKey(`> ### ${url}`)).toBe(null);
     expect(headingEntryKey(`text ${url}`)).toBe(null);

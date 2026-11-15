@@ -108,6 +108,7 @@ function hasClosingRun(
   for (let index = afterLine + 1; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     if (line.trim() === "") return false;
+    if (/^ {0,3}#{1,6}(?:\s|$)/.test(line)) return false;
     if (closingRun(line, 0, delimiter) !== null) return true;
   }
   return false;
