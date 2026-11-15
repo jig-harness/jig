@@ -53,6 +53,17 @@ Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
 
+### 56. The epic planner: every epic planned, and its plan kept current
+
+An epic's children run side by side only when the epic carries an execution
+plan, and today nothing writes one. `/jig:plan-epic` reads an epic and its
+children on GitHub Issues, Linear or Jira. It records each real dependency
+as the tracker's own relation, and writes the plan the pickup and the
+dispatcher read. Run again, it keeps the plan current: mechanical changes
+apply on their own, and changes that need judgment wait for one approval.
+The feature delivery module gains an acceptance stage and the execution
+plan as a stated practice.
+
 ### 50. What the line hands a person: each class of need settled at its source
 
 Most waits the dispatcher hands a person are not decisions. A flaky check
@@ -76,6 +87,17 @@ budget the whole machine shares, and keeps each request small enough to be
 answered. Next are GitHub's limits in the shared budget, reuse of unchanged
 answers and identical reads, and gates that enforce the transport boundary
 and query cost ceilings.
+
+### 57. Starting work that will not collide first
+
+When several pieces of work change the same files, each merge puts the
+others in conflict. Every conflict costs another agent session and another
+test run. Each item gets a record of the files it is expected to change.
+The dispatcher compares those files with every open pull request and every
+item already in progress. It starts work that collides with nothing first,
+and starts colliding work when nothing else is ready. It starts no more
+work than the machine can test in time. Each item that waits says what it
+waits on.
 
 ### 36. The dispatch board: what is driven and what is ready to merge
 
@@ -131,6 +153,27 @@ Jig also reports how often each kind of decision follows the
 recommendation, so a team can see which decisions still need a person.
 Later, decisions that cannot be undone, such as a release, will need proof
 that a person answered.
+
+### 58. Declared priorities, a progress review and the overview
+
+A person sees individual failures without seeing whether their goals are
+advancing. [The design](design/priorities-and-overview.md) defines one priorities record
+at site, repository and individual levels. A reproducible shortlist carries
+each epic's rank to its children. A progress review proposes systematic fixes
+and never acts, and an overview joins the facts inside the existing dashboard.
+Urgent issues stay visible, assigned bugs retain their priority, and a
+minimum share keeps peripheral goals moving. The overview pairs each issue
+with its pull request and shows the decisions owed, with confirmed actions
+made by the person's browser, phone unlock and no phone merge.
+
+The person reviews the design before implementation. Build the record and
+ranker, then trial the progress review on Jig and a consumer repository,
+then the overview after its visual design round. Browser actions wait for
+the browser write path to merge and for device probes; site-level records arrive with
+the optional hub. Done when equal input snapshots reproduce the shortlist
+and every Urgent issue appears in each review. The overview must explain
+progress and waiting from structured facts, and browser actions must preserve
+the person's authority. The trial precedes new M9 audit criteria.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
@@ -413,10 +456,10 @@ alerts will.
 
 ### 17. Corrected designs for the existing modules
 
-Practices working repositories validated, added to the modules that exist:
-watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
-that runs M7's post-merge stage in any repository, and a generator for the
-model roster (M0).
+Practices working repositories validated, added to the modules that exist.
+They are watchdogs for what is deployed (M10, M11), a skill that runs M7's
+post-merge stage in any repository, and a generator for the model roster
+(M0).
 
 ### 10. Values the skills still assume
 
@@ -509,8 +552,9 @@ See the [distribution design](design/distribution.md).
   in step with decisions and audits them
   ([M0](modules/M0-instruction-architecture/README.md)), and a review skill
   for SOLID design principles.
-- **Tracker planning.** Epic planning and prioritisation as skills on the
-  tracker interface.
+- **Tracker planning.** Prioritisation, the epic acceptance review, a
+  review-debt report and a skill that applies approved learnings, as skills
+  on the tracker interface.
 - **A forge interface.** GitHub is the only forge the pull-request skills
   work with; an interface with GitHub behind it, then GitLab as the second
   ([what it covers](plugin/EXTENDING.md#forge-github)).

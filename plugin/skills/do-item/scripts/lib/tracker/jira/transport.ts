@@ -712,7 +712,7 @@ export interface OffsetOptions {
   /** What tells items apart. */
   idOf: (item: Record<string, unknown>) => unknown;
   where: string;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
   /** The items are strings (label names), each read as `{name}`. */
   strings?: boolean;
 }

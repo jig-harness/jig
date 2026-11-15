@@ -28,7 +28,11 @@ import type { ReadRecord } from "./launches.ts";
 import { routineClassOf, routineQuestion } from "./routine-questions.ts";
 import { questionOf } from "./session.ts";
 import { stateDb } from "./state.ts";
-import { isRerun, retryableFollowup } from "./session-startup.ts";
+import {
+  isRerun,
+  retryableFollowup,
+  unwrittenResult,
+} from "./session-startup.ts";
 import { currentIso, parseMs } from "../../shared/time.ts";
 
 export interface FollowupOutcome {
@@ -134,7 +138,8 @@ export function readOutcomes(
 
 /** What an ended follow-up record asked: its question, its tag's class where its prompt offered tags, and whether it was a run again. */
 export function askedBy(r: ReadRecord): Asked {
-  const question = questionOf(r.state);
+  // An unwritten end is a host fault: its database question is never asked.
+  const question = unwrittenResult(r) ? null : questionOf(r.state);
   return {
     question,
     ...(r.record.routineTags === true

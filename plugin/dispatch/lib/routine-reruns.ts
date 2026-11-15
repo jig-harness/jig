@@ -41,7 +41,7 @@ import {
   routineClassOf,
   type StandingAnswer,
 } from "./routine-questions.ts";
-import { isRerun } from "./session-startup.ts";
+import { isRerun, unwrittenResult } from "./session-startup.ts";
 import { releaseOwnMarkers } from "./followup-waits.ts";
 import { questionOf } from "./session.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -56,6 +56,24 @@ export interface RoutineRerun {
 }
 
 /**
+ * Whether the failed attempt is another path's to settle: an unwritten end is
+ * a host fault whose recovery the host-health path owns (releasing this marker
+ * would drop it), an attempt that was itself a run again owes none, and a
+ * pass that recorded a rate-limit wait asked nothing (`followup-waits.ts`
+ * owns it).
+ */
+function ownedElsewhere(
+  outcome: FollowupOutcome,
+  found: ReadRecord | undefined,
+): boolean {
+  if (outcome.rerun === true) return true;
+  if (found === undefined) return false;
+  return (
+    unwrittenResult(found) || isRerun(found.record) || found.result === "waits"
+  );
+}
+
+/**
  * The run again the follow-up whose latest outcome is `outcome` owes; `null`
  * when it owes none: it did not fail, its question carried no routine tag,
  * or the attempt was itself a run again.
@@ -67,10 +85,7 @@ export function routineRerun(
   if (outcome?.outcome !== "failed" || outcome.unreadable !== undefined)
     return null;
   const found = launches.find((r) => r.record.id === outcome.record);
-  if (outcome.rerun === true || (found !== undefined && isRerun(found.record)))
-    return null;
-  // A pass that recorded a wait for a rate limit asked nothing: `followup-waits.ts` owns it.
-  if (found?.result === "waits") return null;
+  if (ownedElsewhere(outcome, found)) return null;
   const question =
     outcome.question ?? (found === undefined ? null : questionOf(found.state));
   const routine =

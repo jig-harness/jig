@@ -11,6 +11,7 @@
  * on as ISO 8601 in UTC.
  */
 
+import { waitFor } from "../../../../../../shared/wait-for.ts";
 import { dispatchTransport } from "./dispatch-transport.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
@@ -128,8 +129,8 @@ export interface Client {
   ): Promise<JiraIssue[]>;
   /** Every comment on an issue, oldest first. */
   comments(key: string, signal?: AbortSignal): Promise<JiraComment[]>;
-  /** Every changelog entry of an issue. */
-  changelog(key: string): Promise<ChangelogEntry[]>;
+  /** Every changelog entry of an issue; an aborted `signal` ends the read and the pages not yet read. */
+  changelog(key: string, signal?: AbortSignal): Promise<ChangelogEntry[]>;
   /** A fix version of the project by its name; its id. */
   version(name: string, signal?: AbortSignal): Promise<string>;
   /** A priority by its name; its id. */
@@ -183,10 +184,9 @@ export interface Client {
    * An aborted `signal` ends the request in flight and the pages not yet read.
    */
   accountId(identity: string, signal?: AbortSignal): Promise<string>;
-  /** Whether the account can be assigned issues in the project; cached. */
-  assignable(accountId: string): Promise<boolean>;
-  /** Whether a user (a comment author, an assigner) is trusted. */
-  trusted(user: Record<string, unknown> | null): Promise<boolean>;
+  /** Whether the account can be assigned issues in the project (cached, shared: an aborted `signal` ends only this wait); `trusted`: whether a user (a comment author, an assigner) is. */
+  assignable(accountId: string, signal?: AbortSignal): Promise<boolean>;
+  trusted(u: Record<string, unknown> | null, s?: AbortSignal): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
 }
@@ -739,11 +739,12 @@ export function jiraClient(opts: ClientOptions): Client {
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
 
-    async changelog(key) {
+    async changelog(key, signal) {
+      const log = `changelog of ${key}`;
       const values = await offsetPages(
         transport,
         { method: "GET", path: `issue/${encodeURIComponent(key)}/changelog` },
-        { items: "values", idOf: (v) => v.id, where: `changelog of ${key}` },
+        { items: "values", idOf: (v) => v.id, where: log, signal },
       );
       return values.map((v, i) => {
         const where = `changelog of ${key}[${i}]`;
@@ -950,7 +951,8 @@ export function jiraClient(opts: ClientOptions): Client {
         : searchAccount(get, who, signal);
     },
 
-    assignable(accountId) {
+    assignable(accountId, signal) {
+      signal?.throwIfAborted();
       let found = assignables.get(accountId);
       if (found === undefined) {
         found = (async () => {
@@ -968,13 +970,13 @@ export function jiraClient(opts: ClientOptions): Client {
         found.catch(() => assignables.delete(accountId));
         assignables.set(accountId, found);
       }
-      return found;
+      return signal === undefined ? found : waitFor(found, signal);
     },
 
-    async trusted(user) {
+    async trusted(user, signal) {
       if (user === null || typeof user.accountId !== "string") return false;
       if (user.accountType !== "atlassian" || user.guest === true) return false;
-      return client.assignable(user.accountId);
+      return client.assignable(user.accountId, signal);
     },
 
     timeZone() {

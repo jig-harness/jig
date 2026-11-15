@@ -19,8 +19,11 @@
  * as Orca reports it, unnormalised. Every file carries the record envelope
  * (`records/envelope.ts`) and is published whole: written to a temporary
  * file in its directory and renamed (or, for an admission, linked) into
- * place, so a reader never sees a partial one. A stale admission is replaced
- * under a `.<key>.json.reclaim` lock created exclusively beside it.
+ * place, so a reader never sees a partial one. gc marks its admission
+ * submitted, by a rename over it, just before `orca worktree rm`; a submitted
+ * admission is released only by that call's reply or the worktree's absence.
+ * A dead collector's admission is taken over, or deleted once its worktree is
+ * gone, under a file lock (`file-lock.ts`) beside it.
  *
  * What a reader makes of a file it cannot read fails closed for gc: an
  * admission or a launch marker that does not parse, or names a version this
@@ -40,6 +43,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
+import { tryFileLockSync } from "./file-lock.ts";
 import {
   decodeIdentity,
   describeIdentity,
@@ -172,6 +176,18 @@ export interface Admission {
   /** When it was written: the envelope's `at`. */
   at: string;
   holder: ProcessIdentity;
+  /**
+   * When `orca worktree rm` was called under this admission, or `null` while
+   * it has not been: set by `submit`, or carried over from the submitted
+   * admission of a collector that ended, which this one took over.
+   */
+  submitted: string | null;
+  /**
+   * Mark the admission submitted, right before the removal call: it is
+   * rewritten in place by a rename, so a reader never finds it absent, and
+   * only while it is still this one. On a failure nothing is marked.
+   */
+  submit(now?: number): Outcome<true, AdmissionCode>;
   /** Delete the admission, when it is still this one. */
   release(): void;
 }
@@ -188,11 +204,27 @@ function writerOf(identity: ProcessIdentity): Writer {
   };
 }
 
-/** The holder an admission's text names, or why it does not read. */
+/** What an admission's text says: the worktree's path, its holder, when it was written and submitted. */
+interface Standing {
+  path: string;
+  holder: ProcessIdentity;
+  at: string;
+  submitted: string | null;
+}
+
+/** Whether `value` is an admission's `submitted` as it may stand: absent, or a time. */
+function isMark(value: unknown): value is string | undefined {
+  return (
+    value === undefined ||
+    (typeof value === "string" && !Number.isNaN(parseMs(value)))
+  );
+}
+
+/** What an admission's text says, or why it does not read. */
 function admissionHolder(
   text: string,
   key: string,
-): Outcome<{ holder: ProcessIdentity; at: string }, "unreadable"> {
+): Outcome<Standing, "unreadable"> {
   const read = decode(text, ADMISSION_KIND);
   if (!read.ok) return failed("unreadable", read.failure.reason);
   if (read.value.envelope.v !== GUARD_VERSION)
@@ -200,7 +232,7 @@ function admissionHolder(
       "unreadable",
       `version ${read.value.envelope.v} is not one this version of Jig reads`,
     );
-  const { path } = read.value.payload;
+  const { path, submitted } = read.value.payload;
   if (
     typeof path !== "string" ||
     path === "" ||
@@ -208,10 +240,17 @@ function admissionHolder(
     guardKey(path) !== key
   )
     return failed("unreadable", "it does not name the worktree of its key");
+  if (!isMark(submitted))
+    return failed("unreadable", "its submitted mark is not a time");
   const holder = decodeIdentity(read.value.payload.holder);
   return holder === null
     ? failed("unreadable", "it names no holder")
-    : ok({ holder, at: read.value.envelope.at });
+    : ok({
+        path,
+        holder,
+        at: read.value.envelope.at,
+        submitted: submitted ?? null,
+      });
 }
 
 /** Whether the admission at `file` is still the one `mine` wrote. */
@@ -230,12 +269,33 @@ function stillMine(
   );
 }
 
+/** Write `body` to a new temporary file beside `file`; its path, or why it cannot be written. */
+function stage(
+  dir: string,
+  file: string,
+  body: string,
+): Outcome<string, AdmissionCode> {
+  const staged = stagedBeside(dir, basename(file));
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(staged, body, { flag: "wx", mode: 0o600 });
+    return ok(staged);
+  } catch (error) {
+    rmSync(staged, { force: true });
+    return failed(
+      "unwritable",
+      `the admission ${file} cannot be written`,
+      error,
+    );
+  }
+}
+
 /**
  * Write gc's admission for the worktree Orca reports at `path`: published
  * whole by a link, which fails while another admission stands. One whose
- * holder is judged dead is replaced; one held by a live or unjudgeable
- * process, or that does not read, refuses this one and stays for a person to
- * inspect.
+ * holder is judged dead is taken over, keeping its submitted mark; one held
+ * by a live or unjudgeable process, or that does not read, refuses this one
+ * and stays for a person to inspect.
  */
 export function admit(
   path: string,
@@ -247,57 +307,86 @@ export function admit(
   const key = guardKey(path);
   const file = join(dir, `${key}.json`);
   const at = isoFromMs(now);
-  const body = encode(
-    {
-      kind: ADMISSION_KIND,
-      v: GUARD_VERSION,
-      key,
-      writer: writerOf(holder),
-      at,
-    },
-    { path, holder: JSON.parse(encodeIdentity(holder)) },
-  );
-  const staged = stagedBeside(dir, `${key}.json`);
+  const body = (submitted: string | null): string =>
+    `${encode(
+      {
+        kind: ADMISSION_KIND,
+        v: GUARD_VERSION,
+        key,
+        writer: writerOf(holder),
+        at,
+      },
+      {
+        path,
+        holder: JSON.parse(encodeIdentity(holder)),
+        ...(submitted === null ? {} : { submitted }),
+      },
+    )}\n`;
+  const staged = stage(dir, file, body(null));
+  if (!staged.ok) return staged;
   try {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileSync(staged, `${body}\n`, { flag: "wx", mode: 0o600 });
-  } catch (error) {
-    rmSync(staged, { force: true });
-    return failed(
-      "unwritable",
-      `the admission ${file} cannot be written`,
-      error,
+    const placed = publish(staged.value, file, (submitted) =>
+      writeFileSync(staged.value, body(submitted)),
     );
-  }
-  try {
-    const placed = publish(staged, file);
     if (!placed.ok) return placed;
     const mine = { holder, at };
     if (!stillMine(file, key, mine))
       return failed("held", `another collection took ${file} first`);
-    return ok({
+    const admission: Admission = {
       file,
       key,
       at,
       holder,
+      submitted: placed.value.submitted,
+      submit: (when = currentMs()) => {
+        const mark = isoFromMs(when);
+        const marked = stage(dir, file, body(mark));
+        if (!marked.ok) return marked;
+        try {
+          if (!stillMine(file, key, mine))
+            return failed(
+              "held",
+              `the admission ${file} is no longer this collection's`,
+            );
+          renameWithRetry(marked.value, file);
+          admission.submitted = mark;
+          return ok(true);
+        } catch (error) {
+          return failed(
+            "unwritable",
+            `the admission ${file} cannot be marked submitted`,
+            error,
+          );
+        } finally {
+          rmSync(marked.value, { force: true });
+        }
+      },
       release: () => {
         if (stillMine(file, key, mine)) rmSync(file, { force: true });
       },
-    });
+    };
+    return ok(admission);
   } finally {
-    rmSync(staged, { force: true });
+    rmSync(staged.value, { force: true });
   }
 }
 
-/** Link `staged` into place at `file`, replacing an admission only when its holder is dead. */
+/** Rewrite the staged admission to carry the submitted mark it takes over. */
+type CarryMark = (submitted: string) => void;
+
+/**
+ * Link `staged` into place at `file`, taking over an admission only when its
+ * holder is dead; the submitted mark it carried over, or `null`.
+ */
 function publish(
   staged: string,
   file: string,
+  carry: CarryMark,
   retried = false,
-): Outcome<true, AdmissionCode> {
+): Outcome<{ submitted: string | null }, AdmissionCode> {
   try {
     linkSync(staged, file);
-    return ok(true);
+    return ok({ submitted: null });
   } catch (error) {
     if (errnoCode(error) !== "EEXIST")
       return failed(
@@ -312,23 +401,15 @@ function publish(
   if (text.value === null)
     return retried
       ? failed("held", `another collection is taking ${file}`)
-      : publish(staged, file, true);
-  return replaceDead(staged, file, text.value);
+      : publish(staged, file, carry, true);
+  return replaceDead(staged, file, text.value, carry);
 }
 
-/**
- * Replace the admission `text` at `file` with `staged` when its holder is
- * judged dead. Two collectors can read the same dead admission, so the
- * replacement runs under a reclaim lock created exclusively beside it: the
- * holder of the lock reads the admission again, replaces it only while it is
- * still the one judged, and a contender that finds the lock taken or the
- * admission changed is refused.
- */
-function replaceDead(
-  staged: string,
+/** The standing admission at `file` when its holder is judged dead, or why it is not gc's to take. */
+function deadStanding(
   file: string,
   text: string,
-): Outcome<true, AdmissionCode> {
+): Outcome<Standing, AdmissionCode> {
   const standing = admissionHolder(text, basename(file, ".json"));
   if (!standing.ok)
     return failed(
@@ -342,43 +423,193 @@ function replaceDead(
       "held",
       `another collection holds ${file} (${who}: ${verdict.ok ? verdict.value.reason : verdict.failure.reason})`,
     );
-  const lock = join(dirname(file), `.${basename(file)}.reclaim`);
+  return standing;
+}
+
+/**
+ * Run `body` under the reclaim lock of the admission at `file`: two
+ * collectors can judge the same dead admission, and only the lock's holder
+ * may act on it. The lock is the shared file lock (`file-lock.ts`), which
+ * publishes it whole and hands a dead holder's lock to one reclaimer at a
+ * time without moving a live owner's.
+ */
+function underReclaimLock<T, Code extends string>(
+  file: string,
+  body: () => Outcome<T, Code>,
+): Outcome<T, Code | AdmissionCode> {
   try {
-    writeFileSync(lock, `${encodeIdentity(ownIdentity())}\n`, {
-      flag: "wx",
-      mode: 0o600,
+    const held = tryFileLockSync(file, body, {
+      root: dirname(file),
+      name: "reclaim",
     });
+    if (held !== null) return held.value;
   } catch (error) {
-    if (errnoCode(error) === "EEXIST")
-      return failed(
-        "held",
-        `another collection is replacing the stale admission ${file}; if no collection runs, remove ${lock} after inspection`,
-      );
     return failed(
       "unwritable",
-      `the stale admission ${file} cannot be replaced`,
+      `the stale admission ${file} cannot be settled`,
       error,
     );
   }
+  return failed(
+    "held",
+    `another collection is settling the stale admission ${file}`,
+  );
+}
+
+/**
+ * Take over the admission `text` at `file` with `staged` when its holder is
+ * judged dead, under the reclaim lock: the lock's holder reads the admission
+ * again and replaces it, by a rename so the hook never finds the worktree
+ * unclaimed, only while it is still the one judged; a contender that finds
+ * the lock taken or the admission changed is refused. A submitted admission
+ * stays submitted: its mark is carried into the one that replaces it.
+ */
+function replaceDead(
+  staged: string,
+  file: string,
+  text: string,
+  carry: CarryMark,
+): Outcome<{ submitted: string | null }, AdmissionCode> {
+  const standing = deadStanding(file, text);
+  if (!standing.ok) return standing;
+  const { submitted } = standing.value;
+  return underReclaimLock(
+    file,
+    (): Outcome<{ submitted: string | null }, AdmissionCode> => {
+      try {
+        const now = readText(file);
+        if (!now.ok) return now;
+        if (now.value !== null && now.value !== text)
+          return failed("held", `another collection took ${file} first`);
+        if (submitted !== null) carry(submitted);
+        if (now.value === null) linkSync(staged, file);
+        else renameWithRetry(staged, file);
+        return ok({ submitted });
+      } catch (error) {
+        if (errnoCode(error) === "EEXIST")
+          return failed("held", `another collection took ${file} first`);
+        return failed(
+          "unwritable",
+          `the stale admission ${file} cannot be replaced`,
+          error,
+        );
+      }
+    },
+  );
+}
+
+/** An admission whose holder is judged dead: the worktree it names and whether its removal was submitted. */
+export interface StaleAdmission {
+  path: string;
+  submitted: string | null;
+}
+
+/**
+ * The admissions under `root` whose holder is judged dead, each with the
+ * worktree path it names. One that does not read, or whose holder is live or
+ * cannot be judged, is left out, and so is every one when the directory
+ * cannot be listed.
+ */
+export function staleAdmissions(root = guardRoot()): StaleAdmission[] {
+  const dir = join(root, "admissions");
+  let names: string[];
   try {
-    const now = readText(file);
-    if (!now.ok) return now;
-    if (now.value !== null && now.value !== text)
-      return failed("held", `another collection took ${file} first`);
-    if (now.value !== null) rmSync(file, { force: true });
-    linkSync(staged, file);
-    return ok(true);
+    names = readdirSync(dir).filter((name) => ENTRY.test(name));
   } catch (error) {
-    if (errnoCode(error) === "EEXIST")
-      return failed("held", `another collection took ${file} first`);
-    return failed(
-      "unwritable",
-      `the stale admission ${file} cannot be replaced`,
-      error,
-    );
-  } finally {
-    rmSync(lock, { force: true });
+    if (errnoCode(error) !== "ENOENT")
+      swallow(error, "the admissions cannot be listed; none are settled");
+    return [];
   }
+  const stale: StaleAdmission[] = [];
+  for (const name of names) {
+    const file = join(dir, name);
+    const text = readText(file);
+    if (!text.ok || text.value === null) continue;
+    const standing = deadStanding(file, text.value);
+    if (standing.ok)
+      stale.push({
+        path: standing.value.path,
+        submitted: standing.value.submitted,
+      });
+  }
+  return stale;
+}
+
+/** An admission under the guard root that gc cannot read: the file and why. */
+export interface UnreadableAdmission {
+  file: string;
+  reason: string;
+}
+
+/**
+ * The admissions under `root` that do not read or are malformed. They still
+ * block launches under the fail-closed contract, so a collection reports each
+ * for a person to inspect.
+ */
+export function unreadableAdmissions(
+  root = guardRoot(),
+): UnreadableAdmission[] {
+  const dir = join(root, "admissions");
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((name) => ENTRY.test(name));
+  } catch (error) {
+    if (errnoCode(error) !== "ENOENT")
+      swallow(error, "the admissions cannot be listed; none are reported");
+    return [];
+  }
+  const found: UnreadableAdmission[] = [];
+  for (const name of names) {
+    const file = join(dir, name);
+    const text = readText(file);
+    if (!text.ok) {
+      found.push({ file, reason: text.failure.reason });
+      continue;
+    }
+    if (text.value === null) continue;
+    const standing = admissionHolder(text.value, basename(file, ".json"));
+    if (!standing.ok) found.push({ file, reason: standing.failure.reason });
+  }
+  return found;
+}
+
+/**
+ * Delete the admission for the worktree at `path` when its holder is judged
+ * dead and `absent` (the worktree's absence from the disk, read last) holds:
+ * under the reclaim lock, after reading the admission again. The caller has
+ * already read the worktree's absence from Orca's list.
+ */
+export function releaseAbsent(
+  path: string,
+  absent: () => boolean,
+  root = guardRoot(),
+): Outcome<true, AdmissionCode | "present"> {
+  const file = join(root, "admissions", `${guardKey(path)}.json`);
+  return underReclaimLock(
+    file,
+    (): Outcome<true, AdmissionCode | "present"> => {
+      const text = readText(file);
+      if (!text.ok) return text;
+      if (text.value === null) return ok(true);
+      const standing = deadStanding(file, text.value);
+      if (!standing.ok) return standing;
+      if (!absent())
+        return failed(
+          "present",
+          `the worktree at ${path} is on the disk again`,
+        );
+      try {
+        rmSync(file, { force: true });
+        return ok(true);
+      } catch (error) {
+        return failed(
+          "unwritable",
+          `the stale admission ${file} cannot be deleted`,
+          error,
+        );
+      }
+    },
+  );
 }
 
 // Launch markers ---------------------------------------------------------------
