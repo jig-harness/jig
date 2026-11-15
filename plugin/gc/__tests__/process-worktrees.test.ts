@@ -101,8 +101,12 @@ test.skipIf(
     const refused = await kind.exclusive(async () => { await prove("dead"); return kind.collect(resource); });
     if (refused.outcome !== "failed" || !existsSync(tree)) throw Error("owner change during hook was not refused: " + JSON.stringify(refused));
     rmSync(flag); writeWorktreeOwner(admin, owner);
+    db.query("INSERT INTO process_worktree_completions (id, record, claim, exit) VALUES (?, ?, ?, ?)").run(id, JSON.stringify(record), JSON.stringify(claim), JSON.stringify(exit));
+    db.query("DELETE FROM launches WHERE id = ?").run(id);
+    await prove("dead");
     const collected = await kind.exclusive(async () => { await prove("dead"); return kind.collect(resource); });
     if (collected.outcome !== "collected" || existsSync(tree)) throw Error(JSON.stringify(collected));
+    if (db.query("SELECT id FROM process_worktree_completions").all().length !== 0) throw Error("removed process worktree retained completion evidence");
     console.log("collected with final owner proof");
   `;
     const child = Bun.spawnSync(
