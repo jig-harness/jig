@@ -70,6 +70,24 @@ test.each([false, true])(
   },
 );
 
+test.each([
+  ['--header=If-None-Match: "one"'],
+  ['-HIf-None-Match: "one"'],
+  ["--header=If-Modified-Since: yesterday"],
+])("304 costs zero with a joined conditional header: %s", async (header) => {
+  const events: CallRecord[] = [];
+  await withLedgerWriter(
+    (e) => events.push(e),
+    () => client(304)(["api", "repos/o/r/pulls/1", header]),
+  );
+  expect(events[0]).toMatchObject({
+    requests: 1,
+    cost: 0,
+    estimated: false,
+    failure: null,
+  });
+});
+
 test("a conditional 200 costs one primary request", async () => {
   const events: CallRecord[] = [];
   await withLedgerWriter(

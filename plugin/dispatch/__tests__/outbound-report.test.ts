@@ -167,3 +167,28 @@ test("unchanged GitHub traffic is reported without forecasting primary depletion
     spent: 20,
   });
 });
+
+test("unknown GitHub primary spending forecasts conservatively", () => {
+  const data = report();
+  data.rows = [
+    {
+      ...row(),
+      system: "github",
+      credential: "github:test",
+      operation: "GET /repos/{}/{}/pulls/{}",
+      unit: "requests",
+      requests: 2000,
+      cost: 0,
+      unknownCost: 2000,
+    },
+  ];
+  const balance = data.balances[0];
+  if (balance === undefined) throw new Error("fixture has no balance");
+  balance.key = "github:test";
+  balance.system = "github";
+  balance.record.requests = { limit: 5000, remaining: 10, resetAt: now + hour };
+  expect(quotaRisks(data, now)[0]).toMatchObject({
+    window: "requests",
+    spent: 2000,
+  });
+});

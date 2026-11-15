@@ -216,11 +216,19 @@ export function apiRoute(args: readonly string[]): string {
 
 /** A request GitHub answers 304 without charging it, when nothing changed; a 200 to it is charged like any other. */
 export function conditional(args: readonly string[]): boolean {
-  return args.some(
-    (arg, i) =>
-      (args[i - 1] === "-H" || args[i - 1] === "--header") &&
-      /^\s*if-(none-match|modified-since)\s*:/i.test(arg),
-  );
+  return args.some((arg, i) => {
+    const header =
+      args[i - 1] === "-H" || args[i - 1] === "--header"
+        ? arg
+        : arg.startsWith("--header=")
+          ? arg.slice("--header=".length)
+          : arg.startsWith("-H") && arg !== "-H"
+            ? arg.slice(2).replace(/^=/, "")
+            : null;
+    return (
+      header !== null && /^\s*if-(none-match|modified-since)\s*:/i.test(header)
+    );
+  });
 }
 
 /**
