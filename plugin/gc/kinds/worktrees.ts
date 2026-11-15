@@ -69,7 +69,11 @@ import {
   type WorktreeIdentity,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
-import { holdDetachedHead, type HeadHold } from "./worktree-head-hold.ts";
+import {
+  headHoldRefusal,
+  holdHead,
+  type HeadHold,
+} from "./worktree-head-hold.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
@@ -554,11 +558,18 @@ async function collectAgentWorktree(
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
-  const withArchive = (collected: Collected): Collected =>
-    withArchiveOf(collected, archived);
-  let snapshot: { hook: string; dir: string } | null = null;
-  // The detached head held from the final comparison through the removal.
+  // The head held from the final comparison through the removal.
   const holds: HeadHold[] = [];
+  // Every answer once the hold may be taken releases it, and says so when
+  // the release failed, since the lock then keeps git from moving the head.
+  const withArchive = (collected: Collected): Collected => {
+    const unreleased = releaseHolds(holds, log);
+    const answer = withArchiveOf(collected, archived);
+    return unreleased === null
+      ? answer
+      : { ...answer, reason: `${answer.reason}; ${unreleased}` };
+  };
+  let snapshot: { hook: string; dir: string } | null = null;
   try {
     // The commit and branch the runner's final proof saw: every check before
     // removal holds the tree to them.
@@ -567,6 +578,11 @@ async function collectAgentWorktree(
         outcome: "failed",
         reason: "kept: no final proof recorded the tree's commit and branch",
       };
+    const refusal = await headHoldRefusal(resource.id, identity);
+    if (!refusal.ok)
+      return { outcome: "failed", reason: refusal.failure.reason };
+    if (refusal.value !== null)
+      return { outcome: "refused", reason: refusal.value };
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
     if (!taken.ok) return { outcome: "failed", reason: taken.failure.reason };
     snapshot = taken.value;
@@ -585,8 +601,8 @@ async function collectAgentWorktree(
             legacy,
             // The holder read can take half a minute, so the identity
             // comparison goes last: nothing slow stands between it and removal.
-            // Before the final one the head is held, so no commit lands on a
-            // detached head between it and `git worktree remove`.
+            // Before the final one the head is held, so no commit, switch or
+            // reset moves it between the comparison and `git worktree remove`.
             async (final) => {
               const held = await unheld(worktree);
               if (!held.ok) return held;
@@ -595,7 +611,7 @@ async function collectAgentWorktree(
                 identity,
                 final
                   ? async () => {
-                      const taken = await holdDetachedHead(worktree, identity);
+                      const taken = await holdHead(worktree, identity);
                       if (!taken.ok) return taken;
                       holds.push(taken.value);
                       return ok(undefined);
@@ -633,13 +649,24 @@ async function collectAgentWorktree(
       reason: error instanceof Error ? error.message : String(error),
     });
   } finally {
-    for (const hold of holds) {
-      const released = hold.release();
-      if (!released.ok) log(released.failure.reason);
-    }
+    releaseHolds(holds, log);
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
+}
+/** Release every hold taken, emptying `holds`; why one could not be, or null. */
+function releaseHolds(
+  holds: HeadHold[],
+  log: (line: string) => void,
+): string | null {
+  const reasons: string[] = [];
+  for (const hold of holds.splice(0)) {
+    const released = hold.release();
+    if (released.ok) continue;
+    reasons.push(released.failure.reason);
+    log(String(released.failure.cause ?? released.failure.reason));
+  }
+  return reasons.length === 0 ? null : reasons.join("; ");
 }
 /** `collected` naming the archive written before removal, when there is one. */
 function withArchiveOf(

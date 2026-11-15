@@ -1,8 +1,9 @@
 /**
- * Holding a detached worktree's HEAD through its removal: while held, git
- * refuses to move the head; a branch needs no hold; a lock git already holds,
- * or a ref store where `HEAD.lock` holds nothing, keeps the tree; and a
- * release deletes only the lock the hold wrote.
+ * Holding a worktree's HEAD through its removal: while held, git refuses to
+ * move the head, on a branch or detached; a lock git already holds keeps the
+ * tree; under a ref store where `HEAD.lock` holds nothing a detached tree is
+ * kept and a branched one goes unheld; and a release deletes only the lock
+ * the hold wrote.
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import {
@@ -17,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { gitEnvironment } from "../git.ts";
-import { holdDetachedHead } from "../kinds/worktree-head-hold.ts";
+import { headHoldRefusal, holdHead } from "../kinds/worktree-head-hold.ts";
 import { worktreeIdentity } from "../kinds/worktree-proof.ts";
 
 const made: string[] = [];
@@ -58,14 +59,14 @@ async function identity(tree: string) {
   return seen.value;
 }
 
-describe("holding a detached worktree's head", () => {
+describe("holding a worktree's head", () => {
   test("while held, git refuses a commit on it; the release frees it", async () => {
     const { tree } = setup();
     const seen = await identity(tree);
-    const held = await holdDetachedHead(tree, seen);
+    const held = await holdHead(tree, seen);
     if (!held.ok) throw new Error(held.failure.reason);
     const lock = join(seen.admin, "HEAD.lock");
-    expect(existsSync(lock)).toBe(true);
+    expect(readFileSync(lock, "utf8")).toStartWith(`jig gc ${process.pid} `);
     const refused = git(tree, ["commit", "--allow-empty", "-m", "late"], 128);
     expect(refused.stderr.toString()).toContain("cannot lock ref 'HEAD'");
     expect(held.value.release()).toEqual({ ok: true, value: undefined });
@@ -73,12 +74,14 @@ describe("holding a detached worktree's head", () => {
     git(tree, ["commit", "-q", "--allow-empty", "-m", "late"]);
   });
 
-  test("a tree on a branch is not held: the branch keeps its commits", async () => {
+  test("a tree on a branch is held too: git refuses to detach its head", async () => {
     const { tree } = setup([], "topic");
     const seen = await identity(tree);
-    const held = await holdDetachedHead(tree, seen);
-    expect(held.ok).toBe(true);
-    expect(existsSync(join(seen.admin, "HEAD.lock"))).toBe(false);
+    const held = await holdHead(tree, seen);
+    if (!held.ok) throw new Error(held.failure.reason);
+    const refused = git(tree, ["switch", "--detach"], 128);
+    expect(refused.stderr.toString()).toContain("HEAD.lock");
+    expect(held.value.release().ok).toBe(true);
   });
 
   test("a lock git already holds keeps the tree, and is left in place", async () => {
@@ -86,7 +89,7 @@ describe("holding a detached worktree's head", () => {
     const seen = await identity(tree);
     const lock = join(seen.admin, "HEAD.lock");
     writeFileSync(lock, "git's own\n");
-    const held = await holdDetachedHead(tree, seen);
+    const held = await holdHead(tree, seen);
     expect(held).toMatchObject({
       ok: false,
       failure: {
@@ -100,7 +103,7 @@ describe("holding a detached worktree's head", () => {
   test("a release leaves a lock another process wrote after the hold's", async () => {
     const { tree } = setup();
     const seen = await identity(tree);
-    const held = await holdDetachedHead(tree, seen);
+    const held = await holdHead(tree, seen);
     if (!held.ok) throw new Error(held.failure.reason);
     const lock = join(seen.admin, "HEAD.lock");
     writeFileSync(lock, "another\n");
@@ -111,7 +114,7 @@ describe("holding a detached worktree's head", () => {
   test("a release after the git directory went is a success", async () => {
     const { repo, tree } = setup();
     const seen = await identity(tree);
-    const held = await holdDetachedHead(tree, seen);
+    const held = await holdHead(tree, seen);
     if (!held.ok) throw new Error(held.failure.reason);
     git(repo, ["worktree", "remove", tree]);
     expect(existsSync(seen.admin)).toBe(false);
@@ -126,11 +129,20 @@ describe("holding a detached worktree's head", () => {
       env: gitEnvironment(),
     }).exitCode === 0;
   test.skipIf(!reftable)(
-    "a repository keeping its refs in reftable keeps a detached tree",
+    "a repository keeping its refs in reftable keeps a detached tree, and leaves a branched one unheld",
     async () => {
+      const branched = setup(["--ref-format=reftable"], "topic");
+      const onBranch = await identity(branched.tree);
+      expect(await headHoldRefusal(branched.tree, onBranch)).toEqual({
+        ok: true,
+        value: null,
+      });
+      const unheld = await holdHead(branched.tree, onBranch);
+      expect(unheld.ok).toBe(true);
+      expect(existsSync(join(onBranch.admin, "HEAD.lock"))).toBe(false);
       const { tree } = setup(["--ref-format=reftable"]);
       const seen = await identity(tree);
-      const held = await holdDetachedHead(tree, seen);
+      const held = await holdHead(tree, seen);
       expect(held).toMatchObject({
         ok: false,
         failure: {
