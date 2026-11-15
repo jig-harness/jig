@@ -53,7 +53,7 @@ import {
   outboundFailure,
   retryAfterMs,
 } from "./failure.ts";
-import { type GhRun, ghRunFailure } from "./github.ts";
+import { type GhRun, ghResponseStatus, ghRunFailure } from "./github.ts";
 import { defaultLedgerPath } from "./ledger.ts";
 import { currentMs, parseMs } from "../time.ts";
 
@@ -215,12 +215,20 @@ export function apiRoute(args: readonly string[]): string {
 }
 
 /** A request GitHub answers 304 without charging it, when nothing changed; a 200 to it is charged like any other. */
-function conditional(args: readonly string[]): boolean {
-  return args.some(
-    (arg, i) =>
-      (args[i - 1] === "-H" || args[i - 1] === "--header") &&
-      /^\s*if-(none-match|modified-since)\s*:/i.test(arg),
-  );
+export function conditional(args: readonly string[]): boolean {
+  return args.some((arg, i) => {
+    const header =
+      args[i - 1] === "-H" || args[i - 1] === "--header"
+        ? arg
+        : arg.startsWith("--header=")
+          ? arg.slice("--header=".length)
+          : arg.startsWith("-H") && arg !== "-H"
+            ? arg.slice(2).replace(/^=/, "")
+            : null;
+    return (
+      header !== null && /^\s*if-(none-match|modified-since)\s*:/i.test(header)
+    );
+  });
 }
 
 /**
@@ -555,9 +563,15 @@ export function ghGovernance(
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";
       const { headers, body } = splitHeaders(stdout);
+      const status =
+        opts.captured && (strip || askedHeaders(args))
+          ? ghResponseStatus(result)
+          : null;
+      const observed =
+        status === null ? result : { ...result, httpStatus: status };
       // A store that cannot take the answer governs nothing (`budget.ts`);
       // anything else that throws here is a defect, and stops the call.
-      const failure = ghRunFailure(result, tookMs);
+      const failure = ghRunFailure(observed, tookMs);
       const now = currentMs();
       gov.observe(
         key,
@@ -566,7 +580,7 @@ export function ghGovernance(
         reservedIn,
       );
       const answered =
-        strip && headers !== null ? { ...result, stdout: body } : result;
+        strip && headers !== null ? { ...observed, stdout: body } : observed;
       if (failure?.code !== "rate-limited") return answered;
       // The caller waits as long as the record now holds the credential, or
       // for the reset of the window the refusal spent; not the generic wait.

@@ -396,6 +396,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.247.2] - 2026-11-15
+
+### Fixed
+
+- Count conditional GitHub request headers in their joined flag forms and forecast unknown primary-quota spending conservatively. **Consumer action:** none.
+- GitHub conditional reads answered unchanged now record request traffic with
+  zero primary quota cost, including when the CLI exits nonzero or response
+  headers are stripped. Budget reports retain that traffic separately, and
+  low-quota forecasts use the charged cost rather than unchanged traffic.
+- Finished worktrees are no longer kept just for the `.fallow` tool cache. Repositories can declare other rebuildable ignored paths with `gc.regenerable_paths`; undeclared content remains protected. Existing installations refresh the collector after upgrading, even without configuration changes, to confirm new default bounds. **Consumer action:** required at machine. After upgrading, review the preview and run `jig install gc --repo <repository> --yes` for every existing installation.
+
+## [0.247.1] - 2026-11-15
+
+### Fixed
+
+- The dispatch dashboard page is built again from its current source, so its
+  list of the files Jig keeps on a machine now includes the cursor where
+  `jig gc` stopped reading the test-fixture registry.
+
 ## [0.247.0] - 2026-11-15
 
 ### Added
@@ -8690,7 +8709,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.247.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.247.2...HEAD
+[0.247.2]: https://github.com/jig-harness/jig/compare/v0.247.1...v0.247.2
+[0.247.1]: https://github.com/jig-harness/jig/compare/v0.247.0...v0.247.1
 [0.247.0]: https://github.com/jig-harness/jig/compare/v0.246.0...v0.247.0
 [0.246.0]: https://github.com/jig-harness/jig/compare/v0.245.0...v0.246.0
 [0.245.0]: https://github.com/jig-harness/jig/compare/v0.244.2...v0.245.0

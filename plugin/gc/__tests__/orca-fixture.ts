@@ -128,6 +128,7 @@ export function setup() {
     kinds: ["worktrees"],
     worktree_roots: [roots],
     scratch_prefixes: [],
+    regenerable_paths: [".fallow"],
   };
   mkdirSync(join(repo, ".config", "worktree-hooks"), { recursive: true });
   writeFileSync(join(repo, ".config/jig.yaml"), dump({ gc: declaration }));
