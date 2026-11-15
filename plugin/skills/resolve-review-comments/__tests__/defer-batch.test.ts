@@ -324,6 +324,20 @@ describe("appendEntry", () => {
     expect(authoritativeLines(doc)).toEqual(["real content"]);
   });
 
+  it("does not let a fence inside an HTML comment hide later entries", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["<!--", "```", "-->", `### ${url}`, identity].join("\n");
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual([`### ${url}`, identity]);
+  });
+
+  it("does not treat Markdown examples as HTML comments", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["`<!--`", "    <!--", `### ${url}`, identity].join("\n");
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual(["`<!--`", `### ${url}`, identity]);
+  });
+
   it("is not fooled by a non-heading line or a deeper heading", () => {
     expect(headingEntryKey(`> ### ${url}`)).toBe(null);
     expect(headingEntryKey(`text ${url}`)).toBe(null);

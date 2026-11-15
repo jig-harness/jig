@@ -73,6 +73,30 @@ interface Fence {
   len: number;
 }
 
+/** Strip inline-code spans and escaped characters before looking for comments. */
+function commentSyntax(line: string): string {
+  let out = "";
+  let ticks = 0;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i] ?? "";
+    if (char === "\\") {
+      i += 1;
+      continue;
+    }
+    if (char === "`") {
+      let end = i;
+      while (line[end] === "`") end += 1;
+      const length = end - i;
+      if (ticks === 0) ticks = length;
+      else if (ticks === length) ticks = 0;
+      i = end - 1;
+      continue;
+    }
+    if (ticks === 0) out += char;
+  }
+  return out;
+}
+
 /** HTML comments are invisible Markdown content, never entry records. */
 function commentLine(
   line: string,
@@ -81,23 +105,24 @@ function commentLine(
   inComment: boolean;
   consumed: boolean;
 } {
+  const syntax = commentSyntax(line);
   let cursor = 0;
   let open = inComment;
-  while (cursor < line.length) {
+  while (cursor < syntax.length) {
     if (open) {
-      const end = line.indexOf("-->", cursor);
+      const end = syntax.indexOf("-->", cursor);
       if (end < 0) return { inComment: true, consumed: true };
       cursor = end + 3;
       open = false;
       continue;
     }
-    const start = line.indexOf("<!--", cursor);
+    const start = syntax.indexOf("<!--", cursor);
     if (start < 0) break;
-    const end = line.indexOf("-->", start + 4);
+    const end = syntax.indexOf("-->", start + 4);
     if (end < 0) return { inComment: true, consumed: true };
     cursor = end + 3;
   }
-  return { inComment: open, consumed: inComment || line.includes("<!--") };
+  return { inComment: open, consumed: inComment || syntax.includes("<!--") };
 }
 
 function openingFence(line: string): { fence: Fence; info: string } | null {
@@ -135,6 +160,12 @@ export function entryHeadings(description: string): string[] {
   let fence: Fence | null = null;
   let inComment = false;
   for (const line of description.split("\n")) {
+    if (fence === null && inComment) {
+      const comment = commentLine(line, inComment);
+      inComment = comment.inComment;
+      continue;
+    }
+    if (fence === null && indentedCodeLine(line)) continue;
     const state = fenceLine(line, fence);
     fence = state.fence;
     if (state.consumed) continue;
@@ -169,6 +200,12 @@ export function authoritativeLines(description: string): string[] {
   let fence: Fence | null = null;
   let inComment = false;
   for (const line of description.split("\n")) {
+    if (fence === null && inComment) {
+      const comment = commentLine(line, inComment);
+      inComment = comment.inComment;
+      continue;
+    }
+    if (fence === null && indentedCodeLine(line)) continue;
     const state = fenceLine(line, fence);
     fence = state.fence;
     if (state.consumed) continue;
