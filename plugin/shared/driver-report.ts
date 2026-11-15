@@ -16,7 +16,9 @@
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
+  closeSync,
+  openSync,
+  readSync,
   renameSync,
   writeFileSync,
 } from "node:fs";
@@ -28,6 +30,27 @@ import {
 } from "./closing-report.ts";
 import { isRecord } from "./guards.ts";
 import { failed, ok, type Outcome } from "./outcome.ts";
+
+/**
+ * The text of the file at `path`, read no further than `max` bytes; `null`
+ * when the file holds more, so an oversized file is refused without being
+ * held whole in memory.
+ */
+export function readBoundedText(path: string, max: number): string | null {
+  const fd = openSync(path, "r");
+  try {
+    const buffer = Buffer.alloc(max + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const n = readSync(fd, buffer, length, buffer.length - length, null);
+      if (n === 0) break;
+      length += n;
+    }
+    return length > max ? null : buffer.toString("utf8", 0, length);
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /** The variable naming the file a dispatched drive writes its closing report to. */
 export const DRIVER_REPORT_VARIABLE = "JIG_DRIVER_REPORT";
@@ -78,8 +101,8 @@ export function readDriverReport(
   if (!existsSync(path)) return ok(null);
   let value: unknown;
   try {
-    const text = readFileSync(path, "utf8");
-    if (new TextEncoder().encode(text).length > REPORT_BYTE_LIMIT * 2)
+    const text = readBoundedText(path, REPORT_BYTE_LIMIT * 2);
+    if (text === null)
       return failed("unreadable", "the driver's report file is too large");
     value = JSON.parse(text);
   } catch (error) {

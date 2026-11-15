@@ -49,6 +49,17 @@ describe("a round report read back", () => {
     expect(readRoundReport(dir, "999", LAUNCH, 3)).toEqual(REPORT);
   });
 
+  test("is never read when a later pass of the same round started after it was written", () => {
+    const dir = stateDir();
+    keep(dir, LAUNCH, 3);
+    expect(
+      readRoundReport(dir, "999", LAUNCH, 3, "2026-11-15T07:59:00.000Z"),
+    ).toEqual(REPORT);
+    expect(
+      readRoundReport(dir, "999", LAUNCH, 3, "2026-11-15T08:00:01.000Z"),
+    ).toBeNull();
+  });
+
   test("is never read for another launch, another round or another pull request", () => {
     const dir = stateDir();
     keep(dir, LAUNCH, 3);

@@ -47,6 +47,7 @@ import {
   passLaunch,
 } from "./../../../../../shared/launched-session.ts";
 
+import { swallow } from "../../../../../shared/errors.ts";
 import { driverRuntime } from "./runtime.ts";
 
 import { startHeartbeat } from "./identity.ts";
@@ -167,6 +168,12 @@ interface DriveContext {
   dryRun: boolean;
   /** The drive's state directory, once resolved; empty before. */
   stateDir: string;
+  /**
+   * The drive's state as it stood at the stop, read while the driver still
+   * held its locks (`undefined` when it stopped before holding them), so a
+   * successor that takes them over cannot change what the report says.
+   */
+  stoppedState?: { state: DriveState | null };
 }
 
 /**
@@ -191,7 +198,14 @@ export async function main(): Promise<number> {
 /** The closing report, then the card, for a drive that ended with `exit`. */
 async function afterDrive(ctx: DriveContext, exit: number): Promise<void> {
   if (ctx.pr === "") return;
-  if (!ctx.dryRun) await writeClosingReport(ctx.pr, exit, ctx.stateDir);
+  if (!ctx.dryRun)
+    await writeClosingReport(
+      ctx.pr,
+      exit,
+      ctx.stateDir,
+      process.env,
+      ctx.stoppedState,
+    );
   await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
 }
 
@@ -345,6 +359,18 @@ async function drive(ctx: DriveContext): Promise<number> {
     generation,
   });
   void lifecycle;
+  // Declared after the lock cleanups, so it is disposed before they run.
+  await using stopSnapshot = {
+    async [Symbol.asyncDispose](): Promise<void> {
+      if (ctx.dryRun) return;
+      const state = await readDriveState(pr).catch((error: unknown) => {
+        swallow(error, "the drive state could not be read for its report");
+        return null;
+      });
+      ctx.stoppedState = { state };
+    },
+  };
+  void stopSnapshot;
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
     // when a takeover would be admitted.

@@ -972,12 +972,16 @@ function markerEnd(
   byId: ReadonlyMap<string, ReadRecord>,
   nowIso: string,
 ): LaunchEnd | null {
-  if (written?.record === record)
+  if (written?.record === record) {
+    const launch = byId.get(record);
     return {
       state: "ended",
       at: written.at,
       exit: null,
       outcome: written.outcome,
+      // The report is the launch record's: kept while that record is.
+      ...(launch === undefined ? {} : reportOfRun(launch)),
     };
+  }
   return endOfRecord(byId.get(record), nowIso);
 }

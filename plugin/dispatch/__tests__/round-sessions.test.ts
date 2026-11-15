@@ -100,6 +100,27 @@ describe("a drive's round sessions on its launch record", () => {
     expect(row.sessions).toBe("{not json");
   });
 
+  it("are never written over when one of the ones kept does not read", () => {
+    const w = world();
+    current = w;
+    const root = dispatchState(w);
+    earlierRecord(w, { id: ID, account: "a", token: TOKEN, pr: 7 });
+    const kept = JSON.stringify([
+      { round: 1, session: "session-0", at: "2026-11-15T09:00:00.000Z" },
+      { round: "two" },
+    ]);
+    stateDb(root)
+      .query("UPDATE launches SET sessions = ? WHERE id = ?")
+      .run(kept, ID);
+    expect(recordRoundSession(ID, 7, 2, "session-1", root)).toBe(
+      "the sessions it keeps do not read, and are left as they are",
+    );
+    const row = stateDb(root)
+      .query("SELECT sessions FROM launches WHERE id = ?")
+      .get(ID) as { sessions: string };
+    expect(row.sessions).toBe(kept);
+  });
+
   it("keep the newest entries past their bound", () => {
     const w = world();
     current = w;

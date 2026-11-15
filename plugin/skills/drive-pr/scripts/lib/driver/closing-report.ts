@@ -21,8 +21,9 @@
  *   stop prints, whose text names how many more wait; a stop that parks
  *   nothing writes neither.
  *
- * A round report stamped with another launch, or with a round other than
- * the last one this driver started a pass for, is never read. The report is
+ * A round report stamped with another launch, with a round other than
+ * the last one this driver started a pass for, or written before that pass
+ * started, is never read. The report is
  * written only when the dispatcher's wrapper named a file for it
  * (`shared/driver-report.ts`); a drive armed any other way writes none.
  */
@@ -171,27 +172,38 @@ export function composeDriverReport(input: {
  * when no wrapper named one, and a report that cannot be written is one line
  * on the driver's output, never a change to its exit. `stateDir` is the
  * drive's state directory, where the round report is kept; empty when the
- * drive stopped before it was resolved.
+ * drive stopped before it was resolved. `stopped` is the state read at the
+ * stop while the driver held its locks; without it the state is read now.
  */
 export async function writeClosingReport(
   pr: string,
   code: number,
   stateDir: string,
   env: Record<string, string | undefined> = process.env,
+  stopped?: { state: DriveState | null },
 ): Promise<void> {
   const path = driverReportPath(env);
   const launch = launchOf(env);
   if (path === null || launch === null) return;
   try {
-    const state = await readDriveState(pr).catch((error: unknown) => {
-      swallow(error, "the drive state could not be read for its report");
-      return null;
-    });
+    const state =
+      stopped !== undefined
+        ? stopped.state
+        : await readDriveState(pr).catch((error: unknown) => {
+            swallow(error, "the drive state could not be read for its report");
+            return null;
+          });
     const roundNumber = driverRuntime.passRound;
     const round =
       stateDir === "" || roundNumber === null
         ? null
-        : readRoundReport(stateDir, pr, launch, roundNumber);
+        : readRoundReport(
+            stateDir,
+            pr,
+            launch,
+            roundNumber,
+            driverRuntime.passStartedAt,
+          );
     writeDriverReport(
       path,
       launch,

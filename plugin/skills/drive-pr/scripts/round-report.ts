@@ -23,14 +23,15 @@
  * be read, or one the check refuses, with every problem named so the pass
  * can fix it and run the command again.
  */
-import { readFileSync } from "node:fs";
 import {
   type ClosingReport,
   closingReportOf,
+  REPORT_BYTE_LIMIT,
 } from "../../../shared/closing-report.ts";
+import { readBoundedText } from "../../../shared/driver-report.ts";
 import { launchOf } from "../../../shared/launched-session.ts";
 import { currentIso } from "../../../shared/time.ts";
-import { fail, isDigits, readStdinAll, runMain } from "./lib/cli.ts";
+import { ExitError, fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   ROUND_REPORT_SCHEMA,
   writeRoundReport,
@@ -65,12 +66,38 @@ function fileArg(argv: string[]): string {
   return file !== undefined && extra.length === 0 ? file : fail(2, USAGE);
 }
 
-/** The report's text, from the file or from standard input. */
+/** The most a report's text may hold: the check's own limit, which every read stays within. */
+const READ_LIMIT = REPORT_BYTE_LIMIT * 2;
+
+/** Standard input read no further than `READ_LIMIT` bytes; `null` when it holds more. */
+async function readBoundedStdin(): Promise<string | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    size += buffer.length;
+    if (size > READ_LIMIT) return null;
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** The report's text, from the file or from standard input, read no further than the limit. */
 async function readReport(file: string): Promise<string> {
   const from = file === "-" ? "standard input" : file;
   try {
-    return file === "-" ? await readStdinAll() : readFileSync(file, "utf8");
+    const text =
+      file === "-"
+        ? await readBoundedStdin()
+        : readBoundedText(file, READ_LIMIT);
+    if (text === null)
+      return fail(
+        2,
+        `${NAME}: the report in ${from} is larger than ${READ_LIMIT} bytes`,
+      );
+    return text;
   } catch (error) {
+    if (error instanceof ExitError) throw error;
     return fail(
       2,
       `${NAME}: the report could not be read from ${from}: ${error instanceof Error ? error.message : String(error)}`,

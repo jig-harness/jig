@@ -60,11 +60,12 @@ export function readRoundSessions(
   return Array.isArray(value) ? value.filter(isRoundSession) : [];
 }
 
-/** Whether a record's sessions column is empty or a JSON list. */
+/** Whether a record's sessions column is empty or a JSON list of sessions that each read, so rewriting the list loses none. */
 function sessionsRead(json: string | null): boolean {
   if (json === null) return true;
   try {
-    return Array.isArray(JSON.parse(json));
+    const value: unknown = JSON.parse(json);
+    return Array.isArray(value) && value.every(isRoundSession);
   } catch (error) {
     swallow(error, "a launch record's round sessions do not read");
     return false;

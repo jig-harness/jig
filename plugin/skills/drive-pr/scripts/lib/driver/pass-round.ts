@@ -2,8 +2,8 @@
  * What the driver hands each pass about its round, and records as a pass
  * starts. Every pass, review or repair, reads its round in `DRIVE_PR_ROUND`
  * and stamps its round report with it (`round-report.ts`); the driver
- * remembers the round of the last pass it started, the only round whose
- * report its closing report reads (`closing-report.ts`). Under the
+ * remembers the round and start time of the last pass it started, the only
+ * round report its closing report reads, and only when the pass wrote it (`closing-report.ts`). Under the
  * dispatcher's wrapper (`shared/driver-report.ts`), a pass the driver gave a
  * session id has that id recorded on the launch record, round by round
  * (`dispatch/lib/round-sessions.ts`); a drive armed any other way records
@@ -13,6 +13,7 @@ import { recordRoundSession } from "../../../../../dispatch/lib/round-sessions.t
 import { driverReportPath } from "../../../../../shared/driver-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { launchOf } from "../../../../../shared/launched-session.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 
@@ -54,6 +55,7 @@ export function notePassStarted(
   env: Record<string, string | undefined> = process.env,
 ): void {
   driverRuntime.passRound = round;
+  driverRuntime.passStartedAt = currentIso();
   const launch = launchOf(env);
   if (session === null || launch === null || driverReportPath(env) === null)
     return;

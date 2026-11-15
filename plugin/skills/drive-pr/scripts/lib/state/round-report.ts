@@ -13,13 +13,15 @@
  * launch, or with a round other than the last one this driver ran a pass
  * for, is never read.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   type ClosingReport,
   closingReportOf,
+  REPORT_BYTE_LIMIT,
 } from "../../../../../shared/closing-report.ts";
+import { readBoundedText } from "../../../../../shared/driver-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { atomicWrite } from "./fsutil.ts";
@@ -66,20 +68,28 @@ function isRoundReport(value: unknown): value is RoundReport {
 
 /**
  * The report of pull request `pr`'s round report, when it is stamped with
- * `launch` and `round` and still passes the check; `null` otherwise, and
- * when there is none or it does not read.
+ * `launch` and `round`, was written no earlier than `notBefore` (when the
+ * last pass started, so an earlier pass of the same round is not read as its
+ * conclusion) and still passes the check; `null` otherwise, and when there is
+ * none or it does not read.
  */
 export function readRoundReport(
   stateDir: string,
   pr: string,
   launch: string,
   round: number,
+  notBefore: string | null = null,
 ): ClosingReport | null {
   const file = roundReportFile(stateDir, pr);
   if (!existsSync(file)) return null;
   let value: unknown;
   try {
-    value = JSON.parse(readFileSync(file, "utf8"));
+    const text = readBoundedText(file, REPORT_BYTE_LIMIT * 2);
+    if (text === null) {
+      swallow(new Error("too large"), "the round report is too large");
+      return null;
+    }
+    value = JSON.parse(text);
   } catch (error) {
     swallow(error, "the round report does not read");
     return null;
@@ -88,7 +98,8 @@ export function readRoundReport(
     !isRoundReport(value) ||
     String(value.pr) !== pr ||
     value.launch !== launch ||
-    value.round !== round
+    value.round !== round ||
+    (notBefore !== null && !(Date.parse(value.at) >= Date.parse(notBefore)))
   )
     return null;
   const checked = closingReportOf(JSON.stringify(value.report));
