@@ -181,14 +181,30 @@ function needEvidence(
   return rows;
 }
 
+/** The card's note on the decision it leads with: its class, when named, and its kind. */
+function classNoteOf(first: LineDecision | undefined): string {
+  if (first === undefined) return "";
+  const named = first.decisionClass ?? null;
+  return `${named === null ? "" : `, class ${named}`}, ${first.kind}`;
+}
+
+/** The recommendation in words; a record whose recommended option reads in full shows that option instead. */
+function recommendationLine(
+  first: LineDecision | undefined,
+  recommended: NeedView["recommended"],
+): string | null {
+  const recommendation = first?.recommendation ?? null;
+  return recommendation === null || recommended !== null
+    ? null
+    : `Recommended: ${recommendation}`;
+}
+
 /** One need as its row shows it. */
 export function needView(n: LineNeed, clockNow: Clock): NeedView {
   const first = n.decisions[0];
   // A park's question is its first decision's; a follow-up's is the line it stopped on.
   const question = first?.question ?? n.question ?? null;
-  const recommendation = first?.recommendation ?? null;
   const decision = decisionText(n.decisions);
-  const named = first?.decisionClass ?? null;
   // The card leads with the oldest decision's options; the steps of every open decision go in its fold.
   const options = first?.options ?? [];
   const recommended = options.find((o) => o.recommended) ?? null;
@@ -209,17 +225,10 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     role: ROLES.needs,
     cause: n.cause,
     recorded: recordedWord(n),
-    classNote:
-      first === undefined
-        ? ""
-        : `${named === null ? "" : `, class ${named}`}, ${first.kind}`,
+    classNote: classNoteOf(first),
     question: question ?? n.reason,
     concluded: n.concluded ?? null,
-    // A record whose recommended option reads in full shows that option instead.
-    recommendation:
-      recommendation === null || recommended !== null
-        ? null
-        : `Recommended: ${recommendation}`,
+    recommendation: recommendationLine(first, recommended),
     decision,
     url: n.url,
     goLabel: n.url === null ? null : goLabelOf(n),
