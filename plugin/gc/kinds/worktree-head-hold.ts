@@ -9,7 +9,15 @@
  * remove` deletes the git directory, the lock with it.
  */
 import { randomUUID } from "node:crypto";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { gcGit as git } from "../git.ts";
@@ -65,20 +73,20 @@ export async function holdHead(
     );
   const lock = join(admin, "HEAD.lock");
   const token = `jig gc ${process.pid} ${randomUUID()}\n`;
-  let created = false;
+  let fd: number | null = null;
   try {
-    writeFileSync(lock, "", { flag: "wx" });
-    created = true;
-    writeFileSync(lock, token);
+    fd = openSync(lock, "wx");
+    writeSync(fd, token);
+    closeSync(fd);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (!created && code === "EEXIST")
+    if (fd === null && code === "EEXIST")
       return failed(
         "head-unheld",
         "kept: a git process holds the worktree's HEAD (HEAD.lock exists)",
         error,
       );
-    const stranded = created ? discard(lock) : "";
+    const stranded = fd === null ? "" : discard(lock, fd);
     return failed(
       "head-unheld",
       `kept: the worktree's HEAD cannot be held: ${error instanceof Error ? error.message : String(error)}${stranded}`,
@@ -104,18 +112,37 @@ export async function holdHead(
   });
 }
 
-/** Remove a lock this call created; the sentence to append when that fails. */
-function discard(lock: string): string {
+/**
+ * Remove the lock this call created, through the descriptor that created it:
+ * a pathname another process has since taken is left alone. The sentence to
+ * append when removal fails.
+ */
+function discard(lock: string, fd: number): string {
   try {
-    rmSync(lock, { force: true });
+    const mine = fstatSync(fd);
+    try {
+      closeSync(fd);
+    } catch {
+      // Already closed.
+    }
+    const current = statSync(lock, { throwIfNoEntry: false });
+    if (current && current.ino === mine.ino && current.dev === mine.dev)
+      rmSync(lock, { force: true });
     return "";
   } catch (error) {
     return `; gc could not remove ${lock}, which keeps git from moving the tree's HEAD, remove it by hand: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
-/** The repository's ref store, `files` unless `extensions.refStorage` names another. */
+/**
+ * The ref store git actually uses. `--show-ref-format` answers from the
+ * repository's setup, which a worktree's own config cannot override; git
+ * before 2.48 lacks it and reads the shared config instead.
+ */
 async function refStore(path: string): Promise<Outcome<string, "git-failed">> {
+  const format = await git(path, ["rev-parse", "--show-ref-format"]);
+  if (format.ok && format.value !== "" && !format.value.startsWith("--"))
+    return ok(format.value.toLowerCase());
   const store = await git(path, [
     "config",
     "--default",

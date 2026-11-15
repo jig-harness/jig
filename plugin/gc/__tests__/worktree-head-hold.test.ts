@@ -1,8 +1,8 @@
 /**
  * Holding a worktree's HEAD through its removal: while held, git refuses to
  * move the head, on a branch or detached; a lock git already holds keeps the
- * tree; under a ref store where `HEAD.lock` holds nothing a detached tree is
- * kept and a branched one goes unheld; and a release deletes only the lock
+ * tree; under a ref store where `HEAD.lock` holds nothing a tree is kept,
+ * detached or on a branch; and a release deletes only the lock
  * the hold wrote.
  */
 import { afterAll, describe, expect, test } from "bun:test";
@@ -148,6 +148,18 @@ describe("holding a worktree's head", () => {
         });
         expect(existsSync(join(seen.admin, "HEAD.lock"))).toBe(false);
       }
+    },
+  );
+  test.skipIf(!reftable)(
+    "a worktree's own config naming the files store does not hide a reftable repository",
+    async () => {
+      const { repo, tree } = setup(["--ref-format=reftable"]);
+      git(repo, ["config", "extensions.worktreeConfig", "true"]);
+      git(tree, ["config", "--worktree", "extensions.refStorage", "files"]);
+      expect(await headHoldRefusal(tree)).toEqual({
+        ok: true,
+        value: expect.stringContaining("reftable ref store"),
+      });
     },
   );
 });
