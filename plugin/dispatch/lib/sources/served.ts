@@ -474,7 +474,7 @@ async function readChildren(
     const got = read[i];
     const child = got?.child ?? null;
     const threw = got?.threw === true;
-    const error = got !== undefined && got.threw ? got.error : undefined;
+    const error = got?.threw ? got.error : undefined;
     if (isRateLimited(error)) {
       limits.push(error);
       return;

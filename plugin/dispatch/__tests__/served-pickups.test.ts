@@ -132,50 +132,41 @@ describe("served pickups", () => {
     expect(read.read.failure).toMatchObject({ class: "unreachable" });
     expect(read.claimed).toBeNull();
   });
-  it("fails the record for a child read that threw an error of no class", async () => {
+  const readWithChildRead = async (
+    child: (poolIssue: (k: string) => Promise<unknown>, k: string) => unknown,
+  ) => {
     const f = fake();
     const poolIssue = f.tracker.poolIssue.bind(f.tracker);
-    f.tracker.poolIssue = async (k: string) => {
-      if (k === "#2") throw new TypeError("a defect in the read");
-      return poolIssue(k);
-    };
-    const read = await readPickups(
+    f.tracker.poolIssue = (async (k: string) =>
+      child(poolIssue, k)) as typeof f.tracker.poolIssue;
+    return readPickups(
       () => f.tracker,
       { identity: null } as DispatchSection,
       undefined,
       { people, cache: f.cache, nowMs: 1, headroom: true },
     );
+  };
+  it("fails the record for a child read that threw an error of no class", async () => {
+    const read = await readWithChildRead(async (poolIssue, k) => {
+      if (k === "#2") throw new TypeError("a defect in the read");
+      return poolIssue(k);
+    });
     expect(read.read.ok).toBe(false);
     expect(read.claimed).toBeNull();
   });
   it("fails the record for a child read that threw an error with no value", async () => {
-    const f = fake();
-    const poolIssue = f.tracker.poolIssue.bind(f.tracker);
-    f.tracker.poolIssue = async (k: string) => {
+    const read = await readWithChildRead(async (poolIssue, k) => {
       if (k === "#2") return Promise.reject(undefined);
       return poolIssue(k);
-    };
-    const read = await readPickups(
-      () => f.tracker,
-      { identity: null } as DispatchSection,
-      undefined,
-      { people, cache: f.cache, nowMs: 1, headroom: true },
-    );
+    });
     expect(read.read.ok).toBe(false);
     expect(read.claimed).toBeNull();
   });
   it("keeps the record ok for an item no read threw for, and leaves the claims unknown", async () => {
-    const f = fake();
-    const poolIssue = f.tracker.poolIssue.bind(f.tracker);
-    f.tracker.poolIssue = async (k: string) =>
+    const read = await readWithChildRead(async (poolIssue, k) =>
       k === "#2"
         ? { ...issue("#2", ["epic"], null), truncated: ["labels"] }
-        : poolIssue(k);
-    const read = await readPickups(
-      () => f.tracker,
-      { identity: null } as DispatchSection,
-      undefined,
-      { people, cache: f.cache, nowMs: 1, headroom: true },
+        : poolIssue(k),
     );
     expect(read.read.ok).toBe(true);
     expect(read.read.failure).toBeUndefined();
