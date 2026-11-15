@@ -418,14 +418,14 @@ function reportedGates(
 /** Add the guidance and the gates to the result, both matched on the planned paths `--paths` names. */
 function attachPathMatches(
   result: Record<string, unknown>,
-  pathsFile: string | null,
+  pathsFile: string | undefined,
   item: {
     labels: string[];
     catalog: ChangeAreaCatalog | null;
     routing: AgentRouting;
   },
 ): void {
-  const paths = readPlannedPaths(pathsFile);
+  const paths = readPlannedPaths(pathsFile ?? null);
   result.guidance = reportedGuidance(
     item.labels,
     paths,
@@ -553,7 +553,7 @@ async function main(): Promise<number> {
     const catalog = configuredCatalog(catalogPath, verbose);
 
     const result = determineAgents(labels, title, catalog, routing);
-    attachPathMatches(result, parsed.args.values.get("paths") ?? null, {
+    attachPathMatches(result, parsed.args.values.get("paths"), {
       labels,
       catalog,
       routing,
