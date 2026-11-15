@@ -396,6 +396,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.248.1] - 2026-11-15
+
+### Changed
+
+- Tracker and forge reads share the outbound library’s caching, duplicate-read
+  grouping and bounded batches. Quiet ticks reuse unchanged assignment answers,
+  while failed reads are retried on the next tick. The change probe compares
+  check-state totals instead of downloading each check. **Consumer action:** none.
+
+### Fixed
+
+- Review-finding deferrals use the tracker adapter’s governed transport, and
+  issue children are read in bounded pages. Forge cost reports identify REST
+  routes even when command flags precede the route. **Consumer action:** none.
+
 ## [0.248.0] - 2026-11-15
 
 ### Added
@@ -8725,7 +8740,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.248.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.248.1...HEAD
+[0.248.1]: https://github.com/jig-harness/jig/compare/v0.248.0...v0.248.1
 [0.248.0]: https://github.com/jig-harness/jig/compare/v0.247.2...v0.248.0
 [0.247.2]: https://github.com/jig-harness/jig/compare/v0.247.1...v0.247.2
 [0.247.1]: https://github.com/jig-harness/jig/compare/v0.247.0...v0.247.1
