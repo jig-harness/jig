@@ -415,6 +415,26 @@ function reportedGates(
   return { applied: gates.applied, by_path: gates.byPath };
 }
 
+/** Add the guidance and the gates to the result, both matched on the planned paths `--paths` names. */
+function attachPathMatches(
+  result: Record<string, unknown>,
+  pathsFile: string | null,
+  item: {
+    labels: string[];
+    catalog: ChangeAreaCatalog | null;
+    routing: AgentRouting;
+  },
+): void {
+  const paths = readPlannedPaths(pathsFile);
+  result.guidance = reportedGuidance(
+    item.labels,
+    paths,
+    item.catalog,
+    item.routing,
+  );
+  result.gates = reportedGates(item.labels, paths, item.routing);
+}
+
 /** The planned paths `--paths` names, one per line; `null` without it. */
 function readPlannedPaths(file: string | null): string[] | null {
   if (file === null) return null;
@@ -533,9 +553,11 @@ async function main(): Promise<number> {
     const catalog = configuredCatalog(catalogPath, verbose);
 
     const result = determineAgents(labels, title, catalog, routing);
-    const paths = readPlannedPaths(parsed.args.values.get("paths") ?? null);
-    result.guidance = reportedGuidance(labels, paths, catalog, routing);
-    result.gates = reportedGates(labels, paths, routing);
+    attachPathMatches(result, parsed.args.values.get("paths") ?? null, {
+      labels,
+      catalog,
+      routing,
+    });
 
     if (verbose) {
       console.error(`Primary agent: ${String(result.primary_agent)}`);
