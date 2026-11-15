@@ -64,11 +64,7 @@ export type RuleFailure = "rule-invalid";
 const fold = (text: string) => text.trim().toLowerCase();
 
 /** Whether a rule's value matches one of the item's values for `fact`. */
-export function compare(
-  fact: FactName,
-  ruleValue: string,
-  value: string,
-): boolean {
+function compare(fact: FactName, ruleValue: string, value: string): boolean {
   switch (RULE_FACTS[fact].comparison) {
     case "equal-ignoring-case":
       return fold(ruleValue) === fold(value);

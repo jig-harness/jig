@@ -61,7 +61,7 @@ function plainToken(c: string, depth: number): [GlobToken, number] {
  * any number of whole directories; `open`, `alt` and `close` are the
  * braces and commas of an alternation.
  */
-export type GlobToken =
+type GlobToken =
   | { kind: "one" | "many"; source: string }
   | { kind: "dirs" | "open" | "alt" | "close" };
 
@@ -75,7 +75,7 @@ function starTokenOf(glob: string, i: number): [GlobToken, number] {
  * The glob's tokens, the one reading of its syntax that matching and every
  * other question about a glob share. Throws on an unclosed `{`.
  */
-export function globTokens(glob: string): GlobToken[] {
+function globTokens(glob: string): GlobToken[] {
   const tokens: GlobToken[] = [];
   let depth = 0;
   for (let i = 0; i < glob.length; ) {
