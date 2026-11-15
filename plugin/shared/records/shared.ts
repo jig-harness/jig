@@ -46,6 +46,7 @@
  *   before its next act on an earlier marker.
  */
 import type { Outcome } from "../outcome.ts";
+import type { TickOutcome } from "./followup-values.ts";
 import type { Writer } from "./writer.ts";
 
 /** The stages that publish a claim here. */
@@ -66,7 +67,7 @@ export type LaunchEnd =
       /** The stage's exit; `null` when it ended on a signal or has none (a follow-up a person ran). */
       exit: number | null;
       /** A follow-up's answer: `done`, or `failed` when its pass ended without recording done. */
-      outcome: "done" | "failed" | null;
+      outcome: TickOutcome | null;
     }
   | {
       state: "died";
