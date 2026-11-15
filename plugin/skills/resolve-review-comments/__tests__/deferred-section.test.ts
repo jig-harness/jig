@@ -943,14 +943,29 @@ describe("what an entry records", () => {
 });
 
 describe("the route a deferral takes", () => {
-  test("the batch step on GitHub and Jira", () => {
+  test("the batch step on GitHub and a configured Jira adapter", () => {
     expect(
       deferralRoute({ issue_tracker: { adapter: "github" } }, {}).route,
     ).toBe("defer-batch");
     expect(
-      deferralRoute({ issue_tracker: { adapter: "jira" } }, {}).route,
+      deferralRoute(
+        {
+          issue_tracker: {
+            adapter: "jira",
+            team: "JIG",
+            jira: { site: "https://example.atlassian.net" },
+          },
+        },
+        {},
+      ).route,
     ).toBe("defer-batch");
     expect(deferralRoute({}, {}).route).toBe("defer-batch");
+  });
+
+  test("the pull request body for a Jira adapter that cannot file", () => {
+    expect(
+      deferralRoute({ issue_tracker: { adapter: "jira" } }, {}).route,
+    ).toBe("pr-body");
   });
 
   test("the pull request body on Linear with no credential", () => {

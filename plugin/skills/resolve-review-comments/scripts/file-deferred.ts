@@ -696,7 +696,7 @@ export async function missingEntries(
 
 /** The issue explicitly linked by the pull request, independent of its tracker. */
 export function originatingFromBody(body: string): string | undefined {
-  return /^\s*(?:closes|fixes|resolves|refs)\s+((?:#[1-9]\d*)|(?:[A-Za-z][A-Za-z0-9]*-\d+))\b/im.exec(
+  return /^\s*(?:closes|fixes|resolves|refs)\s+(#[1-9]\d*|[A-Za-z][A-Za-z0-9]*-\d+)\b/im.exec(
     body,
   )?.[1];
 }

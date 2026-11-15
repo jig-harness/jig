@@ -30,6 +30,8 @@
 import { parseArgs } from "node:util";
 import { fail, readStdinAll, runMain } from "../../../shared/cli.ts";
 import { parseReviewConfig, readConfig } from "../../../shared/consumer.ts";
+import { deferralTrackerConfig } from "./lib/deferral-config.ts";
+import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { valueAt } from "../../../shared/config-layers.ts";
 import {
   deferredEntries,
@@ -60,8 +62,20 @@ export function deferralRoute(
   env: Env = process.env,
 ): { route: "defer-batch" } | { route: "pr-body"; why: string } {
   const adapter = valueAt(values, "issue_tracker.adapter") ?? "github";
-  if (adapter === "github" || adapter === "jira")
-    return { route: "defer-batch" };
+  if (adapter === "github") return { route: "defer-batch" };
+  if (adapter === "jira") {
+    try {
+      openTracker(
+        deferralTrackerConfig(values, parseReviewConfig(values.review)),
+      );
+      return { route: "defer-batch" };
+    } catch (err) {
+      return {
+        route: "pr-body",
+        why: `tracker adapter cannot file: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
   if (adapter !== "linear")
     return {
       route: "pr-body",

@@ -17,6 +17,7 @@ import { openTracker } from "../../../do-item/scripts/lib/tracker/index.ts";
 import {
   missingGroups,
   SIZE_GROUP,
+  validateLabels,
 } from "../../../file-issue/scripts/lib/validate.ts";
 import { entryFacets, identityLine, textLine } from "../file-deferred.ts";
 import { recordedError } from "../defer-in-pr.ts";
@@ -181,6 +182,7 @@ async function filingLabels(
     path ? { path } : { none: "the finding has no review-thread path" },
     taxonomy,
     configuredCatalog,
+    labels,
   );
   if ("why" in derived) throw new JigError("deferral", derived.why);
   return [...new Set([...labels, ...derived.labels])];
@@ -237,6 +239,7 @@ export async function deferBatchCommand(
 ): Promise<number> {
   const a = commandInput(argv, finding);
   const { config, review } = configured(a);
+  const taxonomy = readTaxonomy(consumerRoot(), config.taxonomy);
   if (a.severity === "blocker")
     console.error(
       "defer-batch: WARNING — a blocker should be fixed or escalated, not deferred; filing at urgent priority so the finding is tracked.",
@@ -260,11 +263,24 @@ export async function deferBatchCommand(
     pr: a.pr,
     type: facets.type ?? a.type,
     identity: identityLine(entry),
-    text: `${entry.text}\n\n${identityLine(entry)}\n${textLine(entry)}`,
+    text: `${entry.text}\n\nSeverity: ${a.severity}. Category: ${a.category}.\n\n${identityLine(entry)}\n${textLine(entry)}`,
     category: a.category,
     priority: facets.priority ?? 3,
     size: facets.size,
     labels: await filingLabels(a, config, review, origin, forge),
+    ...(taxonomy === null
+      ? {}
+      : {
+          labelConflict: (labels: string[]) => {
+            const checked = validateLabels(labels, taxonomy);
+            const conflict = checked.errors.find((e) =>
+              e.startsWith("more than one label of group"),
+            );
+            return conflict === undefined
+              ? undefined
+              : `Batch labels contradict the taxonomy: ${conflict}`;
+          },
+        }),
     originating,
     dryRun: a["dry-run"] ?? false,
   });

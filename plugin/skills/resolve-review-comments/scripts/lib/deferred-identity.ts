@@ -78,7 +78,7 @@ function fenceLine(
   line: string,
   fence: Fence | null,
 ): { fence: Fence | null; consumed: boolean } {
-  const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+  const marker = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(line);
   if (marker === null) return { fence, consumed: fence !== null };
   const text = marker[1] ?? "";
   const char = text.charAt(0);
@@ -108,4 +108,16 @@ export function entryHeadings(description: string): string[] {
 
 export function hasEntry(description: string, entryKey: string): boolean {
   return entryHeadings(description).includes(entryKey);
+}
+
+/** Lines that can carry an entry record, excluding Markdown examples. */
+export function authoritativeLines(description: string): string[] {
+  const found: string[] = [];
+  let fence: Fence | null = null;
+  for (const line of description.split("\n")) {
+    const state = fenceLine(line, fence);
+    fence = state.fence;
+    if (!state.consumed && !/^ {4}/.test(line)) found.push(line);
+  }
+  return found;
 }

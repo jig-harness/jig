@@ -1,4 +1,8 @@
-import { hasEntry, summaryEntryKey } from "./deferred-identity.ts";
+import {
+  authoritativeLines,
+  hasEntry,
+  summaryEntryKey,
+} from "./deferred-identity.ts";
 import { JigError } from "../../../../shared/outcome.ts";
 /** One backlog issue per repository, pull request and work type, on every tracker. */
 import type {
@@ -23,6 +27,8 @@ export interface TrackerDeferral {
   priority: number;
   size?: string | undefined;
   labels: string[];
+  /** Refuse a combined label set that violates this consumer's taxonomy. */
+  labelConflict?: (labels: string[]) => string | undefined;
   originating?: string | undefined;
   dryRun?: boolean;
 }
@@ -30,12 +36,9 @@ export interface TrackerDeferral {
 const open = (i: Issue) =>
   !["completed", "canceled", "duplicate"].includes(i.state.type);
 export const findingIdentityLines = (text: string) =>
-  text
-    .replaceAll("\r", "")
-    .split("\n")
-    .map((l) =>
-      l.replace(/\[[^\]]*\]\(<?(https?:\/\/[^)>]+)>?\)/g, "$1").trim(),
-    );
+  authoritativeLines(text.replaceAll("\r", "")).map((l) =>
+    l.replace(/\[[^\]]*\]\(<?(https?:\/\/[^)>]+)>?\)/g, "$1").trim(),
+  );
 const higher = (a: number, b: number) =>
   a === 0 ? b : b === 0 ? a : Math.min(a, b);
 
@@ -111,13 +114,15 @@ function hasFinding(description: string, identity: string): boolean {
 function descriptionFor(description: string, d: TrackerDeferral): string {
   const section = description.indexOf("\n## Entries");
   const scaffold = section < 0 ? description : description.slice(0, section);
-  const categoryLine = /^\*\*Category\*\*: (.*)$/m;
+  const categoryLine = /^\*\*Category\*\*: ([^\r\n]*)$/m;
   const current =
     categoryLine
       .exec(scaffold)?.[1]
       ?.split(",")
       .map((c) => c.trim()) ?? [];
-  const categories = [...new Set([...current, d.category])].sort();
+  const categories = [...new Set([...current, d.category])].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const header = `**Category**: ${categories.join(", ")}`;
   let out = categoryLine.test(scaffold)
     ? description.replace(categoryLine, header)
@@ -173,6 +178,13 @@ function assertBatch(issue: Issue, d: TrackerDeferral): void {
       "deferral",
       `Batch ${issue.identifier} has type ${issue.type}, which contradicts its key ${d.type}`,
     );
+  if (issue.size !== null && d.size !== undefined && issue.size !== d.size)
+    throw new JigError(
+      "deferral",
+      `Batch ${issue.identifier} has size ${issue.size}, which contradicts the finding size ${d.size}`,
+    );
+  const conflict = d.labelConflict?.([...issue.labels, ...d.labels]);
+  if (conflict !== undefined) throw new JigError("deferral", conflict);
 }
 
 async function createBatch(
@@ -215,16 +227,15 @@ async function persist(
   const description = descriptionFor(issue.description, d);
   const priority = higher(issue.priority, d.priority);
   const missing = d.labels.filter((l) => !issue.labels.includes(l));
-  if (
-    description !== issue.description ||
-    priority !== issue.priority ||
-    missing.length > 0
-  )
-    await tracker.updateIssue(issue.identifier, {
-      description,
-      priority,
-      addLabels: missing,
-    });
+  const patch = {
+    ...(description !== issue.description ? { description } : {}),
+    ...(priority !== issue.priority ? { priority } : {}),
+    ...(missing.length > 0 ? { addLabels: missing } : {}),
+    ...(issue.type === null ? { type: d.type } : {}),
+    ...(issue.size === null && d.size !== undefined ? { size: d.size } : {}),
+  };
+  if (Object.keys(patch).length > 0)
+    await tracker.updateIssue(issue.identifier, patch);
   // Existing batches keep their parent until epic closure, and started batches keep their state.
   if (!["backlog", "started"].includes(issue.state.type))
     await tracker.transition(issue.identifier, "backlog");
@@ -255,6 +266,8 @@ async function confirmed(
     descriptionFor(issue.description, d) === issue.description,
     higher(issue.priority, d.priority) === issue.priority,
     d.labels.every((l) => issue.labels.includes(l)),
+    issue.type?.toLowerCase() === d.type.toLowerCase(),
+    d.size === undefined || issue.size === d.size,
     targets.every((t) =>
       related.some((r) => r.type === "related" && r.issue === t),
     ),

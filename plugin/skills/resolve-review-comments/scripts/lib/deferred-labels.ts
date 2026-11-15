@@ -64,9 +64,12 @@ export function entryLabels(
   file: FindingFile,
   taxonomy: Taxonomy | null,
   catalog: () => CatalogSource,
+  present: string[] = [],
 ): { labels: string[] } | { why: string } {
-  const missing = unfilledGroups(label, taxonomy);
-  if (taxonomy === null || missing.length === 0) return { labels: [label] };
+  const initial = [...new Set([label, ...present])];
+  const missing =
+    taxonomy === null ? [] : missingGroups(initial, taxonomy, [SIZE_GROUP]);
+  if (taxonomy === null || missing.length === 0) return { labels: initial };
   const lacks = `it lacks a ${listed(missing)} label`;
   if ("none" in file)
     return {
@@ -85,7 +88,7 @@ export function entryLabels(
       (source.catalog.get(a)?.trackerLabels ?? []).map((l) => l.toLowerCase()),
     ),
   );
-  const labels = [label];
+  const labels = initial;
   for (const id of missing) {
     const group = taxonomy.groups.find((g) => g.id === id);
     const found = (group?.labels ?? []).filter((l) =>
