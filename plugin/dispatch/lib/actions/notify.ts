@@ -384,6 +384,22 @@ function earlierSend(
   );
 }
 
+/** The runtime operations before a write: the open's repository lookup, the listing's repository lookup and workspace listing, then the write itself. */
+const DELIVERY_RUNTIME_CALLS = 4;
+
+/** The longest one delivery may take: the workspace open, then each runtime operation at its own timeout. The tick's receipt reserve (`noticeTime`, `timeLeftMs`) holds back the settlement time. */
+export function deliveryBudgetMs(
+  machine: Pick<
+    ApplyState["machine"],
+    "workspaceTimeoutMs" | "runtimeTimeoutMs"
+  >,
+): number {
+  return (
+    machine.workspaceTimeoutMs +
+    DELIVERY_RUNTIME_CALLS * machine.runtimeTimeoutMs
+  );
+}
+
 /** `--apply` for one repository's notifications, on each channel, then its notices workspace. */
 export async function applyNotices(
   state: ApplyState,
@@ -422,9 +438,7 @@ export async function applyNotices(
     causes,
     standing,
     timeLeftMs: () => timeLeftMs(state),
-    // One delivery opens the destination, lists it, then writes.
-    deliveryTimeoutMs:
-      state.machine.workspaceTimeoutMs + 2 * state.machine.runtimeTimeoutMs,
+    deliveryTimeoutMs: deliveryBudgetMs(state.machine),
   };
   const due = channels.map((channel) => ({
     channel,

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ApplyState, enforcedDeadlineMs } from "../lib/actions/launch.ts";
-import { applyNotices } from "../lib/actions/notify.ts";
+import { applyNotices, deliveryBudgetMs } from "../lib/actions/notify.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 import type { SessionRuntime, Workspace } from "../lib/runtime/port.ts";
 import { closeStateDb } from "../lib/state.ts";
@@ -101,4 +101,12 @@ it.each([
     closeStateDb(root);
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+it("budgets a delivery for every preparation operation before its write", () => {
+  const machine = { workspaceTimeoutMs: 60_000, runtimeTimeoutMs: 60_000 };
+  // The open's lookup, the listing's two reads and the write each take a full runtime timeout.
+  expect(deliveryBudgetMs(machine)).toBeGreaterThanOrEqual(
+    machine.workspaceTimeoutMs + 4 * machine.runtimeTimeoutMs,
+  );
 });
