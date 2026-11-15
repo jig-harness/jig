@@ -16,6 +16,7 @@ import {
   type FramedNeed,
   memberKey,
   rearmableBySteward,
+  STEWARD_REFUSED_OPEN,
 } from "./steward.ts";
 import { missingFacets } from "./steward-facets.ts";
 import { resumeSource } from "./steward-resume.ts";
@@ -204,23 +205,52 @@ export function stewardTrigger(
 /** How many of a repository's latest passes the judged set reads: a member still waiting is in every one since it appeared. */
 const JUDGED_RUNS = 20;
 
-/** The members the repository's latest steward passes saw in their backlogs. */
-export function judgedMembers(repo: string, root?: string): Set<string> {
-  const rows = stateDb(root)
+/**
+ * The members the repository's latest steward passes saw in their backlogs:
+ * a pass that submitted, or whose launch (`live`) still holds. A pass that
+ * ended without submitting judged nothing, and a resume
+ * its pass proposed but the policy refused for now (`refused-open`) stays
+ * offered, so neither suppresses its member.
+ */
+export function judgedMembers(
+  repo: string,
+  root?: string,
+  live: ReadonlySet<string> = new Set(),
+): Set<string> {
+  const db = stateDb(root);
+  const rows = db
     .query(
-      "SELECT json_extract(digest, '$.backlog') AS backlog FROM steward_runs WHERE repo = ? AND json_valid(digest) ORDER BY at_ms DESC LIMIT ?",
+      "SELECT id, submitted, json_extract(digest, '$.backlog') AS backlog FROM steward_runs WHERE repo = ? AND json_valid(digest) ORDER BY at_ms DESC LIMIT ?",
     )
-    .all(repo, JUDGED_RUNS) as Array<{ backlog: string | null }>;
+    .all(repo, JUDGED_RUNS) as Array<{
+    id: string;
+    submitted: number;
+    backlog: string | null;
+  }>;
+  const open = new Set(
+    (
+      db
+        .query(
+          "SELECT run, json_extract(value, '$.record') AS record FROM steward_records WHERE repo = ? AND effect = ? AND json_extract(value, '$.kind') = 'resume'",
+        )
+        .all(repo, STEWARD_REFUSED_OPEN) as Array<{
+        run: string;
+        record: string | null;
+      }>
+    ).map((r) => `${r.run}\u0000${r.record}`),
+  );
   const judged = new Set<string>();
   for (const row of rows) {
     if (row.backlog === null) continue;
+    if (row.submitted !== 1 && !live.has(row.id)) continue;
     const parsed: unknown = JSON.parse(row.backlog);
     if (!Array.isArray(parsed)) continue;
     for (const m of parsed)
       if (
         typeof m?.kind === "string" &&
         typeof m.target === "string" &&
-        typeof m.facts === "string"
+        typeof m.facts === "string" &&
+        !(m.kind === "resume" && open.has(`${row.id}\u0000${m.target}`))
       )
         judged.add(memberKey(m as BacklogMember));
   }

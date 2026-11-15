@@ -93,17 +93,6 @@ export async function applySteward(
     return skip("a steward pass already holds this repository");
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
-  const found = await backlogOf(state, observation, station);
-  if (!found.ok) return skip(found.failure.reason);
-  const backlog = found.value;
-  const trigger = stewardTrigger(
-    backlog.members,
-    judgedMembers(repo.slug, state.root),
-  );
-  if (trigger.kind !== "due") {
-    report.steward = notStarted(trigger);
-    return;
-  }
   if (stewardBudgetSpent(stewardRuns(null, state.root), currentMs())) {
     report.steward = {
       status: "the host's hourly steward budget is spent",
@@ -111,7 +100,24 @@ export async function applySteward(
     };
     return;
   }
-  const read = await readDigest(state, observation, backlog);
+  const found = await backlogOf(state, observation, station);
+  if (!found.ok) return skip(found.failure.reason);
+  const backlog = found.value.backlog;
+  const trigger = stewardTrigger(
+    backlog.members,
+    judgedMembers(
+      repo.slug,
+      state.root,
+      new Set(
+        state.records.filter((r) => holds(r.state)).map((r) => r.record.id),
+      ),
+    ),
+  );
+  if (trigger.kind !== "due") {
+    report.steward = notStarted(trigger);
+    return;
+  }
+  const read = await readDigest(state, observation, backlog, found.value.queue);
   if (!read.ok) return skip(read.failure.reason);
   const digest = read.value;
   const hash = backlogHash(backlog.members);
@@ -252,14 +258,17 @@ async function backlogOf(
   state: ApplyState,
   observation: RepoObservation,
   station: StationContext,
-): Promise<Outcome<Backlog, QueueFailure>> {
+): Promise<Outcome<{ backlog: Backlog; queue: PoolIssue[] }, QueueFailure>> {
   const queued = await stewardQueue(observation.tracked, () =>
     readRoomMs(state),
   );
   if (!queued.ok) return queued;
-  return ok(
-    stewardBacklog(backlogInput(state, observation, station, queued.value)),
-  );
+  return ok({
+    backlog: stewardBacklog(
+      backlogInput(state, observation, station, queued.value),
+    ),
+    queue: queued.value,
+  });
 }
 
 /**
@@ -327,7 +336,7 @@ type QueueFailure = "out-of-time" | "unread";
 const QUEUE_READ_MS = 60_000;
 
 /**
- * Reuse the tick's evidence and keep the digest separate from launch
+ * Reuse the tick's evidence, the queue `backlogOf` completed included, and keep the digest separate from launch
  * admission. A digest that cannot be completed is a failure, since a
  * partial queue would hash as changed input.
  */
@@ -335,12 +344,10 @@ async function digestOf(
   state: ApplyState,
   observation: RepoObservation,
   backlog: Backlog,
+  queue: PoolIssue[],
 ): Promise<Outcome<StewardDigest, QueueFailure>> {
-  const { opened, tracked, forge } = observation;
+  const { opened, forge } = observation;
   const { repo } = opened;
-  const read = await stewardQueue(tracked, () => readRoomMs(state));
-  if (!read.ok) return read;
-  const queue = read.value;
   const targets = await collectStewardEvidence(
     state.records,
     observation,

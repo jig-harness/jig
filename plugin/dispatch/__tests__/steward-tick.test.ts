@@ -85,7 +85,9 @@ describe("steward tick integration", () => {
       JSON.stringify({ at: new Date().toISOString(), code: 0, signal: null }),
       row.id,
     );
-    db.query("UPDATE steward_runs SET at_ms = at_ms - 1200001").run();
+    db.query(
+      "UPDATE steward_runs SET at_ms = at_ms - 1200001, submitted = 1",
+    ).run();
     const next = await tick(w);
     expect(
       next.repos[0]?.launches.filter((r) => r.action === "steward"),

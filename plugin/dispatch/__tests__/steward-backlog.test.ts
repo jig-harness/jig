@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { applySteward, startKept } from "../lib/actions/steward.ts";
 import type { ReadRecord } from "../lib/launches.ts";
 import type { StationContext } from "../lib/line-station.ts";
-import { closeStateDb } from "../lib/state.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
 import {
   forgetStewardRun,
   keepStewardRun,
@@ -165,6 +165,13 @@ async function apply(
   return { reads, seen };
 }
 
+/** Mark a kept run as submitted, as its pass's `steward submit` does. */
+function submitted(id: string, root: string): void {
+  stateDb(root)
+    .query("UPDATE steward_runs SET submitted = 1 WHERE id = ?")
+    .run(id);
+}
+
 describe("the steward's trigger", () => {
   const MINUTE = 60_000;
 
@@ -177,6 +184,7 @@ describe("the steward's trigger", () => {
       Date.now() - 45 * MINUTE,
       root,
     );
+    submitted("first", root);
     const { reads, seen } = await apply(root, actions, [
       endedPass("pass-1", "#20"),
       endedPass("pass-2", "#21"),
@@ -266,6 +274,7 @@ describe("the steward's trigger", () => {
     const root = freshRoot();
     const seen = stalled("#12", "2026-11-14T08:00:00Z");
     keepStewardRun("seen", digest(REPO, [seen]), Date.now(), root);
+    submitted("seen", root);
     const judged = judgedMembers(REPO, root);
     const again = stewardBacklog(input([seen])).members;
     expect(stewardTrigger(again, judged)).toEqual({
@@ -390,6 +399,33 @@ describe("a launch that starts no pass", () => {
         return { ...refusal, outcome: "lost" };
       },
     );
+    expect(judgedMembers(REPO, root, new Set(["run-1"])).size).toBe(1);
+    expect(judgedMembers(REPO, root).size).toBe(0);
+  });
+
+  test("a resume refused for now stays unjudged", () => {
+    const root = freshRoot();
+    const resume = { kind: "resume" as const, target: "rec-1", facts: "" };
+    keepStewardRun(
+      "run-r",
+      { ...digest(REPO, []), backlog: [resume] },
+      Date.now(),
+      root,
+    );
+    submitted("run-r", root);
+    const db = stateDb(root);
+    db.query(
+      "INSERT INTO steward_records (run, repo, value, applied, effect) VALUES ('run-r', ?, ?, 1, 'refused-open')",
+    ).run(REPO, JSON.stringify({ kind: "resume", record: "rec-1" }));
+    expect(judgedMembers(REPO, root).size).toBe(0);
+    db.query("UPDATE steward_records SET effect = 'launched'").run();
     expect(judgedMembers(REPO, root).size).toBe(1);
+  });
+
+  test("a pass that ended without submitting judged nothing", () => {
+    const root = freshRoot();
+    const seen = stalled("#12", "2026-11-14T08:00:00Z");
+    keepStewardRun("silent", digest(REPO, [seen]), Date.now(), root);
+    expect(judgedMembers(REPO, root).size).toBe(0);
   });
 });
