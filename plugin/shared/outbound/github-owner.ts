@@ -46,6 +46,7 @@ import {
   type BudgetWindow,
   isRateLimited,
 } from "./budget.ts";
+import { recordCall } from "./ledger.ts";
 import { swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import { type OutboundFailure, outboundFailure } from "./failure.ts";
@@ -61,7 +62,6 @@ import {
   unverifiedOwner,
   userOwner,
 } from "./github-credential.ts";
-import { recordCall } from "./ledger.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { BUDGET_MIGRATIONS } from "./schema.ts";
 import { currentMs } from "../time.ts";
@@ -189,53 +189,28 @@ export function userOf(body: string): GithubUser | null {
   }
 }
 
-/** `gh api user`, run directly: the forge client's wrapper would govern it against the owner it is finding. */
+/**
+ * `gh api user` through the forge client's wrapper, which bounds it as every
+ * run is (the process tree is ended at the deadline) and admits and records
+ * it; a plain `gh api user` is governed against the owner already known, or
+ * the host's unverified record, never against the owner it is finding.
+ */
 const ghUser: DiscoverUser = async (env, deadlineMs) => {
   const began = currentMs();
-  let child: ReturnType<typeof Bun.spawn>;
-  try {
-    child = Bun.spawn(["gh", "api", "user"], {
-      env: Object.fromEntries(
-        Object.entries(env).filter(
-          (e): e is [string, string] => e[1] !== undefined,
-        ),
-      ),
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-  } catch (error) {
-    swallow(error, "gh could not start to name the credential's owner");
-    return { failure: outboundFailure("unauthorized", "gh could not start") };
-  }
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill();
-  }, deadlineMs);
-  try {
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout as ReadableStream).text(),
-      new Response(child.stderr as ReadableStream).text(),
-      child.exited,
-    ]);
-    const failure = ghRunFailure(
-      { code, stderr, timedOut },
-      currentMs() - began,
-    );
-    if (failure !== null) return { failure };
-    const user = userOf(stdout);
-    return user === null
-      ? {
-          failure: outboundFailure(
-            "invalid",
-            "GET /user answered with no user",
-          ),
-        }
-      : { user };
-  } finally {
-    clearTimeout(timer);
-  }
+  // Imported when used: the wrapper's module reads this one.
+  const { ghCall } = await import("../proc.ts");
+  const result = await ghCall(["api", "user"], {
+    env,
+    timeoutSec: Math.max(1, Math.ceil(deadlineMs / 1000)),
+  });
+  const failure = ghRunFailure(result, currentMs() - began);
+  if (failure !== null) return { failure };
+  const user = userOf(result.stdout);
+  return user === null
+    ? {
+        failure: outboundFailure("invalid", "GET /user answered with no user"),
+      }
+    : { user };
 };
 
 /** Whose allowance a credential spends. */
@@ -321,8 +296,9 @@ export function githubOwnerResolver(deps: {
   ): Promise<OwnerResolution> => {
     const now = clock();
     const fallback = unverified(env, credential);
-    // The request spends the credential's allowance, whose record is not
-    // known yet: it is admitted against the unverified one.
+    // The request is admitted, observed and recorded as any run of `gh` is,
+    // against the unverified record, the owner not being known yet.
+    // While the unverified record is held nothing is sent.
     try {
       deps.governor?.admit("GitHub", fallback.owner, {
         windows: ["requests"],
@@ -341,19 +317,22 @@ export function githubOwnerResolver(deps: {
         : entry?.verified === true
           ? entry.owner
           : fallback.owner;
-    recordCall({
-      system: "github",
-      credential,
-      owner,
-      window: "requests",
-      operation: "GET /user",
-      requests: 1,
-      cost: 1,
-      estimated: true,
-      unit: "requests",
-      durationMs: currentMs() - began,
-      failure: "failure" in answer ? answer.failure.code : null,
-    });
+    // The default discovery is a run of `gh` the wrapper records itself; a
+    // discovery given in its place is recorded here.
+    if (deps.discover !== undefined)
+      recordCall({
+        system: "github",
+        credential,
+        owner,
+        window: "requests",
+        operation: "GET /user",
+        requests: 1,
+        cost: 1,
+        estimated: true,
+        unit: "requests",
+        durationMs: currentMs() - began,
+        failure: "failure" in answer ? answer.failure.code : null,
+      });
     const next: OwnerEntry =
       user !== null
         ? {

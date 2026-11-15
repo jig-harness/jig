@@ -113,14 +113,23 @@ export function systemSpending(
     }
     operation.cost += row.cost;
     operation.requests += row.requests;
-    if (row.window != null) {
-      let spent = entry.windows.find((w) => w.window === row.window);
+    // A GitHub row written without its window spent the one its unit and
+    // operation suggest, counted as an estimate.
+    const spentIn =
+      row.window != null
+        ? { window: row.window, inferred: false }
+        : row.system === "github"
+          ? rowWindow(row)
+          : null;
+    if (spentIn !== null) {
+      let spent = entry.windows.find((w) => w.window === spentIn.window);
       if (spent === undefined) {
-        spent = { window: row.window, cost: 0, estimated: 0 };
+        spent = { window: spentIn.window, cost: 0, estimated: 0 };
         entry.windows.push(spent);
       }
       spent.cost += row.cost + row.unknownCost;
-      spent.estimated += row.estimated + row.unknownCost;
+      spent.estimated +=
+        row.estimated + row.unknownCost + (spentIn.inferred ? row.cost : 0);
     }
   }
   for (const b of report.balances)

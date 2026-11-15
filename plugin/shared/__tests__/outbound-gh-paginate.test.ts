@@ -132,7 +132,7 @@ describe("a paged REST read the forge client sends a page at a time", () => {
     );
     expect(read.stdout).not.toContain("HTTP/");
     expect(forge.sent.map((s) => s.argv)).toEqual([
-      ["api", "repos/o/r/items", "--include"],
+      ["api", "repos/o/r/items?per_page=100", "--include"],
       ["api", `${API}?per_page=2&page=2`, "--include"],
       ["api", `${API}?per_page=2&page=3`, "--include"],
     ]);
@@ -154,7 +154,7 @@ describe("a paged REST read the forge client sends a page at a time", () => {
       "--slurp",
       "-H",
       "Accept: application/vnd.github+json",
-      "repos/o/r/items",
+      "repos/o/r/items?per_page=100",
     ]);
     expect(JSON.parse(read.stdout)).toEqual([
       [{ name: "a1" }, { name: "b1" }],
@@ -450,5 +450,40 @@ describe("a paged read left to gh, against a bounded reservation", () => {
     expect(forge.sent.map((s) => s.argv)).toEqual([
       ["api", "--paginate", "repos/o/r/items"],
     ]);
+  });
+});
+
+describe("the pages' own rules", () => {
+  it("reads the first pageInfo in document order, nested before a later sibling", () => {
+    expect(
+      endCursorOf({
+        a: { pageInfo: { hasNextPage: true, endCursor: "inner" } },
+        pageInfo: { hasNextPage: false, endCursor: null },
+      }),
+    ).toBe("inner");
+  });
+
+  it("follows a next link only on the read's API origin", () => {
+    const args = ["api", "--paginate", "repos/o/r/items"];
+    const plan = pagePlan(args, true);
+    const link = (url: string) => new Headers({ link: `<${url}>; rel="next"` });
+    expect(plan?.next(link("https://api.github.com/x?page=2"), "[]")).not.toBe(
+      null,
+    );
+    for (const url of [
+      "http://127.0.0.1/x",
+      "https://169.254.169.254/x",
+      "https://api.github.com.evil.example/x",
+    ])
+      expect(plan?.next(link(url), "[]")).toBe(null);
+  });
+
+  it("asks for 100 a page unless the route says otherwise", () => {
+    const first = (route: string) =>
+      pagePlan(["api", "--paginate", route], true)?.first[1];
+    expect(first("repos/o/r/items")).toBe("repos/o/r/items?per_page=100");
+    expect(first("repos/o/r/items?per_page=5")).toBe(
+      "repos/o/r/items?per_page=5",
+    );
   });
 });

@@ -513,3 +513,19 @@ describe("records an earlier release kept", () => {
     expect(machine.owners.known({ GH_TOKEN: "never-asked" })).toBeNull();
   });
 });
+
+describe("a call that names its host", () => {
+  it("takes the credential and owner of that host", async () => {
+    const { ghHostIn, githubCredential } = await import(
+      "../outbound/github-budget.ts"
+    );
+    const env = ghHostIn(["api", "--hostname", "ghe.example.com", "user"], {
+      GH_ENTERPRISE_TOKEN: "ent",
+      GH_TOKEN: "dotcom",
+    });
+    expect(env.GH_HOST).toBe("ghe.example.com");
+    expect(githubCredential(env)).not.toBe(
+      githubCredential({ GH_TOKEN: "dotcom" }),
+    );
+  });
+});

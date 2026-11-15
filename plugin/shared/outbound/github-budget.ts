@@ -186,6 +186,26 @@ const VALUED = new Set([
   "--preview",
 ]);
 
+/** `env` as the call sees it: with the host its `gh api --hostname` names, as `GH_HOST`. */
+export function ghHostIn(
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  if (args[0] !== "api") return env;
+  for (let i = 1; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    const host =
+      arg === "--hostname"
+        ? args[i + 1]
+        : arg.startsWith("--hostname=")
+          ? arg.slice(11)
+          : undefined;
+    if (host !== undefined && host.trim() !== "")
+      return { ...env, GH_HOST: host.trim() };
+  }
+  return env;
+}
+
 /** Where a `gh api` command line names its route: its first argument that is neither a flag nor a flag's value; `-1` when it names none. */
 export function apiRouteAt(args: readonly string[]): number {
   for (let i = 1; i < args.length; i += 1) {
@@ -249,7 +269,7 @@ function admission(
   const only = limits.length === 1 ? limits[0] : undefined;
   const spent: GitHubLimit | null =
     only !== undefined && GITHUB_PROFILE.limits[only].unit === "requests"
-      ? conditional(args) && readable
+      ? conditional(args) && readable && !args.includes("--paginate")
         ? null
         : only
       : limits.includes("graphql")
@@ -624,16 +644,15 @@ export function ghGovernance(
     argv,
     admit() {
       try {
-        while (taken.length < reservations)
-          taken.push(
-            gov.admit("GitHub", key, {
-              ...admitted,
-              onReserved: (name) => {
-                reservedIn = name;
-              },
-            }),
-          );
-        return { sentAt: taken[0] as number };
+        const at = gov.admit("GitHub", key, {
+          ...admitted,
+          count: reservations,
+          onReserved: (name) => {
+            reservedIn = name;
+          },
+        });
+        taken.push(...Array.from({ length: reservations }, () => at));
+        return { sentAt: at };
       } catch (error) {
         if (!isRateLimited(error)) throw error;
         giveBack();

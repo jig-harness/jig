@@ -169,6 +169,8 @@ export interface AdmitOptions {
    * instead of reserving nothing.
    */
   rollMs?: number;
+  /** How many requests this one admission reserves, all or none in one transaction; 1 when left out. */
+  count?: number;
   /** Told the window the request actually reserved in: `null` when it reserved nothing, whatever `reserve` asked. */
   onReserved?: (reservedIn: string | null) => void;
 }
@@ -853,21 +855,29 @@ export function budgetGovernor(
       // so concurrent callers each spend their own part of the balance.
       store.update(key, (record) => {
         if (record === null) return null;
-        const refusal = refusalFor(
-          adapter,
-          record,
-          share(),
-          now,
-          opts.windows ?? DEFAULT_WINDOWS,
-        );
-        if (refusal !== null) {
-          out.refusal = refusal;
-          return null;
-        }
         const name = opts.reserve === undefined ? "requests" : opts.reserve;
-        const next = reserved(record, now, name, opts.rollMs);
-        out.reservedIn = next === null ? null : name;
-        return next;
+        let current: BudgetRecord = record;
+        let changed = false;
+        for (let at = 0; at < (opts.count ?? 1); at += 1) {
+          const refusal = refusalFor(
+            adapter,
+            current,
+            share(),
+            now,
+            opts.windows ?? DEFAULT_WINDOWS,
+          );
+          if (refusal !== null) {
+            // All or none: a refused batch reserves nothing.
+            out.refusal = refusal;
+            return null;
+          }
+          const next = reserved(current, now, name, opts.rollMs);
+          if (next === null) break;
+          current = next;
+          changed = true;
+        }
+        out.reservedIn = changed ? name : null;
+        return changed ? current : null;
       });
       if (out.refusal !== null) throw out.refusal;
       opts.onReserved?.(out.reservedIn);

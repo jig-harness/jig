@@ -65,7 +65,7 @@ function storedLoginSeed(env: Env): string {
 
 /**
  * The credential's key: a hash of the token the client sends, or for its
- * stored login, of the host and configuration it reads it from and the
+ * stored login, of the host and the configuration directory it resolves and the
  * account `hosts.yml` names as active there (left out when the file cannot
  * be read). A host named only on a command line is not an input here.
  */
@@ -73,7 +73,9 @@ export function githubCredential(env: Env = process.env): string {
   const token = githubToken(env);
   if (token !== null) return credentialKey("github", token);
   const account = activeAccount(env);
-  const seed = storedLoginSeed(env);
+  // The directory the client resolves, so two environments that leave it
+  // unset but resolve different homes are not the same credential.
+  const seed = `opaque-cli-credential:${env.GH_HOST?.trim() ?? ""}:${ghConfigDir(env)}`;
   return credentialKey(
     "github",
     account === null ? seed : `${seed}#user:${account}`,

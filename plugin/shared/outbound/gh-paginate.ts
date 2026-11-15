@@ -12,7 +12,8 @@
  *   is `GET`; no `--input`): the next page is the URL the answer's `Link`
  *   header names `rel="next"`, sent as the route with the caller's other
  *   flags (`-H`, `--jq`, `--template`, `--hostname`) and without its fields,
- *   which that URL already carries, as gh does;
+ *   which that URL already carries, as gh does; a next link off the API
+ *   origin of the read's host ends the read (nothing is sent to it);
  * - a GraphQL read with neither `--jq` nor `--template`: the next page is
  *   asked with the `endCursor` variable set to the cursor of the first
  *   `pageInfo` in the answer whose `hasNextPage` is true, as gh does.
@@ -119,38 +120,70 @@ function stripped(
   return out;
 }
 
-/** The URL the `Link` header names as the next page. */
-function nextLink(headers: Headers | null): string | null {
+/** The host a command line sends to: its `--hostname`, else `GH_HOST`, else github.com. */
+function hostOf(args: readonly string[]): string {
+  for (let i = 1; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    if (arg === "--hostname") return (args[i + 1] ?? "").toLowerCase();
+    if (arg.startsWith("--hostname=")) return arg.slice(11).toLowerCase();
+  }
+  return (process.env.GH_HOST ?? "github.com").toLowerCase();
+}
+
+/** Whether `url` is an https URL on the API origin of `host` (`api.<host>`, or `<host>` itself for an enterprise server). */
+function onApiOrigin(url: string, host: string): boolean {
+  try {
+    const at = new URL(url);
+    return (
+      at.protocol === "https:" &&
+      at.username === "" &&
+      at.password === "" &&
+      (at.hostname === host || at.hostname === `api.${host}`)
+    );
+  } catch (error) {
+    swallow(error, "a next link that is not a URL is not followed");
+    return false;
+  }
+}
+
+/** The URL the `Link` header names as the next page, when it is on `host`'s API origin. */
+function nextLink(headers: Headers | null, host: string): string | null {
   const link = headers?.get("link") ?? "";
-  return /<([^>]+)>;\s*rel="next"/.exec(link)?.[1] ?? null;
+  const url = /<([^>]+)>;\s*rel="next"/.exec(link)?.[1] ?? null;
+  return url !== null && onApiOrigin(url, host) ? url : null;
 }
 
 /** The cursor of the next page: the first `pageInfo` in the answer, in document order, when it says there is one. */
 export function endCursorOf(value: unknown): string | null {
-  const seen: unknown[] = [value];
-  // Depth first, keys in the order the answer gave them.
-  while (seen.length > 0) {
-    const at = seen.shift();
-    if (Array.isArray(at)) {
-      seen.unshift(...at);
-      continue;
+  return cursorIn(value)?.cursor ?? null;
+}
+
+/** The first `pageInfo` at or below `value` in document order, as its cursor (`null` when it names no next page); `undefined` when there is none. */
+function cursorIn(value: unknown): { cursor: string | null } | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = cursorIn(item);
+      if (found !== undefined) return found;
     }
-    if (!isRecord(at)) continue;
-    const children: unknown[] = [];
-    for (const [key, child] of Object.entries(at)) {
-      if (
-        key === "pageInfo" &&
-        isRecord(child) &&
-        typeof child.hasNextPage === "boolean"
-      )
-        return child.hasNextPage && typeof child.endCursor === "string"
-          ? child.endCursor
-          : null;
-      children.push(child);
-    }
-    seen.unshift(...children);
+    return undefined;
   }
-  return null;
+  if (!isRecord(value)) return undefined;
+  for (const [key, child] of Object.entries(value)) {
+    if (
+      key === "pageInfo" &&
+      isRecord(child) &&
+      typeof child.hasNextPage === "boolean"
+    )
+      return {
+        cursor:
+          child.hasNextPage && typeof child.endCursor === "string"
+            ? child.endCursor
+            : null,
+      };
+    const found = cursorIn(child);
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 function json(body: string): unknown {
@@ -222,10 +255,17 @@ export function pagePlan(
   const method = methodOf(args);
   const fields = args.some(isField);
   if (method === null ? fields : method !== "GET") return null;
+  const host = hostOf(args);
+  // gh asks REST pages 100 at a time unless the caller said otherwise.
+  const first = stripped(args, () => false);
+  const firstAt = apiRouteAt(first);
+  const route = first[firstAt] ?? "";
+  if (!fields && firstAt >= 0 && !/[?&]per_page=/.test(route))
+    first[firstAt] = `${route}${route.includes("?") ? "&" : "?"}per_page=100`;
   return {
-    first: [...stripped(args, () => false), "--include"],
+    first: [...first, "--include"],
     next: (headers) => {
-      const url = nextLink(headers);
+      const url = nextLink(headers, host);
       if (url === null) return null;
       const rest = [...args];
       rest[at] = url;
@@ -272,7 +312,7 @@ export async function drivePages<T extends GhRun & { stdout?: string }>(
     if (result.code !== 0 || result.held !== undefined) {
       // A refused page sent nothing, and a failing first page is a single
       // call's failure; a later failure keeps what the pages before it said.
-      if (result.held !== undefined || page === 1) return answered;
+      if (page === 1) return answered;
       return { ...answered, stdout: plan.assemble(outputs) };
     }
     outputs.push(body);

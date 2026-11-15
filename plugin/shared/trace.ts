@@ -13,6 +13,7 @@ import {
   type GhAttribution,
   forgeBudgetOn,
   forgeOwner,
+  ghHostIn,
   ghGovernance,
 } from "./outbound/github-budget.ts";
 import { drivePages, pagePlan } from "./outbound/gh-paginate.ts";
@@ -224,22 +225,27 @@ async function governedRun<T extends GhRun, O>(
   args: string[],
   opts: O,
   refuse: (failure: OutboundFailure) => T,
-  send: (argv: string[]) => Promise<T>,
+  send: (argv: string[], spentSec: number) => Promise<T>,
   attribution: GhAttribution,
 ): Promise<T> {
-  const env = (opts as { env?: Record<string, string | undefined> }).env;
-  const owner = await forgeOwner(args, env ?? process.env);
+  const entered = currentMs();
+  // The host a call names (`--hostname`) is the one it sends to, so its
+  // credential and owner are those of that host.
+  const given = (opts as { env?: Record<string, string | undefined> }).env;
+  const env = ghHostIn(args, given ?? process.env);
+  const owner = await forgeOwner(args, env);
   const governance = ghGovernance(args, {
-    env: env ?? process.env,
+    env,
     captured: captured(opts),
     ...(owner === undefined ? {} : { owner }),
     attribution,
   });
-  if (governance === null) return send(args);
+  const spentSec = () => (currentMs() - entered) / 1000;
+  if (governance === null) return send(args, spentSec());
   const admitted = governance.admit();
   if ("refused" in admitted) return refuse(admitted.refused);
   const began = currentMs();
-  const result = await send(governance.argv);
+  const result = await send(governance.argv, spentSec());
   return governance.observe(result, admitted.sentAt, currentMs() - began);
 }
 
@@ -279,7 +285,11 @@ function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
           args,
           opts,
           refuse,
-          (argv) => run(argv, { ...opts, timeoutSec }),
+          (argv, spentSec) =>
+            run(argv, {
+              ...opts,
+              timeoutSec: Math.max(1, Math.ceil(timeoutSec - spentSec)),
+            }),
           attribution,
         ),
       attribution,
