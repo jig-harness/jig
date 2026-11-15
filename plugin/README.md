@@ -657,9 +657,11 @@ item of a tracker other than the forge are not read yet.
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
 machine file) inspects what the rules leave stopped, under the owner host's
-account and load admission. Every 20 minutes, only when the digest changed,
-it can propose a transient-stop retry, a missing issue facet, queue tie order
-and the act and ask for a human need. It can also propose one fixed resume of
+account and load admission. It starts when the repository's
+[judgment backlog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds work no earlier pass
+judged, at once rather than on a cadence, and an empty or already judged
+backlog starts none. It can propose a transient-stop retry, a missing issue
+facet, queue tie order and the act and ask for a need nothing has framed. It can also propose one fixed resume of
 an ended dispatched pass that recommended an option outside the human-decision
 registry. The follow-up lane's own routine retry runs first. The next tick
 applies its closed records under the current holds and recovery budget;
