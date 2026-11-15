@@ -442,6 +442,26 @@ describe("a launch that starts no pass", () => {
     expect(judgedMembers(REPO, root).size).toBe(0);
   });
 
+  test("a refusal for a resume outside its own run's backlog does not unjudge it", () => {
+    const root = freshRoot();
+    const resume = { kind: "resume" as const, target: "rec-1", facts: "" };
+    keepStewardRun("run-a", digest(REPO, []), Date.now(), root);
+    submitted("run-a", root);
+    keepStewardRun(
+      "run-b",
+      { ...digest(REPO, []), backlog: [resume] },
+      Date.now(),
+      root,
+    );
+    submitted("run-b", root);
+    stateDb(root)
+      .query(
+        "INSERT INTO steward_records (run, repo, value, applied, effect) VALUES ('run-a', ?, ?, 1, 'refused-open')",
+      )
+      .run(REPO, JSON.stringify({ kind: "resume", record: "rec-1" }));
+    expect(judgedMembers(REPO, root).size).toBe(1);
+  });
+
   test("a pass that ended without submitting judged nothing", () => {
     const root = freshRoot();
     const seen = stalled("#12", "2026-11-14T08:00:00Z");
