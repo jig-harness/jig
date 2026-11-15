@@ -16,6 +16,7 @@ import {
   ghHostIn,
   ghGovernance,
 } from "./outbound/github-budget.ts";
+import { setDiscoveryRunner } from "./outbound/github-owner.ts";
 import { drivePages, pagePlan } from "./outbound/gh-paginate.ts";
 import type { OutboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
@@ -417,5 +418,8 @@ export function traceGhRunner<
       traceGhCall(args, opts, timeout(), run, refuse, held);
   const runner = through(true);
   unheldForms.set(runner, through(false));
+  setDiscoveryRunner((args, env, timeoutSec) =>
+    runner(args, { ...defaults, env, timeoutSec } as O),
+  );
   return runner;
 }

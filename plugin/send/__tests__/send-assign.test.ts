@@ -118,7 +118,7 @@ describe("jig send assign", () => {
     // The forge is read for the quota owner the budget keeps its record
     // under and for the default branch's configuration, and written nowhere.
     expect(w.calls()).toEqual([
-      "api user",
+      "api user --include",
       `api -i repos/${REPO}/contents/.config/jig.yaml`,
     ]);
   });

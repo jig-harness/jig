@@ -299,7 +299,8 @@ describe("jig ask", () => {
     expect(answer.sources.trackerCalls).toBe(0);
     // Every forge call is a read: the budget's one lookup of the quota
     // owner (`api user`) and the reads with their headers.
-    for (const call of w.calls()) expect(call).toMatch(/^api (-i |user$)/);
+    for (const call of w.calls())
+      expect(call).toMatch(/^api (-i |user( --include)?$)/);
   });
 
   it("answers an address nobody holds with its last outcome", async () => {

@@ -50,7 +50,7 @@ import { recordCall } from "./ledger.ts";
 import { swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import { type OutboundFailure, outboundFailure } from "./failure.ts";
-import { ghRunFailure } from "./github.ts";
+import { type GhRun, ghRunFailure } from "./github.ts";
 import {
   declaredInstallation,
   githubCredential,
@@ -189,6 +189,20 @@ export function userOf(body: string): GithubUser | null {
   }
 }
 
+/** Runs `gh` with `args` as the forge client does: bounded, admitted and recorded. */
+export type GhRunner = (
+  args: string[],
+  env: Env,
+  timeoutSec: number,
+) => Promise<GhRun & { stdout?: unknown }>;
+
+let runner: GhRunner | null = null;
+
+/** The forge client's traced runner, which the default discovery goes through; the first one registered is kept. */
+export function setDiscoveryRunner(run: GhRunner): void {
+  runner ??= run;
+}
+
 /**
  * `gh api user` through the forge client's wrapper, which bounds it as every
  * run is (the process tree is ended at the deadline) and admits and records
@@ -196,16 +210,19 @@ export function userOf(body: string): GithubUser | null {
  * the host's unverified record, never against the owner it is finding.
  */
 const ghUser: DiscoverUser = async (env, deadlineMs) => {
+  if (runner === null)
+    return {
+      failure: outboundFailure("unauthorized", "no gh runner to ask with"),
+    };
   const began = currentMs();
-  // Imported when used: the wrapper's module reads this one.
-  const { ghCall } = await import("../proc.ts");
-  const result = await ghCall(["api", "user"], {
+  const result = await runner(
+    ["api", "user"],
     env,
-    timeoutSec: Math.max(1, Math.ceil(deadlineMs / 1000)),
-  });
+    Math.max(1, Math.ceil(deadlineMs / 1000)),
+  );
   const failure = ghRunFailure(result, currentMs() - began);
   if (failure !== null) return { failure };
-  const user = userOf(result.stdout);
+  const user = userOf(typeof result.stdout === "string" ? result.stdout : "");
   return user === null
     ? {
         failure: outboundFailure("invalid", "GET /user answered with no user"),
@@ -231,6 +248,28 @@ export interface GithubOwnerResolver {
   resolve(env: Env): Promise<OwnerResolution>;
   /** The owner the machine already knows, sending nothing; `null` for a credential never asked. */
   known(env: Env): OwnerResolution | null;
+}
+
+/** The ledger row of a discovery the wrapper did not record. */
+function ledgerLookup(
+  credential: string,
+  owner: string,
+  answer: { user: GithubUser } | { failure: OutboundFailure },
+  durationMs: number,
+): void {
+  recordCall({
+    system: "github",
+    credential,
+    owner,
+    window: "requests",
+    operation: "GET /user",
+    requests: 1,
+    cost: 1,
+    estimated: true,
+    unit: "requests",
+    durationMs,
+    failure: "failure" in answer ? answer.failure.code : null,
+  });
 }
 
 /** A resolver over `owners` and the budget records in `budget`; `discover` and `clock` are for tests. */
@@ -320,19 +359,7 @@ export function githubOwnerResolver(deps: {
     // The default discovery is a run of `gh` the wrapper records itself; a
     // discovery given in its place is recorded here.
     if (deps.discover !== undefined)
-      recordCall({
-        system: "github",
-        credential,
-        owner,
-        window: "requests",
-        operation: "GET /user",
-        requests: 1,
-        cost: 1,
-        estimated: true,
-        unit: "requests",
-        durationMs: currentMs() - began,
-        failure: "failure" in answer ? answer.failure.code : null,
-      });
+      ledgerLookup(credential, owner, answer, currentMs() - began);
     const next: OwnerEntry =
       user !== null
         ? {
