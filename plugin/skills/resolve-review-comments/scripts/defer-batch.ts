@@ -73,6 +73,9 @@ export type { LinearClient } from "../../do-item/scripts/lib/tracker/linear-defe
  */
 export const RUN_DEADLINE_MS = 5 * 60_000;
 
+const USAGE =
+  "usage: defer-batch.ts <PR> <type> --thread-url <url> --reason <text> --severity <severity> --category <category> --originating <key|none>; finding body is required on stdin";
+
 /**
  * Consumer-declared taxonomy: live workspace groups are also validated before
  * writing. Read when the module loads, so an importer in a repository without
