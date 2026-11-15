@@ -1,8 +1,13 @@
 /** Account for forge commands at their shared runner, without keeping command arguments or query variables. */
-import { apiRoute, githubCredential } from "./github-budget.ts";
+import { apiRoute, conditional, githubCredential } from "./github-budget.ts";
 import { isRecord } from "../guards.ts";
 import { swallow } from "../errors.ts";
-import { type GhRun, ghRunFailure, graphQLErrorsClass } from "./github.ts";
+import {
+  type GhRun,
+  ghResponseStatus,
+  ghRunFailure,
+  graphQLErrorsClass,
+} from "./github.ts";
 import { operationName } from "./ledger.ts";
 import { recordAttempt, type Attempt } from "./record-attempt.ts";
 import { currentMs } from "../time.ts";
@@ -126,7 +131,90 @@ function operation(args: string[], stdin: string | undefined): string {
   );
 }
 
-/** Each command invocation is an estimated request unless the answer reports query points. Local credential operations send none. */
+interface CaptureOptions {
+  stdin?: string;
+  env?: Record<string, string | undefined>;
+  stdout?: string;
+  onOutput?: unknown;
+}
+
+/** A whole captured answer; inherited, streamed and absent output carries no measurement. */
+function capturedOutput(
+  result: GhRun & { stdout?: unknown },
+  opts: CaptureOptions,
+): string | null {
+  if ((opts.stdout ?? "pipe") !== "pipe" || opts.onOutput !== undefined)
+    return null;
+  return typeof result.stdout === "string" ? result.stdout : null;
+}
+
+/** Whether a single captured conditional REST response was charged primary quota. */
+function conditionalCost(args: string[], result: GhRun): number | null {
+  if (
+    args[0] !== "api" ||
+    apiRoute(args) === "graphql" ||
+    args.includes("--paginate") ||
+    !conditional(args)
+  )
+    return null;
+  // Status evidence came from governance before stripping or caller-requested headers.
+  if (
+    result.httpStatus === undefined &&
+    !args.some((arg) => arg === "-i" || arg === "--include")
+  )
+    return null;
+  const status = ghResponseStatus(result);
+  if (status === 304) return 0;
+  return status === 200 ? 1 : null;
+}
+
+function estimatedCost(
+  args: string[],
+  sent: number,
+  output: string | null,
+): number | null {
+  if (output === null || sent === 0) return null;
+  return args[0] === "api" && apiRoute(args) === "rate_limit" ? 0 : 1;
+}
+
+/** Keep request traffic separate from measured primary cost and opaque command estimates. */
+function accountAnswer(
+  observation: Attempt,
+  args: string[],
+  result: GhRun,
+  opts: CaptureOptions,
+): unknown {
+  observation.requests =
+    result.held === undefined && !result.spawnFailed ? 1 : 0;
+  const output = capturedOutput(result, opts);
+  const body = output === null ? null : parsed(output);
+  const reported = githubCost(body);
+  // gh authenticates its API calls; 304 confirms this conditional read was free.
+  const conditional = output === null ? null : conditionalCost(args, result);
+  observation.cost =
+    reported ??
+    conditional ??
+    estimatedCost(args, observation.requests, output);
+  observation.estimated =
+    output !== null && reported === null && conditional === null;
+  return body;
+}
+
+function bodyFailure(body: unknown) {
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.errors) ||
+    body.errors.length === 0
+  )
+    return null;
+  return graphQLErrorsClass(
+    body.errors.map((e) =>
+      isRecord(e) && typeof e.type === "string" ? e.type : "",
+    ),
+  );
+}
+
+/** Captured conditional status or query points determine cost; opaque commands remain estimated. Local credential operations send none. */
 export function recordGhAttempt<T extends GhRun, O>(
   args: string[],
   options: O,
@@ -134,10 +222,7 @@ export function recordGhAttempt<T extends GhRun, O>(
 ): Promise<T> {
   if (args[0] === "auth" || args[0] === "--help" || args[0] === "--version")
     return send();
-  const opts = options as {
-    stdin?: string;
-    env?: Record<string, string | undefined>;
-  };
+  const opts = options as CaptureOptions;
   const credential = githubCredential(opts.env ?? process.env);
   const observation: Attempt = {
     system: "github",
@@ -154,40 +239,13 @@ export function recordGhAttempt<T extends GhRun, O>(
     async () => {
       const began = currentMs();
       const result = await send();
-      if (
-        result.held === undefined &&
-        !result.spawnFailed &&
-        args[0] !== "auth" &&
-        args[0] !== "--help" &&
-        args[0] !== "--version"
-      )
-        observation.requests = 1;
-      const stdout = (result as GhRun & { stdout?: unknown }).stdout;
-      const hasOutput = typeof stdout === "string";
-      const body = hasOutput ? parsed(stdout) : null;
-      const cost = githubCost(body);
-      observation.cost =
-        cost ??
-        (hasOutput && observation.requests > 0
-          ? args[0] === "api" && apiRoute(args) === "rate_limit"
-            ? 0
-            : 1
-          : null);
-      observation.estimated = hasOutput && cost === null;
+      const body = accountAnswer(observation, args, result, opts);
       const run =
         typeof result.stderr === "string" && typeof result.code === "number"
           ? ghRunFailure(result, currentMs() - began)
           : null;
       if (run !== null) return { result, failure: run.code };
-      const failure =
-        isRecord(body) && Array.isArray(body.errors) && body.errors.length > 0
-          ? graphQLErrorsClass(
-              body.errors.map((e) =>
-                isRecord(e) && typeof e.type === "string" ? e.type : "",
-              ),
-            )
-          : null;
-      return { result, failure };
+      return { result, failure: bodyFailure(body) };
     },
     (answer) => answer.failure,
   ).then((answer) => answer.result);
