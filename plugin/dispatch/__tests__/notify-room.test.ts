@@ -238,6 +238,7 @@ describe("a cause the comment has no room for", () => {
     backoffMs: 0,
     backoffMaxMs: 0,
     notifyAfter: 3,
+    rerunDied: 1,
   };
   const held = `${SLUG} PR #21 parked at new`;
   // Four parks that all still wait fill the comment.
