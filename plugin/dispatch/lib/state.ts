@@ -445,8 +445,8 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: "CREATE INDEX notices_channel_key ON notices (channel, key);",
   },
   {
-    // A process-owned checkout keeps its ended launch evidence after normal retention.
-    additive: true,
+    // A process-owned checkout keeps its ended launch evidence after normal retention. Pruning must preserve that evidence, which an earlier writer does not do, so earlier readers are refused.
+    additive: false,
     sql: `
     CREATE TABLE process_worktree_completions (
       id TEXT PRIMARY KEY,
