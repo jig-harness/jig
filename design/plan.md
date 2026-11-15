@@ -876,7 +876,8 @@ built so far: the generator, its gate, the chapter on the drive's end
 states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
 repository supplies and on the follow-up claim and its result, and the
-provisional chapter on addresses and the verbs of `jig send`
+provisional chapters on addresses and the verbs of `jig send` and on
+tracker facets
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
 Open, in order: the stable chapters' restatements as links

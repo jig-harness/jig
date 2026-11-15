@@ -128,7 +128,11 @@ What each tracker can hold:
 | `label`           | any facet                                       | any facet                                       | any facet                                                  |
 
 A store the adapter cannot hold is refused when the configuration is read,
-naming the facet and the stores that adapter has. A store kept by the
+naming the facet and the stores that adapter has. The stores each adapter
+holds in the current release, each refusal with its reason, are in the
+Protocol's
+[tracker facets chapter](../plugin/protocol/tracker-facets.md#the-stores-each-adapter-holds),
+generated from the code. A store kept by the
 repository's own command is [later work](#later-the-command-store).
 
 ### Value maps

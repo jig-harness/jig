@@ -53,6 +53,7 @@ authorizes an action.
 | [Commands a repository supplies](repo-commands.md) | The settings whose value is a command Jig runs: what each command is given, what it answers with, its deadline and the exits its caller reads. | 1 | stable | [data/repo-commands.json](data/repo-commands.json) |
 | [The follow-up claim and its result](followup-claim.md) | The marker that claims a merged pull request's follow-up: who took it, a dispatcher's tick or a person's run, and how it ended. | 1 | stable | [data/followup-claim.json](data/followup-claim.json) |
 | [Addresses and the verbs of `jig send`](addresses.md) | The stations an address names on a piece of work, what each one's key is, and the verbs `jig send` tells a station. | 1 | provisional, moved by [plan item 39](https://github.com/jig-harness/jig/issues/485), [plan item 42](https://github.com/jig-harness/jig/issues/541) | [data/addresses.json](data/addresses.json) |
+| [Tracker facets: type, priority and size](tracker-facets.md) | The facts every issue carries beside its labels, the numbers of the priorities, the stores a facet may be kept in and which each tracker adapter holds, and why a facet's store is the one in force. | 1 | provisional, moved by [plan item 41](https://github.com/jig-harness/jig/issues/518) | [data/tracker-facets.json](data/tracker-facets.json) |
 
 <!-- /protocol:generated -->
 

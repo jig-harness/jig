@@ -1,0 +1,512 @@
+{
+  "chapter": "tracker-facets",
+  "title": "Tracker facets: type, priority and size",
+  "version": 1,
+  "status": "provisional",
+  "planItems": [
+    {
+      "item": 41,
+      "epic": 518
+    }
+  ],
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "facet for an issue facet, priority for a priority, store for a store a facet may be kept in, adapter-store for whether one adapter holds one store for one facet, reason for why facet-stores reports a store as the one in force."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The facet, the store or the reason as the interface and the configuration write it; a priority's configuration name, or none for priority 0; for an adapter-store, the adapter, the facet and the store, as <adapter>:<facet>:<store>."
+    },
+    "number": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a priority, the number the interface carries it as; null for every other kind."
+    },
+    "adapter": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an adapter-store, the adapter as issue_tracker.adapter names it; null for every other kind."
+    },
+    "facet": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an adapter-store, the facet; null for every other kind."
+    },
+    "store": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an adapter-store, the store; null for every other kind."
+    },
+    "held": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an adapter-store, whether the adapter holds the store for the facet; a configuration that names a store it does not hold is refused. Null for every other kind."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What the facet, the priority, the store or the reason means; for an adapter-store, what the store is on that tracker where the adapter holds it, or why it is refused where it does not."
+    }
+  },
+  "values": [
+    {
+      "kind": "facet",
+      "name": "type",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "What kind of work the issue is: a type of the repository's label taxonomy, or a work type where it has no taxonomy; null for none"
+    },
+    {
+      "kind": "facet",
+      "name": "priority",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "How soon the issue matters: a number from 1 (urgent) to 4 (low), or 0 for none"
+    },
+    {
+      "kind": "facet",
+      "name": "size",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "How much work the issue is: a label of the taxonomy's size group, null for none; a repository whose taxonomy has no size group has no size facet, and an epic is asked no size"
+    },
+    {
+      "kind": "priority",
+      "name": "none",
+      "number": 0,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "No priority: the issue is unranked, not low, so a pool that holds it cannot be worked in order; a filing through the tracker refuses it"
+    },
+    {
+      "kind": "priority",
+      "name": "urgent",
+      "number": 1,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "The most pressing: before every other"
+    },
+    {
+      "kind": "priority",
+      "name": "high",
+      "number": 2,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "Ahead of the usual run of work"
+    },
+    {
+      "kind": "priority",
+      "name": "medium",
+      "number": 3,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "The usual run of work"
+    },
+    {
+      "kind": "priority",
+      "name": "low",
+      "number": 4,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "Behind the usual run of work"
+    },
+    {
+      "kind": "store",
+      "name": "native",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "The tracker's own field for the fact: an issue type, a priority field or an estimate, each canonical value kept as the tracker's value of its own name unless the entry's values map names another"
+    },
+    {
+      "kind": "store",
+      "name": "field",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "A custom field the entry's field names, each canonical value kept as the option, text or number of its own name unless the entry's values map names another"
+    },
+    {
+      "kind": "store",
+      "name": "label",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "A label per value: the value's own name (on GitHub Issues, a priority's is priority: followed by it), unless the entry's labels map names each value's label or its prefix comes before the value"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:type:native",
+      "number": null,
+      "adapter": "github",
+      "facet": "type",
+      "store": "native",
+      "held": true,
+      "meaning": "The issue type"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:type:field",
+      "number": null,
+      "adapter": "github",
+      "facet": "type",
+      "store": "field",
+      "held": true,
+      "meaning": "An issue field of the repository's organization, by name"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:type:label",
+      "number": null,
+      "adapter": "github",
+      "facet": "type",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per type"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:priority:native",
+      "number": null,
+      "adapter": "github",
+      "facet": "priority",
+      "store": "native",
+      "held": true,
+      "meaning": "The organization's Priority issue field"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:priority:field",
+      "number": null,
+      "adapter": "github",
+      "facet": "priority",
+      "store": "field",
+      "held": true,
+      "meaning": "An issue field of the repository's organization, by name"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:priority:label",
+      "number": null,
+      "adapter": "github",
+      "facet": "priority",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per priority, priority: urgent to priority: low unless labels or a prefix names them"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:size:native",
+      "number": null,
+      "adapter": "github",
+      "facet": "size",
+      "store": "native",
+      "held": false,
+      "meaning": "an Effort issue field is a field store (store: field, field: Effort)"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:size:field",
+      "number": null,
+      "adapter": "github",
+      "facet": "size",
+      "store": "field",
+      "held": true,
+      "meaning": "An issue field of the repository's organization, by name, such as Effort"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "github:size:label",
+      "number": null,
+      "adapter": "github",
+      "facet": "size",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per size"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:type:native",
+      "number": null,
+      "adapter": "jira",
+      "facet": "type",
+      "store": "native",
+      "held": true,
+      "meaning": "The issue type"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:type:field",
+      "number": null,
+      "adapter": "jira",
+      "facet": "type",
+      "store": "field",
+      "held": true,
+      "meaning": "A custom field of the site, by its name or its id"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:type:label",
+      "number": null,
+      "adapter": "jira",
+      "facet": "type",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per type"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:priority:native",
+      "number": null,
+      "adapter": "jira",
+      "facet": "priority",
+      "store": "native",
+      "held": true,
+      "meaning": "The priority field, its names given by issue_tracker.jira.priorities"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:priority:field",
+      "number": null,
+      "adapter": "jira",
+      "facet": "priority",
+      "store": "field",
+      "held": false,
+      "meaning": "Jira keeps priority in its own priority field (store: native, with issue_tracker.jira.priorities)"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:priority:label",
+      "number": null,
+      "adapter": "jira",
+      "facet": "priority",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per priority, named by labels or a prefix"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:size:native",
+      "number": null,
+      "adapter": "jira",
+      "facet": "size",
+      "store": "native",
+      "held": false,
+      "meaning": "each site's estimate is a custom field: store: field, field: <its name or id>"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:size:field",
+      "number": null,
+      "adapter": "jira",
+      "facet": "size",
+      "store": "field",
+      "held": true,
+      "meaning": "A custom field of the site, by its name or its id"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "jira:size:label",
+      "number": null,
+      "adapter": "jira",
+      "facet": "size",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per size"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:type:native",
+      "number": null,
+      "adapter": "linear",
+      "facet": "type",
+      "store": "native",
+      "held": false,
+      "meaning": "Linear has no issue types"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:type:field",
+      "number": null,
+      "adapter": "linear",
+      "facet": "type",
+      "store": "field",
+      "held": false,
+      "meaning": "the Linear adapter has no custom field to name"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:type:label",
+      "number": null,
+      "adapter": "linear",
+      "facet": "type",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per type"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:priority:native",
+      "number": null,
+      "adapter": "linear",
+      "facet": "priority",
+      "store": "native",
+      "held": true,
+      "meaning": "The priority field"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:priority:field",
+      "number": null,
+      "adapter": "linear",
+      "facet": "priority",
+      "store": "field",
+      "held": false,
+      "meaning": "the Linear adapter has no custom field to name"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:priority:label",
+      "number": null,
+      "adapter": "linear",
+      "facet": "priority",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per priority, named by labels or a prefix"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:size:native",
+      "number": null,
+      "adapter": "linear",
+      "facet": "size",
+      "store": "native",
+      "held": true,
+      "meaning": "The team's estimate"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:size:field",
+      "number": null,
+      "adapter": "linear",
+      "facet": "size",
+      "store": "field",
+      "held": false,
+      "meaning": "the Linear adapter has no custom field to name"
+    },
+    {
+      "kind": "adapter-store",
+      "name": "linear:size:label",
+      "number": null,
+      "adapter": "linear",
+      "facet": "size",
+      "store": "label",
+      "held": true,
+      "meaning": "A label per size"
+    },
+    {
+      "kind": "reason",
+      "name": "configured",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "Named by issue_tracker.facets"
+    },
+    {
+      "kind": "reason",
+      "name": "kept in labels",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "Kept in labels because a setting names the facet's labels (issue_tracker.types, issue_tracker.github.priority_labels) or, on GitHub Issues, an issue carries one"
+    },
+    {
+      "kind": "reason",
+      "name": "detected",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "Selected on GitHub Issues from what detection read: an issue's value in the tracker's own field, or, with no labels or values at all, the field the organization has"
+    },
+    {
+      "kind": "reason",
+      "name": "default",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "The adapter's default, with nothing named and nothing detected to move it"
+    },
+    {
+      "kind": "reason",
+      "name": "conflict",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "The facet's labels and values in the tracker's own field are both present and no store is named: store is null, and the facet's reads and writes fail, naming both stores, until the configuration names one"
+    },
+    {
+      "kind": "reason",
+      "name": "no facet",
+      "number": null,
+      "adapter": null,
+      "facet": null,
+      "store": null,
+      "held": null,
+      "meaning": "The repository has no such facet, as size with no size group, or its taxonomy cannot be read: store is null"
+    }
+  ]
+}
