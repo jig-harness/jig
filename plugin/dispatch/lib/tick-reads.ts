@@ -10,7 +10,10 @@
  * a read of its own would. The queries start from the page size the last
  * tick's read ended at (`pageSizes`), so a repository whose pull requests
  * the forge cannot answer fifty at a time is not asked that way every tick.
- * The budget is read once, as the tick starts: it
+ * The budget is read once, as the tick starts, from the machine's budget
+ * record (`shared/outbound/github-budget.ts`), which every process's forge
+ * calls keep current; only a record whose core window no answer has reported in the last
+ * minute is refreshed first, by one read of the `rate_limit` endpoint. It
  * decides whether the optional reads run (`lowBudget`), and every
  * repository's report says what was left then.
  *
@@ -32,6 +35,9 @@ import { listComments } from "../../shared/records/forge-claims.ts";
 import type { SharedBudget } from "../../shared/records/shared.ts";
 import { failed, type Outcome } from "../../shared/outcome.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
+import type { BudgetWindow } from "../../shared/outbound/budget.ts";
+import { githubBalances } from "../../shared/outbound/github-budget.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import {
   type CommentsRead,
   type PageSizes,
@@ -48,7 +54,6 @@ import type { ServedViews } from "./sources/served-reads.ts";
 import { failureText } from "./text.ts";
 import { type TickComments, tickComments } from "./tick-comments.ts";
 import type { SharedReport } from "./types.ts";
-import { currentMs } from "../../shared/time.ts";
 
 /** The forge's budget as the tick started, or why it did not read. */
 export type TickBudget = SharedBudget | { unreadable: string };
@@ -115,11 +120,42 @@ function lazySessions(runtime: SessionRuntime): SessionsReader {
   };
 }
 
-/** The forge's core budget; a read that fails is the reason it does not read. */
+/** How old the record's core balance may be for the tick to read it without asking the forge. */
+const FRESH_RECORD_MS = 60_000;
+
+/** The core balance the machine's record holds now, when an answer updated it within `FRESH_RECORD_MS`; `null` otherwise. */
+export function recordedBudget(
+  now: number,
+  balances: ReturnType<typeof githubBalances>,
+): SharedBudget | null {
+  if (balances === null) return null;
+  const core: BudgetWindow = balances.core;
+  // The core window's own last report: spending that other windows' answers
+  // or reservations recorded does not make the balance current.
+  if (core.answeredAt == null || now - core.answeredAt > FRESH_RECORD_MS)
+    return null;
+  if (core.remaining === null || core.limit === null || core.resetAt === null)
+    return null;
+  const reset = core.resetAt <= now;
+  return {
+    remaining: reset ? core.limit : Math.max(0, Math.floor(core.remaining)),
+    limit: core.limit,
+    resetAt: isoFromMs(core.resetAt),
+  };
+}
+
+/**
+ * The forge's core budget from the machine's record; a record too old to
+ * read is refreshed by one `rate_limit` read, whose answer the forge
+ * client records. A read that fails is the reason it does not read.
+ */
 async function readBudget(): Promise<TickBudget> {
   try {
+    const held = recordedBudget(currentMs(), githubBalances());
+    if (held !== null) return held;
     const read = await forgeShared({ login: null }).budget();
-    return read.ok ? read.value : { unreadable: read.failure.reason };
+    if (!read.ok) return { unreadable: read.failure.reason };
+    return recordedBudget(currentMs(), githubBalances()) ?? read.value;
   } catch (error) {
     return { unreadable: failureText(error) };
   }

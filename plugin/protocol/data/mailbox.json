@@ -280,5 +280,292 @@
       "carriedBy": "ack (always)",
       "meaning": "The generation of the driver that acted on the directive."
     }
-  ]
+  ],
+  "schemas": {
+    "mailbox-message": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ts": {
+              "type": "string",
+              "minLength": 1
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pr": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "const": "note"
+            },
+            "body": {
+              "type": "string"
+            },
+            "command": false,
+            "target": false,
+            "generation": false
+          },
+          "required": ["id", "ts", "from", "pr", "kind", "body"],
+          "additionalProperties": true
+        },
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ts": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "from": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "pr": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "const": "directive"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "command": {
+                  "enum": ["hold-push", "pause"]
+                },
+                "target": false,
+                "generation": false,
+                "now": false
+              },
+              "required": ["id", "ts", "from", "pr", "kind", "command"],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ts": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "from": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "pr": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "const": "directive"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "command": {
+                  "const": "resume"
+                },
+                "target": {
+                  "enum": ["hold-push", "pause", "stop"]
+                },
+                "generation": false,
+                "now": false
+              },
+              "required": [
+                "id",
+                "ts",
+                "from",
+                "pr",
+                "kind",
+                "command",
+                "target"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ts": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "from": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "pr": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "const": "directive"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "command": {
+                  "const": "stop"
+                },
+                "target": false,
+                "generation": false,
+                "now": false
+              },
+              "required": ["id", "ts", "from", "pr", "kind", "command"],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ts": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "from": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "pr": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "const": "directive"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "command": {
+                  "const": "stop"
+                },
+                "target": false,
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "now": {
+                  "const": true
+                }
+              },
+              "required": [
+                "id",
+                "ts",
+                "from",
+                "pr",
+                "kind",
+                "command",
+                "generation"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        }
+      ]
+    },
+    "mailbox-outbox": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ts": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pr": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "const": "received"
+            },
+            "response": false
+          },
+          "required": ["id", "ts", "pr", "status"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ts": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pr": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "const": "done"
+            },
+            "response": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["id", "ts", "pr", "status", "response"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ts": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pr": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "const": "ack"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "response": false
+          },
+          "required": ["id", "ts", "pr", "status", "generation"],
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
 }

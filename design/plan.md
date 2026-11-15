@@ -288,8 +288,6 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **GitHub in the budget record**: its hourly and secondary limits beside
-  the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,
   identical reads in a run sent once and reads by key in one request,
   through the shared library that the existing queue snapshots adopt.
@@ -873,7 +871,7 @@ pull-request labels, on hidden comment markers, on the commands a
 repository supplies and on the follow-up claim and its result
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
-Open, in order: the stable chapters' schemas, their restatements as links
+Open, in order: the stable chapters' restatements as links
 and the provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated

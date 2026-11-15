@@ -895,10 +895,14 @@ make, use the entry's term instead.
   `has-migration`, `api-change`, `dpa-relevant` (personal data covered by a
   data-processing agreement) and `manual-ops`. A fired flag sends a call to a human instead of an agent
   ([decide](plugin/skills/decide/SKILL.md)) and widens the review a change gets.
-- **Epic** — an issue whose sub-issues are each worked as their own pull
-  request, while the epic itself tracks the whole. Jig's `do-item` skill
-  picks up the next sub-issue in the order the epic's *execution plan*
-  gives, when it has one ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
+- **Epic** — an issue whose sub-issues are each delivered as their own pull
+  request, while the epic itself tracks the whole. A `do-item` session takes
+  one sub-issue at a time; the dispatcher starts an epic's ready sub-issues
+  in parallel, in the order and parallelism its execution plan sets, or
+  without one up to a per-epic width. Jig's `do-item` skill picks up the
+  next sub-issue and follows the epic's order when a machine-readable
+  execution plan is present
+  ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
   (an outcome too large for one pull request, and the unit progress is
   reported on), not by how many children it has, and it closes on an
   *acceptance verdict*, never on a count of open children
@@ -2231,11 +2235,11 @@ make, use the entry's term instead.
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
   ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
-  tracker adapters' transports keep the budget and the deadline, and they
-  and the forge's `gh` calls fail as the failure classes; a tracker read
+  tracker adapters' transports and the forge's `gh` calls keep the budget
+  and the deadline and fail as the failure classes; a tracker read
   is sent once more after a failure that may clear, a forge call is not;
-  the transports record each attempt in the cost ledger. Shared caching,
-  GitHub budget windows and the boundary gates remain planned
+  the transports record each attempt in the cost ledger. Shared caching
+  and the boundary gates remain planned
   ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
@@ -2244,7 +2248,7 @@ make, use the entry's term instead.
   starts and a person's skills spend one allowance knowingly. A *governed
   transport* asks it before each request and tells it what each answer
   said; the dispatcher's own reads keep to a share of each limit
-  (`tracker_share`,
+  (`outbound_share`,
   [configuration reference](plugin/CONFIGURATION.md)).
 - **Cost ledger** — the record of what Jig's calls to outside systems
   cost: for each hour, system, credential, named operation and caller, the

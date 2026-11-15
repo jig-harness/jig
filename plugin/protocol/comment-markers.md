@@ -154,3 +154,15 @@ trusted claims on one key, the earliest comment wins.
 | `reflection-escalation` | tracker | an issue's label and a line of its description, not a hidden marker |
 
 <!-- /protocol:generated -->
+
+## JSON Schemas
+
+The [record envelope](schemas/record-envelope.json) describes the shared
+fields. JSON records also have their own schemas: the
+[drive ledger](schemas/drive-ledger.json),
+[sent answer](schemas/drive-answer.json),
+[claim marker](schemas/tracker-claim-marker.json),
+[claim outcome](schemas/tracker-claim-outcome.json),
+[attachment header](schemas/tracker-attachment.json) and
+[reflection event](schemas/reflection-record.json). Text marker grammars
+remain the forms this chapter lists.

@@ -316,7 +316,7 @@ async function landing(
 ): Promise<{ landed: string | null; problems: string[] }> {
   const candidates: string[] = [];
   const problems: string[] = [];
-  if (approval.pull_request !== undefined) {
+  if (typeof approval.pull_request === "number") {
     const merged = await mergeCommitOf(approval.pull_request);
     if (merged.commit !== null) candidates.push(merged.commit);
     if (merged.error !== undefined) problems.push(merged.error);

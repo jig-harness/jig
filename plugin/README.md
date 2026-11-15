@@ -440,13 +440,19 @@ assignee makes the pickup refuse without restoring anyone. Linear and Jira
 have one assignee, so they assign first and verify the assignment from history;
 when that check finds a concurrent assignee was replaced, they conditionally
 make a best-effort restoration and refuse the pickup. A tracker without either
-operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
-none while a started child still needs an agent. A child awaiting a person
-does not occupy that slot: it is in the tracker's `ops_pending` state, or
-carries `hitl`, `hitl:*`, `manual-ops` (including their configured names) or
-`jig:hold`. Nor does a child this host's ended pickup record keeps from
-starting: its next startable sibling takes the slot, and the epic reports
-the held child and why. An epic none of whose open children can start reports one reason,
+operation leaves the blocker for a person to assign. An assigned epic without
+an execution plan has its ready children started in parallel, best-ranked
+first, up to `dispatch.epic_width` of them under way at once (4 by default;
+1 starts one child at a time). A started child counts toward the width while
+it still needs an agent, and so does a child that cannot be read, since it
+may be under way. A child awaiting a person takes no part of the width: it
+is in the tracker's `ops_pending` state, or carries `hitl`, `hitl:*`,
+`manual-ops` (including their configured names) or `jig:hold`. Nor does a
+child this host's ended pickup record keeps from starting: its next
+startable sibling takes its place, and the epic reports the held child and
+why. A child that waits on the width says so, naming the epic and the width
+([ADR-0024](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)).
+An epic none of whose open children can start reports one reason,
 naming a child waiting on a person when it has one. An execution plan keeps
 its own ordering rules.
 
@@ -472,8 +478,9 @@ free slot reuses one younger than that without asking. Every repository of
 the machine file that names the same tracker, team and person shares one
 reading per tick.
 
-Every process on the host shares each tracker credential's request budget
-(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+Every process on the host shares each tracker credential's and the forge
+credential's request budget
+(`outbound_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
 While the tracker refuses the credential for its rate limit, no request
 leaves the host before the reset it named: a tick reports the tracker once
 as rate limited until then, the queue it shows is the last reading, and

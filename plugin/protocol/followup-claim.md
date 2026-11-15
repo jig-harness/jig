@@ -52,7 +52,7 @@ How a follow-up command claims, checks and ends its marker with
 follow-ups. The runs and their outcomes, for a program in any language:
 [data/followup-claim.json](data/followup-claim.json), whose `field` entries
 also give each payload field's type and the runs whose markers carry it;
-schemas for them are a later step.
+the JSON Schemas below publish the claim and result forms those records use.
 
 ## The record
 
@@ -112,3 +112,12 @@ carries a field on every marker or on some; "never" that it carries none.
 | `cause` | string | sometimes | never | Why the follow-up run fell short, from the closing report's closed list of causes, written by its host with the outcome when the report named one. |
 
 <!-- /protocol:generated -->
+
+## JSON Schemas
+
+The [claim schema](schemas/followup-claim.json) describes the enveloped JSON
+record, including version 1 envelopes. The
+[result schema](schemas/followup-result.json) additionally requires a final
+outcome. Earlier plain-text markers retain their textual grammar.
+Version 1 identifies its pull request by its envelope key and ignores any
+`pr` field; version 2 requires `pr` and uses the key `followup`.
