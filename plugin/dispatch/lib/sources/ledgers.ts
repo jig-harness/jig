@@ -85,15 +85,15 @@
  *
  * A ledger that cannot be read (its comments, a version this reader does
  * not know, a damaged body, an unreadable heartbeat or park answer) is
- * `unplaced`: reported, never planned. Where a failed call stopped the read
- * (its comments, a thread's answers, its base branch's head), the drive
- * carries that call's failure class, which decides whether the tick waits
- * it out (`read-failures.ts`); a read that answered but does not parse
- * carries none. So is a converged one whose
+ * `unplaced`: reported, never planned. So is a converged one whose
  * mergeability the forge is still computing, or whose head or verified head
  * is not known, since whether it is stale cannot be told this tick, and one
  * that stopped `PR_CONFLICTING` whose mergeability, head or base branch's head
  * is not known, since the change a re-drive would act on cannot be told.
+ * Where a failed call stopped the read (its comments, a thread's answers,
+ * its base branch's head), the drive carries that call's failure class,
+ * which decides whether the tick waits it out (`read-failures.ts`); a read
+ * that answered but does not parse carries none.
  *
  * Where the repository turns dispatch labels on, each drive carries its
  * pull request's labels, and a pull request with no ledger that carries the
