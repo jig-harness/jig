@@ -136,6 +136,12 @@ import {
   recordExit,
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
+import {
+  driverReportFile,
+  printKeptReport,
+  recordAndSay,
+} from "./lib/run-report.ts";
+import { DRIVER_REPORT_VARIABLE } from "../shared/driver-report.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
 import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
 import { defectLine } from "../shared/pr-labels/write.ts";
@@ -445,6 +451,9 @@ async function executeStage(
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
       JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
+      ...(isDrive(record)
+        ? { [DRIVER_REPORT_VARIABLE]: driverReportFile(id) }
+        : {}),
     },
     { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );
@@ -550,6 +559,8 @@ async function finishRun(
     const startup = startupOf(record, ran);
     const startupWallUnrecorded =
       startup !== undefined && !recordStartupWall(record, startup);
+    // The report before the exit: a tick that reads the exit reads its report too.
+    recordAndSay(id, isDrive(record), startup);
     recordExit(id, {
       at: currentIso(),
       code,
@@ -569,6 +580,7 @@ async function finishRun(
   }
   await endSharedClaim(id);
   await labelFollowup(id);
+  printKeptReport(id);
   if (isInteractive(record)) await closeTabIfDone(record, code);
   return code ?? 1;
 }
