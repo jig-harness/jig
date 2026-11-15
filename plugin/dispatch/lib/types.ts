@@ -682,7 +682,13 @@ export interface PreflightHold {
 }
 
 export interface RepoReport {
-  steward?: { status: string; hash?: string; records?: number };
+  /** The steward on this tick: what it did, and for a pass the judgment backlog started or did not start, why (`trigger`). */
+  steward?: {
+    status: string;
+    hash?: string;
+    records?: number;
+    trigger?: "empty" | "judged" | "budget" | "started";
+  };
   path: string;
   slug: string | null;
   /** Set when the repository could not be dispatched at all, or a defect stopped its turn. */

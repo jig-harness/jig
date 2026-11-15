@@ -225,7 +225,6 @@ by a person's answer to a framed decision, or by a person alone. It builds
 on item 46's framed needs and answers. What it will build, one pull request
 per issue in the design's order:
 
-- **CI repair.** The repair passes become `drive.ci_repair_rounds`.
 - **Host faults.** One host need per cause (`failures.group`); a
   follow-up's run again also covers a failed result write and waits for the
   host's health check (`failures.rerun_died`); a tracker credential probe

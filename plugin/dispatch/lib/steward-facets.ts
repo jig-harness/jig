@@ -56,6 +56,16 @@ export async function applyStewardFacet(
   }
 }
 
+/** The facets a steward record could fill on an assigned issue as read: empty, mapped and not held. */
+export function missingFacets(
+  issue: PoolIssue,
+  policy: { hitl?: string; manualOps?: string } = {},
+): Facet[] {
+  return (["priority", "type", "size"] as const).filter((facet) =>
+    writable(issue, issue, facet, policy),
+  );
+}
+
 function writable(
   issue: PoolIssue | null,
   observed: PoolIssue,

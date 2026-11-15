@@ -50,6 +50,12 @@ function boundTick(w: World): string {
 export function withOrigin(w: World): void {
   const origin = join(w.root, "example-org", "example-repo.git");
   mkdirSync(join(w.root, "example-org"), { recursive: true });
+  // An origin a workspace's checkout gave the clone (`checkoutOn`) gives way to this one.
+  Bun.spawnSync(["git", "-C", w.repo, "remote", "remove", "origin"], {
+    env: w.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   for (const args of [
     ["clone", "-q", "--bare", w.repo, origin],
     ["-C", w.repo, "remote", "add", "origin", origin],

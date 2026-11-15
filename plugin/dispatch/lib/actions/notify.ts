@@ -26,8 +26,8 @@
  *   log (`log.ts`) in the same transaction as the first suppression record
  *   written for it, timed at that record and keyed by the same facts; a
  *   cause about a stage this machine launched has its ended row instead.
- * - **Backed off while it keeps failing.** A cause whose delivery was lost
- *   is counted in the failure ledger (`failures.ts`) under its channel's key
+ * - **Backed off while it keeps failing.** A cause whose delivery was lost,
+ *   or that found no room in its destination's comment, is counted in the failure ledger (`failures.ts`) under its channel's key
  *   (`notice <key>` on `orca-card`, `notice <channel> <key>` on another):
  *   until its next try on that channel it is reported waiting there, and
  *   past `failures.notify_after` lost deliveries in a row it is notified as
@@ -66,7 +66,12 @@ import {
   type Suppression,
 } from "../notice-records.ts";
 import { unobservedTarget } from "../notices.ts";
-import { openCard, orcaCard, retireCard } from "../runtime/orca-card.ts";
+import {
+  NO_ROOM,
+  openCard,
+  orcaCard,
+  retireCard,
+} from "../runtime/orca-card.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { failureText } from "../text.ts";
 import {
@@ -280,8 +285,9 @@ function deliveryOf(
 
 /**
  * Count each delivery the channel attempted in the failure ledger: a lost
- * one fails, a sent or already-carried one succeeds; one that waited for
- * its destination was not attempted.
+ * one or one the destination had no room for fails, a sent or
+ * already-carried one succeeds; one that waited for another reason was not
+ * attempted.
  */
 function countDeliveries(
   channel: string,
@@ -289,7 +295,8 @@ function countDeliveries(
   outcomes: ReadonlyArray<{ cause: Cause; answer: Delivery }>,
 ): void {
   for (const { cause: c, answer: o } of outcomes) {
-    if (o.outcome === "lost") book.ran(deliveryOf(channel, c), o.detail);
+    if (o.outcome === "lost" || (o.outcome === "waits" && o.detail === NO_ROOM))
+      book.ran(deliveryOf(channel, c), o.detail);
     else if (o.outcome === "sent" || o.outcome === "already")
       book.ran(deliveryOf(channel, c), null);
   }
@@ -377,6 +384,22 @@ function earlierSend(
   );
 }
 
+/** The runtime operations before a write: the open's repository lookup, the listing's repository lookup and workspace listing, then the write itself. */
+const DELIVERY_RUNTIME_CALLS = 4;
+
+/** The longest one delivery may take: the workspace open, then each runtime operation at its own timeout. The tick's receipt reserve (`noticeTime`, `timeLeftMs`) holds back the settlement time. */
+export function deliveryBudgetMs(
+  machine: Pick<
+    ApplyState["machine"],
+    "workspaceTimeoutMs" | "runtimeTimeoutMs"
+  >,
+): number {
+  return (
+    machine.workspaceTimeoutMs +
+    DELIVERY_RUNTIME_CALLS * machine.runtimeTimeoutMs
+  );
+}
+
 /** `--apply` for one repository's notifications, on each channel, then its notices workspace. */
 export async function applyNotices(
   state: ApplyState,
@@ -387,7 +410,15 @@ export async function applyNotices(
 ): Promise<void> {
   const root = state.root ?? stateRoot();
   openCard(repo, sessions, root);
-  const card = orcaCard(state, repo, report, sessions, settings.branch);
+  // `standing` is read when the card writes, after the tick has named its causes.
+  const card = orcaCard(
+    state,
+    repo,
+    report,
+    sessions,
+    settings.branch,
+    () => standing,
+  );
   const channels = namedChannels([card, ...(settings.channels ?? [])], report);
   const planned = report.actions.filter(isCause);
   wantedDeliveries(
@@ -407,7 +438,7 @@ export async function applyNotices(
     causes,
     standing,
     timeLeftMs: () => timeLeftMs(state),
-    deliveryTimeoutMs: state.machine.runtimeTimeoutMs,
+    deliveryTimeoutMs: deliveryBudgetMs(state.machine),
   };
   const due = channels.map((channel) => ({
     channel,
@@ -447,7 +478,7 @@ interface SendScope {
   standing: ReadonlySet<string>;
   /** Milliseconds the tick has left; `null` without a deadline. */
   timeLeftMs: () => number | null;
-  /** The longest one channel delivery may take without a tick deadline. */
+  /** The longest one channel delivery may take without a tick deadline: its preparation and its write. */
   deliveryTimeoutMs: number;
 }
 
