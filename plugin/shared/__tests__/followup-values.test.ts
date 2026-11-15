@@ -51,7 +51,7 @@ function asRecord(draft: ClaimDraft): ClaimRecord {
 
 const keys = (draft: ClaimDraft) => Object.keys(draft.payload).sort();
 
-/** Every marker a tick's writers write: posted bare or in full, then ended done, failed or by a death. */
+/** Every marker a tick's writers write: posted bare or in full, then ended done, failed (with its report's writer and cause) or by a death. */
 function tickMarkers(): ClaimDraft[] {
   const bare = tickClaim(RECORD, { pr: PR, writer: WRITER });
   const full = tickClaim(
@@ -66,6 +66,14 @@ function tickMarkers(): ClaimDraft[] {
     full,
     ended({ state: "ended", at: AT, exit: 0, outcome: "done" }),
     ended({ state: "ended", at: AT, exit: 1, outcome: "failed" }),
+    ended({
+      state: "ended",
+      at: AT,
+      exit: 1,
+      outcome: "failed",
+      by: "agent",
+      cause: "needs-person",
+    }),
     ended({ state: "died", at: AT, reason: "the session died" }),
   ];
 }

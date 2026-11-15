@@ -87,3 +87,47 @@ numbering instead, and is listed here so that no state or exit is given it.
 | `PUSH_HELD` | helper | 17 | guarded-push.ts and push-hold-recheck.ts (PUSH_HELD_EXIT) | no | A `hold-push` directive in the drive's mailbox is in force, so nothing was pushed; the pre-push hook's recheck exits with it to stop a push already under way. Not an end state: clear the hold, then push again. |
 
 <!-- /protocol:generated -->
+
+## What `drive.ts`'s closing report says at each exit
+
+When a [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+runs a drive, `drive.ts` writes a
+[closing report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+when it stops (`closing-report/v1`, written by the driver). Its `concluded`
+opens with the stop's text, after the pull request's name and before the
+exit, followed by what the last
+[round report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) of
+the same launch concluded; its `cause` and `suggested_next` are the ones this
+table gives the exit. A park's text names the first parked decision's
+question and how many more wait, and a usage-limit stop's names the limit and
+when it resets. An exit this table does not list has cause `unknown` and a
+next step a person investigates. A `cause` is absent where the drive did not
+fall short of its goal.
+
+<!-- protocol:generated source=plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts#TERMINAL_STATES.report -->
+
+| State | `drive.ts` exits | The stop's text | `cause` | Next: owner | Next: act | Next: step |
+| --- | --- | --- | --- | --- | --- | --- |
+| `INDETERMINATE` | 1 | stopped on a failure; the drive's log says what failed | `tool-failed` | `person` | `Investigate` | Read what the drive's log says failed, then re-arm the drive. |
+| `UNSUPPORTED_CLI` | 2 | stopped: a usage error, or a gh that cannot report the pull request | `environment` | `person` | `Investigate` | Read the drive's message, fix the command line, the working tree or the gh install it names, then re-arm the drive. |
+| `CONVERGED` | 0 | converged: the reviewer reviewed its head and nothing is left open | — | `person` | `Merge` | Merge the pull request once its required checks pass. |
+| `NOT_SETTLED` | 4 | stopped before the pull request could be judged: it has not settled yet | — | `line` | — | The line drives it again once the pull request settles. |
+| `PR_NOT_OPEN` | 5 | ended: the pull request was merged or closed | — | `none` | — | Nothing is left for the drive; a merge's follow-up settles what the merge owes. |
+| `MAX_ROUNDS` | 6 | used its round budget without converging | `deadline` | `person` | `Investigate` | Read the handoff file for what keeps the review open, then re-arm the drive or take the work over. |
+| `REVIEWER_FAILED` | 7 | stopped: the posting reviewer's check did not pass | `tool-failed` | `person` | `Investigate` | Look at the reviewer's failed check, then re-arm the drive. |
+| `HITL_PARKED` | 8 | parked: a decision waits for a person | `needs-person` | `person` | `Decide` | Answer each parked decision on its thread, then re-arm the drive. |
+| `PR_CONFLICTING` | 9 | stopped: it conflicts with its base and has nothing left to work | `needs-person` | `person` | `Do` | Merge the base in and resolve the conflicts, then re-arm the drive. |
+| `SINGLE_INSTANCE_LOCK` | 11 | refused: another driver already holds this pull request's or this working tree's lock | `refused` | `line` | — | The driver that holds the lock goes on driving. |
+| `WORKTREE_UNCLEAN` | 12 | converged, but its worktree holds changes no round shipped | `environment` | `line` | — | A re-armed drive settles the working tree, then reports convergence. |
+| `DRIVE_HELD_BY_OTHER_WORKTREE` | 13 | refused: another working tree or clone drives this pull request | `refused` | `line` | — | The driver in the other working tree or clone finishes the drive. |
+| `STALLED` | 14 | stalled: its passes changed nothing | `unknown` | `person` | `Investigate` | Read what the passes decided and what the working tree holds, then re-arm the drive. |
+| `PASS_DEADLINE` | 15 | stopped: its passes kept running out of time | `deadline` | `person` | `Investigate` | Check the working tree for the stopped pass's leftovers, then re-arm the drive. |
+| `QUOTA_PARKED` | 16 | stopped on a usage limit | `usage-limit` | `line` | — | The line re-arms the drive after the limit resets, or on an account the limit does not hold. |
+| `MAILBOX_STOPPED` | 18 | stopped: a person or a tool told it to stop through its mailbox | — | `none` | — | Nothing until a person re-arms the drive. |
+| `MAILBOX_PAUSE_TIMEOUT` | 19 | stopped: a pause sent through its mailbox outlasted its wait | `deadline` | `person` | `Do` | Resume the drive through its mailbox, then re-arm it. |
+| `TAKEN_OVER` | 20 | stopped: another clone took the drive over | — | `line` | — | The clone that took the drive over drives it now. |
+| `CI_REPAIR_SPENT` | 21 | stopped: CI still fails with its CI-repair passes spent | `tool-failed` | `person` | `Investigate` | Look at the failing checks, then re-arm the drive to repair again. |
+| `REVIEW_SKIPPED` | 22 | stopped: the reviewer skipped its head and will not review it | `environment` | `person` | `Do` | Have this head reviewed, then re-arm the drive. |
+| `CI_INFRA_PERSISTED` | 23 | stopped: checks kept failing on the CI service's own infrastructure | `environment` | `line` | — | The line re-arms the drive once the CI service recovers. |
+
+<!-- /protocol:generated -->
