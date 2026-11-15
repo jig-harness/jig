@@ -166,20 +166,29 @@ function prepareProjection(
   );
 }
 
+// Once the write is admitted, only the runtime's own deadline ends the
+// read-back: a sender that gave up stops new writes, not a started one.
+function spentReceipt(
+  target: NotifyTarget,
+  remaining: () => number,
+  started: boolean,
+): RuntimeReceipt | null {
+  if (remaining() > 0 && (started || target.signal?.aborted !== true))
+    return null;
+  return {
+    ok: false,
+    lost: false,
+    detail: `${target.path}: the runtime's deadline passed or the sender gave up before the comment was written; nothing written`,
+  };
+}
+
 async function notifyUnlocked(
   target: NotifyTarget,
   message: string,
   remaining: () => number,
 ): Promise<RuntimeReceipt> {
   const selector = `path:${target.path}`;
-  const spent = (): RuntimeReceipt | null =>
-    remaining() > 0
-      ? null
-      : {
-          ok: false,
-          lost: false,
-          detail: `${target.path}: the runtime's deadline passed before the comment was written; nothing written`,
-        };
+  const spent = (started = false) => spentReceipt(target, remaining, started);
   let late = spent();
   if (late !== null) return late;
   const before = await call(
@@ -223,7 +232,7 @@ async function notifyUnlocked(
     );
     if (!set.ok) return { ok: false, lost: set.lost, detail: set.why };
   }
-  late = spent();
+  late = spent(merge !== null);
   if (late !== null)
     return {
       ...late,
@@ -240,7 +249,7 @@ async function notifyUnlocked(
       lost: true,
       detail: `the comment was written, and could not be read back: ${shown.why}`,
     };
-  late = spent();
+  late = spent(true);
   if (late !== null)
     return {
       ...late,

@@ -434,6 +434,16 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: false,
     sql: "SELECT 1;",
   },
+  {
+    // The notification channel a suppression record is of (`notice-records.ts`). A row an earlier release wrote, or a copy one release behind writes, is `orca-card`'s, the only channel there was; the table's key stays the repository and `key`, which a channel other than `orca-card` qualifies with its name.
+    additive: true,
+    sql: "ALTER TABLE notices ADD COLUMN channel TEXT NOT NULL DEFAULT 'orca-card';",
+  },
+  {
+    // Channel-qualified host notices are read by channel and key prefix on every tick.
+    additive: false,
+    sql: "CREATE INDEX notices_channel_key ON notices (channel, key);",
+  },
 ];
 
 /** The schema version this plugin writes. */
