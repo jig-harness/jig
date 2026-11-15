@@ -112,7 +112,7 @@ export function commentSaysDraftSkip(app: string, body: string): boolean {
     // The generated marker labels CodeRabbit's generic skip template too, so
     // only the draft notice itself can prove this was a draft skip.
     .filter((line) => !/^\s*<!--(?:(?!-->).)*-->\s*$/u.test(line));
-  if (lines.some((line) => /^ {0,3}~{3,}|`|<[!/?a-z]/iu.test(line)))
+  if (lines.some((line) => /(?:^ {0,3}~{3,}|`|<[!/?a-z])/iu.test(line)))
     return false;
   return lines.some((line) =>
     /^ {0,3}(?:#{1,6}\s+Draft PR not reviewed(?:\s+#+)?|\*\*Draft PR not reviewed\*\*)\s*$/u.test(
