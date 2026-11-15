@@ -573,7 +573,12 @@ thing Orca adds has a Herdr or plain-text equivalent. Every write is the
 person's, made with their own credential. A card's Send answers a parked
 decision from the person's browser with a token kept there, the host
 serving no write route and the dispatcher relaying nothing; every other
-dashboard write waits until item 40 settles how a comment a pass posts
+act the page makes goes from the person's browser straight to the forge or
+tracker with the person's own token, after the physical-device probes pass
+([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md),
+[ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)),
+needing only the proof its class asks for. A commit the host makes waits
+until item 40 settles how a comment a pass posts
 under the person's login is told from the person's own, and each such
 commit then asks for proof that a person is present. Only the card's Send is built; the rest is built in stages, one pull request per
 step: the per-pull-request status on the dashboard that exists (rounds and
