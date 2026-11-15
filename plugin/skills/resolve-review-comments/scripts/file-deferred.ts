@@ -365,6 +365,14 @@ const heldIssue = (found: Held, entry: DeferredEntry): Got => ({
   stale: !found.lines.includes(textLine(entry)),
 });
 
+function damagedBatch(found: Held, entry: DeferredEntry, pr: string): boolean {
+  return (
+    leadingKeyLine(found.issue.description)?.startsWith(
+      "<!-- defer-batch-key:",
+    ) || found.issue.title === batchTitle(pr, entry.type ?? "unknown")
+  );
+}
+
 /** Repair the setup of an existing open batch before its entry is recorded as filed. */
 async function readyHeld(
   tracker: Tracker,
@@ -383,12 +391,7 @@ async function readyHeld(
     marker ?? "",
   );
   if (key === null) {
-    if (
-      leadingKeyLine(found.issue.description)?.startsWith(
-        "<!-- defer-batch-key:",
-      ) ||
-      found.issue.title === batchTitle(context.pr, entry.type ?? "unknown")
-    )
+    if (damagedBatch(found, entry, context.pr))
       throw new JigError(
         "deferral",
         "The held batch lost or malformed its key; do not record the finding as filed",
@@ -611,6 +614,21 @@ function planner(
  * the tracker already holds an issue for needs only recording, so it is not
  * planned, and carries that issue forward.
  */
+async function heldPlan(
+  held: Held,
+  entry: DeferredEntry,
+  plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+): Promise<Plan | null> {
+  if (
+    !/^<!-- defer-batch-key: repo=\S+ pr=\d+ type=\S+ -->$/.test(
+      leadingKeyLine(held.issue.description) ?? "",
+    )
+  )
+    return null;
+  const expected = await plan(entry);
+  return "why" in expected ? null : expected;
+}
+
 async function fileable(
   entries: DeferredEntry[],
   tracker: Tracker | null,
@@ -622,15 +640,10 @@ async function fileable(
     if (entry.filed !== undefined) continue;
     const held = tracker === null ? null : await alreadyFiled(tracker, entry);
     if (held !== null) {
-      const isBatch =
-        /^<!-- defer-batch-key: repo=\S+ pr=\d+ type=\S+ -->$/.test(
-          leadingKeyLine(held.issue.description) ?? "",
-        );
-      const expected = isBatch ? await plan(entry) : null;
       open.push({
         entry,
         held,
-        plan: expected === null || "why" in expected ? null : expected,
+        plan: await heldPlan(held, entry, plan),
       });
       continue;
     }
