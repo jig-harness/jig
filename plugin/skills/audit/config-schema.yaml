@@ -136,7 +136,7 @@ fields:
     distinct: true
     read_by: [audit, gc]
     repository_only: true
-    since: next
+    since: 0.247.2
 
   dispatch.identity:
     type: string
