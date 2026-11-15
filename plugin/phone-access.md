@@ -358,7 +358,7 @@ claims it works until it has.
 | What was tested | Result |
 | --- | --- |
 | Front and version (`tailscale version`) | Passed, 2026-11-15: Tailscale Serve on Tailscale 1.104.7, `--https=8443`, tailnet only; the host's tailnet address no longer answers on the dashboard's own port |
-| Phone browser and version | Run, 2026-11-15, for the install check below; the browser's version was not recorded |
+| Phone browser and version | Not complete: a phone was used for the install check below on 2026-11-15, but its browser product and version were not recorded. Fill them in before the install row is read as a tested configuration |
 | Ordinary-browser access to the HTTPS address, no token in it | Passed, 2026-11-15: `/` answers `200` through the front with no token in the address, and the phone opens it |
 | Refusal for a device or sign-in the front does not admit | Not yet run |
 | Forged identity header from a refused device | Not yet run |
@@ -367,5 +367,5 @@ claims it works until it has.
 | QR code and text for the token-free address, scanned on the phone | Not yet run |
 | Reading a decision, copying a command and an answer line, opening the forge link | Not yet run |
 | Copy after the clipboard permission is refused | Not yet run |
-| Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Passed, 2026-11-15: the page installs as an app on the phone from the HTTPS front; the manifest (`start_url` `/`, `display` `standalone`) and its 192, 512 and maskable 512 icons each answer `200` through the front |
+| Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Partly run, 2026-11-15: the page installs as an app on the phone from the HTTPS front; the manifest (`start_url` `/`, `display` `standalone`) and its 192, 512 and maskable 512 icons each answer `200` through the front. Not yet observed: the installed app opening without a browser bar, showing no token in its addresses, reading the page and copying a command |
 | Reverse-proxy path, with its product and version | Not yet run |
