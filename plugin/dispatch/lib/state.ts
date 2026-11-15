@@ -434,6 +434,18 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: false,
     sql: "SELECT 1;",
   },
+  {
+    // A process-owned checkout keeps its ended launch evidence after normal retention.
+    additive: true,
+    sql: `
+    CREATE TABLE process_worktree_completions (
+      id TEXT PRIMARY KEY,
+      record TEXT NOT NULL,
+      claim TEXT NOT NULL,
+      exit TEXT NOT NULL
+    );
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

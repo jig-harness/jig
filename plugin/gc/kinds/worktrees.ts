@@ -781,15 +781,31 @@ export function worktreesKind(
       if (isAgentTool(resource) || processOwned) {
         const final = proved.get(resource.id);
         proved.delete(resource.id);
+        const checkProcessOwner = async (): Promise<Outcome<void>> => {
+          if (final === undefined) return ok(undefined);
+          const idle = await processWorktreeIdle(
+            resource.id,
+            repository,
+            final,
+          );
+          if (!idle.ok) return idle;
+          if (orca === undefined) return ok(undefined);
+          const managed = await orcaWorktrees(orca, repository);
+          if (!managed.ok) return managed;
+          return managed.value.has(canonicalWorktree(resource.id))
+            ? failed(
+                "dual-managed",
+                "process-owned worktree is also listed by Orca; reconcile its runtime ownership before collection",
+              )
+            : ok(undefined);
+        };
         return collectAgentWorktree(
           resource,
           repository,
           declaration,
           legacy(),
           final,
-          processOwned && final !== undefined
-            ? () => processWorktreeIdle(resource.id, repository, final)
-            : undefined,
+          processOwned && final !== undefined ? checkProcessOwner : undefined,
         );
       }
       const id = orcaId(resource);

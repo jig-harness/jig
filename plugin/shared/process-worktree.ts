@@ -28,6 +28,9 @@ export interface ProcessWorktreeOptions extends WorkspaceOpenOptions {
   home?: string;
 }
 
+/** Publication is part of admission, so a stalled publisher must cooperate. */
+const PUBLICATION_TIMEOUT_MS = 30_000;
+
 /**
  * `publish` must persist this launch's checkout before returning success.
  * Admission is held through the owner, the hook and that publication, including
@@ -39,6 +42,7 @@ export async function openProcessWorktree(
   options: ProcessWorktreeOptions,
   publish: (
     worktree: WorkspaceCheckout,
+    signal: AbortSignal,
   ) => Outcome<void> | Promise<Outcome<void>>,
 ): Promise<
   Outcome<{
@@ -148,8 +152,20 @@ export async function openProcessWorktree(
             return { id: path, path, branch };
           },
         });
-        const published = await publish(opened.worktree);
-        return published.ok ? ok(opened) : published;
+        // Do not race publication: a publisher that ignores cancellation
+        // remains under admission rather than continuing after collection is
+        // allowed to enter. The publisher's contract is to settle only after
+        // it has stopped its own work.
+        const signal = AbortSignal.timeout(PUBLICATION_TIMEOUT_MS);
+        const published = await publish(opened.worktree, signal);
+        return signal.aborted
+          ? failed(
+              "publish-timed-out",
+              "worktree publication exceeded its deadline",
+            )
+          : published.ok
+            ? ok(opened)
+            : published;
       },
       { root, name: "owner-publication" },
     );

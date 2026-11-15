@@ -160,7 +160,11 @@ export async function processWorktreeIdle(
   const db = opened.value.db;
   try {
     const rows = db
-      .query("SELECT id, record, claim, exit FROM launches")
+      .query(
+        `SELECT id, record, claim, exit FROM launches
+         UNION ALL
+         SELECT id, record, claim, exit FROM process_worktree_completions`,
+      )
       .all() as LaunchRow[];
     const launches = indexedLaunches(rows);
     if (!launches.ok) return launches;

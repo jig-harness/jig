@@ -62,6 +62,10 @@ export function attachWorkspace<T extends WorkspaceCheckout>(
     }
     worktree = backend.create(branch, from, action.kind);
   }
+  // A process-backed checkout must be owned before upstream repair can make
+  // another opener observe and reuse it.  Keep this before every operation
+  // that can fail after the checkout exists, including expected-head checks.
+  backend.prepare?.(worktree);
   ensureUpstreamTracking(port.host, repository, branch);
   return { worktree, reattached: found !== null };
 }
@@ -98,7 +102,6 @@ export function openWorkspace<T extends WorkspaceCheckout>(
         `${opened.worktree.path} does not match the pull request head ${options.expectedHead}; reconcile the checkout before driving it`,
       );
   }
-  backend.prepare?.(opened.worktree);
   const hookRan =
     options.createHook !== false &&
     ensureCreateHook(
