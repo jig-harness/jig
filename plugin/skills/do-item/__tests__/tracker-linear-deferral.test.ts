@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { deferralClient } from "../scripts/lib/tracker/linear-deferral.ts";
+import {
+  deferralClient,
+  deferralEnvironment,
+} from "../scripts/lib/tracker/linear-deferral.ts";
 import { httpTransport } from "../scripts/lib/tracker/linear-transport.ts";
 
 test("deferral uses adapter response parsing and refuses a malformed data object", async () => {
@@ -32,4 +35,13 @@ test("deferral forwards its whole-run abort to the adapter before sending", asyn
     client("query DeferralIssue { issue { id } }", {}, AbortSignal.abort()),
   ).rejects.toThrow();
   expect(calls).toBe(0);
+});
+
+test("deferral keeps its dedicated token ahead of the general API key", () => {
+  expect(
+    deferralEnvironment({
+      LINEAR_API_TOKEN: "deferral-token",
+      LINEAR_API_KEY: "general-key",
+    }).LINEAR_API_KEY,
+  ).toBe("deferral-token");
 });
