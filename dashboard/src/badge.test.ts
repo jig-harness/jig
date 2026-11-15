@@ -1,6 +1,15 @@
 import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { applyReadyBadge, badgeText, markWith, titleWith } from "./badge.ts";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { act } from "react";
+import {
+  ReadyBadge,
+  applyReadyBadge,
+  badgeText,
+  markWith,
+  titleWith,
+} from "./badge.ts";
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="m0 0"/></svg>';
 const HREF = `data:image/svg+xml,${encodeURIComponent(SVG)}`;
@@ -83,4 +92,56 @@ test("the page badge tolerates unavailable or rejected badge APIs", async () => 
 test("an address that is not wholly percent-encoded is not drawn on", () => {
   const raw = `data:image/svg+xml,${SVG}`;
   expect(markWith(raw, 3)).toBe(raw);
+});
+
+test("a mounted badge puts its count back when the window returns, and lets go on unmount", async () => {
+  const window = new Window();
+  window.document.title = "Dispatch";
+  const priorGlobals = {
+    window: globalThis.window,
+    document: globalThis.document,
+    navigator: globalThis.navigator,
+    act: (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT,
+  };
+  const calls: string[] = [];
+  let visibility = "visible";
+  Object.defineProperty(window.document, "visibilityState", {
+    get: () => visibility,
+  });
+  Object.assign(globalThis, {
+    window,
+    document: window.document,
+    navigator: {
+      setAppBadge: async (count: number) => calls.push(`set:${count}`),
+      clearAppBadge: async () => calls.push("clear"),
+    },
+    IS_REACT_ACT_ENVIRONMENT: true,
+  });
+  const root = createRoot(window.document.createElement("div") as never);
+  try {
+    await act(async () => root.render(createElement(ReadyBadge, { ready: 2 })));
+    expect(calls).toEqual(["set:2"]);
+    await act(async () => root.render(createElement(ReadyBadge, { ready: 5 })));
+    calls.length = 0;
+    window.dispatchEvent(new window.Event("focus"));
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    expect(calls).toEqual(["set:5", "set:5"]);
+    calls.length = 0;
+    visibility = "hidden";
+    window.dispatchEvent(new window.Event("focus"));
+    expect(calls).toEqual([]);
+    visibility = "visible";
+    await act(async () => root.unmount());
+    calls.length = 0;
+    window.dispatchEvent(new window.Event("focus"));
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    expect(calls).toEqual([]);
+  } finally {
+    Object.assign(globalThis, {
+      window: priorGlobals.window,
+      document: priorGlobals.document,
+      navigator: priorGlobals.navigator,
+      IS_REACT_ACT_ENVIRONMENT: priorGlobals.act,
+    });
+  }
 });
