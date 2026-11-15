@@ -50,6 +50,7 @@ import { ruleList } from "../../../../shared/rule-matcher.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
 import {
   catalogPathFromOverlay,
+  areaOfLabel,
   parseAgentRouting,
 } from "../../../do-item/scripts/determine_agent.ts";
 import { doItemSection } from "../../../do-item/scripts/lib/overlay.ts";
@@ -455,6 +456,21 @@ function lookups(
     if (name !== null)
       stateNames[name.trim().toLowerCase()] ??= state as CanonicalState;
   return { areaNaming, areaNamingSpelling, areaFlags, stateNames };
+}
+
+/**
+ * The area an area-naming label names (`do_item.agents.codearea_areas`), as
+ * the rule matcher's lookup reads the map, or `undefined`.
+ */
+export function areaNamedBy(
+  policy: Pick<BatchPolicy, "areaNaming">,
+  label: string,
+): string | undefined {
+  const entries = Object.entries(policy.areaNaming).map(([key, result]) => ({
+    key,
+    result,
+  }));
+  return areaOfLabel({ codeareaAreas: entries }, label);
 }
 
 /**

@@ -75,6 +75,7 @@ import { anchorIssueKey } from "./lib/anchor-key.ts";
 import { Refusal } from "./lib/errors.ts";
 import { parsePoolIssues } from "./lib/pool-input.ts";
 import {
+  areaNamedBy,
   type BatchPolicy,
   catalogPath,
   policyFrom,
@@ -568,7 +569,7 @@ function seedPoolLabels(
       `${key} has open children but no ${policy.epicLabel} label: a batch would resolve only its children and leave ${key} itself open. Label it ${policy.epicLabel} if it is a container, or close its children first.`,
     );
   const poolLabels = seed.labels
-    .filter((l) => policy.areaNaming[l.toLowerCase()] !== undefined)
+    .filter((l) => areaNamedBy(policy, l) !== undefined)
     .sort();
   if (poolLabels.length === 0)
     refuse(
@@ -615,7 +616,7 @@ async function runIssueAnchor(
 
   const poolLabels = seedPoolLabels(key, seed, policy, opts);
   const areas = [
-    ...new Set(poolLabels.map((l) => policy.areaNaming[l.toLowerCase()])),
+    ...new Set(poolLabels.map((l) => areaNamedBy(policy, l))),
   ].filter((a): a is string => a !== undefined);
   const anchor: Anchor = {
     kind: "issue",

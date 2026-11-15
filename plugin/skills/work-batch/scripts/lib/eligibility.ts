@@ -22,7 +22,7 @@ import {
   type PoolIssue,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { matchOne } from "../../../../shared/rule-matcher.ts";
-import { type BatchPolicy, labelPrefix } from "./policy.ts";
+import { areaNamedBy, type BatchPolicy, labelPrefix } from "./policy.ts";
 
 export type ExclusionReason =
   | { kind: "truncated"; lists: string[] }
@@ -82,7 +82,7 @@ export function soloAreaOf(
   policy: BatchPolicy,
 ): { area: string; flags: string[] } | null {
   for (const label of [...labels].sort()) {
-    const area = policy.areaNaming[label.toLowerCase()];
+    const area = areaNamedBy(policy, label);
     const flags = area === undefined ? [] : (policy.areaFlags[area] ?? []);
     if (area !== undefined && flags.length > 0) return { area, flags };
   }
