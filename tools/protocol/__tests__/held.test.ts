@@ -70,6 +70,42 @@ test("held phrases ignore hidden Markdown comments and tolerate section layout c
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
 });
 
+test("held phrases ignore fenced decoys and fenced headings", () => {
+  const root = tempDir("held-fences");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nExit `13` on the lock\n\n```sh\nExit `11` on the lock\n```\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n```sh\n# Another section\n```\n\nExit `11` on the lock\n\n## Other\n\nExit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+});
+
+test("held phrases reject duplicate visible copies in an operational section", () => {
+  const root = tempDir("held-duplicate");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nExit `13` on the lock\n\nExample: Exit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+});
+
 test("held phrases accept either checkout line ending and still reject changed values", () => {
   const root = tempDir("held-line-endings");
   for (const sourceEnding of ["\n", "\r\n"]) {

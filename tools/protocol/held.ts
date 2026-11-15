@@ -18,22 +18,92 @@ const lineEndings = (text: string): string => text.replaceAll("\r\n", "\n");
 const withoutHtmlComments = (text: string): string =>
   text.replaceAll(/<!--[\s\S]*?-->/g, "");
 
-/** The one section named by `heading`, through its next peer or parent heading. */
+/** An ATX heading outside code, normalized to the form declarations use. */
+function markdownHeading(line: string): { text: string; level: number } | null {
+  const match = /^ {0,3}(#{1,6})(?:[ \t]+(.*?)|[ \t]*)$/.exec(line);
+  const marks = match?.[1];
+  if (!match || marks === undefined) return null;
+  const content = (match[2] ?? "").replace(/[ \t]+#+[ \t]*$/, "").trimEnd();
+  return {
+    text: `${marks}${content === "" ? "" : ` ${content}`}`,
+    level: marks.length,
+  };
+}
+
+/**
+ * Visible Markdown lines, preserving headings while excluding fenced examples.
+ *
+ * Held instructions live in prose. A command example can legitimately repeat an
+ * exit code or even resemble a heading, so it must neither delimit a section
+ * nor satisfy the held-value check.
+ */
+function visibleLines(source: string): string[] {
+  const lines: string[] = [];
+  let fence: { char: "`" | "~"; length: number } | undefined;
+  for (const line of source.split("\n")) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      if (
+        marker !== undefined &&
+        marker[0] === fence.char &&
+        marker.length >= fence.length &&
+        new RegExp(`^ {0,3}${fence.char}{${fence.length},}[ \\t]*$`).test(line)
+      )
+        fence = undefined;
+      continue;
+    }
+    if (marker !== undefined) {
+      fence = { char: marker[0] as "`" | "~", length: marker.length };
+      continue;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** The one prose section named by `heading`, through its next peer or parent heading. */
 function sectionOf(source: string, heading: string): string | null {
-  const lines = source.split("\n");
-  const indexes = lines
-    .map((line, index) => (line.trim() === heading ? index : -1))
-    .filter((index) => index >= 0);
-  const [start] = indexes;
-  if (indexes.length !== 1 || start === undefined) return null;
-  const level = heading.match(/^#+/)?.[0].length;
-  if (level === undefined) return null;
-  const end = lines.findIndex(
-    (line, index) =>
-      index > start &&
-      (line.match(/^(#+)\s/)?.[1]?.length ?? Number.POSITIVE_INFINITY) <= level,
+  const lines = visibleLines(source);
+  const headings = lines
+    .map((line, index) => ({ index, parsed: markdownHeading(line) }))
+    .filter(
+      (
+        entry,
+      ): entry is { index: number; parsed: { text: string; level: number } } =>
+        entry.parsed !== null,
+    );
+  const matches = headings.filter(({ parsed }) => parsed.text === heading);
+  const start = matches[0];
+  if (matches.length !== 1 || start === undefined) return null;
+  const next = headings.find(
+    ({ index, parsed }) =>
+      index > start.index && parsed.level <= start.parsed.level,
   );
-  return lines.slice(start, end < 0 ? undefined : end).join("\n");
+  return lines.slice(start.index, next?.index).join("\n");
+}
+
+/** Escape literal text for the small semantic-pattern check below. */
+const escapeRegExp = (text: string): string =>
+  text.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A section-scoped exit instruction cannot be masked by a contradictory copy.
+ *
+ * The stable phrases carry exit numbers in code spans. Treat those numbers as
+ * the variable part of one instruction shape: every visible copy must carry
+ * the declared value, and there must be exactly one such copy.
+ */
+function isOneOperationalOccurrence(source: string, text: string): boolean {
+  const parts = text.split(/(`\d+`)/);
+  if (parts.length === 1)
+    return source.indexOf(text) === source.lastIndexOf(text);
+  const pattern = parts
+    .map((part) => (/^`\d+`$/.test(part) ? "`\\d+`" : escapeRegExp(part)))
+    .join("");
+  const matches = [...source.matchAll(new RegExp(pattern, "g"))].map(
+    (match) => match[0],
+  );
+  return matches.length === 1 && matches[0] === text;
 }
 
 export function checkHeldPhrases(
@@ -64,7 +134,10 @@ export function checkHeldPhrases(
         : withoutHtmlComments(lineEndings(source));
     const operational =
       phrase.section === undefined ? actual : sectionOf(actual, phrase.section);
-    return operational?.includes(expected)
+    return operational !== null &&
+      (phrase.section === undefined
+        ? operational.includes(expected)
+        : isOneOperationalOccurrence(operational, expected))
       ? []
       : [
           {
