@@ -225,6 +225,40 @@ describe("a served queue's cost in tracker requests", () => {
     }
   });
 
+  it("reports an item no user assigned as its own row, keeps the record ok and leaves the claims unknown", async () => {
+    const read = async (history?: "none") => {
+      const fake = queue();
+      fake.add({
+        identifier: "ENG-900",
+        assignee: PERSON,
+        ...(history === undefined ? {} : { history }),
+      });
+      return readPickups(
+        () => fake.tracker(),
+        { identity: null } as DispatchSection,
+        undefined,
+        { cache: memoryCache(), people, nowMs: T0, headroom: true },
+      );
+    };
+    const whole = await read();
+    expect(whole.read.ok).toBe(true);
+    expect(whole.claimed).not.toBeNull();
+
+    const noAssigner = await read("none");
+    expect(noAssigner.read.ok).toBe(true);
+    expect(noAssigner.read.detail).not.toContain(
+      "a served queue could not be read",
+    );
+    expect(noAssigner.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "ENG-900",
+        reason: expect.stringContaining("its history holds no assignment of"),
+      }),
+    );
+    expect(noAssigner.wanted).toHaveLength(50);
+    expect(noAssigner.claimed).toBeNull();
+  });
+
   it("reads neither the children nor the description of an epic no user assigned", async () => {
     const fake = queue();
     fake.add({
