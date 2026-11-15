@@ -33,18 +33,18 @@ const SCHEDULERS = [
 ];
 
 /** Read only direct Bun invocations and the known status/summary wrapper. */
-function applying(command: unknown): boolean {
+function applying(command: unknown, requirePosition: boolean): boolean {
   if (typeof command !== "string") return false;
   const lines = command
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#"));
-  if (lines.length === 1) return sweepCommand(lines[0] ?? "");
-  return statusWrapper(lines);
+  if (lines.length === 1) return sweepCommand(lines[0] ?? "", requirePosition);
+  return statusWrapper(lines, requirePosition);
 }
 
 /** The supported shell wrapper preserves the sweep's exit status. */
-function statusWrapper(lines: string[]): boolean {
+function statusWrapper(lines: string[], requirePosition: boolean): boolean {
   // A wrapper is evidence only in this order: capture the command's status,
   // print its output, publish that output, then return the captured status.
   // Arbitrary shell control flow needs a person's inspection.
@@ -54,7 +54,7 @@ function statusWrapper(lines: string[]): boolean {
     lines.length === 5 &&
     lines[0] === "status=0" &&
     command.endsWith(suffix) &&
-    sweepCommand(command.slice(0, -suffix.length)) &&
+    sweepCommand(command.slice(0, -suffix.length), requirePosition) &&
     lines[2] === 'cat "$RUNNER_TEMP/sweep.txt"' &&
     /^\{ echo '[^']+'; cat "\$RUNNER_TEMP\/sweep.txt"; echo '[^']+'; \} >> "\$GITHUB_STEP_SUMMARY"$/u.test(
       lines[3] ?? "",
@@ -64,7 +64,7 @@ function statusWrapper(lines: string[]): boolean {
 }
 
 /** Certify only literal script paths (or quoted paths) and the supported arguments. */
-function sweepCommand(line: string): boolean {
+function sweepCommand(line: string, requirePosition: boolean): boolean {
   // Read the executable's script argument, never a comment or later argument.
   const m = /^(?:exec\s+)?bun\s+("[^"`]+"|'[^']+'|[^\s'"`]+)\s+(.*)$/u.exec(
     line,
@@ -82,8 +82,11 @@ function sweepCommand(line: string): boolean {
   if (script.includes("$(") || script.split("/").at(-1) !== "check-fields.ts")
     return false;
   const args = m[2] ?? "";
-  return /^(?:check\s+)?--yes(?: --retired-from [a-zA-Z0-9_./-]+)?(?: --position [a-zA-Z0-9_./-]+)?$/u.test(
-    args,
+  return (
+    /^(?:check\s+)?--yes(?: --retired-from [a-zA-Z0-9_./][a-zA-Z0-9_./-]*)?(?: --position [a-zA-Z0-9_./][a-zA-Z0-9_./-]*)?$/u.test(
+      args,
+    ) &&
+    (!requirePosition || args.includes(" --position "))
   );
 }
 
@@ -120,7 +123,11 @@ function weeklyCron(value: unknown): boolean {
 }
 
 /** A workflow counts only with an independent job and no uncertain preceding steps. */
-function scheduledWorkflow(text: string, branch: string | null): boolean {
+function scheduledWorkflow(
+  text: string,
+  branch: string | null,
+  requirePosition: boolean,
+): boolean {
   const doc = load(text);
   if (
     !isMapping(doc) ||
@@ -144,7 +151,7 @@ function scheduledWorkflow(text: string, branch: string | null): boolean {
           isMapping(step) &&
           scheduleSafe(step.if, branch) &&
           step["continue-on-error"] !== true &&
-          applying(step.run),
+          applying(step.run, requirePosition),
       ),
   );
 }
@@ -153,6 +160,7 @@ function scheduledWorkflow(text: string, branch: string | null): boolean {
 export function sweepRunners(
   root: string,
   tracked: readonly string[],
+  requirePosition = false,
 ): string[] {
   const defaultRef = spawnSync(
     "git",
@@ -168,13 +176,17 @@ export function sweepRunners(
     .filter((f) => {
       try {
         const text = readFileSync(join(root, f), "utf8");
-        if (/\.ya?ml$/.test(f)) return scheduledWorkflow(text, branch);
+        if (/\.ya?ml$/.test(f))
+          return scheduledWorkflow(text, branch, requirePosition);
         if (/(?:crontab|\.cron)$/.test(f))
           return text.split("\n").some((line) => {
             const words = line.trim().split(/\s+/);
             const command =
               words.length > 5 ? words.slice(5).join(" ") : undefined;
-            return weeklyCron(words.slice(0, 5).join(" ")) && applying(command);
+            return (
+              weeklyCron(words.slice(0, 5).join(" ")) &&
+              applying(command, requirePosition)
+            );
           });
         // A service alone has no activation evidence; a tracked enabled timer must name it.
         if (!f.endsWith(".service")) return false;
@@ -188,7 +200,8 @@ export function sweepRunners(
             .split("\n")
             .some(
               (line) =>
-                line.startsWith("ExecStart=") && applying(line.slice(10)),
+                line.startsWith("ExecStart=") &&
+                applying(line.slice(10), requirePosition),
             )
         );
       } catch (err) {
@@ -223,7 +236,22 @@ export function sweepFindings(
   tracked: readonly string[],
 ): Finding[] {
   if (!isMapping(config.issue_tracker)) return [];
-  if (sweepRunners(root, tracked).length > 0) return [];
+  if (sweepRunners(root, tracked).length > 0) {
+    const fileIssue = config.file_issue;
+    const commentOnly =
+      isMapping(fileIssue) &&
+      isMapping(fileIssue.sweep) &&
+      fileIssue.sweep.move === false;
+    if (!commentOnly || sweepRunners(root, tracked, true).length > 0) return [];
+    return [
+      {
+        id: "suggestion:issue_tracker.sweep.position",
+        severity: "suggestion",
+        message:
+          "this repository sets `file_issue.sweep.move: false`, but no confirmed scheduled sweep passes `--position <file>`: without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass the flag and keep its file between runs (file-issue's README, The weekly sweep)",
+      },
+    ];
+  }
   return [
     {
       id: "suggestion:issue_tracker.sweep",

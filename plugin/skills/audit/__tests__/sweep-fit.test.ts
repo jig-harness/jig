@@ -23,6 +23,73 @@ function repo(files: Record<string, string>): {
 
 const tracker = { issue_tracker: { adapter: "github" } };
 
+function schedulerFixtures(command: string): Record<string, string>[] {
+  const workflow = (run: string) => ({
+    ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
+  });
+  return [
+    workflow(command),
+    workflow(`status=0
+${command} > "$RUNNER_TEMP/sweep.txt" || status=$?
+cat "$RUNNER_TEMP/sweep.txt"
+{ echo 'text'; cat "$RUNNER_TEMP/sweep.txt"; echo 'end'; } >> "$GITHUB_STEP_SUMMARY"
+exit "$status"`),
+    { "jobs.cron": `37 5 * * 1 ${command}\n` },
+    {
+      "systemd/sweep.timer": "OnCalendar=weekly\nWantedBy=timers.target\n",
+      "systemd/sweep.service": `ExecStart=${command}\n`,
+    },
+  ];
+}
+
+it("flags a comment-only sweep that never advances past the read cap", () => {
+  const config = { ...tracker, file_issue: { sweep: { move: false } } };
+  for (const files of schedulerFixtures("bun check-fields.ts check --yes")) {
+    const { root, tracked } = repo(files);
+    const findings = sweepFindings(config, root, tracked);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("suggestion:issue_tracker.sweep.position");
+    expect(findings[0]?.message).toContain("--position <file>");
+    expect(findings[0]?.message).toContain(
+      "issues past the read cap are never reached",
+    );
+  }
+});
+
+it("certifies positioned comment-only sweeps and moving sweeps", () => {
+  for (const move of [false, true, undefined]) {
+    const config = { ...tracker, file_issue: { sweep: { move } } };
+    const command = `bun check-fields.ts check --yes${move === false ? " --position state/sweep.json" : ""}`;
+    for (const files of schedulerFixtures(command)) {
+      const { root, tracked } = repo(files);
+      expect(sweepFindings(config, root, tracked)).toEqual([]);
+    }
+  }
+});
+
+it("requires a position value and accepts any confirmed positioned schedule", () => {
+  const config = { ...tracker, file_issue: { sweep: { move: false } } };
+  const { root, tracked } = repo({
+    "missing.cron": "37 5 * * 1 bun check-fields.ts check --yes --position\n",
+    "ambiguous.cron":
+      "37 5 * * 1 bun check-fields.ts check --yes --position --yes\n",
+    "ambiguous-retired.cron":
+      "37 5 * * 1 bun check-fields.ts check --yes --retired-from --yes --position state/position.json\n",
+    "plain.cron": "37 5 * * 1 bun check-fields.ts check --yes\n",
+    "positioned.cron":
+      "37 5 * * 1 bun check-fields.ts check --yes --position state/sweep.json\n",
+  });
+  expect(sweepFindings(config, root, ["missing.cron"])).toHaveLength(1);
+  expect(sweepFindings(config, root, ["ambiguous.cron"])).toHaveLength(1);
+  expect(sweepFindings(config, root, ["ambiguous-retired.cron"])).toHaveLength(
+    1,
+  );
+  expect(
+    sweepFindings(config, root, ["missing.cron", "plain.cron"])[0]?.id,
+  ).toBe("suggestion:issue_tracker.sweep.position");
+  expect(sweepFindings(config, root, tracked)).toEqual([]);
+});
+
 describe("the audit's sweep finding", () => {
   it("names a repository that keeps facets and runs no sweep", () => {
     const { root, tracked } = repo({
