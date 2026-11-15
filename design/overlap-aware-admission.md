@@ -20,7 +20,7 @@ least first, still starts colliding work when nothing else is ready, and
 starts no more passes than the host can validate in time. A person sees,
 for each item that waits, what it waits on.
 
-This is the design of [plan.md](plan.md) item 56. Nothing of it is built.
+This is the design of [plan.md](plan.md) item 57. Nothing of it is built.
 It builds on the change that lets a plan-less epic's ready children start
 in parallel up to a width per epic (#1178), and on that change's decision
 record: admission is parallel by default, and overlap is a cost weighed
