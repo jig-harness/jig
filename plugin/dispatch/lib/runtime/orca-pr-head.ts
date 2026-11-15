@@ -3,6 +3,8 @@ import { isRecord } from "../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import {
   type Context,
+  type RunOptions,
+  type RunResult,
   HerdrError,
   output,
 } from "../../../shared/orca-workspace/runner.ts";
@@ -16,6 +18,12 @@ interface Head {
   repo: string;
   url: string;
 }
+
+/** An asynchronous forge read; absent on the existing workspace-open path. */
+export type HeadReader = (
+  argv: string[],
+  options: RunOptions,
+) => Promise<RunResult>;
 
 function parseHead(text: string, branch: string): Proof<Head> {
   let meta: unknown;
@@ -122,8 +130,10 @@ export async function resolvePullRequestHead(
   clone: string,
   pr: number,
   branch: string,
+  repository?: string,
+  readForge?: HeadReader,
 ): Promise<Proof<string>> {
-  const result = await readHead(ctx, clone, pr, branch);
+  const result = await readHead(ctx, clone, pr, branch, repository, readForge);
   return result.ok ? result : refuse(`PR #${pr}: ${result.failure.reason}`);
 }
 
@@ -132,13 +142,18 @@ async function readHead(
   clone: string,
   pr: number,
   branch: string,
+  repository?: string,
+  readForge?: HeadReader,
 ): Promise<Proof<string>> {
-  const read = ctx.run(
+  const read = await (
+    readForge ?? (async (argv, options) => ctx.run(argv, options))
+  )(
     [
       "gh",
       "pr",
       "view",
       String(pr),
+      ...(repository === undefined ? [] : ["--repo", repository]),
       "--json",
       "state,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner,url",
     ],
@@ -150,6 +165,10 @@ async function readHead(
     );
   const head = parseHead(read.stdout, branch);
   if (!head.ok) return head;
+  if (repository !== undefined && head.value.repo !== repository.toLowerCase())
+    return refuse(
+      `its head repository is not the expected repository ${repository}`,
+    );
   const origin = await requireOrigin(ctx, clone, head.value);
   if (!origin.ok) return origin;
   const remote = ctx.run([

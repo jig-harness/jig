@@ -163,6 +163,7 @@ export async function actObserved(
     outcomes: readOutcomes(repo.slug),
     nowMs: context.nowMs,
     book,
+    rerunsHeld: context.rerunsHeld ?? null,
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
@@ -208,7 +209,13 @@ export async function actObserved(
       applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
       hooks
-        .guard("steward", () => applySteward(apply, observation))
+        .guard("steward", () =>
+          applySteward(
+            apply,
+            observation,
+            stationContextOf(repo.slug, context.lineInputs.get(report.path)),
+          ),
+        )
         .then(() =>
           applyStages(
             apply,

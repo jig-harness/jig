@@ -166,6 +166,23 @@ describe("the machine file's send switch", () => {
   });
 });
 
+describe("the machine file's share of each rate-limit window", () => {
+  it("reads outbound_share, and tracker_share as its older name, defaulting to half", () => {
+    expect(machine("").outboundShare).toBe(0.5);
+    expect(machine("outbound_share: 0.3\n").outboundShare).toBe(0.3);
+    expect(machine("tracker_share: 0.4\n").outboundShare).toBe(0.4);
+  });
+
+  it("refuses a file that names both, and a share outside (0, 1]", () => {
+    expect(config("outbound_share: 0.3\ntracker_share: 0.4\n")).toEqual(
+      invalid("outbound_share and tracker_share name one setting"),
+    );
+    expect(config("outbound_share: 1.5\n")).toEqual(
+      invalid("outbound_share must be a number above 0 and at most 1"),
+    );
+  });
+});
+
 describe("the machine file's account directories", () => {
   it("refuses two accounts for one vendor and configuration directory", () => {
     const read = config(

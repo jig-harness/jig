@@ -53,6 +53,17 @@ Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
 
+### 56. The epic planner: every epic planned, and its plan kept current
+
+An epic's children run side by side only when the epic carries an execution
+plan, and today nothing writes one. `/jig:plan-epic` reads an epic and its
+children on GitHub Issues, Linear or Jira. It records each real dependency
+as the tracker's own relation, and writes the plan the pickup and the
+dispatcher read. Run again, it keeps the plan current: mechanical changes
+apply on their own, and changes that need judgment wait for one approval.
+The feature delivery module gains an acceptance stage and the execution
+plan as a stated practice.
+
 ### 50. What the line hands a person: each class of need settled at its source
 
 Most waits the dispatcher hands a person are not decisions. A flaky check
@@ -73,9 +84,8 @@ a tracker charges each query a cost, and each ends a request that takes too
 long. Every agent and timer on a machine shares one login's allowance. Jig
 gets one way to make these calls. It reuses an answer it holds, asks a
 budget the whole machine shares, and keeps each request small enough to be
-answered. Next are GitHub's limits in the shared budget, reuse of unchanged
-answers and identical reads, and gates that enforce the transport boundary
-and query cost ceilings.
+answered. Next are reuse of unchanged answers and identical reads, and
+gates that enforce the transport boundary and query cost ceilings.
 
 ### 57. Starting work that will not collide first
 
@@ -445,10 +455,10 @@ alerts will.
 
 ### 17. Corrected designs for the existing modules
 
-Practices working repositories validated, added to the modules that exist:
-watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
-that runs M7's post-merge stage in any repository, and a generator for the
-model roster (M0).
+Practices working repositories validated, added to the modules that exist.
+They are watchdogs for what is deployed (M10, M11), a skill that runs M7's
+post-merge stage in any repository, and a generator for the model roster
+(M0).
 
 ### 10. Values the skills still assume
 
@@ -541,8 +551,9 @@ See the [distribution design](design/distribution.md).
   in step with decisions and audits them
   ([M0](modules/M0-instruction-architecture/README.md)), and a review skill
   for SOLID design principles.
-- **Tracker planning.** Epic planning and prioritisation as skills on the
-  tracker interface.
+- **Tracker planning.** Prioritisation, the epic acceptance review, a
+  review-debt report and a skill that applies approved learnings, as skills
+  on the tracker interface.
 - **A forge interface.** GitHub is the only forge the pull-request skills
   work with; an interface with GitHub behind it, then GitLab as the second
   ([what it covers](plugin/EXTENDING.md#forge-github)).

@@ -105,6 +105,7 @@ import {
 } from "./lib/tick-context.ts";
 import { boundAt } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
+import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
   fillBudgets,
   lowBudget,
@@ -212,8 +213,8 @@ async function startTick(
         ? Temporal.Instant.from(options.now.toISOString())
         : options.now;
   const machine = options.machine ?? null;
-  // The tick's tracker reads keep to their share of each credential's budget.
-  setDispatcherShare(machine?.trackerShare ?? DEFAULT_DISPATCHER_SHARE);
+  // The tick's own calls, to the trackers and the forge, keep to their share of each credential's budget.
+  setDispatcherShare(machine?.outboundShare ?? DEFAULT_DISPATCHER_SHARE);
   // A system that does not answer is not asked again in this tick, and the next tick probes it once first.
   holdUnanswered(join(stateRoot(), UNANSWERED_FILE));
   const runtime = options.runtime ?? defaultRuntime(machine);
@@ -244,6 +245,7 @@ async function startTick(
     reflections: [],
     pending: [],
     reads: tickReads(runtime, options.poolSize, bound),
+    rerunsHeld: rerunsHeld(),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };
 }

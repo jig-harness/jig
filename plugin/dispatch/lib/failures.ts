@@ -93,6 +93,8 @@ export interface FailureSettings {
   backoffMaxMs: number;
   /** `failures.notify_after`: the failures in a row at which a person is told. */
   notifyAfter: number;
+  /** `failures.rerun_died`: the runs again a follow-up whose pass died or could not record its result is owed, `0` or `1`. */
+  rerunDied: number;
   /** `failures.group`: this host's own failing rows told one notice per cause (`cause`, also when absent) or one per scope (`scope`). */
   group?: FailureGrouping;
 }
@@ -114,6 +116,7 @@ export const FAILURE_DEFAULTS: FailureSettings = {
   backoffMs: 2 * 60_000,
   backoffMaxMs: 60 * 60_000,
   notifyAfter: 3,
+  rerunDied: 1,
   group: "cause",
 };
 

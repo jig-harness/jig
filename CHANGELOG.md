@@ -396,6 +396,117 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.242.0] - 2026-11-15
+
+### Added
+
+- Two more chapters of the [Jig Protocol](GLOSSARY.md), for a program
+  that reads Jig's records on the forge and the tracker without reading its
+  code, each with its values as JSON beside it in `protocol/data/`.
+  [Hidden comment markers on the forge and the tracker](plugin/protocol/comment-markers.md)
+  lists every hidden marker Jig writes or reads in comments and bodies, with
+  the record it marks, its version, its key's shape, who writes it and what
+  it means, and the fields of the record envelope.
+  [The follow-up claim and its result](plugin/protocol/followup-claim.md)
+  gives the follow-up marker's runs, each run's outcomes and the fields of
+  its record. Both are generated from the records registry and the code that
+  writes and reads the markers, and Jig's build fails when a chapter and the
+  code disagree. Every kind in the records registry now says what it means
+  to a reader, in a required `meaning`. **Consumer action:** none.
+
+### Fixed
+
+- The plugin's README and the features page said the steward runs every 20
+  minutes when its digest changed. They now say it starts as soon as a
+  repository's judgment backlog holds work no earlier pass judged.
+
+## [0.241.0] - 2026-11-15
+
+### Added
+
+- drive-pr: `drive.ci_repair_rounds` (a whole number, `0` or more, default
+  `2`) sets how many CI-repair passes a drive spends per head and failing
+  check, so a repository states its own CI cost rather than taking the
+  host's environment. `DRIVE_PR_CI_REPAIR_ROUNDS` still sets it for one run
+  and wins over the file.
+
+### Changed
+
+- The steward now starts when a repository's judgment backlog holds work no
+  earlier pass judged: a stalled pickup or failed follow-up with no running
+  session, a stopped drive a re-arm could resolve, an ended pass that
+  recommends a resume, a queued item missing a facet, or a need nothing has
+  framed. It starts at once, within the host's three passes an hour, and an
+  empty or already judged backlog starts no pass; the receipt and the
+  dashboard say which. `steward.every` is still read and no longer changes
+  anything. The digest lists framed needs apart from the needs the steward
+  may frame, and a `need` record for a framed one is refused.
+
+### Fixed
+
+- drive-pr: an always-run aggregator check that failed only because a job it
+  needs was cancelled, in a run nothing replaced, no longer spends a CI-repair
+  pass and stops for `/jig:fix-ci`. When every failing check is a job of a
+  workflow run that concluded `cancelled`, no commit status fails and a
+  cancelled job is unreplaced, the drive recovers that run as it
+  recovers a cancelled check: a grace period, then one re-run per head, and
+  the `cancelled-ci` park when that does not recover it. A real failure comes
+  back from the re-run and is repaired then.
+- drive-pr: a failed read of the pull request or its label timeline while
+  the drive releases the CI hold at convergence (a forge timing out) now ends
+  the drive with `4`, wait and re-arm, instead of `1`, and the driver log
+  keeps what the release printed, the forge's own error included.
+- A repository's notices comment that reached its 16,000-character limit no
+  longer holds back every later notice: the entries whose causes are settled
+  (the pull request closed, the need answered) leave a comment only the
+  dispatcher wrote to make room, and an entry whose cause still stands is
+  never dropped. A notice that still finds no room counts as a failed
+  delivery, so past `failures.notify_after` ticks a person is told through
+  whatever destination still delivers. `jig ask` and the dashboard say which
+  notices were held and why, and a notices workspace is counted as written
+  only on a tick that wrote it, so one whose causes are all gone is retired.
+- `jig dispatch` now proves a workspace it did not open itself before a
+  drive runs in it: the workspace joined to the pull request, a stopped
+  drive's tree it recovers, and the recorded workspace of a launch it
+  replays must each be a checkout of the repository's clone, with its origin
+  the pull request's head repository and its commit on the head's line of
+  history. A stale checkout of an earlier branch of the same name, or one
+  whose origin changed, is refused with its reason and nothing runs in it;
+  the proof changes no work in the workspace.
+
+## [0.240.0] - 2026-11-15
+
+### Added
+
+- The dispatcher runs a follow-up again once when its pass could not record
+  its result on the host, as it already did for a pass that died: whatever
+  the pass said and however long ago, and never with the question the pass
+  asked about the dispatcher's database. `jig dispatch result` now exits `4`
+  when the state database refuses the write, keeps the evidence of the
+  attempt outside the database, and tells the pass to stop without asking a
+  person; the wrapper keeps the same evidence when it cannot record the
+  stage's exit. Both runs again, a death's and an unwritten result's, wait
+  for the host's health check to pass (`jig doctor dispatch`'s last run):
+  while it fails, every such follow-up that is not itself a run again is
+  held, whatever its age, with nothing released or notified, and the host's
+  own `host-failing` notice is what a person sees by default (`ticks-failing`
+  or `repository-failing` when `failures.group` is `scope`).
+  Once it passes, a death's 6-hour window applies again, and a plain death
+  older than it goes to a person.
+  It stays one run again per follow-up, counted against the pull request's
+  recovery budget
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+- `failures.rerun_died` in the machine's dispatch file (`1` by default, `0`
+  or `1`): `0` hands a follow-up whose pass died or could not record its
+  result to a person instead of running it again.
+
+### Changed
+
+- A pickup whose result the host could not write never raises the question
+  its pass stopped on: its end is logged as a stage that ended without a
+  result, the host's health check reports the cause while it fails, and once
+  it passes a person is asked once to settle or release the item.
+
 ## [0.239.0] - 2026-11-15
 
 ### Added
@@ -8468,7 +8579,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.239.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.242.0...HEAD
+[0.242.0]: https://github.com/jig-harness/jig/compare/v0.241.0...v0.242.0
+[0.241.0]: https://github.com/jig-harness/jig/compare/v0.240.0...v0.241.0
+[0.240.0]: https://github.com/jig-harness/jig/compare/v0.239.0...v0.240.0
 [0.239.0]: https://github.com/jig-harness/jig/compare/v0.238.7...v0.239.0
 [0.238.7]: https://github.com/jig-harness/jig/compare/v0.238.6...v0.238.7
 [0.238.6]: https://github.com/jig-harness/jig/compare/v0.238.5...v0.238.6

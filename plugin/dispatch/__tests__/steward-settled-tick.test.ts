@@ -141,7 +141,7 @@ test("settled records do not read their stored digest and remain as witnesses", 
   expect(stewardRecords(SLUG, root)).toHaveLength(100);
 }, 60_000);
 
-test("an applied continuing need still projects its framing on later ticks", async () => {
+test("a need the tick already frames is left to its framing: the digest lists it as framed, and a steward need for it is refused and never projects", async () => {
   const w = fixture();
   w.setPrs("open", [openPr(7, "feature/stopped")]);
   w.setComments(7, [ledgerComment(701, stoppedLedger(7, 2))]);
@@ -155,9 +155,10 @@ test("an applied continuing need still projects its framing on later ticks", asy
   expect(digest.ok).toBe(true);
   if (!digest.ok) return;
   expect(
-    digest.value.needs.some((a) => a.target === "PR #7"),
+    digest.value.framed?.some((f) => f.target === "PR #7"),
     JSON.stringify(first.repos[0]),
   ).toBe(true);
+  expect(digest.value.needs.some((a) => a.target === "PR #7")).toBe(false);
   expect(submitStewardRecords(row.id, [need("PR #7")], root).ok).toBe(true);
   for (let n = 0; n < 2; n++) {
     const receipt = await tick(w);
@@ -165,7 +166,7 @@ test("an applied continuing need still projects its framing on later ticks", asy
       receipt.repos[0]?.actions.find(
         (a) => a.stage === "notify" && a.target === "PR #7",
       )?.evidence.stewardAsk,
-    ).toBe("Choose the next step.");
-    expect(stewardRecords(SLUG, root)[0]?.applied).toBe(true);
+    ).toBeUndefined();
+    expect(stewardRecords(SLUG, root)[0]?.effect).toBe("refused");
   }
 }, 60_000);

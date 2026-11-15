@@ -10,7 +10,9 @@ guards. It can propose another attempt for a transient stop, one fixed
 resume for a routine question with a recommended option, a missing priority,
 type or size, and the order of items tied under the queue's rules. Each
 missing-facet proposal records the steward and its reason on the issue.
-It frames the act and ask for every need that remains a person's.
+It frames the act and ask for a need that remains a person's and arrived
+with no framing; a need its pass, its drive or the tick already framed as a
+decision is left as it is.
 
 A resume the tick cannot apply is refused once, with its reason, and the
 digest then stops offering that pass: the pass framed a decision for a person,
@@ -39,7 +41,6 @@ In the owner host's `~/.jig/dispatch.yaml`, enable `steward.enabled` and add
 ```yaml
 steward:
   enabled: true
-  every: 20m
 repositories:
   - path: /path/to/repository
     owner: true
@@ -47,9 +48,13 @@ repositories:
 ```
 
 Keep the repository's other machine-file settings when adding these fields.
-The host starts at most three steward passes an hour across its repositories,
-only when the selected repository's input changed,
-under account and host-load admission. It uses the complex tier's model of
+A pass starts when the repository's judgment backlog holds work no earlier
+pass judged: a stalled pickup or failed follow-up with no running session, a
+stopped drive a re-arm could resolve, an ended pass recommending a resume, a
+queued item missing a facet, or a need nothing has framed yet. An empty or
+already judged backlog starts no pass, and the receipt and the dashboard say
+which. The host starts at most three steward passes an hour across its
+repositories, under account and host-load admission. It uses the complex tier's model of
 the admitted account's vendor and has a 15-minute deadline. It starts no
 interactive session. Digests and submitted records stay in the owner host's
 state database; other hosts see resulting launches through the usual claims.

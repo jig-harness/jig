@@ -1,5 +1,5 @@
 /** Account for forge commands at their shared runner, without keeping command arguments or query variables. */
-import { credentialKey } from "./budget.ts";
+import { apiRoute, githubCredential } from "./github-budget.ts";
 import { isRecord } from "../guards.ts";
 import { swallow } from "../errors.ts";
 import { type GhRun, ghRunFailure, graphQLErrorsClass } from "./github.ts";
@@ -42,7 +42,7 @@ function commandQuery(
   args: string[],
   stdin: string | undefined,
 ): string | null {
-  if (args[0] !== "api" || args[1] !== "graphql") return null;
+  if (args[0] !== "api" || apiRoute(args) !== "graphql") return null;
   const body = stdin === undefined ? null : parsed(stdin);
   if (isRecord(body) && typeof body.query === "string") return body.query;
   for (let i = 0; i < args.length; i += 1) {
@@ -138,18 +138,15 @@ export function recordGhAttempt<T extends GhRun, O>(
     stdin?: string;
     env?: Record<string, string | undefined>;
   };
-  const env = opts.env ?? process.env;
-  const credential = credentialKey(
-    "github",
-    env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || "opaque-cli-credential",
-  );
+  const credential = githubCredential(opts.env ?? process.env);
   const observation: Attempt = {
     system: "github",
     credential,
     operation: operation(args, opts.stdin),
     requests: 0,
     cost: null,
-    unit: args[0] === "api" && args[1] === "graphql" ? "points" : "requests",
+    unit:
+      args[0] === "api" && apiRoute(args) === "graphql" ? "points" : "requests",
     estimated: true,
   };
   return recordAttempt(
@@ -172,7 +169,7 @@ export function recordGhAttempt<T extends GhRun, O>(
       observation.cost =
         cost ??
         (hasOutput && observation.requests > 0
-          ? args[0] === "api" && args[1] === "rate_limit"
+          ? args[0] === "api" && apiRoute(args) === "rate_limit"
             ? 0
             : 1
           : null);

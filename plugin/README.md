@@ -478,8 +478,9 @@ free slot reuses one younger than that without asking. Every repository of
 the machine file that names the same tracker, team and person shares one
 reading per tick.
 
-Every process on the host shares each tracker credential's request budget
-(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+Every process on the host shares each tracker credential's and the forge
+credential's request budget
+(`outbound_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
 While the tracker refuses the credential for its rate limit, no request
 leaves the host before the reset it named: a tick reports the tracker once
 as rate limited until then, the queue it shows is the last reading, and
@@ -663,9 +664,11 @@ item of a tracker other than the forge are not read yet.
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
 machine file) inspects what the rules leave stopped, under the owner host's
-account and load admission. Every 20 minutes, only when the digest changed,
-it can propose a transient-stop retry, a missing issue facet, queue tie order
-and the act and ask for a human need. It can also propose one fixed resume of
+account and load admission. It starts when the repository's
+[judgment backlog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds work no earlier pass
+judged, at once rather than on a cadence, and an empty or already judged
+backlog starts none. It can propose a transient-stop retry, a missing issue
+facet, queue tie order and the act and ask for a need nothing has framed. It can also propose one fixed resume of
 an ended dispatched pass that recommended an option outside the human-decision
 registry. The follow-up lane's own routine retry runs first. The next tick
 applies its closed records under the current holds and recovery budget;
@@ -730,7 +733,17 @@ died during its work (its wrapper gone, or a signal or a failing exit) with
 no result and no question is run again once: the tick releases its marker,
 answered or not, and a later tick starts the follow-up again, within the pull
 request's recovery budget, while the death is under 6 hours old; a second
-death is notified. A pass that cannot finish without a person stops and
+death is notified. A pass whose result or exit this host could not write is
+run again once too (`jig dispatch result` exits `4` when the dispatcher's database refuses
+it, and keeps the evidence outside the database), whatever the pass said and
+however long ago, and never with the question it asked. Both runs again wait
+for the host's health check (`jig doctor dispatch`'s last run) to pass;
+while it fails, a death is held whatever its age and nothing is notified.
+`failures.rerun_died: 0` turns them off
+([CONFIGURATION.md](CONFIGURATION.md#the-machines-dispatch-file)). A pickup
+whose result this host could not write is never asked its own question
+either: once the health check passes, a person is asked once to settle or
+release the item. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person. A
 question that is only one of the dispatcher's fixed **routine question
@@ -847,7 +860,11 @@ counts as sent only once the workspace's comment, read back, carries its key
 line (`[jig dispatch: …]`), and is not sent again while its cause stands
 until `renotify_after` has passed;
 while a workspace is still unread, a new message is appended to its comment
-rather than replacing it. The answer to a park is never sent back through
+rather than replacing it, and the entries whose causes are settled (the pull
+request closed, the need answered) leave a comment only the dispatcher wrote
+to make room. A message that still finds no room counts as a failed delivery,
+and past `failures.notify_after` ticks a person is told it is failing. The
+answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
 
@@ -1519,6 +1536,9 @@ older parks use the PR author when the tick knows them; older snapshots without
 a named recipient remain in the unfiltered list. Each entry carries its recorded
 stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
+An entry whose notice did not reach a person at that tick (held for room in
+the notices comment, lost, or its destination out of reach) says why in
+`notice`, and as a `notice not delivered:` line in text.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this
@@ -2047,6 +2067,7 @@ drive:
   reviews_drafts: true        # does the AI reviewer review draft pull requests
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
+  ci_repair_rounds: 2         # CI-repair passes per head and failing check on red final CI; 0 stops on red; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires

@@ -9,6 +9,7 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { NoticeFields } from "../../chat/channel.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
+import type { TickOutcome } from "../../shared/records/followup-values.ts";
 import type { FailureClass } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
@@ -140,6 +141,7 @@ import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
 /** How a pickup that needs nothing reads: the repository's start rules refused its claim, its claimed item is idle but not yet stalled, or a served person started the item themselves. */
 export type PickupClass =
+  | "pickup-ended"
   | "pickup-refused"
   | "claimed-idle"
   | "claimed"
@@ -290,7 +292,7 @@ export interface FollowupMarker {
         host?: string;
         /** Whether that host says it owns the repository. */
         owner?: boolean;
-        outcome?: "done" | "failed";
+        outcome?: TickOutcome;
       }
     | { kind: "manual"; done: boolean }
     | { kind: "unreadable"; reason: string };
@@ -682,7 +684,13 @@ export interface PreflightHold {
 }
 
 export interface RepoReport {
-  steward?: { status: string; hash?: string; records?: number };
+  /** The steward on this tick: what it did, and for a pass the judgment backlog started or did not start, why (`trigger`). */
+  steward?: {
+    status: string;
+    hash?: string;
+    records?: number;
+    trigger?: "empty" | "judged" | "budget" | "started";
+  };
   path: string;
   slug: string | null;
   /** Set when the repository could not be dispatched at all, or a defect stopped its turn. */

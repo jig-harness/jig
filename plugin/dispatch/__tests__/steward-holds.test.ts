@@ -1,6 +1,6 @@
 /** A steward must read human holds independently of dispatch label projection. */
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
@@ -20,6 +20,7 @@ import {
   stoppedLedger,
   SLUG,
   type World,
+  checkoutOn,
 } from "./fixtures.ts";
 import { account, dispatchState, machineFile } from "./launch-fixtures.ts";
 import { withOrigin } from "./pickup-fixtures.ts";
@@ -44,11 +45,10 @@ function fixture(automatic = false, prefix: string | null = "work:") {
     automatic ? ["rearm"] : ["rearm", "steward"],
   );
   const ws = join(w.root, "original-stopped-tree");
-  mkdirSync(ws, { recursive: true });
-  expectSpawnExit(Bun.spawnSync(["git", "init", "-q", ws]), 0);
+  checkoutOn(w.repo, ws, "feature/steward", w.env);
   const ledger = stoppedLedger(7, automatic ? 16 : 2);
   ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
-  ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
+  ledger.driver.clone = cloneId(cloneKey(join(w.repo, ".git")));
   ledger.narrative = [
     "The forge request timed out during a brief outage; retry the same operation.",
   ];
@@ -74,6 +74,8 @@ function fixture(automatic = false, prefix: string | null = "work:") {
       {
         version: 1,
         repo: SLUG,
+        // The pass that judged this stop: the backlog holds nothing new for another.
+        backlog: [{ kind: "rearm", target: "PR #7", facts: factsOf(pr) }],
         drives: [pr],
         needs: [],
         queue: [],

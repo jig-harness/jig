@@ -527,6 +527,12 @@ fields:
     default: 2
     since: 0.98.0
     read_by: [drive-pr]
+  drive.ci_repair_rounds:
+    type: integer
+    min: 0
+    default: 2
+    since: 0.241.0
+    read_by: [drive-pr]
   drive.pass_model:
     type: string
     pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@[\\]-]*$"

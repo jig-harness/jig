@@ -8,6 +8,7 @@ import { driverOnlyExitCode } from "../status/terminal-states.ts";
 import {
   maxRoundsSetting,
   DEFAULT_MAX_ROUNDS,
+  ciRepairRoundsSetting,
   passDeadlineRetriesSetting,
   DEFAULT_PASS_DEADLINE_RETRIES,
 } from "../overlay.ts";
@@ -368,7 +369,7 @@ export function passTimeoutSeconds(): number {
  * `0` disables repair passes. Failed-job retries are independently controlled
  * by `ci.rerun_failed_once` and never charge a repair allowance.
  */
-const CI_REPAIR_ROUNDS_DEFAULT = 2;
+export const CI_REPAIR_ROUNDS_DEFAULT = 2;
 
 const CONFLICT_REPAIR_ROUNDS_DEFAULT = 1;
 
@@ -409,11 +410,19 @@ export function finalCiWitnessPolls(): number {
   );
 }
 
+/**
+ * CI-repair passes per head and failing check: `DRIVE_PR_CI_REPAIR_ROUNDS`
+ * for one run, else the repository's `drive.ci_repair_rounds`, else the
+ * default. An unreadable setting stops the drive rather than guessing a budget.
+ */
 export function ciRepairRounds(): number {
-  return wholeEnv(
-    process.env.DRIVE_PR_CI_REPAIR_ROUNDS,
-    CI_REPAIR_ROUNDS_DEFAULT,
-  );
+  const once = wholeEnv(process.env.DRIVE_PR_CI_REPAIR_ROUNDS, -1);
+  if (once >= 0) return once;
+  try {
+    return ciRepairRoundsSetting() ?? CI_REPAIR_ROUNDS_DEFAULT;
+  } catch (e) {
+    return fail(1, `drive.ts: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /**

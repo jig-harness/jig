@@ -147,7 +147,9 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
-import { newerStateRefusal } from "./lib/state.ts";
+import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
+import { writeUnwritten } from "./lib/unwritten-result.ts";
+import { stateRoot } from "./receipts.ts";
 import { writeWall } from "./lib/walls.ts";
 import { failedStartup } from "./lib/session-startup.ts";
 import {
@@ -542,20 +544,29 @@ async function finishRun(
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
-  const startup = startupOf(record, ran);
-  const startupWallUnrecorded =
-    startup !== undefined && !recordStartupWall(record, startup);
-  recordExit(id, {
-    at: currentIso(),
-    code,
-    signal,
-    ...(wallUnrecorded || startupWallUnrecorded
-      ? { wallUnrecorded: true as const }
-      : {}),
-    ...(startup === undefined ? {} : { startup }),
-    ...saidOf(record, ran),
-    ...usageOf(record, ran),
-  });
+  try {
+    // Every read of the state database sits inside the boundary that keeps the
+    // exit evidence, so a database that refuses reads still leaves it.
+    const startup = startupOf(record, ran);
+    const startupWallUnrecorded =
+      startup !== undefined && !recordStartupWall(record, startup);
+    recordExit(id, {
+      at: currentIso(),
+      code,
+      signal,
+      ...(wallUnrecorded || startupWallUnrecorded
+        ? { wallUnrecorded: true as const }
+        : {}),
+      ...(startup === undefined ? {} : { startup }),
+      ...saidOf(record, ran),
+      ...usageOf(record, ran),
+    });
+  } catch (error) {
+    const why = stateDbFailure(error);
+    if (!isDrive(record) && why !== null)
+      writeUnwritten(stateRoot(), id, record.token, "exit", why);
+    throw error;
+  }
   await endSharedClaim(id);
   await labelFollowup(id);
   if (isInteractive(record)) await closeTabIfDone(record, code);
