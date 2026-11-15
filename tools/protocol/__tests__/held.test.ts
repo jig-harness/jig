@@ -193,6 +193,27 @@ test("held phrases parse code-span closers and nested-list dedents as prose", ()
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
 });
 
+test("held phrases keep comments in separate Markdown blocks from code spans", () => {
+  const root = tempDir("held-block-context");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nAn unmatched ` delimiter.\n\n<!-- Exit `11` on the lock -->\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n~~~text\n<!--\n~~~\n\nExit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+});
+
 test("held phrases recognize headings without backtracking over closing hashes", () => {
   const root = tempDir("held-heading-hashes");
   const phrase = {
@@ -274,6 +295,15 @@ test("the stable chapters reject changed operational mailbox, label and associat
     put(root, driveFile, drive.replaceAll(before ?? "", after ?? ""));
     expect(MAILBOX.check?.(root)?.length).toBeGreaterThan(0);
   }
+  put(
+    root,
+    driveFile,
+    drive.replace(
+      "A graceful stop exits `18`",
+      "A graceful stop exits `19` <!-- A graceful stop exits `18` -->",
+    ),
+  );
+  expect(MAILBOX.check?.(root)?.length).toBeGreaterThan(0);
   put(root, driveFile, drive.replaceAll("jig:hold", "jig:pause"));
   expect(PR_LABELS.check?.(root)?.length).toBeGreaterThan(0);
   put(

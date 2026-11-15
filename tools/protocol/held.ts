@@ -9,6 +9,8 @@ export interface HeldPhrase {
   readonly text: string;
   /** The Markdown heading that owns this operational restatement. */
   readonly section?: string;
+  /** Command contracts may intentionally appear in a fenced example. */
+  readonly includeCodeExamples?: boolean;
 }
 
 /** Checkout line endings do not change an operational phrase's value. */
@@ -27,16 +29,29 @@ function withoutHtmlComments(text: string): string {
       while (text[end] === "`") end += 1;
       const delimiter = text.slice(codeStart, end);
       const close = closingDelimiter(text, delimiter, end);
-      if (close < 0) return visible + text.slice(cursor);
+      if (close < 0) {
+        const boundary = text.indexOf("\n\n", end);
+        if (boundary < 0) return visible + text.slice(cursor);
+        // This unmatched opener is literal text in its paragraph. Resume at
+        // it so comments in the following block remain comments.
+        visible += text.slice(cursor, end);
+        cursor = end;
+        continue;
+      }
       visible += text.slice(cursor, close + delimiter.length);
       cursor = close + delimiter.length;
       continue;
     }
     visible += text.slice(cursor, start);
     const end = text.indexOf("-->", start + "<!--".length);
-    if (end < 0) return `${visible}\n`;
-    // Keep a boundary: removing a comment must not join two phrase fragments.
-    visible += "\n";
+    const hidden = text.slice(
+      start,
+      end < 0 ? text.length : end + "-->".length,
+    );
+    // Preserve every line boundary so section locations stay aligned with the
+    // source while comments cannot join phrase fragments or satisfy a check.
+    visible += hidden.replaceAll(/[^\n]/g, " ");
+    if (end < 0) return visible;
     cursor = end + "-->".length;
   }
 }
@@ -70,6 +85,10 @@ function closingDelimiter(
   from: number,
 ): number {
   for (let cursor = from; cursor < text.length; cursor += 1) {
+    // An inline code span cannot make a later Markdown block part of its
+    // context. In particular, an unmatched delimiter in one paragraph must
+    // not shield an HTML comment after a blank line.
+    if (text.startsWith("\n\n", cursor)) return -1;
     if (text.startsWith(delimiter, cursor)) {
       const beforeMatches = text[cursor - 1] === "`";
       const afterMatches = text[cursor + delimiter.length] === "`";
@@ -240,8 +259,16 @@ function visibleLines(source: string): string[] {
 }
 
 /** The one prose section named by `heading`, through its next peer or parent heading. */
-function sectionOf(source: string, heading: string): string | null {
-  const lines = visibleLines(source);
+function sectionOf(
+  source: string,
+  heading: string,
+  includeCodeExamples = false,
+): string | null {
+  // Remove block-code contexts before looking for comments. A literal comment
+  // token in a fenced example is data, not an HTML comment in this document.
+  const lines = withoutHtmlComments(visibleLines(source).join("\n")).split(
+    "\n",
+  );
   const headings = lines
     .map((line, index) => ({ index, parsed: markdownHeading(line) }))
     .filter(
@@ -257,7 +284,13 @@ function sectionOf(source: string, heading: string): string | null {
     ({ index, parsed }) =>
       index > start.index && parsed.level <= start.parsed.level,
   );
-  return lines.slice(start.index, next?.index).join("\n");
+  if (!includeCodeExamples)
+    return lines.slice(start.index, next?.index).join("\n");
+  // `visibleLines` retains one line for every source line, so its heading
+  // boundaries also locate the raw command examples in this section.
+  return withoutHtmlComments(
+    source.split("\n").slice(start.index, next?.index).join("\n"),
+  );
 }
 
 /** Escape literal text for the small semantic-pattern check below. */
@@ -273,8 +306,10 @@ const escapeRegExp = (text: string): string =>
  */
 function isOneOperationalOccurrence(source: string, text: string): boolean {
   const parts = text.split(/(`\d+`)/);
-  if (parts.length === 1)
-    return source.indexOf(text) === source.lastIndexOf(text);
+  if (parts.length === 1) {
+    const first = source.indexOf(text);
+    return first >= 0 && first === source.lastIndexOf(text);
+  }
   const pattern = parts
     .map((part) => (/^`\d+`$/.test(part) ? "`\\d+`" : escapeRegExp(part)))
     .join("");
@@ -306,12 +341,11 @@ export function checkHeldPhrases(
       ];
     }
     const expected = lineEndings(text);
-    const actual =
-      phrase.section === undefined
-        ? lineEndings(source)
-        : withoutHtmlComments(lineEndings(source));
+    const actual = lineEndings(source);
     const operational =
-      phrase.section === undefined ? actual : sectionOf(actual, phrase.section);
+      phrase.section === undefined
+        ? actual
+        : sectionOf(actual, phrase.section, phrase.includeCodeExamples);
     return operational !== null &&
       (phrase.section === undefined
         ? operational.includes(expected)
