@@ -1,11 +1,11 @@
 ---
 title: "ADR-0019: The dashboard's page answers a parked decision as the person"
 type: adr
-status: draft
+status: approved
 description: "The dispatch dashboard's page may post a parked decision's answer: from the browser, to the forge's API, with a fine-grained token the person pastes into that browser and that the host never receives; the dashboard's server keeps no write route, the dispatcher never relays an answer, and the answer is trusted as one `jig send` writes from a terminal until item 40 tells a pass's comment from a person's"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-11-12
+last_updated: 2026-11-15
 owner: maintainers
 decision_date: 2026-11-12
 supersedes: ~
@@ -15,7 +15,7 @@ tags: [adr, dashboard, security, answers, dispatcher]
 
 # ADR-0019: The dashboard's page answers a parked decision as the person
 
-**Status:** Draft · **Date:** 2026-11-12 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Approved · **Date:** 2026-11-12 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
@@ -77,6 +77,35 @@ from the browser, as the person:
 Send is offered only where a station reads an answer comment, a parked
 drive's decisions today; any other card keeps Copy and says why it has no
 Send.
+
+### A send with no answer
+
+A card posts its comments one at a time and stops at the first that fails.
+A failure with no answer from GitHub (the connection dropped, or a status
+other than 401, 403, 404, 410 or 422, which post nothing) may still have
+created the comment, so the page treats that decision's answer as
+uncertain:
+
+- **What is tracked.** The page keeps, per card, each answer that may have
+  posted, under the writer (the token's login, compared without case, as
+  the readers compare it) and the decision's key. The answer is the whole
+  comment's answer and note lines, so a changed option or condition is
+  another answer. One Send runs per card at a time.
+- **What the person sees.** The card says what was not sent and why: which
+  answers before it posted (with their links), which one may or may not
+  have posted, and which were not attempted. An earlier uncertainty that a
+  later failure did not replace stays beside it as "Still unchecked", and
+  the card offers **I checked the pull request; allow Send again**.
+- **When Send may send again.** Send refuses to post an answer that is
+  uncertain for the same writer and decision. A different answer, another
+  writer's token, or a decision this send refused or never attempted sends
+  as usual. A comment that does post for a decision clears that decision's
+  uncertainty; the button clears the card's. The record lives in the
+  page's memory, so a reload starts without it, while the links of what
+  was sent stay in the browser.
+
+A duplicate the person sends anyway is harmless to the readers, since each
+person's latest answer counts.
 
 ## Alternatives considered
 
