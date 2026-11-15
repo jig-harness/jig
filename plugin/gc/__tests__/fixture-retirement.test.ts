@@ -389,4 +389,7 @@ test("the cached enclosure index survives the collector's own retirements", () =
   rmSync(join(f.store, gone ?? ""), { recursive: true, force: true });
   const next = withoutRetired(first, [join(f.store, gone ?? "")]);
   expect(cachedFixtureEnclosure(f.store, next)).toBe(next);
+  expect(next.index.roots.size).toBe(1);
+  expect(next.index.held.has(join(f.store, gone ?? ""))).toBe(false);
+  expect(next.index.held.size).toBe(1);
 });

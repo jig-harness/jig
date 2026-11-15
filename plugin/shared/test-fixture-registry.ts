@@ -456,6 +456,8 @@ export function fixtureRootGone(root: string): boolean {
 /** Every registered root and the registrations holding it, read once for a proof batch. */
 export interface FixtureEnclosureIndex {
   roots: Map<string, Set<string>>;
+  /** The roots each registration holds, so retiring one touches only those. */
+  held: Map<string, Set<string>>;
   /** False when a folder could not be read as a registration, so some root is unknown. */
   complete: boolean;
 }
@@ -469,7 +471,11 @@ export interface FixtureEnclosureIndex {
 function fixtureEnclosureIndex(
   store = testFixtureRegistryRoot(),
 ): FixtureEnclosureIndex {
-  const index: FixtureEnclosureIndex = { roots: new Map(), complete: true };
+  const index: FixtureEnclosureIndex = {
+    roots: new Map(),
+    held: new Map(),
+    complete: true,
+  };
   let names: string[];
   try {
     names = readdirSync(store);
@@ -492,6 +498,9 @@ function fixtureEnclosureIndex(
       const holders = index.roots.get(root) ?? new Set<string>();
       holders.add(registry);
       index.roots.set(root, holders);
+      const own = index.held.get(registry) ?? new Set<string>();
+      own.add(root);
+      index.held.set(registry, own);
     }
   }
   return index;
@@ -562,9 +571,13 @@ export function withoutRetired(
   retired: string[],
 ): ReturnType<typeof cachedFixtureEnclosure> {
   const gone = new Set(retired);
-  for (const [root, holders] of cached.index.roots) {
-    for (const holder of gone) holders.delete(holder);
-    if (holders.size === 0) cached.index.roots.delete(root);
+  for (const registry of gone) {
+    for (const root of cached.index.held.get(registry) ?? []) {
+      const holders = cached.index.roots.get(root);
+      holders?.delete(registry);
+      if (holders?.size === 0) cached.index.roots.delete(root);
+    }
+    cached.index.held.delete(registry);
   }
   return {
     ...cached,
