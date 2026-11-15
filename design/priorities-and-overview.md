@@ -9,7 +9,7 @@ With this built, a declared purpose and a reproducible ranking explain the
 shortlist, a scheduled review spots lack of progress across work, and one
 overview shows the goals, activity and decisions together.
 
-This is the design of [plan.md](plan.md) item 56. None of it is built.
+This is the design of [plan.md](plan.md) item 58. None of it is built.
 The person reviews this design before implementation; the overview's visual
 design round follows that review. It extends [M9's computed prioritization
 invariant](../modules/M9-tasks-memory/README.md#computed-prioritization),
