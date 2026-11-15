@@ -347,6 +347,16 @@ function heldForHost(
   return true;
 }
 
+/** Whether the item's pull request or the host's failing health check settles it for this tick. */
+function settledOrHeld(
+  item: ClaimedItem,
+  input: PickupInput,
+  step: LaunchPrStep | null,
+  plan: PickupPlan,
+): boolean {
+  return settledByPr(item.key, step, plan) || heldForHost(item, input, plan);
+}
+
 /** One claimed item: a double claim, running, idle, or stalled. */
 function planClaimed(
   item: ClaimedItem,
@@ -404,8 +414,7 @@ function planClaimed(
     plan.actions.push(asked);
     return;
   }
-  if (settledByPr(item.key, pr.step, plan)) return;
-  if (heldForHost(item, input, plan)) return;
+  if (settledOrHeld(item, input, pr.step, plan)) return;
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
