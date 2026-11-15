@@ -31,6 +31,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { dump } from "../../shared/yaml.ts";
+import { stateDb } from "../../dispatch/lib/state.ts";
 import type { Receipt, ReceiptLine } from "../types.ts";
 import { FIXTURE_REMOTE, setupWorktreeFixture } from "./worktree-fixture.ts";
 
@@ -247,6 +248,34 @@ function line(result: ReturnType<typeof gc>): ReceiptLine {
 
 function idle(f: ReturnType<typeof setup>): void {
   makeIdle(f.tree, join(f.repo, ".git", "worktrees", "topic"));
+}
+
+function preserveCompletion(f: ReturnType<typeof setup>): void {
+  const record = {
+    version: 1,
+    id: "20261115T000000Z-aaaaaaaa",
+    token: "token",
+    action: "pickup",
+    repo: "acme/app",
+    repoPath: f.repo,
+    item: "#1",
+    pr: null,
+    account: "account",
+    vendor: "codex",
+    configDir: f.root,
+    wallBackoffMs: 1000,
+    replaces: null,
+    facts: "",
+    createdAt: "2026-11-15T00:00:00.000Z",
+    workspace: { id: f.tree, path: f.tree },
+    attempts: [],
+  };
+  const db = stateDb(
+    join(f.env.HOME as string, ".local", "state", "jig", "dispatch"),
+  );
+  db.query(
+    "INSERT INTO process_worktree_completions (id, record, claim, exit) VALUES (?, ?, ?, ?)",
+  ).run(record.id, JSON.stringify(record), "{}", "{}");
 }
 
 const FINDING_TITLE = "The setup step assumed a running database";
@@ -596,6 +625,19 @@ describe.skipIf(
     ) as OrcaState;
     expect(state.worktrees).toEqual([]);
     expect(calls(f)).toContain(`worktree rm --worktree id:${f.id} --json`);
+  }, 60_000);
+
+  test("collecting an Orca checkout retires its preserved completion evidence", () => {
+    const f = setup();
+    preserveCompletion(f);
+    idle(f);
+    expect(line(gc(f, ["--collect", "--json"])).outcome).toBe("collected");
+    const db = stateDb(
+      join(f.env.HOME as string, ".local", "state", "jig", "dispatch"),
+    );
+    expect(
+      db.query("SELECT id FROM process_worktree_completions").all(),
+    ).toEqual([]);
   }, 60_000);
 
   test("collecting a worktree whose only ignored content is a dependency directory still reports it as rebuildable", () => {

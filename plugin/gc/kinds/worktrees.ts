@@ -318,6 +318,7 @@ async function collectThroughOrca(
   repository: string,
   declaration: string,
   legacy: LegacyPolicy | undefined,
+  retireCompletions?: () => Outcome<void>,
 ): Promise<Collected> {
   const { id, launched } = orcaWorktree;
   let archived: Archived | null = null;
@@ -380,6 +381,24 @@ async function collectThroughOrca(
       return archived === null
         ? failure(removed)
         : { ...failure(removed), details: { archive: archived } };
+    const retired = retireCompletions?.();
+    if (retired !== undefined && !retired.ok)
+      return {
+        outcome: "failed",
+        reason: `removed through Orca, but completion evidence retirement failed: ${retired.failure.reason}`,
+        details: {
+          ...(isMapping(resource.details) ? resource.details : {}),
+          removal: {
+            method: "orca worktree rm",
+            hook: removed.value.hook,
+            parked: true,
+          },
+          completionEvidence: {
+            outcome: "failed",
+            reason: retired.failure.reason,
+          },
+        },
+      };
     return {
       outcome: "collected",
       reason: `removed through Orca: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} orca worktree rm`,
@@ -859,6 +878,7 @@ export function worktreesKind(
             repository,
             declaration,
             legacy(),
+            () => retireProcessWorktreeCompletions(resource.id, repository),
           ),
         );
       return {
