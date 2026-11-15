@@ -7,6 +7,8 @@ import type { Finding } from "../../lib/findings.ts";
 export interface HeldPhrase {
   readonly file: string;
   readonly text: string;
+  /** The one-based source line that owns this operational restatement. */
+  readonly line?: number;
 }
 
 /** Checkout line endings do not change an operational phrase's value. */
@@ -17,7 +19,8 @@ export function checkHeldPhrases(
   chapter: string,
   phrases: readonly HeldPhrase[],
 ): Finding[] {
-  return phrases.flatMap(({ file, text }) => {
+  return phrases.flatMap((phrase) => {
+    const { file, text } = phrase;
     let source: string;
     try {
       source = readFileSync(join(root, file), "utf8");
@@ -32,13 +35,28 @@ export function checkHeldPhrases(
         },
       ];
     }
-    return lineEndings(source).includes(lineEndings(text))
+    const expected = lineEndings(text);
+    const actual = lineEndings(source);
+    const atLine = (() => {
+      if (typeof phrase.line !== "number") return actual.includes(expected);
+      const lines = actual.split("\n");
+      const start = lines[phrase.line - 1];
+      const firstLine = expected.split("\n")[0] ?? "";
+      const offset = start?.indexOf(firstLine) ?? -1;
+      return (
+        offset >= 0 &&
+        [start?.slice(offset), ...lines.slice(phrase.line)]
+          .join("\n")
+          .startsWith(expected)
+      );
+    })();
+    return atLine
       ? []
       : [
           {
             rule: "protocol-held",
             file,
-            problem: `the held restatement of ${chapter} lacks ${JSON.stringify(text)}`,
+            problem: `the held restatement of ${chapter} lacks ${JSON.stringify(text)}${typeof phrase.line === "number" ? ` at line ${phrase.line}` : ""}`,
             remedy: `restore the operational phrase using plugin/protocol/${chapter}.md, or replace it with a chapter link and remove its held check`,
           },
         ];

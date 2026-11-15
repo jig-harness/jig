@@ -228,26 +228,62 @@ export function checkDriveExitPhrases(root: string) {
     {
       file: "plugin/skills/do-item/SKILL.md",
       text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **per-PR** lock`,
+      line: 1408,
     },
     {
       file: "plugin/skills/do-item/SKILL.md",
       text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **worktree** lock`,
+      line: 1415,
     },
     {
       file: "plugin/skills/do-item/SKILL.md",
       text: `Exit \`${DRIVE_EXIT.CONVERGED}\` → the drive already reached a terminal state`,
+      line: 1427,
     },
-    ...[
-      `exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` (single-instance lock)`,
-      `Proceed only on exit \`${TERMINAL_STATES.ROUND_READY?.exitCode}\`. Anything else is the answer for *this* gate's own`,
-      `For a driver pass carrying a \`WORKTREE_UNCLEAN\` notice, exit \`${TERMINAL_STATES.CONVERGED?.exitCode}\``,
-      `**exit \`${DRIVE_EXIT.QUOTA_PARKED}\`,\n  QUOTA_PARKED**`,
-      `\`drive.ts\` refuses that re-arm itself (exit \`${DRIVE_EXIT.QUOTA_PARKED}\`)`,
-      `exit \`${DRIVE_EXIT.CONVERGED}\` inside the window → the drive already reached a terminal state`,
-      `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live **session in your tree** holds the drive lease`,
-      `| \`${TERMINAL_STATES.DRIVE_HELD_BY_OTHER_WORKTREE?.exitCode}\` | Another live **working tree** is driving this PR`,
-      `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live session holds this working tree's tree lease`,
-      `also refuses (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\`) while a mailbox \`hold-push\` directive`,
-    ].map((text) => ({ file: "plugin/skills/drive-pr/SKILL.md", text })),
+    ...(
+      [
+        [
+          `exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` (single-instance lock)`,
+          1253,
+        ],
+        [
+          `Proceed only on exit \`${TERMINAL_STATES.ROUND_READY?.exitCode}\`. Anything else is the answer for *this* gate's own`,
+          1661,
+        ],
+        [
+          `For a driver pass carrying a \`WORKTREE_UNCLEAN\` notice, exit \`${TERMINAL_STATES.CONVERGED?.exitCode}\``,
+          1666,
+        ],
+        [`**exit \`${DRIVE_EXIT.QUOTA_PARKED}\`,\n  QUOTA_PARKED**`, 3625],
+        [
+          `\`drive.ts\` refuses that re-arm itself (exit \`${DRIVE_EXIT.QUOTA_PARKED}\`)`,
+          3635,
+        ],
+        [
+          `exit \`${DRIVE_EXIT.CONVERGED}\` inside the window → the drive already reached a terminal state`,
+          1279,
+        ],
+        [
+          `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live **session in your tree** holds the drive lease`,
+          3086,
+        ],
+        [
+          `| \`${TERMINAL_STATES.DRIVE_HELD_BY_OTHER_WORKTREE?.exitCode}\` | Another live **working tree** is driving this PR`,
+          3087,
+        ],
+        [
+          `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live session holds this working tree's tree lease`,
+          2777,
+        ],
+        [
+          `also refuses (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\`) while a mailbox \`hold-push\` directive`,
+          4030,
+        ],
+      ] as const
+    ).map(([text, line]) => ({
+      file: "plugin/skills/drive-pr/SKILL.md",
+      text,
+      line,
+    })),
   ]);
 }

@@ -28,6 +28,15 @@ test("a held value must survive unchanged, including its operational context", (
   expect(unreadable[0]?.remedy).toContain("read access");
 });
 
+test("a held value is checked at its declared operational location", () => {
+  const root = tempDir("held-location");
+  const phrase = { file: "skill.md", text: "Exit `11` on the lock", line: 1 };
+  put(root, "skill.md", "Exit `11` on the lock\nExit `11` on the lock\n");
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  put(root, "skill.md", "Exit `13` on the lock\nExit `11` on the lock\n");
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+});
+
 test("held phrases accept either checkout line ending and still reject changed values", () => {
   const root = tempDir("held-line-endings");
   for (const sourceEnding of ["\n", "\r\n"]) {

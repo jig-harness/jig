@@ -2,7 +2,10 @@
 import { join } from "node:path";
 import type { Finding } from "../../lib/findings.ts";
 
-export function checkDriveExitChapter(root: string): readonly Finding[] {
+export function checkDriveExitChapter(
+  root: string,
+  env: Record<string, string | undefined> = process.env,
+): readonly Finding[] {
   const result = Bun.spawnSync(
     [
       process.execPath,
@@ -10,7 +13,7 @@ export function checkDriveExitChapter(root: string): readonly Finding[] {
     ],
     {
       cwd: root,
-      env: process.env,
+      env,
       stdout: "pipe",
       stderr: "pipe",
       timeout: 120_000,
