@@ -19,7 +19,7 @@ export async function runReviewPassPhase(
   apiHead: string,
   round: number,
 ): Promise<number | "continue" | "passed"> {
-  const prepareReviewPassResult = await prepareReviewPass(context);
+  const prepareReviewPassResult = await prepareReviewPass(context, round);
   if (typeof prepareReviewPassResult !== "object")
     return prepareReviewPassResult;
   const {

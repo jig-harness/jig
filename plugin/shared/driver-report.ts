@@ -1,0 +1,106 @@
+/**
+ * How a dispatched drive hands its closing report to the wrapper that runs
+ * it. The wrapper (`dispatch/run.ts`) starts `drive.ts` with
+ * `JIG_DRIVER_REPORT` naming a file in the run's own state directory
+ * (`~/.local/state/jig/dispatch/runs/<record>/drive-report.json`, readable
+ * only by its owner); `drive.ts`, when it stops, writes there the closing
+ * report it composed (`skills/drive-pr/scripts/lib/driver/closing-report.ts`),
+ * stamped with its launch record; and the wrapper reads it once the drive
+ * has ended, checks it again and records it under the record, written by
+ * the driver (`dispatch/lib/run-report.ts`).
+ *
+ * Only the wrapper sets the variable, and the driver hands it to none of its
+ * passes, so a drive armed any other way writes no file, and a drive armed
+ * from inside a dispatched session never writes onto that session's record.
+ */
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
+import {
+  type ClosingReport,
+  closingReportOf,
+  REPORT_BYTE_LIMIT,
+} from "./closing-report.ts";
+import { swallow } from "./errors.ts";
+import { isRecord } from "./guards.ts";
+import { failed, ok, type Outcome } from "./outcome.ts";
+
+/** The variable naming the file a dispatched drive writes its closing report to. */
+export const DRIVER_REPORT_VARIABLE = "JIG_DRIVER_REPORT";
+
+const DRIVER_REPORT_SCHEMA = "driver-closing-report/v1";
+
+/** The file as the driver writes it: its launch record and its report. */
+interface DriverReportFile {
+  schema: typeof DRIVER_REPORT_SCHEMA;
+  launch: string;
+  report: ClosingReport;
+}
+
+/** The file a dispatched drive writes its closing report to, or `null` when no wrapper named one. */
+export function driverReportPath(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const path = (env[DRIVER_REPORT_VARIABLE] ?? "").trim();
+  return path === "" ? null : path;
+}
+
+/** Write `report`, stamped with `launch`, to `path`: whole or not at all, in a directory only its owner reads. */
+export function writeDriverReport(
+  path: string,
+  launch: string,
+  report: ClosingReport,
+): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const file: DriverReportFile = {
+    schema: DRIVER_REPORT_SCHEMA,
+    launch,
+    report,
+  };
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(file)}\n`, { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
+/**
+ * The report at `path` for launch record `launch`, checked again; `null`
+ * when there is no file. A file that does not read, that names another
+ * launch, or whose report the check refuses, is a failure naming why.
+ */
+export function readDriverReport(
+  path: string,
+  launch: string,
+): Outcome<ClosingReport | null, "unreadable"> {
+  if (!existsSync(path)) return ok(null);
+  let value: unknown;
+  try {
+    const text = readFileSync(path, "utf8");
+    if (new TextEncoder().encode(text).length > REPORT_BYTE_LIMIT * 2)
+      return failed("unreadable", "the driver's report file is too large");
+    value = JSON.parse(text);
+  } catch (error) {
+    swallow(error, "the driver's report file does not read");
+    return failed("unreadable", "the driver's report file does not read");
+  }
+  if (
+    !isRecord(value) ||
+    value.schema !== DRIVER_REPORT_SCHEMA ||
+    value.launch !== launch
+  )
+    return failed(
+      "unreadable",
+      `the driver's report file is not one for launch record ${launch}`,
+    );
+  const checked = closingReportOf(JSON.stringify(value.report));
+  return checked.ok
+    ? ok(checked.value)
+    : failed(
+        "unreadable",
+        `the driver's report does not pass the check: ${checked.failure.reason}`,
+      );
+}

@@ -9,6 +9,13 @@ interface DriverRuntime {
    */
   stopLeftWork: { leftWork: boolean; tree: string } | null;
   /**
+   * The round of the last pass this driver started, review or repair, which
+   * every pass reads as `DRIVE_PR_ROUND`; `null` before the first. The
+   * closing report reads only the round report stamped with it
+   * (`closing-report.ts`).
+   */
+  passRound: number | null;
+  /**
    * Set when a held lock stops being this process's — named, so the refusal can
    * say which one. Written from the heartbeat timer, read by the round loop.
    */
@@ -74,6 +81,7 @@ interface DriverRuntime {
 
 export const driverRuntime: DriverRuntime = {
   stopLeftWork: null,
+  passRound: null,
   compromised: "",
   activePass: null,
   quotaSleepAbort: null,

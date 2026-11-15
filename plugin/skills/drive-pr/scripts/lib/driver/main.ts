@@ -82,6 +82,7 @@ import {
 } from "./ledger.ts";
 
 import { cardAfterDrive } from "./orca-card.ts";
+import { writeClosingReport } from "./closing-report.ts";
 
 import {
   type EffectivePass,
@@ -160,30 +161,41 @@ async function stateUnderLocks(
   return quotaRefusal(state, agent, windowReopened) ?? state;
 }
 
+/** What `main` learns of the drive as it starts, for what follows its end. */
+interface DriveContext {
+  pr: string;
+  dryRun: boolean;
+  /** The drive's state directory, once resolved; empty before. */
+  stateDir: string;
+}
+
 /**
  * Run the drive; whatever ends it once the PR is known (a return, a refusal,
- * a thrown failure) goes through `cardAfterDrive`, which moves nothing for a
- * dry run and for the stops no person settles.
+ * a thrown failure) goes through `afterDrive`: the closing report for the
+ * dispatcher's wrapper, and `cardAfterDrive`, which moves nothing for a dry
+ * run and for the stops no person settles.
  */
 export async function main(): Promise<number> {
-  const ctx = { pr: "", dryRun: false };
+  const ctx: DriveContext = { pr: "", dryRun: false, stateDir: "" };
   let exit: number;
   try {
     exit = await drive(ctx);
   } catch (error) {
-    if (ctx.pr !== "")
-      await cardAfterDrive(
-        ctx.pr,
-        error instanceof ExitError ? error.code : 1,
-        ctx.dryRun,
-      );
+    await afterDrive(ctx, error instanceof ExitError ? error.code : 1);
     throw error;
   }
-  if (ctx.pr !== "") await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
+  await afterDrive(ctx, exit);
   return exit;
 }
 
-async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
+/** The closing report, then the card, for a drive that ended with `exit`. */
+async function afterDrive(ctx: DriveContext, exit: number): Promise<void> {
+  if (ctx.pr === "") return;
+  if (!ctx.dryRun) await writeClosingReport(ctx.pr, exit, ctx.stateDir);
+  await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
+}
+
+async function drive(ctx: DriveContext): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   ctx.dryRun = options.dryRun;
   let { pr, keepDraft, handoffAt } = options;
@@ -238,6 +250,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // — see `worktreeLockName` for why the latter may not be keyed by anything a
   // second driver in the same tree can be configured to compute differently.
   const stateDir = await resolveStateDir();
+  ctx.stateDir = stateDir;
   const mailboxDir = await resolveMailboxDir();
 
   // The durable log. A drive is routinely armed as a background
