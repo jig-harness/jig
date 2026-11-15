@@ -171,14 +171,25 @@ export function parseRule(
 /**
  * The rule an entry's own fact keys make (`do_item.gates`, `do_item.guidance`):
  * the keys among the field's facts, each checked; a fact the field does not
- * test is refused, and the entry's other keys are its field's to check.
+ * test is refused, and any key beside the facts and the field's `results` is refused.
  */
 export function parseEntryRule(
   field: string,
   entry: Readonly<Record<string, unknown>>,
   at: string,
 ): Outcome<Rule, RuleFailure> {
-  const tested = ruleField(field).facts;
+  const { facts: tested, results } = ruleField(field);
+  const stray = Object.keys(entry).find(
+    (k) =>
+      results !== undefined &&
+      !results.includes(k) &&
+      !(FACT_NAMES as readonly string[]).includes(k),
+  );
+  if (stray !== undefined)
+    return failed(
+      "rule-invalid",
+      `${at}.${formatField([stray])} is not a known field (${[...tested, ...(results ?? [])].join(", ")})`,
+    );
   const untested = FACT_NAMES.find((f) => !tested.includes(f) && f in entry);
   if (untested !== undefined)
     return failed(
@@ -255,7 +266,7 @@ export interface MapEntry<T> {
 /**
  * A field written as a map from a value of its one fact to a result
  * (`do_item.agents.labels`): its entries in the order written, keys that
- * differ only in case kept once, the last written. `result` checks each
+ * the field's comparison treats as equal kept once, in the first one's place, with the last written value. `result` checks each
  * value; its failure reason is appended to the entry's path.
  */
 export function ruleMap<T>(
@@ -268,6 +279,11 @@ export function ruleMap<T>(
   if (!isRecord(raw))
     return failed("rule-invalid", `${field} must map ${describe}`);
   const byKey = new Map<string, MapEntry<T>>();
+  // Keys are one entry exactly when the field's comparison says they match.
+  const identity =
+    RULE_FACTS[onlyFact(field)].comparison === "contained-ignoring-case"
+      ? (key: string) => key.toLowerCase()
+      : fold;
   for (const [key, value] of Object.entries(raw)) {
     const at = `${field}.${key}`;
     if (key.trim() === "")
@@ -275,8 +291,7 @@ export function ruleMap<T>(
     const checked = result(value);
     if (!checked.ok)
       return failed("rule-invalid", `${at} ${checked.failure.reason}`);
-    byKey.delete(fold(key));
-    byKey.set(fold(key), { key, result: checked.value });
+    byKey.set(identity(key), { key, result: checked.value });
   }
   return ok([...byKey.values()]);
 }

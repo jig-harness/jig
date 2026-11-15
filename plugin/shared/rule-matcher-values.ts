@@ -136,6 +136,8 @@ export interface RuleField {
   readonly form: RuleForm;
   /** Words the field accepts in place of a list, and what each stands for. */
   readonly words?: Readonly<Record<string, string>>;
+  /** An entry-form field's result keys, beside the facts: no other key is allowed. */
+  readonly results?: readonly string[];
   /** The skills that read it. */
   readonly readBy: readonly string[];
   readonly meaning: string;
@@ -154,6 +156,7 @@ export const RULE_FIELDS: Readonly<Record<string, RuleField>> = {
     facts: ["labels", "paths"],
     list: "every",
     form: "entry",
+    results: ["skill"],
     readBy: ["do-item", "audit"],
     meaning:
       "The review skills that must approve a change before it is pushed.",
@@ -162,6 +165,7 @@ export const RULE_FIELDS: Readonly<Record<string, RuleField>> = {
     facts: ["labels", "paths"],
     list: "every",
     form: "entry",
+    results: ["skills", "notes"],
     readBy: ["do-item", "audit"],
     meaning: "The skills and notes the implementing agent is given.",
   },
@@ -176,7 +180,7 @@ export const RULE_FIELDS: Readonly<Record<string, RuleField>> = {
     facts: ["labels"],
     list: "lookup",
     form: "map",
-    readBy: ["do-item", "work-batch"],
+    readBy: ["do-item", "work-batch", "dispatch"],
     meaning:
       "The change area an item carrying the label reaches, for the area's agent and guidance.",
   },
@@ -234,7 +238,7 @@ export const RULE_FIELDS: Readonly<Record<string, RuleField>> = {
     facts: ["labels"],
     list: "one",
     form: "list",
-    readBy: ["work-batch"],
+    readBy: ["work-batch", "dispatch"],
     meaning:
       "Holds an item out of a batch, joined to the flags work-batch derives (the human-in-the-loop label and its facets, `manual-ops`, and every flag the catalog declares).",
   },

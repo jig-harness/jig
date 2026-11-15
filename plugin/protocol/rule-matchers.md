@@ -105,13 +105,13 @@ the one a reason names.
 | `do_item.gates` | labels, paths | `every` | `entry` | — | do-item, audit | The review skills that must approve a change before it is pushed. |
 | `do_item.guidance` | labels, paths | `every` | `entry` | — | do-item, audit | The skills and notes the implementing agent is given. |
 | `do_item.agents.labels` | labels | `lookup` | `map` | — | do-item, work-batch | The agent that implements an item carrying the label. |
-| `do_item.agents.codearea_areas` | labels | `lookup` | `map` | — | do-item, work-batch | The change area an item carrying the label reaches, for the area's agent and guidance. |
+| `do_item.agents.codearea_areas` | labels | `lookup` | `map` | — | do-item, work-batch, dispatch | The change area an item carrying the label reaches, for the area's agent and guidance. |
 | `do_item.agents.title_keywords` | title | `lookup` | `map` | — | do-item | The agent that implements an item whose title holds the keyword, beside the agents its labels choose. |
 | `pull_requests.labels_from_issue` | labels | `lookup` | `map` | — | do-item, audit | The label the pull request opens with for an item carrying the label. |
 | `pull_requests.reviewers_from_issue` | labels | `lookup` | `map` | — | do-item | The reviewers asked on the pull request for an item carrying the label. |
 | `routing.complex_flags` | labels | `one` | `list` | — | do-item, audit | Makes the item's complexity tier complex at any size, when the item or an area it reaches carries one of the flags. |
 | `routing.raise.flags` | labels | `one` | `list` | catalog: Every flag an area of the change-area catalog declares. | do-item, audit | Raises the implementer's effort one step. |
 | `routing.raise.sizes` | size | `one` | `list` | — | do-item, audit | Raises the implementer's effort one step; unset, the sizes `issue_tracker.labels.batch_sizes` leaves out. |
-| `work_batch.solo_flags` | labels | `one` | `list` | — | work-batch | Holds an item out of a batch, joined to the flags work-batch derives (the human-in-the-loop label and its facets, `manual-ops`, and every flag the catalog declares). |
+| `work_batch.solo_flags` | labels | `one` | `list` | — | work-batch, dispatch | Holds an item out of a batch, joined to the flags work-batch derives (the human-in-the-loop label and its facets, `manual-ops`, and every flag the catalog declares). |
 
 <!-- /protocol:generated -->

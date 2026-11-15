@@ -105,11 +105,34 @@ describe("list semantics", () => {
       "a label to an agent",
     );
     if (!entries.ok) throw new Error(entries.failure.reason);
-    expect(entries.value.map((e) => e.result)).toEqual(["api", "ui"]);
+    expect(entries.value.map((e) => e.result)).toEqual(["ui", "api"]);
     const found = lookup("do_item.agents.labels", entries.value, {
       labels: ["back", "front"],
     });
     expect(found.map((m) => m.result)).toEqual(["api", "ui"]);
+  });
+
+  it("a map keeps a replaced key's place and, for titles, tells keys apart by case only", () => {
+    const run = (field: string, raw: Record<string, unknown>) => {
+      const r = ruleMap(field, raw, (v) => ok(String(v)), "x");
+      if (!r.ok) throw new Error(r.failure.reason);
+      return r.value.map((e) => e.result);
+    };
+    expect(
+      run("do_item.agents.title_keywords", { fix: "a", " fix ": "b" }),
+    ).toEqual(["a", "b"]);
+    expect(
+      run("do_item.agents.title_keywords", { fix: "a", bug: "c", FIX: "b" }),
+    ).toEqual(["b", "c"]);
+  });
+
+  it("an entry refuses a key that is neither a fact nor a result of its field", () => {
+    const r = parseEntryRule(
+      "do_item.gates",
+      { label: ["security"], paths: ["db/**"], skill: "s" },
+      "do_item.gates[0]",
+    );
+    expect(r.ok).toBe(false);
   });
 
   it("one: the field is one rule", () => {

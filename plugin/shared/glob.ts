@@ -5,6 +5,19 @@
  * repository writes it.
  */
 import { JigError } from "./outcome.ts";
+
+// A long-lived process (the dispatcher) sees many configurations over its
+// lifetime; a cache holds the most recent globs only, oldest dropped first.
+const CACHE_LIMIT = 1024;
+
+function remember<T>(cache: Map<string, T>, glob: string, value: T): void {
+  if (cache.size >= CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+  cache.set(glob, value);
+}
+
 const globCache = new Map<string, RegExp>();
 
 // Each helper reads the token starting at `i` and returns its regular
@@ -41,7 +54,7 @@ export function globToRegExp(glob: string): RegExp {
   const hit = globCache.get(glob);
   if (hit !== undefined) return hit;
   const compiled = compileGlob(glob);
-  globCache.set(glob, compiled);
+  remember(globCache, glob, compiled);
   return compiled;
 }
 
@@ -218,7 +231,7 @@ function automatonOf(glob: string): Automaton {
     return at;
   };
   a.accept = sequence(state());
-  automata.set(glob, a);
+  remember(automata, glob, a);
   return a;
 }
 

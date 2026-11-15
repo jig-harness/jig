@@ -32,4 +32,8 @@ describe("work_batch.solo_flags", () => {
   it("compares a label ignoring case, naming the flag as the list spells it", () => {
     expect(solo(["Privacy-Review"])).toBe("privacy-review");
   });
+
+  it("matches the human-in-the-loop facets ignoring case", () => {
+    expect(solo(["HITL:Security"])).toBe("HITL:Security");
+  });
 });

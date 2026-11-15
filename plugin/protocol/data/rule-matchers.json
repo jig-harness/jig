@@ -339,7 +339,7 @@
       "list": "lookup",
       "form": "map",
       "words": null,
-      "readBy": "do-item, work-batch",
+      "readBy": "do-item, work-batch, dispatch",
       "meaning": "The change area an item carrying the label reaches, for the area's agent and guidance."
     },
     {
@@ -437,7 +437,7 @@
       "list": "one",
       "form": "list",
       "words": null,
-      "readBy": "work-batch",
+      "readBy": "work-batch, dispatch",
       "meaning": "Holds an item out of a batch, joined to the flags work-batch derives (the human-in-the-loop label and its facets, `manual-ops`, and every flag the catalog declares)."
     }
   ],
