@@ -17,8 +17,6 @@ export interface HeldPhrase {
 const lineEndings = (text: string): string => text.replaceAll("\r\n", "\n");
 
 /** HTML comments are not operational Markdown, so they cannot satisfy a check. */
-const protectedFencedCommentOpener = "\uE000held-comment-opener\uE001";
-
 function withoutHtmlComments(text: string): string {
   let visible = "";
   let cursor = 0;
@@ -56,23 +54,6 @@ function withoutHtmlComments(text: string): string {
     if (end < 0) return visible;
     cursor = end + "-->".length;
   }
-}
-
-/** Preserve literal comment openers in fenced examples while comments are stripped. */
-function protectFencedCommentOpeners(source: string): string {
-  let fence: { char: "`" | "~"; length: number } | undefined;
-  return source
-    .split("\n")
-    .map((line) => {
-      if (fence !== undefined) {
-        if (closesFence(line, fence, 0)) fence = undefined;
-        return line.replaceAll("<!--", protectedFencedCommentOpener);
-      }
-      const marker = fenceMarker(line);
-      if (marker !== null) fence = marker;
-      return line;
-    })
-    .join("\n");
 }
 
 /** A backslash escapes a delimiter when it is preceded by an odd backslash run. */
@@ -227,27 +208,59 @@ function isIndentedCode(line: string, listIndent: number | undefined): boolean {
   return leading >= (listIndent === undefined ? 4 : listIndent + 4);
 }
 
+interface ClassifiedLine {
+  /** The line as prose sees it: empty where a code example stood. */
+  readonly prose: string;
+  /** The original line when it belongs to a code example. */
+  readonly code: string | null;
+}
+
+/** Whether an HTML comment is still open at the end of `line`. */
+function commentOpenAfter(line: string, open: boolean): boolean {
+  // Matched inline code spans on one line cannot open or close a comment.
+  let rest = line.replaceAll(/(`+)[^`]*?\1(?!`)/g, "");
+  let isOpen = open;
+  while (true) {
+    const token = isOpen ? "-->" : "<!--";
+    const at = rest.indexOf(token);
+    if (at < 0) return isOpen;
+    rest = rest.slice(at + token.length);
+    isOpen = !isOpen;
+  }
+}
+
 /**
- * Visible Markdown lines, preserving headings while excluding code examples.
+ * Markdown lines classified once: prose, or a code example kept apart.
  *
  * Held instructions live in prose. A command example can legitimately repeat an
  * exit code or even resemble a heading, so it must neither delimit a section
- * nor satisfy the held-value check. Empty separators prevent excluded blocks
- * from joining phrase fragments that were not adjacent in the source.
+ * nor satisfy the held-value check. A fence marker inside an HTML comment is
+ * comment text, so it opens no example. Empty prose lines prevent excluded
+ * blocks from joining phrase fragments that were not adjacent in the source.
  */
-function visibleLines(source: string): string[] {
-  const lines: string[] = [];
+function classifyLines(source: string): ClassifiedLine[] {
+  const lines: ClassifiedLine[] = [];
   let fence:
     | { char: "`" | "~"; length: number; containerIndent: number }
     | undefined;
   let indentedCode = false;
   let previousWasBlank = true;
+  let inComment = false;
   let listContainers: readonly ListContainer[] = [];
+  const codeLine = (line: string) => {
+    lines.push({ prose: "", code: line });
+    previousWasBlank = true;
+  };
   for (const line of source.split("\n")) {
     if (fence) {
       if (closesFence(line, fence, fence.containerIndent)) fence = undefined;
-      lines.push("");
-      previousWasBlank = true;
+      codeLine(line);
+      continue;
+    }
+    if (inComment) {
+      inComment = commentOpenAfter(line, true);
+      lines.push({ prose: line, code: null });
+      previousWasBlank = line.trim() === "";
       continue;
     }
     listContainers = nextListContainers(line, listContainers);
@@ -255,23 +268,21 @@ function visibleLines(source: string): string[] {
     const marker = fenceMarker(line, listIndent);
     if (marker !== null) {
       fence = { ...marker, containerIndent: listIndent };
-      lines.push("");
-      previousWasBlank = true;
+      codeLine(line);
       continue;
     }
     const indented = isIndentedCode(line, listIndent);
     if (indentedCode && (indented || line.trim() === "")) {
-      lines.push("");
-      previousWasBlank = true;
+      codeLine(line);
       continue;
     }
     indentedCode = previousWasBlank && indented;
     if (indentedCode) {
-      lines.push("");
-      previousWasBlank = true;
+      codeLine(line);
       continue;
     }
-    lines.push(line);
+    inComment = commentOpenAfter(line, false);
+    lines.push({ prose: line, code: null });
     previousWasBlank = line.trim() === "";
   }
   return lines;
@@ -285,9 +296,10 @@ function sectionOf(
 ): string | null {
   // Remove block-code contexts before looking for comments. A literal comment
   // token in a fenced example is data, not an HTML comment in this document.
-  const lines = withoutHtmlComments(visibleLines(source).join("\n")).split(
-    "\n",
-  );
+  const classified = classifyLines(source);
+  const lines = withoutHtmlComments(
+    classified.map(({ prose }) => prose).join("\n"),
+  ).split("\n");
   const headings = lines
     .map((line, index) => ({ index, parsed: markdownHeading(line) }))
     .filter(
@@ -303,15 +315,16 @@ function sectionOf(
     ({ index, parsed }) =>
       index > start.index && parsed.level <= start.parsed.level,
   );
-  if (!includeCodeExamples)
-    return lines.slice(start.index, next?.index).join("\n");
-  // `visibleLines` retains one line for every source line, so its heading
-  // boundaries also locate the raw command examples in this section.
-  return withoutHtmlComments(
-    protectFencedCommentOpeners(
-      source.split("\n").slice(start.index, next?.index).join("\n"),
-    ),
-  ).replaceAll(protectedFencedCommentOpener, "<!--");
+  // Every source line keeps its position, so the section's lines can take
+  // their code examples back from the classification without a second parse.
+  return lines
+    .slice(start.index, next?.index)
+    .map((line, offset) =>
+      includeCodeExamples
+        ? (classified[start.index + offset]?.code ?? line)
+        : line,
+    )
+    .join("\n");
 }
 
 /** Escape literal text for the small semantic-pattern check below. */

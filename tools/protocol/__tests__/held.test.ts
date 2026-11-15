@@ -234,6 +234,18 @@ test("held phrases preserve comment syntax in opted-in fenced examples", () => {
     "## Operational instruction\n\n~~~text\n<!--\n~~~\n\nrun --command stop\n",
   );
   expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n1. Example:\n\n    ~~~text\n    <!--\n    ~~~\n\nrun --command stop\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n<!--\n~~~text\n-->\n<!-- run --command stop -->\n~~~\n",
+  );
+  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
 });
 
 test("held phrases recognize headings without backtracking over closing hashes", () => {
