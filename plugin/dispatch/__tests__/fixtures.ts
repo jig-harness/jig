@@ -359,7 +359,7 @@ if (file === null) { process.stdout.write(JSON.stringify({ ok: false, error: { c
 answer(JSON.parse(fs.readFileSync(F + "/" + file, "utf8")));
 `;
 
-/** The drive the wrapper starts in tests: it records how it was started, runs while `drive-hold` exists, and exits with `drive-exit`'s code. */
+/** The drive the wrapper starts in tests: it records how it was started, runs while `drive-hold` exists, writes `drive-report` to the report file the wrapper named, and exits with `drive-exit`'s code. */
 const FAKE_DRIVE = `const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
 fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
@@ -371,11 +371,16 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? null,
   openaiKey: process.env.OPENAI_API_KEY ?? null,
   launch: process.env.JIG_LAUNCH ?? null,
+  report: process.env.JIG_DRIVER_REPORT ?? null,
 }) + "\\n");
 const until = Date.now() + 60000;
 if (fs.existsSync(F + "/drive-stderr")) process.stderr.write(fs.readFileSync(F + "/drive-stderr"));
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);
 if (fs.existsSync(F + "/drive-output")) process.stdout.write(fs.readFileSync(F + "/drive-output"));
+if (fs.existsSync(F + "/drive-report") && process.env.JIG_DRIVER_REPORT) {
+  fs.mkdirSync(require("node:path").dirname(process.env.JIG_DRIVER_REPORT), { recursive: true });
+  fs.writeFileSync(process.env.JIG_DRIVER_REPORT, fs.readFileSync(F + "/drive-report"));
+}
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 

@@ -148,6 +148,8 @@ export function driveRuns(w: World): Array<{
   openaiKey: string | null;
   /** The launch the wrapper named in the drive's environment (`JIG_LAUNCH`). */
   launch: string | null;
+  /** The file the wrapper named for the driver's closing report (`JIG_DRIVER_REPORT`). */
+  report: string | null;
 }> {
   const path = join(w.dir, "drive-runs.jsonl");
   if (!existsSync(path)) return [];

@@ -26,6 +26,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readRecord } from "../lib/launches.ts";
+import { driverReportFile } from "../lib/run-report.ts";
 import { bootId } from "../../shared/liveness.ts";
 import { formatReceipt } from "../lib/report.ts";
 import { writeWall } from "../lib/walls.ts";
@@ -189,6 +190,7 @@ describe("jig dispatch --apply on Codex accounts", () => {
         anthropicKey: null,
         openaiKey: null,
         launch: id,
+        report: driverReportFile(id, dispatchState(w)),
       },
     ]);
     await waitFor("the exit", () => exitWritten(w, id));

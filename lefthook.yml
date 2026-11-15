@@ -28,6 +28,8 @@ pre-commit:
         - "biome.json"
         - "package.json"
         - "bun.lock"
+        - "plugin/send/lib/verb-values.ts"
+        - "plugin/shared/address.ts"
         - "plugin/shared/autonomy-values.ts"
         - "plugin/shared/errors.ts"
         - "plugin/shared/fixture-observer.ts"

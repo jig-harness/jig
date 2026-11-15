@@ -18,7 +18,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 34;
+const DISPATCH_DB = 35;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const REFLECT = "skills/reflect/scripts/";
@@ -180,6 +180,13 @@ export const DRIVE_STATE: RecordKind[] = [
     "pass-handoff",
   ),
   driveFile(
+    "drive-round-report",
+    `${STATE}round-report.ts`,
+    "drive-pr-<PR>.round-report.json",
+    "What a drive pass's round concluded, in the fields of a closing report, stamped with the pass's launch and round; each pass's replaces the one before it. The driver reads the last one of its own launch into the closing report it writes at its stop.",
+    "round-report",
+  ),
+  driveFile(
     "drive-report-memory",
     `${DRIVE}lib/morning-report.ts`,
     "drives-report.json",
@@ -239,6 +246,14 @@ export const DISPATCHER: RecordKind[] = [
     `${DISPATCH_DIR}tick.lock, observe/<16 hex>.lock, tick-index`,
     0,
     "The locks that let one tick act on the machine at a time and one tick read and act on each repository at a time. A tick that cannot take a repository's lock leaves the repository to the tick that holds it.",
+  ),
+  plain(
+    "machine",
+    "dispatch-driver-report",
+    "dispatch/lib/run-report.ts",
+    `${DISPATCH_DIR}runs/<record>/drive-report.json`,
+    0,
+    "The closing report a dispatched drive's driver wrote at its stop, stamped with its launch record, for the wrapper to check and record under that record once the drive ended; the wrapper removes it then.",
   ),
   plain(
     "machine",

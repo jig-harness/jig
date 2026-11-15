@@ -396,6 +396,39 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.245.0] - 2026-11-15
+
+### Added
+
+- A drive the dispatcher runs now leaves a closing report too, written by its driver. Every drive pass ends its round with a round report, the same fields as a closing report, through the new `round-report.ts`; it is kept in the drive's state directory, stamped with the pass's launch and round, and never in the handoff narrative. When `drive.ts` stops, it composes the closing report: the stop's own line followed by what the last round report of its launch concluded, within 600 characters, and the cause and next step the terminal-state table now gives each exit (printed in the protocol's chapter on the drive's exits). At a park it carries the first parked decision's question and framed options. The wrapper records the report under the launch record before the exit, and prints whatever report a run keeps as its last lines; a follow-up pass that could not start gets the wrapper's own report, with cause `startup` or `usage-limit`. See [plugin/README.md](plugin/README.md#the-closing-report).
+- The launch record of a dispatched drive keeps each round's pass session id, so a run is found in its vendor's transcripts (dispatch database schema 35).
+- The end the wrapper writes onto a shared claim, a drive's launch claim or a follow-up marker, now names who wrote the run's closing report (`by`) and its `cause`, never the report's text.
+- The Jig Protocol has a provisional chapter on addresses and the verbs of
+  `jig send` ([plugin/protocol/addresses.md](plugin/protocol/addresses.md)):
+  the form of an address, the stations it names with what each one's key is,
+  and every verb with the stations that take it, whether it is a person's
+  command, its arguments and what it asks for. Its values are generated from
+  the tables `jig ask` and `jig send` parse with, and its data file,
+  `plugin/protocol/data/addresses.json`, carries them for a program that
+  forms addresses or sends verbs.
+
+## [0.244.2] - 2026-11-15
+
+### Fixed
+
+- A drive no longer stops on its own working files in a repository that
+  does not ignore `.context/`. The handoff, mailbox and other files the
+  drive writes there used to show up as untracked changes, and the attach,
+  the push and the convergence check refused the tree until a person added
+  an exclude by hand. The attach (`attach-pr.ts`, alone or under
+  `drive.ts`) and `drive.ts` now add `.context/` to the clone's local
+  exclude file (`info/exclude`, never committed) when the repository's
+  ignore rules do not cover it, once, keeping the lines already there. A
+  repository that already ignores `.context/` is left as it is, and every
+  file outside `.context/` is judged as before.
+- `drive-pr`: after review converges, the drive's final status re-read now judges the same view as its round gate (the drive's `--bots-only`, `--no-head-sync` and inherited head), so a person's open thread under `--bots-only` no longer makes the drive re-gate every half minute for as long as it lives. A re-read that still disagrees with the gate on one commit re-gates at most `DRIVE_PR_FINAL_REGATE_LIMIT` times in a row (default 3), then stops with exit `1`, naming what the re-read saw and the command that shows it.
+- `drive-pr`: a CI-hold release that fails without printing an error now leaves its cause in the driver log: which step failed, whether it was stopped at its deadline or from outside, and the command that shows its own error.
+
 ## [0.244.1] - 2026-11-15
 
 ### Fixed
@@ -8632,7 +8665,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.244.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.245.0...HEAD
+[0.245.0]: https://github.com/jig-harness/jig/compare/v0.244.2...v0.245.0
+[0.244.2]: https://github.com/jig-harness/jig/compare/v0.244.1...v0.244.2
 [0.244.1]: https://github.com/jig-harness/jig/compare/v0.244.0...v0.244.1
 [0.244.0]: https://github.com/jig-harness/jig/compare/v0.243.0...v0.244.0
 [0.243.0]: https://github.com/jig-harness/jig/compare/v0.242.0...v0.243.0

@@ -2385,10 +2385,19 @@ make, use the entry's term instead.
   the *steward*'s *headless pass* writes it as its last act through
   `jig dispatch report`, which keeps it on the launch record and its fields
   on the run's row of the outcome log; for a drive, whose last pass cannot
-  know it is last, the driver writes it when the drive stops. The *steward*
+  know it is last, the driver writes it when the drive stops, from its own
+  stop and the last *round report*, and the dispatcher's wrapper records
+  it. The wrapper prints the report as the run's last lines. The *steward*
   reads a run's transcript only when the run left no report. Designed in
   [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
   [ROADMAP.md](ROADMAP.md) item 51.
+- **Round report** — what one pass of a drive concluded about its round, in
+  the fields of a *closing report*, written by the pass as its last act
+  (`round-report.ts`) to the drive's state directory, stamped with the
+  pass's launch and round, and never into the handoff narrative. When the
+  drive stops, the driver's own closing report ends with the `concluded`
+  of the last round report of its launch. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report).
 - **Process runtime** — a *session runtime* that runs a *headless pass* as
   a plain managed process in a git worktree Jig opens itself, with no
   terminal and no desktop app; a host chooses it in its machine dispatch
