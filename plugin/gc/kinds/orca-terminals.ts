@@ -49,6 +49,8 @@ const TABLE_CALL_SEC = 10;
 interface Listed {
   /** Epoch milliseconds of the terminal's last output; null when Orca has none. */
   lastOutputAt: number | null;
+  /** Orca sent a last-output value that is not a time: the tab's activity is unknown. */
+  invalidOutput: boolean;
 }
 
 /** Orca's terminals by handle, and whether the listing covers every terminal. */
@@ -62,20 +64,44 @@ function readListing(result: Record<string, unknown>): Listing | string {
   if (!Array.isArray(result.terminals))
     return "orca terminal list answered without a terminal list";
   const terminals = new Map<string, Listed>();
+  let wellFormed = true;
   for (const terminal of result.terminals) {
-    if (!isRecord(terminal) || typeof terminal.handle !== "string") continue;
-    const last = terminal.lastOutputAt;
-    terminals.set(terminal.handle, {
-      lastOutputAt:
-        typeof last === "number" && Number.isFinite(last) ? last : null,
-    });
+    const row = readTerminal(terminal);
+    if (row === null || terminals.has(row.handle)) wellFormed = false;
+    else terminals.set(row.handle, row.listed);
   }
+  return {
+    terminals,
+    complete:
+      wellFormed && coversEveryHost(result) && result.truncated === false,
+  };
+}
+
+/** Whether `hostScope` names its hosts and omits none. */
+function coversEveryHost(result: Record<string, unknown>): boolean {
   const scope = result.hostScope;
-  const everyHost =
+  return (
     isRecord(scope) &&
+    Array.isArray(scope.hostIds) &&
     Array.isArray(scope.omittedHostIds) &&
-    scope.omittedHostIds.length === 0;
-  return { terminals, complete: everyHost && result.truncated !== true };
+    scope.omittedHostIds.length === 0
+  );
+}
+
+/** One terminal row of the listing; null when it is not a row with a handle. */
+function readTerminal(
+  terminal: unknown,
+): { handle: string; listed: Listed } | null {
+  if (!isRecord(terminal) || typeof terminal.handle !== "string") return null;
+  const last = terminal.lastOutputAt;
+  const valid = typeof last === "number" && Number.isFinite(last);
+  return {
+    handle: terminal.handle,
+    listed: {
+      lastOutputAt: valid ? last : null,
+      invalidOutput: !valid && last !== null && last !== undefined,
+    },
+  };
 }
 
 async function listTerminals(
@@ -150,6 +176,11 @@ function runTabProof(
     return {
       state: "live",
       reason: `its shell (PID ${tab.shellPid}) has a child process`,
+    };
+  if (listed.invalidOutput)
+    return {
+      state: "unverified",
+      reason: "Orca's last output for the tab is not a time",
     };
   const last = lastActivity(tab, listed);
   if (last === null)

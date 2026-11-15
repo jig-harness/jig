@@ -189,6 +189,39 @@ describe("the orca-terminals kind's proof", () => {
     expect(proof.reason).toContain("inside the 24-hour guard");
   });
 
+  test("an invalid output time, a duplicate handle or a missing truncation flag keeps the tab", async () => {
+    record();
+    const bad = JSON.stringify({
+      ok: true,
+      result: {
+        terminals: [{ handle: "term_old", lastOutputAt: "invalid" }],
+        hostScope: { hostIds: ["local"], omittedHostIds: [] },
+        truncated: false,
+      },
+    });
+    const dup = JSON.stringify({
+      ok: true,
+      result: {
+        terminals: [{ handle: "x" }, { handle: "x" }],
+        hostScope: { hostIds: ["local"], omittedHostIds: [] },
+        truncated: false,
+      },
+    });
+    const noFlag = JSON.stringify({
+      ok: true,
+      result: {
+        terminals: [],
+        hostScope: { hostIds: ["local"], omittedHostIds: [] },
+      },
+    });
+    for (const list of [bad, dup, noFlag]) {
+      const k = kind(fakeOrca([], { list }).runner, [shell()]);
+      const [tab] = await inventory(k);
+      const proof = await k.prove(tab as Resource);
+      expect(proof.state).toBe("unverified");
+    }
+  });
+
   test("a tab opened inside the guard is kept though Orca has no output time", async () => {
     record({ openedAt: isoFromMs(NOW - HOUR) });
     const k = kind(fakeOrca([{ handle: "term_old" }]).runner, [shell()]);
@@ -327,6 +360,97 @@ const JIG = resolve(import.meta.dir, "../../jig.ts");
 describe.skipIf(
   skipsOnWindows("process-lifecycle", "the tab's shell is read through ps"),
 )("jig gc --kind orca-terminals", () => {
+  test("a tab whose shell has a child is neither reported collectable nor closed", async () => {
+    const home = join(root, "home");
+    const bin = join(root, "bin");
+    const log = join(root, "orca-calls.log");
+    mkdirSync(join(home, ".jig"), { recursive: true });
+    mkdirSync(bin);
+    const orca = join(bin, "orca-ide");
+    writeFakeProgram(
+      orca,
+      `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, args.join(" ") + "\\n");
+const result = args[1] === "list"
+  ? { terminals: [{ handle: "term_old", lastOutputAt: null }], hostScope: { hostIds: ["local"], omittedHostIds: [] }, truncated: false }
+  : {};
+console.log(JSON.stringify({ ok: true, result }));
+`,
+    );
+    writeFileSync(
+      join(home, ".jig", "jig.yaml"),
+      dump({ gc: { orca: { command: orca } } }),
+    );
+    // A shell running a command: `sleep` is its child.
+    const busy = Bun.spawn(["sh", "-c", "sleep 120; sleep 1"], {
+      stdout: "ignore",
+    });
+    try {
+      let start = "";
+      for (let i = 0; i < 50 && start === ""; i++) {
+        const rows = await processTable();
+        const child = rows?.some((r) => r.ppid === busy.pid);
+        start = child
+          ? (rows?.find((r) => r.pid === busy.pid)?.start ?? "")
+          : "";
+        if (start === "") await Bun.sleep(100);
+      }
+      expect(start).not.toBe("");
+      const tabs = join(home, ".local", "state", "jig", "orca-tabs");
+      mkdirSync(tabs, { recursive: true });
+      writeFileSync(
+        join(tabs, "term_old.json"),
+        JSON.stringify({
+          version: 1,
+          handle: "term_old",
+          tabId: "tab-old",
+          shellPid: busy.pid,
+          shellStart: start,
+          worktree: root,
+          subject: "pr:42",
+          title: "drive #42",
+          orca: "/elsewhere/orca",
+          openedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+      const run = Bun.spawnSync(
+        [
+          process.execPath,
+          "--no-env-file",
+          `--config=${join(dirname(JIG), "gc", "bunfig.toml")}`,
+          JIG,
+          "gc",
+          "--kind",
+          "orca-terminals",
+          "--json",
+          "--collect",
+        ],
+        {
+          cwd: root,
+          env: {
+            PATH: process.env.PATH,
+            HOME: home,
+            USERPROFILE: home,
+            JIG_HOME: join(home, ".jig"),
+            RESOURCE_LOCK_BYPASS: "1",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: 30000,
+        },
+      );
+      expectSpawnExit(run, 0);
+      const receipt = JSON.parse(run.stdout.toString()) as Receipt;
+      expect(receipt.resources[0]?.outcome).not.toBe("collected");
+      expect(readFileSync(log, "utf8")).not.toContain("close");
+      expect(existsSync(join(tabs, "term_old.json"))).toBe(true);
+    } finally {
+      busy.kill();
+    }
+  });
+
   test("reports an idle run tab without closing it, then closes its terminal when collecting", async () => {
     const home = join(root, "home");
     const bin = join(root, "bin");
