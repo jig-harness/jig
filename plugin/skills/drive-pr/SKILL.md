@@ -1452,6 +1452,10 @@ waiting indefinitely.
 Backgrounding is for an `--interactive` session only, whose process survives to
 receive the notification.
 
+**Every driver pass ends with its round report** (§ 8), a repair round's
+too: the driver reads the last one into the closing report it writes at its
+stop.
+
 **A notice from the driver.** When `$DRIVE_PR_PASS_NOTICE` is set, read it
 before § 0: the driver recovered from a stop without a person and tells this
 pass what it inherits. Its first line names the case, and a notice can carry
@@ -3274,6 +3278,37 @@ named, such as `finish-round.ts` exit `3`, `REFUSED_UNCLEAN`), what the tree
 holds, and what would unblock it. Write it in this round, even when an
 earlier pass wrote one: a stall stop prints what the last round recorded, so
 the paragraph a person reads is the refusal that stands now.
+
+**Under a driver, end the round with its round report.** When
+`$DRIVE_PR_ROUND` is set, the last act of every driver pass, a repair
+round's (§ 0) included, is its round report: what this round concluded, in
+the fields of a closing report (`closing-report/v1`, the record
+`jig dispatch report` takes). `concluded` (at most 600
+characters) says what the round did or why it stopped; `suggested_next` has
+the `step` you suggest (at most 300 characters) and its `owner`: `line`, or
+`person` with an `act` (`Merge`, `Decide`, `Authorize`, `Reply`, `Do`,
+`Investigate`), or `none`; add a `cause` from its closed list when the round
+fell short (`needs-person`, `refused`, `tool-failed`, `environment`,
+`scope`, `deadline`, `unknown`), and up to 10 `evidence` references
+(`pr:#12`, `commit:<sha>`, `path:<path>`). It names no secret and no
+person's data, and it never goes into the handoff narrative, whose last
+lines the drive ledger posts on the pull request. Write it to
+`.context/scratch/round-report.json`, then:
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/round-report.ts" .context/scratch/round-report.json
+```
+
+It checks the report as `jig dispatch report` does and keeps it in the
+drive's state directory, stamped with this pass's launch and round; a
+refusal (exit `2`) names every problem: fix them and run it again. Each
+pass's report replaces the one before it. No pass knows it is the last, so
+every pass writes one: when `drive.ts` stops, it opens its own closing
+report with the stop and follows it with the `concluded` of the last round
+report of its launch. A question for a person and its framed decision reach
+that report only from a park (§ 4), never from a round report.
 
 Your per-round report is qualitative. The quantitative half — what the loop has
 cost so far — is § What the loop cost below, and `drive.ts` prints it for you

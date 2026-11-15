@@ -155,7 +155,7 @@ nothing requires it.
   asked.
 - **A person's act is made with that person's credential.** Merging,
   answering a park and every write a dashboard makes for a person go from
-  the person's own machine, as the person, never through the hub. The hub
+  the person's own machine or browser, as the person, never through the hub. The hub
   holds no person's credential. The one exception is a request made through
   the hub's chat bridge, posted under the bridge's identity and naming the
   person the chat authenticated

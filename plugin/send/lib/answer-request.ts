@@ -14,6 +14,7 @@ import {
   answerKeyFault,
   answerTextFault,
 } from "../../skills/drive-pr/scripts/lib/answer-comment.ts";
+import { ANSWER_ARGS } from "./verb-values.ts";
 
 /** The answer flags `jig send` takes, as its command line parsed them. */
 export interface AnswerFlags {
@@ -41,10 +42,6 @@ export type AnswerRequest =
       decision?: string;
     }
   | { verb: "answer"; all: true; decisionSet?: string };
-
-/** The arguments `answer` takes, as a usage error names them. */
-export const ANSWER_ARGS =
-  "<key> <text> | <key> --approve|--choose <option> [--note <text>] [--decision <digest>] | --all --approve [--decision-set <token>]";
 
 /** The flags set, by name, for a usage error that refuses them. */
 export function answerFlagsSet(flags: AnswerFlags): string[] {

@@ -47,6 +47,7 @@ import {
   passLaunch,
 } from "./../../../../../shared/launched-session.ts";
 
+import { swallow } from "../../../../../shared/errors.ts";
 import { driverRuntime } from "./runtime.ts";
 
 import { startHeartbeat } from "./identity.ts";
@@ -83,6 +84,7 @@ import {
 } from "./ledger.ts";
 
 import { cardAfterDrive } from "./orca-card.ts";
+import { writeClosingReport } from "./closing-report.ts";
 
 import {
   type EffectivePass,
@@ -161,30 +163,54 @@ async function stateUnderLocks(
   return quotaRefusal(state, agent, windowReopened) ?? state;
 }
 
+/** What `main` learns of the drive as it starts, for what follows its end. */
+interface DriveContext {
+  pr: string;
+  dryRun: boolean;
+  /** The drive's state directory, once resolved; empty before. */
+  stateDir: string;
+  /**
+   * The drive's state as it stood at the stop, read while the driver still
+   * held its locks (`undefined` when it stopped before holding them), so a
+   * successor that takes them over cannot change what the report says.
+   */
+  stoppedState?: { state: DriveState | null };
+}
+
 /**
  * Run the drive; whatever ends it once the PR is known (a return, a refusal,
- * a thrown failure) goes through `cardAfterDrive`, which moves nothing for a
- * dry run and for the stops no person settles.
+ * a thrown failure) goes through `afterDrive`: the closing report for the
+ * dispatcher's wrapper, and `cardAfterDrive`, which moves nothing for a dry
+ * run and for the stops no person settles.
  */
 export async function main(): Promise<number> {
-  const ctx = { pr: "", dryRun: false };
+  const ctx: DriveContext = { pr: "", dryRun: false, stateDir: "" };
   let exit: number;
   try {
     exit = await drive(ctx);
   } catch (error) {
-    if (ctx.pr !== "")
-      await cardAfterDrive(
-        ctx.pr,
-        error instanceof ExitError ? error.code : 1,
-        ctx.dryRun,
-      );
+    await afterDrive(ctx, error instanceof ExitError ? error.code : 1);
     throw error;
   }
-  if (ctx.pr !== "") await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
+  await afterDrive(ctx, exit);
   return exit;
 }
 
-async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
+/** The closing report, then the card, for a drive that ended with `exit`. */
+async function afterDrive(ctx: DriveContext, exit: number): Promise<void> {
+  if (ctx.pr === "") return;
+  if (!ctx.dryRun)
+    await writeClosingReport(
+      ctx.pr,
+      exit,
+      ctx.stateDir,
+      process.env,
+      ctx.stoppedState,
+    );
+  await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
+}
+
+async function drive(ctx: DriveContext): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   ctx.dryRun = options.dryRun;
   let { pr, keepDraft, handoffAt } = options;
@@ -239,6 +265,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // — see `worktreeLockName` for why the latter may not be keyed by anything a
   // second driver in the same tree can be configured to compute differently.
   const stateDir = await resolveStateDir();
+  ctx.stateDir = stateDir;
   const mailboxDir = await resolveMailboxDir();
 
   // The durable log. A drive is routinely armed as a background
@@ -333,6 +360,18 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     generation,
   });
   void lifecycle;
+  // Declared after the lock cleanups, so it is disposed before they run.
+  await using stopSnapshot = {
+    async [Symbol.asyncDispose](): Promise<void> {
+      if (ctx.dryRun) return;
+      const state = await readDriveState(pr).catch((error: unknown) => {
+        swallow(error, "the drive state could not be read for its report");
+        return null;
+      });
+      ctx.stoppedState = { state };
+    },
+  };
+  void stopSnapshot;
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
     // when a takeover would be admitted.

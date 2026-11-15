@@ -605,10 +605,17 @@ line spends. Jig stays whole without Orca:
 every view works in any browser, the machines reach each other through
 the hub where a person runs one, and each
 thing Orca adds has a Herdr or plain-text equivalent. Every write is the
-person's, made with their own credential, and the dashboard writes nothing until
-item 40 settles how a comment a pass posts under the person's login is
-told from the person's own; each commit then asks for proof that a person
-is present. Nothing of it is built. Built in stages, one pull request per
+person's, made with their own credential. A card's Send answers a parked
+decision from the person's browser with a token kept there, the host
+serving no write route and the dispatcher relaying nothing; every other
+act the page makes goes from the person's browser straight to the forge or
+tracker with the person's own token, after the physical-device probes pass
+([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md),
+[ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)),
+needing only the proof its class asks for. A commit the host makes waits
+until item 40 settles how a comment a pass posts
+under the person's login is told from the person's own, and each such
+commit then asks for proof that a person is present. Only the card's Send is built; the rest is built in stages, one pull request per
 step: the per-pull-request status on the dashboard that exists (rounds and
 resolved parks in the drive ledger, item 36's board read, the phone
 measurement fixture, Ready to merge and placement with the marks, a line one
@@ -868,10 +875,11 @@ chapters rendered on the site. Built in steps, one pull request each;
 built so far: the generator, its gate, the chapter on the drive's end
 states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
-repository supplies and on the follow-up claim and its result
+repository supplies and on the follow-up claim and its result, and the
+provisional chapter on addresses and the verbs of `jig send`
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
-Open, in order: the provisional chapters.
+Open, in order: the other provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the

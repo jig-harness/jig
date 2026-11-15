@@ -81,6 +81,7 @@ import {
   cancelledBeforeExecution,
 } from "./launches.ts";
 import { stateDb } from "./state.ts";
+import type { ReportCause, ReportWriter } from "../../shared/closing-report.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
 import { currentIso, currentMs, parseMs } from "../../shared/time.ts";
 
@@ -569,7 +570,16 @@ function endOfRecord(
     at: r.state.exit.at,
     exit: r.state.exit.code,
     outcome,
+    ...reportOfRun(r),
   };
+}
+
+/** What an end says of the run's closing report: who wrote it and its cause, never its text, since the claim is public. */
+function reportOfRun(r: ReadRecord): { by: ReportWriter; cause?: ReportCause } {
+  const kept = r.report ?? null;
+  if (kept === null) return { by: "none" };
+  const { cause } = kept.report;
+  return cause === undefined ? { by: kept.by } : { by: kept.by, cause };
 }
 
 /**
@@ -962,12 +972,16 @@ function markerEnd(
   byId: ReadonlyMap<string, ReadRecord>,
   nowIso: string,
 ): LaunchEnd | null {
-  if (written?.record === record)
+  if (written?.record === record) {
+    const launch = byId.get(record);
     return {
       state: "ended",
       at: written.at,
       exit: null,
       outcome: written.outcome,
+      // The report is the launch record's: kept while that record is.
+      ...(launch === undefined ? {} : reportOfRun(launch)),
     };
+  }
   return endOfRecord(byId.get(record), nowIso);
 }

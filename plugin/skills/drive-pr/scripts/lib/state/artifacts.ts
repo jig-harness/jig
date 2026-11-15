@@ -13,6 +13,7 @@ export type ArtifactFamily =
   | "log"
   | "pass-handoff"
   | "arm-output"
+  | "round-report"
   | "driver-observation";
 
 interface ClonePattern {
@@ -32,6 +33,10 @@ const CLONE_FILES: readonly ClonePattern[] = [
     family: "pass-handoff",
   },
   { re: /^drive-arm-([0-9]+)\.out$/, family: "arm-output" },
+  {
+    re: /^drive-pr-([0-9]+)\.round-report\.json(?:\.[0-9a-f]{6})?$/,
+    family: "round-report",
+  },
 ];
 
 /** A driver's process registry on Windows: `pr-drive-<PR>.processes.<lock token>`. */
