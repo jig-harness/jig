@@ -134,15 +134,18 @@ finished.
   also covers a pass whose result write failed, and waits until the host's
   health check passes. It stays one run again per follow-up, counted
   against the pull request's recovery budget; `failures.rerun_died: 0`
-  turns it off (#944).
+  turns it off, and it takes no bound above `1` (#944).
 - A pickup that died or recorded no result is not started afresh, which
   could be a second implementer: it takes the stalled pickup's
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
-  follow-up's question (#944).
-- These re-runs are the tick's rule, in `routine-reruns.ts`, never a
-  steward record: the tick decides them from its own records.
+  follow-up's question (#944). Until that relaunch (#950) is built, a
+  pickup whose result could not be written asks a person once, after the
+  health check passes, to settle or release its item.
+- These re-runs are the tick's rule, beside the routine re-runs
+  (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
+  tick decides them from its own records.
 
 #### A stalled pickup
 
@@ -486,9 +489,3 @@ on #884, whose health check it reads.
   a repository's maintainers decide, in its configuration.
 - **A sweep of the needs raised before this.** Clearing that backlog is a
   person's one-off task, not a mechanism.
-
-## Review
-
-Critiqued on 2026-11-12 by a reviewer with fresh context (a subagent that
-did not write it), against the draft of this design, its plan item and
-ADR-0018 on top of commit `96567939`.

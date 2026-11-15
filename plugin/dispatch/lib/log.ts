@@ -50,6 +50,7 @@ import {
   targetOf,
 } from "./launches.ts";
 import { sessionResultClass } from "./session-result-class.ts";
+import { unwrittenResult } from "./session-startup.ts";
 import { type ReportFields, reportFields } from "./closing-report-store.ts";
 import { stewardNoSubmitCause } from "./pass-output.ts";
 import { existingStateDb, stateDb } from "./state.ts";
@@ -408,6 +409,12 @@ function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
+  // Its question, if it asked one, is about the host that could not write its result: never a person's.
+  if (unwrittenResult(r))
+    return {
+      class: "died",
+      reason: `no result recorded: this host could not write it (since ${r.unwritten}); the host's health check reports the cause`,
+    };
   // A steward that did not submit has no outcome, even if its retained output
   // contains a Question line that the generic classifier can describe.
   if (r.record.action === "steward" && r.result === null)
