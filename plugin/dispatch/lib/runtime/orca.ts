@@ -6,7 +6,10 @@
  * request's head, and to an item by the issue Orca links to it or by its
  * branch carrying the item's key in the repository's branch form. Both
  * listings are host-wide: `sessionsOnce` reads each at most once for a
- * tick's observe phases and answers every repository from them.
+ * tick's observe phases and answers every repository from them. A
+ * `sessions` read given a signal starts no listing once it has aborted, and
+ * stops waiting for one in flight when it does; the listing itself runs on
+ * to its own timeout, its answer kept for another repository's read.
  *
  * Orca's command is the shared resolver's (`ORCA_CLI_COMMAND`, else the
  * command in `ORCA_CLI_BIN_DIR`), else the name Orca installs it under on
@@ -331,14 +334,39 @@ function memo<T>(read: () => Promise<T>): () => Promise<T> {
   };
 }
 
+/** `list`'s answer, or why not once `signal` has aborted: not started then, and no longer waited for when it aborts meanwhile. */
+async function unlessStopped(
+  name: string,
+  list: () => Promise<Record<string, unknown> | string>,
+  signal: AbortSignal | undefined,
+): Promise<Record<string, unknown> | string> {
+  const why = `the read was stopped before orca ${name} answered`;
+  if (signal === undefined) return await list();
+  if (signal.aborted) return `the read was stopped before orca ${name} ran`;
+  let stop: (() => void) | undefined;
+  const stopped = new Promise<string>((resolve) => {
+    stop = () => resolve(why);
+    signal.addEventListener("abort", stop, { once: true });
+  });
+  const listed = list();
+  // A listing no longer waited for may still fail: its failure is nobody's then.
+  listed.catch(() => undefined);
+  try {
+    return await Promise.race([listed, stopped]);
+  } finally {
+    if (stop !== undefined) signal.removeEventListener("abort", stop);
+  }
+}
+
 /** The workspaces of `repo` out of Orca's host-wide listings; the workspace listing is read only once the repository is found. */
 async function sessionsFrom(
   lists: HostLists,
   repo: RepoTarget,
   join: JoinTargets,
+  signal?: AbortSignal,
 ): Promise<SessionsReport> {
   const source = "orca worktree ps";
-  const listing = await lists.repos();
+  const listing = await unlessStopped("repo list", lists.repos, signal);
   if (typeof listing === "string")
     return { ok: false, source, reason: listing };
   const ids = repoIds(listing, repo);
@@ -355,7 +383,7 @@ async function sessionsFrom(
       source,
       reason: `no Orca repository is ${repo.path} or ${repo.slug}`,
     };
-  const ps = await lists.ps();
+  const ps = await unlessStopped("worktree ps", lists.ps, signal);
   if (typeof ps === "string") return { ok: false, source, reason: ps };
   const cut = partial(ps);
   if (cut !== null) return { ok: false, source, reason: cut };
@@ -390,12 +418,13 @@ export function orcaRuntime(
   return {
     name: "orca",
     interactiveBinding: binding,
-    sessions: (repo, join) => sessionsFrom(lists(), repo, join),
+    sessions: (repo, join, signal) => sessionsFrom(lists(), repo, join, signal),
     sessionsOnce() {
       const once = lists();
       const repos = memo(once.repos);
       const ps = memo(once.ps);
-      return (repo, join) => sessionsFrom({ repos, ps }, repo, join);
+      return (repo, join, signal) =>
+        sessionsFrom({ repos, ps }, repo, join, signal);
     },
     async openWorkspace(repo, target) {
       const found = await orcaRepo(repo, timeoutSec);
