@@ -618,7 +618,23 @@ export function jiraTracker(client: Client): Tracker {
       // A facet already at its value is no change, and no request.
       if (Object.keys(body).length === 0) return;
       signal?.throwIfAborted();
-      await transport({ method: "PUT", path: path(issue.key), body }, signal);
+      try {
+        await transport({ method: "PUT", path: path(issue.key), body }, signal);
+      } catch (error) {
+        // Jira answers a type change across workflows with a bare 400 on
+        // `issuetype`: keep its whole answer and add what that means.
+        if (
+          facet.typeMove !== undefined &&
+          error instanceof JiraApiError &&
+          error.status === 400 &&
+          error.errors.issuetype !== undefined
+        )
+          throw new TrackerRequestError(
+            "unresolved",
+            `${error.message}; Jira refused changing ${issue.key} from ${issue.issueType?.name ?? "its issue type"} to ${facet.typeMove.to} for type ${facet.typeMove.value}: Jira changes an issue type by an edit only between issue types of one workflow and field configuration, and the edit screen may not have listed the issue type choices to check beforehand; move ${issue.key} to ${facet.typeMove.to} in Jira, or keep type in labels or a field (store: label or store: field)`,
+          );
+        throw error;
+      }
     },
 
     async writeBlockedFields(key, value, signal, except = []) {

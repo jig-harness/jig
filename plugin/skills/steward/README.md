@@ -12,6 +12,13 @@ type or size, and the order of items tied under the queue's rules. Each
 missing-facet proposal records the steward and its reason on the issue.
 It frames the act and ask for every need that remains a person's.
 
+A resume the tick cannot apply is refused once, with its reason, and the
+digest then stops offering that pass: the pass framed a decision for a person,
+ended done, was already resumed, or holds no single recommended option. A
+refusal that depends on something that can change leaves the pass offered:
+the autonomy policy's human-decision classes, or a pass the steward named
+that is not in its digest or has not ended.
+
 Before filling a field, the tick re-reads the assignment and the field after
 recording its proposal. A value found nonempty is preserved. Tracker APIs
 do not combine that check and the write into one operation: a human edit
