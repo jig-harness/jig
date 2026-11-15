@@ -145,6 +145,33 @@ test("held phrases retain list continuations and inline-code comment tokens", ()
   expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
 });
 
+test("held phrases ignore escaped delimiters, nested fences, and tab-indented code", () => {
+  const root = tempDir("held-markdown-edge-cases");
+  const phrase = {
+    file: "skill.md",
+    text: "Exit `11` on the lock",
+    section: "## Operational instruction",
+  };
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\nAn escaped \\` marker.\n\n<!-- Exit `11` on the lock -->\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n1. Example:\n\n    ```text\n    Exit `11` on the lock\n    ```\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  put(
+    root,
+    "skill.md",
+    "## Operational instruction\n\n\tExit `11` on the lock\n",
+  );
+  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+});
+
 test("held phrases reject duplicate visible copies in an operational section", () => {
   const root = tempDir("held-duplicate");
   const phrase = {

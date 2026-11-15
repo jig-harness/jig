@@ -19,14 +19,14 @@ function withoutHtmlComments(text: string): string {
   let visible = "";
   let cursor = 0;
   while (true) {
-    const codeStart = text.indexOf("`", cursor);
+    const codeStart = nextUnescapedBacktick(text, cursor);
     const start = text.indexOf("<!--", cursor);
     if (start < 0 && codeStart < 0) return visible + text.slice(cursor);
     if (codeStart >= 0 && (start < 0 || codeStart < start)) {
       let end = codeStart;
       while (text[end] === "`") end += 1;
       const delimiter = text.slice(codeStart, end);
-      const close = text.indexOf(delimiter, end);
+      const close = closingDelimiter(text, delimiter, end);
       if (close < 0) return visible + text.slice(cursor);
       visible += text.slice(cursor, close + delimiter.length);
       cursor = close + delimiter.length;
@@ -41,9 +41,54 @@ function withoutHtmlComments(text: string): string {
   }
 }
 
+/** A backslash escapes a delimiter when it is preceded by an odd backslash run. */
+function isEscaped(text: string, index: number): boolean {
+  let slashes = 0;
+  for (
+    let cursor = index - 1;
+    cursor >= 0 && text[cursor] === "\\";
+    cursor -= 1
+  )
+    slashes += 1;
+  return slashes % 2 === 1;
+}
+
+function nextUnescapedBacktick(text: string, from: number): number {
+  for (
+    let index = text.indexOf("`", from);
+    index >= 0;
+    index = text.indexOf("`", index + 1)
+  )
+    if (!isEscaped(text, index)) return index;
+  return -1;
+}
+
+/** Find an unescaped inline-code closer with exactly the opening delimiter. */
+function closingDelimiter(
+  text: string,
+  delimiter: string,
+  from: number,
+): number {
+  for (let cursor = from; cursor < text.length; cursor += 1) {
+    if (text.startsWith(delimiter, cursor) && !isEscaped(text, cursor)) {
+      const beforeMatches = text[cursor - 1] === "`";
+      const afterMatches = text[cursor + delimiter.length] === "`";
+      if (!beforeMatches && !afterMatches) return cursor;
+    }
+  }
+  return -1;
+}
+
+/** Render indentation as Markdown columns, where a tab moves to the next stop. */
+function indentationColumns(text: string): number {
+  let columns = 0;
+  for (const char of text) columns += char === "\t" ? 4 - (columns % 4) : 1;
+  return columns;
+}
+
 function listContentIndent(line: string): number | null {
-  const match = /^( *)(?:[-+*]|\d+[.)])[ \t]+/.exec(line);
-  return match === null ? null : match[0].length;
+  const match = /^(?:[ \t]*)(?:[-+*]|\d+[.)])[ \t]+/.exec(line);
+  return match === null ? null : indentationColumns(match[0]);
 }
 
 /** An ATX heading outside code, normalized to the form declarations use. */
@@ -65,9 +110,18 @@ function markdownHeading(line: string): { text: string; level: number } | null {
 
 function fenceMarker(
   line: string,
+  containerIndent = 0,
 ): { char: "`" | "~"; length: number; end: number } | null {
   let offset = 0;
-  while (offset < 3 && line[offset] === " ") offset += 1;
+  let columns = 0;
+  while (
+    offset < line.length &&
+    (line[offset] === " " || line[offset] === "\t")
+  ) {
+    columns += line[offset] === "\t" ? 4 - (columns % 4) : 1;
+    offset += 1;
+  }
+  if (columns > containerIndent + 3) return null;
   const char = line[offset];
   if (char !== "`" && char !== "~") return null;
   const start = offset;
@@ -79,14 +133,33 @@ function fenceMarker(
 function closesFence(
   line: string,
   fence: { char: "`" | "~"; length: number },
+  containerIndent: number,
 ): boolean {
-  const marker = fenceMarker(line);
+  const marker = fenceMarker(line, containerIndent);
   return (
     marker !== null &&
     marker.char === fence.char &&
     marker.length >= fence.length &&
     /^[ \t]*$/.test(line.slice(marker.end))
   );
+}
+
+/** Carry a list's content indent across blank lines and continuations. */
+function nextListIndent(
+  line: string,
+  current: number | undefined,
+): number | undefined {
+  const listed = listContentIndent(line);
+  if (listed !== null) return listed;
+  const leading = indentationColumns(/^[ \t]*/.exec(line)?.[0] ?? "");
+  return line.trim() !== "" && (current === undefined || leading < current)
+    ? undefined
+    : current;
+}
+
+function isIndentedCode(line: string, listIndent: number | undefined): boolean {
+  const leading = indentationColumns(/^[ \t]*/.exec(line)?.[0] ?? "");
+  return leading >= (listIndent === undefined ? 4 : listIndent + 4);
 }
 
 /**
@@ -99,34 +172,28 @@ function closesFence(
  */
 function visibleLines(source: string): string[] {
   const lines: string[] = [];
-  let fence: { char: "`" | "~"; length: number } | undefined;
+  let fence:
+    | { char: "`" | "~"; length: number; containerIndent: number }
+    | undefined;
   let indentedCode = false;
   let previousWasBlank = true;
   let listIndent: number | undefined;
   for (const line of source.split("\n")) {
     if (fence) {
-      if (closesFence(line, fence)) fence = undefined;
+      if (closesFence(line, fence, fence.containerIndent)) fence = undefined;
       lines.push("");
       previousWasBlank = true;
       continue;
     }
-    const marker = fenceMarker(line);
+    listIndent = nextListIndent(line, listIndent);
+    const marker = fenceMarker(line, listIndent ?? 0);
     if (marker !== null) {
-      fence = marker;
+      fence = { ...marker, containerIndent: listIndent ?? 0 };
       lines.push("");
       previousWasBlank = true;
       continue;
     }
-    const listed = listContentIndent(line);
-    if (listed !== null) listIndent = listed;
-    else if (
-      line.trim() !== "" &&
-      !line.startsWith(" ") &&
-      !line.startsWith("\t")
-    )
-      listIndent = undefined;
-    const leading = line.length - line.trimStart().length;
-    const indented = leading >= (listIndent === undefined ? 4 : listIndent + 4);
+    const indented = isIndentedCode(line, listIndent);
     if (indentedCode && (indented || line.trim() === "")) {
       lines.push("");
       previousWasBlank = true;
