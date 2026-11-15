@@ -381,35 +381,12 @@ async function collectThroughOrca(
       return archived === null
         ? failure(removed)
         : { ...failure(removed), details: { archive: archived } };
-    const retired = retireCompletions?.();
-    if (retired !== undefined && !retired.ok)
-      return {
-        outcome: "failed",
-        reason: `removed through Orca, but completion evidence retirement failed: ${retired.failure.reason}`,
-        details: {
-          ...(isMapping(resource.details) ? resource.details : {}),
-          removal: {
-            method: "orca worktree rm",
-            hook: removed.value.hook,
-            parked: true,
-          },
-          completionEvidence: {
-            outcome: "failed",
-            reason: retired.failure.reason,
-          },
-          ...(archived === null ? {} : { archive: archived }),
-        },
-      };
-    return {
-      outcome: "collected",
-      reason: `removed through Orca: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} orca worktree rm`,
-      details: {
-        ...(isMapping(resource.details) ? resource.details : {}),
-        hook: removed.value.hook,
-        parked: true,
-        ...(archived === null ? {} : { archive: archived }),
-      },
-    };
+    return orcaCompletionRetirementResult(
+      resource,
+      removed.value,
+      archived,
+      retireCompletions,
+    );
   } catch (error) {
     // A step that throws (a platform error, or a defect) fails the removal.
     return {
@@ -421,6 +398,43 @@ async function collectThroughOrca(
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
+}
+/** A failed evidence retirement does not erase the fact that Orca removed the checkout. */
+function orcaCompletionRetirementResult(
+  resource: Resource,
+  removed: { hook: string | null },
+  archived: Archived | null,
+  retireCompletions: (() => Outcome<void>) | undefined,
+): Collected {
+  const retired = retireCompletions?.();
+  if (retired !== undefined && !retired.ok)
+    return {
+      outcome: "failed",
+      reason: `removed through Orca, but completion evidence retirement failed: ${retired.failure.reason}`,
+      details: {
+        ...(isMapping(resource.details) ? resource.details : {}),
+        removal: {
+          method: "orca worktree rm",
+          hook: removed.hook,
+          parked: true,
+        },
+        completionEvidence: {
+          outcome: "failed",
+          reason: retired.failure.reason,
+        },
+        ...(archived === null ? {} : { archive: archived }),
+      },
+    };
+  return {
+    outcome: "collected",
+    reason: `removed through Orca: ${removed.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} orca worktree rm`,
+    details: {
+      ...(isMapping(resource.details) ? resource.details : {}),
+      hook: removed.hook,
+      parked: true,
+      ...(archived === null ? {} : { archive: archived }),
+    },
+  };
 }
 /** Kept when a process holds the worktree, or holders could not be read. */
 async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
