@@ -17,6 +17,8 @@ import {
   type FieldSpec,
   fromRows,
 } from "../chapter.ts";
+import { checkHeldPhrases } from "../held.ts";
+import { TERMINAL_STATES } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { flag, table } from "../markdown.ts";
 import {
   MAILBOX_MESSAGE_SHAPE,
@@ -25,6 +27,7 @@ import {
 
 const SOURCE_FILE =
   "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts";
+const OPERATIONAL_SECTION = "## The drive mailbox";
 
 /** The tables the chapter takes, with the kind each value is listed as. */
 const TABLES = {
@@ -219,6 +222,57 @@ export const MAILBOX: Chapter = {
     { name: "mailbox-outbox", shape: MAILBOX_OUTBOX_SHAPE },
   ],
   id: "mailbox",
+  check: (root) =>
+    checkHeldPhrases(root, "mailbox", [
+      ...(
+        [
+          "hold-push",
+          "stop",
+        ] as const satisfies readonly (keyof typeof MAILBOX_DIRECTIVES)[]
+      ).map((command) => ({
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `--kind ${"directive" satisfies keyof typeof MESSAGE_KINDS} --from <you> --command ${command}${command === "stop" ? ` --${"generation" satisfies keyof typeof INBOX_FIELDS} <n>` : ""}`,
+        section: OPERATIONAL_SECTION,
+        includeCodeExamples: true,
+      })),
+      ...(
+        [
+          "hold-push",
+          "stop",
+        ] as const satisfies readonly (keyof typeof MAILBOX_DIRECTIVES)[]
+      ).map((command) => ({
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `--command ${"resume" satisfies keyof typeof MAILBOX_DIRECTIVES} --${"target" satisfies keyof typeof INBOX_FIELDS} ${command}`,
+        section: OPERATIONAL_SECTION,
+        includeCodeExamples: true,
+      })),
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `--command ${"stop" satisfies keyof typeof MAILBOX_DIRECTIVES} --${"generation" satisfies keyof typeof INBOX_FIELDS} <n>`,
+        section: OPERATIONAL_SECTION,
+        includeCodeExamples: true,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `an \`${"ack" satisfies keyof typeof OUTBOX_STATUSES}\` of each\ndirective it acted on`,
+        section: OPERATIONAL_SECTION,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `directive refuses the push (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\``,
+        section: OPERATIONAL_SECTION,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `drive exits \`${TERMINAL_STATES.MAILBOX_PAUSE_TIMEOUT?.exitCode}\` and releases its`,
+        section: OPERATIONAL_SECTION,
+      },
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `A graceful stop exits \`${TERMINAL_STATES.MAILBOX_STOPPED?.exitCode}\``,
+        section: OPERATIONAL_SECTION,
+      },
+    ]),
   title: "The drive mailbox",
   summary:
     "What a person or a tool may tell a running drive, and how the drive answers: the messages, directives and acknowledgements in a working tree's mailbox files.",

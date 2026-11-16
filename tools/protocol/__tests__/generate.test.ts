@@ -52,6 +52,30 @@ describe("the committed chapters", () => {
   });
 });
 
+describe("held restatements", () => {
+  test("the chapter's check participates in the same gate as its generated values", () => {
+    const chapter = {
+      ...fixtureChapter(),
+      check: () => [
+        {
+          rule: "protocol-held",
+          file: "skill.md",
+          problem: "the held value disagrees with the chapter",
+          remedy: "correct the held restatement",
+        },
+      ],
+    };
+    const root = written([chapter]);
+    const result = generate({ root, chapters: [chapter], check: true });
+    expect(result.findings.filter((f) => f.rule === "protocol-held")).toEqual(
+      chapter.check(),
+    );
+    expect(
+      generate({ root, chapters: [chapter], check: false }).findings,
+    ).toEqual([]);
+  });
+});
+
 describe("writing", () => {
   test("fills the status line and each section, and leaves the prose as written", () => {
     const root = written();
