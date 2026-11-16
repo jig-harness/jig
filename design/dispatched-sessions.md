@@ -23,7 +23,7 @@ a worktree Jig opens itself, so a host needs no terminal kept open and no
 desktop app to dispatch; once it has run on a host that dispatches, it
 becomes the default, and Orca stays supported as an option.
 
-This is the design of [plan.md](plan.md) item 51. Steps 1 to 3 of the
+This is the design of [plan.md](plan.md) item 51. Steps 1 to 4 of the
 [build order](#build-order) are built: the `closing-report/v1` check,
 `jig dispatch report`, the report on the launch record and the outcome
 log, and the prompts that ask for it; a drive's round reports, the report
@@ -32,8 +32,11 @@ record, the wrapper recording and printing the report, and the report's
 `cause` and `by` on the shared claim's end; and the report shown on the
 dashboard's run lines, each piece of work's page of runs (the History view
 filtered to that work) and *What needs you*, `jig ask`'s *Last run* line
-(`last.run`), and the `notify` stage's `notices_read` event. The rest is
-not. It builds on the dispatcher (item 33,
+(`last.run`), and the `notify` stage's `notices_read` event; and the
+wrapper's own report of an end it explains, the transcript copy of a run
+that left no report, with its retention, and the steward's `cause` record
+for such a run, from the copy's excerpt in its digest, for pickups and
+follow-ups. The rest is not. It builds on the dispatcher (item 33,
 [dark-factory-dispatch.md](dark-factory-dispatch.md)), whose
 [session runtime interface](dark-factory-dispatch.md#the-session-runtime-interface)
 the process runtime implements, and on the

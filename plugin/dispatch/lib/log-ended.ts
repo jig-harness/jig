@@ -7,10 +7,18 @@
  * tick that reads it. The result, the handoff and the closing report are
  * read under the same write transaction so a session reporting during a
  * tick is not lost.
+ *
+ * A run that left no closing report is settled first, as its wrapper
+ * settles it at its exit (`end-report.ts`), for a run whose wrapper died or
+ * did not: the report its wrapper would record, else the copy of its
+ * transcript. A run that still has no report carries the copy's path on its
+ * row (`transcript`), which the dashboard shows.
  */
 import { Defect } from "../../shared/errors.ts";
 import { readNext } from "./next-owner.ts";
 import { readKeptReport } from "./closing-report-store.ts";
+import { type SeenEnd, settleUnreported } from "./end-report.ts";
+import { readTranscriptCopy } from "./transcript-copy.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { failureText } from "./text.ts";
 import {
@@ -45,6 +53,36 @@ function endRound(r: ReadRecord, drives: DrivenPr[] | null): number | null {
   return r.record.samples?.at(-1)?.round ?? null;
 }
 
+/** What the tick reads of a run's end from its record, as its wrapper saw it; `null` for a run whose wrapper died. */
+function seenOf(r: ReadRecord): SeenEnd | null {
+  if (r.state.kind !== "ended") return null;
+  const { exit } = r.state;
+  return {
+    code: exit.code,
+    signal: exit.signal,
+    ...(exit.startup === undefined ? {} : { startup: exit.startup }),
+    ...(exit.context === undefined ? {} : { output: exit.context }),
+  };
+}
+
+/** The path of a run's transcript copy, for its row, while it holds no report. */
+function transcriptField(
+  id: string,
+  reported: boolean,
+  root: string | undefined,
+): { transcript?: string } {
+  const path = reported ? null : readTranscriptCopy(id, root)?.transcript;
+  return typeof path === "string" ? { transcript: path } : {};
+}
+
+/** Recover a report or transcript for a run its wrapper did not settle. */
+function settleEnded(r: ReadRecord, root?: string): void {
+  if ((r.report ?? null) !== null) return;
+  const session =
+    r.state.kind === "ended" ? (r.state.exit.session ?? null) : null;
+  settleUnreported(r.record, seenOf(r), r.record.sessionId ?? session, root);
+}
+
 /** Write the ended row of each record in `records` that ended and has none yet; returns what failed. */
 export async function logEnded(
   records: ReadRecord[],
@@ -62,6 +100,7 @@ export async function logEnded(
           : null;
       const takenOver = ctx.all.some((x) => x.record.replaces === record.id);
       const endedAt = endTime(r, ctx.nowIso);
+      settleEnded(r, ctx.root);
       const db = stateDb(ctx.root);
       inTransaction(db, () => {
         const current = db
@@ -84,13 +123,16 @@ export async function logEnded(
           next: readNext(current.result_next),
           report: readKeptReport(current.report),
         };
-        const row = endedRow(
-          fresh,
-          endedAt,
-          { takenOver, merged },
-          isDrive(record) ? endRound(r, ctx.drives) : null,
-          ctx.about?.(targetOf(record)),
-        );
+        const row = {
+          ...endedRow(
+            fresh,
+            endedAt,
+            { takenOver, merged },
+            isDrive(record) ? endRound(r, ctx.drives) : null,
+            ctx.about?.(targetOf(record)),
+          ),
+          ...transcriptField(record.id, fresh.report !== null, ctx.root),
+        };
         writeRecord({ ...record, endedAt }, ctx.root);
         insertRow(db, row);
       });

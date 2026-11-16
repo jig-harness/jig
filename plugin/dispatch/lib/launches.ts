@@ -16,7 +16,9 @@
  *   so exactly one wrapper ever claims a record; a headless stage reserves
  *   pending supervisor and child identities, each acknowledged once by its
  *   owner under that launch's token;
- * - `exit`, the wrapper's again: the stage's exit, once it ended; first write wins;
+ * - `exit`, the wrapper's again: the stage's exit, once it ended; first write
+ *   wins, and only its bounded output (`context`) is ever taken out again,
+ *   with the run's transcript copy (`transcript-copy.ts`);
  * - `result`, a pickup's session's or a follow-up pass's own answer
  *   (`done` or `failed`), written once by `jig dispatch result` under the
  *   record's token.
@@ -281,6 +283,8 @@ export interface LaunchExit {
   /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
   said?: string;
   usage?: string; // a drive's exit on drive.ts's usage error: the end of its message, one line
+  /** For a Codex pass: the session id it printed at its start, which finds its transcript (`transcript-copy.ts`). */
+  session?: string;
 }
 
 export type LaunchState =
