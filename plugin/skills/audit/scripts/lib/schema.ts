@@ -4,8 +4,8 @@
  *
  * The check reports what the skills would do with each value: a key they
  * ignore (unknown, so probably misspelt), a key they refuse (in a strict map,
- * or a refused section), a value of the wrong shape, and a field kept only
- * under an older name.
+ * or a refused section), a section no skill reads any more, a value of the
+ * wrong shape, and a field kept only under an older name.
  */
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { readFileSync } from "node:fs";
@@ -80,6 +80,8 @@ export interface Schema {
   /** Sections and fields whose `null` the skills refuse rather than read as not set. */
   null_refused: string[];
   refused: Record<string, string>;
+  /** Sections no skill reads any more, with what that means for a file that keeps one. */
+  retired: Record<string, string>;
   fields: Field[];
 }
 
@@ -298,6 +300,12 @@ export function parseSchema(raw: unknown): Schema {
     Object.values(raw.refused).some((m) => typeof m !== "string")
   )
     throw new Error("config schema: refused must map a section to a message");
+  const retired = raw.retired ?? {};
+  if (
+    !isRecord(retired) ||
+    Object.values(retired).some((m) => typeof m !== "string")
+  )
+    throw new Error("config schema: retired must map a section to a message");
   if (!isRecord(raw.fields))
     throw new Error("config schema: fields must be a mapping");
   const nullRefused = raw.null_refused ?? [];
@@ -309,6 +317,7 @@ export function parseSchema(raw: unknown): Schema {
     strict: raw.strict,
     null_refused: nullRefused,
     refused: raw.refused as Record<string, string>,
+    retired: retired as Record<string, string>,
     fields: Object.entries(raw.fields).map(([path, entry]) =>
       parseField(path, entry),
     ),
@@ -683,6 +692,14 @@ function keyFindings(
         message: `${key} is refused: ${index.schema.refused[key]}`,
       },
     ];
+  if (!prefix && Object.hasOwn(index.schema.retired, key))
+    return [
+      {
+        id: `retired:${key}`,
+        severity: "info",
+        message: `${key} no longer has an effect: ${index.schema.retired[key]}`,
+      },
+    ];
   const field = index.byPath.get(path);
   if (field) return knownFieldFindings(index, path, value, field);
   if (index.prefixes.has(path)) return sectionFindings(index, path, value);
@@ -702,8 +719,8 @@ function walk(
 /**
  * Check a parsed configuration against the schema. Reports every key the
  * schema does not know (an error inside a strict map, a warning elsewhere,
- * since the skills ignore it there), every refused section, every value of
- * the wrong shape and every field kept under a deprecated name.
+ * since the skills ignore it there), every refused or retired section, every
+ * value of the wrong shape and every field kept under a deprecated name.
  */
 export function checkConfig(
   config: Record<string, unknown>,

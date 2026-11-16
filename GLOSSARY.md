@@ -2618,9 +2618,8 @@ make, use the entry's term instead.
   record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in
   the workspace's comment and on the launch record, and a workspace the
   dispatcher creates is named by its first part (`⚙ dispatched · rearm
-  #456`). A session may rename the workspace to what the work became; the
-  mark outlives the name, so the morning report still lists the workspace
-  as dispatched.
+  #456`). A person may rename the workspace; the mark outlives the name,
+  so the morning report still lists the workspace as dispatched.
 - **Run tab** — a terminal tab Jig opens in a workspace to run a drive or
   another stage of the line: one `drive-pr` arms a drive in, or one the
   *dispatcher* launches into. Jig records each one it opens, and the tab

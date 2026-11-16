@@ -3,8 +3,8 @@
  * How well the repository's `.config/jig.yaml` fits the repository and this
  * plugin version. Reports, each with a stable id:
  *
- *   - fields the schema does not know, refuses, or reads only under an older
- *     name, and values of the wrong shape (`config-schema.yaml`);
+ *   - fields the schema does not know, refuses, has retired, or reads only
+ *     under an older name, and values of the wrong shape (`config-schema.yaml`);
  *   - what the skills' own validation rejects;
  *   - derivations that fail: a command whose program or script does not
  *     exist, a configured path that is missing, an integration branch that
