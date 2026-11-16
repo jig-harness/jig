@@ -80,7 +80,7 @@ export interface Schema {
   /** Sections and fields whose `null` the skills refuse rather than read as not set. */
   null_refused: string[];
   refused: Record<string, string>;
-  /** Sections no skill reads any more, with what that means for a file that keeps one. */
+  /** Sections no skill reads, with what that means for a file that keeps one. */
   retired: Record<string, string>;
   fields: Field[];
 }

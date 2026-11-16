@@ -103,10 +103,10 @@ refused:
   do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
   clones: "it describes one machine, and every skill refuses a repository's file that sets it: move it to the user file"
 
-# Sections no skill reads any more, with what that means for a file that keeps
-# one. The skills ignore them; the configuration-fit check notes each once.
+# Sections no skill reads, with what that means for a file that keeps one.
+# The skills ignore them; the configuration-fit check notes each once.
 retired:
-  workspace_name: "no skill renames a workspace any more, so the section can be removed"
+  workspace_name: "no skill renames a workspace, so the section can be removed"
 
 fields:
   gc.kinds:

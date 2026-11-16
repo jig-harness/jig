@@ -211,7 +211,7 @@ export interface LaunchRecord {
   /**
    * The dispatched mark the launch's workspace was named and marked with
    * (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this
-   * record's id. It joins a workspace a skill renamed to its launch.
+   * record's id. It joins a workspace renamed since to its launch.
    * `null` on a record written before the mark was kept.
    */
   mark?: string | null;
