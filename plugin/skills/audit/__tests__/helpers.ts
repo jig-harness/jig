@@ -26,6 +26,8 @@ export function cleanEnv(
       env[key] = value;
   return {
     ...env,
+    // Fake forge answers must never read or update the operator's budget.
+    JIG_FORGE_BUDGET: "off",
     GIT_AUTHOR_NAME: "t",
     GIT_AUTHOR_EMAIL: "t@example.com",
     GIT_COMMITTER_NAME: "t",
