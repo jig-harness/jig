@@ -147,8 +147,10 @@ export interface LineNeed {
   since: string;
   /** The tick's reason, verbatim. */
   reason: string;
-  /** The question a stage stopped on for a person, such as a follow-up's `Question:` line; `null` when it stated none. A park's questions are its decisions'. */
+  /** The question a stage stopped on for a person: its run's closing report's `question`, else its `Question:` line, as a follow-up's or a pickup's; `null` when it stated none. A park's questions are its decisions'. */
   question?: string | null;
+  /** What the run the need is about concluded, from its closing report, shown beside the question as context; absent when the run left no report. */
+  concluded?: string | null;
   /** For a park: the decisions still unanswered, oldest first. */
   decisions: LineDecision[];
   notified: LineNotified | null;
@@ -525,6 +527,10 @@ export interface RowsAnswer {
     stage: string[];
     account: string[];
     class: string[];
+    /** The closing-report causes the window's ended rows name. */
+    cause: string[];
+    /** Who wrote the window's ended rows' closing reports (`none` for a run that left none). */
+    by: string[];
   };
   /** Bad classes that recur per repository and stage, over the seven host days to now, whatever the window. */
   recurring: RecurringClass[];

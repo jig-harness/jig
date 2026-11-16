@@ -15,8 +15,10 @@
  * its own home, so its receipts and lock never touch the real ones.
  */
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -74,6 +76,11 @@ fs.appendFileSync(F + "/gh-calls.log", args.join(" ").replace(/\\n/g, " ") + "\\
 if (fs.existsSync(F + "/forge-rate-limited")) { process.stderr.write("gh: API rate limit exceeded for user ID 1. (HTTP 403)\\n"); process.exit(1); }
 if (fs.existsSync(F + "/forge-unauthorized")) { process.stderr.write("gh: Bad credentials (HTTP 401)\\n"); process.exit(1); }
 if (fs.existsSync(F + "/forge-unreachable")) { process.stderr.write("dial tcp: lookup api.github.com: no such host\\n"); process.exit(1); }
+// One call refused as the first rule of forge-fails.json whose \`match\` is part of its arguments says, with that rule's \`stderr\`.
+if (fs.existsSync(F + "/forge-fails.json")) {
+  const rule = JSON.parse(fs.readFileSync(F + "/forge-fails.json", "utf8")).find((r) => args.join(" ").includes(r.match));
+  if (rule !== undefined) { process.stderr.write(rule.stderr + "\\n"); process.exit(1); }
+}
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
 // The repository's labels as labels-repo.json lists them: a name alone is a label with no description.
 const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])
@@ -564,6 +571,8 @@ export interface World {
   setAssigner(number: number, login: string, permission: string): void;
   setPrs(state: "open" | "merged", prs: unknown[]): void;
   setComments(pr: number, comments: unknown[]): void;
+  /** Refuse every forge call whose arguments hold `match` as `gh` would, printing `stderr`; a pull request's comments it refuses are not read in full by the repository's query either. */
+  failCall(match: string, stderr: string): void;
   /** The head of the base branch; `null` for a branch that does not read. With `next`, the head after the next read of it. */
   setBaseHead(sha: string | null, next?: string): void;
   setWorkspaces(rows: OrcaRow[]): void;
@@ -841,6 +850,13 @@ export function world(): World {
     },
     setPrs: (state, prs) => write(`prs-${state}.json`, prs),
     setComments: (pr, comments) => write(`comments-${pr}.json`, comments),
+    failCall: (match, stderr) => {
+      const file = join(dir, "forge-fails.json");
+      const rules = existsSync(file)
+        ? JSON.parse(readFileSync(file, "utf8"))
+        : [];
+      write("forge-fails.json", [...rules, { match, stderr }]);
+    },
     setBaseHead: (sha, next) => {
       if (sha === null) rmSync(join(dir, "base-head"), { force: true });
       else write("base-head", sha);

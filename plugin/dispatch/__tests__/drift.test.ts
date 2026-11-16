@@ -141,8 +141,9 @@ describe("stage drift", () => {
       [3, 4],
       [4, 5],
     ]);
+    // The notify stage's own notices_read rows, one a tick, are not the drift's.
     const events = readRows(undefined, undefined, dispatchState(w)).filter(
-      (r) => r.kind === "event",
+      (r) => r.kind === "event" && r.event !== "notices_read",
     );
     expect(
       events.map((e) => [e.kind === "event" && e.event, e.target, e.stage]),

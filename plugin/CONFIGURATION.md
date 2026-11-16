@@ -195,20 +195,31 @@ How review threads are resolved, how the drive recognises its AI reviewer,
 and which [review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 the `review` skill's semantic tier runs.
 
+Deferred findings file through `issue_tracker.adapter` on GitHub, Linear and
+Jira. The scripts keep one open backlog issue per repository, pull request
+and issue type, append later findings to it, set its highest priority and
+union of categories, and add native related links to the originating issue
+and epic without parenting it. `defer-in-pr.ts route` returns `defer-batch`
+when the configured adapter can file; otherwise the pull request's
+`## Deferred` section retains the entry until `file-deferred.ts` can file it
+under the same key. Closure's standing person-checks destination,
+`issue_tracker.person_checks`, is planned separately; this release does not
+add that configuration field to the runtime.
+
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `review.bots` | list of logins, or of `{login, confirmation_marker, chat_marker}` | No reviewer named: threads are worked whoever wrote them, and only CodeRabbit's confirmations are transparent | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) the review skills name as the repository's reviewers. The review skill works every unresolved thread whether or not it is set; `--bots-only` keys on GitHub App authorship, not on this list. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins. A comment posted after a held reply is **transparent**, resolved with the hold and never triaged or answered, when no line of it opens with an outcome token and it carries its author's `confirmation_marker`, or, for a bot this list names, its `chat_marker` and no severity line of the bot's finding shape (its [severity formats](EXTENDING.md#severity-formats)); anything else is triaged. A bot absent from the list, or one without a severity format known to be its own (one `review.severity_formats` declares, or a built-in one; not the Jig format assumed for the configured reviewer, whether named by `review.reviewer_app` or by this list), gets no transparent chat follow-ups, while a confirmation marker measured on that bot's own comments still applies: CodeRabbit's `<!-- coderabbit-skip-review-comment-follow-up -->`, listed or not. Listed as `coderabbitai[bot]`, CodeRabbit's chat marker defaults to `<!-- coderabbit-ai-generated:v1 -->`. CodeRabbit's chat replies can also be turned off at the source with `chat.auto_reply: false` in `.coderabbit.yaml`, which leaves its reviews, confirmations and tagged commands as they are |
 | `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
 | `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
-| `review.deferral_team` | team key | none: deferring a finding with no originating issue then needs `--team` | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
-| `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments, work-batch, dispatch | Repository label put on filed follow-ups, and the one a batch item must carry; dispatch also leaves a served item that carries another label of `review.taxonomy.repos` and not this one to that repository's checkout (an item with no repository label is started only by its tracker namespace's default repository, `serve_defaults` in the machine file, on a Linear or Jira tracker, and reported once as needing a repository label where there is none; a GitHub repository reading its own issues is not affected); must be one of `review.taxonomy.repos`. work-batch does not ask an issue to carry it where the tracker is the GitHub adapter and `review.taxonomy.repos` names no repository besides this label, since every issue in that tracker belongs to the repository already. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
-| `review.repo_slug` | `owner/name` | Empty, which fails unless `--repo-slug` is given | resolve-review-comments | Repository whose links a deferred finding must point into |
+| `review.deferral_team` | team key | `issue_tracker.team` | resolve-review-comments | Linear team that deferred findings are filed into, falling back to `issue_tracker.team`. `--team` overrides it on Linear and is refused on other adapters |
+| `review.repo_label` | label | Repository slug becomes the batch key's repository value | resolve-review-comments, work-batch, dispatch | Repository label put on filed follow-ups, and the one a batch item must carry; dispatch also leaves a served item that carries another label of `review.taxonomy.repos` and not this one to that repository's checkout (an item with no repository label is started only by its tracker namespace's default repository, `serve_defaults` in the machine file, on a Linear or Jira tracker, and reported once as needing a repository label where there is none; a GitHub repository reading its own issues is not affected); must be one of `review.taxonomy.repos`. work-batch does not ask an issue to carry it where the tracker is the GitHub adapter and `review.taxonomy.repos` names no repository besides this label, since every issue in that tracker belongs to the repository already. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
+| `review.repo_slug` | `owner/name` | Derived from the pull request's forge URL | resolve-review-comments | Repository whose links a deferred finding must point into |
 | `review.taxonomy.types` | list of labels | none | resolve-review-comments, work-batch | Type labels a follow-up may carry, one of which a batch item must carry. Requires `ownership_prefixes`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
 | `review.taxonomy.repos` | list of labels | none | resolve-review-comments, drive-pr (fleet health), work-batch, dispatch | Repository labels a follow-up may carry, and the labels by which dispatch tells another repository's served item from this one's (with `review.repo_label`). Requires `ownership_prefixes`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
 | `review.taxonomy.sizes` | list of labels | `[xs, small]` | resolve-review-comments, work-batch | Size labels a batch of follow-ups may carry |
 | `review.taxonomy.categories` | list of names | only `unknown` | resolve-review-comments | Allowed finding categories |
 | `review.taxonomy.context_prefixes` | list of prefixes | none | resolve-review-comments, work-batch | Prefixes of labels carried from the pull request onto its follow-ups. Requires `ownership_prefixes` |
-| `review.taxonomy.ownership_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of ownership labels; two findings share a batch only when these agree. Required when `types`, `repos` or `context_prefixes` is set |
+| `review.taxonomy.ownership_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of ownership labels retained as context; the batch key remains pull request and type. Required when `types`, `repos` or `context_prefixes` is set |
 | `review.taxonomy.provenance_label` | label | `pr-followup` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.followup`, still read when that is unset; the two may not disagree |
 | `review.taxonomy.epic_label` | label | `epic` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.epic`, still read when that is unset; the two may not disagree |
 | `review.scanner_apps` | list of GitHub App slugs | `[sonarqubecloud]` | resolve-review-comments | Apps whose check-run annotations are findings to triage: a static-analysis app that decorates the pull request with annotations instead of review threads (SonarQube Cloud does). Listed by `list-scanner-annotations.ts`, which waits for each configured app to report on the head; the default app is read only where it runs |
@@ -1294,7 +1305,7 @@ the installed plugin copy, outside a Git checkout.
 | Setting in the user file's `gc` section | Default / meaning |
 |----------------------------------------|-------------------|
 | `repositories` | Empty; installer-written entries containing `path`, `remote`, `remote_url`, `base_branch`, and `bounds` (the confirmed declaration) |
-| `disabled` | Empty; kinds the machine will skip; cannot enable undeclared repository kinds |
+| `disabled` | Empty; kinds the machine will skip, the machine kinds `receipts` and `orca-terminals` included; cannot enable undeclared repository kinds |
 | `idle_days` | Mapping of repository kind to idle guard, default 7 days; allowed range 7–365, so machine policy can only tighten the default |
 | `receipts` | `false`; enable collection of old receipts |
 | `receipts_days` | 30; positive days to retain receipts; each kind's latest receipt is always kept |
@@ -1302,7 +1313,8 @@ the installed plugin copy, outside a Git checkout.
 | `collect_day` | 0; local weekday (Sunday 0 through Saturday 6) on which the daily run collects |
 | `min_free_bytes` | 0, disabled; collect on other days when available space in the home filesystem falls below this threshold |
 | `archive_max_bytes` | 67108864 (64 MiB); the most the one-time archive of one worktree's ignored content may hold, for a worktree made before marking began ([the collector's README](gc/README.md#ignored-content)); 0 archives nothing, so that content keeps vetoing |
-| `orca.command` | Unset; the absolute path of Orca's command (`orca`, or `orca-ide` on Linux). When set, the worktrees kind tells worktrees Orca manages from plain ones and collects them through Orca ([the collector's README](gc/README.md#worktrees-orca-manages)) |
+| `orca.command` | Unset; the absolute path of Orca's command (`orca`, or `orca-ide` on Linux). When set, the worktrees kind tells worktrees Orca manages from plain ones and collects them through Orca ([the collector's README](gc/README.md#worktrees-orca-manages)), and the machine kind `orca-terminals` closes idle [run tabs](gc/README.md#run-tabs) |
+| `orca.terminal_idle_hours` | 24; hours since a run tab's last output (or its opening, when Orca reports no output time) before the `orca-terminals` kind may close it, and only while no command is running in it at collection time; a command that finished moments ago earns no further grace. Allowed range 24–8760, so machine policy can only lengthen the guard |
 
 The job records Bun's executable, the installed command's path, `HOME`,
 `PATH`, `JIG_HOME`, and any explicit `TMPDIR`, `LOCK_ROOT` or `LOCK_NAME`.
@@ -1797,6 +1809,17 @@ message to tell them apart. What a host sees:
 | `unauthorized` | the credential is missing, expired or refused | not sent again | the tick exits 1, and a person is told at once, through the host's home repository when that one still opens: the repository's row counts as `failures.notify_after` failures |
 | `not-found` | what was asked for does not exist or is not visible | not sent again | an absence, read as such |
 | `invalid` | the system refused the request as malformed, or answered in a form that does not read | not sent again | the tick exits 1, and the failure ledger tells a person at `failures.notify_after` |
+
+The same holds for a read the tick makes for one item: a pull request's
+comments (its drive ledger, its launch claims, its follow-up markers), the
+answers to a parked drive's review thread, the head of a conflicting
+drive's base branch, and the claim markers on a claimed tracker item. The
+item's row in the report carries the class of the call that failed, and
+the repository's turn follows that class as above, except `not-found`: a
+per-item read that fails that way is a failed read, not an absence, so
+the tick exits 1 as for `invalid`, with notification at `failures.notify_after`. A read that answered
+in a form that does not read, such as a damaged ledger or marker, carries
+no class and fails the turn.
 
 A repository whose forge read waits shows, in the tick's report, the last
 reading a tick took whole, with its time and its age. A tick's receipt names

@@ -464,10 +464,11 @@ to read.
   answer](#picking-an-answer) describes. The tick's line carries each
   waiting park's digest and options, so neither parses the decision. The
   dashboard's page copies the card's comment, and with a token the person
-  pasted into that browser its Send posts, once an option is picked, each
-  decision's answer as the comment `jig send` writes, record included, to
-  the pull request from the browser, as the person, with no route through
-  the host
+  pasted into that browser its Send posts, once an option is picked and the
+  send confirmed, each decision's answer as the comment `jig send` writes,
+  record included, to the GitHub issue or pull request the station reads
+  answers on, from the browser, as the person, with no route through the
+  host
   ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes));
   the panel's Send runs the same `jig send` as the person
   ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
@@ -814,17 +815,20 @@ For the causes the tick finds itself it frames the decision from the facts
 that identify the occurrence: the launch record, the marker, the item, the
 branch and the path, the exit. Never a clock or a count: the digest stays
 the same from tick to tick while those facts do, and an answer to earlier
-facts is stale. Every set ends with **Leave it to me**: the tick takes no
-step, and the need leaves Needs you for these facts; it comes back when
-they change.
+facts is stale. Every set ends with **I'll handle it — hide this card**:
+the tick takes no step and the work stays where it is. The answered hold
+stays visible, saying the work remains undone, until its facts change. An
+answer naming the option's earlier name, **Leave it to me**, still counts,
+and keeps the decision's digest, so an answer to unchanged facts stays
+current.
 
 | Cause | Key | Options (the recommendation in bold) | The tick's step |
 | --- | --- | --- | --- |
-| a failed follow-up (`followup-failed`), a stale claim again (`followup-stale`) | `followup` | **Run it again** when the pass asked nothing or the claim went stale; Record it done; **Leave it to me** when the pass stopped on a question | deletes the marker the need names, so a later tick starts the follow-up again, the person's note in its prompt; or marks the existing marker done in place |
-| a stalled pickup (`stalled`), a pickup's question it did not frame (`pickup-question`), a pickup that ended without a question and that no rule starts again (`pickup-ended`) | `pickup` | **Release the claim** for a stall or an ended pickup no open pull request carries; **Leave it to me** otherwise | moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
-| a checkout the workspace runtime does not list holds the launch's branch and is in use (`needs-person`) | `checkout` | Detach the checkout; **Leave it to me** | detaches it at its commit when it is idle, as an open does an idle holder |
-| a drive the ledger handed to a person, or one stopped with no cause (`needs-person`, `stopped-unknown`) | `drive` | Re-arm the drive; **Leave it to me** | adds the rearm label, the person's command the tick then carries out |
-| a launch record stuck pending (`needs-person`) | `launch` | **Clear the record**; Leave it to me | removes it, as `jig dispatch clear` does |
+| a failed follow-up (`followup-failed`), a stale claim again (`followup-stale`) | `followup` | **Run it again** when the pass asked nothing or the claim went stale; Record it done; **I'll handle it — hide this card** when the pass stopped on a question | deletes the marker the need names, so a later tick starts the follow-up again, the person's note in its prompt; or marks the existing marker done in place |
+| a stalled pickup (`stalled`), a pickup's question it did not frame (`pickup-question`), a pickup that ended without a question and that no rule starts again (`pickup-ended`) | `pickup` | **Release the claim** for a stall or an ended pickup no open pull request carries; **I'll handle it — hide this card** otherwise | moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
+| a checkout the workspace runtime does not list holds the launch's branch and is in use (`needs-person`) | `checkout` | Detach the checkout; **I'll handle it — hide this card** | detaches it at its commit when it is idle, as an open does an idle holder |
+| a drive the ledger handed to a person, or one stopped with no cause (`needs-person`, `stopped-unknown`) | `drive` | Re-arm the drive; **I'll handle it — hide this card** | adds the rearm label, the person's command the tick then carries out |
+| a launch record stuck pending (`needs-person`) | `launch` | **Clear the record**; I'll handle it — hide this card | removes it, as `jig dispatch clear` does |
 
 The classes (`followup-recovery`, `pickup-recovery`, `checkout-recovery`,
 `drive-recovery`, `launch-recovery`) read Decide in the acts table, so the

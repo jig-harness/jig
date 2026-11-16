@@ -647,6 +647,18 @@ conflict repair pass, whose transcripts `launches.sessions` does not list. The e
 onto the shared claim carries the report's `cause` and who wrote it
 (`by`), never its text.
 
+The dispatch dashboard and `jig ask` show the report. On the History view,
+each run's line carries what it concluded, the next step it suggests and
+its cause, or says it ended without a report; the log filters on the
+report's cause and on who wrote it; and a row opens to all runs of its
+piece of work, newest first, each with its report, the next step the
+report suggests beside the tick's own next owner where the two name
+different owners, with nothing decided between them. *Needs you* shows a
+report's `question` and framed `decision` where it shows a pass's
+`Question:` line, with what the run concluded beside them. `jig ask`'s
+answer prints the last run's stage, when it ended, what it concluded and
+the next step it suggests as `last.run`.
+
 #### Every need is a decision
 
 A pass that stops for a person frames what it asks, as a drive frames a
@@ -1117,6 +1129,17 @@ park is counted twice. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
 those rows is what a new class is made from.
 
+Where the `notify` stage runs, each of its ticks also writes one
+`notices_read` event (no class) with the read state of the repository's
+notices workspace as the tick's session listing found it, before the
+tick's own notice marks it unread (`read`: `true`, `false`, or `null`
+when no workspace is open, the runtime reports no mark or the listing did
+not read). It is the observation the stage's retirement measure reads,
+so the dashboard's log leaves these rows out unless its class filter
+names `event: notices_read`, and the steward's digest leaves them out of
+the history it judges from. `jig dispatch log` and its text copy list
+them, one a tick.
+
 **The log as text.** The log prints as text, one line a row, or with
 `--jsonl` as JSON lines:
 
@@ -1285,8 +1308,9 @@ writes nothing to the host:
   the last 48 ticks, a tick for
   one repository included.
 - **The outcome log**, on the History view, filtered by time (today, yesterday,
-  seven or thirty days, or a range), repository, stage, account, class and
-  reason, counting each class over the window and naming each recurring
+  seven or thirty days, or a range), repository, stage, account, class,
+  reason, the closing report's cause and who wrote it, and the piece of
+  work, whose page lists its runs with their reports, counting each class over the window and naming each recurring
   class: a bad class (any but converged, merged and parked for a person) of
   one stage on one repository on at least three of the last seven host days,
   counting the ended rows and the event rows that carry a class, such as a
@@ -1544,7 +1568,7 @@ whose configuration names the tracker.
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
 | `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
-| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
+| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
 **What it reads.** A `drive` or a `followup` reads the pull request and its
