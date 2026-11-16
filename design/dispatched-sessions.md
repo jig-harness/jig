@@ -179,9 +179,11 @@ terminal someone typed into stays open.
 | Stopped or taken over by a person | `by: person` | closes; a terminal the person typed into stays |
 
 Closing every tab on every exit is how a tab stops outliving its merged
-pull request (#481): no run leaves one. Tabs earlier releases left are
-collected with their worktrees by `jig gc`, which removes an Orca worktree
-with its terminals.
+pull request: no run leaves one. Tabs earlier releases left are collected
+with their worktrees by `jig gc`, which removes an Orca worktree with its
+terminals. A tab whose run was killed before anything closed it is closed by
+`jig gc`'s `orca-terminals` kind once it has been idle past its guard
+([plugin/gc/README.md § Run tabs](../plugin/gc/README.md#run-tabs)).
 
 The session runtime interface gains one method for this, `endRun(record)`:
 what the runtime does with what a run left once the tick finds the run
@@ -487,7 +489,7 @@ fixes, have merged.
    copy and its retention.
 5. **Tabs close on every exit.** The wrapper closes its run tab on every
    exit; `endRun` in the interface, and the tick calling it for a record
-   that ended without its wrapper. Closes #481.
+   that ended without its wrapper.
 6. **A worktree opener that shares admission.** The workspace rules moved
    into a shared opener; plain git worktrees under the runs root with owner
    records under `jig gc`'s shared admission; the collector collecting

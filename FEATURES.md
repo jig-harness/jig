@@ -372,7 +372,10 @@ the declaration from the recorded remote base branch and stay within the
 confirmed bounds. A worktree Orca manages is collected through Orca, so its
 card and terminals go with it. It also finds the worktrees Claude Code's
 agent tool makes for its subagents, with no configuration, and removes an
-idle one with git. Other worktrees, scratch directories and tool state are
+idle one with git. On a machine that names Orca's command, it also closes
+the terminal tabs Jig opened for runs ([run tabs](GLOSSARY.md)). It closes a tab
+whose run was killed once the tab's shell runs nothing and has been idle for
+at least a day. Other worktrees, scratch directories and tool state are
 reported only, because collecting them needs the tools that create and use
 them to take part. Old receipts can be collected, keeping the latest
 report for each repository and kind.
