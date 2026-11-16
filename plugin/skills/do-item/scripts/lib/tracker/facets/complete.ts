@@ -49,10 +49,7 @@ export function incompleteness(
   );
   // An epic by its issue type stands for the epic label, and the type itself
   // for its own id, as when `validate-labels` reads the same issue.
-  const typed = (issue.type ?? "").trim();
-  const typeId =
-    (usable(facets.type) ? canonical(facets.type.values, typed) : null) ??
-    typed;
+  const typeId = typeIdOf(issue, facets);
   const presentFrom = (labels: string[]) => {
     const present = new Set(labels);
     if (epic) present.add(facets.epic);
@@ -72,6 +69,14 @@ export function incompleteness(
       ...missingGroups([...presentFrom(issue.labels)], taxonomy, [SIZE_GROUP]),
     );
   return missing;
+}
+
+/** The type's id as the facet spells it, ignoring the caller's case and spacing. */
+function typeIdOf(issue: NewIssue, facets: Facets): string {
+  const typed = (issue.type ?? "").trim();
+  return (
+    (usable(facets.type) ? canonical(facets.type.values, typed) : null) ?? typed
+  );
 }
 
 /** The issue type a new issue is filed as, where its type facet is the issue type. */
