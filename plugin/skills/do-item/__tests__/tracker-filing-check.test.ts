@@ -164,6 +164,10 @@ it("spares a group its requirement on a type the group is not required on", asyn
   await expect(
     t.createIssue(issue({ type: "chore", labels: [] })),
   ).resolves.toEqual({ identifier: "#9", url: null });
+  // The caller's spelling of a type is read as the type it names.
+  await expect(
+    t.createIssue(issue({ type: " Chore ", labels: [] }, ["size"])),
+  ).resolves.toEqual({ identifier: "#9", url: null });
   await expect(
     t.createIssue(issue({ type: "bug", labels: [] }, ["size"])),
   ).rejects.toThrow("no size and no repo label");

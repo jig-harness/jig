@@ -26,6 +26,7 @@ import {
 import { type NewIssue, type Tracker, TrackerRequestError } from "../port.ts";
 import { isEpic } from "../../../../../../shared/tracker-labels.ts";
 import { type Facets, usable } from "./config.ts";
+import { canonical } from "./values.ts";
 
 /**
  * What a new issue lacks: `type`, `priority` and `size` for the facets the
@@ -48,7 +49,10 @@ export function incompleteness(
   );
   // An epic by its issue type stands for the epic label, and the type itself
   // for its own id, as when `validate-labels` reads the same issue.
-  const typeId = (issue.type ?? "").trim();
+  const typed = (issue.type ?? "").trim();
+  const typeId =
+    (usable(facets.type) ? canonical(facets.type.values, typed) : null) ??
+    typed;
   const presentFrom = (labels: string[]) => {
     const present = new Set(labels);
     if (epic) present.add(facets.epic);
