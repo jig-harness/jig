@@ -289,23 +289,24 @@ function parseField(path: string, entry: unknown): Field {
   return { path, ...entry } as unknown as Field;
 }
 
+/** A map from a section to a message (`refused`, `retired`); throws naming it otherwise. */
+function sectionMessages(value: unknown, name: string): Record<string, string> {
+  if (
+    !isRecord(value) ||
+    Object.values(value).some((m) => typeof m !== "string")
+  )
+    throw new Error(`config schema: ${name} must map a section to a message`);
+  return value as Record<string, string>;
+}
+
 /** Parse and check the schema; throws naming the first malformed entry. */
 export function parseSchema(raw: unknown): Schema {
   if (!isRecord(raw) || raw.version !== 1)
     throw new Error("config schema: expected version: 1");
   if (!stringList(raw.strict))
     throw new Error("config schema: strict must be a list of field paths");
-  if (
-    !isRecord(raw.refused) ||
-    Object.values(raw.refused).some((m) => typeof m !== "string")
-  )
-    throw new Error("config schema: refused must map a section to a message");
-  const retired = raw.retired ?? {};
-  if (
-    !isRecord(retired) ||
-    Object.values(retired).some((m) => typeof m !== "string")
-  )
-    throw new Error("config schema: retired must map a section to a message");
+  const refused = sectionMessages(raw.refused, "refused");
+  const retired = sectionMessages(raw.retired ?? {}, "retired");
   if (!isRecord(raw.fields))
     throw new Error("config schema: fields must be a mapping");
   const nullRefused = raw.null_refused ?? [];
@@ -316,8 +317,8 @@ export function parseSchema(raw: unknown): Schema {
   const schema: Schema = {
     strict: raw.strict,
     null_refused: nullRefused,
-    refused: raw.refused as Record<string, string>,
-    retired: retired as Record<string, string>,
+    refused,
+    retired,
     fields: Object.entries(raw.fields).map(([path, entry]) =>
       parseField(path, entry),
     ),

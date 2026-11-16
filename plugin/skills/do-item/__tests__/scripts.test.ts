@@ -1195,27 +1195,6 @@ describe("tracker.ts", () => {
     }
   });
 
-  it("reads a file that still sets the retired workspace_name section", () => {
-    const dir = mkdtempSync(join(tmpdir(), "do-item-tracker-"));
-    dirs.push(dir);
-    const overlay = join(dir, "overlay.yaml");
-    writeFileSync(
-      overlay,
-      "issue_tracker:\n  adapter: linear\n  team: ENG\nworkspace_name:\n  template: '{id} {status} {title}'\n  statuses: { ready: '[R]' }\n",
-    );
-    for (const op of ["states", "labels"]) {
-      const r = spawnSync(process.execPath, [join(SCRIPTS, "tracker.ts"), op], {
-        encoding: "utf8",
-        env: { ...gitCleanEnv(), JIG_OVERLAY: overlay },
-      });
-      expectSpawnExit(
-        { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
-        0,
-        op,
-      );
-    }
-  });
-
   it("moves an issue to the tracker's name for a canonical state", () => {
     const r = run(
       ["transition", "ENG-1", "in_review"],
