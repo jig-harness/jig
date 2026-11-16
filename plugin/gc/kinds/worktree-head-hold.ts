@@ -15,6 +15,7 @@
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
+  existsSync,
   fstatSync,
   openSync,
   readFileSync,
@@ -32,6 +33,8 @@ import {
 
 /** A held head, released once the removal ran or was refused. */
 export interface HeadHold {
+  /** The lock file the hold wrote. */
+  readonly lock: string;
   /** Delete the lock while it is still the one this hold wrote. */
   release(): Outcome<undefined, "release-failed">;
 }
@@ -58,9 +61,18 @@ export async function holdableIdentity(
   const refusal = await headHoldRefusal(path);
   if (!refusal.ok)
     return { stop: { outcome: "failed", reason: refusal.failure.reason } };
-  return refusal.value === null
-    ? { identity }
-    : { stop: { outcome: "refused", reason: refusal.value } };
+  if (refusal.value !== null)
+    return { stop: { outcome: "refused", reason: refusal.value } };
+  // A lock already there would refuse the hold only after the hook ran.
+  const lock = join(identity.admin, "HEAD.lock");
+  return existsSync(lock)
+    ? {
+        stop: {
+          outcome: "refused",
+          reason: `kept: ${lock} exists, held by a git process or left by an earlier collection; once nothing holds the worktree, delete it by hand`,
+        },
+      }
+    : { identity };
 }
 
 /**
@@ -89,6 +101,18 @@ export function unchangedAndHeld(
   );
 }
 
+/**
+ * Leave every hold taken in place, emptying `holds`, for a removal that may
+ * still be under way: its lock goes with the tree's git directory. What the
+ * receipt says of each lock left.
+ */
+export function keepHolds(holds: HeadHold[]): string | null {
+  const locks = holds.splice(0).map((hold) => hold.lock);
+  return locks.length === 0
+    ? null
+    : `gc leaves ${locks.join(" and ")} in place, so the head stays held while the removal may still run; if the worktree stays, delete it by hand`;
+}
+
 /** Release every hold taken, emptying `holds`; why one could not be, or null. */
 export function releaseHolds(
   holds: HeadHold[],
@@ -107,9 +131,8 @@ export function releaseHolds(
 /**
  * Null when the tree's head can be held, or the reason it is kept: the
  * repository keeps its refs in a store other than files, where `HEAD.lock`
- * holds nothing. A tree on a branch is kept too, since it can be detached and
- * committed on after the final comparison. Read before the remove hook, so a
- * tree that would be kept anyway is not torn down on every run.
+ * holds nothing. Read before the remove hook, so a tree that would be kept
+ * anyway is not torn down on every run.
  */
 export async function headHoldRefusal(
   path: string,
@@ -175,6 +198,7 @@ export async function holdHead(
     );
   }
   return ok({
+    lock,
     release: () => {
       try {
         if (readFileSync(lock, "utf8") === token) rmSync(lock);

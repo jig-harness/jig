@@ -167,10 +167,27 @@ export interface Removed {
  * Whether `removed` is the answer of `orca worktree rm` itself: success, or
  * Orca's explicit refusal. A failure of an earlier step is not, and neither
  * is a call that gave no answer (`orca-timeout`, `orca-failed`,
- * `orca-unreadable`): whether the worktree is gone is then unknown.
+ * `orca-unreadable`) or said Orca is still deleting (`orca-pending`):
+ * whether the worktree is gone is then unknown.
  */
 export function removalAnswered(removed: Outcome<unknown>): boolean {
   return removed.ok || removed.failure.code === "orca-refused";
+}
+
+/** The failures of an `orca worktree rm` call that leave the worktree's fate unknown. */
+const UNSETTLED = new Set([
+  "orca-timeout",
+  "orca-failed",
+  "orca-unreadable",
+  "orca-pending",
+]);
+
+/**
+ * Whether `orca worktree rm` was called and its answer leaves the worktree's
+ * fate unknown, so Orca may be deleting it still.
+ */
+export function removalUnsettled(removed: Outcome<unknown>): boolean {
+  return !removed.ok && UNSETTLED.has(removed.failure.code);
 }
 
 /** What `orca worktree rm` answered `done`: done, or why the worktree may stay. */
@@ -191,6 +208,17 @@ function removalAnswer(
     parsed?.ok === false && !parsed.code?.trim() && !parsed.message?.trim()
       ? null
       : parsed;
+  // Orca stopped waiting, or answered on accepting the removal: its host
+  // goes on deleting the checkout in the background.
+  if (
+    (envelope?.ok === false &&
+      envelope.code === "worktree_removal_in_progress") ||
+    (envelope?.ok === true && envelope.result.removing === true)
+  )
+    return failed(
+      "orca-pending",
+      `${what}: Orca is still deleting the checkout in the background ${orcaFailure(done)}`,
+    );
   if (envelope?.ok === false)
     return failed(
       "orca-refused",

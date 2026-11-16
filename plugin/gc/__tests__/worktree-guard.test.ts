@@ -95,6 +95,23 @@ const refused: Answer = {
   stderr: "",
 };
 
+const stillDeleting: Answer = {
+  code: 1,
+  stdout: JSON.stringify({
+    ok: false,
+    error: {
+      code: "worktree_removal_in_progress",
+      message: "Stopped waiting, but Orca may still be deleting the checkout.",
+    },
+  }),
+  stderr: "",
+};
+const accepted: Answer = {
+  code: 0,
+  stdout: JSON.stringify({ ok: true, result: { removing: true } }),
+  stderr: "",
+};
+
 const emptyRefusal = (error: Record<string, string>): Answer => ({
   code: 1,
   stdout: JSON.stringify({ ok: false, error }),
@@ -116,6 +133,16 @@ describe("the admission around orca worktree rm", () => {
     ],
     ["a nonzero exit", exited, "orca worktree rm failed (exit 1)"],
     ["output that is not Orca's", garbled, "unreadable output"],
+    [
+      "Orca stopping its wait while it deletes",
+      stillDeleting,
+      "Orca is still deleting the checkout in the background",
+    ],
+    [
+      "an answer on accepting the removal",
+      accepted,
+      "Orca is still deleting the checkout in the background",
+    ],
   ])("is kept, marked submitted, after %s", async (_name, answer, why) => {
     const root = scratch();
     const { collected, atCall, file } = await collect(root, answer);

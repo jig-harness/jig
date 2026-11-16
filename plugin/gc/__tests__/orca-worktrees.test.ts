@@ -677,6 +677,51 @@ describe.skipIf(
     expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
   }, 60_000);
 
+  test("a detached checkout Orca is still deleting keeps its head held, and the next run keeps it before the hook", () => {
+    const f = setup();
+    commitAndPush(f, "work", { "work.txt": "work\n" });
+    detachWithMergedPull(
+      f,
+      f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]),
+    );
+    f.command(["git", "-C", f.tree, "push", "origin", "--delete", "topic"]);
+    idle(f);
+    f.writeState({ rm: "accepted" });
+    const first = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(first, 1);
+    const pending = (JSON.parse(first.stdout.toString()) as Receipt)
+      .resources[0];
+    expect(pending).toMatchObject({
+      outcome: "failed",
+      details: { claim: "kept" },
+    });
+    expect(String(pending?.reason)).toContain(
+      "Orca is still deleting the checkout in the background",
+    );
+    expect(String(pending?.reason)).toContain("HEAD.lock in place");
+    const lock = join(f.repo, ".git", "worktrees", "topic", "HEAD.lock");
+    expect(readFileSync(lock, "utf8")).toStartWith("jig gc ");
+    const tried = Bun.spawnSync(
+      ["git", "-C", f.tree, "commit", "--allow-empty", "-m", "window"],
+      { env: f.env, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(tried.exitCode).not.toBe(0);
+    expect(tried.stderr.toString()).toContain("HEAD.lock");
+    // The worktree survived: the next collection keeps it before its hook.
+    rmSync(join(f.root, "hook-ran"));
+    f.writeState({});
+    const second = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(second, 0);
+    expect(
+      (JSON.parse(second.stdout.toString()) as Receipt).resources[0],
+    ).toMatchObject({
+      outcome: "refused",
+      reason: expect.stringContaining(`${lock} exists`),
+    });
+    expect(existsSync(join(f.root, "hook-ran"))).toBe(false);
+    expect(existsSync(f.tree)).toBe(true);
+  }, 60_000);
+
   test("a checkout Orca does not list stays a plain, report-only worktree", () => {
     const f = setup();
     idle(f);

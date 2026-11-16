@@ -358,19 +358,25 @@ registry, the launch markers and the process holders are read, it checks
 that the checkout gained no changes, hidden index flags or operation, takes
 its `HEAD.lock` and compares its commit and branch with the proof's. It
 keeps the lock through `orca worktree rm`, which never moves the head
-itself: Orca reads the checkout's status, stops its terminals, removes it
-with `git worktree remove` and deletes only its branch, and only at the
-commit it found there. For an Orca checkout, then, gc guarantees that a
+itself: Orca reads the checkout's status, stops its terminals and removes
+it with `git worktree remove`, which deletes the lock with the worktree's
+git directory; a branch it deletes afterwards is a ref of the repository,
+not the worktree's head. For an Orca checkout, then, gc guarantees that a
 commit made after the final proof keeps the worktree, the commit with it,
 and that a commit, checkout, switch or reset tried between the last
 comparison and the removal fails with git's own "cannot lock ref" error, so
-none is lost. A `HEAD.lock` another git process already holds keeps the
-worktree, and so does a repository on
-[reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), before
-the hook runs, as for an agent tool's worktree. gc deletes its lock once
-`orca worktree rm` returns, whatever the call answered, and the receipt says
-when it could not; a removal Orca goes on with after the call's deadline is
-outside the hold, and the launch guard claim stays for it as below.
+none is lost. A `HEAD.lock` that is already there keeps the worktree before
+its hook runs, whether a git process holds it or an earlier collection left
+it, and so does a repository on
+[reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as for
+an agent tool's worktree. gc deletes its lock once Orca's answer settles the
+removal: the worktree removed, or Orca's refusal, after which the receipt
+says when the lock could not be deleted. While the answer leaves it unknown
+whether the worktree is going (the cases below in which the launch guard
+claim stays, among them Orca saying it is still deleting the checkout in the
+background), gc leaves the lock in place, since Orca may still be removing
+the worktree, and the receipt names it; a worktree that survives keeps the
+lock, which a person deletes by hand after inspecting it.
 
 Orca offers no reservation that stops a start between the registry's last
 read and the removal. Jig's plugin for Orca closes that gap from inside Orca: its
@@ -390,8 +396,10 @@ Orca checkout it collects, gc:
 
 Only the removal call's answer, success or Orca's explicit refusal, or the
 worktree's absence from Orca's list and from the disk releases a submitted
-admission. A call that timed out, exited nonzero without a refusal, or
-printed output gc cannot read may or may not have removed the worktree, so
+admission. A call that timed out, exited nonzero without a refusal, printed
+output gc cannot read, or answered that Orca is still deleting the checkout
+in the background (it stopped waiting, or answered on accepting the
+removal) may or may not have removed the worktree, so
 the admission stays and the plugin's hook keeps refusing launches into it; a
 gc that crashed after the mark leaves it the same way. The receipt line says
 so (`details.claim: kept`, and the reason says why). The next collection

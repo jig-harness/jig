@@ -32,6 +32,7 @@ import {
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import {
   localSteps,
+  removalUnsettled,
   removeThroughOrca,
   removeWithGit,
 } from "../worktree-removal.ts";
@@ -70,6 +71,7 @@ import {
   type WorktreePolicy,
 } from "./worktree-proof.ts";
 import {
+  keepHolds,
   releaseHolds,
   unchangedAndHeld,
   holdableIdentity,
@@ -495,10 +497,16 @@ async function collectThroughOrca(
     guard.settle(removed);
     // An archive written before a step that then failed stays, named in the
     // receipt, and expires with the receipts.
-    if (!removed.ok)
+    if (!removed.ok) {
+      // Orca may be deleting the worktree still: the hold stays, as the claim.
+      const left = removalUnsettled(removed) ? keepHolds(holds) : null;
+      const kept = failure(removed);
+      const answer =
+        left === null ? kept : { ...kept, reason: `${kept.reason}; ${left}` };
       return archived === null
-        ? failure(removed)
-        : { ...failure(removed), details: { archive: archived } };
+        ? answer
+        : { ...answer, details: { archive: archived } };
+    }
     return released({
       outcome: "collected",
       reason: `removed through Orca: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} orca worktree rm`,

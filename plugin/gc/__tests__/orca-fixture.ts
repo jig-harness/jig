@@ -55,9 +55,10 @@ export interface OrcaState {
    * How `rm` goes wrong: `exit` exits nonzero with no reply, and
    * `unreadable` prints output that is not Orca's, both removing nothing;
    * `lost-reply` removes the worktree, then exits nonzero with no output, as
-   * a reply lost on its way back.
+   * a reply lost on its way back; `accepted` answers that Orca is still
+   * deleting the worktree, removing nothing yet.
    */
-  rm?: "exit" | "unreadable" | "lost-reply";
+  rm?: "exit" | "unreadable" | "lost-reply" | "accepted";
   /** Where `rm` reads gc's admission for the worktree, copying it to `admission-at-rm.json`. */
   guard?: string;
   /**
@@ -118,6 +119,7 @@ if (sub === "rm") {
   }
   if (state.rm === "exit") { console.error("orca: connection lost"); process.exit(1); }
   if (state.rm === "unreadable") { console.log("orca: something went sideways"); process.exit(0); }
+  if (state.rm === "accepted") answer({ removing: true });
   if (state.commitAt === "rm") {
     const tried = commit(row.path, "window");
     writeFileSync(join(root, "window-commit"), tried.exitCode + "\\n" + tried.stderr.toString());
