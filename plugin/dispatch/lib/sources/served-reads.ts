@@ -73,6 +73,7 @@ export interface HeldIssue {
 interface Snapshot {
   version: 1;
   watermarks?: Readonly<Record<string, string>> | undefined;
+  boundaryRows?: Readonly<Record<string, ReadonlyArray<string>>> | undefined;
   membershipAt?: number;
   /** Metadata invalidations that happened since the last full reading. */
   revisions?: Record<string, number>;
@@ -364,6 +365,7 @@ interface Plan {
   stale: ReadonlySet<string> | "all";
   since: string;
   watermarks?: Readonly<Record<string, string>> | undefined;
+  boundaryRows?: Readonly<Record<string, ReadonlyArray<string>>> | undefined;
   limited: TrackerRateLimited | null;
   unavailable?: string;
   unavailableCause?: unknown;
@@ -397,6 +399,9 @@ async function plan(
   const answer = await tracker.changedSince({
     since: kept.since,
     ...(kept.watermarks === undefined ? {} : { watermarks: kept.watermarks }),
+    ...(kept.boundaryRows === undefined
+      ? {}
+      : { boundaryRows: kept.boundaryRows }),
     identity,
     keys: watched(kept),
   });
@@ -406,6 +411,7 @@ async function plan(
       ...full,
       source: "unchanged",
       watermarks: answer.watermarks ?? kept.watermarks,
+      boundaryRows: answer.boundaryRows ?? kept.boundaryRows,
       snapshot: kept,
       stale: new Set(),
       since: kept.since,
@@ -414,6 +420,7 @@ async function plan(
     ...full,
     source: "changed",
     watermarks: answer.watermarks ?? kept.watermarks,
+    boundaryRows: answer.boundaryRows ?? kept.boundaryRows,
     snapshot: kept,
     stale: new Set(answer.keys),
     since:
@@ -573,6 +580,7 @@ function assemble(
         revisions: versions.saved(),
         membershipAt: versions.membershipAt,
         watermarks: p.watermarks ?? kept?.watermarks,
+        boundaryRows: p.boundaryRows ?? kept?.boundaryRows,
         since: p.since,
         open,
         progress,
@@ -618,6 +626,7 @@ function savedProbe(
   since: string;
   keys: string[];
   watermarks?: Readonly<Record<string, string>> | undefined;
+  boundaryRows?: Readonly<Record<string, ReadonlyArray<string>>> | undefined;
 } | null {
   const key = `${tracker.adapter}:${tracker.team}:queue:${identity}:${configIdentity(tracker)}`;
   const snapshot = snapshotOf(cache.get<unknown>(key));
@@ -627,6 +636,7 @@ function savedProbe(
         since: snapshot.since,
         keys: watched(snapshot),
         watermarks: snapshot.watermarks,
+        boundaryRows: snapshot.boundaryRows,
       };
 }
 

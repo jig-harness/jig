@@ -103,6 +103,9 @@ export async function nativeSharedView(
       since: string;
       keys: string[];
       watermarks?: Readonly<Record<string, string>> | undefined;
+      boundaryRows?:
+        | Readonly<Record<string, ReadonlyArray<string>>>
+        | undefined;
     } | null;
     credential: (tracker: Tracker, credential: string) => void;
   },
@@ -164,6 +167,18 @@ export async function nativeSharedView(
                     .sort()[0] ?? since,
                 ]),
               );
+              const boundaryRows = Object.fromEntries(
+                [...partitions].map((name) => [
+                  name,
+                  [
+                    ...new Set(
+                      readings.flatMap(
+                        (value) => value.boundaryRows?.[name] ?? [],
+                      ),
+                    ),
+                  ],
+                ]),
+              );
               return coalesce(reads, probeKey, () =>
                 facts.guarded(() =>
                   changedSince(
@@ -173,6 +188,7 @@ export async function nativeSharedView(
                       keys,
                       identities,
                       ...(partitions.size === 0 ? {} : { watermarks }),
+                      ...(partitions.size === 0 ? {} : { boundaryRows }),
                     },
                     options.bound?.signal,
                   ),

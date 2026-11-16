@@ -216,32 +216,73 @@ function affectedKeys(
 interface ProbeContext {
   home: Repo;
   sinceMs: number;
+  includeBoundary: boolean;
+  boundaryRows: ReadonlySet<string>;
   watched: ReadonlyMap<string, string[]>;
   people: ReadonlySet<string>;
+}
+
+interface PageChanges {
+  keys: string[];
+  complete: boolean;
+  latest: string | null;
+  boundaryRowKeys: string[];
+}
+
+function unseenAtBoundary(row: Change, context: ProbeContext): boolean {
+  const time = parseMs(row.time);
+  return (
+    time >= context.sinceMs &&
+    (time !== context.sinceMs ||
+      (context.includeBoundary && !context.boundaryRows.has(row.key)))
+  );
 }
 
 function pageChanges(
   page: ProbePage,
   repo: Repo,
   context: ProbeContext,
-): ChangeAnswer {
-  const incomplete = { keys: [], complete: false, latest: null };
+): PageChanges {
+  const incomplete = {
+    keys: [],
+    complete: false,
+    latest: null,
+    boundaryRowKeys: [],
+  };
   if (!page.complete) return incomplete;
   const changed = new Set<string>();
+  const boundaryRows = new Set<string>();
   let latest: string | null = null;
   for (const value of page.nodes) {
     const row = changeRow(value, repo, context.home);
     if (!row.complete) return incomplete;
-    // IssueFilters.since includes its boundary; the shared watermark means after it.
-    if (parseMs(row.time) <= context.sinceMs) continue;
+    // IssueFilters.since includes its boundary. Retain the rows seen there so
+    // a later row sharing its timestamp is not silently skipped.
+    if (!unseenAtBoundary(row, context)) continue;
     if (latest === null || row.time > latest) latest = row.time;
+    if (row.time === latest) boundaryRows.add(row.key);
     const keys = affectedKeys(row, context.watched, context.people);
     if (keys.length === 0) continue;
     keys.forEach((key) => {
       changed.add(key);
     });
   }
-  return { keys: [...changed], complete: true, latest };
+  return {
+    keys: [...changed],
+    complete: true,
+    latest,
+    boundaryRowKeys: [...boundaryRows],
+  };
+}
+
+function nextBoundaryRows(
+  answer: PageChanges,
+  since: string,
+  previous: readonly string[],
+): string[] {
+  return answer.latest !== null && answer.latest > since
+    ? answer.boundaryRowKeys
+    : [...new Set([...previous, ...answer.boundaryRowKeys])];
 }
 
 /** Repository updates avoid search-index lag. Untimestamped link/board edits require the scheduled full refresh. */
@@ -253,6 +294,7 @@ export function changeProbe(
     // Sequential repository reads have independent source-clock boundaries.
     // Advancing one repository must never hide another repository's update.
     const watermarks: Record<string, string> = {};
+    const boundaryRows: Record<string, string[]> = {};
     const watched = new Map<string, string[]>();
     for (const key of query.keys) {
       const id = keyOf(client.ref(key), client.home).toLowerCase();
@@ -275,6 +317,8 @@ export function changeProbe(
       const answer = pageChanges(page, repo, {
         home: client.home,
         sinceMs: parseMs(since),
+        includeBoundary: query.boundaryRows !== undefined,
+        boundaryRows: new Set(query.boundaryRows?.[name] ?? []),
         watched,
         people,
       });
@@ -284,12 +328,18 @@ export function changeProbe(
       });
       watermarks[name] =
         answer.latest !== null && answer.latest > since ? answer.latest : since;
+      boundaryRows[name] = nextBoundaryRows(
+        answer,
+        since,
+        query.boundaryRows?.[name] ?? [],
+      );
     }
     return {
       keys: [...changed],
       complete: true,
       latest: Object.values(watermarks).sort()[0] ?? null,
       watermarks,
+      boundaryRows,
     } satisfies ChangeAnswer;
   };
 }

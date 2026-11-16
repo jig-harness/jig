@@ -243,3 +243,36 @@ it("keeps repository watermarks independent across interleaved updates without u
   expect(quiet.keys).toEqual([]);
   expect(quiet.complete).toBe(true);
 });
+
+it("retains inclusive watermark boundaries so a later same-timestamp row is observed", async () => {
+  let phase = 0;
+  const boundary = "2026-01-02T00:00:00Z";
+  const { t } = gitHub(() => ({
+    repository: {
+      issues: conn([
+        { ...change(1), updatedAt: boundary },
+        ...(phase === 0 ? [] : [{ ...change(2), updatedAt: boundary }]),
+      ]),
+    },
+  }));
+  assert(t.changedSince);
+  const first = await t.changedSince({
+    since,
+    identity: "dana",
+    keys: ["#1", "#2"],
+  });
+  expect(first.keys).toEqual(["#1"]);
+  expect(first.boundaryRows).toEqual({ "acme/app": ["#1"] });
+  phase = 1;
+  const second = await t.changedSince({
+    since: first.latest ?? since,
+    ...(first.watermarks === undefined ? {} : { watermarks: first.watermarks }),
+    ...(first.boundaryRows === undefined
+      ? {}
+      : { boundaryRows: first.boundaryRows }),
+    identity: "dana",
+    keys: ["#1", "#2"],
+  });
+  expect(second.keys).toEqual(["#2"]);
+  expect(second.boundaryRows).toEqual({ "acme/app": ["#1", "#2"] });
+});

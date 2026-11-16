@@ -462,3 +462,22 @@ it("persists source watermarks through changed and unchanged native queue readin
   (await f.open(3)).save();
   expect(queries).toEqual([undefined, watermarks, watermarks]);
 });
+
+it("persists source boundary rows through native queue readings", async () => {
+  const f = fixture();
+  const boundaryRows = { "acme/app": ["#1"] };
+  const queries: unknown[] = [];
+  f.tracker.changedSince = async (query) => {
+    queries.push(query.boundaryRows);
+    return {
+      keys: [],
+      complete: true,
+      latest: isoFromMs(START),
+      boundaryRows,
+    };
+  };
+  (await f.open(0)).save();
+  (await f.open(1)).save();
+  (await f.open(2)).save();
+  expect(queries).toEqual([undefined, boundaryRows]);
+});
