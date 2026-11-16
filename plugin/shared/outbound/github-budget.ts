@@ -647,13 +647,6 @@ interface Governed {
 /** The unit of the cost ledger each record window counts in. */
 const LEDGER_UNITS = { requests: "requests", complexity: "points" } as const;
 
-/**
- * Points a GraphQL answer measured beyond what its reservation took from the
- * record, because it reported a cost but no balance: the cost ledger holds
- * them already, so a later snapshot that shows them spent explains them.
- */
-const measuredBeyondBalance = new Map<string, number>();
-
 /** The points a GraphQL answer's `rateLimit.cost` reports, `null` when it reports none. */
 function measuredCost(body: string): number | null {
   const value = parsed(body);
@@ -665,20 +658,15 @@ function measuredCost(body: string): number | null {
     : null;
 }
 
-/** Remember what an answer measured that the record's balance did not take. */
-function noteMeasured(
-  key: string,
+/** The points an answer measured beyond its reservation, when it reported a cost but no balance. */
+function measuredBeyondReservation(
   body: string,
   answer: BudgetAnswer,
   reserved: number,
-): void {
-  if (answer.complexity !== undefined) return;
+): number {
+  if (answer.complexity !== undefined) return 0;
   const cost = measuredCost(body);
-  if (cost === null || cost <= reserved) return;
-  measuredBeyondBalance.set(
-    key,
-    (measuredBeyondBalance.get(key) ?? 0) + cost - reserved,
-  );
+  return cost === null || cost <= reserved ? 0 : cost - reserved;
 }
 
 /** Put what a snapshot showed was spent beyond the record's count on the cost ledger's unattributed row. */
@@ -688,13 +676,9 @@ function recordUnexplained(
   snapshot: boolean,
 ): void {
   if (unexplained === undefined || !snapshot) return;
-  // A snapshot replaces the balance: what it left unexplained settles every
-  // measured cost the record had not taken.
-  const measured = measuredBeyondBalance.get(key) ?? 0;
-  measuredBeyondBalance.delete(key);
   for (const [name, unit] of Object.entries(LEDGER_UNITS)) {
     const shown = unexplained[name as keyof Unexplained];
-    const cost = name === "complexity" ? (shown ?? 0) - measured : shown;
+    const cost = shown;
     if (cost === undefined || cost <= 0) continue;
     recordCall({
       system: "github",
@@ -774,12 +758,12 @@ function governed(
         now,
         refusedText,
       );
-      noteMeasured(
-        key,
+      const extra = measuredBeyondReservation(
         body,
         answer,
         reservedIn === "complexity" ? reservations : 0,
       );
+      if (extra > 0) answer.extraComplexity = extra;
       recordUnexplained(
         key,
         gov.observe(key, answer, sentAt, reservedIn),

@@ -158,6 +158,33 @@ describe("the unattributed row of the cost ledger", () => {
     expect(rows.filter((r) => r.operation === UNATTRIBUTED)).toEqual([]);
   });
 
+  it("settles a cost-only answer's extra points in the shared record, so a fresh process and a later ordinary balance explain them alike", async () => {
+    const store = memoryBudgetStore();
+    setForgeGovernor(budgetGovernor(store, { share: () => null }));
+    const reset = Math.floor(currentMs() / 1000) + 1800;
+    let remaining = 4500;
+    const gh = client((argv) => {
+      if (argv.includes("rate_limit"))
+        return JSON.stringify({
+          resources: { graphql: { limit: 5000, remaining, reset } },
+        });
+      return JSON.stringify({ data: { rateLimit: { cost: 9 } } });
+    });
+    const rows: CallRecord[] = [];
+    await withLedgerWriter(
+      (row) => rows.push(row),
+      async () => {
+        await gh(["api", "rate_limit"]);
+        await gh(["api", "graphql", "-f", "query={ viewer { login } }"]);
+        // Another process sharing the store takes the snapshot: no local state.
+        setForgeGovernor(budgetGovernor(store, { share: () => null }));
+        remaining = 4491;
+        await gh(["api", "rate_limit"]);
+      },
+    );
+    expect(rows.filter((r) => r.operation === UNATTRIBUTED)).toEqual([]);
+  });
+
   it("records nothing when the counted requests explain the balance, or the balance is another window's", () => {
     let now = 1_000_000;
     const store = memoryBudgetStore();

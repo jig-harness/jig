@@ -153,6 +153,13 @@ export interface BudgetAnswer {
    * reservations included, rather than taking the lower count.
    */
   snapshot?: boolean;
+  /**
+   * Complexity points the answer measured beyond what its reservation took,
+   * for an ordinary answer that reported a cost but no balance: the record
+   * takes them off the stored balance, so a later snapshot is compared with
+   * a balance that already holds them and shows them as explained.
+   */
+  extraComplexity?: number;
   limitedUntil?: number;
   /**
    * A refusal that named no wait: the credential is held for `floorMs`,
@@ -821,11 +828,13 @@ export function budgetGovernor(
             ? snapshotOf(prev, next, now, sentAt)
             : merged(prev, next, now, sentAt, reservedIn === name);
         const requests = take(base.requests, answer.requests, "requests");
-        const complexity = take(
-          base.complexity,
-          answer.complexity,
-          "complexity",
-        );
+        const taken = take(base.complexity, answer.complexity, "complexity");
+        const extra =
+          answer.snapshot === true ? 0 : (answer.extraComplexity ?? 0);
+        const complexity =
+          extra > 0 && taken.remaining !== null
+            ? { ...taken, remaining: Math.max(0, taken.remaining - extra) }
+            : taken;
         unexplained =
           answer.snapshot === true
             ? unexplainedSpending(base, { requests, complexity })
