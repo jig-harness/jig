@@ -19,4 +19,27 @@ export const BUDGET_MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "CREATE TABLE forge_pacing (owner TEXT PRIMARY KEY, next_at REAL NOT NULL);",
   },
+  {
+    // A GitHub credential's quota owner, found once and shared by every
+    // process (`github-owner.ts`): the owner's record key, whether it was
+    // verified, the login it answered with, and when to look again.
+    additive: true,
+    sql: `CREATE TABLE github_owner (
+      credential TEXT NOT NULL, host TEXT NOT NULL, owner TEXT NOT NULL,
+      verified INTEGER NOT NULL, login TEXT, checked_at INTEGER NOT NULL,
+      retry_at INTEGER NOT NULL, PRIMARY KEY (credential, host)
+    );`,
+  },
+  {
+    // Which quota owner and which of its windows an hourly ledger row spent,
+    // beside the row (`ledger.ts`): a table of its own, so a copy that writes
+    // the row's twelve columns by position still writes it.
+    additive: true,
+    sql: `CREATE TABLE outbound_cost_quota (
+      hour INTEGER NOT NULL, system TEXT NOT NULL, credential TEXT NOT NULL,
+      operation TEXT NOT NULL, caller TEXT NOT NULL, unit TEXT NOT NULL,
+      owner TEXT, quota_window TEXT,
+      PRIMARY KEY (hour, system, credential, operation, caller, unit)
+    );`,
+  },
 ];

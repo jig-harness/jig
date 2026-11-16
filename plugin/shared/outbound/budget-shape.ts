@@ -1,8 +1,9 @@
-import type { BudgetWindow } from "./budget.ts";
+import { swallow } from "../errors.ts";
+import type { BudgetRecord, BudgetWindow } from "./budget.ts";
 
 // Whether a value read back from the store has the shape of a window.
 
-export const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
+const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
   v === null || (typeof v === "number" && Number.isFinite(v) && ok(v));
 
 const nonNegative = (n: number): boolean => n >= 0;
@@ -29,7 +30,7 @@ function validOverflow(overflow: unknown): boolean {
   );
 }
 
-export function validWindow(w: unknown): w is BudgetWindow {
+function validWindow(w: unknown): w is BudgetWindow {
   if (typeof w !== "object" || w === null) return false;
   const r = w as Record<string, unknown>;
   return (
@@ -44,4 +45,40 @@ export function validWindow(w: unknown): w is BudgetWindow {
     validOverflow(r.overflow) &&
     (r.estimated === undefined || typeof r.estimated === "boolean")
   );
+}
+
+function validWindows(w: unknown): boolean {
+  if (w === undefined) return true;
+  return (
+    typeof w === "object" &&
+    w !== null &&
+    !Array.isArray(w) &&
+    Object.values(w).every(validWindow)
+  );
+}
+
+/** A record read from the store only when every field has its shape; a damaged one reads as none. */
+function validRecord(value: unknown): value is BudgetRecord {
+  if (typeof value !== "object" || value === null) return false;
+  const r = value as Record<string, unknown>;
+  return (
+    validWindow(r.requests) &&
+    validWindow(r.complexity) &&
+    validWindows(r.windows) &&
+    (r.strikes === undefined || orNull(r.strikes, (n) => n >= 0)) &&
+    orNull(r.limitedUntil, (n) => n >= 0) &&
+    (r.why === null || typeof r.why === "string") &&
+    typeof r.observedAt === "number" &&
+    Number.isFinite(r.observedAt)
+  );
+}
+
+export function parseRecord(text: string): BudgetRecord | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return validRecord(value) ? value : null;
+  } catch (error) {
+    swallow(error, "a tracker budget record does not read");
+    return null;
+  }
 }

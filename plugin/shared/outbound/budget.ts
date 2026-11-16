@@ -27,7 +27,8 @@ import { errnoCode, swallow } from "../errors.ts";
 import { JigError } from "../outcome.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
-import { orNull, validWindow } from "./budget-shape.ts";
+import { parseRecord } from "./budget-shape.ts";
+export { parseRecord };
 import {
   EMPTY,
   olderWindow,
@@ -152,6 +153,13 @@ export interface BudgetAnswer {
    * reservations included, rather than taking the lower count.
    */
   snapshot?: boolean;
+  /**
+   * Complexity points the answer measured beyond what its reservation took,
+   * for an ordinary answer that reported a cost but no balance: the record
+   * takes them off the stored balance, so a later snapshot is compared with
+   * a balance that already holds them and shows them as explained.
+   */
+  extraComplexity?: number;
   limitedUntil?: number;
   /**
    * A refusal that named no wait: the credential is held for `floorMs`,
@@ -176,6 +184,8 @@ export interface AdmitOptions {
    * instead of reserving nothing.
    */
   rollMs?: number;
+  /** How many requests this one admission reserves, all or none in one transaction; 1 when left out. */
+  count?: number;
   /** Told the window the request actually reserved in: `null` when it reserved nothing, whatever `reserve` asked. */
   onReserved?: (reservedIn: string | null) => void;
   /** Throw a store's contention to the caller rather than wait for it. */
@@ -247,42 +257,6 @@ import { BUDGET_MIGRATIONS } from "./schema.ts";
 /** The machine's budget database: `~/.local/state/jig/tracker/budget.sqlite`. */
 export function budgetPath(home = homedir()): string {
   return join(home, ".local", "state", "jig", "tracker", "budget.sqlite");
-}
-
-function validWindows(w: unknown): boolean {
-  if (w === undefined) return true;
-  return (
-    typeof w === "object" &&
-    w !== null &&
-    !Array.isArray(w) &&
-    Object.values(w).every(validWindow)
-  );
-}
-
-/** A record read from the store only when every field has its shape; a damaged one reads as none. */
-function validRecord(value: unknown): value is BudgetRecord {
-  if (typeof value !== "object" || value === null) return false;
-  const r = value as Record<string, unknown>;
-  return (
-    validWindow(r.requests) &&
-    validWindow(r.complexity) &&
-    validWindows(r.windows) &&
-    (r.strikes === undefined || orNull(r.strikes, (n) => n >= 0)) &&
-    orNull(r.limitedUntil, (n) => n >= 0) &&
-    (r.why === null || typeof r.why === "string") &&
-    typeof r.observedAt === "number" &&
-    Number.isFinite(r.observedAt)
-  );
-}
-
-export function parseRecord(text: string): BudgetRecord | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    return validRecord(value) ? value : null;
-  } catch (error) {
-    swallow(error, "a tracker budget record does not read");
-    return null;
-  }
 }
 
 /** The SQLite store at `path`; one that cannot be opened governs nothing. */
@@ -357,6 +331,35 @@ function currentShare(): number | null {
  * none, or for an answer that is not a snapshot.
  */
 export type Unexplained = Partial<Record<"requests" | "complexity", number>>;
+
+/**
+ * The complexity window less the points an ordinary answer measured beyond
+ * its reservation. The deduction counts as an ordinary answer's, so a
+ * snapshot sent before it cannot raise the balance back above it. It is
+ * skipped where the stored balance already holds the spending or belongs to
+ * another window: a snapshot sent after the request (its balance includes
+ * what the request cost), or a window that reset since. A snapshot sent in
+ * the same millisecond is ambiguous, and the deduction stays: a balance
+ * counted twice errs low, one never counted errs high.
+ */
+function withExtraSpent(
+  window: BudgetWindow,
+  answer: BudgetAnswer,
+  now: number,
+  sentAt: number | undefined,
+): BudgetWindow {
+  const extra = answer.snapshot === true ? 0 : (answer.extraComplexity ?? 0);
+  if (extra <= 0 || window.remaining === null) return window;
+  const sent = sentAt ?? now;
+  if (window.resetAt !== null && window.resetAt <= sent) return window;
+  if (window.snapshotSentAt != null && window.snapshotSentAt > sent)
+    return window;
+  return {
+    ...window,
+    remaining: Math.max(0, window.remaining - extra),
+    answeredOrdinarilyAt: now,
+  };
+}
 
 /** Admits requests for a credential and records what the answers said. */
 export interface BudgetGovernor {
@@ -789,21 +792,29 @@ export function budgetGovernor(
       // so concurrent callers each spend their own part of the balance.
       const decide = (record: BudgetRecord | null): BudgetRecord | null => {
         if (record === null) return null;
-        const refusal = refusalFor(
-          adapter,
-          record,
-          share(),
-          now,
-          opts.windows ?? DEFAULT_WINDOWS,
-        );
-        if (refusal !== null) {
-          out.refusal = refusal;
-          return null;
-        }
         const name = opts.reserve === undefined ? "requests" : opts.reserve;
-        const next = reserved(record, now, name, opts.rollMs);
-        out.reservedIn = next === null ? null : name;
-        return next;
+        let current: BudgetRecord = record;
+        let changed = false;
+        for (let at = 0; at < (opts.count ?? 1); at += 1) {
+          const refusal = refusalFor(
+            adapter,
+            current,
+            share(),
+            now,
+            opts.windows ?? DEFAULT_WINDOWS,
+          );
+          if (refusal !== null) {
+            // All or none: a refused batch reserves nothing.
+            out.refusal = refusal;
+            return null;
+          }
+          const next = reserved(current, now, name, opts.rollMs);
+          if (next === null) break;
+          current = next;
+          changed = true;
+        }
+        out.reservedIn = changed ? name : null;
+        return changed ? current : null;
       };
       store.update(key, decide, opts.nonblocking);
       if (out.refusal !== null) throw out.refusal;
@@ -846,10 +857,11 @@ export function budgetGovernor(
             ? snapshotOf(prev, next, now, sentAt)
             : merged(prev, next, now, sentAt, reservedIn === name);
         const requests = take(base.requests, answer.requests, "requests");
-        const complexity = take(
-          base.complexity,
-          answer.complexity,
-          "complexity",
+        const complexity = withExtraSpent(
+          take(base.complexity, answer.complexity, "complexity"),
+          answer,
+          now,
+          sentAt,
         );
         unexplained =
           answer.snapshot === true

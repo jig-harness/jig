@@ -142,3 +142,65 @@ test.each([
   );
   expect(events[0]).toMatchObject({ cost: 1, estimated: true, failure });
 });
+
+/** A runner whose `gh` prints `stdout`, recording each attempt. */
+function printing(stdout: string) {
+  setForgeGovernor(budgetGovernor(memoryBudgetStore(), { share: () => null }));
+  return traceGhRunner<
+    GhRun & { stdout: string },
+    { env: Record<string, string>; timeoutSec?: number }
+  >(
+    async () => ({ code: 0, stdout, stderr: "", timedOut: false }),
+    () => 10,
+    { env: { GH_TOKEN: "window-test" } },
+    (failure) => ({
+      code: 1,
+      stdout: "",
+      stderr: failure.reason,
+      timedOut: false,
+      held: failure,
+    }),
+  );
+}
+
+const resourceHeaders = (resource: string) =>
+  `HTTP/2.0 200 OK\r\nx-ratelimit-resource: ${resource}\r\nx-ratelimit-limit: 30\r\nx-ratelimit-remaining: 29\r\nx-ratelimit-reset: 9999999999\r\n\r\n{}`;
+
+test.each([
+  { args: ["pr", "view", "1"], stdout: "{}", window: "complexity" },
+  { args: ["issue", "list"], stdout: "[]", window: "complexity" },
+  { args: ["run", "list"], stdout: "[]", window: "requests" },
+  { args: ["label", "create", "x"], stdout: "", window: "requests" },
+  { args: ["pr", "diff", "1"], stdout: "", window: "unknown" },
+  {
+    args: ["api", "graphql", "-f", "query={ viewer { login } }"],
+    stdout: "{}",
+    window: "complexity",
+  },
+  { args: ["api", "rate_limit"], stdout: "{}", window: "none" },
+  { args: ["api", "search/issues?q=x"], stdout: "{}", window: "search" },
+  {
+    args: ["api", "repos/o/r"],
+    stdout: resourceHeaders("core"),
+    window: "requests",
+  },
+  {
+    args: ["api", "search/code?q=x"],
+    stdout: resourceHeaders("code_search"),
+    window: "code_search",
+  },
+])(
+  "a run of $args is recorded against the $window window",
+  async ({ args, stdout, window }) => {
+    const events: CallRecord[] = [];
+    await withLedgerWriter(
+      (e) => events.push(e),
+      () => printing(stdout)([...args]),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      window,
+      owner: githubCredential({ GH_TOKEN: "window-test" }),
+    });
+  },
+);

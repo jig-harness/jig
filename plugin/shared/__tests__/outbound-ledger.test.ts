@@ -3,7 +3,8 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeDatabase } from "../records/db.ts";
+import { closeDatabase, openDatabase } from "../records/db.ts";
+import { BUDGET_MIGRATIONS } from "../outbound/schema.ts";
 import {
   ledgerReport,
   recordCall,
@@ -176,4 +177,95 @@ test("a locked ledger discards accounting without delaying the outbound caller",
     lock.exec("ROLLBACK");
     lock.close();
   }
+});
+
+test("a row keeps the quota owner and the window it spent, and an earlier row reads with neither", () => {
+  const p = path();
+  const at = 300 * hour;
+  recordCall({
+    path: p,
+    system: "github",
+    credential: "github:token",
+    owner: "github:owner",
+    window: "complexity",
+    operation: "pr view",
+    cost: 1,
+    estimated: true,
+    durationMs: 1,
+    at,
+  });
+  // A copy that knows only the row's twelve columns still writes them.
+  const opened = openDatabase({ path: p, migrations: BUDGET_MIGRATIONS });
+  if (!opened.ok) throw new Error(opened.failure.reason);
+  opened.value
+    .query(
+      "INSERT OR REPLACE INTO outbound_cost VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    )
+    .run(
+      at,
+      "github",
+      "github:other",
+      "pr list",
+      "skill:x",
+      "requests",
+      1,
+      1,
+      0,
+      1,
+      1,
+      "{}",
+    );
+  opened.value
+    .query(
+      "INSERT INTO github_owner (credential, host, owner, verified, login, checked_at, retry_at) VALUES (?,?,?,?,?,?,?)",
+    )
+    .run(
+      "github:other",
+      "github.com",
+      "github:owner",
+      1,
+      "octo",
+      at,
+      at + hour,
+    );
+  const rows = ledgerReport({ path: p, since: at - hour, until: at + 1 }).rows;
+  expect(rows.find((r) => r.operation === "pr view")).toMatchObject({
+    owner: "github:owner",
+    window: "complexity",
+  });
+  // An earlier row names no window; its owner is the one the machine knows.
+  expect(rows.find((r) => r.operation === "pr list")).toMatchObject({
+    owner: "github:owner",
+    window: null,
+  });
+});
+
+test("a database an earlier copy created reads without the quota tables", () => {
+  const p = path();
+  const at = 300 * hour;
+  const opened = openDatabase({
+    path: p,
+    migrations: BUDGET_MIGRATIONS.slice(0, 2),
+  });
+  if (!opened.ok) throw new Error(opened.failure.reason);
+  opened.value
+    .query("INSERT INTO outbound_cost VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run(
+      at,
+      "github",
+      "github:old",
+      "pr view",
+      "skill:x",
+      "requests",
+      1,
+      1,
+      0,
+      1,
+      1,
+      "{}",
+    );
+  closeDatabase(p);
+  const rows = ledgerReport({ path: p, since: at - hour, until: at + 1 }).rows;
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ owner: null, window: null, requests: 1 });
 });

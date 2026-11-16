@@ -141,6 +141,67 @@ GraphQL request sent over HTTPS instead of through the client (with
 `JIG_GITHUB_GRAPHQL_URL` set) is admitted and recorded as a `gh api graphql`
 call is, under the record of the token it sends.
 
+**GitHub's quota owner.** GitHub counts its primary limits per user across
+every personal token of that user (classic or fine-grained), and per
+installation across every token of an installation, so the record is the
+owner's, never the token's. A credential keeps two keys:
+
+- the credential's own, a hash of the token, or for the client's stored
+  login of the host, the configuration directory and the account the
+  client's `hosts.yml` names as active there (a local read, no request),
+  so an account switch starts from nothing the previous account learnt.
+  It keys ledger rows and every cache of answers: two tokens of one user
+  may read different repositories, so neither reads the other's cached
+  answers;
+- the quota owner's, a hash of the host and `user:<numeric id>` or
+  `installation:<numeric id>`; the numeric id, since a login can be
+  renamed. Admission and observation use it.
+
+A user's credential is asked once who it is (`GET /user`, run directly with
+a 10-second deadline so it is not governed against the owner it is finding,
+admitted against the unverified record below and counted in the ledger).
+The machine keeps the answer in the budget database for every process: a
+week for a token, whose user never changes, a day for a stored login. An
+installation token cannot name its installation (no request answers its
+id), so its owner is the installation its issuer declares beside it
+(`JIG_GITHUB_INSTALLATION_ID`), on the host it is used on: a replacement
+token after expiry keeps the record and its hold.
+
+**When the owner cannot be established** (the question failed or waits to
+be asked again, an installation token with no declaration, an answer that
+does not read), the credential is kept under one record per host that every
+such credential shares. Those credentials can then only spend less than
+their allowances together, never more, and a hold seen there holds every
+one of them on the host. A failed question is asked again after 15
+minutes, never on every call; an owner verified before stays in use while
+it is asked again. There is no record of the credential's own to fall back
+to: a rotated installation token would otherwise start with a fresh budget
+and no hold.
+
+**Records an earlier release kept.** Records kept under a credential's own
+key stay as they are, readable by the release that wrote them; nothing is
+deleted. The first time an owner's record is used, it is seeded from the
+credential's earlier record (for the stored login, the earlier key had no
+account in it), and an existing owner's record has it merged in, once a
+process. Merging is conservative and never drops an active hold: the later
+hold, the higher count of refusals in a row, and for each window the lower
+balance when both name one reset, else the one with the later reset.
+
+**A paged `gh api --paginate` read** is charged per page. When its output
+is captured whole and the budget is on, the wrapper sends the pages itself
+(`plugin/shared/outbound/gh-paginate.ts`): each page is admitted, observed
+and recorded in the ledger as a request of its own, the next page named by
+the answer's `Link` header (REST) or the first `pageInfo` cursor (GraphQL),
+and the output assembled as the client prints it. A page the record
+refuses ends the read as `rate-limited`, the pages already sent staying
+charged, so a long read cannot pass the dispatcher's floor; a failing page
+ends it with that page's failure; the pages share the call's one deadline;
+past 100 pages the read fails as `too-costly`. A form the wrapper does not
+reproduce (streamed output, GraphQL with `--jq` or `--template`, the
+caller's own `--include`, `--input`, or REST fields without `GET`) is left
+to the client to page, after reserving 10 requests (or points) above the
+floor; it keeps them and is charged them as an estimate.
+
 The dispatcher's reads may use a share of each limit and leave the rest to
 passes and people. One setting covers every system; `tracker_share` stays
 readable as its older name.
@@ -152,6 +213,19 @@ key, the operation, the caller (a tick, a pass and its stage, a person's
 skill), and for that row the requests, the cost in the system's own unit,
 the time and the count of each failure class. Rows are totals for an hour,
 kept 7 days, in the budget database.
+
+A GitHub row also names the quota owner's key and the window of the
+owner's record it spent (core, GraphQL, search, none, or unknown), in a
+table beside the rows so a release that writes the row's columns by
+position still writes it. The window is taken from evidence: the limit the
+answer's `x-ratelimit-resource` header names, else the `gh api` route,
+else a table of the subcommands Jig runs and the API each mainly spends
+(`gh pr view` and `gh issue list` GraphQL, `gh run list` and `gh label
+create` core); a subcommand the table does not know is unknown, never
+guessed. The forecasts and reports read each row's window and match it to
+its owner's balance; a row written before owners were kept is matched by
+its credential, or the owner the machine has since learnt for it, and its
+window is inferred from its unit and operation and marked as such.
 
 - The tick report has one line per system: the balance, what the tick
   spent, and its costliest operations.

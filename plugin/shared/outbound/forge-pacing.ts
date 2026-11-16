@@ -85,9 +85,9 @@ export async function paceForge(
         await deps.sleep(Math.min(25, remaining), signal);
         continue;
       }
-      return outboundFailure("unreachable", claimed.failure.reason, {
-        cause: claimed.failure.cause,
-      });
+      // Unavailable pacing storage governs nothing, as the budget's does: the
+      // send goes ahead rather than stopping every otherwise-working read.
+      return null;
     }
     if (signal?.aborted || deps.now() >= deadlineAt) continue;
     if (claimed.value === 0) return null;

@@ -241,6 +241,26 @@ export const DISPATCHER: RecordKind[] = [
     meaning:
       "The next governed CLI send time per existing GitHub quota owner, claimed atomically without future queue reservations. A crashed sender holds others for at most 200 milliseconds.",
   },
+  {
+    name: "github-owner",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "github_owner",
+    version: 1,
+    meaning:
+      "Which quota owner a GitHub credential's runs are admitted against, per hashed credential and host: the hashed user or installation, whether it was verified, the login GitHub answered with, and when to ask again. Every process reads it, so a credential is asked who it is at most once a check period.",
+  },
+  {
+    name: "outbound-cost-quota",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "outbound_cost_quota",
+    version: 1,
+    meaning:
+      "For each hourly cost-ledger row, the quota owner whose record it spent and the window it spent (core, GraphQL, search, none or unknown). The reports read it to match spending to the owner's balance and its window; a row without one is read with its window inferred.",
+  },
   plain(
     "machine",
     "dispatch-receipt",

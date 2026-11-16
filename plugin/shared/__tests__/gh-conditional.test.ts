@@ -267,6 +267,18 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     });
   });
 
+  it("never hands one credential's cached answer to another, even of the same user", async () => {
+    serve(PULL, pull("open", false, SHA));
+    const one = { ...process.env, GH_TOKEN: "first-token" };
+    const two = { ...process.env, GH_TOKEN: "second-token" };
+    await ghConditionalGet(PULL, { env: one });
+    const other = await ghConditionalGet(PULL, { env: two });
+    // The second credential read unconditionally: no ETag of the first's.
+    expect(other).toMatchObject({ ok: true, changed: true });
+    expect(conditionalCalls()).toHaveLength(0);
+    expect(entryFiles()).toHaveLength(2);
+  });
+
   it("returns the new body and re-arms the ETag when the resource changed", async () => {
     serve(PULL, pull("open", false, SHA));
     await ghConditionalGet(PULL);
@@ -690,6 +702,18 @@ describe.skipIf(process.platform === "win32")("cachedRepoView", () => {
     await cachedRepoView(ARGS, {
       cwd: repoA,
       env: { ...process.env, GH_REPO: "other/thing" },
+    });
+    expect(viewCalls()).toHaveLength(2);
+  });
+
+  it("keys on the credential the gh call sends", async () => {
+    await cachedRepoView(ARGS, {
+      cwd: repoA,
+      env: { ...process.env, GH_TOKEN: "first-token" },
+    });
+    await cachedRepoView(ARGS, {
+      cwd: repoA,
+      env: { ...process.env, GH_TOKEN: "second-token" },
     });
     expect(viewCalls()).toHaveLength(2);
   });
