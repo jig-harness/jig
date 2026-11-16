@@ -505,7 +505,7 @@ describe("discovery is bounded and reused", () => {
       const started = currentMs();
       const waiting = await waiter(["--version"], { env: {} });
       expect(currentMs() - started).toBeLessThan(5000);
-      expect(waiting.held?.code).toBe("unreachable");
+      expect(waiting.held?.code).toBe("too-costly");
       expect(sent).toHaveLength(0);
       gate.resolve();
       await probe;

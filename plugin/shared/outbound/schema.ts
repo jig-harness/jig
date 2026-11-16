@@ -16,6 +16,10 @@ export const BUDGET_MIGRATIONS: readonly Migration[] = [
     );`,
   },
   {
+    additive: true,
+    sql: "CREATE TABLE forge_pacing (owner TEXT PRIMARY KEY, next_at REAL NOT NULL);",
+  },
+  {
     // A GitHub credential's quota owner, found once and shared by every
     // process (`github-owner.ts`): the owner's record key, whether it was
     // verified, the login it answered with, and when to look again.

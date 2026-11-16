@@ -42,6 +42,7 @@ function fixture() {
     },
     reads: () => reads,
     arm: async (unwitnessed = true) => {
+      current = { head: HEAD, pull: "open-pull", unchanged: false };
       const before = await gate.prime();
       gate.remember(HEAD, before, unwitnessed);
       current = { head: HEAD, pull: "open-pull", unchanged: true };
@@ -50,6 +51,68 @@ function fixture() {
 }
 
 describe("final CI keep-waiting gate", () => {
+  it("backs off unchanged signal requests with a sixty-second detection bound", async () => {
+    const f = fixture();
+    await f.arm();
+    for (let now = 0; now < 300_000; now += 10_000) {
+      f.time(now);
+      expect(await f.gate.skip(1, 180)).toBe("witness");
+    }
+    // Prime plus probes at 0, 20, 60, 120, 180 and 240 seconds.
+    expect(f.reads()).toBe(7);
+    f.time(300_000);
+    expect(await f.gate.skip(1, 180)).toBeNull();
+  });
+
+  it("forces fresh evidence at the elapsed witness deadline despite backoff", async () => {
+    const f = fixture();
+    await f.arm();
+    expect(await f.gate.skip(1, 180, 25_000)).toBe("witness");
+    f.time(20_000);
+    expect(await f.gate.skip(1, 180, 25_000)).toBe("witness");
+    f.time(25_000);
+    expect(await f.gate.skip(1, 180, 25_000)).toBeNull();
+  });
+
+  it("measures witness expiry by elapsed time, resets on a new head or witness", () => {
+    const f = fixture();
+    expect(f.gate.witnessSpent(HEAD, 3)).toBe(false);
+    for (let poll = 0; poll < 1000; poll++)
+      expect(f.gate.witnessSpent(HEAD, 3)).toBe(false);
+    f.time(29_999);
+    expect(f.gate.witnessSpent(HEAD, 3)).toBe(false);
+    f.time(30_000);
+    expect(f.gate.witnessSpent(HEAD, 3)).toBe(true);
+    expect(f.gate.witnessSpent(HEAD, 0)).toBe(false);
+    expect(f.gate.witnessSpent("b".repeat(40), 3)).toBe(false);
+    f.time(60_000);
+    expect(f.gate.witnessSpent("b".repeat(40), 3)).toBe(true);
+    f.gate.resetWitness();
+    expect(f.gate.witnessSpent("b".repeat(40), 3)).toBe(false);
+  });
+
+  for (const change of [
+    { head: "b".repeat(40), pull: "open-pull", unchanged: true },
+    { head: HEAD, pull: "open-pull", unchanged: false },
+    { head: HEAD, pull: "new-review", unchanged: true },
+  ]) {
+    it("detects activity within the capped delay and restores immediate probing", async () => {
+      const f = fixture();
+      await f.arm();
+      for (const now of [0, 20_000, 60_000]) {
+        f.time(now);
+        expect(await f.gate.skip(1, 180)).toBe("witness");
+      }
+      f.time(60_001);
+      f.set(change);
+      expect(await f.gate.skip(1, 180)).toBe("witness");
+      f.time(120_000);
+      expect(await f.gate.skip(1, 180)).toBeNull();
+      await f.arm();
+      f.set(change);
+      expect(await f.gate.skip(1, 180)).toBeNull();
+    });
+  }
   it("ages the wait from when the evidence was read, not from remember()", async () => {
     const f = fixture();
     const before = await f.gate.prime();
@@ -167,7 +230,7 @@ describe("final CI keep-waiting gate", () => {
       );
     const roundStep = driver("round-step");
     const branch = `  const skippedFinalCi = await context.finalCiWait.skip(
-    context.witnessWaits,
+    0,
     context.witnessWaitLimit,
   );
   if (skippedFinalCi !== null) {
@@ -238,7 +301,8 @@ process.exit(status === 200 ? 0 : 1);
 `,
     );
     const script = `
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
+import { setSystemTime } from 'bun:test';
 import { FinalCiWait } from ${JSON.stringify(resolve(import.meta.dir, "../scripts/lib/final-ci-wait.ts"))};
 const gate = new FinalCiWait('123');
 const phase = (value) => writeFileSync(process.env.FIXTURE_DIR + '/phase', value);
@@ -260,7 +324,18 @@ for (const change of ['checks-changed', 'check-error', 'malformed', 'closed']) {
   phase('open');
   results.push(await gate.skip(1, 180));
 }
-console.log(JSON.stringify(results));
+const calls = () => readFileSync(process.env.FIXTURE_DIR + '/calls', 'utf8').trim().split('\\n').map(JSON.parse);
+const epoch = 1_800_000_000_000;
+setSystemTime(epoch);
+await arm();
+const baseline = calls().length;
+for (let tick = 0; tick < 300_000; tick += 10_000) {
+  setSystemTime(epoch + tick);
+  await gate.skip(1, 180);
+}
+const waiting = calls().slice(baseline);
+setSystemTime();
+console.log(JSON.stringify({results, traffic: waiting.length, primary: waiting.filter(c => c.status === 200).length}));
 `;
     const result = Bun.spawnSync([process.execPath, "-e", script], {
       cwd: dir,
@@ -277,7 +352,11 @@ console.log(JSON.stringify(results));
       stderr: "pipe",
     });
     expectSpawnExit(result, 0, "final-CI real conditional transport");
-    expect(JSON.parse(result.stdout.toString())).toEqual([
+    const evidence = JSON.parse(result.stdout.toString());
+    expect(evidence.traffic).toBe(36);
+    expect(evidence.traffic).toBeLessThan(30 * 6); // fixed ten-second probes
+    expect(evidence.primary).toBe(0); // 304 still sends traffic
+    expect(evidence.results).toEqual([
       "witness",
       "pending",
       null,

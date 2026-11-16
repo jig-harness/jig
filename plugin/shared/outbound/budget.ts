@@ -23,11 +23,12 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { swallow } from "../errors.ts";
+import { errnoCode, swallow } from "../errors.ts";
 import { JigError } from "../outcome.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
-import { orNull, validWindow } from "./budget-shape.ts";
+import { parseRecord } from "./budget-shape.ts";
+export { parseRecord };
 
 /** How long a credential stays limited when the refusal named no reset. */
 export const FALLBACK_LIMIT_MS = 15 * 60_000;
@@ -173,6 +174,8 @@ export interface AdmitOptions {
   count?: number;
   /** Told the window the request actually reserved in: `null` when it reserved nothing, whatever `reserve` asked. */
   onReserved?: (reservedIn: string | null) => void;
+  /** Throw a store's contention to the caller rather than wait for it. */
+  nonblocking?: boolean;
 }
 
 /** No request may leave for the credential before `resetAt`. */
@@ -214,10 +217,12 @@ export interface BudgetStore {
   /**
    * Apply `change` to the record in one transaction, so two processes' answers
    * do not lose one another; a `null` result leaves the record as it was.
+   * `nonblocking` throws a store's `SQLITE_BUSY` instead of waiting for it.
    */
   update(
     key: string,
     change: (prev: BudgetRecord | null) => BudgetRecord | null,
+    nonblocking?: boolean,
   ): void;
 }
 
@@ -238,42 +243,6 @@ import { BUDGET_MIGRATIONS } from "./schema.ts";
 /** The machine's budget database: `~/.local/state/jig/tracker/budget.sqlite`. */
 export function budgetPath(home = homedir()): string {
   return join(home, ".local", "state", "jig", "tracker", "budget.sqlite");
-}
-
-function validWindows(w: unknown): boolean {
-  if (w === undefined) return true;
-  return (
-    typeof w === "object" &&
-    w !== null &&
-    !Array.isArray(w) &&
-    Object.values(w).every(validWindow)
-  );
-}
-
-/** A record read from the store only when every field has its shape; a damaged one reads as none. */
-function validRecord(value: unknown): value is BudgetRecord {
-  if (typeof value !== "object" || value === null) return false;
-  const r = value as Record<string, unknown>;
-  return (
-    validWindow(r.requests) &&
-    validWindow(r.complexity) &&
-    validWindows(r.windows) &&
-    (r.strikes === undefined || orNull(r.strikes, (n) => n >= 0)) &&
-    orNull(r.limitedUntil, (n) => n >= 0) &&
-    (r.why === null || typeof r.why === "string") &&
-    typeof r.observedAt === "number" &&
-    Number.isFinite(r.observedAt)
-  );
-}
-
-export function parseRecord(text: string): BudgetRecord | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    return validRecord(value) ? value : null;
-  } catch (error) {
-    swallow(error, "a tracker budget record does not read");
-    return null;
-  }
 }
 
 /** The SQLite store at `path`; one that cannot be opened governs nothing. */
@@ -302,18 +271,23 @@ export function sqliteBudgetStore(path = budgetPath()): BudgetStore {
         return null;
       }
     },
-    update(key, change) {
+    update(key, change, nonblocking) {
       try {
         const d = open();
         if (d === null) return;
-        inTransaction(d, () => {
-          const next = change(get(d, key));
-          if (next === null) return;
-          d.query(
-            "INSERT OR REPLACE INTO tracker_budget (key, value) VALUES (?, ?)",
-          ).run(key, JSON.stringify(next));
-        });
+        inTransaction(
+          d,
+          () => {
+            const next = change(get(d, key));
+            if (next === null) return;
+            d.query(
+              "INSERT OR REPLACE INTO tracker_budget (key, value) VALUES (?, ?)",
+            ).run(key, JSON.stringify(next));
+          },
+          nonblocking ? 0 : undefined,
+        );
       } catch (error) {
+        if (nonblocking && errnoCode(error) === "SQLITE_BUSY") throw error;
         swallow(error, "write the tracker budget");
       }
     },
@@ -853,7 +827,7 @@ export function budgetGovernor(
       };
       // The decision and the reservation of one request are one transaction,
       // so concurrent callers each spend their own part of the balance.
-      store.update(key, (record) => {
+      const decide = (record: BudgetRecord | null): BudgetRecord | null => {
         if (record === null) return null;
         const name = opts.reserve === undefined ? "requests" : opts.reserve;
         let current: BudgetRecord = record;
@@ -878,7 +852,8 @@ export function budgetGovernor(
         }
         out.reservedIn = changed ? name : null;
         return changed ? current : null;
-      });
+      };
+      store.update(key, decide, opts.nonblocking);
       if (out.refusal !== null) throw out.refusal;
       opts.onReserved?.(out.reservedIn);
       return now;
