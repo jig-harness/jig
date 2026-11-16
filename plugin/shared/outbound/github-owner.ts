@@ -47,7 +47,7 @@ import {
   isRateLimited,
 } from "./budget.ts";
 import { recordCall } from "./ledger.ts";
-import { swallow } from "../errors.ts";
+import { errnoCode, swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import { type OutboundFailure, outboundFailure } from "./failure.ts";
 import { type GhRun, ghRunFailure } from "./github.ts";
@@ -118,9 +118,15 @@ export function sqliteOwnerStore(
     db = opened.ok ? opened.value : null;
     // A credential nobody has used since its check came due is forgotten.
     try {
-      db?.query("DELETE FROM github_owner WHERE retry_at < ?").run(
-        clock() - OWNER_RETENTION_MS,
-      );
+      if (db !== null)
+        inTransaction(
+          db,
+          () =>
+            db
+              ?.query("DELETE FROM github_owner WHERE retry_at < ?")
+              .run(clock() - OWNER_RETENTION_MS),
+          0,
+        );
     } catch (error) {
       swallow(error, "prune the GitHub owner store");
     }
@@ -151,19 +157,25 @@ export function sqliteOwnerStore(
       try {
         const d = open();
         if (d === null) return;
-        inTransaction(d, () => {
-          d.query(
-            "INSERT OR REPLACE INTO github_owner (credential, host, owner, verified, login, checked_at, retry_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          ).run(
-            credential,
-            host,
-            entry.owner,
-            entry.verified ? 1 : 0,
-            entry.login,
-            entry.checkedAt,
-            entry.retryAt,
-          );
-        });
+        inTransaction(
+          d,
+          () => {
+            d.query(
+              "INSERT OR REPLACE INTO github_owner (credential, host, owner, verified, login, checked_at, retry_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ).run(
+              credential,
+              host,
+              entry.owner,
+              entry.verified ? 1 : 0,
+              entry.login,
+              entry.checkedAt,
+              entry.retryAt,
+            );
+            // A held lock is not waited for: the entry is rewritten at the next
+            // check, and a one-second call cannot wait ten seconds on it.
+          },
+          0,
+        );
       } catch (error) {
         swallow(error, "write the GitHub owner store");
       }
@@ -338,7 +350,13 @@ export function githubOwnerResolver(deps: {
     const earlier = deps.budget.read(legacy);
     if (earlier === null) return;
     const now = clock();
-    deps.budget.update(owner, (prev) => carried(prev, earlier, now));
+    try {
+      deps.budget.update(owner, (prev) => carried(prev, earlier, now), true);
+    } catch (error) {
+      if (errnoCode(error) !== "SQLITE_BUSY") throw error;
+      // Carried at the next resolve, once the lock is free.
+      seeded.delete(pair);
+    }
   };
 
   const ask = async (
@@ -356,9 +374,12 @@ export function githubOwnerResolver(deps: {
       deps.governor?.admit("GitHub", fallback.owner, {
         windows: ["requests"],
         reserve: null,
+        nonblocking: true,
       });
     } catch (error) {
-      if (!isRateLimited(error)) throw error;
+      // A busy store sends nothing either: discovery waits for a later check.
+      if (!isRateLimited(error) && errnoCode(error) !== "SQLITE_BUSY")
+        throw error;
       return entry?.verified === true ? fromEntry(credential, entry) : fallback;
     }
     const began = currentMs();
@@ -376,9 +397,16 @@ export function githubOwnerResolver(deps: {
     if (user !== null && owner !== fallback.owner) {
       const seen = deps.budget.read(fallback.owner);
       if (seen !== null && seen.observedAt >= began)
-        deps.budget.update(owner, (prev) =>
-          withDiscoveryWindow(prev, seen, clock()),
-        );
+        try {
+          deps.budget.update(
+            owner,
+            (prev) => withDiscoveryWindow(prev, seen, clock()),
+            true,
+          );
+        } catch (error) {
+          // The owner's own first run records its window instead.
+          if (errnoCode(error) !== "SQLITE_BUSY") throw error;
+        }
     }
     // The default discovery is a run of `gh` the wrapper records itself; a
     // discovery given in its place is recorded here.

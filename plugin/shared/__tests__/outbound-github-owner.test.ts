@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -437,8 +438,33 @@ describe("discovery is bounded and reused", () => {
     const found = await machine.owners.resolve({ GH_TOKEN: "token-b" });
     expect(found.owner).toBe(userOwner("github.com", 7));
     const record = machine.store.read(found.owner);
+    expect(record?.requests.remaining).toBe(4000);
+    expect(record?.requests.limit).toBe(5000);
+    expect(record?.requests.resetAt).not.toBeNull();
     expect(record?.complexity.remaining).toBeNull();
     expect(record?.limitedUntil).toBeNull();
+  });
+
+  it("does not wait on a held store lock: discovery asks nothing and answers at once", async () => {
+    const path = databasePath();
+    let asked = 0;
+    const machine = processOn(path, async () => {
+      asked += 1;
+      return { user: { id: 7, login: "user7" } };
+    });
+    machine.store.read(unverifiedOwner("github.com"));
+    const other = new Database(path);
+    other.run("BEGIN IMMEDIATE");
+    const started = Date.now();
+    try {
+      const found = await machine.owners.resolve({ GH_TOKEN: "token-b" });
+      expect(found.verified).toBe(false);
+    } finally {
+      other.run("ROLLBACK");
+      other.close();
+    }
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(asked).toBe(0);
   });
 
   it("bounds a second caller's wait on a running discovery by its own deadline", async () => {

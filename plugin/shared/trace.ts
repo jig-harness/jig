@@ -320,8 +320,9 @@ async function governedRun<T extends GhRun, O>(
  * ledger, kept to the quota owner's budget record (`governedRun`) and, when
  * `held`, sent to no forge this run holds (`outbound/hold.ts`): the call
  * then answers `refuse`'s result, a failed run naming the earlier failure.
- * One deadline bounds the wait for a probe, discovery, pacing and the run,
- * and a cancel of the caller's signal ends all of them.
+ * One deadline bounds the wait for a probe, discovery, pacing and the run;
+ * a cancel of the caller's signal ends the waits, while a run already started
+ * ends at the deadline.
  */
 async function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
   args: string[],
