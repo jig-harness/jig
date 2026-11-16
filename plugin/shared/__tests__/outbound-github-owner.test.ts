@@ -644,6 +644,38 @@ describe("records an earlier release kept", () => {
     expect(store.read(found.owner)?.limitedUntil).toBe(until);
   });
 
+  it("settle a carry under each joining caller's own deadline, not the initiator's", async () => {
+    const path = databasePath();
+    const env = { GH_TOKEN: "token-a" };
+    const store = sqliteBudgetStore(path);
+    let busy = true;
+    const flaky: BudgetStore = {
+      ...store,
+      update: (key, change, nonblocking) => {
+        if (busy && key !== legacyGithubCredential(env))
+          throw Object.assign(new Error("database is locked"), {
+            code: "SQLITE_BUSY",
+          });
+        return store.update(key, change, nonblocking);
+      },
+    };
+    const owners = githubOwnerResolver({
+      owners: sqliteOwnerStore(path, currentMs),
+      budget: flaky,
+      discover: discovery({ "token-a": 3 }).discover,
+    });
+    const until = currentMs() + 600_000;
+    store.update(legacyGithubCredential(env), () => held(until));
+    const short = owners.resolve(env, 40);
+    const long = owners.resolve(env, 5_000);
+    setTimeout(() => {
+      busy = false;
+    }, 150);
+    await short;
+    const found = await long;
+    expect(store.read(found.owner)?.limitedUntil).toBe(until);
+  });
+
   it("give up on a carry the lock keeps refusing once the call's one deadline passes, discovery and settling together", async () => {
     const path = databasePath();
     const env = { GH_TOKEN: "token-a" };

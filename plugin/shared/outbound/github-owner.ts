@@ -507,7 +507,7 @@ export function githubOwnerResolver(deps: {
       return held.resolution;
     }
     const pending = inflight.get(slot);
-    if (pending !== undefined) return within(pending, env, deadlineMs);
+    if (pending !== undefined) return within(pending, env, deadlineMs, until);
     const entry = deps.owners.read(credential, host);
     if (entry !== null && entry.retryAt > now) {
       const found = fromEntry(credential, entry);
@@ -532,11 +532,17 @@ export function githubOwnerResolver(deps: {
     return asked;
   };
 
-  /** A caller's wait on a shared discovery, bounded by its own deadline; the discovery goes on for the others. */
-  const within = (
+  /**
+   * A caller's wait on a shared discovery, bounded by its own deadline; the
+   * discovery goes on for the others. The initiator settled the carries under
+   * its own deadline, which may have been shorter: each joining caller
+   * completes them under its own before the owner is used.
+   */
+  const within = async (
     pending: Promise<OwnerResolution>,
     env: Env,
     deadlineMs: number,
+    until: number,
   ): Promise<OwnerResolution> => {
     const bound = Math.min(DISCOVERY_DEADLINE_MS, deadlineMs);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -546,7 +552,11 @@ export function githubOwnerResolver(deps: {
         Math.max(0, bound),
       );
     });
-    return Promise.race([pending, expired]).finally(() => clearTimeout(timer));
+    const found = await Promise.race([pending, expired]).finally(() =>
+      clearTimeout(timer),
+    );
+    await settle(env, found.owner, until);
+    return found;
   };
 
   return { resolve, known };
