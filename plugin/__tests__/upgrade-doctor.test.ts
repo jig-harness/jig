@@ -321,6 +321,61 @@ test.skipIf(onWindows)(
   },
 );
 
+test.skipIf(onWindows)(
+  "jig upgrade reports a successful scoped command that leaves the old record and exits nonzero",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    expectSpawnExit(m.jig(["install", "gc", "--yes"]), 0);
+    const { kept } = scopedRecord(m);
+    const launcher = nextRelease(m);
+    m.agentState((state) => {
+      state.claude.scopedUpdateNoop = true;
+    });
+    const result = m.jig(["upgrade", "--json"]);
+    expectSpawnExit(result, 1);
+    const report = JSON.parse(result.stdout.toString()) as {
+      harnesses: {
+        harness: string;
+        outcome: string;
+        version: string;
+        scoped?: Record<string, unknown>[];
+      }[];
+      jobs: { target: string; outcome: string }[];
+    };
+    const claude = report.harnesses.find((h) => h.harness === "claude");
+    expect(claude).toMatchObject({ outcome: "updated", version: "0.3.0" });
+    expect(claude?.scoped).toContainEqual(
+      expect.objectContaining({
+        project: kept,
+        version: "0.1.0",
+        outcome: "left",
+        detail: expect.stringContaining("remains at 0.1.0; expected 0.3.0"),
+      }),
+    );
+    expect(result.stderr.toString()).toContain(
+      `for ${kept} (project scope): left`,
+    );
+    expect(report.jobs).toContainEqual(
+      expect.objectContaining({ target: "jig-gc", outcome: "refreshed" }),
+    );
+    expect(
+      readFileSync(
+        join(m.home, ".local", "state", "jig", "gc", "launcher", "launcher.ts"),
+        "utf8",
+      ),
+    ).toBe(readFileSync(launcher, "utf8"));
+    const record = JSON.parse(
+      readFileSync(
+        join(m.home, ".claude", "plugins", "installed_plugins.json"),
+        "utf8",
+      ),
+    ) as { plugins: Record<string, { version: string }[]> };
+    expect(record.plugins["jig@jig"]?.map((entry) => entry.version)).toEqual([
+      "0.1.0",
+    ]);
+  },
+);
+
 /** The next release, whose launcher differs from the installed one's; offered on the channel. */
 function nextRelease(m: Machine): string {
   const next = join(m.root, "next-release");
