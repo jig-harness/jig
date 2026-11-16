@@ -239,31 +239,7 @@ function fenceLine(
 
 export function entryHeadings(description: string): string[] {
   const found: string[] = [];
-  let fence: Fence | null = null;
-  let inline: InlineState = { inComment: false, codeDelimiter: null };
-  const lines = description.split("\n");
-  for (const [index, line] of lines.entries()) {
-    if (
-      fence === null &&
-      (inline.inComment ||
-        (inline.codeDelimiter !== null && !inlineBoundary(line)))
-    ) {
-      inline = inlineLine(line, inline, (delimiter) =>
-        hasClosingRun(lines, index, delimiter),
-      ).state;
-      continue;
-    }
-    if (inline.codeDelimiter !== null)
-      inline = { ...inline, codeDelimiter: null };
-    if (fence === null && indentedCodeLine(line)) continue;
-    const state = fenceLine(line, fence);
-    fence = state.fence;
-    if (state.consumed) continue;
-    const lineState = inlineLine(line, inline, (delimiter) =>
-      hasClosingRun(lines, index, delimiter),
-    );
-    inline = lineState.state;
-    if (lineState.consumed) continue;
+  for (const line of authoritativeLines(description)) {
     const key = headingEntryKey(line);
     if (key !== null) found.push(key);
   }
@@ -313,7 +289,7 @@ export function authoritativeLines(description: string): string[] {
       hasClosingRun(lines, index, delimiter),
     );
     inline = lineState.state;
-    if (!lineState.consumed && !indentedCodeLine(line)) found.push(line);
+    if (!lineState.consumed) found.push(line);
   }
   return found;
 }
