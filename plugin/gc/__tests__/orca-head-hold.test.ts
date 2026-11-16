@@ -8,7 +8,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  existsSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
   expectSpawnExit,
@@ -87,11 +94,19 @@ function commitRefused(f: ReturnType<typeof setup>): void {
  * not see a module patched at preload, so the throw is placed in a global
  * the step reads.
  */
-function throwingSubmit(): Record<string, string> {
-  // BUN_OPTIONS cannot quote a path, so the preload is a fixed file beside
-  // the test, not one written under the temporary directory.
+function throwingSubmit(): { env: Record<string, string>; remove: () => void } {
+  // BUN_OPTIONS cannot quote a path, and the checkout or the temporary
+  // directory may hold whitespace, so the preload is linked from a directory
+  // made directly under /tmp, whose name has none.
+  const dir = mkdtempSync("/tmp/jig-preload-");
+  const link = join(dir, "throwing-submit-preload.ts");
+  symlinkSync(
+    join(import.meta.dir, "fixtures", "throwing-submit-preload.ts"),
+    link,
+  );
   return {
-    BUN_OPTIONS: `--preload=${join(import.meta.dir, "fixtures", "throwing-submit-preload.ts")}`,
+    env: { BUN_OPTIONS: `--preload=${link}` },
+    remove: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
 
@@ -203,7 +218,13 @@ describe.skipIf(
     const f = detachedAndIdle();
     const left = leftUnsettled(f);
     f.writeState({});
-    const thrown = failedLine(f, throwingSubmit());
+    const preload = throwingSubmit();
+    let thrown: ReturnType<typeof failedLine>;
+    try {
+      thrown = failedLine(f, preload.env);
+    } finally {
+      preload.remove();
+    }
     expect(thrown).toMatchObject({
       outcome: "failed",
       details: { claim: "kept" },
