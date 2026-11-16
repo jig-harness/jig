@@ -33,8 +33,11 @@ describe("base rules", () => {
 
   it("reads the rules in order", () => {
     expect(policy({ base_rules: RULES }).baseRules).toEqual([
-      { labels: ["fixversion:2.4", "fixversion:2.4.1"], base: "release/2.4" },
-      { labels: ["fixversion:2.3"], base: "release/2.3" },
+      {
+        when: { labels: ["fixversion:2.4", "fixversion:2.4.1"] },
+        base: "release/2.4",
+      },
+      { when: { labels: ["fixversion:2.3"] }, base: "release/2.3" },
     ]);
     expect(policy({}).baseRules).toEqual([]);
   });

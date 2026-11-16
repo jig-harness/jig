@@ -872,8 +872,9 @@ chapters rendered on the site. Built in steps, one pull request each;
 built so far: the generator, its gate, the chapter on the drive's end
 states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
-repository supplies and on the follow-up claim and its result, and the
-provisional chapter on addresses and the verbs of `jig send`
+repository supplies, on the follow-up claim and its result, on rule
+matchers in configuration, and the provisional chapter on addresses and the
+verbs of `jig send`
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
 Open, in order: the stable chapters' restatements as links

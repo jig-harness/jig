@@ -24,10 +24,7 @@
  * reader validates the whole section: the history report's hotspot threshold.
  */
 import { posix } from "node:path";
-import {
-  globProblem,
-  matchesGlob,
-} from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { globProblem, matchesGlob } from "../../../../shared/glob.ts";
 import { OUTPUT_PATH_RE } from "../../../change-areas/scripts/lib/catalog.ts";
 import { catalogPathFromOverlay } from "../../../do-item/scripts/determine_agent.ts";
 import { fail } from "../../../../shared/cli.ts";

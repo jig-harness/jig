@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,7 +24,9 @@ import {
 import type { OutboundFailure } from "../outbound/failure.ts";
 import { ghRunFailure } from "../outbound/github.ts";
 import { seededBudget } from "./outbound-budget-fixture.ts";
-import { closeDatabase } from "../records/db.ts";
+import { closeDatabase, openDatabase } from "../records/db.ts";
+import { errnoCode } from "../errors.ts";
+import { BUDGET_MIGRATIONS } from "../outbound/schema.ts";
 import { currentMs } from "../time.ts";
 import { traceGhRunner } from "../trace.ts";
 
@@ -856,5 +859,42 @@ describe("what a refusal holds and what its caller is told", () => {
     expect(
       ghGovernance(["api", "user"], { env: { ...ENV }, captured: true }),
     ).not.toBeNull();
+  });
+});
+
+describe("nonblocking admission", () => {
+  it("throws store contention at once and leaves the connection's wait as it was", () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-nonblocking-"));
+    const path = join(root, "budget.sqlite");
+    try {
+      const governor = budgetGovernor(sqliteBudgetStore(path), {
+        clock: () => 1_000_000,
+        share: () => null,
+      });
+      governor.observe("GitHub:key", {
+        requests: { limit: 5000, remaining: 4000, resetAt: 2_000_000 },
+      });
+      const other = new Database(path);
+      other.run("BEGIN IMMEDIATE");
+      const started = Date.now();
+      let thrown: unknown;
+      try {
+        governor.admit("GitHub", "GitHub:key", { nonblocking: true });
+      } catch (error) {
+        thrown = error;
+      }
+      other.run("ROLLBACK");
+      other.close();
+      expect(errnoCode(thrown)).toBe("SQLITE_BUSY");
+      expect(Date.now() - started).toBeLessThan(2_000);
+      const opened = openDatabase({ path, migrations: BUDGET_MIGRATIONS });
+      if (!opened.ok) throw new Error("budget store did not open");
+      expect(opened.value.query("PRAGMA busy_timeout").get()).toEqual({
+        timeout: 10_000,
+      });
+    } finally {
+      closeDatabase(path);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
