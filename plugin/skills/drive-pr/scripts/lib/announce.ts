@@ -79,7 +79,7 @@ export function headMarker(head: string): string {
   return `<!-- drive-pr-merge-ready: ${head} -->`;
 }
 
-const HEAD_MARKER = /<!-- drive-pr-merge-ready: ([0-9a-f]{7,40}) -->$/;
+const HEAD_MARKER = /<!-- drive-pr-merge-ready: ([0-9a-f]{7,64}) -->$/;
 
 /** An announcement written before it carried a record: its head, from the marker it ends with. */
 function legacyAnnouncement(

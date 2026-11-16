@@ -74,7 +74,7 @@ function carriedInState(carried: string, state: string): string {
 const ENVELOPE_FIELDS_LISTED = ["generation"];
 
 describe("the forge claims' tables", () => {
-  it("list a claim's fields for each of the three registry kinds, and only those", () => {
+  it("list a claim's fields for each registry kind, and only those", () => {
     for (const name of Object.keys(FORGE_CLAIM_FIELDS)) {
       const kind = RECORD_KINDS.find((k) => k.name === name);
       expect(kind?.medium).toBe("forge");

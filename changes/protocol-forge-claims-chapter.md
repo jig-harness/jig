@@ -18,5 +18,5 @@ release: minor
   `plugin/protocol/schemas/`) carry them for a program that reads who
   launched a drive, how the launch ended, or whether a head was announced.
   The three readers now check a claim against the same description the
-  schemas are generated from, and read every claim they read before.
+  schemas are generated from, and read every claim they read before, except a takeover claim whose generation is above 9007199254740991, which no ledger reaches.
   **Consumer action:** none.

@@ -231,7 +231,7 @@
       "carried": "always",
       "version": null,
       "key": null,
-      "meaning": "The number of the pull request the claim is on; a claim whose record names another pull request does not read."
+      "meaning": "The number of the pull request the claim is on, always written; a reader that knows which pull request it reads holds the claim to it, and a claim naming another does not read."
     },
     {
       "kind": "field",

@@ -75,9 +75,8 @@ earliest comment wins:
   claimant read. A driver that finds a claim in force from another clone,
   newer than its own, stops at its next round boundary, and leaves its own
   comment as the record of the claim it lost. A claim made more than the
-  lease window after a winner whose driver never wrote the ledger past that
-  generation replaces it, so an abandoned claim never holds the drive for
-  good.
+  lease window after the winner's claim replaces it, so an abandoned claim
+  never holds the drive for good.
 - **Launch**: the key is `drive` and the generation is the attempt. A host
   claims the attempt after the latest; a claim that loses its attempt is
   withdrawn. The latest attempt's winner with no end holds the pull
@@ -149,7 +148,7 @@ which only ends with its head marker.
 
 Beside the envelope's, Jig's writers write these fields into a claim's
 record, and no other. "Always" and "sometimes" say whether every claim of
-the kind carries a field or only some. A launch's end is in one of the two
+the kind carries a field or only some. A launch's end is in one of its
 end states above; its fields say which ends carry them. The merge-ready
 announcement carries no field beside the envelope's: its key names the
 head.
@@ -162,7 +161,7 @@ head.
 | `drive-takeover-claim` | `actor` | string | always | The claiming driver's session, as the drive ledger names its driver: the driver that takes the drive over. |
 | `drive-takeover-claim` | `clone` | string | always | The clone the claiming driver runs in: a driver that finds a claim in force from another clone stops at its next round boundary. |
 | `dispatch-launch-claim` | `generation` | integer | always | The attempt the claim makes, from 1: a launch claims the attempt after the latest, and of the claims on one attempt the earliest trusted one wins. |
-| `dispatch-launch-claim` | `pr` | integer | always | The number of the pull request the claim is on; a claim whose record names another pull request does not read. |
+| `dispatch-launch-claim` | `pr` | integer | always | The number of the pull request the claim is on, always written; a reader that knows which pull request it reads holds the claim to it, and a claim naming another does not read. |
 | `dispatch-launch-claim` | `action` | string | always | What the launch does: one of the actions listed above. |
 | `dispatch-launch-claim` | `record` | string | always | The claiming host's launch record, in the dispatcher's form `<yyyymmdd>T<hhmmss>Z-<8 hex>`. |
 | `dispatch-launch-claim` | `host` | string | always | The claiming host, as a digest of its dispatcher's database instance: a public comment names no machine, and that host recognises its own claim. Only that host writes the launch's end. |

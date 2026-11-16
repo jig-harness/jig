@@ -1,5 +1,5 @@
 /**
- * The fields of three forge claims (`forge-claims.ts`): the takeover claim
+ * The fields of forge claims (`forge-claims.ts`): the takeover claim
  * (`drive-takeover-claim`), the dispatcher's launch claim
  * (`dispatch-launch-claim`) and the merge-ready announcement
  * (`drive-merge-ready`), each field with its JSON type, which claims carry it
@@ -106,7 +106,7 @@ export const LAUNCH_CLAIM_FIELDS = {
     type: "integer",
     carried: "always",
     meaning:
-      "The number of the pull request the claim is on; a claim whose record names another pull request does not read.",
+      "The number of the pull request the claim is on, always written; a reader that knows which pull request it reads holds the claim to it, and a claim naming another does not read.",
   },
   action: {
     type: "string",
