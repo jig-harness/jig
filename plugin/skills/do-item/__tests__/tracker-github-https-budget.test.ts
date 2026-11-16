@@ -430,7 +430,6 @@ describe("a GitHub request over HTTPS in the shared budget record", () => {
     expect(fetched).toBe(0);
     expect(heldSystems().size).toBe(0);
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
     const next = await httpTransport(
       "https://github.example/graphql",
       TOKEN,
