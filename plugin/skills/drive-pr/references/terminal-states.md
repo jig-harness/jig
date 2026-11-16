@@ -1662,7 +1662,8 @@ false "green":
   request with no active run parks `cancelled-ci` and exits `8`; its decision
   record and doctor recovery name the run. A person's "Re-run safely" answer
   (or approval), consumed by the re-arm, grants the head one more re-run
-  (`grants` in the same SQLite row), which the drive requests after the same
+  (`grants` in the same SQLite row, keyed to the answers so a later arm that
+  reads them again grants nothing more), which the drive requests after the same
   checks; a park after it says the granted re-run was spent. Observing
   recovery clears that operational park. A live CI hold is left for convergence to release.
   Cancellation stops counting only when a run of

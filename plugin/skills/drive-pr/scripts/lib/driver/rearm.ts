@@ -51,7 +51,7 @@ import {
 
 import { resolveStateDir } from "./../state/store.ts";
 import type { ConsumedVerdict } from "./../state/resolution-receipt.ts";
-import { answerGrantsRerun } from "./../cancelled-recovery.ts";
+import { answerGrantsRerun, grantKey } from "./../cancelled-recovery.ts";
 import { grantCancellation } from "./../cancelled-recovery-state.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
@@ -305,6 +305,7 @@ export async function admitAnsweredParks(
     console.error(
       `re-arm: ${carried.length} answered item(s) an earlier arm unparked are still owed to a pass (${file}).`,
     );
+  if (!dryRun) await grantAnsweredRerun(pr, carried);
   const fresh = state.parked.length === 0 ? [] : await answeredParks(state);
   if (fresh === null || fresh.length === 0)
     return dryRun ? "" : rearmNotice(carried, file);
@@ -359,17 +360,22 @@ export async function admitAnsweredParks(
 /**
  * A person's "Re-run safely" answer to the `cancelled-ci` park is the
  * cancelled-run recovery's next budget: without it the drive would find the
- * once-per-head re-run spent and park the same question again.
+ * once-per-head re-run spent and park the same question again. Answers an
+ * earlier arm unparked are granted again too, so a stop between the unpark
+ * and the grant loses nothing; the grant names its answers, so they count
+ * once.
  */
 async function grantAnsweredRerun(
   pr: string,
-  fresh: readonly PendingVerdict[],
+  verdicts: readonly PendingVerdict[],
 ): Promise<void> {
-  if (!fresh.some(answerGrantsRerun)) return;
-  const heads = await grantCancellation(pr);
-  console.error(
-    `re-arm: a person's answer granted one more cancelled-run re-run on ${heads} recorded head(s) of PR #${pr}; the drive repeats the recovery's checks before it requests it.`,
-  );
+  for (const verdict of verdicts.filter(answerGrantsRerun)) {
+    const heads = await grantCancellation(pr, grantKey(verdict));
+    if (heads > 0)
+      console.error(
+        `re-arm: a person's answer granted one more cancelled-run re-run on ${heads} recorded head(s) of PR #${pr}; the drive repeats the recovery's checks before it requests it.`,
+      );
+  }
 }
 
 /** What `unpark --stdin` keeps of a verdict for its receipt. */

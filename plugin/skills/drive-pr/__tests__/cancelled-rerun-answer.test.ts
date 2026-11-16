@@ -27,14 +27,27 @@ const LIB = join(SCRIPTS, "lib");
 
 /**
  * One recovery on the forge's state, `offset` milliseconds after the real
- * clock: one cancelled run of workflow 10, every check passing, each re-run
- * recorded.
+ * clock: one cancelled run of workflow 10, each re-run recorded. Mode `held`
+ * refuses the run as created under the CI hold; `age` instead moves the
+ * recorded times two minutes back, as a later arm finds them, and `ungrant`
+ * puts back the spent claim a grant released, as an arm that stopped before
+ * its grant leaves it.
  */
 const PROBE = `
 import { observeCancellation, claimCancellation, readCancellation } from ${JSON.stringify(join(LIB, "cancelled-recovery-state.ts"))};
 import { recoverCancelled } from ${JSON.stringify(join(LIB, "cancelled-recovery.ts"))};
+import { driveDb } from ${JSON.stringify(join(LIB, "state", "db.ts"))};
+import { resolveStateDir } from ${JSON.stringify(join(LIB, "state", "store.ts"))};
 import { currentMs } from ${JSON.stringify(join(SCRIPTS, "..", "..", "..", "shared", "time.ts"))};
 const head = ${JSON.stringify(HEAD)};
+const mode = process.argv[3] ?? "";
+if (mode === "age" || mode === "ungrant") {
+  const { db } = driveDb(await resolveStateDir());
+  db.run(mode === "age"
+    ? "UPDATE cancelled_ci SET first_seen = first_seen - 120000, requested_at = requested_at - 120000"
+    : "UPDATE cancelled_ci SET requested_at = first_seen, grants = 0, granted_for = NULL");
+  process.exit(0);
+}
 const clock = currentMs() + Number(process.argv[2]);
 const calls = [];
 const parks = [];
@@ -46,19 +59,26 @@ const answer = await recoverCancelled("12", head, [job], [run], {
   observe: observeCancellation,
   claim: claimCancellation,
   confirm: async () => true,
-  rerunnable: async (_pr, runs) => runs.map((r) => r.id),
+  rerunnable: async (_pr, runs) => (mode === "held" ? [] : runs.map((r) => r.id)),
   rerun: async (id) => { calls.push(id); return { code: 0, stderr: "" }; },
   park: async (_pr, reason) => { parks.push(reason); },
 });
 console.log(JSON.stringify({ answer, calls, parks, record: await readCancellation("12", head) }));
 `;
 
-async function recover(forge: Forge, offset: number) {
-  const probe = join(forge.dir, "probe.ts");
-  writeFileSync(probe, PROBE);
-  const r = await runIn(forge, probe, [String(offset)], { env: DRIVER });
+async function probe(forge: Forge, offset: number, mode = "") {
+  const file = join(forge.dir, "probe.ts");
+  writeFileSync(file, PROBE);
+  const r = await runIn(forge, file, [String(offset), mode], { env: DRIVER });
   expectSpawnExit(r, 0);
-  return JSON.parse(r.stdout) as {
+  return r.stdout;
+}
+
+/** Move the recorded observation and claim two minutes into the past. */
+const age = (forge: Forge) => probe(forge, 0, "age");
+
+async function recover(forge: Forge, offset: number, mode = "") {
+  return JSON.parse(await probe(forge, offset, mode)) as {
     answer: string;
     calls: number[];
     parks: string[];
@@ -78,6 +98,8 @@ async function parkedAndAnswered(answer: string) {
   expect(spent.calls).toEqual([]);
   const reason = spent.parks[0] ?? "";
   expect(reason).toContain("once-per-head re-run was already requested");
+  // The person answers well after the claim's replacement window.
+  await age(forge);
   const decision = cancelledCiDecision(reason);
   const parkedAt = currentMs() - 60_000;
   writeState(forge.stateDir, "12", {
@@ -106,6 +128,10 @@ async function parkedAndAnswered(answer: string) {
       body: answer,
     },
   ]);
+  return { forge, rearmed: await rearm(forge) };
+}
+
+async function rearm(forge: Forge) {
   const rearmed = await runIn(
     forge,
     "-e",
@@ -115,7 +141,7 @@ async function parkedAndAnswered(answer: string) {
     { env: DRIVER },
   );
   expectSpawnExit(rearmed, 0);
-  return { forge, rearmed };
+  return rearmed;
 }
 
 describe("answering the cancelled-ci park", () => {
@@ -134,7 +160,39 @@ describe("answering the cancelled-ci park", () => {
     expect(again.parks[0]).toContain(
       "the re-run a person's answer granted was requested",
     );
-    expect(again.parks[0]).toContain("after 1 further re-run(s)");
+    expect(again.parks[0]).toContain("granted 1 more re-run(s) on this head");
+  });
+
+  test("an answer counts once, and an arm that stopped before its grant loses nothing", async () => {
+    const { forge } = await parkedAndAnswered(
+      "answer cancelled-ci: choose Re-run safely",
+    );
+    expect(await recover(forge, 120_000)).toMatchObject({ calls: [1] });
+    await age(forge);
+    // The next arm reads the same answers, kept until a pass completes.
+    const again = await rearm(forge);
+    expect(again.stderr).not.toContain("granted one more");
+    expect((await recover(forge, 0)).record).toMatchObject({ grants: 1 });
+    expect((await recover(forge, 0)).record?.requestedAt).toBeNumber();
+    // As if the unparking arm had stopped before it granted.
+    await probe(forge, 0, "ungrant");
+    expect((await rearm(forge)).stderr).toContain("granted one more");
+    expect(await recover(forge, 120_000)).toMatchObject({
+      answer: "wait",
+      calls: [1],
+    });
+  });
+
+  test("a granted re-run the CI hold still refuses stops naming the manual step", async () => {
+    const { forge } = await parkedAndAnswered(
+      "answer cancelled-ci: choose Re-run safely",
+    );
+    const held = await recover(forge, 120_000, "held");
+    expect(held.answer).toBe("parked");
+    expect(held.calls).toEqual([]);
+    expect(held.parks[0]).toContain("created under the CI hold");
+    expect(held.parks[0]).toContain("granted 1 more re-run(s) on this head");
+    expect(held.parks[0]).toContain("gh run rerun 1");
   });
 
   test("approving the recommended option grants the re-run too", async () => {

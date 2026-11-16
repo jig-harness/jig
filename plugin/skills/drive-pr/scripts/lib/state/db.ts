@@ -196,7 +196,10 @@ const MIGRATIONS: readonly Migration[] = [
   },
   {
     additive: true,
-    sql: "ALTER TABLE cancelled_ci ADD COLUMN grants INTEGER NOT NULL DEFAULT 0;",
+    sql: `
+  ALTER TABLE cancelled_ci ADD COLUMN grants INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE cancelled_ci ADD COLUMN granted_for TEXT;
+  `,
   },
 ];
 

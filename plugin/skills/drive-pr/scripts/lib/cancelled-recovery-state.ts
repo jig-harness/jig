@@ -75,16 +75,23 @@ export async function claimCancellation(
 
 /**
  * A person's answer to the `cancelled-ci` park authorises one more re-run on
- * each head the pull request has a recovery record for: the claim is released
- * and the grant counted, so the next recovery repeats every check the first
- * one made (the exact head, the CI hold, the run's event) before it requests
- * the re-run. Returns how many heads it released.
+ * each head the pull request has a spent recovery record for: the claim is
+ * released and the grant counted, so the next recovery repeats every check
+ * the first one made (the exact head, the CI hold, the run's event) before it
+ * requests the re-run. `answer` names the answer, so a re-arm that reads it
+ * again grants nothing more; a claim younger than the 60-second replacement
+ * window is still waiting for its own re-run and is left alone. Returns how
+ * many heads it released.
  */
-export async function grantCancellation(pr: string): Promise<number> {
+export async function grantCancellation(
+  pr: string,
+  answer: string,
+): Promise<number> {
   const drive = driveDb(await resolveStateDir());
   return drive.db
     .query(
-      "UPDATE cancelled_ci SET requested_at = NULL, workflow_ids = '[]', grants = grants + 1 WHERE clone = ? AND pr = ? RETURNING head",
+      "UPDATE cancelled_ci SET requested_at = NULL, workflow_ids = '[]', grants = grants + 1, granted_for = ? WHERE clone = ? AND pr = ? AND requested_at IS NOT NULL AND requested_at < ? AND (granted_for IS NULL OR granted_for <> ?) RETURNING head",
     )
-    .all(drive.clone, canonicalPr(pr)).length;
+    .all(answer, drive.clone, canonicalPr(pr), currentMs() - 60_000, answer)
+    .length;
 }

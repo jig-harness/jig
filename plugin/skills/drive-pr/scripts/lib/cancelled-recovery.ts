@@ -48,6 +48,14 @@ export function answerGrantsRerun(verdict: PendingVerdict): boolean {
   );
 }
 
+/** The answers a grant is for, so that reading them again grants nothing more. */
+export function grantKey(verdict: PendingVerdict): string {
+  return verdict.answers
+    .map((a) => `${a.url} ${a.at}`)
+    .sort()
+    .join("\n");
+}
+
 export async function recoverCancelled(
   pr: string,
   head: string,
@@ -122,7 +130,7 @@ export async function recoverCancelled(
   async function park(why: string): Promise<"parked"> {
     const commands = orphaned.map((run) => `gh run rerun ${run.id}`).join("; ");
     const after = granted
-      ? ` (after ${record.grants} further re-run(s) a person's answer granted)`
+      ? ` (a person's answer granted ${record.grants} more re-run(s) on this head)`
       : "";
     const reason = `Cancelled CI on head ${head}: run ${orphaned.map((run) => run.id).join(", ")}: ${why}${after}. Answering "Re-run safely" and re-arming grants one more re-run, which the drive requests after the same checks; or inspect the workflow's event and permissions, run ${commands} when safe and re-arm the drive.`;
     await deps.park(pr, reason);
