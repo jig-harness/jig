@@ -250,10 +250,10 @@ export function changeProbe(
 ): NonNullable<Tracker["changedSince"]> {
   return async (query, signal) => {
     refuseStopped(signal);
-    // A probe can read several repositories. Advance only to a boundary that
-    // predates every read, otherwise an update to an early repository can be
-    // hidden by a later repository's newer timestamp.
-    const watermark = new Date().toISOString();
+    // Use the forge's own timestamps for the next boundary. A local clock can
+    // run ahead of GitHub and skip an update that arrives immediately after
+    // this probe.
+    let latest: string | null = null;
     const watched = new Map<string, string[]>();
     for (const key of query.keys) {
       const id = keyOf(client.ref(key), client.home).toLowerCase();
@@ -282,11 +282,13 @@ export function changeProbe(
       answer.keys.forEach((key) => {
         changed.add(key);
       });
+      if (answer.latest !== null && (latest === null || answer.latest > latest))
+        latest = answer.latest;
     }
     return {
       keys: [...changed],
       complete: true,
-      latest: changed.size === 0 ? null : watermark,
+      latest,
     } satisfies ChangeAnswer;
   };
 }

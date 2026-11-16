@@ -173,7 +173,6 @@ it("keeps an unrelated update from refreshing the queue and probes foreign depen
     },
   }));
   assert(t.changedSince);
-  const before = Date.now();
   const answer = await t.changedSince({
     since,
     identity: "dana",
@@ -181,9 +180,9 @@ it("keeps an unrelated update from refreshing the queue and probes foreign depen
   });
   expect(answer.keys).toEqual(["Acme/Other#9"]);
   expect(answer.complete).toBe(true);
-  // The boundary is taken before either repository read, so a mutation to
-  // the first repository during the second read remains visible next time.
-  expect(Date.parse(answer.latest ?? "")).toBeGreaterThanOrEqual(before);
+  // Keep the forge's timestamp as the next boundary. A local wall clock may
+  // be ahead of GitHub and would hide a mutation that follows this probe.
+  expect(answer.latest).toBe(updatedAt);
   expect(calls.map((call) => call.variables.name)).toEqual(["app", "other"]);
 });
 
