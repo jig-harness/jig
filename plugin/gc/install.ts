@@ -62,12 +62,18 @@ export async function install(options: InstallOptions): Promise<number> {
     repositoryValues.repository,
   );
   if (!repositories.ok) return stopped(repositories.failure);
-  const next = {
+  // Machine-wide removal withdraws every machine kind's authority, the
+  // terminal kind's included: reinstalling a repository must not revive it.
+  const next: MachineConfig = {
     ...machine,
     repositories: repositories.value,
     ...(options.machine ? { receipts: false } : {}),
   };
-  const noEntries = next.repositories.length === 0 && !next.receipts;
+  if (options.machine) delete next.orca;
+  const terminals =
+    next.orca !== undefined && !next.disabled.includes("orca-terminals");
+  const noEntries =
+    next.repositories.length === 0 && !next.receipts && !terminals;
   // The job names no repository: removing one while others remain changes
   // only the machine entry, and keeps the job and the programs it recorded.
   const keepJob = options.uninstall && !noEntries;

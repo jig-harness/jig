@@ -222,6 +222,34 @@ describe("the orca-terminals kind's proof", () => {
     }
   });
 
+  test("a handle Orca lists twice proves nothing, whichever row is idle", async () => {
+    record();
+    const list = JSON.stringify({
+      ok: true,
+      result: {
+        terminals: [
+          { handle: "term_old", lastOutputAt: null },
+          { handle: "term_old", lastOutputAt: NOW },
+        ],
+        hostScope: { hostIds: ["local"], omittedHostIds: [] },
+        truncated: false,
+      },
+    });
+    const k = kind(fakeOrca([], { list }).runner, [shell()]);
+    const [tab] = await inventory(k);
+    expect((await k.prove(tab as Resource)).state).toBe("unverified");
+  });
+
+  test("an output time no instant can hold keeps the tab instead of throwing", async () => {
+    record();
+    const k = kind(
+      fakeOrca([{ handle: "term_old", lastOutputAt: 1e20 }]).runner,
+      [shell()],
+    );
+    const [tab] = await inventory(k);
+    expect((await k.prove(tab as Resource)).state).toBe("unverified");
+  });
+
   test("a tab opened inside the guard is kept though Orca has no output time", async () => {
     record({ openedAt: isoFromMs(NOW - HOUR) });
     const k = kind(fakeOrca([{ handle: "term_old" }]).runner, [shell()]);
@@ -374,7 +402,7 @@ import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, args.join(" ") + "\\n");
 const result = args[1] === "list"
-  ? { terminals: [{ handle: "term_old", lastOutputAt: null }], hostScope: { hostIds: ["local"], omittedHostIds: [] }, truncated: false }
+  ? { terminals: [{ handle: "term_old", lastOutputAt: null }, { handle: "term_foreign", lastOutputAt: null }], hostScope: { hostIds: ["local"], omittedHostIds: [] }, truncated: false }
   : {};
 console.log(JSON.stringify({ ok: true, result }));
 `,
@@ -499,6 +527,25 @@ console.log(JSON.stringify({ ok: true, result }));
           openedAt: old,
         }),
       );
+      // A record in the directory the environment names must never be
+      // inventoried or closed: only the machine's own store is read.
+      const elsewhere = join(root, "elsewhere");
+      mkdirSync(elsewhere, { recursive: true });
+      writeFileSync(
+        join(elsewhere, "term_foreign.json"),
+        JSON.stringify({
+          version: 1,
+          handle: "term_foreign",
+          tabId: "tab-foreign",
+          shellPid: idle.pid,
+          shellStart: start,
+          worktree: root,
+          subject: "pr:43",
+          title: "drive #43",
+          orca: "/elsewhere/orca",
+          openedAt: old,
+        }),
+      );
       const gc = (args: string[]) =>
         Bun.spawnSync(
           [
@@ -546,7 +593,9 @@ console.log(JSON.stringify({ ok: true, result }));
       expect(readFileSync(log, "utf8")).toContain(
         "terminal close --terminal term_old --json",
       );
+      expect(readFileSync(log, "utf8")).not.toContain("term_foreign");
       expect(existsSync(join(tabs, "term_old.json"))).toBe(false);
+      expect(existsSync(join(elsewhere, "term_foreign.json"))).toBe(true);
     } finally {
       idle.kill();
     }

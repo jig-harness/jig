@@ -42,6 +42,9 @@ import type { CollectionKind, Proof, Resource } from "../types.ts";
 /** More rows than a machine holds terminals; a listing Orca still cuts short is incomplete. */
 const LIST_LIMIT = 5000;
 
+/** The latest epoch millisecond a Temporal instant holds. */
+const MAX_EPOCH_MS = 8.64e15;
+
 /** Seconds one process-table read may take. */
 const TABLE_CALL_SEC = 10;
 
@@ -51,6 +54,8 @@ interface Listed {
   lastOutputAt: number | null;
   /** Orca sent a last-output value that is not a time: the tab's activity is unknown. */
   invalidOutput: boolean;
+  /** Orca listed the handle more than once: no row proves anything about the tab. */
+  ambiguous: boolean;
 }
 
 /** Orca's terminals by handle, and whether the listing covers every terminal. */
@@ -67,8 +72,14 @@ function readListing(result: Record<string, unknown>): Listing | string {
   let wellFormed = true;
   for (const terminal of result.terminals) {
     const row = readTerminal(terminal);
-    if (row === null || terminals.has(row.handle)) wellFormed = false;
-    else terminals.set(row.handle, row.listed);
+    if (row === null) wellFormed = false;
+    else {
+      const earlier = terminals.get(row.handle);
+      if (earlier !== undefined) {
+        wellFormed = false;
+        earlier.ambiguous = true;
+      } else terminals.set(row.handle, row.listed);
+    }
   }
   return {
     terminals,
@@ -94,12 +105,16 @@ function readTerminal(
 ): { handle: string; listed: Listed } | null {
   if (!isRecord(terminal) || typeof terminal.handle !== "string") return null;
   const last = terminal.lastOutputAt;
-  const valid = typeof last === "number" && Number.isFinite(last);
+  const valid =
+    typeof last === "number" &&
+    Number.isFinite(last) &&
+    Math.abs(last) <= MAX_EPOCH_MS;
   return {
     handle: terminal.handle,
     listed: {
       lastOutputAt: valid ? last : null,
       invalidOutput: !valid && last !== null && last !== undefined,
+      ambiguous: false,
     },
   };
 }
@@ -161,6 +176,11 @@ function runTabProof(
           reason:
             "Orca's terminal list does not cover every terminal, and it does not name this tab",
         };
+  if (listed.ambiguous)
+    return {
+      state: "unverified",
+      reason: "Orca lists this handle more than once: its activity is unknown",
+    };
   if (rows === null)
     return {
       state: "live",
