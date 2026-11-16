@@ -64,8 +64,8 @@ with the review.
 | [Setting a repository up for Jig](init.md) | 26 |
 | [Work types](work-types.md) | 27 |
 | [Evidence before claims, and a debugging protocol](verify-and-debug.md) | 28 |
-| [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 29 |
-| [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
+| [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | Backlog: #1311 to #1315 |
+| [Routing work to an agent, a model and an effort](agent-routing.md) | Backlog: #1319 to #1321 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |

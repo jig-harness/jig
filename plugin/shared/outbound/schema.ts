@@ -15,4 +15,8 @@ export const BUDGET_MIGRATIONS: readonly Migration[] = [
       PRIMARY KEY (hour, system, credential, operation, caller, unit)
     );`,
   },
+  {
+    additive: true,
+    sql: "CREATE TABLE forge_pacing (owner TEXT PRIMARY KEY, next_at REAL NOT NULL);",
+  },
 ];

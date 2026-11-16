@@ -353,6 +353,31 @@ window it closes.
 
 ### Limits you can tune
 
+While final CI stays unchanged, its conditional signal observations back off
+from ten seconds through twenty and forty to sixty seconds between starts.
+A changed head, check, review or pull signal restores responsive probing.
+Local mailbox stop, hold and resume and remote takeover/provisional checks
+retain a ten-second idle cadence, independent of bulk CI observation. The
+mailbox runs before remote reads. In-flight work adds its helper deadline;
+GitHub's Retry-After and primary reset holds still take precedence. These
+bounds describe scheduling while requests can be admitted, not a guarantee
+that an unavailable forge will answer. Terminal verdicts, launches and pushes
+still gather their authoritative evidence afresh. Required-check witness
+waits measure elapsed time on one head, and overall reviewer waits keep
+their existing wall-clock deadline.
+
+Processes that send with the same GitHub credential key are admitted to send
+their `gh` calls at least 200 milliseconds apart, through send slots recorded
+in the shared budget database. The spacing is between admissions, not between
+the starts themselves: a suspended or delayed process can start a send it was
+already admitted for closer to another process's send. Processes with
+different keys do not wait on one
+another. No future slot is reserved: a crashed caller can
+delay the next start by at most that interval. Waiting consumes the caller's
+deadline and observes cancellation; every send still passes budget admission
+after waiting. Pagination within one CLI invocation retains its existing
+governance.
+
 Each is an environment variable read by the drive (and, where noted, a flag on
 `drive.ts`). The defaults suit most repositories; raise a deadline when a
 legitimate step keeps hitting it, rather than removing it.
@@ -363,7 +388,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_CI_INFRA_RERUNS` | Integer from 0 through 100; otherwise the default. Re-runs, per head, of final checks that all failed on the infrastructure, before the head is moved instead | `2` |
 | `DRIVE_PR_CI_INFRA_HEAD_MOVES` | Integer from 0 through 100; otherwise the default. Head moves (a base merge, or an empty commit) per drive to run such checks again, before the drive stops with exit `23` | `2` |
 | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once) | `1` |
-| `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | How long to wait for the required checks to report on the final commit, in 10-second polls (`0`: wait forever) | `180` (30 minutes) |
+| `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | Elapsed wait for required checks on the final commit, in ten-second units, independent of observation count (`0`: wait forever) | `180` (30 minutes) |
 | `DRIVE_PR_FINAL_REGATE_LIMIT` | Re-gates in a row on one commit when the converged round's final status re-read disagrees with the round's own read, before the drive stops with exit `1` (`0`: stop on the first) | `3` |
 | `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with exit `14` (`0`: off) | `2` |
 | `DRIVE_PR_PASS_TIMEOUT` | One round's agent pass, in seconds; also `bun "<skill-dir>/scripts/drive.ts" --pass-timeout` (`0`: off) | `5400` (90 minutes) |

@@ -396,6 +396,67 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.251.0] - 2026-11-16
+
+### Added
+
+- The Jig Protocol has a provisional chapter on tracker facets
+  ([plugin/protocol/tracker-facets.md](plugin/protocol/tracker-facets.md)):
+  the facts every issue carries beside its labels (type, priority and
+  size), the number of each priority, the stores a facet may be kept in,
+  which stores each tracker adapter holds for each facet and why it refuses
+  the others, and the reasons `tracker.ts facet-stores` gives for the store
+  in force. Its values are generated from the tables the tracker reads its
+  configuration with, and its data file,
+  `plugin/protocol/data/tracker-facets.json`, carries them for a program
+  that reads an issue's facets or a repository's stores.
+
+### Changed
+
+- The verification record in `plugin/phone-access.md` now holds the results
+  of the Tailscale Serve front's checks: the front and its version, tokenless
+  HTTPS access, the `Host` allowlist, the QR code scanned on a phone and, in
+  part, installing the page as an app on a phone. The phone browser's product
+  and version, the installed app's behaviour, copy, clipboard-refusal, refusal,
+  forged-header, Serve route and reverse-proxy rows are still not run.
+- The `drive-pr` and `resolve-review-comments` skills say that the work to
+  count scanner annotations as open work is now tracked as
+  [#1316](https://github.com/jig-harness/jig/issues/1316). Before, they
+  pointed to roadmap item 30, which has left the roadmap. What either skill
+  does is unchanged. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` no longer loses a commit made on a detached agent tool worktree in
+  the moment between its last check of the tree and `git worktree remove`.
+  It now holds the tree's `HEAD.lock` from just before that check until the
+  removal, so a commit, checkout, switch or reset in the tree then fails
+  with git's own "cannot lock ref" error instead of moving the head. A lock
+  a stopped run leaves behind names `jig gc`. In a repository that keeps its
+  refs in reftable, where that lock holds nothing, every tree is kept
+  before its remove hook runs
+  ([plugin/gc/README.md](plugin/gc/README.md#worktrees-an-agent-tool-makes)).
+- The drive-pr README now says plainly how forge send pacing works:
+  processes that send with the same GitHub credential key are admitted to send
+  at least 200 milliseconds apart (a delayed send can still start closer to
+  another), and processes with different keys do not wait on one another.
+
+## [0.250.1] - 2026-11-16
+
+### Fixed
+
+- The dispatch dashboard can send answers to pickup, follow-up and drive recovery decisions on GitHub, prompts for a token, confirms every send, and shows the tick's outcome. Answered holds stay visible and say the work remains undone; the earlier hold label still works in answers. Posted answers trigger bounded faster refreshes.
+
+## [0.250.0] - 2026-11-16
+
+### Changed
+
+- Final-CI waiting backs off unchanged observations up to a sixty-second
+  scheduling delay while keeping control checks responsive and witness
+  expiry based on elapsed time. Forge callers sharing a credential space
+  request starts through the shared budget record, with cancellation and
+  deadline bounds and recovery after a caller crashes.
+
 ## [0.249.0] - 2026-11-15
 
 Every configuration field that chooses something by an item's or a
@@ -8808,7 +8869,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.249.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.251.0...HEAD
+[0.251.0]: https://github.com/jig-harness/jig/compare/v0.250.1...v0.251.0
+[0.250.1]: https://github.com/jig-harness/jig/compare/v0.250.0...v0.250.1
+[0.250.0]: https://github.com/jig-harness/jig/compare/v0.249.0...v0.250.0
 [0.249.0]: https://github.com/jig-harness/jig/compare/v0.248.2...v0.249.0
 [0.248.2]: https://github.com/jig-harness/jig/compare/v0.248.1...v0.248.2
 [0.248.1]: https://github.com/jig-harness/jig/compare/v0.248.0...v0.248.1

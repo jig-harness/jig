@@ -391,7 +391,17 @@ that cancels itself blocking the merge.
 
 **The "still waiting for a witness" poll is bounded**, at
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` × 10s — 30 minutes by default, `0` to wait
-forever. The wait it bounds has one state it cannot leave on its own: a
+forever. This is elapsed time on one head, independent of poll count; a new
+head or a fresh required-check witness starts a new wait. Unchanged final-CI
+signal probes back off from ten seconds through twenty and forty to sixty
+seconds between observation starts. Activity or an unreadable signal clears
+the wait cache and restores responsive probing. Local mailbox controls and
+remote takeover/provisional checks keep their ten-second idle cadence, with
+the mailbox checked before remote work. These are scheduling bounds: an
+in-flight helper adds its configured deadline and a GitHub rate-limit hold
+remains authoritative. Age and witness expiry force fresh evidence before
+any terminal verdict; no cached wait authorizes success, a push or a launch.
+The wait it bounds has one state it cannot leave on its own: a
 required check whose fresh run completed `skipped` is *passing* to the
 aggregate verdict and *no witness at all* to the exact-head check, and nothing
 later turns a skipped run into a successful one. The drive exits `4` there
@@ -2031,8 +2041,8 @@ accepted in the same commit as the round's other fixes, and report the rest in
 scanner clean once a listing exits `0` and every finding it printed is fixed
 or named with its outcome in a round report. The listing runs only in a round
 the gate (§ 1) lets start: the gate does not count annotations, so a drive
-whose only open findings are annotations converges without one (roadmap
-item 30).
+whose only open findings are annotations converges without one
+([#1316](https://github.com/jig-harness/jig/issues/1316)).
 
 ### 3. Triage and act
 
