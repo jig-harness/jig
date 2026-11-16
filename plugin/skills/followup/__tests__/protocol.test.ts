@@ -132,7 +132,7 @@ describe("recording a verdict", () => {
     expect(recorded.ok).toBe(true);
     if (recorded.ok)
       expect(recorded.value.verdicts["deferred-findings"]).toMatchObject({
-        verdict: "owed",
+        verdict: "owed" as const,
         items: ["ENG-40", "ENG-41"],
       });
   });
@@ -161,6 +161,26 @@ describe("settling a run", () => {
     const text = renderSettled(answer.value);
     expect(text).toContain("Nothing is owed.");
     expect(text).toContain("jig dispatch marker done 7 --comment 42");
+  });
+
+  test("escapes backslashes before table delimiters in report evidence", () => {
+    const run = settled(runOf());
+    const changed = {
+      ...run,
+      verdicts: {
+        ...run.verdicts,
+        release: {
+          verdict: "owed" as const,
+          items: [],
+          at: run.startedAt,
+          evidence: "path\\|value",
+        },
+      },
+    };
+    const answer = settle(changed);
+    expect(answer.ok).toBe(true);
+    if (answer.ok)
+      expect(renderSettled(answer.value)).toContain("path\\\\\\|value");
   });
 
   test("a pending arm ends as a wait, an unread one as failed", () => {

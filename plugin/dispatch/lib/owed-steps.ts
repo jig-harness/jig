@@ -415,16 +415,29 @@ export function outOfTreeSteps(body: string): OutOfTreeSection {
   const found = sections(body);
   const steps: OutOfTreeStep[] = [];
   for (const lines of found) {
-    // The first step's indent is the steps' own; a plain item deeper than it is a step's detail.
-    const items = lines.flatMap((l) => {
+    // The first step's indent is the steps' own; a plain item deeper than it, and any continuation line, is a step's detail.
+    const first = steps.length;
+    let top: number | null = null;
+    for (const l of lines) {
       const item = itemOf(l);
-      return item === null ? [] : [{ ...item, text: itemText(l)?.text ?? "" }];
-    });
-    const top = items[0]?.indent ?? 0;
-    for (const item of items) {
-      if (item.kind === "done") steps.push({ text: item.text, done: true });
+      const detail = (): void => {
+        const text = (
+          item === null ? l.trim() : (itemText(l)?.text ?? "")
+        ).replace(/^\s+/, "");
+        const last = steps[steps.length - 1];
+        if (text !== "" && steps.length > first && last)
+          last.text = `${last.text} ${text}`;
+      };
+      if (item === null) {
+        detail();
+        continue;
+      }
+      top ??= item.indent;
+      const text = itemText(l)?.text ?? "";
+      if (item.kind === "done") steps.push({ text, done: true });
       else if (item.kind === "open" || item.indent <= top)
-        steps.push({ text: item.text, done: false });
+        steps.push({ text, done: false });
+      else detail();
     }
   }
   return { declared: found.length > 0, steps };

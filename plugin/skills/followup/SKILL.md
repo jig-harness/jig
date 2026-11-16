@@ -86,7 +86,12 @@ bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" arms
 It lists the core arms this run settles, in order, and the ones it skips
 with why: one the repository turned off (`followup.off`), the release arm
 where no `changelog.file` is set, the workspace board outside Orca or before
-the merge. Work each arm below, then record its verdict:
+the merge.
+
+Read the authority table in force (the `authority` command, printed in full
+in Step 3) before the first arm: an act it marks `ask`, `person` or `never`
+overrides any instruction of an arm below. Work each arm, then record its
+verdict:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" record <arm> <owed|not-owed|pending|unread> --evidence "<the checkable fact>" --item <ref>
@@ -105,8 +110,10 @@ write.
 
 ### tracker: the item and its epic
 
-Without an `item`, record `not-owed` with that fact (no closing keyword and
-no key in the branch name); the deferred findings still apply.
+Without an `item`, skip the item steps and record that fact (no closing
+keyword and no key in the branch name); every `epics` entry is still
+reconciled by step 4, and the deferred findings still apply. Record
+`not-owed` only when `epics` is empty too.
 
 1. Read the item: `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>`.
 2. **Status**: `do-item`'s post-merge status rule decides between done and
@@ -157,8 +164,10 @@ out where your authority covers it, else file it as an item carrying the
 repository's manual-operations label (`issue_tracker.labels.manual_ops`)
 and record it `owed` with the item. The dispatcher keeps that label on the
 merged pull request until every step is checked off or this follow-up ends
-done. A declared section with no step (or only "None") is evidence:
-`not-owed`. **Silence is not none**: with no section, `not-owed` needs the
+done. A declared section that says "None" (or "N/A") is evidence: `not-owed`. A
+heading with no step and no such statement is an unfilled template:
+report it and treat it as silence. **Silence is not none**: with no
+section or an unfilled one, `not-owed` needs the
 facts that the item carries no manual-operations label and the change areas
 name no post-deploy action; otherwise the missing declaration is itself
 owed: report it and file the steps.
@@ -187,7 +196,8 @@ reads. Then:
 | No note of the merge is `waiting`, or it added none | Go on to the tags |
 | A waiting note is in the report's `errors` | `owed`, a person's step: the release cannot read it |
 | A waiting note and the report's `releaseRun.state` `running` | `pending`: read again once the run finishes |
-| A waiting note, and `releaseRun.state` `success`, `failure` or `none` on a second read | `owed`, a person's step: the workflow did not consume it (link `releaseRun.url`) |
+| A waiting note, and `releaseRun.state` `success`, `failure` or `none` on a second read | `owed`, a person's step: the workflow did not consume it (link `releaseRun.url`), unless `status.ts` lists the note in the report's `waiting` and none requests a release: the format waits for the next release, so `not-owed`, naming the note |
+| `notesRead` is not null | `unread`, with that reason: a note's state could not be read |
 | `releaseRun.state` `unknown`, or `report` is null | `unread`, with its `exit` and `stderr` |
 
 Then the tags, on every merge (a tag an earlier release left owed is owed
@@ -237,7 +247,10 @@ as owed and file it where no item tracks it.
 
 ### next-step: what comes next
 
-What the merge implies, as work rather than advice. Prefer, in this order,
+What the merge implies, as work rather than advice. Choosing the next
+work is a person's decision (`next-item`): present a shortlist with the
+recommendation and hand nothing to `/jig:do-item` or `/jig:work-batch`
+until a person picks one. Prefer, in this order,
 and name in the evidence which rung the recommendation landed on (or that
 none applied and this is an ordinary next pick):
 
@@ -313,7 +326,8 @@ table in force:
 Ask first with Claude Code's `AskUserQuestion` where the session can use it,
 a plain-text numbered question in any other interactive runtime, and, with
 nobody there to answer, report the act as owed and go on. **A step only a
-person can take** (a live check against a real service, a rollout to another
+person can take** (a live check that needs credentials or access the
+session lacks, or whose environment is not read-only, a rollout to another
 repository, an organization's setting, an operational action, a failed
 release gate) is reported as owed and filed where no item tracks it: it
 settles its arm and is never a reason to stop.

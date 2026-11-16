@@ -46,7 +46,7 @@ export type Mode = "post-merge" | "preview";
 /** The commits the merge brought in, or a preview's branch. */
 export interface DiffRange {
   /** `squash` (one parent), `merge-commit` (two or more), or `open` (a preview's branch). */
-  kind: "squash" | "merge-commit" | "open";
+  kind: "squash" | "merge-commit" | "rebase" | "open";
   /** The commit the change is compared with: the merge's first parent, or where the branch left its base. */
   base: string;
   /** The merge commit, or the branch's head. */
@@ -74,13 +74,25 @@ export function areasFromPlan(stdout: string, by: string): ChangeAreas {
   if (!parsed.ok || !isMapping(parsed.value))
     return { known: false, reason: `${by} printed no JSON object` };
   const plan = parsed.value;
-  const postDeploy = Array.isArray(plan.postDeploy)
-    ? plan.postDeploy.flatMap((p) =>
-        isMapping(p) && typeof p.area === "string"
-          ? [{ area: p.area, action: p.action }]
-          : [],
-      )
-    : [];
+  if (
+    !Array.isArray(plan.seedAreas) ||
+    !plan.seedAreas.every((area) => typeof area === "string") ||
+    !Array.isArray(plan.areas) ||
+    !plan.areas.every((area) => typeof area === "string") ||
+    !Array.isArray(plan.postDeploy) ||
+    !plan.postDeploy.every(
+      (entry) =>
+        isMapping(entry) && typeof entry.area === "string" && "action" in entry,
+    )
+  )
+    return {
+      known: false,
+      reason: `${by} printed JSON without valid seedAreas, areas and postDeploy collections`,
+    };
+  const postDeploy = plan.postDeploy.map((p) => ({
+    area: p.area as string,
+    action: p.action,
+  }));
   return {
     known: true,
     seedAreas: strings(plan.seedAreas),
@@ -106,6 +118,8 @@ export interface Facts {
   changeAreas: ChangeAreas;
   /** The item the merge closes: a closing keyword in the description, else the branch name's key. */
   item: { key: string; source: "description" | "branch" } | null;
+  /** Whether tracker linkage was read, rather than merely absent. */
+  itemRead: boolean;
   /** The epics the description says it is part of. */
   epics: string[];
   outOfTree: OutOfTreeSection;
@@ -130,11 +144,12 @@ export interface PrView {
   body: string;
   labels: string[];
   files: string[];
+  commits: string[];
 }
 
 /** The `gh pr view` fields `parsePrView` reads. */
 export const PR_VIEW_FIELDS =
-  "number,url,title,state,mergeCommit,baseRefName,headRefName,headRefOid,body,labels,files";
+  "number,url,title,state,mergeCommit,baseRefName,headRefName,headRefOid,body,labels,files,commits";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -165,6 +180,7 @@ export function parsePrView(text: string): PrView | null {
     body: str(raw.body),
     labels: names(raw.labels, "name"),
     files: names(raw.files, "path"),
+    commits: names(raw.commits, "oid"),
   };
 }
 
@@ -304,11 +320,17 @@ export function itemOf(
   values: Record<string, unknown>,
   body: string,
   branch: string,
-): { item: Facts["item"]; epics: string[]; note: string | null } {
+): {
+  item: Facts["item"];
+  itemRead: boolean;
+  epics: string[];
+  note: string | null;
+} {
   const keys = keysOf(values);
   if (keys === null)
     return {
       item: null,
+      itemRead: false,
       epics: [],
       note: "the tracker's key shape cannot be told from the configuration, so no item is read",
     };
@@ -320,7 +342,7 @@ export function itemOf(
       : fromBranch !== null
         ? { key: fromBranch, source: "branch" as const }
         : null;
-  return { item, epics: partOfKeys(body, keys), note: null };
+  return { item, itemRead: true, epics: partOfKeys(body, keys), note: null };
 }
 
 /** What `gatherFacts` needs from outside. */
@@ -354,7 +376,23 @@ async function mergedRange(
 ): Promise<Outcome<DiffRange, "unreadable">> {
   const merge = view.mergeCommit?.oid ?? "";
   const first = await mergeRange(deps.git, merge);
-  if (first.ok) return first;
+  if (first.ok) {
+    // A rebase merge is represented by its final rebased commit, so its one
+    // parent only describes the last original commit.  GitHub's PR commit
+    // list gives the complete landed sequence; use the parent of its first
+    // commit as the range base instead.
+    if (first.value.kind !== "squash" || view.commits.length < 2) return first;
+    const initial = view.commits[0];
+    if (initial === undefined || !SHA.test(initial)) return first;
+    const parent = await deps.git(["rev-parse", `${initial}^`]);
+    const base = parent.stdout.trim();
+    if (parent.code !== 0 || !SHA.test(base))
+      return failed(
+        "unreadable",
+        `the first landed commit ${initial} has no readable parent; cannot establish the complete rebase range`,
+      );
+    return ok({ kind: "rebase", base, head: merge, branchHead: merge });
+  }
   await deps.fetch(["fetch", "--no-tags", deps.remote, merge]);
   return mergeRange(deps.git, merge);
 }
@@ -454,11 +492,16 @@ function describedFacts(
   view: PrView,
   values: Record<string, unknown>,
   notes: string[],
-): Pick<Facts, "item" | "epics" | "outOfTree" | "labels"> {
-  const { item, epics, note } = itemOf(values, view.body, view.headRefName);
+): Pick<Facts, "item" | "itemRead" | "epics" | "outOfTree" | "labels"> {
+  const { item, itemRead, epics, note } = itemOf(
+    values,
+    view.body,
+    view.headRefName,
+  );
   if (note !== null) notes.push(note);
   return {
     item,
+    itemRead,
     epics,
     outOfTree: outOfTreeSteps(view.body),
     labels: view.labels,
