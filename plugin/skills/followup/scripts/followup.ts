@@ -85,6 +85,7 @@ import {
 } from "./lib/settings.ts";
 import { mergeNotes, statusInCheckout } from "./lib/release.ts";
 import { renderSettled, settle } from "./lib/settle.ts";
+import { verifyRemoteIsPrRepo } from "../../drive-pr/scripts/lib/base-drift.ts";
 import {
   shellArgv,
   validationPlanCommand,
@@ -320,6 +321,36 @@ async function trustedPolicy(
     : { integration: named, read: await fetchedPolicy(dir, remote, named) };
 }
 
+/** Stops unless `remote` fetches from the repository the pull request belongs to. */
+async function bindRemoteToPr(
+  dir: string,
+  remote: string,
+  prUrl: string,
+): Promise<void> {
+  const repo = /^https?:\/\/[^/]+\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/.exec(
+    prUrl,
+  );
+  if (repo === null)
+    return stop(
+      1,
+      `cannot tell the repository of the pull request from ${prUrl}`,
+    );
+  const check = await verifyRemoteIsPrRepo(
+    (args, opts) =>
+      git(args, {
+        cwd: dir,
+        timeoutSec: opts?.timeoutSec ?? GIT_TIMEOUT_SEC,
+        env: gitIdentityEnv(),
+      }),
+    dir,
+    repo[1] as string,
+    undefined,
+    remote,
+    prUrl,
+  );
+  if (!check.ok) stop(2, `cannot trust the policy of ${remote}: ${check.why}`);
+}
+
 async function factsCommand(args: string[]): Promise<number> {
   const facts = "facts takes one PR number";
   const pr = numberArg(exactly(args, 1, facts)[0], facts);
@@ -329,9 +360,10 @@ async function factsCommand(args: string[]): Promise<number> {
     2,
   );
   const local = gitIn(dir);
-  const { integration, read } = await trustedPolicy(dir, remote);
   const viewed = await viewPr(pr);
   if (!viewed.ok) stop(FACTS_EXIT[viewed.failure.code], viewed.failure.reason);
+  await bindRemoteToPr(dir, remote, viewed.value.url);
+  const { integration, read } = await trustedPolicy(dir, remote);
   const gathered = await gatherFacts(pr, integration, {
     view: async () => viewed,
     git: local,

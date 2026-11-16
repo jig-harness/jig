@@ -1083,9 +1083,13 @@ area's paths, the build tools and the database conventions.
 How the [followup](skills/followup/README.md) skill settles what a merge
 still owes. Without the section the skill runs every core arm that applies
 and the fixed authority table. The skill reads the section from the
-integration branch's committed `.config/jig.yaml` when the clone has that
-branch (the working tree's otherwise), so a pull request's own change to it
-does not decide that pull request's preview. An unknown key, arm, act or
+committed `.config/jig.yaml` of the integration branch, named by the
+remote's HEAD and fetched first, so a pull request's own change to it does
+not decide that pull request's preview. The remote must fetch from the
+pull request's repository. A clone that cannot fetch the branch, a remote
+that is another repository, or a configuration that cannot be read stops the
+facts with a message; `JIG_OVERLAY` is the one explicit exception, and the
+working tree's file is not a fallback. An unknown key, arm, act or
 level is refused with a message naming the field, and so is a level that
 would loosen the fixed table.
 
