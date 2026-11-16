@@ -141,6 +141,36 @@ describe("a single-parent merge of several commits", () => {
   });
 });
 
+describe("a rebase whose commits edit one file", () => {
+  test("still reaches back over the first commit", async () => {
+    const root = repository({ "a.test.ts": "test('a', () => {});\n" });
+    gitRun(root, "checkout", "-q", "-b", "feature");
+    write(root, "a.test.ts", "test.skip('a', () => {});\n");
+    gitRun(root, "commit", "-qam", "skip a");
+    write(root, "a.test.ts", "test.skip('a', () => {});\n// note\n");
+    gitRun(root, "commit", "-qam", "annotate a");
+    gitRun(root, "checkout", "-q", "main");
+    const before = gitRun(root, "rev-parse", "HEAD");
+    gitRun(root, "cherry-pick", "feature~1", "feature");
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const settled = await settleSquash(
+      { commitSubjects: ["skip a", "annotate a"] } as unknown as PrView,
+      {
+        kind: "squash",
+        base: gitRun(root, "rev-parse", "HEAD~1"),
+        head: merge,
+      },
+      runnerIn(root),
+    );
+    expect(settled).toEqual({
+      kind: "rebase",
+      base: before,
+      head: merge,
+      branchHead: merge,
+    });
+  });
+});
+
 describe("the scaffolding scan", () => {
   test("names each added line that looks temporary, with its file and line", () => {
     const diff = [
