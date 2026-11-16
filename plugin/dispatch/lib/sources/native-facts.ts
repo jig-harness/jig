@@ -24,12 +24,13 @@ function limiter(limit: number) {
   return async <T>(read: () => Promise<T>): Promise<T> => {
     if (running >= limit)
       await new Promise<void>((resume) => waiting.push(resume));
-    running += 1;
+    else running += 1;
     try {
       return await read();
     } finally {
-      running -= 1;
-      waiting.shift()?.();
+      const next = waiting.shift();
+      if (next === undefined) running -= 1;
+      else next();
     }
   };
 }
@@ -95,7 +96,9 @@ export function nativeFacts(
     async issues(
       keys: ReadonlyArray<string>,
     ): Promise<Map<string, DispatchRawIssue>> {
-      const missing = keys.filter((key) => !reads.has(rowKey(key)));
+      const missing = [
+        ...new Set(keys.filter((key) => !reads.has(rowKey(key)))),
+      ];
       const batch = source.issues;
       if (batch !== undefined && missing.length > 0) {
         const reading = guarded(() => batch(missing, bound), true);
@@ -104,7 +107,10 @@ export function nativeFacts(
             rowKey(key),
             reading.then(
               (found) =>
-                found.get(key) ?? guarded(() => source.issue(key, bound), true),
+                found.get(key) ??
+                scope.singles(() =>
+                  guarded(() => source.issue(key, bound), true),
+                ),
               () => {
                 // A malformed or inaccessible member makes the native batch
                 // atomic, but must not poison readable siblings' per-key

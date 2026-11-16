@@ -54,7 +54,7 @@ import {
   trackerStateMaps,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { PickupReads } from "../pickup-reads.ts";
-import { isoFromMs } from "../../../shared/time.ts";
+import { isoFromMs, parseMs } from "../../../shared/time.ts";
 
 /** How old a reading may be before it is taken whole again. */
 const REREAD_MS = 15 * 60_000;
@@ -424,7 +424,7 @@ async function plan(
     snapshot: kept,
     stale: new Set(answer.keys),
     since:
-      answer.latest !== null && answer.latest > kept.since
+      answer.latest !== null && parseMs(answer.latest) > parseMs(kept.since)
         ? answer.latest
         : kept.since,
   };

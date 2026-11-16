@@ -116,6 +116,9 @@ function change(
   return {
     number,
     updatedAt,
+    state: "OPEN",
+    stateReason: null,
+    labels: conn([]),
     assignees: conn(assignee === null ? [] : [{ login: assignee }]),
     parent:
       parent === null
@@ -151,6 +154,8 @@ it("probes assignment additions/removals, state and dependency updates and a chi
   expect(answer.complete).toBe(true);
   expect(calls).toHaveLength(1);
   expect(calls[0]?.query).toContain("filterBy: {since: $since}");
+  expect(calls[0]?.query).toContain("issues(first: 100");
+  expect(calls[0]?.query).toContain("labels(first: 20)");
   expect(calls[0]?.query).not.toContain("states:");
   expect(calls[0]?.query).not.toContain("body");
   expect(
@@ -190,6 +195,7 @@ it("never reports incomplete probe pages or unreadable assignments as unchanged 
   for (const issues of [
     conn([], "more"),
     conn([{ ...change(9), assignees: conn([], "more") }]),
+    conn([{ ...change(9), labels: conn([], "more") }]),
   ]) {
     const { t } = gitHub(() => ({ repository: { issues } }));
     assert(t.changedSince);
@@ -262,7 +268,9 @@ it("retains inclusive watermark boundaries so a later same-timestamp row is obse
     keys: ["#1", "#2"],
   });
   expect(first.keys).toEqual(["#1"]);
-  expect(first.boundaryRows).toEqual({ "acme/app": ["#1"] });
+  const observed = first.boundaryRows?.["acme/app"];
+  assert(observed);
+  expect(observed).toHaveLength(1);
   phase = 1;
   const second = await t.changedSince({
     since: first.latest ?? since,
@@ -274,5 +282,54 @@ it("retains inclusive watermark boundaries so a later same-timestamp row is obse
     keys: ["#1", "#2"],
   });
   expect(second.keys).toEqual(["#2"]);
-  expect(second.boundaryRows).toEqual({ "acme/app": ["#1", "#2"] });
+  expect(second.boundaryRows?.["acme/app"]).toHaveLength(2);
+  expect(second.boundaryRows?.["acme/app"]).toEqual(
+    expect.arrayContaining(observed),
+  );
 });
+
+it.each(["assignment", "state", "labels", "parent"] as const)(
+  "detects a changed %s on an already observed row at the same timestamp",
+  async (kind) => {
+    let after = false;
+    const { t } = gitHub(() => ({
+      repository: {
+        issues: conn([
+          {
+            ...change(
+              1,
+              kind === "assignment" ? (after ? "dana" : "other") : null,
+              kind === "parent" && after ? 9 : null,
+            ),
+            state: kind === "state" && after ? "CLOSED" : "OPEN",
+            stateReason: kind === "state" && after ? "COMPLETED" : null,
+            labels: conn([
+              { name: kind === "labels" && after ? "In Progress" : "Todo" },
+            ]),
+          },
+        ]),
+      },
+    }));
+    assert(t.changedSince);
+    const keys = kind === "assignment" ? [] : ["#1", "#9"];
+    const first = await t.changedSince({ since, identity: "dana", keys });
+    after = true;
+    const second = await t.changedSince({
+      since: first.latest ?? since,
+      ...(first.watermarks ? { watermarks: first.watermarks } : {}),
+      ...(first.boundaryRows ? { boundaryRows: first.boundaryRows } : {}),
+      identity: "dana",
+      keys,
+    });
+    expect(second.keys).toEqual(kind === "parent" ? ["#1", "#9"] : ["#1"]);
+    after = false;
+    const reverted = await t.changedSince({
+      since: second.latest ?? since,
+      ...(second.watermarks ? { watermarks: second.watermarks } : {}),
+      ...(second.boundaryRows ? { boundaryRows: second.boundaryRows } : {}),
+      identity: "dana",
+      keys: ["#1", "#9"],
+    });
+    expect(reverted.keys).toEqual(["#1"]);
+  },
+);

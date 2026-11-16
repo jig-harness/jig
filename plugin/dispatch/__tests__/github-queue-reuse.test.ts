@@ -11,6 +11,7 @@ import { freshServedPickup } from "../lib/sources/served.ts";
 import { metadata } from "../lib/sources/served-metadata.ts";
 import { servedParentHold } from "../lib/sources/served-parents.ts";
 import { isoFromMs } from "../../shared/time.ts";
+import { isRecord } from "../../shared/guards.ts";
 
 const START = 1_767_398_400_000;
 const node = (number: number, assignee: string | null = "dana", extra = {}) =>
@@ -37,9 +38,38 @@ function fixture(legacy = false) {
     (call) => {
       if (failure !== null) return failure;
       if (call.op === "TrackerDispatchQueue")
-        return { repository: { issues: conn(rows) } };
+        return {
+          repository: {
+            issues: conn(
+              rows.filter((row) =>
+                (row.assignees as { nodes: { login: string }[] }).nodes.some(
+                  (person) => person.login === call.variables.identity,
+                ),
+              ),
+            ),
+          },
+        };
       if (call.op === "TrackerDispatchChanges")
-        return { repository: { issues: changes } };
+        return {
+          repository: {
+            issues:
+              isRecord(changes) && Array.isArray(changes.nodes)
+                ? {
+                    ...changes,
+                    nodes: changes.nodes.map((value) =>
+                      isRecord(value)
+                        ? {
+                            state: "OPEN",
+                            stateReason: null,
+                            labels: conn([]),
+                            ...value,
+                          }
+                        : value,
+                    ),
+                  }
+                : changes,
+          },
+        };
       if (call.op === "TrackerDispatchChildren")
         return { repository: { issue: { subIssues: conn(children) } } };
       if (call.op === "TrackerDispatchIssue" || call.op === "TrackerIssue")
@@ -481,3 +511,78 @@ it("persists source boundary rows through native queue readings", async () => {
   (await f.open(2)).save();
   expect(queries).toEqual([undefined, boundaryRows]);
 });
+
+it.each(["same", "later", "same instant"] as const)(
+  "preserves an older person's boundary when another queue has a %s watermark",
+  async (position) => {
+    const f = fixture();
+    const boundary = isoFromMs(START);
+    const later = isoFromMs(START + 30_000);
+    let olderBoundary: Readonly<Record<string, string[]>> | undefined;
+    const nativeProbe = f.tracker.changedSince;
+    assert(nativeProbe);
+    f.tracker.changedSince = async (query, signal) => {
+      const answer = await nativeProbe(query, signal);
+      if (query.identity === "alex" && olderBoundary === undefined)
+        olderBoundary = answer.boundaryRows;
+      return answer;
+    };
+    const changed = (number: number, time = boundary) => ({
+      number,
+      updatedAt: time,
+      assignees: conn([{ login: "alex" }]),
+      parent: null,
+    });
+    const open = (person: string, minute: number, people = [person]) =>
+      sharedView(
+        new Map(),
+        f.tracker,
+        person,
+        {
+          nowMs: START + minute * 60_000,
+          headroom: true,
+          scopeIdentities: people,
+        },
+        f.cache,
+      );
+    f.setRows([node(1, "alex")]);
+    (await open("alex", 0)).save();
+    f.setChanges(
+      conn([
+        changed(
+          1,
+          position === "same instant"
+            ? boundary.replace(".000Z", "Z")
+            : boundary,
+        ),
+      ]),
+    );
+    (await open("alex", 1)).save();
+    (await open("sam", 0)).save();
+    f.setChanges(
+      conn([
+        ...(position === "later" ? [changed(9, later)] : []),
+        changed(1),
+        changed(2),
+      ]),
+    );
+    (await open("sam", 1)).save();
+    f.setRows([node(1, "alex"), node(2, "alex")]);
+    const original = f.tracker.changedSince;
+    assert(original);
+    const observed: unknown[] = [];
+    f.tracker.changedSince = async (query, signal) => {
+      observed.push(query.boundaryRows);
+      return original(query, signal);
+    };
+    const refreshed = await open("alex", 2, ["alex", "sam"]);
+    expect(refreshed.source).toBe("changed");
+    expect(refreshed.open().map((held) => held.issue.identifier)).toEqual([
+      "#1",
+      "#2",
+    ]);
+    expect(observed).toEqual([olderBoundary]);
+    refreshed.save();
+    expect((await open("alex", 3)).source).toBe("unchanged");
+  },
+);

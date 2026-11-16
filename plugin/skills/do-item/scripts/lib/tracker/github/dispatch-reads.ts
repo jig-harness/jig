@@ -1,5 +1,6 @@
 /** Bounded native reads; queue snapshots and coalescing belong to the shared reader. */
 import { batch } from "../../../../../../shared/outbound/batch.ts";
+import { createHash } from "node:crypto";
 import { parseMs } from "../../../../../../shared/time.ts";
 import type { Client } from "./client.ts";
 import { keyOf, repoOf, slug, type Repo } from "./refs.ts";
@@ -16,7 +17,7 @@ import type {
 /** At most 20 issues and 10,000 objects, including the scope's selected board fields. */
 const ISSUE_BATCH = 20;
 const OBJECT_CEILING = 10_000;
-/** One repository per probe request: at most 100 issues and one assignee each, under 1,000 objects. */
+/** One repository per probe: at most 100 issues, one assignee and 20 labels each, under 4,000 objects. */
 const PROBE_PAGE = 100;
 
 export function issueBatch(
@@ -130,7 +131,8 @@ async function readChanges(
       repository(owner: $owner, name: $name) {
         issues(first: ${PROBE_PAGE}, filterBy: {since: $since}, orderBy: {field: UPDATED_AT, direction: DESC}) {
           pageInfo { hasNextPage } nodes {
-            number updatedAt
+            number updatedAt state stateReason
+            labels(first: 20) { pageInfo { hasNextPage } nodes { name } }
             assignees(first: 1) { pageInfo { hasNextPage } nodes { login } }
             parent { number repository { nameWithOwner } }
           }
@@ -174,6 +176,7 @@ interface Change {
   assignees: string[];
   parent: string | null;
   complete: boolean;
+  boundaryToken: string;
 }
 
 function changeRow(value: unknown, repo: Repo, home: Repo): Change {
@@ -182,17 +185,37 @@ function changeRow(value: unknown, repo: Repo, home: Repo): Change {
   if (!Number.isFinite(parseMs(time)))
     throw new GitHubApiError("dispatch change: invalid update time");
   const assignees = probePage(row.assignees, "dispatch change.assignees");
-  return {
-    key: keyOf({ ...repo, number: issueNumber(row.number) }, home),
-    time,
-    assignees: assignees.nodes.map((node) =>
+  const labels = probePage(row.labels, "dispatch change.labels");
+  const names = assignees.nodes
+    .map((node) =>
       str(
         record(node, "dispatch assignee").login,
         "dispatch assignee.login",
       ).toLowerCase(),
-    ),
-    parent: parentKey(row.parent, home),
-    complete: assignees.complete,
+    )
+    .sort((a, b) => a.localeCompare(b));
+  const parent = parentKey(row.parent, home);
+  const key = keyOf({ ...repo, number: issueNumber(row.number) }, home);
+  const values = [
+    names,
+    parent,
+    str(row.state, "dispatch change.state"),
+    row.stateReason === null
+      ? null
+      : str(row.stateReason, "dispatch change.stateReason"),
+    labels.nodes
+      .map((node) =>
+        str(record(node, "dispatch label").name, "dispatch label.name"),
+      )
+      .sort((a, b) => a.localeCompare(b)),
+  ];
+  return {
+    key,
+    time,
+    assignees: names,
+    parent,
+    complete: assignees.complete && labels.complete,
+    boundaryToken: `${key}:${createHash("sha256").update(JSON.stringify(values)).digest("hex")}`,
   };
 }
 
@@ -234,7 +257,7 @@ function unseenAtBoundary(row: Change, context: ProbeContext): boolean {
   return (
     time >= context.sinceMs &&
     (time !== context.sinceMs ||
-      (context.includeBoundary && !context.boundaryRows.has(row.key)))
+      (context.includeBoundary && !context.boundaryRows.has(row.boundaryToken)))
   );
 }
 
@@ -258,9 +281,14 @@ function pageChanges(
     if (!row.complete) return incomplete;
     // IssueFilters.since includes its boundary. Retain the rows seen there so
     // a later row sharing its timestamp is not silently skipped.
+    if (parseMs(row.time) < context.sinceMs) continue;
+    if (latest === null || parseMs(row.time) > parseMs(latest)) {
+      latest = row.time;
+      boundaryRows.clear();
+    }
+    if (parseMs(row.time) === parseMs(latest))
+      boundaryRows.add(row.boundaryToken);
     if (!unseenAtBoundary(row, context)) continue;
-    if (latest === null || row.time > latest) latest = row.time;
-    if (row.time === latest) boundaryRows.add(row.key);
     const keys = affectedKeys(row, context.watched, context.people);
     if (keys.length === 0) continue;
     keys.forEach((key) => {
@@ -273,16 +301,6 @@ function pageChanges(
     latest,
     boundaryRowKeys: [...boundaryRows],
   };
-}
-
-function nextBoundaryRows(
-  answer: PageChanges,
-  since: string,
-  previous: readonly string[],
-): string[] {
-  return answer.latest !== null && answer.latest > since
-    ? answer.boundaryRowKeys
-    : [...new Set([...previous, ...answer.boundaryRowKeys])];
 }
 
 /** Repository updates avoid search-index lag. Untimestamped link/board edits require the scheduled full refresh. */
@@ -327,17 +345,19 @@ export function changeProbe(
         changed.add(key);
       });
       watermarks[name] =
-        answer.latest !== null && answer.latest > since ? answer.latest : since;
-      boundaryRows[name] = nextBoundaryRows(
-        answer,
-        since,
-        query.boundaryRows?.[name] ?? [],
-      );
+        answer.latest !== null && parseMs(answer.latest) > parseMs(since)
+          ? answer.latest
+          : since;
+      // A complete inclusive page carries the current facts at its boundary.
+      // Keeping superseded facts would hide a mutation back to an earlier value.
+      boundaryRows[name] = answer.boundaryRowKeys;
     }
     return {
       keys: [...changed],
       complete: true,
-      latest: Object.values(watermarks).sort()[0] ?? null,
+      latest:
+        Object.values(watermarks).sort((a, b) => parseMs(a) - parseMs(b))[0] ??
+        null,
       watermarks,
       boundaryRows,
     } satisfies ChangeAnswer;

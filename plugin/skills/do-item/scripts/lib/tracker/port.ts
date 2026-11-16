@@ -633,7 +633,7 @@ export interface ChangeQuery {
   since: string;
   /** Source-defined partitions may advance independently; missing entries use `since`. */
   watermarks?: Readonly<Record<string, string>>;
-  /** Rows already observed at each inclusive source-watermark boundary. */
+  /** Source tokens for facts already observed at each inclusive timestamp boundary. */
   boundaryRows?: Readonly<Record<string, ReadonlyArray<string>>>;
   identity: string;
   /** All people sharing this scope probe, when dispatch groups its queues. */
@@ -648,7 +648,7 @@ export interface ChangeAnswer {
   latest: string | null;
   /** Safe boundaries for the source's partitions, retained only with a complete answer. */
   watermarks?: Readonly<Record<string, string>>;
-  /** Rows observed at each inclusive source-watermark boundary. */
+  /** Source tokens for facts observed at each inclusive timestamp boundary. */
   boundaryRows?: Readonly<Record<string, string[]>>;
 }
 
