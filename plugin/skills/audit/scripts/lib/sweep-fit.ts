@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
+import { layeredConfig } from "../../../../shared/consumer.ts";
 import { load } from "../../../../shared/yaml.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import { probedFiles } from "./criteria.ts";
@@ -215,6 +216,22 @@ export function sweepRunners(
 }
 
 /**
+ * The configuration the sweep runs under: the repository's file merged with
+ * this machine's layers. The repository's own checks stay on its file; a layer
+ * that fails to load is reported elsewhere, so the file stands in for it.
+ */
+export function mergedConfig(
+  root: string,
+  fallback: Record<string, unknown>,
+): Record<string, unknown> {
+  try {
+    return layeredConfig(root).values;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Every finding config-fit reads from the repository's files about its
  * tracker: the configuration against its label taxonomy, and the sweep.
  */
@@ -225,7 +242,7 @@ export function trackerFileFindings(
 ): Finding[] {
   return [
     ...taxonomyFindings(config, root, tracked),
-    ...sweepFindings(config, root, tracked),
+    ...sweepFindings(mergedConfig(root, config), root, tracked),
   ];
 }
 
@@ -242,13 +259,13 @@ export function sweepFindings(
       isMapping(fileIssue) &&
       isMapping(fileIssue.sweep) &&
       fileIssue.sweep.move === false;
-    if (!commentOnly) return [];
+    if (!commentOnly || sweepRunners(root, tracked, true).length > 0) return [];
     return [
       {
         id: "suggestion:issue_tracker.sweep.position",
         severity: "suggestion",
         message:
-          "this repository sets `file_issue.sweep.move: false`, but durable scheduled sweep position storage could not be confirmed: without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass `--position <file>` and keep that file between runs (file-issue's README, The weekly sweep)",
+          "this repository sets `file_issue.sweep.move: false`, but no scheduled sweep passes `--position`: without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass `--position <file>` and keep that file between runs (file-issue's README, The weekly sweep)",
       },
     ];
   }

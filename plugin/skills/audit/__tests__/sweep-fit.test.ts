@@ -56,21 +56,13 @@ it("flags a comment-only sweep that never advances past the read cap", () => {
   }
 });
 
-it("keeps comment-only sweeps advisory until durable position storage is confirmed", () => {
+it("certifies a comment-only sweep that passes a read position", () => {
   for (const move of [false, true, undefined]) {
     const config = { ...tracker, file_issue: { sweep: { move } } };
     const command = `bun check-fields.ts check --yes${move === false ? " --position state/sweep.json" : ""}`;
     for (const files of schedulerFixtures(command)) {
       const { root, tracked } = repo(files);
-      expect(sweepFindings(config, root, tracked)).toEqual(
-        move === false
-          ? [
-              expect.objectContaining({
-                id: "suggestion:issue_tracker.sweep.position",
-              }),
-            ]
-          : [],
-      );
+      expect(sweepFindings(config, root, tracked)).toEqual([]);
     }
   }
 });
@@ -95,7 +87,7 @@ it("requires durable position storage for comment-only sweeps", () => {
   expect(
     sweepFindings(config, root, ["missing.cron", "plain.cron"])[0]?.id,
   ).toBe("suggestion:issue_tracker.sweep.position");
-  expect(sweepFindings(config, root, tracked)).toHaveLength(1);
+  expect(sweepFindings(config, root, tracked)).toEqual([]);
 });
 
 describe("the audit's sweep finding", () => {

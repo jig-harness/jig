@@ -2168,9 +2168,7 @@ export async function configFit(opts: {
   report.findings.push(...machineLayers(config, schema));
   report.findings.push(...staleSession());
   const files = trackedFiles(opts.root);
-  report.findings.push(
-    ...fileFindings(layeredConfig(opts.root).values, files, opts, report),
-  );
+  report.findings.push(...fileFindings(config, files, opts, report));
   report.findings.push(...legacyFindings(opts.root, files, report.configured));
   report.findings.push(...contextDirFindings(opts.root));
   report.findings.push(...integrationBranch(config, opts.root, report));
