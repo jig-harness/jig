@@ -54,7 +54,7 @@ Contents: [the file](#the-file) ·
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
-- **Retired sections** are ignored like unknown fields, and the audit's
+- <a id="workspace_name"></a>**Retired sections** are ignored like unknown fields, and the audit's
   configuration check notes each one once, so the section can be removed:
   `workspace_name`, which named a workspace after the stage its work was at,
   has no effect, since no skill renames a workspace.

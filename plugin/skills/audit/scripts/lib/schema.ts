@@ -324,6 +324,17 @@ export function parseSchema(raw: unknown): Schema {
     ),
   };
   const index = indexSchema(schema);
+  for (const section of Object.keys(retired)) {
+    if (
+      index.byPath.has(section) ||
+      index.prefixes.has(section) ||
+      schema.strict.includes(section) ||
+      Object.hasOwn(refused, section)
+    )
+      throw new Error(
+        `config schema: retired names ${section}, which the schema also declares`,
+      );
+  }
   for (const path of schema.null_refused) {
     const field = index.byPath.get(path);
     if (!field && !index.prefixes.has(path))

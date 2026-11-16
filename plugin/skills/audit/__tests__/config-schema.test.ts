@@ -806,6 +806,10 @@ describe("the schema's own format", () => {
     expect(() =>
       parseSchema({ ...withField({ type: "string" }), retired: { old: 1 } }),
     ).toThrow("retired must map a section to a message");
+    for (const retired of [{ a: "x" }, { "a.b": "x" }])
+      expect(() =>
+        parseSchema({ ...withField({ type: "string" }), retired }),
+      ).toThrow("which the schema also declares");
   });
 });
 
