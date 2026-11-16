@@ -45,6 +45,7 @@ import { resolve } from "node:path";
 import { definedFields } from "../defined-fields.ts";
 import { swallow } from "../errors.ts";
 import { entryFile, readJsonFile, writeJsonFile } from "../gh-cache-storage.ts";
+import { log } from "../log.ts";
 import { currentMs } from "../time.ts";
 import { coalesce } from "./coalesce.ts";
 import { PAGE_CAP, nextPageUrl } from "./gh-paginate.ts";
@@ -87,6 +88,8 @@ type GhCall<R extends ObservedRun> = (
 /** What the reader needs of the conditional-request cache it shares. */
 export interface ObservedDeps<R extends ObservedRun> {
   ghCall: GhCall<R>;
+  /** The bound transport's default deadline, applied to the whole resource. */
+  defaultTimeoutSec: () => number;
   /** The cache directory, or null when caching is off. */
   cacheDir: () => string | null;
   /** The repository scope a call in `ctx` reads, or null when it cannot be known. */
@@ -144,7 +147,7 @@ function readEntry(file: string, request: string): Entry | null {
 }
 
 /** How many items a page holds: its array, or an object's first array (`check_runs`); null when neither. */
-export function pageItems(body: string): number | null {
+function pageItems(body: string): number | null {
   try {
     const v: unknown = JSON.parse(body);
     if (Array.isArray(v)) return v.length;
@@ -200,6 +203,19 @@ const ok = (stdout: string): ObservedRun => ({
   stderrTail: "",
 });
 
+/** Keep a rejected page's diagnostic when the caller retries the whole list. */
+function rejectedPage(result: ObservedRun, reason: string): null {
+  log.debug("conditional page rejected; reading the resource whole", {
+    reason,
+    code: result.code,
+    stderrTail: result.stderrTail,
+    timedOut: result.timedOut,
+    bufferExceeded: result.bufferExceeded,
+    spawnFailed: result.spawnFailed,
+  });
+  return null;
+}
+
 const spent = (path: string): ObservedRun => {
   const reason = `gh api ${path}: caller budget exhausted`;
   return {
@@ -245,14 +261,18 @@ export function createObservedPages<R extends ObservedRun>(
       ],
       definedFields({ cwd: ctx.cwd, env: ctx.env, timeoutSec: left }),
     );
-    if (r.timedOut || r.bufferExceeded || r.spawnFailed) return null;
+    if (r.timedOut || r.bufferExceeded || r.spawnFailed)
+      return rejectedPage(r, "transport did not complete");
     const status = /^HTTP\/\S+\s+(\d{3})/.exec(r.stdout);
-    if (!status) return null;
+    if (!status) return rejectedPage(r, "missing HTTP status");
     const { headers, body } = splitHeaders(r.stdout);
     // `gh api` exits 1 on a 304, so the status line decides, not the exit.
-    if (status[1] === "304") return etag ? { status: 304 } : null;
+    if (status[1] === "304")
+      return etag
+        ? { status: 304 }
+        : rejectedPage(r, "304 without a validator");
     if (status[1] !== "200" || r.code !== 0 || pageItems(body) === null)
-      return null;
+      return rejectedPage(r, "response was not a whole JSON page");
     return {
       status: 200,
       etag: headers?.get("etag") ?? "",
@@ -277,46 +297,64 @@ export function createObservedPages<R extends ObservedRun>(
     let tail = kept?.tail ?? null;
     let changed = kept === null;
     let url: string | null = firstPage(path);
-    // Asking the page after the last one, and whether the last one was live.
     let probing = false;
     let lastLive = false;
     while (url !== null) {
       if (pages.length >= PAGE_CAP) return null;
+      const next = await step(url);
+      if (next === "failed") return null;
+      if (next === "done") break;
+    }
+    return done();
+
+    async function step(at: string): Promise<"next" | "done" | "failed"> {
       const left = leftSec(ctx, startMs);
-      const held = byUrl.get(url);
-      const tailEtag: string | null =
-        probing && tail?.url === url ? tail.etag : null;
-      const answer: PageAnswer | null =
-        left === 0
-          ? null
-          : await readPage(url, (held?.etag ?? tailEtag) || null, ctx, left);
-      // A live last page's own `Link` already said nothing follows it.
-      if (answer === null) return probing && lastLive ? done() : null;
-      const fresh: LiveAnswer | null = answer.status === 200 ? answer : null;
-      const live = fresh !== null;
-      if (probing) {
-        // A `304` to the empty tail's ETag, or an empty answer: nothing follows.
-        if (!live && held === undefined) break;
-        if (fresh !== null && (pageItems(fresh.body) ?? 0) === 0) {
-          if (tail?.url !== url || tail.etag !== fresh.etag) changed = true;
-          tail = { url, etag: fresh.etag };
-          break;
-        }
-        // A page follows the last one: it is read like any other.
-      }
-      const page: KeptPage | undefined = fresh
-        ? { url, etag: fresh.etag, body: fresh.body, next: fresh.next }
+      const held = byUrl.get(at);
+      const answer =
+        left === 0 ? null : await readPage(at, validator(at), ctx, left);
+      // A live last page already established that nothing follows it.
+      if (answer === null) return probing && lastLive ? "done" : "failed";
+      const fresh = answer.status === 200 ? answer : null;
+      if (tailEnds(at, held, fresh)) return "done";
+      const page = fresh
+        ? { url: at, etag: fresh.etag, body: fresh.body, next: fresh.next }
         : held;
-      if (page === undefined) return null;
+      if (page === undefined) return "failed";
+      keepPage(page, fresh !== null);
+      return advance(page);
+    }
+
+    function validator(at: string): string | null {
+      const tailEtag = probing && tail?.url === at ? tail.etag : null;
+      return (byUrl.get(at)?.etag ?? tailEtag) || null;
+    }
+
+    // The empty tail has no items to append, but its validator must be kept.
+    function tailEnds(
+      at: string,
+      held: KeptPage | undefined,
+      fresh: LiveAnswer | null,
+    ): boolean {
+      if (!probing) return false;
+      if (fresh === null) return held === undefined;
+      if (pageItems(fresh.body) !== 0) return false;
+      if (tail?.url !== at || tail.etag !== fresh.etag) changed = true;
+      tail = { url: at, etag: fresh.etag };
+      return true;
+    }
+
+    function keepPage(page: KeptPage, live: boolean): void {
       changed ||= live;
-      // An empty page after the first holds nothing a whole read would show.
       if (pages.length === 0 || (pageItems(page.body) ?? 0) > 0)
         pages.push(page);
       probing = false;
       lastLive = live;
+    }
+
+    function advance(page: KeptPage): "next" | "done" | "failed" {
       if (page.next !== null) {
         url = page.next;
-        continue;
+        return "next";
       }
       const after = followingPage(page.url);
       const known =
@@ -324,14 +362,13 @@ export function createObservedPages<R extends ObservedRun>(
           ? null
           : (byUrl.get(after)?.etag ??
             (tail?.url === after ? tail.etag : null));
-      // A live last page needs the probe only to keep the tail's ETag.
-      if (live && (after === null || known !== null)) break;
-      // An unchanged last page says nothing of a page added after it.
-      if (after === null) return null;
+      // A live last page needs the probe only to keep the tail validator.
+      if (lastLive && (after === null || known !== null)) return "done";
+      if (after === null) return "failed";
       url = after;
       probing = true;
+      return "next";
     }
-    return done();
 
     function done() {
       return { entry: { pages, tail }, changed };
@@ -387,6 +424,7 @@ export function createObservedPages<R extends ObservedRun>(
     path: string,
     ctx: ObservedOptions = {},
   ): Promise<ObservedRun> {
+    ctx = { ...ctx, timeoutSec: ctx.timeoutSec ?? deps.defaultTimeoutSec() };
     const reads = evaluation.getStore();
     if (reads === undefined) return read(path, ctx);
     const shared = coalesce(reads, memoKey(path, ctx), async () => {

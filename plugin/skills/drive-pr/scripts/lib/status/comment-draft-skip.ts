@@ -1,13 +1,12 @@
 /** Draft skips a reviewer records in its issue comment instead of a check. */
 import { isRecord } from "../../../../../shared/guards.ts";
-import { attempt } from "../../../../../shared/outcome.ts";
 import {
   reviewerApp,
   reviewerEvidence,
   reviewerLabel,
   reviewsDrafts,
 } from "../overlay.ts";
-import { slurpPages } from "../paged-read.ts";
+import { readArrayPages } from "../paged-read.ts";
 import { commentSaysDraftSkip } from "../reviewer-profiles.ts";
 
 /**
@@ -25,18 +24,13 @@ export async function commentDraftSkip(
   // No other profile defines a comment skip, so no extra read is needed.
   if (app !== "coderabbitai") return false;
   // An observation for the evaluation's verdict (`paged-read.ts`).
-  const r = await slurpPages(
+  const comments = await readArrayPages(
     `repos/${owner}/${repo}/issues/${pr}/comments?per_page=100`,
     "observed",
   );
-  if (r.code !== 0) return null;
-  const decoded = attempt("unreadable", "issue comments JSON", (): unknown =>
-    JSON.parse(r.stdout),
-  );
-  const pages = decoded.ok ? decoded.value : null;
-  if (!Array.isArray(pages) || !pages.every(Array.isArray)) return null;
+  if (comments === null) return null;
   let skipped = false;
-  for (const raw of pages.flat() as unknown[]) {
+  for (const raw of comments) {
     if (!isRecord(raw)) return null;
     if (!isRecord(raw.user)) return null;
     if (raw.user.login !== `${app}[bot]`) continue;

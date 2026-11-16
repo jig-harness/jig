@@ -18,6 +18,12 @@ A few behaviours worth knowing before you arm one:
 - **Stops.** It stops on a state it names precisely — convergence verified against the exact commit, a merged or closed PR, a conflict it could not resolve, findings that need a human decision ([HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) — or on one of the operational stops in [the exit table](#the-exit-states--what-you-do-now).
 - **Limits.** It never approves, never merges, and never bypasses a hook.
 
+Within each evaluation, readers share the same REST observation. Across
+evaluations, the drive revalidates every cached page with GitHub, so unchanged
+pages avoid the primary REST rate limit. Reads before actions remain fresh.
+The [cost report](../../CONFIGURATION.md#outbound-cost-reports) counts
+`304 Not Modified` answers separately so you can check the savings.
+
 The practice it implements is Jig's [M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md); its loop-cost reports belong to [M11 — Process observability](https://github.com/jig-harness/jig/blob/main/modules/M11-process-observability/README.md).
 
 This page is for **you, the human** — the operator contract agents follow is the skill itself: [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).

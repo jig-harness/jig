@@ -1299,6 +1299,20 @@ function slurp(path: string, read: PagedRead): Promise<string> {
   return gh(args, slurpPages(path, read));
 }
 
+/** A report observes comments; checking a marker before posting a reply reads fresh. */
+async function issueCommentsFor(
+  repo: string,
+  prNumber: number,
+  checkFingerprintsArg: string | undefined,
+): Promise<IssueComment[]> {
+  return JSON.parse(
+    await slurp(
+      `repos/${repo}/issues/${prNumber}/comments?per_page=100`,
+      checkFingerprintsArg === undefined ? "observed" : "fresh",
+    ),
+  ).flat();
+}
+
 /**
  * The reviewer's sticky summary comment, if any: the last comment from the
  * reviewer's login carrying the sticky marker. With `configuredOnly` (the
@@ -1425,38 +1439,21 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // `--check-addressed fp1,fp2,... [--marker-sha SHA]` — used by
-  // `answer-summary-finding.ts` to reconcile against the PR's ACTUAL comments
-  // before posting a new one, so a driver reclaiming an abandoned held-batch
-  // claim after its owner's post already succeeded (but crashed before
-  // `release-held`) does not post a SECOND, duplicate comment.
+  // `--check-addressed fp1,fp2,... [--marker-sha SHA]` checks whether the
+  // exact reply a caller is about to post already exists. Retrying after a
+  // held-batch owner posted but stopped before releasing its claim must not
+  // post a duplicate.
   //
-  // This is deliberately NOT a query over `collectAddressed`/`reviewerPosition`,
-  // even though that pairing is what the main report below uses and it looks
-  // like the obvious thing to reuse. `reviewerPosition` answers "how far has
-  // the reviewer read relative to this fix, so should the finding stay
-  // suppressed" — a question scoped to the CURRENT sticky's reviewed SHA.
-  // Routing this reconciliation through it reintroduced the exact bug it exists
-  // to fix: once the reviewer has read the
-  // SHA a fix-dependent marker names — reaching it, for a finding outside the
-  // backlog blob, or moving past it for any finding — `collectAddressed` treats
-  // that marker as EXPIRED, so a driver reconciling right after a legitimate
-  // post sees its own just-posted marker as "unaddressed" and posts a second
-  // one. This question is different in kind: "did a specific comment
-  // I am about to post already get posted" is a fact about the PAST, and
-  // whether the reviewer has since reviewed it is irrelevant to whether
-  // posting it again would duplicate it. So this matches markers EXACTLY —
-  // same fingerprint, same `@sha` suffix (or same bare fingerprint for a
-  // durable outcome, which never carries one) — with no expiry test at all.
-  // A LATER round asking about the same fingerprint passes a DIFFERENT
-  // `--marker-sha` (the new commit it is answering for), so a marker that
-  // legitimately expired and is being re-answered under a new SHA is never
-  // mistaken for the one this call is about to post.
+  // Match the fingerprint and its `@sha` suffix exactly, or the bare
+  // fingerprint for a durable outcome. Ignore marker expiry: the reviewer
+  // reaching a fix may expire its suppression, but cannot undo its posting.
+  // A later round answering a new fix supplies that fix's SHA, so the older
+  // reply does not satisfy it. The report's `collectAddressed` and
+  // `reviewerPosition` answer whether a finding remains suppressed and
+  // therefore cannot serve this duplicate check.
   //
-  // Every flag value and the PR number are stripped out of `argv` before the
-  // PR-number scan below, so a wholly-numeric fingerprint (legal under
-  // MARKER_SAFE_FINGERPRINT) or a from-digits-only SHA prefix can never be
-  // mistaken for the PR.
+  // Strip flag values before scanning for the PR number: a numeric
+  // fingerprint or SHA prefix is also a valid value for those flags.
   const checkIdx = rawArgv.indexOf("--check-addressed");
   const checkFingerprintsArg =
     checkIdx === -1 ? undefined : rawArgv[checkIdx + 1];
@@ -1506,14 +1503,11 @@ async function main(): Promise<number> {
   }
   const repo = repoView.stdout.trim();
 
-  // `--check-addressed` guards the marker a reply is about to post, so it
-  // reads fresh; the report is an observation (`lib/paged-read.ts`).
-  const issueComments: IssueComment[] = JSON.parse(
-    await slurp(
-      `repos/${repo}/issues/${prNumber}/comments?per_page=100`,
-      checkFingerprintsArg === undefined ? "observed" : "fresh",
-    ),
-  ).flat();
+  const issueComments = await issueCommentsFor(
+    repo,
+    prNumber,
+    checkFingerprintsArg,
+  );
 
   const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
   // The round the sticky describes. Read here — above the `--check-addressed`

@@ -10,6 +10,7 @@
  *   call and never takes a reading another module took earlier: what it
  *   authorizes must rest on what GitHub says now.
  */
+import { attempt } from "../../../../shared/outcome.ts";
 import { ghObservedSlurp } from "./gh-conditional.ts";
 import { ghCall, type RunResult } from "./proc.ts";
 
@@ -28,4 +29,20 @@ export function slurpPages(
   if (read === "observed") return ghObservedSlurp(path, opts);
   const args = ["api", "--paginate", "--slurp", path];
   return opts === undefined ? ghCall(args) : ghCall(args, opts);
+}
+
+/** All items from array-valued pages; null for an unreadable or malformed list. */
+export async function readArrayPages(
+  path: string,
+  read: PagedRead,
+): Promise<unknown[] | null> {
+  const result = await slurpPages(path, read);
+  if (result.code !== 0) return null;
+  const decoded = attempt("unreadable", "paged list JSON", (): unknown =>
+    JSON.parse(result.stdout),
+  );
+  const pages = decoded.ok ? decoded.value : null;
+  return Array.isArray(pages) && pages.every(Array.isArray)
+    ? pages.flat()
+    : null;
 }

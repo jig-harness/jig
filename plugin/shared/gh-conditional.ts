@@ -69,6 +69,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   ghCall as defaultGhCall,
+  ghCallTimeoutSeconds,
   git as defaultGit,
   type RunResult,
 } from "./proc.ts";
@@ -510,6 +511,7 @@ export function createConditionalCache({
 
   const { ghObservedSlurp } = createObservedPages({
     ghCall,
+    defaultTimeoutSec: ghCallTimeoutSeconds,
     cacheDir: ghCacheDir,
     repoScope,
   });

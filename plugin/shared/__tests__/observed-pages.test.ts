@@ -9,7 +9,14 @@
  * that carries no `Link` header (as GitHub does) and exit 1 (as `gh` does),
  * and records every request it was sent.
  */
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+} from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -184,6 +191,7 @@ function reader() {
   );
   const { ghObservedSlurp } = createObservedPages({
     ghCall,
+    defaultTimeoutSec: () => 30,
     cacheDir: () => (cacheOn ? dir : null),
     repoScope: async () => "scope",
   });
@@ -199,7 +207,40 @@ const items = (prefix: string, n: number) =>
 const route = (path: string) => path.split("?")[0] ?? "";
 const json = (r: { stdout: string }): unknown => JSON.parse(r.stdout);
 
-describe.skipIf(process.platform === "win32")("observed paged reads", () => {
+describe("observed paged reads", () => {
+  it("bounds sequential pages and scope resolution by the transport's default whole-resource deadline", async () => {
+    github.lists.set(route(COMMENTS), items("c", 10));
+    let now = 1_800_000_000_000;
+    const advance = () => {
+      now += 400;
+      setSystemTime(now);
+    };
+    setSystemTime(now);
+    const budgets: Array<number | undefined> = [];
+    const { ghObservedSlurp } = createObservedPages({
+      defaultTimeoutSec: () => 1,
+      cacheDir: () => dir,
+      repoScope: async () => {
+        advance();
+        return "scope";
+      },
+      ghCall: async (argv, opts) => {
+        budgets.push(opts?.timeoutSec);
+        advance();
+        return github.answer(argv);
+      },
+    });
+    try {
+      const result = await ghObservedSlurp(COMMENTS, { env: ENV });
+      expect(result.timedOut).toBe(true);
+      expect(result.code).toBe(124);
+      expect(github.sent).toHaveLength(2);
+      expect(budgets).toEqual([1, 1]);
+    } finally {
+      setSystemTime();
+    }
+  });
+
   it("a second evaluation over an unchanged resource sends only conditional requests, each answered 304, and reuses the earlier reading", async () => {
     github.lists.set(route(COMMENTS), items("c", 5));
     const read = reader();
