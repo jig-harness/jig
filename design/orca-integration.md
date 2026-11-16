@@ -133,9 +133,9 @@ finished, and the registry and the worktree list show only what exists, so
 gc relies on no settlement evidence it cannot observe. Only three things
 release a submitted admission: the removal call's own reply, success or an
 explicit refusal; the worktree's absence from the list of Orca's worktrees
-of the repository the admission names, and from the disk; and another
-incarnation of the worktree at its path, which proves the one it claimed
-gone. Another repository's list cannot hold the worktree, so its absence
+of the repository the admission names, and from the disk; and a worktree
+born later than the one it claimed standing at its path, which proves that
+one gone. Another repository's list cannot hold the worktree, so its absence
 there proves nothing, and a worktree made again at the path does not
 inherit the old claim's block. Every other outcome is ambiguous (a timeout at the removal command's
 deadline, a throw, a nonzero exit, output gc cannot read, a crashed gc), and
@@ -148,8 +148,8 @@ releases the claim. Repeating the call is safe because the claim still
 excludes every launch the hook mediates and the proof is read afresh. A
 worktree that is gone is never collected again, so each run of the worktrees
 kind also lists every claim a collector of its repository that ended left on
-a worktree gone from Orca's list and from the disk, or made again since, and
-collecting that line deletes it. A
+a worktree gone from Orca's list and from the disk, and every claim on a
+worktree made again since, and collecting that line deletes it. A
 removal that keeps failing holds its worktree closed to launches and, while
 the worktree's idle proof still holds, appears in each run's receipt with the
 reason the claim stays, until the cause is fixed. A worktree whose proof finds
