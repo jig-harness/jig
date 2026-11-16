@@ -25,7 +25,7 @@ issues [#1319](https://github.com/jig-harness/jig/issues/1319), [#1320](https://
 [workspace launcher](../tools/launcher/README.md)'s first prompt. The
 derivation and the complexity tiers ([build order](#build-order) steps 1
 and 2) are built, of step 4 the known-families list, `routing.family_tiers`
-and the loader's checks, and of step 5 the forwarding behind a declared
+and the loader's checks, and of step 5 the forwarding in dispatched passes behind a declared
 `routing` section; the rest is not.
 It builds on the agent selection that exists
 (`plugin/skills/do-item/scripts/determine_agent.ts`) and on the
