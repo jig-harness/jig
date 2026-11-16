@@ -396,6 +396,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.250.0] - 2026-11-16
+
+### Changed
+
+- Final-CI waiting backs off unchanged observations up to a sixty-second
+  scheduling delay while keeping control checks responsive and witness
+  expiry based on elapsed time. Forge callers sharing a credential space
+  request starts through the shared budget record, with cancellation and
+  deadline bounds and recovery after a caller crashes.
+
 ## [0.249.0] - 2026-11-15
 
 Every configuration field that chooses something by an item's or a
@@ -8808,7 +8818,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.249.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.250.0...HEAD
+[0.250.0]: https://github.com/jig-harness/jig/compare/v0.249.0...v0.250.0
 [0.249.0]: https://github.com/jig-harness/jig/compare/v0.248.2...v0.249.0
 [0.248.2]: https://github.com/jig-harness/jig/compare/v0.248.1...v0.248.2
 [0.248.1]: https://github.com/jig-harness/jig/compare/v0.248.0...v0.248.1
