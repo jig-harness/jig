@@ -91,11 +91,15 @@ function closingRun(
   start: number,
   delimiter: string,
 ): number | null {
-  for (let cursor = start; cursor < line.length; cursor += 1) {
-    if (line[cursor] !== "`") continue;
+  let cursor = start;
+  while (cursor < line.length) {
+    if (line[cursor] !== "`") {
+      cursor += 1;
+      continue;
+    }
     const end = backtickRun(line, cursor);
     if (end - cursor === delimiter.length) return end;
-    cursor = end - 1;
+    cursor = end;
   }
   return null;
 }
@@ -121,6 +125,8 @@ function inlineBoundary(line: string): boolean {
     /^ {0,3}(?:\*[ \t]*){3,}$/.test(line) ||
     /^ {0,3}(?:-[ \t]*){3,}$/.test(line) ||
     /^ {0,3}(?:_[ \t]*){3,}$/.test(line) ||
+    /^ {0,3}(?:={1,}|-{1,})[ \t]*$/.test(line) ||
+    /^ {0,3}<!--/.test(line) ||
     openingFence(line) !== null
   );
 }

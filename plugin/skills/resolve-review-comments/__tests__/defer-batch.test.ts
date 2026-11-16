@@ -392,6 +392,17 @@ describe("appendEntry", () => {
     expect(authoritativeLines(doc)).toEqual(["Example: `", "***"]);
   });
 
+  it("does not carry inline code through HTML or setext-heading boundaries", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const html = ["Example: `", "<!--`", identity, "-->"].join("\n");
+    const setext = ["Example: `", "===", "<!--`", identity, "-->"].join("\n");
+
+    expect(entryHeadings(html)).toEqual([]);
+    expect(authoritativeLines(html)).toEqual(["Example: `"]);
+    expect(entryHeadings(setext)).toEqual([]);
+    expect(authoritativeLines(setext)).toEqual(["Example: `", "==="]);
+  });
+
   it("does not mistake an invalid backtick fence for an inline-code boundary", () => {
     const identity = "Deferred finding: https://example.test/source";
     const doc = ["Example: `<!--", "```not`a-fence", "", identity].join("\n");
