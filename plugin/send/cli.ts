@@ -152,6 +152,37 @@ function standing(request: Request): string | null {
   return null;
 }
 
+/**
+ * A pick-up's answer on another tracker's item: its plan, or the address the
+ * forge writers take. The key is checked against the default branch's
+ * tracker, never the checkout's, before anything is looked up by it.
+ */
+async function planPickupAnswer(
+  resolved: ResolvedAddress,
+  strict: () => ResolvedAddress,
+  request: Extract<Request, { verb: "answer"; all: false }>,
+  as: string | undefined,
+  dryRun: boolean,
+): Promise<{ plan: Planned } | { resolved: ResolvedAddress }> {
+  if (resolved.address.station !== "pickup") return { resolved: strict() };
+  const trackerCtx = contextFor(resolved, reading(), null);
+  const opened = await openTrackerHere(trackerCtx, resolved.checkout);
+  const canonical = opened.ok
+    ? opened.value.keys?.(resolved.address.key)
+    : undefined;
+  if (!opened.ok || typeof canonical !== "string")
+    return { resolved: strict() };
+  const address = { ...resolved.address, key: canonical };
+  const onTracker = await planTrackerAnswer(
+    { ...trackerCtx, address, name: formatAddress(address) },
+    request,
+    { as, dryRun, open: () => opened },
+  );
+  if (onTracker !== null) return { plan: onTracker };
+  // The key is the default branch's own; the forge writers take it as canonicalized.
+  return { resolved: { ...resolved, address } };
+}
+
 /** The plan of `request` to the resolved address, or why it is refused. */
 async function planFor(
   resolved: ResolvedAddress,
@@ -168,24 +199,9 @@ async function planFor(
       : planAssign(ctx, resolved.checkout, as);
   }
   if (request.verb === "answer" && !request.all) {
-    // An item of another tracker is answered as the tracker's user here; a
-    // pick-up's key is checked against the default branch's tracker, never
-    // the checkout's, before anything is looked up by it.
-    const trackerCtx = contextFor(resolved, r, null);
-    const opened = await openTrackerHere(trackerCtx, resolved.checkout);
-    const canonical = opened.ok
-      ? opened.value.keys?.(resolved.address.key)
-      : undefined;
-    if (opened.ok && typeof canonical === "string") {
-      const address = { ...resolved.address, key: canonical };
-      const onTracker = await planTrackerAnswer(
-        { ...trackerCtx, address, name: formatAddress(address) },
-        request,
-        { as, dryRun, open: () => opened },
-      );
-      if (onTracker !== null) return onTracker;
-    }
-    resolved = strict();
+    const first = await planPickupAnswer(resolved, strict, request, as, dryRun);
+    if ("plan" in first) return first.plan;
+    resolved = first.resolved;
   }
   const login = writerLogin(await readLogin(r), as, "the forge");
   if (!login.ok) return login;
