@@ -218,27 +218,38 @@ async function call(
   const bound =
     signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
   const deadlineAt = currentMs() + GITHUB_TIMEOUT_MS;
-  // Once an attempt has begun, a cancellation may have cut a request that
-  // landed: `retryRead` throws the bare reason, which carries no marker.
+  // Once a request has gone out, a cancellation may have cut one that
+  // landed: `retryRead` throws the bare reason, which carries no marker. An
+  // attempt answered as unsent (cancelled or refused before the send) is no
+  // dispatch.
   let dispatched = false;
-  const retried = () =>
-    retryRead(
-      () => {
-        dispatched = true;
-        return send(bound, deadlineAt);
-      },
-      {
-        read,
-        signal: bound,
-        deadlineAt,
-        failureOf: failureOfAnswer,
-      },
-    ).catch((err: unknown): Answer => {
-      const sent = dispatched || (err instanceof GitHubApiError && err.sent);
-      if (cancelled(signal)) throw abortedError(signal, sent);
-      if (cancelled(bound)) return abortedError(bound, sent);
+  const attempt = async (): Promise<Answer> => {
+    let answer: Answer;
+    try {
+      answer = await send(bound, deadlineAt);
+    } catch (err) {
+      dispatched = true;
       throw err;
-    });
+    }
+    if (!(answer instanceof GitHubApiError && unsentAnswers.has(answer)))
+      dispatched = true;
+    return answer;
+  };
+  /** A cancellation as the call's answer or throw, keeping whether a request went out. */
+  const cancelledAnswer = (err: unknown): Answer => {
+    const sent = dispatched || (err instanceof GitHubApiError && err.sent);
+    if (cancelled(signal)) throw abortedError(signal, sent);
+    if (cancelled(bound))
+      return sent ? abortedError(bound, true) : unsent(abortedError(bound));
+    throw err;
+  };
+  const retried = () =>
+    retryRead(attempt, {
+      read,
+      signal: bound,
+      deadlineAt,
+      failureOf: failureOfAnswer,
+    }).catch(cancelledAnswer);
   // A `gh` run is held where every `gh` call is (`ghCall`); an HTTPS request here, under its endpoint's host.
   const answer =
     hold === null
@@ -250,15 +261,7 @@ async function call(
           (f) => errorOf(f),
           bound,
           (a) => a instanceof GitHubApiError && unsentAnswers.has(a),
-        ).catch((err: unknown): Answer => {
-          // A cancellation that met no request keeps nothing sent; one a
-          // dispatched request met, or that an attempt already marked, keeps that fact.
-          const sent =
-            dispatched || (err instanceof GitHubApiError && err.sent);
-          if (cancelled(signal)) throw abortedError(signal, sent);
-          if (cancelled(bound)) return abortedError(bound, sent);
-          throw err;
-        });
+        ).catch(cancelledAnswer);
   if (answer instanceof GitHubApiError) throw answer;
   return unwrapResponse(answer.body);
 }
@@ -462,16 +465,34 @@ async function postOnce(
       ),
     );
   }
+  /** A body that could not be read: the headers GitHub sent still say its limits. */
+  const unreadBody = (answer: Answer, got: Response): Posted => ({
+    answer,
+    headers: got.headers,
+    text: "",
+  });
   let text: string;
   try {
     text = await res.text();
   } catch (err) {
-    if (cancelled(bound)) return lost(abortedError(bound, true));
-    return lost(
-      new GitHubApiError(
-        `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`,
-        { code: "unreachable", sent: true },
-      ),
+    if (cancelled(bound)) return unreadBody(abortedError(bound, true), res);
+    const reason = `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`;
+    // A refusal's status and headers stand without its body.
+    const refused = gitHubHttpFailure(
+      res.status,
+      res.headers,
+      "",
+      currentMs() - began,
+    );
+    return unreadBody(
+      refused === null
+        ? new GitHubApiError(reason, { code: "unreachable", sent: true })
+        : errorOf({
+            ...refused,
+            reason: `${reason}; ${refused.reason}`,
+            sent: true,
+          }),
+      res,
     );
   }
   if (cancelled(bound)) return lost(abortedError(bound, true));

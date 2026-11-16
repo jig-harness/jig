@@ -256,4 +256,73 @@ describe("a GitHub request over HTTPS in the shared budget record", () => {
     );
     expect(server.hits()).toBe(0);
   });
+
+  it("holds the credential on a refusal whose body could not be read, from the headers it did send", async () => {
+    const path = databasePath();
+    setForgeGovernor(
+      budgetGovernor(sqliteBudgetStore(path), { share: () => null }),
+    );
+    let sends = 0;
+    const lostBody = (async () => {
+      sends += 1;
+      const res = new Response("", {
+        status: 429,
+        headers: { "retry-after": "120" },
+      });
+      Object.defineProperty(res, "text", {
+        value: () => Promise.reject(new Error("socket closed")),
+      });
+      return res;
+    }) as unknown as typeof fetch;
+    const refused = await httpTransport(
+      "https://github.example/graphql",
+      TOKEN,
+      lostBody,
+    )(QUERY, {}, undefined, false).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(GitHubApiError);
+    expect((refused as GitHubApiError).code).toBe("rate-limited");
+    expect(sends).toBe(1);
+    const record = sqliteBudgetStore(path).read(githubCredential(ENV));
+    expect(record?.limitedUntil ?? 0).toBeGreaterThan(currentMs() + 100_000);
+  });
+
+  it("keeps a cancellation after the request went out marked as sent, and one before it unsent", async () => {
+    const path = databasePath();
+    setForgeGovernor(
+      budgetGovernor(sqliteBudgetStore(path), { share: () => null }),
+    );
+    const controller = new AbortController();
+    const cut = (async (_url: unknown, init?: RequestInit) => {
+      controller.abort(new Error("stop"));
+      init?.signal?.throwIfAborted();
+      return Response.json({ data: {} });
+    }) as unknown as typeof fetch;
+    const after = await httpTransport(
+      "https://github.example/graphql",
+      TOKEN,
+      cut,
+    )(QUERY, {}, controller.signal, false).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(after).toBeInstanceOf(GitHubApiError);
+    expect((after as GitHubApiError).sent).toBe(true);
+
+    const before = new AbortController();
+    before.abort(new Error("never started"));
+    const untouched = await httpTransport(
+      "https://github.example/graphql",
+      TOKEN,
+      (() => {
+        throw new Error("must not be sent");
+      }) as unknown as typeof fetch,
+    )(QUERY, {}, before.signal, false).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect((untouched as GitHubApiError).sent).toBe(false);
+  });
 });
