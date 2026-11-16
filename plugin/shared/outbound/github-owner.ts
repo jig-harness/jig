@@ -78,6 +78,8 @@ const OWNER_RETENTION_MS = 30 * 24 * 3_600_000;
 export const DISCOVERY_BACKOFF_MS = 15 * 60_000;
 /** The discovery request's deadline. */
 const DISCOVERY_DEADLINE_MS = 10_000;
+/** How often a refused carry is tried again while the call waits for it. */
+const SETTLE_POLL_MS = 25;
 
 /** What the machine knows of one credential's owner. */
 export interface OwnerEntry {
@@ -343,29 +345,32 @@ export function githubOwnerResolver(deps: {
     login: e.login,
   });
 
-  /** Carry the credential's earlier record into its owner's, once a process. */
-  const seed = (env: Env, owner: string): void => {
+  /** Carry the credential's earlier record into its owner's, once a process; `false` while the lock refuses it. */
+  const seed = (env: Env, owner: string): boolean => {
     const legacy = legacyGithubCredential(env);
     const pair = `${legacy}>${owner}`;
-    if (legacy === owner || seeded.has(pair)) return;
-    seeded.add(pair);
+    if (legacy === owner || seeded.has(pair)) return true;
     const earlier = deps.budget.read(legacy);
-    if (earlier === null) return;
+    if (earlier === null) {
+      seeded.add(pair);
+      return true;
+    }
     const now = clock();
-    // Carried at the next resolve when the lock is held.
     if (
       !whenFree(() =>
         deps.budget.update(owner, (p) => carried(p, earlier, now), true),
       )
     )
-      seeded.delete(pair);
+      return false;
+    seeded.add(pair);
+    return true;
   };
 
-  /** Complete every carry owed to `owner`; one the lock refused is tried again at the next resolve. */
-  const settle = (env: Env, owner: string): void => {
-    seed(env, owner);
+  /** Complete every carry owed to `owner`; `false` while the lock refuses one, to be tried again. */
+  const settleOnce = (env: Env, owner: string): boolean => {
+    let done = seed(env, owner);
     const seen = unsettled.get(owner);
-    if (seen === undefined) return;
+    if (seen === undefined) return done;
     if (
       whenFree(() =>
         deps.budget.update(
@@ -376,6 +381,24 @@ export function githubOwnerResolver(deps: {
       )
     )
       unsettled.delete(owner);
+    else done = false;
+    return done;
+  };
+
+  /**
+   * Complete the carries before the owner is used, so a call is admitted
+   * against the owner's record and not an absent one: the lock is waited for
+   * within the call's deadline, and a carry still refused then is tried
+   * again at the next resolve.
+   */
+  const settle = async (
+    env: Env,
+    owner: string,
+    deadlineMs: number,
+  ): Promise<void> => {
+    const until = clock() + Math.max(0, deadlineMs);
+    while (!settleOnce(env, owner) && clock() < until)
+      await new Promise((r) => setTimeout(r, SETTLE_POLL_MS));
   };
 
   const ask = async (
@@ -417,7 +440,7 @@ export function githubOwnerResolver(deps: {
       if (seen !== null && seen.observedAt >= began) {
         // Carried at the owner's next resolve when the lock is held.
         unsettled.set(owner, seen);
-        settle(env, owner);
+        await settle(env, owner, deadlineMs - (currentMs() - began));
       }
     }
     // The default discovery is a run of `gh` the wrapper records itself; a
@@ -462,7 +485,7 @@ export function githubOwnerResolver(deps: {
     const credential = githubCredential(env);
     if (installationToken(env)) {
       const found = installation(env, credential);
-      seed(env, found.owner);
+      await settle(env, found.owner, deadlineMs);
       return found;
     }
     const now = clock();
@@ -470,7 +493,7 @@ export function githubOwnerResolver(deps: {
     const slot = `${credential}@${host}`;
     const held = memo.get(slot);
     if (held !== undefined && held.until > now) {
-      settle(env, held.resolution.owner);
+      await settle(env, held.resolution.owner, deadlineMs);
       return held.resolution;
     }
     const pending = inflight.get(slot);
@@ -479,7 +502,7 @@ export function githubOwnerResolver(deps: {
     if (entry !== null && entry.retryAt > now) {
       const found = fromEntry(credential, entry);
       memo.set(slot, { resolution: found, until: entry.retryAt });
-      settle(env, found.owner);
+      await settle(env, found.owner, deadlineMs);
       return found;
     }
     const asked = ask(
@@ -488,7 +511,7 @@ export function githubOwnerResolver(deps: {
       entry,
       Math.min(DISCOVERY_DEADLINE_MS, deadlineMs),
     )
-      .then((found) => {
+      .then(async (found) => {
         // A refused admission stores nothing: the process waits out the
         // backoff before it asks again.
         const until = deps.owners.read(credential, host)?.retryAt ?? 0;
@@ -496,7 +519,7 @@ export function githubOwnerResolver(deps: {
           resolution: found,
           until: until > clock() ? until : clock() + DISCOVERY_BACKOFF_MS,
         });
-        settle(env, found.owner);
+        await settle(env, found.owner, deadlineMs);
         return found;
       })
       .finally(() => inflight.delete(slot));

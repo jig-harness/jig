@@ -611,10 +611,36 @@ describe("records an earlier release kept", () => {
     });
     const until = currentMs() + 600_000;
     store.update(legacyGithubCredential(env), () => held(until));
-    const found = await owners.resolve(env);
+    const found = await owners.resolve(env, 60);
     expect(store.read(found.owner)).toBeNull();
     busy = false;
     expect((await owners.resolve(env)).owner).toBe(found.owner);
+    expect(store.read(found.owner)?.limitedUntil).toBe(until);
+  });
+
+  it("wait for a carry the lock refused, within the call's deadline, before the owner is used", async () => {
+    const path = databasePath();
+    const env = { GH_TOKEN: "token-a" };
+    const store = sqliteBudgetStore(path);
+    let refusals = 3;
+    const flaky: BudgetStore = {
+      ...store,
+      update: (key, change, nonblocking) => {
+        if (key !== legacyGithubCredential(env) && refusals-- > 0)
+          throw Object.assign(new Error("database is locked"), {
+            code: "SQLITE_BUSY",
+          });
+        return store.update(key, change, nonblocking);
+      },
+    };
+    const owners = githubOwnerResolver({
+      owners: sqliteOwnerStore(path, currentMs),
+      budget: flaky,
+      discover: discovery({ "token-a": 3 }).discover,
+    });
+    const until = currentMs() + 600_000;
+    store.update(legacyGithubCredential(env), () => held(until));
+    const found = await owners.resolve(env, 5_000);
     expect(store.read(found.owner)?.limitedUntil).toBe(until);
   });
 
