@@ -29,6 +29,7 @@ import type { OutboundFailure } from "../outbound/failure.ts";
 import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import { closeDatabase } from "../records/db.ts";
 import { currentMs } from "../time.ts";
+import { holdUnanswered, stopHolding } from "../outbound/hold.ts";
 import { traceGhRunner } from "../trace.ts";
 
 type Env = Record<string, string | undefined>;
@@ -416,6 +417,101 @@ describe("discovery is bounded and reused", () => {
     const found = await machine.owners.resolve({ GH_TOKEN: "token-a" });
     expect(asked).toHaveLength(0);
     expect(found.owner).toBe(unverifiedOwner("github.com"));
+  });
+
+  it("carries only the REST window of a discovery into the owner's record, never the host's other windows or holds", async () => {
+    const path = databasePath();
+    const unverified = unverifiedOwner("github.com");
+    const machine = processOn(path, async () => {
+      machine.store.update(unverified, () => ({
+        ...held(currentMs() + 60_000),
+        complexity: {
+          limit: 5000,
+          remaining: 0,
+          resetAt: currentMs() + 3_600_000,
+        },
+        observedAt: currentMs(),
+      }));
+      return { user: { id: 7, login: "user7" } };
+    });
+    const found = await machine.owners.resolve({ GH_TOKEN: "token-b" });
+    expect(found.owner).toBe(userOwner("github.com", 7));
+    const record = machine.store.read(found.owner);
+    expect(record?.complexity.remaining).toBeNull();
+    expect(record?.limitedUntil).toBeNull();
+  });
+
+  it("bounds a second caller's wait on a running discovery by its own deadline", async () => {
+    const release = Promise.withResolvers<void>();
+    const machine = processOn(databasePath(), async () => {
+      await release.promise;
+      return { user: { id: 7, login: "user7" } };
+    });
+    const env = { GH_TOKEN: "token-b" };
+    const first = machine.owners.resolve(env);
+    const started = currentMs();
+    const second = await machine.owners.resolve(env, 50);
+    expect(currentMs() - started).toBeLessThan(2000);
+    expect(second.verified).toBe(false);
+    release.resolve();
+    expect((await first).verified).toBe(true);
+  });
+
+  it("bounds a call's wait for another call's probe by its own deadline", async () => {
+    const path = join(scratch(), "unanswered.json");
+    try {
+      holdUnanswered(path);
+      const down = client({ GH_TOKEN: "token-a" }, () => ({
+        code: 1,
+        stdout: "",
+        stderr: "dial tcp: no such host",
+        timedOut: false,
+      }));
+      await down.run(["--version"]);
+      holdUnanswered(path);
+      const gate = Promise.withResolvers<void>();
+      const sent: string[][] = [];
+      const waiter = traceGhRunner<Run, { env?: Env; timeoutSec?: number }>(
+        async (argv) => {
+          sent.push(argv);
+          return ok("{}");
+        },
+        () => 1,
+        { env: {} },
+        (failure) => ({
+          code: 1,
+          stdout: "",
+          stderr: failure.reason,
+          timedOut: false,
+          held: failure,
+        }),
+      );
+      const probe = traceGhRunner<Run, { env?: Env; timeoutSec?: number }>(
+        async () => {
+          await gate.promise;
+          return ok("{}");
+        },
+        () => 30,
+        { env: {} },
+        (failure) => ({
+          code: 1,
+          stdout: "",
+          stderr: failure.reason,
+          timedOut: false,
+          held: failure,
+        }),
+      )(["--version"], { env: {} });
+      await Bun.sleep(0);
+      const started = currentMs();
+      const waiting = await waiter(["--version"], { env: {} });
+      expect(currentMs() - started).toBeLessThan(5000);
+      expect(waiting.held?.code).toBe("unreachable");
+      expect(sent).toHaveLength(0);
+      gate.resolve();
+      await probe;
+    } finally {
+      stopHolding();
+    }
   });
 
   it("names only a user an answer to GET /user names", () => {

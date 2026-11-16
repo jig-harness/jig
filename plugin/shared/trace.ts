@@ -326,6 +326,8 @@ function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
     refusedHere.add(refused);
     return refused;
   };
+  // The wait for another call's probe is bounded by this call's own deadline.
+  const waitLimit = AbortSignal.timeout(Math.max(0, timeoutSec * 1000));
   return recordGhAttempt(
     args,
     opts,
@@ -357,9 +359,18 @@ function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
           ),
         (r) => ghRunFailure(r, tookMs),
         refuse,
-        undefined,
+        waitLimit,
         (r) => refusedHere.has(r),
-      ),
+      ).catch((error: unknown) => {
+        if (waitLimit.aborted && error === waitLimit.reason)
+          return refuse(
+            outboundFailure(
+              "unreachable",
+              "the call's deadline was spent waiting for another request's probe; nothing was sent",
+            ),
+          );
+        throw error;
+      }),
     attribution,
   );
 }

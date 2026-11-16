@@ -376,7 +376,9 @@ export function githubOwnerResolver(deps: {
     if (user !== null && owner !== fallback.owner) {
       const seen = deps.budget.read(fallback.owner);
       if (seen !== null && seen.observedAt >= began)
-        deps.budget.update(owner, (prev) => carried(prev, seen, clock()));
+        deps.budget.update(owner, (prev) =>
+          withDiscoveryWindow(prev, seen, clock()),
+        );
     }
     // The default discovery is a run of `gh` the wrapper records itself; a
     // discovery given in its place is recorded here.
@@ -429,7 +431,7 @@ export function githubOwnerResolver(deps: {
     const held = memo.get(slot);
     if (held !== undefined && held.until > now) return held.resolution;
     const pending = inflight.get(slot);
-    if (pending !== undefined) return pending;
+    if (pending !== undefined) return within(pending, env, deadlineMs);
     const entry = deps.owners.read(credential, host);
     if (entry !== null && entry.retryAt > now) {
       const found = fromEntry(credential, entry);
@@ -457,6 +459,23 @@ export function githubOwnerResolver(deps: {
       .finally(() => inflight.delete(slot));
     inflight.set(slot, asked);
     return asked;
+  };
+
+  /** A caller's wait on a shared discovery, bounded by its own deadline; the discovery goes on for the others. */
+  const within = (
+    pending: Promise<OwnerResolution>,
+    env: Env,
+    deadlineMs: number,
+  ): Promise<OwnerResolution> => {
+    const bound = Math.min(DISCOVERY_DEADLINE_MS, deadlineMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<OwnerResolution>((resolve) => {
+      timer = setTimeout(
+        () => resolve(unverified(env, githubCredential(env))),
+        Math.max(0, bound),
+      );
+    });
+    return Promise.race([pending, expired]).finally(() => clearTimeout(timer));
   };
 
   return { resolve, known };
@@ -515,6 +534,32 @@ export function mergedRecord(
     observedAt: Math.max(a.observedAt, b.observedAt),
     ...(names.size === 0 ? {} : { windows }),
     ...(strikes === 0 ? {} : { strikes }),
+  };
+}
+
+/**
+ * The owner's record with the one window a `GET /user` answer reports (the
+ * REST count) taken from the unverified record: that record is shared by
+ * every unverified credential of the host, so its other windows and holds
+ * belong to other users.
+ */
+function withDiscoveryWindow(
+  owner: BudgetRecord | null,
+  seen: BudgetRecord,
+  now: number,
+): BudgetRecord {
+  const empty: BudgetWindow = { limit: null, remaining: null, resetAt: null };
+  const base: BudgetRecord = owner ?? {
+    requests: empty,
+    complexity: empty,
+    limitedUntil: null,
+    why: null,
+    observedAt: seen.observedAt,
+  };
+  return {
+    ...base,
+    requests: lowerWindow(base.requests, seen.requests, now),
+    observedAt: Math.max(base.observedAt, seen.observedAt),
   };
 }
 
