@@ -205,8 +205,12 @@ Once the person agrees:
    still running. If it is gone, start it again (or give the person the
    command again) with a directive that says its first act may be partly
    done, so it checks before repeating it, and repeat this confirmation
-   after every replacement. Where liveness cannot be established, keep
-   ownership of the topic and tell the person; do not go on to step 4.
+   after every replacement. Where liveness cannot be established, a
+   successor may still be running, so this session keeps ownership but stays
+   quiescent (it sends no commands, launches nothing and updates no record)
+   and tells the person; it resumes work, or goes on to step 4, only once
+   the person confirms the successor is stopped or running. Do not go on to
+   step 4 before then.
 4. Only once a successor is confirmed alive, tell the person it now holds
    the topic. This session then stops acting: it sends no further commands and launches nothing, so two
    sessions never act on the same line at once.
