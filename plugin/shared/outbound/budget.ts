@@ -29,6 +29,13 @@ import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
 import { parseRecord } from "./budget-shape.ts";
 export { parseRecord };
+import {
+  EMPTY,
+  olderWindow,
+  snapshotOf,
+  stamped,
+  unexplainedSpending,
+} from "./budget-snapshot.ts";
 
 /** How long a credential stays limited when the refusal named no reset. */
 export const FALLBACK_LIMIT_MS = 15 * 60_000;
@@ -310,6 +317,14 @@ function currentShare(): number | null {
   return dispatcherShare;
 }
 
+/**
+ * What a snapshot answer showed was spent beyond what the record had
+ * counted, in each window's own unit: the record's balance before it less
+ * the balance it left, within one window. Absent for a window that shows
+ * none, or for an answer that is not a snapshot.
+ */
+export type Unexplained = Partial<Record<"requests" | "complexity", number>>;
+
 /** Admits requests for a credential and records what the answers said. */
 export interface BudgetGovernor {
   /** Throws `TrackerRateLimited` when no request may leave now; returns the time the request was admitted. */
@@ -319,13 +334,15 @@ export interface BudgetGovernor {
    * it answers: what was recorded since is not in the answer. `reservedIn`
    * names the window that request reserved, `null` for one that reserved
    * nothing; left out, it is read as the window `admit` reserves by default.
+   * A snapshot's answer returns the spending it showed that the record had
+   * not counted.
    */
   observe(
     key: string,
     answer: BudgetAnswer,
     sentAt?: number,
     reservedIn?: string | null,
-  ): void;
+  ): Unexplained | undefined;
   /** Until when the credential is held after the answers recorded so far, epoch milliseconds; `null` when it is not. */
   heldUntil?(key: string): number | null;
   /**
@@ -334,8 +351,6 @@ export interface BudgetGovernor {
    */
   release?(key: string, name: string, sentAt: number): void;
 }
-
-const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
 
 /**
  * The newer of two readings of a window, the answer read at `now`: the
@@ -481,15 +496,6 @@ function sameResetWindow(prev: BudgetWindow, next: BudgetWindow): boolean {
     next.resetAt === prev.resetAt &&
     prev.remaining !== null &&
     next.remaining !== null
-  );
-}
-
-/** The answer is from a window that ended before the stored one. */
-function olderWindow(prev: BudgetWindow, next: BudgetWindow): boolean {
-  return (
-    prev.resetAt !== null &&
-    next.resetAt !== null &&
-    next.resetAt < prev.resetAt
   );
 }
 
@@ -732,85 +738,6 @@ function holdOf(
   return { until: null, strikes: fresh ? 0 : strikes };
 }
 
-/**
- * The windows a snapshot answer reports, taken as they are: it charges
- * nothing and counts every caller's spending up to the time its request was
- * sent. Spending recorded since (`readAt` at or after `sentAt`) is not in
- * it, so within one window the lower count stands.
- */
-/** A snapshot delayed across a reset says nothing of the window since. */
-function delayedAcrossReset(
-  prev: BudgetWindow,
-  next: BudgetWindow,
-  now: number,
-): boolean {
-  return prev.estimated === true
-    ? next.resetAt !== null && next.resetAt <= now
-    : olderWindow(prev, next);
-}
-
-/**
- * The snapshot's window `read`, with the balance of an ordinary answer
- * recorded since its request was sent when that answer holds spending the
- * snapshot cannot know of: the lower balance of one window stands.
- */
-function keepNewerOrdinary(
-  prev: BudgetWindow,
-  read: BudgetWindow,
-  counted: number,
-  since: number,
-): BudgetWindow {
-  const ordinaryAt = prev.answeredOrdinarilyAt;
-  const newer =
-    ordinaryAt !== undefined &&
-    ordinaryAt >= since &&
-    prev.remaining !== null &&
-    read.resetAt === prev.resetAt;
-  if (!newer) return { ...read, remaining: counted };
-  // The balance kept is the one whose deductions are kept with it: when the
-  // ordinary answer's lower balance stands, so do the reservations it counted,
-  // or a release could no longer give one back.
-  if ((prev.remaining as number) < counted)
-    return {
-      ...read,
-      remaining: prev.remaining as number,
-      answeredOrdinarilyAt: ordinaryAt,
-      pending: prev.pending ?? [],
-      ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
-    };
-  return { ...read, remaining: counted, answeredOrdinarilyAt: ordinaryAt };
-}
-
-function snapshotOf(
-  prev: BudgetWindow,
-  next: BudgetWindow | undefined,
-  now: number,
-  sentAt: number | undefined,
-): BudgetWindow {
-  if (next === undefined || delayedAcrossReset(prev, next, now)) return prev;
-  const since = sentAt ?? now;
-  // An older snapshot than the one the record holds says less than it does.
-  if (prev.snapshotSentAt != null && since < prev.snapshotSentAt) return prev;
-  // What the snapshot cannot count: the reservations made since its request
-  // was sent. Those made before it are in its balance, and settled.
-  const pending = (prev.pending ?? []).filter((t) => t >= since);
-  const forgotten =
-    prev.overflow !== undefined && prev.overflow.at >= since
-      ? prev.overflow
-      : undefined;
-  const read: BudgetWindow = {
-    ...next,
-    readAt: now,
-    answeredAt: now,
-    snapshotSentAt: since,
-    pending,
-    ...(forgotten === undefined ? {} : { overflow: forgotten }),
-  };
-  if (next.remaining === null) return read;
-  const counted = next.remaining - pending.length - (forgotten?.count ?? 0);
-  return keepNewerOrdinary(prev, read, counted, since);
-}
-
 /** A governor over `store`; `clock` and `share` are for tests. */
 export function budgetGovernor(
   store: BudgetStore,
@@ -860,6 +787,7 @@ export function budgetGovernor(
     },
     observe(key, answer, sentAt, reservedIn = "requests") {
       const now = clock();
+      let unexplained: Unexplained = {};
       store.update(key, (prev) => {
         const base: BudgetRecord = prev ?? {
           requests: EMPTY,
@@ -892,9 +820,19 @@ export function budgetGovernor(
           answer.snapshot === true
             ? snapshotOf(prev, next, now, sentAt)
             : merged(prev, next, now, sentAt, reservedIn === name);
+        const requests = take(base.requests, answer.requests, "requests");
+        const complexity = take(
+          base.complexity,
+          answer.complexity,
+          "complexity",
+        );
+        unexplained =
+          answer.snapshot === true
+            ? unexplainedSpending(base, { requests, complexity })
+            : {};
         return {
-          requests: take(base.requests, answer.requests, "requests"),
-          complexity: take(base.complexity, answer.complexity, "complexity"),
+          requests,
+          complexity,
           limitedUntil:
             hold.until !== null
               ? Math.max(
@@ -910,6 +848,7 @@ export function budgetGovernor(
           ...(hold.strikes === 0 ? {} : { strikes: hold.strikes }),
         };
       });
+      return unexplained;
     },
     heldUntil(key) {
       const record = store.read(key);
@@ -949,21 +888,6 @@ export function budgetGovernor(
       });
     },
   };
-}
-
-/** A snapshot's windows read at `now`, each one older than the stored window left out. */
-function stamped(
-  prev: Record<string, BudgetWindow> | undefined,
-  windows: Record<string, BudgetWindow>,
-  now: number,
-  sentAt: number | undefined,
-): Record<string, BudgetWindow> {
-  return Object.fromEntries(
-    Object.entries(windows).map(([name, w]) => [
-      name,
-      snapshotOf(prev?.[name] ?? EMPTY, w, now, sentAt),
-    ]),
-  );
 }
 
 let machineGovernor: BudgetGovernor | undefined;

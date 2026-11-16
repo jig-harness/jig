@@ -116,7 +116,9 @@ repository contradicts, tracker labels that the label taxonomy
 not define, a `review.taxonomy.types` that differs from that taxonomy
 (`taxonomy:<field>`), a repository that keeps issue facets on its tracker and
 runs no weekly sweep for issues filed without them
-(`suggestion:issue_tracker.sweep`), workflow steps that open pull requests
+(`suggestion:issue_tracker.sweep`), a comment-only scheduled sweep without
+`--position <file>` to reach issues past the read cap
+(`suggestion:issue_tracker.sweep.position`), workflow steps that open pull requests
 (`peter-evans/create-pull-request`, `gh pr create`) without an `automation:`
 label (`suggestion:automation-labels`), and settings its shape suggests. Each finding has an id
 (`config/<id>`). Exit 1 means at least one error; it is a finding, not a reason

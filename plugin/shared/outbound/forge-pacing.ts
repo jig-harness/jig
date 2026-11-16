@@ -1,5 +1,7 @@
 /** Space governed sends across processes without reserving a queue of future slots. */
 import { systemClock, type Clock } from "../clock.ts";
+import { errnoCode } from "../errors.ts";
+import { currentMs } from "../time.ts";
 import { attempt, type Outcome } from "../outcome.ts";
 import { inTransaction, openTransientDatabase } from "../records/db.ts";
 import { defaultLedgerPath } from "./ledger.ts";
@@ -90,5 +92,45 @@ export async function paceForge(
     if (signal?.aborted || deps.now() >= deadlineAt) continue;
     if (claimed.value === 0) return null;
     await deps.sleep(Math.min(claimed.value, remaining), signal);
+  }
+}
+
+/** The failure of a call whose deadline passed or that was cancelled `when`; `null` while it may still send. */
+export function endedFailure(
+  deadlineAt: number,
+  signal: AbortSignal | undefined,
+  when: string,
+): OutboundFailure | null {
+  const late = currentMs() >= deadlineAt;
+  if (!late && !signal?.aborted) return null;
+  return {
+    code: late ? "too-costly" : "unreachable",
+    reason: `GitHub call ended ${when}; nothing was sent`,
+  };
+}
+
+/**
+ * Pace, then admit, again after each store contention until the deadline or a
+ * cancel: a retry never sends on a pacing slot that has since expired.
+ */
+export async function admitPaced<A>(
+  governance: { owner: string; admit(): A },
+  deadlineAt: number,
+  signal: AbortSignal | undefined,
+): Promise<A | { failure: OutboundFailure }> {
+  for (;;) {
+    const paced = await paceForge(governance.owner, deadlineAt, signal);
+    if (paced !== null) return { failure: paced };
+    const failure = endedFailure(
+      deadlineAt,
+      signal,
+      "while waiting for budget admission",
+    );
+    if (failure !== null) return { failure };
+    try {
+      return governance.admit();
+    } catch (error) {
+      if (errnoCode(error) !== "SQLITE_BUSY") throw error;
+    }
   }
 }

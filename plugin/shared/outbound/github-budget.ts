@@ -36,6 +36,14 @@
  * the share still moves toward its floor, and the balance they spend is read
  * from the `rate_limit` endpoint, which the tick asks at most once, and from
  * their refusals' text. A refusal's caller is told the wait the record holds.
+ * What the `rate_limit` endpoint shows was spent beyond what the record had
+ * counted goes to the cost ledger's unattributed row (`UNATTRIBUTED`), never
+ * to an operation.
+ *
+ * A GraphQL request sent over HTTPS (`httpsGovernance`: the tracker adapter
+ * and the reflection store with `JIG_GITHUB_GRAPHQL_URL` set) is admitted
+ * against the record of the token it sends and recorded in it as a
+ * `gh api graphql` run is, so a refusal either meets holds the other.
  *
  * `JIG_FORGE_BUDGET=off` leaves every run ungoverned: nothing is admitted,
  * observed or added to the command line. The test suites set it, so a
@@ -48,7 +56,9 @@ import {
   type BudgetRecord,
   type BudgetStore,
   type BudgetWindow,
+  type Unexplained,
   budgetGovernor,
+  credentialKey,
   isRateLimited,
   sqliteBudgetStore,
 } from "./budget.ts";
@@ -71,7 +81,7 @@ import {
   retryAfterMs,
 } from "./failure.ts";
 import { type GhRun, ghResponseStatus, ghRunFailure } from "./github.ts";
-import { defaultLedgerPath } from "./ledger.ts";
+import { defaultLedgerPath, recordCall, UNATTRIBUTED } from "./ledger.ts";
 import { currentMs, parseMs } from "../time.ts";
 
 export { githubCredential } from "./github-credential.ts";
@@ -618,6 +628,119 @@ function withObservedStatus<T extends GhRun>(
   return status === null ? result : ({ ...result, httpStatus: status } as T);
 }
 
+/** One request admitted against the credential's record and observed into it, whatever carries it. */
+interface Governed {
+  admit(): { refused: OutboundFailure } | { sentAt: number };
+  /** Give back what the admission reserved: nothing was sent. */
+  release(sentAt: number): void;
+  /** Record what the answer said; for a refusal, when the caller may send again, else `null`. */
+  observe(
+    args: readonly string[],
+    headers: Headers | null,
+    body: string,
+    failure: OutboundFailure | null,
+    sentAt: number,
+    refusedText?: string,
+  ): number | null;
+}
+
+/** The unit of the cost ledger each record window counts in. */
+const LEDGER_UNITS = { requests: "requests", complexity: "points" } as const;
+
+/** Put what a snapshot showed was spent beyond the record's count on the cost ledger's unattributed row. */
+function recordUnexplained(
+  key: string,
+  unexplained: Unexplained | undefined,
+): void {
+  if (unexplained === undefined) return;
+  for (const [name, unit] of Object.entries(LEDGER_UNITS)) {
+    const cost = unexplained[name as keyof Unexplained];
+    if (cost === undefined || cost <= 0) continue;
+    recordCall({
+      system: "github",
+      credential: key,
+      operation: UNATTRIBUTED,
+      caller: UNATTRIBUTED,
+      requests: 0,
+      cost,
+      unit,
+      estimated: false,
+      durationMs: 0,
+    });
+  }
+}
+
+/**
+ * A request for the credential `key`, admitted with `admitted`. A read gh
+ * pages itself sends an unknown number of requests: it reserves `reservations`
+ * of them, each admitted above the floor, and keeps them once it ran.
+ */
+function governed(
+  key: string,
+  admitted: AdmitOptions,
+  reservations = 1,
+): Governed {
+  const gov = governor();
+  // The window the admission actually reserved in: none when the record or
+  // the balance was not known, whatever the admission asked for.
+  let reservedIn: string | null = admitted.reserve ?? null;
+  const taken: number[] = [];
+  const giveBack = () => {
+    for (const at of taken.splice(0))
+      if (reservedIn !== null) gov.release?.(key, reservedIn, at);
+  };
+  return {
+    admit() {
+      try {
+        const at = gov.admit("GitHub", key, {
+          ...admitted,
+          count: reservations,
+          // The caller retries contention within the call's deadline.
+          nonblocking: true,
+          onReserved: (name) => {
+            reservedIn = name;
+          },
+        });
+        taken.push(...Array.from({ length: reservations }, () => at));
+        return { sentAt: at };
+      } catch (error) {
+        if (!isRateLimited(error)) throw error;
+        giveBack();
+        return {
+          refused: outboundFailure(
+            "rate-limited",
+            `${error.message}; nothing was sent`,
+            { until: error.resetAt },
+          ),
+        };
+      }
+    },
+    release(sentAt) {
+      // Nothing was sent: the requests it reserved go back.
+      if (taken.length === 0) taken.push(sentAt);
+      giveBack();
+    },
+    observe(args, headers, body, failure, sentAt, refusedText = "") {
+      const now = currentMs();
+      // A store that cannot take the answer governs nothing (`budget.ts`);
+      // anything else that throws here is a defect, and stops the call.
+      recordUnexplained(
+        key,
+        gov.observe(
+          key,
+          forgeAnswerOf(args, headers, body, failure, now, refusedText),
+          sentAt,
+          reservedIn,
+        ),
+      );
+      if (failure?.code !== "rate-limited") return null;
+      // The caller waits as long as the record now holds the credential, or
+      // for the reset of the window the refusal spent; not the generic wait.
+      return gov.heldUntil?.(key) ?? namedWait(headers, now);
+    },
+  };
+}
+
 /**
  * The governance of one run of `gh` with `args`; `null` for a run that sends
  * nothing to GitHub, or while the budget is off. `captured` says the run's
@@ -638,58 +761,19 @@ export function ghGovernance(
   if (limits === null || !forgeBudgetOn(opts.env ?? process.env)) return null;
   const key = opts.owner ?? githubCredential(opts.env ?? process.env);
   if (opts.attribution !== undefined) opts.attribution.owner = key;
-  const gov = governor();
   const { argv, strip } = withHeaders(args, opts.captured);
-  const admitted = admission(
-    limits,
-    args,
-    strip || (opts.captured && askedHeaders(args)),
+  const request = governed(
+    key,
+    admission(limits, args, strip || (opts.captured && askedHeaders(args))),
+    args.includes("--paginate") ? PAGINATED_RESERVE : 1,
   );
-  // The window the admission actually reserved in: none when the record or
-  // the balance was not known, whatever the admission asked for.
-  let reservedIn: string | null = admitted.reserve ?? null;
-  // A read gh pages itself sends an unknown number of requests: it reserves
-  // `PAGINATED_RESERVE` of them, each admitted above the floor, and keeps
-  // them once it ran.
-  const reservations = args.includes("--paginate") ? PAGINATED_RESERVE : 1;
-  const taken: number[] = [];
-  const giveBack = () => {
-    for (const at of taken.splice(0))
-      if (reservedIn !== null) gov.release?.(key, reservedIn, at);
-  };
   return {
     owner: key,
     argv,
-    admit() {
-      try {
-        const at = gov.admit("GitHub", key, {
-          ...admitted,
-          count: reservations,
-          // `trace.ts` retries contention within the call's deadline.
-          nonblocking: true,
-          onReserved: (name) => {
-            reservedIn = name;
-          },
-        });
-        taken.push(...Array.from({ length: reservations }, () => at));
-        return { sentAt: at };
-      } catch (error) {
-        if (!isRateLimited(error)) throw error;
-        giveBack();
-        return {
-          refused: outboundFailure(
-            "rate-limited",
-            `${error.message}; nothing was sent`,
-            { until: error.resetAt },
-          ),
-        };
-      }
-    },
+    admit: () => request.admit(),
     observe(result, sentAt, tookMs) {
       if (result.held !== undefined || result.spawnFailed === true) {
-        // Nothing was sent: the requests it reserved go back.
-        if (taken.length === 0) taken.push(sentAt);
-        giveBack();
+        request.release(sentAt);
         return result;
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";
@@ -700,24 +784,65 @@ export function ghGovernance(
         opts.attribution,
         opts.captured && (strip || askedHeaders(args)),
       );
-      // A store that cannot take the answer governs nothing (`budget.ts`);
-      // anything else that throws here is a defect, and stops the call.
       const failure = ghRunFailure(observed, tookMs);
-      const now = currentMs();
-      gov.observe(
-        key,
-        forgeAnswerOf(args, headers, body, failure, now, result.stderr ?? ""),
+      const until = request.observe(
+        args,
+        headers,
+        body,
+        failure,
         sentAt,
-        reservedIn,
+        result.stderr ?? "",
       );
       const answered =
         strip && headers !== null ? { ...observed, stdout: body } : observed;
-      if (failure?.code !== "rate-limited") return answered;
-      // The caller waits as long as the record now holds the credential, or
-      // for the reset of the window the refusal spent; not the generic wait.
-      const until = gov.heldUntil?.(key) ?? namedWait(headers, now);
       return until === null ? answered : { ...answered, limitedUntil: until };
     },
+  };
+}
+
+/** How one GraphQL request sent over HTTPS goes: what it is admitted against, and how its answer is recorded. */
+export interface HttpsGovernance {
+  /** Existing quota identity, also used for cross-process send pacing. */
+  owner: string;
+  /** The failure to answer at once instead of sending, or the time it was admitted. */
+  admit(): { refused: OutboundFailure } | { sentAt: number };
+  /** Give back the reservation of a request that was not sent. */
+  release(sentAt: number): void;
+  /**
+   * Record what the answer said: its headers, its body and the failure it
+   * met. For a rate-limited answer, when the caller may send again as the
+   * record now holds it; else `null`.
+   */
+  observe(
+    headers: Headers | null,
+    body: string,
+    failure: OutboundFailure | null,
+    sentAt: number,
+  ): number | null;
+}
+
+/** The command line a GraphQL request over HTTPS stands for, as the profile reads it. */
+const HTTPS_GRAPHQL = ["api", "graphql"] as const;
+
+/**
+ * The governance of one GraphQL request sent over HTTPS with `token`, under
+ * the record a `gh` run signed in with the same token keeps; `null` while
+ * the budget is off. It reserves a point of the GraphQL balance, as a run
+ * whose answer may not report its cost does.
+ */
+export function httpsGovernance(
+  token: string,
+  env: Record<string, string | undefined> = process.env,
+): HttpsGovernance | null {
+  if (!forgeBudgetOn(env)) return null;
+  const key = credentialKey("github", token);
+  const request = governed(key, admission(["graphql"], HTTPS_GRAPHQL, true));
+  return {
+    owner: key,
+    admit: () => request.admit(),
+    release: (sentAt) => request.release(sentAt),
+    observe: (headers, body, failure, sentAt) =>
+      request.observe(HTTPS_GRAPHQL, headers, body, failure, sentAt),
   };
 }
 

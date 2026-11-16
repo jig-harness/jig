@@ -2240,12 +2240,11 @@ make, use the entry's term instead.
   metrics need, and the open-issue reads a batch proposal ranks), and one
   implementation of that set for a particular tracker. The skills call the
   interface, so supporting a new tracker means writing an adapter, not
-  editing the skills, except where a skill still calls Linear directly: the
-  review skill's deferral step (roadmap item 10). Attaching a file is an
+  editing the skills. Attaching a file is an
   operation of the interface each adapter holds in the form its tracker
   offers: an upload, the file in a comment, or a link to a hosted copy.
-  [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
-  them under "What still assumes Linear". Adapters for Linear, GitHub
+  [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists what
+  still assumes Linear. Adapters for Linear, GitHub
   Issues and Jira are built; an adapter for a plan file kept in the
   repository is planned ([ROADMAP.md](ROADMAP.md) item 12).
 - **Governed transport** — the one module through which Jig's code calls

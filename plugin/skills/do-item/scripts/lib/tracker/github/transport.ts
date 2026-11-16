@@ -10,6 +10,10 @@
  * fake (plain `http` is accepted for a loopback address only). Tests of the
  * adapter pass a fake transport.
  *
+ * Either way a request is admitted against the token's budget record and
+ * its answer recorded there (`shared/outbound/github-budget.ts`): `gh` at
+ * the forge client's wrapper, HTTPS here.
+ *
  * A failure is a `GitHubApiError` whose code is its failure class
  * (`shared/outbound/failure.ts`), read from the answer's status, headers
  * and GraphQL error types by the library (`shared/outbound/github.ts`). A
@@ -40,6 +44,11 @@ import {
 import { guarded } from "../../../../../../shared/outbound/hold.ts";
 import { retryRead } from "../../../../../../shared/outbound/retry.ts";
 import { credentialKey } from "../../../../../../shared/outbound/budget.ts";
+import { admitPaced } from "../../../../../../shared/outbound/forge-pacing.ts";
+import {
+  type HttpsGovernance,
+  httpsGovernance,
+} from "../../../../../../shared/outbound/github-budget.ts";
 import { operationName } from "../../../../../../shared/outbound/ledger.ts";
 import { githubCost } from "../../../../../../shared/outbound/gh-ledger.ts";
 import {
@@ -180,6 +189,15 @@ function parsedOrNull(text: string): unknown {
 /** One request's answer: the response body, or the failure it met. */
 type Answer = { body: unknown } | GitHubApiError;
 
+/** Answers made on this machine, which reached no GitHub: the run's hold neither settles on them nor takes them as a probe. */
+const unsentAnswers = new WeakSet<GitHubApiError>();
+
+/** `error`, marked as an answer no request reached GitHub for. */
+function unsent(error: GitHubApiError): GitHubApiError {
+  unsentAnswers.add(error);
+  return error;
+}
+
 const failureOfAnswer = (answer: Answer): OutboundFailure | null =>
   answer instanceof GitHubApiError ? answer.failure : null;
 
@@ -190,7 +208,7 @@ const failureOfAnswer = (answer: Answer): OutboundFailure | null =>
  * thrown.
  */
 async function call(
-  send: (bound: AbortSignal) => Promise<Answer>,
+  send: (bound: AbortSignal, deadlineAt: number) => Promise<Answer>,
   signal: AbortSignal | undefined,
   read: boolean,
   hold: string | null,
@@ -200,27 +218,43 @@ async function call(
   const bound =
     signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
   const deadlineAt = currentMs() + GITHUB_TIMEOUT_MS;
-  // Once an attempt has begun, a cancellation may have cut a request that
-  // landed: `retryRead` throws the bare reason, which carries no marker.
+  // Once a request has gone out, a cancellation may have cut one that
+  // landed: `retryRead` throws the bare reason, which carries no marker. An
+  // attempt answered as unsent (cancelled or refused before the send) is no
+  // dispatch.
   let dispatched = false;
-  const retried = () =>
-    retryRead(
-      () => {
-        dispatched = true;
-        return send(bound);
-      },
-      {
-        read,
-        signal: bound,
-        deadlineAt,
-        failureOf: failureOfAnswer,
-      },
-    ).catch((err: unknown): Answer => {
-      const sent = dispatched || (err instanceof GitHubApiError && err.sent);
-      if (cancelled(signal)) throw abortedError(signal, sent);
-      if (cancelled(bound)) return abortedError(bound, sent);
+  const attempt = async (): Promise<Answer> => {
+    let answer: Answer;
+    try {
+      answer = await send(bound, deadlineAt);
+    } catch (err) {
+      dispatched = true;
       throw err;
-    });
+    }
+    if (!(answer instanceof GitHubApiError && unsentAnswers.has(answer)))
+      dispatched = true;
+    return answer;
+  };
+  /** A cancellation as the call's answer or throw, keeping whether a request went out. */
+  const cancelledAnswer = (err: unknown): Answer => {
+    const sent = dispatched || (err instanceof GitHubApiError && err.sent);
+    if (cancelled(signal)) {
+      // Thrown inside the hold, a cancellation would settle it as a failure;
+      // one that sent nothing is returned, marked unsent, and thrown after.
+      if (sent) throw abortedError(signal, true);
+      return unsent(abortedError(signal));
+    }
+    if (cancelled(bound))
+      return sent ? abortedError(bound, true) : unsent(abortedError(bound));
+    throw err;
+  };
+  const retried = () =>
+    retryRead(attempt, {
+      read,
+      signal: bound,
+      deadlineAt,
+      failureOf: failureOfAnswer,
+    }).catch(cancelledAnswer);
   // A `gh` run is held where every `gh` call is (`ghCall`); an HTTPS request here, under its endpoint's host.
   const answer =
     hold === null
@@ -231,15 +265,8 @@ async function call(
           failureOfAnswer,
           (f) => errorOf(f),
           bound,
-        ).catch((err: unknown): Answer => {
-          // A cancellation that met no request keeps nothing sent; one a
-          // dispatched request met, or that an attempt already marked, keeps that fact.
-          const sent =
-            dispatched || (err instanceof GitHubApiError && err.sent);
-          if (cancelled(signal)) throw abortedError(signal, sent);
-          if (cancelled(bound)) return abortedError(bound, sent);
-          throw err;
-        });
+          (a) => a instanceof GitHubApiError && unsentAnswers.has(a),
+        ).catch(cancelledAnswer);
   if (answer instanceof GitHubApiError) throw answer;
   return unwrapResponse(answer.body);
 }
@@ -405,6 +432,45 @@ export function resolveGitHubToken(env = process.env): string | null {
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//;
 
+/** One HTTPS request's answer, with the headers and the text it came with when it came. */
+interface Posted {
+  answer: Answer;
+  headers: Headers | null;
+  text: string;
+}
+
+/** A cancelled request that had been answered: the refusal it received, else the cancellation. */
+function cutAnswer(
+  refused: OutboundFailure | null,
+  bound: AbortSignal,
+): GitHubApiError {
+  return refused === null
+    ? abortedError(bound, true)
+    : errorOf({ ...refused, sent: true });
+}
+
+/** A cancelled request whose response was read in full: the refusal it carried, a GraphQL one in a successful response included, else the cancellation. */
+function receivedCutAnswer(
+  res: Response,
+  text: string,
+  body: unknown,
+  began: number,
+  bound: AbortSignal,
+): GitHubApiError {
+  const status = gitHubHttpFailure(
+    res.status,
+    res.headers,
+    text,
+    currentMs() - began,
+  );
+  const named = errorsFailure(
+    body,
+    status,
+    status === null ? res.headers : null,
+  );
+  return cutAnswer(named?.failure ?? status, bound);
+}
+
 /** One HTTPS request's answer. */
 async function postOnce(
   fetchImpl: typeof fetch,
@@ -413,9 +479,14 @@ async function postOnce(
   payload: { query: string; variables: Record<string, unknown> },
   bound: AbortSignal,
   observation: Attempt,
-): Promise<Answer> {
+): Promise<Posted> {
   observation.requests = 1;
   const began = currentMs();
+  const lost = (answer: Answer): Posted => ({
+    answer,
+    headers: null,
+    text: "",
+  });
   let res: Response;
   try {
     res = await postGraphQL(fetchImpl, url, `bearer ${token}`, payload, {
@@ -423,24 +494,51 @@ async function postOnce(
       signal: bound,
     });
   } catch (err) {
-    if (cancelled(bound)) return abortedError(bound, true);
-    return new GitHubApiError(
-      `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`,
-      { code: "unreachable", sent: true },
+    if (cancelled(bound)) return lost(abortedError(bound, true));
+    return lost(
+      new GitHubApiError(
+        `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`,
+        { code: "unreachable", sent: true },
+      ),
     );
   }
+  /** A body that could not be read: the headers GitHub sent still say its limits. */
+  const unreadBody = (answer: Answer, got: Response): Posted => ({
+    answer,
+    headers: got.headers,
+    text: "",
+  });
   let text: string;
   try {
     text = await res.text();
   } catch (err) {
-    if (cancelled(bound)) return abortedError(bound, true);
-    return new GitHubApiError(
-      `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`,
-      { code: "unreachable", sent: true },
+    const reason = `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`;
+    // A refusal's status and headers stand without its body, and through a cancellation.
+    const refused = gitHubHttpFailure(
+      res.status,
+      res.headers,
+      "",
+      currentMs() - began,
+    );
+    if (cancelled(bound)) return unreadBody(cutAnswer(refused, bound), res);
+    return unreadBody(
+      refused === null
+        ? new GitHubApiError(reason, { code: "unreachable", sent: true })
+        : errorOf({
+            ...refused,
+            reason: `${reason}; ${refused.reason}`,
+            sent: true,
+          }),
+      res,
     );
   }
-  if (cancelled(bound)) return abortedError(bound, true);
   const body = parsedOrNull(text);
+  if (cancelled(bound))
+    return {
+      answer: receivedCutAnswer(res, text, body, began, bound),
+      headers: res.headers,
+      text,
+    };
   observation.cost = githubCost(body);
   const failure = gitHubHttpFailure(
     res.status,
@@ -448,15 +546,51 @@ async function postOnce(
     text,
     currentMs() - began,
   );
-  if (failure === null) return answerOf(body, res.headers);
-  return errorsFailure(body, failure) ?? errorOf(failure);
+  const answer =
+    failure === null
+      ? answerOf(body, res.headers)
+      : (errorsFailure(body, failure) ?? errorOf(failure));
+  return { answer, headers: res.headers, text };
 }
 
-/** HTTPS transport to `url` with `token`; each call bounded by `GITHUB_TIMEOUT_MS`. */
+/**
+ * One HTTPS request under the credential's budget record (`governance`):
+ * paced and admitted before it is sent, its answer recorded after. A request
+ * the record refuses is not sent and answers `rate-limited` with the time
+ * the record names; a refusal the request meets waits as long as the record
+ * then holds the credential.
+ */
+async function governedPost(
+  governance: HttpsGovernance | null,
+  post: () => Promise<Posted>,
+  bound: AbortSignal,
+  deadlineAt: number,
+): Promise<Answer> {
+  if (governance === null) return (await post()).answer;
+  const admitted = await admitPaced(governance, deadlineAt, bound);
+  if ("failure" in admitted) return unsent(errorOf(admitted.failure));
+  if ("refused" in admitted) return unsent(errorOf(admitted.refused));
+  if (cancelled(bound)) {
+    governance.release(admitted.sentAt);
+    return unsent(abortedError(bound));
+  }
+  const { answer, headers, text } = await post();
+  const failure = failureOfAnswer(answer);
+  const until = governance.observe(headers, text, failure, admitted.sentAt);
+  return until === null || !(answer instanceof GitHubApiError)
+    ? answer
+    : errorOf({ ...answer.failure, until }, answer.data);
+}
+
+/**
+ * HTTPS transport to `url` with `token`; each call bounded by
+ * `GITHUB_TIMEOUT_MS`, and governed by the budget record as `env` says.
+ */
 export function httpTransport(
   url: string,
   token: string,
   fetchImpl: typeof fetch = fetch,
+  env: Record<string, string | undefined> = process.env,
 ): GitHubTransport {
   if (!url.startsWith("https://") && !LOOPBACK.test(url))
     throw new GitHubApiError(
@@ -464,7 +598,8 @@ export function httpTransport(
     );
   return (query, variables, signal, idempotent = false) =>
     call(
-      (bound) => {
+      (bound, deadlineAt) => {
+        const governance = httpsGovernance(token, env);
         const observation: Attempt = {
           system: GITHUB,
           credential: credentialKey(GITHUB, token),
@@ -477,13 +612,19 @@ export function httpTransport(
         return recordAttempt(
           observation,
           () =>
-            postOnce(
-              fetchImpl,
-              url,
-              token,
-              { query, variables },
+            governedPost(
+              governance,
+              () =>
+                postOnce(
+                  fetchImpl,
+                  url,
+                  token,
+                  { query, variables },
+                  bound,
+                  observation,
+                ),
               bound,
-              observation,
+              deadlineAt,
             ),
           (answer) => failureOfAnswer(answer)?.code ?? null,
         );
@@ -507,7 +648,7 @@ export function defaultTransport(env = process.env): GitHubTransport {
       "JIG_GITHUB_GRAPHQL_URL is set, so GH_TOKEN or GITHUB_TOKEN must hold a token for it",
       { code: "unauthorized" },
     );
-  return httpTransport(url, token);
+  return httpTransport(url, token, fetch, env);
 }
 
 /**

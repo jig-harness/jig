@@ -715,10 +715,7 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/proc.ts`), and the dispatcher's reads either
   answer in full or throw, so a population read in part is never planned
   from (`dispatch/lib/forge.ts`). Refuses: `get_issue.ts` exits 2 when the
-  tracker cannot be reached; `list_comments.ts` never prints a partial list. One exception: the deferral step's batching
-  script (`skills/resolve-review-comments/scripts/defer-batch.ts`) files on
-  Linear directly, so choosing GitHub Issues or Jira does not redirect it
-  until deferral moves onto the interface.
+  tracker cannot be reached; `list_comments.ts` never prints a partial list.
 - **Reasoned.** `file-issue`, `do-item`, `work-batch`, the deferral step and
   `reflect` decide what to file, label or comment; the scripts write it.
   `file-issue` checks labels against the repository's taxonomy

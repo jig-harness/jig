@@ -42,7 +42,7 @@ import {
   type StandingAnswer,
 } from "./routine-questions.ts";
 import { isRerun, unwrittenResult } from "./session-startup.ts";
-import { releaseOwnMarkers } from "./followup-waits.ts";
+import { releaseOwnMarkers, waitUntil } from "./followup-waits.ts";
 import { questionOf } from "./session.ts";
 import type { SharedContext } from "./shared-launches.ts";
 
@@ -59,8 +59,8 @@ export interface RoutineRerun {
  * Whether the failed attempt is another path's to settle: an unwritten end is
  * a host fault whose recovery the host-health path owns (releasing this marker
  * would drop it), an attempt that was itself a run again owes none, and a
- * pass that recorded a rate-limit wait asked nothing (`followup-waits.ts`
- * owns it).
+ * pass that waits out a rate limit, recorded or asked about, owes no routine
+ * answer (`followup-waits.ts` owns it).
  */
 function ownedElsewhere(
   outcome: FollowupOutcome,
@@ -69,7 +69,7 @@ function ownedElsewhere(
   if (outcome.rerun === true) return true;
   if (found === undefined) return false;
   return (
-    unwrittenResult(found) || isRerun(found.record) || found.result === "waits"
+    unwrittenResult(found) || isRerun(found.record) || waitUntil(found) !== null
   );
 }
 

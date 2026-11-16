@@ -12,6 +12,12 @@ import type { FailureClass } from "./failure.ts";
 import { BUDGET_MIGRATIONS } from "./schema.ts";
 
 const LEDGER_RETENTION_MS = 7 * 24 * 3_600_000;
+/**
+ * The operation and caller of the row that holds spending no counted call
+ * explains: what a balance the system reported shows was spent beyond what
+ * the record had counted. No operation or caller name takes this form.
+ */
+export const UNATTRIBUTED = "(unattributed)";
 const HOUR = 3_600_000;
 export interface CallRecord {
   system: string;

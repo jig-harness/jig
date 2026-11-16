@@ -1141,9 +1141,7 @@ the changelog by hand.
 ### 12. More tracker adapters
 
 A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
-It waits on the open decisions below. For every adapter to work end to end,
-the deferral step (item 10) uses the [tracker interface](../GLOSSARY.md)'s
-operations.
+It waits on the open decisions below.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 
@@ -1267,21 +1265,6 @@ a re-audit of Jig scores them.
 
 Move into configuration when a consumer needs them:
 
-- the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
-  with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues,
-  the default tracker, cannot defer a finding. Moving it onto the interface makes it work on
-  every adapter; revisit for GitHub Issues what the step relies on that
-  GitHub lacks or spells differently: label groups (GitHub labels have none,
-  so the type and repository groups become configured label lists), its
-  `--originating` and `--team` keys (validated through the adapter's key
-  shape, `keys.ts`), the conditional description edits that keep concurrent
-  deferrals from losing an entry (the interface may need a compare-and-set
-  update, or a comment per entry where the tracker cannot compare), and
-  GitHub's secondary rate limit on writes when a review defers many
-  findings at once. Done when a deferral round files and appends its
-  findings on both adapters, with the fake-tracker tests both adapters'
-  tests use;
 - the git remote: the delivery skills read it from `repository.remote`
   (default `origin`), but `review`, `review-reflections`, `reflect`,
   `code-stats`, `changelog` and the audit's `config-fit.ts` still read
