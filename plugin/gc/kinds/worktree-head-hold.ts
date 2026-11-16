@@ -213,23 +213,32 @@ export async function holdHead(
       );
     closeSync(fd);
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    const left = code === "EEXIST" ? endedRunsLock(lock) : null;
-    if (fd === null && left !== null) return ok(heldAs(lock, left));
-    if (fd === null && code === "EEXIST")
-      return failed(
-        "head-unheld",
-        "kept: a git process holds the worktree's HEAD (HEAD.lock exists)",
-        error,
-      );
-    const stranded = fd === null ? "" : discard(lock, fd);
-    return failed(
-      "head-unheld",
-      `kept: the worktree's HEAD cannot be held: ${error instanceof Error ? error.message : String(error)}${stranded}`,
-      error,
-    );
+    return unheldAfter(lock, fd, error);
   }
   return ok(heldAs(lock, token));
+}
+
+/** The answer when creating or writing the lock threw: a run's left lock is taken over. */
+function unheldAfter(
+  lock: string,
+  fd: number | null,
+  error: unknown,
+): Outcome<HeadHold, "head-unheld"> {
+  const code = (error as NodeJS.ErrnoException).code;
+  const left = code === "EEXIST" ? endedRunsLock(lock) : null;
+  if (fd === null && left !== null) return ok(heldAs(lock, left));
+  if (fd === null && code === "EEXIST")
+    return failed(
+      "head-unheld",
+      "kept: a git process holds the worktree's HEAD (HEAD.lock exists)",
+      error,
+    );
+  const stranded = fd === null ? "" : discard(lock, fd);
+  return failed(
+    "head-unheld",
+    `kept: the worktree's HEAD cannot be held: ${error instanceof Error ? error.message : String(error)}${stranded}`,
+    error,
+  );
 }
 
 /** The hold of `lock` while it carries `token`. */

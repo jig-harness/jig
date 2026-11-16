@@ -402,6 +402,13 @@ async function extractBaseHooks(
   }
   return ok(undefined);
 }
+/** The answer with what a hold left appended to its reason, when one did. */
+function withKept(collected: Collected, left: string | null): Collected {
+  return left === null
+    ? collected
+    : { ...collected, reason: `${collected.reason}; ${left}` };
+}
+
 /**
  * Collect a worktree Orca manages through Orca: the repository's remove hook
  * inside it, its reflection findings parked, then `orca worktree rm`, so its
@@ -427,12 +434,8 @@ async function collectThroughOrca(
   };
   const holds: HeadHold[] = [];
   // Every answer releases the hold, and says so when the release failed.
-  const released = (collected: Collected): Collected => {
-    const unreleased = releaseHolds(holds, log);
-    return unreleased === null
-      ? collected
-      : { ...collected, reason: `${collected.reason}; ${unreleased}` };
-  };
+  const released = (collected: Collected): Collected =>
+    withKept(collected, releaseHolds(holds, log));
   const failure = (outcome: { failure: { code: string; reason: string } }) =>
     released({
       outcome: outcome.failure.code === LAUNCH_VETO ? "refused" : "failed",
@@ -504,12 +507,7 @@ async function collectThroughOrca(
         removalUnsettled(removed) || guard.unsettled()
           ? keepHolds(holds)
           : null;
-      const kept = failure(removed);
-      const answer =
-        left === null ? kept : { ...kept, reason: `${kept.reason}; ${left}` };
-      return archived === null
-        ? answer
-        : { ...answer, details: { archive: archived } };
+      return withArchiveOf(withKept(failure(removed), left), archived);
     }
     return released({
       outcome: "collected",
@@ -523,18 +521,17 @@ async function collectThroughOrca(
     });
   } catch (error) {
     // A step that throws (a platform error, or a defect) fails the removal.
-    const failed: Collected = {
-      outcome: "failed",
-      reason: error instanceof Error ? error.message : String(error),
-      ...(archived === null ? {} : { details: { archive: archived } }),
-    };
+    const failed = withArchiveOf(
+      {
+        outcome: "failed",
+        reason: error instanceof Error ? error.message : String(error),
+      },
+      archived,
+    );
     // A submitted admission, this run's or a dead run's taken over, may still
     // be removing the worktree: the hold stays, as the claim does.
     if (!guard.unsettled()) return released(failed);
-    const left = keepHolds(holds);
-    return left === null
-      ? failed
-      : { ...failed, reason: `${failed.reason}; ${left}` };
+    return withKept(failed, keepHolds(holds));
   } finally {
     releaseHolds(holds, log);
     if (snapshot !== null)
@@ -602,13 +599,8 @@ async function collectAgentWorktree(
   const holds: HeadHold[] = [];
   // Every answer once the hold may be taken releases it, and says so when
   // the release failed, since the lock then keeps git from moving the head.
-  const withArchive = (collected: Collected): Collected => {
-    const unreleased = releaseHolds(holds, log);
-    const answer = withArchiveOf(collected, archived);
-    return unreleased === null
-      ? answer
-      : { ...answer, reason: `${answer.reason}; ${unreleased}` };
-  };
+  const withArchive = (collected: Collected): Collected =>
+    withKept(withArchiveOf(collected, archived), releaseHolds(holds, log));
   let snapshot: { hook: string; dir: string } | null = null;
   try {
     // The commit and branch the runner's final proof saw: every check before
