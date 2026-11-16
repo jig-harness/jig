@@ -87,22 +87,12 @@ function commitRefused(f: ReturnType<typeof setup>): void {
  * not see a module patched at preload, so the throw is placed in a global
  * the step reads.
  */
-function throwingSubmit(f: ReturnType<typeof setup>): Record<string, string> {
-  const preload = join(f.root, "throwing-step.ts");
-  writeFileSync(
-    preload,
-    `const instant = Temporal.Now.instant;
-let thrown = false;
-Temporal.Now.instant = () => {
-  if (!thrown && /\\bat submit\\b/.test(new Error().stack ?? "")) {
-    thrown = true;
-    throw new Error("injected: the submit step threw");
-  }
-  return instant();
-};
-`,
-  );
-  return { BUN_OPTIONS: `--preload=${preload}` };
+function throwingSubmit(): Record<string, string> {
+  // BUN_OPTIONS cannot quote a path, so the preload is a fixed file beside
+  // the test, not one written under the temporary directory.
+  return {
+    BUN_OPTIONS: `--preload=${join(import.meta.dir, "throwing-submit-preload.ts")}`,
+  };
 }
 
 describe.skipIf(
@@ -213,7 +203,7 @@ describe.skipIf(
     const f = detachedAndIdle();
     const left = leftUnsettled(f);
     f.writeState({});
-    const thrown = failedLine(f, throwingSubmit(f));
+    const thrown = failedLine(f, throwingSubmit());
     expect(thrown).toMatchObject({
       outcome: "failed",
       details: { claim: "kept" },
