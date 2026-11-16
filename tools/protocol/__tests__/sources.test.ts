@@ -479,9 +479,7 @@ describe("tracker facets", () => {
         expected.forEach((hold, i) => {
           const text = (rendered[i] ?? "").replace(/^\s+|[\s|]+$/g, "");
           expect(text.startsWith("refused: ")).toBe(!hold?.held);
-          expect(text).toContain(
-            (hold?.meaning ?? "").replaceAll("<", "&lt;").slice(0, 20),
-          );
+          expect(text).toContain((hold?.meaning ?? "").replaceAll("<", "&lt;"));
         });
       }
   });
