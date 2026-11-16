@@ -82,7 +82,7 @@ export function readTaxonomy(root: string, setting: string): Taxonomy | null {
 }
 
 /** "a, b and c". */
-function listed(items: string[]): string {
+export function listed(items: string[]): string {
   return items.length <= 1
     ? (items[0] ?? "")
     : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;

@@ -42,7 +42,8 @@ honest.
 >
 > Work items follow these rules. An **epic closes on an accepted verdict** that
 > its designed scope is delivered, or on a recorded human waiver, never on its
-> count of open children. A **flag that fires a gate goes on the item that
+> count of open children. Deferred findings enter the backlog in batches
+> linked to their origin, never as children that enlarge its scope. A **flag that fires a gate goes on the item that
 > ships the change**, never on its container. **Labels carry durable
 > classification only**, never mutable operational state. Every issue is
 > filed **with its type, priority, size and category already set**: the
@@ -122,28 +123,38 @@ close on a count that looks complete.
 - A waiver answers "nobody ran the review", never "the review said no": it
   cannot override a rejecting verdict. An accepting verdict that a later
   rejection superseded does not count either.
-- Findings deferred while the epic is live still go to the epic, where its
-  owner sees them.
+- Deferred findings go to the backlog with a priority and category, linked
+  to the originating issue and its epic by the tracker's native `related`
+  relations, never as their children. Batch them by pull request and issue
+  type on every tracker: one open follow-up per key, with the highest
+  priority and the union of its findings' areas as its category. A later
+  finding for that key appends to the open issue.
 - At closure, the epic hands off its [tails](../../GLOSSARY.md): open
   children it was never scoped to finish, such as a legal sign-off, an
-  operator step or review debt. Each tail is linked back to the epic and given a
+  operator step, review debt or a person-only check (plain `hitl` or
+  `ops-pending`). Each tail is linked back to the epic and given a
   comment naming where it came from, and only then unparented and moved to
   the standing destination for its kind. The flag it carries, the link and
   the comment are what make the unparenting safe: the item still shows where
   it came from.
 - An open child that is ordinary scope means the designed scope is not
   delivered, and the epic stays open.
-- An epic that itself owes an operator step parks in a waiting state; it does
-  not close until the step is done.
+- Person-only checks move to one standing [person-checks list](../../GLOSSARY.md).
+  An epic that itself owes an operator step files the step on that list and
+  closes; the step remains owed there. The destination is named by
+  `issue_tracker.person_checks` in Jig's configuration.
+- The pull request that finishes the epic's designed scope removes its
+  entry from the active plan and public roadmap where listed. Released
+  history records what changed.
 
 ### Gate flags go on the shipping item
 
 A flag that fires a gate goes on the work item whose change ships, the
 sub-issue whose pull request carries the migration, never on the epic that
 contains it. On the epic, the gate fires for every child or for none; on the
-child, it fires exactly where the change is. `epic` is itself a flag, not a
-type: an epic keeps its real type, so an epic of fixes stays a `bug` and
-every rule that reads the type still sees it. Each flag in the
+child, it fires exactly where the change is. A tracker may mark the container
+with an `epic` flag while retaining its work type, or with a native `Epic`
+issue type that needs no separate work kind. Each flag in the
 [taxonomy](templates/label-taxonomy.yaml) declares its `scope`
 (`shipping-item` or `container`) so this rule is checkable per flag.
 
@@ -273,8 +284,9 @@ practice:
   `manual-ops` surfaces the operator checklist and parks the item until a
   person completes it. When an epic's only open children are tails, it
   extracts them and closes the epic only on an accepting verdict or a
-  recorded waiver, and an epic that owes an operator step parks instead of
-  closing. The label names and the tracker's state names are
+  recorded waiver. The person-checks destination and moving an epic's own
+  operator step there are planned; the current closing tool still parks an
+  epic that owes an operator step. The label names and the tracker's state names are
   configuration (`issue_tracker.labels`, `issue_tracker.states` in the
   [configuration reference](../../plugin/CONFIGURATION.md#issue_tracker));
   the template's statuses are the same canonical states.
@@ -292,8 +304,11 @@ practice:
   another, labels to the tracker's own fields or back, with a record that
   undoes it.
 - [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/SKILL.md)
-  files a deferred review finding with its type, its priority set from the
-  severity mapping (an unknown severity as medium) and its size, refuses a type outside the declared taxonomy or a missing
+  batches deferred review findings into backlog issues on every tracker,
+  linked to the originating issue and its epic, never parented to them,
+  with their type, highest priority from the
+  severity mapping (an unknown severity as medium), union of categories and
+  size. It refuses a type outside the declared taxonomy or a missing
   mandatory label group, and appends to the open follow-up for the same pull
   request and type instead of filing another.
 - [`drive-pr`](../../plugin/skills/drive-pr/SKILL.md)'s scoreboard
