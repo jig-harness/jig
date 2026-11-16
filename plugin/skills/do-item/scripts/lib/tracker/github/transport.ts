@@ -439,6 +439,16 @@ interface Posted {
   text: string;
 }
 
+/** A cancelled request that had been answered: the refusal it received, else the cancellation. */
+function cutAnswer(
+  refused: OutboundFailure | null,
+  bound: AbortSignal,
+): GitHubApiError {
+  return refused === null
+    ? abortedError(bound, true)
+    : errorOf({ ...refused, sent: true });
+}
+
 /** One HTTPS request's answer. */
 async function postOnce(
   fetchImpl: typeof fetch,
@@ -488,13 +498,7 @@ async function postOnce(
       "",
       currentMs() - began,
     );
-    if (cancelled(bound))
-      return unreadBody(
-        refused === null
-          ? abortedError(bound, true)
-          : errorOf({ ...refused, sent: true }),
-        res,
-      );
+    if (cancelled(bound)) return unreadBody(cutAnswer(refused, bound), res);
     return unreadBody(
       refused === null
         ? new GitHubApiError(reason, { code: "unreachable", sent: true })
@@ -506,22 +510,15 @@ async function postOnce(
       res,
     );
   }
-  if (cancelled(bound)) {
-    const refused = gitHubHttpFailure(
-      res.status,
-      res.headers,
-      text,
-      currentMs() - began,
-    );
+  if (cancelled(bound))
     return {
-      answer:
-        refused === null
-          ? abortedError(bound, true)
-          : errorOf({ ...refused, sent: true }),
+      answer: cutAnswer(
+        gitHubHttpFailure(res.status, res.headers, text, currentMs() - began),
+        bound,
+      ),
       headers: res.headers,
       text,
     };
-  }
   const body = parsedOrNull(text);
   observation.cost = githubCost(body);
   const failure = gitHubHttpFailure(
