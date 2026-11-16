@@ -434,17 +434,41 @@ export async function settleSquash(
       );
 }
 
-/** Whether every file the pull request lists holds, at the landed head, the blob its own head holds. */
+/**
+ * A path's tree entry at a commit: its mode and blob, `""` when the commit
+ * confirmably lacks the path, `null` when the commit cannot be read.
+ */
+async function entryAt(
+  git: GitRunner,
+  commit: string,
+  file: string,
+): Promise<string | null> {
+  const tree = await git([
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `${commit}^{tree}`,
+  ]);
+  if (tree.code !== 0) return null;
+  const entry = await git(["ls-tree", commit, "--", file]);
+  if (entry.code !== 0) return null;
+  return entry.stdout.split("\t")[0]?.trim() ?? "";
+}
+
+/**
+ * Whether every file the pull request lists is, at the landed head, what its
+ * own head holds: the same blob, or absent from both (a deletion or a rename
+ * away).  A commit that cannot be read is not a match.
+ */
 async function sameContent(
   view: PrView,
   git: GitRunner,
   landedHead: string,
 ): Promise<boolean> {
   for (const file of view.files) {
-    const landed = await git(["rev-parse", `${landedHead}:${file}`]);
-    const own = await git(["rev-parse", `${view.headRefOid}:${file}`]);
-    if (landed.code !== 0 || own.code !== 0) return false;
-    if (landed.stdout.trim() !== own.stdout.trim()) return false;
+    const landed = await entryAt(git, landedHead, file);
+    const own = await entryAt(git, view.headRefOid, file);
+    if (landed === null || own === null || landed !== own) return false;
   }
   return true;
 }
