@@ -311,9 +311,12 @@ theme; the dashboard stores nothing for it.
 
 ### When the dashboard writes
 
-**Answering a parked decision: Send, from the browser, as the person.** A
-card of a parked drive whose pull request is on github.com has Send beside
-Copy. For each decision the card answers it posts one comment, the
+**Answering a decision: Send, from the browser, as the person.** A card
+whose station reads answer comments on a GitHub issue or pull request (a
+parked drive's pull request, or the issue or pull request a pickup,
+follow-up or recovery decision names, in the tracker's repository when that
+differs from the code's) has Send beside Copy. For each decision the card
+answers it posts one comment, the
 `drive-answer` record `jig send` writes, built by the module `jig send`
 builds it with (`shared/decisions/answer-record.ts`): the
 `answer <key>: approve [<digest>]` or `answer <key>: choose <option> [<digest>]`
@@ -354,16 +357,19 @@ browser
   or the person's own words beside it. With nothing picked, Copy still
   takes the approval of a lone Decide decision's recommendation to paste,
   but Send never posts an approval nobody picked.
-- **A guarded pick sends on the second step.** A pick under a class the
-  acts table does not list as Decide, or of an option that cannot be undone,
-  opens the check panel first, as a guarded copy does, and Confirm send
-  posts.
-- **Only where an answer comment is read.** Send is offered for a parked
-  drive's decisions alone, the one station whose answer is read from a
-  pull-request comment; any other card keeps Copy and, once a token is kept,
-  says why it has no Send. A pull request on a forge other than github.com
-  has no Send, since the page's content security policy lets it reach
-  `api.github.com` alone.
+- **Every send is confirmed.** Send first shows the target, the login it
+  sends as and the exact answer, and Confirm send posts. The confirmation
+  holds for what it showed alone: a change to the target, the decision's
+  framing, the answer's text or the token asks for a new one. A guarded pick
+  (under a class the acts table does not list as Decide, or of an option
+  that cannot be undone) also takes this second step to copy.
+- **Only where an answer comment is read.** Send is offered where the
+  card's station reads its answer from a comment on a GitHub issue or pull
+  request, and the card's link names that same repository and number; any
+  other card keeps Copy and says why it has no Send. Without a token the
+  card says how to paste one. An issue or pull request on a forge other
+  than github.com has no Send, since the page's content security policy
+  lets it reach `api.github.com` alone.
 - **Only over a path that protects the token.** Send is offered only when
   the page came over HTTPS, from the machine's loopback (`localhost`,
   127.0.0.0/8, `::1`). A hostname proves no encrypted path, so none
@@ -371,14 +377,17 @@ browser
   every card says why it has no Send and the settings panel takes no
   token, since someone on the path who can change the page could read it.
 - **What comes back.** After GitHub answers 201 for each comment, the card
-  links them and says "sent here", in this browser alone, until the next
-  tick reads the answers. A refusal part-way names the decisions not
+  links them, in this browser alone, and the page reads the line every 3
+  seconds for up to 90 seconds, stopping sooner once the tick records the
+  answer's outcome. The card then shows whether the step was carried out,
+  refused with its reason, or held: an answered hold stays on the card and
+  says the work remains undone, until its facts change. A refusal part-way names the decisions not
   posted. A refusal shows GitHub's own message with what it means (401: the
   token is wrong or revoked; 403: it lacks write access to Issues and Pull
   requests on that repository, or an organization has not approved it; 404:
   it was not granted the repository; 422: GitHub would not take the text).
   A call with no answer says the comment may or may not be posted and to
-  check the pull request before sending again.
+  check the linked issue or pull request before sending again.
 
 **The token's scope.** A fine-grained personal access token, limited to the
 repositories the dashboard shows, with Issues and Pull requests set to read
