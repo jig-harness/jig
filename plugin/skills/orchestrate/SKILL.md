@@ -176,7 +176,8 @@ between surveys, so an old count must not become a new issue's premise.
 ### 15. Hand over before the context fills
 
 A coordinating session that runs until its context is full loses state to
-compaction or a forced restart, and with it a decision or an owed act.
+[compaction](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the runtime replacing the earlier
+conversation with a shorter summary) or a forced restart, and with it a decision or an owed act.
 Watch for the signs of a long session: the person has returned many times,
 many delegated results have been read, decisions have been carried across
 hours. At a natural pause, with no delegated work about to return and no
@@ -203,9 +204,11 @@ Once the person agrees:
    its session is live, or, where the person started it, they say it is
    still running. If it is gone, start it again (or give the person the
    command again) with a directive that says its first act may be partly
-   done, so it checks before repeating it.
-4. Tell the person the successor now holds the topic. This session then
-   stops acting: it sends no further commands and launches nothing, so two
+   done, so it checks before repeating it, and repeat this confirmation
+   after every replacement. Where liveness cannot be established, keep
+   ownership of the topic and tell the person; do not go on to step 4.
+4. Only once a successor is confirmed alive, tell the person it now holds
+   the topic. This session then stops acting: it sends no further commands and launches nothing, so two
    sessions never act on the same line at once.
 
 ## Reporting

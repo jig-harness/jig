@@ -50,7 +50,16 @@ describe("orchestrate's contract", () => {
       expect(step).toContain(item);
     expect(step).toContain("points at the record");
     expect(step).toContain("give the person the exact command");
+    expect(step).toContain(
+      "Hand over only with their agreement, never silently",
+    );
+    expect(step).toContain("no delegated work about to return");
+    expect(step).toContain("no question half-asked");
     expect(step).toContain("confirm the successor is alive");
+    expect(step).toContain("If it is gone, start it again");
+    expect(step).toContain("repeat this confirmation after every replacement");
+    expect(step).toContain("keep ownership of the topic");
+    expect(step).toContain("Only once a successor is confirmed alive");
     expect(step).toContain("stops acting");
   });
 
