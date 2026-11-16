@@ -253,28 +253,15 @@ import {
   scaffoldPortion,
 } from "./lib/batch-description.ts";
 
-const LINEAR_API = "https://api.linear.app/graphql";
-const LINEAR_TIMEOUT_MS = 30_000;
+import {
+  deferralClient,
+  type LinearClient,
+} from "../../do-item/scripts/lib/tracker/linear-deferral.ts";
+export type { LinearClient } from "../../do-item/scripts/lib/tracker/linear-deferral.ts";
 
 /**
- * How long the WHOLE run may spend on Linear calls before it is aborted
- * outright, rather than left to the retry loop's attempt count alone.
- *
- * `APPEND_ATTEMPTS` bounds the number of attempts, not the duration of any one
- * awaited `linear(...)` call — a stalled request could otherwise pin the
- * unattended drive loop forever. `LINEAR_TIMEOUT_MS` already caps a single
- * `fetch`, but that cap lived only inside `makeClient`, one implementation of
- * the `LinearClient` port; nothing in the PORT's own type required it, so a
- * test double (or a future client) had no obligation to honor any bound at all,
- * and no caller could bound the loop AS A WHOLE rather than call-by-call.
- * Threading a caller-supplied deadline through the port makes the guarantee
- * part of the CONTRACT every implementation must honor — `makeClient` combines
- * it with its own per-call timeout via `AbortSignal.any`, and `appendWithRetry`
- * checks it directly so a stalled or endlessly-retried run aborts instead of
- * blocking past this ceiling. Generous relative to `LINEAR_TIMEOUT_MS` *
- * `APPEND_ATTEMPTS` (30s × 3 = 90s of pure call time) to leave room for the
- * `RETRY_MAX_MS`-bounded backoff between attempts and the label/relation calls
- * outside the retry loop.
+ * Bound the whole workflow, including retries and backoff. The adapter also
+ * caps each request, while the workflow checks this signal before each call.
  */
 export const RUN_DEADLINE_MS = 5 * 60_000;
 
@@ -1057,66 +1044,6 @@ export function hasRelationTo(
   );
 }
 
-/**
- * The `signal` is REQUIRED, not optional — see `RUN_DEADLINE_MS`'s own doc.
- * A caller-supplied deadline that an implementation is free to ignore is no
- * guarantee at all, so it is part of the port's own type, not bolted on
- * per-call. This does NOT, by itself, force every existing test double to
- * accept it: TypeScript's function-type assignability allows a
- * fewer-parameter function to stand in for a type expecting more (the
- * caller may pass extra arguments; JS ignores them), so a 2-arg fake typed
- * as `LinearClient` still type-checks and simply never sees `signal`. The
- * actual enforcement is `appendWithRetry`'s own `checkDeadline` (below),
- * which does not trust an implementation to honor the signal at all — it
- * checks `signal.aborted` itself before making any call. `makeClient`'s real
- * implementation additionally races the signal against `fetch` via
- * `AbortSignal.any`, so a REAL client does cancel the in-flight request; a
- * test double that ignores `signal` merely resolves as if the deadline had
- * not fired, which `checkDeadline` still catches on the next loop check.
- */
-export type LinearClient = (
-  query: string,
-  variables: Record<string, unknown>,
-  signal: AbortSignal,
-) => Promise<Record<string, unknown>>;
-
-function makeClient(token: string): LinearClient {
-  return async (query, variables, signal) => {
-    let resp: Response;
-    try {
-      resp = await fetch(LINEAR_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: token },
-        body: JSON.stringify({ query, variables }),
-        // Whichever fires first: this one call's own LINEAR_TIMEOUT_MS cap,
-        // or the caller's run-wide deadline — so a single stalled request is
-        // bounded even when the deadline still has room left, AND the loop
-        // as a whole cannot outlast the deadline by retrying calls that each
-        // individually look fine.
-        signal: AbortSignal.any([
-          AbortSignal.timeout(LINEAR_TIMEOUT_MS),
-          signal,
-        ]),
-      });
-    } catch (e) {
-      throw new Error(
-        `Linear API unreachable: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
-    if (!resp.ok) {
-      throw new Error(`Linear API HTTP ${resp.status}`);
-    }
-    const json = (await resp.json()) as {
-      data?: Record<string, unknown>;
-      errors?: unknown;
-    };
-    if (json.errors) {
-      throw new Error(`Linear API error: ${JSON.stringify(json.errors)}`);
-    }
-    return json.data ?? {};
-  };
-}
-
 /** Refuse to act on a page the API truncated — see `isComplete`. */
 function assertComplete(pageInfo: PageInfo | undefined, what: string): void {
   if (!isComplete(pageInfo)) {
@@ -1864,7 +1791,7 @@ export async function appendWithRetry(
   // Checked before any call an attempt would make, not only relied on to
   // cancel an in-flight `fetch` — see `RUN_DEADLINE_MS`'s own doc. A test
   // double standing in for `LinearClient` is not obliged to honor the signal
-  // it is handed (only `makeClient`'s real implementation races it against
+  // it is handed (only the adapter client's real implementation races it against
   // `fetch`), so an explicit check here is what makes the deadline's effect
   // on the LOOP verifiable without a real network call. Called BOTH at the
   // top of each attempt and right after the retry pause: `sleep` itself can
@@ -2302,20 +2229,16 @@ async function main(): Promise<number> {
     fail(2, "defer-batch: the finding body on stdin was empty", "", USAGE);
   }
 
-  // UNSET and EMPTY both fall through — the same `${VAR:-…}` semantics
-  // shared/cli.ts's envOrDefault documents (an empty export from optional
-  // templating must not shadow the fallback name).
-  const token =
-    [process.env.LINEAR_API_TOKEN, process.env.LINEAR_API_KEY].find(
-      (v) => v !== undefined && v !== "",
-    ) ?? "";
-  if (token === "") {
+  if (
+    ![process.env.LINEAR_API_TOKEN, process.env.LINEAR_API_KEY].some((v) =>
+      v?.trim(),
+    )
+  )
     fail(
       1,
       "defer-batch: LINEAR_API_TOKEN (or LINEAR_API_KEY) is required — the batch issue lives in Linear.",
     );
-  }
-  const linear = makeClient(token);
+  const linear = deferralClient();
   return runDeferBatch(linear, args, finding);
 }
 

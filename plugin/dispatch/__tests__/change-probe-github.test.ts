@@ -53,7 +53,9 @@ describe("the probe's GitHub call", () => {
     expect(query).toContain(
       'r1: repository(owner: "acme", name: "api") { nameWithOwner }',
     );
-    expect(query).toContain("statusCheckRollup { state contexts");
+    expect(query).toContain("checkRunCountsByState { state count }");
+    expect(query).not.toContain("contexts(first: 100)");
+    expect(query).not.toContain("... on CheckRun");
     expect(
       probeSearches(["acme/web", "acme/api"], "2026-11-07T10:00:00Z"),
     ).toEqual({
@@ -142,12 +144,11 @@ describe("the probe's GitHub call", () => {
     ).toBeNull();
   });
 
-  it("digests each check, so one that ends while the aggregate stays PENDING moves the detail", () => {
-    const repository = { nameWithOwner: "acme/web" };
-    const at = (nodes: unknown[], totalCount = nodes.length) =>
+  it("detects a completed check from counts while the aggregate stays PENDING", () => {
+    const at = (running: number, success: number) =>
       openPr({
         number: 12,
-        repository,
+        repository: { nameWithOwner: "acme/web" },
         commits: {
           nodes: [
             {
@@ -155,45 +156,24 @@ describe("the probe's GitHub call", () => {
                 oid: "abc",
                 statusCheckRollup: {
                   state: "PENDING",
-                  contexts: { totalCount, nodes },
+                  contexts: {
+                    totalCount: running + success,
+                    checkRunCountsByState: [
+                      { state: "IN_PROGRESS", count: running },
+                      { state: "SUCCESS", count: success },
+                    ],
+                    statusContextCountsByState: [],
+                  },
                 },
               },
             },
           ],
         },
       });
-    const run = (name: string, status: string, conclusion: string | null) => ({
-      __typename: "CheckRun",
-      name,
-      status,
-      conclusion,
-    });
-    const before = at([
-      run("build", "IN_PROGRESS", null),
-      run("lint", "IN_PROGRESS", null),
-    ]);
-    const after = at([
-      run("build", "COMPLETED", "SUCCESS"),
-      run("lint", "IN_PROGRESS", null),
-    ]);
-    expect(before?.checks).toBe("PENDING");
-    expect(after?.checks).toBe("PENDING");
-    expect(after?.detail).not.toBe(before?.detail);
-    expect(
-      at([run("lint", "IN_PROGRESS", null), run("build", "IN_PROGRESS", null)])
-        ?.detail,
-    ).toBe(before?.detail);
-    const status = {
-      __typename: "StatusContext",
-      context: "ci",
-      state: "PENDING",
-    };
-    expect(at([status])?.detail).not.toBe(
-      at([{ ...status, state: "SUCCESS" }])?.detail,
-    );
-    expect(at([run("build", "IN_PROGRESS", null)], 101)?.detail).toMatch(
-      /\+100$/,
-    );
+    expect(at(2, 0)?.checks).toBe("PENDING");
+    expect(at(1, 1)?.checks).toBe("PENDING");
+    expect(at(1, 1)?.detail).not.toBe(at(2, 0)?.detail);
+    expect(at(0, 2)?.detail).not.toBe(at(1, 1)?.detail);
   });
 });
 

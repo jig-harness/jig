@@ -18,6 +18,7 @@
  * drops that pull request's listing, and tells `written`, so nothing after
  * it reads the comments as they were before it.
  */
+import { coalesce } from "../../shared/outbound/coalesce.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import {
   type Deadline,
@@ -78,13 +79,10 @@ export function tickComments(
   return {
     read(repo, pr) {
       const key = keyOf(repo, pr);
-      let listing = listings.get(key);
-      if (listing === undefined) {
+      return coalesce(listings, key, () => {
         started.set(key, currentMs());
-        listing = list({ repo, number: pr });
-        listings.set(key, listing);
-      }
-      return listing;
+        return list({ repo, number: pr });
+      });
     },
     startedAt(repo, pr) {
       return started.get(keyOf(repo, pr)) ?? null;

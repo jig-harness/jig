@@ -30,6 +30,7 @@
  * None of these serves a read just before a launch: those go to the forge
  * and the runtime (`tick-apply.ts`).
  */
+import { coalesce } from "../../shared/outbound/coalesce.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { listComments } from "../../shared/records/forge-claims.ts";
 import type { SharedBudget } from "../../shared/records/shared.ts";
@@ -225,8 +226,7 @@ export function tickReads(
   poolSize?: number,
   bound?: TickBound,
 ): TickReads {
-  let login: Promise<string | null> | null = null;
-  let budget: Promise<TickBudget> | null = null;
+  const singletonReads = new Map<string, Promise<unknown>>();
   const reads = pool(poolSize);
   const comments = tickComments({
     list: (target) =>
@@ -241,18 +241,14 @@ export function tickReads(
   });
   const repositories = new Map<string, Promise<RepositoryOutcome>>();
   return {
-    repository: (path) => {
-      let read = repositories.get(path);
-      if (read === undefined) {
-        read = reads.run(() =>
+    repository: (path) =>
+      coalesce(repositories, path, () =>
+        reads.run(() =>
           unlessEnded(bound, "the repository's query was read", () =>
             queryRepository(path, comments, bound),
           ),
-        );
-        repositories.set(path, read);
-      }
-      return read;
-    },
+        ),
+      ),
     pullRequestComments: (slug, prs) =>
       reads.run(() =>
         unlessEnded(bound, "the merged pull requests' comments were read", () =>
@@ -260,16 +256,16 @@ export function tickReads(
         ),
       ),
     comments,
-    login: () => {
-      login ??= reads.run(() => resolveLogin());
-      return login;
-    },
+    login: () =>
+      coalesce(singletonReads, "login", () =>
+        reads.run(() => resolveLogin()),
+      ) as Promise<string | null>,
     sessions: lazySessions(runtime),
     budgets: [],
-    budget: () => {
-      budget ??= reads.run(readBudget);
-      return budget;
-    },
+    budget: () =>
+      coalesce(singletonReads, "budget", () =>
+        reads.run(readBudget),
+      ) as Promise<TickBudget>,
     pool: reads,
     servedViews: new Map(),
     ...(bound === undefined ? {} : { bound }),

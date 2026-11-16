@@ -19,7 +19,7 @@ import {
   LEAKY_GIT_ENV,
   spawnSync,
 } from "../../../../shared/guarded-git-spawn.ts";
-import { matchesGlob } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { matchesGlob } from "../../../../shared/glob.ts";
 import type { Catalog } from "./catalog.ts";
 
 export { matchesGlob };

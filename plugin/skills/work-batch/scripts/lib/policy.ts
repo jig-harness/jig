@@ -46,9 +46,11 @@ import {
 } from "../../../../shared/consumer.ts";
 import { formatField } from "../../../../shared/config-layers.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { ruleList } from "../../../../shared/rule-matcher.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
 import {
   catalogPathFromOverlay,
+  areaOfLabel,
   parseAgentRouting,
 } from "../../../do-item/scripts/determine_agent.ts";
 import { doItemSection } from "../../../do-item/scripts/lib/overlay.ts";
@@ -204,6 +206,13 @@ function labelList(value: unknown, field: string): string[] {
   return value as string[];
 }
 
+/** `work_batch.solo_flags`, read by the rule matcher as one rule over the item's labels. */
+function soloFlagList(value: unknown): string[] {
+  const rule = ruleList("work_batch.solo_flags", value);
+  if (!rule.ok) throw new WorkBatchConfigError(rule.failure.reason);
+  return typeof rule.value === "string" ? [] : [...(rule.value.labels ?? [])];
+}
+
 /** A map from batchable size to a whole number, keys checked against `batchSizes`. */
 function sizeMap(
   value: unknown,
@@ -350,7 +359,7 @@ export function parseWorkBatchSection(
     soloFlags:
       section.solo_flags === undefined || section.solo_flags === null
         ? []
-        : labelList(section.solo_flags, "work_batch.solo_flags"),
+        : soloFlagList(section.solo_flags),
     sizes,
     ranking: parseRanking(section.ranking, batchSizes, sizeOf),
   };
@@ -395,12 +404,12 @@ function knownLabels(
 ): { area: string[]; context: string[] } {
   const areas = [...(catalog?.values() ?? [])];
   const area = new Set([
-    ...Object.keys(routing.codeareaAreas),
+    ...routing.codeareaAreas.map((e) => e.key.toLowerCase()),
     ...areas.flatMap((a) => a.trackerLabels.map((l) => l.toLowerCase())),
   ]);
   const context = new Set([
     ...area,
-    ...Object.keys(routing.labels),
+    ...routing.labels.map((e) => e.key.toLowerCase()),
     ...areas.flatMap((a) => a.labels.map((l) => l.toLowerCase())),
   ]);
   return { area: [...area].sort(), context: [...context].sort() };
@@ -430,10 +439,9 @@ function lookups(
   BatchPolicy,
   "areaNaming" | "areaNamingSpelling" | "areaFlags" | "stateNames"
 > {
-  const areaNaming: Record<string, string> = Object.assign(
-    Object.create(null),
-    routing.codeareaAreas,
-  );
+  const areaNaming: Record<string, string> = Object.create(null);
+  for (const { key, result } of routing.codeareaAreas)
+    areaNaming[key.toLowerCase()] = result;
   const areaNamingSpelling: Record<string, string> = Object.create(null);
   // The last spelling wins, as it does for the area the label routes to.
   for (const label of configuredLabelKeys(overlay))
@@ -448,6 +456,21 @@ function lookups(
     if (name !== null)
       stateNames[name.trim().toLowerCase()] ??= state as CanonicalState;
   return { areaNaming, areaNamingSpelling, areaFlags, stateNames };
+}
+
+/**
+ * The area an area-naming label names (`do_item.agents.codearea_areas`), as
+ * the rule matcher's lookup reads the map, or `undefined`.
+ */
+export function areaNamedBy(
+  policy: Pick<BatchPolicy, "areaNaming">,
+  label: string,
+): string | undefined {
+  const entries = Object.entries(policy.areaNaming).map(([key, result]) => ({
+    key,
+    result,
+  }));
+  return areaOfLabel({ codeareaAreas: entries }, label);
 }
 
 /**
@@ -484,8 +507,8 @@ export function batchPolicy(
   const repoLabel = repoLabelOf(review);
   const repos = review.taxonomy?.repos ?? [];
   const known = knownLabels(routing, catalog);
-  const prefixes = Object.keys(routing.codeareaAreas)
-    .map(labelPrefix)
+  const prefixes = routing.codeareaAreas
+    .map((e) => labelPrefix(e.key.toLowerCase()))
     .filter((p): p is string => p !== null);
 
   return {
@@ -500,7 +523,9 @@ export function batchPolicy(
       ]),
     ],
     soloFlags,
-    soloFlagPrefixes: [`${labels.hitl}:`],
+    soloFlagPrefixes: [
+      ...new Set([`${labels.hitl}:`, `${labels.hitl.trim()}:`]),
+    ],
     epicLabel: labels.epic,
     epicTypes: labels.epicTypes,
     followupLabel: labels.followup,
