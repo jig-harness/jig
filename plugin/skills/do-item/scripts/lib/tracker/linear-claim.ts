@@ -176,7 +176,7 @@ export function claimOperations(
           assign: (id) => assignId(key, id, id ?? "nobody"),
           async assignIfCurrent(expected, id) {
             const issue = await read(key);
-            if (issue.assignee?.id !== expected) return false;
+            if ((issue.assignee?.id ?? null) !== expected) return false;
             await assignIssue(issue.id, id, key, id ?? "nobody");
             return true;
           },
