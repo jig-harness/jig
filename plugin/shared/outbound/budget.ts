@@ -332,6 +332,17 @@ function currentShare(): number | null {
  */
 export type Unexplained = Partial<Record<"requests" | "complexity", number>>;
 
+/** The complexity window less the points an ordinary answer measured beyond its reservation. */
+function withExtraSpent(
+  window: BudgetWindow,
+  answer: BudgetAnswer,
+): BudgetWindow {
+  const extra = answer.snapshot === true ? 0 : (answer.extraComplexity ?? 0);
+  return extra > 0 && window.remaining !== null
+    ? { ...window, remaining: Math.max(0, window.remaining - extra) }
+    : window;
+}
+
 /** Admits requests for a credential and records what the answers said. */
 export interface BudgetGovernor {
   /** Throws `TrackerRateLimited` when no request may leave now; returns the time the request was admitted. */
@@ -828,13 +839,10 @@ export function budgetGovernor(
             ? snapshotOf(prev, next, now, sentAt)
             : merged(prev, next, now, sentAt, reservedIn === name);
         const requests = take(base.requests, answer.requests, "requests");
-        const taken = take(base.complexity, answer.complexity, "complexity");
-        const extra =
-          answer.snapshot === true ? 0 : (answer.extraComplexity ?? 0);
-        const complexity =
-          extra > 0 && taken.remaining !== null
-            ? { ...taken, remaining: Math.max(0, taken.remaining - extra) }
-            : taken;
+        const complexity = withExtraSpent(
+          take(base.complexity, answer.complexity, "complexity"),
+          answer,
+        );
         unexplained =
           answer.snapshot === true
             ? unexplainedSpending(base, { requests, complexity })
