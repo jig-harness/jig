@@ -46,6 +46,25 @@ label with the prefix that neither table lists ignores it.
 
 <!-- /protocol:generated -->
 
+### Which stop earns which label
+
+Where state labels are on, each stop of a drive is labelled by one table of
+exits (`plugin/skills/drive-pr/scripts/lib/status/exit-classes.ts`), which the
+dispatcher's ledger classifier reads too. A recorded person's stop is parked
+whatever its exit, so it takes precedence over the mapping below; for the rest
+(the exit codes are the [drive-exits chapter's](drive-exits.md)):
+
+- `0` is labelled converged, while the head is still the verified head;
+- parked: the park `8`; a stop only a person settles (`1`, `2`, `6`, `7`,
+  `22` and any code the registry does not name); a person's stop (`18`,
+  `19`, and a recorded stop through `drives.ts`, which names no exit); and a
+  stop the dispatcher re-drives (`9`, `12`, `14`, `15`, `21`, `23`), which a
+  dispatcher's tick turns into stale where one runs;
+- driving: `4` and `16`, which the dispatcher re-arms, and `11` and `13`, a
+  second driver refused while another drives;
+- nothing: `5`, a pull request no longer open; `20`, whose ledger is the
+  successor's; and a stop with no exit and no person's stop recorded.
+
 ## Command labels
 
 A command label is added by a person, and read by the dispatcher's tick;
