@@ -24,6 +24,7 @@ import {
 } from "../../../plugin/shared/records/registry.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { table } from "../markdown.ts";
+import { checkHeldPhrases } from "../held.ts";
 import { s } from "../../../plugin/shared/shapes.ts";
 import {
   ENVELOPE_SHAPE,
@@ -375,6 +376,13 @@ export const COMMENT_MARKERS: Chapter = {
     ...Object.values(MARKER_SCHEMAS).flat(),
   ],
   id: "comment-markers",
+  check: (root) =>
+    checkHeldPhrases(root, "comment-markers", [
+      {
+        file: "plugin/skills/do-item/SKILL.md",
+        text: `<!-- ${recordKind("do-item-pr-association")?.markers?.[0]}: <PR URL> -->`,
+      },
+    ]),
   title: "Hidden comment markers on the forge and the tracker",
   summary:
     "The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means.",

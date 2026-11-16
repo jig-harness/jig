@@ -258,9 +258,6 @@ jobs:
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
-      - name: Check terminal states against their documentation
-        if: matrix.shard == 1
-        run: bun plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts
       - name: Run this shard of the drive-pr suite
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
 

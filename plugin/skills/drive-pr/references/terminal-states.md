@@ -33,63 +33,15 @@ prose to know what happened. Each code `drive.ts` ends with also carries, in
 the same table, what the closing report it writes under `jig dispatch` says
 for it: the stop's own text, the `cause` and the suggested next step
 (`report` in `terminal-states.ts`, printed in the
-[protocol's chapter](../../../protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)). `drive.ts` maps a converged drive to `0` (a
-successful run) — after certifying its own working tree is clean, since exit
-`0` is the signal an operator merges on and an edit no round shipped would
+[protocol's chapter](../../../protocol/drive-exits.md#what-drivetss-closing-report-says-at-each-exit)). `drive.ts` maps a converged drive to its
+[`CONVERGED`](../../../protocol/drive-exits.md) success code — after certifying its own working tree is clean, since that success code is the signal an operator merges on and an edit no round shipped would
 otherwise die silently with the worktree — and leaves every other code
 verbatim.
 
-The canonical (exit, state) pairing below is code, not this table:
-[`terminal-states.ts`](../scripts/lib/status/terminal-states.ts), checked
-against this and the other prose restatements by
-[`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
-A backtick-wrapped **State** cell names a real `state` value (or, on row `4`,
-the five that share that exit code — `4` has no `state` of its own); an em
-dash means the row does not identify a single canonical state. Usually that is
-because the code carries none at all — `drive.ts` returns it directly, outside
-`drive-status.ts`'s `--json` report entirely — except row `10`, which is
-reserved and never emitted (see that row). Row `11` is a second, different
-exception: `drive-status.ts`'s own lease check *does* set `report.state =
-'SESSION_LEASE_HELD'` for it in some paths, but the same exit is also raised
-directly by `drive-state.ts`, `reply-to-thread.ts` and `answer-summary-
-finding.ts` for mechanisms that never populate that report at all (see that
-row) — so the table cell stays an em dash because no single name covers every
-path that produces the exit, not because none of them name one.
-
-| Exit | State | Terminal? | Meaning |
-|---|---|---|---|
-| `0` | `ROUND_READY` | no | Unresolved threads and/or unaddressed summary-only findings exist. On a mergeable head the reviewer gates below also proved it reviewed that head; on a **conflicting** one they are skipped, so the findings may predate it — the `reason` and `reviewer.reviewedSha` say which (§ 14) |
-| `3` | `CONVERGED` | **yes** | Every convergence condition below holds |
-| `4` | `HEAD_LAG` / `AWAITING_REVIEWER` / `STALE_REVIEW` / `HEAD_MOVED` / `MERGEABILITY_UNKNOWN` | no | Not judgeable yet. With `--once` this returns immediately; otherwise after `--timeout`. `drive.ts` also reuses this code for a case `drive-status.ts` cannot see: the reviewer converged, but the Ready-mark lease is held by another driver — `claimed-by-other` is not proof that driver will finish, and reporting `0` would claim a still-draft PR that the draft-skipping reviewers have never seen is done (§ A draft PR is reviewed, and then marked Ready). And for a second such case: the reviewer converged, nothing is failing, and no fresh exact-head required-check witness arrived within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls (default 180 × 10s = 30 min, `0` waits forever) — a required check whose fresh run completed `skipped` is passing to the aggregate verdict and no witness here, and no amount of waiting converts one into the other, so the drive names the rerun and hands back rather than sleeping until a human notices. And for a third: the review converged on a draft the expected reviewer skips (`reviewedShaSource: "draft-skip"`), and the drive leaves the PR a draft (`--keep-draft`, `pull_requests.mark_ready: never`, or a person's earlier return to draft), so that reviewer has reviewed nothing (§ A reviewer that submits pull-request reviews). Cancelled workflows instead use one durable re-run per head after a 30-second grace period; an unsafe or refused re-run, or an unreplaced cancellation after recovery, parks with `8` (§ 9) |
-| `5` | `PR_NOT_OPEN` | **yes** | Merged or closed. Checked first, every pass |
-| `6` | — | **yes** | `drive.ts` only: hit `--max-rounds` without converging |
-| `7` | `REVIEWER_FAILED` | **yes** | The posting reviewer's check-run did not pass |
-| `8` | `HITL_PARKED` | **yes** | Everything still open is parked awaiting a human, each under a registry class with its decision framed, and the exit prints each one in full. The drive never wakes itself up: a re-arm unparks the items, and hands their answers to its passes until one completes, only once **every** one has an answer from an owner, member or collaborator later than the park (§ Picking up a stopped drive); with any unanswered it stops `8` again, unless the PR conflicts with its base: the first gate reports `PR_CONFLICTING` before the park, so the re-arm spends its conflict-repair budget first. Under `jig dispatch` the dispatcher re-drives a parked PR that conflicts with its base, once for each pair of its head and its base branch's head, and tells a person of the conflict when that re-drive leaves it parked or stopped `9` at the same pair |
-| `9` | `PR_CONFLICTING` | **yes**, from `drive.ts` only once its conflict-repair budget is spent | The PR conflicts with its base **and** has no workable findings. A conflict alone does not stop the loop — see mode 14. `drive.ts` first spends `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1) `conflict-resolve` passes on it (§ Repair rounds), and a merge such a pass did not conclude is aborted before the stop, except one already open when the pass began (kept) or one whose abort failed; finish or abort a merge the stop reports before running its `Fix:` command. Under `jig dispatch` the dispatcher re-drives the stop, once for each pair of the pull request's head and its base branch's head, and tells a person when that re-drive leaves it stopped `9` at the same pair; without it the stop is a person's |
-| `22` | `REVIEW_SKIPPED` | **yes** | The reviewer's skip notice names the PR head as a push it did not review, and its review of an earlier head does not cover this one: the pull request's diff changed since that head (§ The reviewer skips a head); or a reviewer that submits pull-request reviews paused or skipped the head, its check run's title reading `Review paused…` or `Review skipped…` (§ A reviewer that submits pull-request reviews). No review of this head will come, so the drive stops rather than wait for one as `STALE_REVIEW`. The `reason` quotes the notice and names both heads. A person reviews the change since the reviewed head and has the reviewer review this head, or pushes a commit it reviews, then re-arms. The stop is a person's: where the pull request state labels are on, the drive labels the pull request parked as it stops, and under `jig dispatch` the dispatcher's line names the skip as the cause. |
-| `10` | — | — | **Reserved**, never emitted. A draft PR is not a stop: drafts are driven — see § A draft PR is reviewed, and then marked Ready. The code is kept unused so it never takes on a second meaning |
-| `12` | `WORKTREE_UNCLEAN` | **yes** | `drive.ts` only: a pass exited `0` with uncommitted edits and this tree's unverified holds from the current round, or review converged over an unclean worktree. The unfinished-pass cause names the held fixes and does not claim convergence: validate, commit and push them, then re-arm in this tree. The convergence cause means the worktree is not clean — uncommitted state, an unconcluded merge/cherry-pick/revert/rebase/am (present even over an otherwise-empty `git status`), local HEAD no longer matching the reviewed head (a commit landed here that was never pushed or reviewed, also invisible to `git status`), or any of those probes being unreadable; every one of them fails closed to the same refusal. For the convergence cause, the convergence is real; the leftovers are edits no round shipped, an unfinished git operation, or an unreviewed local commit. Commit/push/discard as appropriate, or resolve/abort the operation, then re-run. The draft→Ready transition sits **behind** this gate, so a PR still owed that transition when 12 fires stays a draft, and the retry after the cleanup marks it. It never *reverts* one already made: `mark-ready.ts` runs at the end of every completed round from the round `pull_requests.mark_ready` declares (default `1`) and is durably once-only, so a drive that completed that round has already marked the PR and exit 12 leaves it Ready over an unclean tree. The PR is still a draft, then, when no completed round reached the declared one (convergence before it, including at the very first gate), when the repository marks Ready only at convergence (`converged`), or when it never does (`never`, or a drive started with `--keep-draft`, which skips `mark-ready.ts` entirely no matter how many rounds run) — in the last case the draft state is the requested outcome, not a transition still owed — see § A draft PR is reviewed, and then marked Ready |
-| `11` | — | **yes** | `drive.ts` only: a single-instance lock is already held — either this PR's (`pr-drive-<PR>`) or this working tree's (`pr-drive-worktree-<key>`), both rows of the drive's database keyed by the clone, so a driver in another managed worktree of the same clone collides too. The drive is already armed. The refusal names the holder's `drives.ts` `--doctor` verdict and, when that verdict admits a takeover (`WEDGED`), prints the `--take-over` command; do not stop a driver that is making progress (§ Picking up a stopped drive). `drive.ts` with `--take-over` refused for the holder's verdict, or for a dead holder's leftovers, exits `11` too. `drive-state.ts` raises the same code for its own **session lease** over *(working tree, PR)* when a second live agent session in one checkout attempts a state mutation — a different mechanism with the same exit — and for its **tree lease** when that second session is driving a *different* PR from the same tree, which the per-PR lease alone cannot see. `reply-to-thread.ts` and `answer-summary-finding.ts` raise it too, refusing to `POST` rather than refusing to write state — both check **both** fences, the per-PR session lease and the tree lease, so either one can produce this refusal — `reply-to-thread.ts` through the spawned `assert-post-allowed.ts` (it lives in the sibling skill), `answer-summary-finding.ts` through `lib/state/lease.ts` directly (it lives in this one). All of these — a *live* conflicting holder — name that holder's pid; confirm that process is gone before clearing either. One exception, on the tree lease, names no pid because it has no live holder to name: `assertTreeLeaseUnchanged`'s "the lease is simply gone" case (an admitted lease that no longer exists by the time the fence re-checks — `clear-lease` is the common cause but not the only one an operator could have caused, so the message deliberately does not guess which) |
-| `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | **yes** | Another live **working tree** is driving this PR, and this one attempted a state mutation. Raised by `drive-state.ts`, propagated by `drive-status.ts`, and raised by `drive.ts` at its own round-opening `bump-attempt` — the worktree/PR locks above do **not** subsume it, because those are only ever held by another `drive.ts` and an interactive pass in another tree takes no lock at all. The cross-tree twin of `11`, and deliberately not the same code: `11` names a session in the reader's own tree, which they can see and clear where they stand, while `13` names a tree they are not in — and whose driver is very likely the one that should finish. The refusal carries that tree's path, and — when the holder is a session rather than a working tree — its pid and the platform's own liveness check. It **self-clears**: the gate is derived from the live lease set by the same `leaseAlive` test the session lease uses, so a dead or idle worktree never wedges the PR. Inspect with `bun "<skill-dir>/scripts/drive-state.ts" lease <PR> --all`; take the PR over deliberately — the only route that reaches a tree you cannot stand in — with `bun "<skill-dir>/scripts/drive-state.ts" clear-lease <PR> --all`. Reading the drive is never gated, from any tree. `drive.ts` raises it at arm for a tree in **another clone**, which no lease reaches: when the drive ledger names a running driver there, the arm is refused, naming its heartbeat's age and, once that is past the lease window, the `--take-over` command (§ Picking up a stopped drive) |
-| `1` | `INDETERMINATE` | **yes** | The state could not be read. Never reported as settled. `drive.ts` also reuses this code for cases `drive-status.ts` itself never produces: a round-agent pass that returned a nonzero exit other than `5` (mapped straight to `1` — the agent's own logs are the recovery path, and the stop lists the paths it left uncommitted and the commits it left unpushed), local commits that do not build on the head branch's remote ref, measured before a gate (no round could push them as a fast-forward, and the gate would only wait on them as `HEAD_LAG`; the stop names them — rebase them onto the PR head or reset to it, then re-arm; a drive armed over such a tree is refused by the attach with exit `2` first, naming the same commits, unless `DRIVE_PR_ATTACH=off` or `--dry-run` skips the attach), a final status re-read that, after review converged, keeps disagreeing with the round gate on one head past `DRIVE_PR_FINAL_REGATE_LIMIT` re-gates (default 3; § The final status re-read), and a **second consecutive** failed or unconfirmed `mark-ready.ts` call after a completed round. The latter's recovery depends on why it failed: an ordinary failure is cleared with `bun "<skill-dir>/../../shared/command.ts" -- gh pr ready <PR>` by hand, but a repeated `claimed-by-other` is an orphaned Ready-mark lease and needs `bun "<skill-dir>/scripts/drive-state.ts" release-ready-mark <PR>` — never `gh pr ready` directly, which fires the remote transition the lease exists to hold once. Under `jig dispatch` this stop is a person's, except while the pull request conflicts with its base: then it is re-driven once for each pair of its head and its base branch's head, so the drive's conflict-resolve round runs |
-| `14` | — | **yes** | `drive.ts` only: the loop **stalled** — `$DRIVE_PR_STALL_ROUNDS` (default 2, `0` disables) consecutive completed passes changed nothing observable: the reviewed head did not move, local HEAD (measured in the driven tree) did not move, and the unresolved-thread, summary-finding and parked **key sets** came back identical — set equality, not equal counts, because thread A resolved and thread B posted leaves the count untouched across a round that did real work. A pass that exits 0 without acting — the measured case is a pass standing down after mistaking its own parent driver for a competing drive — otherwise burns the whole `--max-rounds` budget while every round header looks like progress, and the exhausted-budget `6` then reads as "the reviewer kept finding things". This stop fires early and names what did not happen instead, after **one extra round**: the first time the streak reaches the threshold the driver runs one more pass with the stand-down diagnostics and what the tree holds in its notice (`$DRIVE_PR_PASS_NOTICE`), and stops only when the gate after it reads the same fingerprint again, printing what that extra pass recorded at the end of the handoff narrative: the refusal that stops the round now. When it recorded nothing, the stop prints the narrative's last lines and says they predate the extra round, since the state they describe may no longer hold. Recovery: **read the leftover report first** — the stop prints what the driven worktree still holds (uncommitted paths, an unconcluded git operation such as a stray `MERGE_HEAD` even over an otherwise-clean porcelain status, a positive "clean", or "unreadable"; never silence), because a pass can make substantive, correct edits and still trip this stop by standing down before committing them, and the stall predicate keys on head/threads/findings, none of which an uncommitted edit or a dangling merge state moves. Recover that work before anything that discards state; then read the pass output for what it decided, fix why it did not act, re-arm. A *different* code from `13` deliberately: `13` names another working tree owning the PR (recoverable by waiting or handing off), and `14` names this pass being stuck (recoverable by reading its own output) — sharing one code would collapse a distinction a caller reading the exit alone needs. Under `jig dispatch` the dispatcher re-drives a stall once per head commit, in the tree that stalled when the stop recorded work left in it, and tells a person when the same head stalls again; the re-armed drive's first pass is told the stall and what its passes recorded, and inherits the edits it left as its own to finish. See § 8 |
-| `15` | `PASS_DEADLINE` | **yes** | `drive.ts` only: the pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 5400s = 90 minutes; `--pass-timeout`, `0` disables) and drive.ts sent its process tree a kill signal. **The one stop in this loop that can fire while a round is still in flight**, which is the gap it exists to close: `--max-rounds`, the stall streak (`14`) and the status poll's `--timeout` all fire only *between* rounds, while the driver's claim heartbeat keeps refreshing from a timer throughout — so a pass that never returns waits forever and `drives.ts` reports it *live* and healthy the entire time (measured: a pass dead mid-`git merge`, the driver polling 24 minutes for a head change that could never arrive). Distinguished from a pass that merely *exited* 124 by `RunResult.timedOut`, never by the code, since the pass is an arbitrary command whose exit space is its own. Termination is then re-witnessed (`passHandle.stop()`) before the locks are released — a descendant in uninterruptible sleep survives the signal, and the POSIX witness (`groupGone()`, polling `kill(-pgid, 0)`) correctly keeps the locks held rather than reporting the tree gone in that case. A group whose only remaining member is a *zombie* — unreaped under a container PID 1 that does not reap orphans — would strand this witness for the full window too, since `kill(-pgid, 0)` cannot tell a zombie from a running process; `hasLiveGroupMember()` (`lib/proc.ts`) therefore checks each member's actual state and reports the group gone once nothing left in it can act. A descendant that itself escaped the process group (`setpgid`/`setsid`) is a *separate*, still-open **known gap, not a covered case**: `kill(-pgid, 0)`, and `hasLiveGroupMember()`'s own per-member scan alike, answer about membership of the *original* group only, so an escaped survivor is invisible to either and `stop()` can report a false witness. **A witnessed kill is restarted from**: the driver runs the two checks below itself, prints what they find, leaves it in the tree, resets the stall streak (a killed pass is not a completed one) and starts the next round, whose pass is told what it inherits. A committed-but-unpushed leftover puts local HEAD ahead of the PR head, so the driver records that HEAD after the kill and passes it to every gate for as long as the tree, measured afresh before each gate, still holds that work (the gate's `--inherited-head` flag; a measurement that finds none left drops it, whether or not a pass has completed): the head-sync guard accepts exactly that HEAD when the PR head is its ancestor, and reports `HEAD_LAG` for any other mismatch; the round is judged on the PR head, and where no live work is left, `CONVERGED` or `HITL_PARKED` is handed out as `ROUND_READY` instead (`PR_CONFLICTING` still goes to its repair pass), so a pass pushes them rather than the drive ending over them. Uncommitted edits alone leave HEAD on the PR head; the driver passes that HEAD all the same, and the gate reads it as the same owed round, so the drive does not converge over edits no pass has settled. Restarts happen up to `drive.pass_deadline_retries` (default 2) per drive, counted in the drive state (`deadlineRetries`) so a re-arm or a takeover shares the budget, and cleared when the drive converges or the PR closes; a clear that fails ends the drive with exit `1` instead, printing the command that clears the count. This exit is the deadline recurring past that budget, and the stop says the budget is spent; an unwitnessed termination exits here at once, locks held. **Recovery: a witnessed-killed pass was not rolled back.** Check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for an uncommitted fix and `bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'` for a committed-but-unpushed one before re-arming — the same checks exit `14` and a `HEAD_LAG` death need, and for the same reason: each is a pass ending somewhere in the fix→gates→commit→push sequence. Widen the deadline if a legitimate round reaches it; it is a backstop against a wedge, not a budget. The stop records on its stop event whether it left work in the tree and which tree, as a stall's does. Under `jig dispatch` the dispatcher re-drives this stop once per head commit, in that tree when the stop left work in it (the re-armed drive's first pass is told the stop and inherits those edits as its own to finish), and tells a person when the same head stops `15` again; an unwitnessed termination keeps its locks and leaves its ledger running: a drive no launch started is taken over only once its host shows the driver and its passes gone, and one a launch started is taken over as any silent launched drive is, subject to `drive.ts`'s admission |
-| `16` | `QUOTA_PARKED` | **yes** | `drive.ts` only: the pass died on a subscription usage wall that will not reopen within the sleep bound. **Not a failure of the drive loop or of `drive.ts` itself** — nothing about the PR or the mechanism needs fixing, and reporting it as `1` would send an operator to read a pass that did nothing wrong. That does not mean the *working tree* is necessarily clean, though: the pass could have modified or committed locally before it hit the wall. **Recovery: read what the stop lists the pass left before re-arming.** The stop prints the uncommitted paths and the commits on top of the head branch's remote ref, or says there are none; so do the exit `6` stop of a quota wall met on the last round and the exit `5` stop of a pass that found the PR closed. A pass can end anywhere in the fix→gates→commit→push sequence. Detected by `lib/quota/`, one adapter per vendor, from the vendor's own durable record rather than from the pass's stdout (which `drive.ts` deliberately does not capture): for Claude Code an `{"error":"rate_limit","apiErrorStatus":429}` transcript entry reading `You've hit your session limit · resets <clock> (<zone>)`; for Codex a `token_count` event carrying `used_percent`, `window_minutes` and an absolute `resets_at`. A **short** window whose reset resolves inside `$DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (default 6h) never reaches this code at all — the driver sleeps through it, locks held and refreshing, and resumes. This code is every other case: a weekly window, an unclassifiable one, a reset that could not be resolved, or one beyond the bound. A reset already in the past is deliberately NOT one of them: `planFor()` clamps it to `sleep(0)` and the driver retries immediately, since the window is open right now, not merely likely to be. The asymmetry is deliberate — sleeping when it should have stopped strands a drive and its locks for days; stopping when it could have slept costs a re-arm — so every uncertainty resolves here. **Do not dispatch a successor session on the same account in this state**: one on the same subscription is behind the same wall, so a handoff converts one parked drive into two. The park records the wall's account (hashed, `accountHash`), the exit names it and prints the re-arm command, and `drive.ts` admits a re-arm while the wall is in effect only for a pass that bills a different, known account; it refuses (exit `16`) when either side is unknown or both are equal. After the reset any account may re-arm; `--window-reopened` is a person's statement that an unresolved window is open again (§ Picking up a stopped drive). The `.context/pr-drive-<PR>.md` trail is unaffected and stays current — it is written at the top of every round, and it is what makes that re-arm cheap. The round it consumed is not refunded, because unwinding a durable counter from a failure path would mutate the state the loop's own bounds are read from |
-| `18` | `MAILBOX_STOPPED` | **yes** | `drive.ts` only: a mailbox `stop` for this driver was observed at a round boundary: one naming this driver's generation, or one naming none. A pass already running finishes and completes its post-round bookkeeping before the stop takes effect; no new pass starts. The driver appends an `ack` of the stop to the outbox, and normal exit releases the drive locks. A stop naming a generation ends that driver alone and needs nothing before a re-arm; a stop naming none stops every later driver too, so resume it before re-arming |
-| `19` | `MAILBOX_PAUSE_TIMEOUT` | **yes** | `drive.ts` only: a mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 1800 seconds). The driver acknowledged the pause in the outbox when it started holding, held and refreshed its locks during the wait, then exited and released them. A pause names no driver generation and holds every later driver too: resume the pause directive and re-arm. An unreadable mailbox instead fails closed with exit `1`; `stop` takes precedence over pause |
-| `21` | `CI_REPAIR_SPENT` | **yes** | `drive.ts` only: the review converged and the required checks ran, but the fresh exact-head CI verdict still names failing checks (`failing: …`) and the CI-repair passes for each failing check on this head (`drive.ci_repair_rounds`; `DRIVE_PR_CI_REPAIR_ROUNDS` for one run) are spent; the stop names how many ran. Its own code, apart from `1`, because its next step is mechanical: a CI repair, which a re-armed drive starts with a fresh budget, where `1` names a crash or an unreadable state a person reads. With repair disabled (`0`), a repair pass that itself failed, or a verdict that names no failing check, the stop stays `1`. Under `jig dispatch` the dispatcher re-drives it once per head commit, and tells a person when the same head stops `21` again. A converged head whose failing checks all failed on the infrastructure never reaches this code: it is re-run first, and stops `23` past its own bounds |
-| `23` | `CI_INFRA_PERSISTED` | **yes** | `drive.ts` only: the review converged, and every failing check on the head failed on the infrastructure, by the rule `fix-ci` shares (`shared/ci-infra.ts`): its runner was lost, or every failed step was a setup step that failed on the network (an HTTP 5xx, a timeout, a reset or refused connection), and its log printed no code diagnostic. The driver re-ran the run's failed jobs up to `DRIVE_PR_CI_INFRA_RERUNS` (default 2) times per head, never a run created under the CI hold's label, and where the forge refused a re-run (it does for a default-setup code scan) or the re-runs were spent, moved the head (merged the base when the branch was behind it, else pushed the empty commit `ci: re-run checks after an infrastructure failure`) up to `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive; this exit is the failure persisting past both. No CI-repair pass was spent. Its own code, apart from `21`, because nothing in the code needs repair: the forge's service must recover. Under `jig dispatch` the dispatcher re-drives it once per stop, after a backoff from the stop that doubles with each consecutive `23` (15 minutes up to 4 hours), and tells a person once 6 consecutive re-drives have stopped `23` |
-| `20` | `TAKEN_OVER` | **yes** | `drive.ts` only: another clone took the drive over. At a round boundary, before spawning a pass, or after renewing its ledger heartbeat through a quota sleep or a mailbox pause, the driver read a takeover claim in force on the PR, from another clone, newer than its own position (its own claim, or the position its clone's ledger records), and stopped without another pass, so it never replies beside its successor; it writes no further ledger. A `--take-over` whose own claim lost to a rival's earlier claim on the same ledger generation stops with it too. Nothing to recover here: that clone drives now. Re-arming beside it is refused with exit `13` while the ledger names it running (§ Picking up a stopped drive) |
-| `2` | `UNSUPPORTED_CLI` | **yes** | A `gh` that cannot report every required PR field, including draft state and mergeability. Reported through the JSON contract; an argument error, which precedes any PR to describe, exits without one |
-
-Exit `17` (`PUSH_HELD`) belongs to the same numbering but is no end state of
-`drive-status.ts` or `drive.ts`: `guarded-push.ts` returns it when a mailbox
-`hold-push` directive is in force and nothing was pushed, before the push
-or, through `push-hold-recheck.ts` at the end of the pre-push hook, while
-the hook runs. Resume the hold, then push again (§ The drive mailbox in
-`SKILL.md`). The code is held in
-[`terminal-states.ts`](../scripts/lib/status/terminal-states.ts) so that no
-state or exit is given it.
+The [drive end states and exit codes](../../../protocol/drive-exits.md)
+chapter defines the states, their producing scripts and their exit codes;
+use it to interpret a round's report or a driver's stop. The recovery
+sections below explain the work a stop leaves to the next round.
 
 Infrastructure retry budgets accept integers from 0 through 100; invalid or
 excessive values use the default. A base-sync refusal or unreadable report
@@ -109,7 +61,7 @@ and a `ci` verdict (`green`, or `held:`, `failing:`, `pending:`, `cancelled:` or
 A live CI hold's intentional failing check reads `held:`, using M13's job
 shape or `ci.hold_sentinels`; it waits without repair and never counts as
 passing. Advisory-only failures (`ci.advisory_checks`) park under
-`reviewer-posture` with `8` before any repair. The framed options are Fix the
+`reviewer-posture` with [`HITL_PARKED`](../../../protocol/drive-exits.md) before any repair. The framed options are Fix the
 finding (one repair attempt), Waive it (a recorded human judgment that does
 not bypass certification), and Leave it to me. Other failures alongside an
 advisory one keep their ordinary repair path.
@@ -136,28 +88,15 @@ zero, an `AWAITING_REVIEWER` report would read `unresolvedThreads: 0` while
 threads are live. A consumer that treats `null` as `0` reintroduces exactly
 that.
 
-`HEAD_LAG` keeps exit `4` for each head mismatch. Its reason distinguishes a
+[`HEAD_LAG`](../../../protocol/drive-exits.md) reports each head mismatch. Its reason distinguishes a
 local head ahead without a push witness (run `guarded-push.ts`), a pushed head
 whose API snapshot still lags (wait), a local head behind (update the tree),
 and diverged history (inspect and reconcile). An unreadable ancestry or push
 probe is reported as unknown rather than asserted as lag.
 
-Where the pull request state labels are on, each stop's label follows one
-table of exits, [`exit-classes.ts`](../scripts/lib/status/exit-classes.ts),
-which the dispatcher's ledger classifier reads too. A recorded person's
-stop is parked whatever its exit, so it takes precedence over the mapping
-below; for the rest:
-
-- `0` is labelled converged, while the head is still the verified head;
-- parked: the park `8`; a stop only a person settles (`1`, `2`, `6`, `7`,
-  `22` and any code the registry does not name); a person's stop (`18`,
-  `19`, and a recorded stop through `drives.ts`, which names no exit); and a
-  stop the dispatcher re-drives (`9`, `12`, `14`, `15`, `21`, `23`), which a
-  dispatcher's tick turns into stale where one runs;
-- driving: `4` and `16`, which the dispatcher re-arms, and `11` and `13`, a
-  second driver refused while another drives;
-- nothing: `5`, a pull request no longer open; `20`, whose ledger is the
-  successor's; and a stop with no exit and no person's stop recorded.
+The [pull-request labels chapter](../../../protocol/pr-labels.md#which-stop-earns-which-label) defines
+the stop-to-label mapping the drive and dispatcher share. Use it when
+interpreting a pull request's state label.
 
 Where the repository names `issue_tracker.states.blocked`, a stop labelled
 parked also moves the items the pull request links to `blocked`, and the
@@ -177,10 +116,10 @@ to a human or to a pass.
 
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
-| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | exit `21` (`CI_REPAIR_SPENT`), handing the red CI back for repair; exit `1` when the budget is `0` |
-| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms | exit `8`, parked `cancelled-ci` |
-| The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | exit `23` (`CI_INFRA_PERSISTED`) |
-| `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | exit `9`, with its `Fix:` command |
+| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md), handing the red CI back for repair; [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
+| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci` |
+| The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | [`CI_INFRA_PERSISTED`](../../../protocol/drive-exits.md) |
+| `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | [`PR_CONFLICTING`](../../../protocol/drive-exits.md), with its `Fix:` command |
 
 The task reaches the pass in its **environment** (`DRIVE_PR_ROUND_TASK`,
 `DRIVE_PR_ROUND_TASK_DETAIL`, and on a CI repair `DRIVE_PR_ROUND_FAILED_RUNS`,
@@ -198,7 +137,7 @@ An accepted retry holds every final CI verdict until the forge reports a newer
 completed attempt of that run on the same head. The driver then gathers CI
 evidence again before a repair or convergence. After
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls without that witness, it stops with
-exit `1`; a setting of `0` uses 180 polls for this retry wait.
+[`INDETERMINATE`](../../../protocol/drive-exits.md); a setting of `0` uses 180 polls for this retry wait.
 
 Properties worth stating because each closes a way this could go wrong:
 
@@ -256,8 +195,8 @@ the repair path, which leaves the review round's own quota handling intact.
 
 ## What `CONVERGED` requires
 
-`drive-status.ts` exit 3 is the review verdict described below. The unattended
-`drive.ts` deliberately has a stronger exit-0 contract: every required check
+`drive-status.ts`'s [`CONVERGED`](../../../protocol/drive-exits.md) exit is the review verdict described below. The unattended
+`drive.ts` deliberately has a stronger [`CONVERGED`](../../../protocol/drive-exits.md) contract: every required check
 must have completed on the exact head, and if it applied the repository's CI
 hold label during intermediate rounds, it must own the newest labelled
 timeline event (adopting one it holds no record of), remove that label, and observe successful exact-head required
@@ -478,7 +417,7 @@ reviewer deployed differently needs a floor derived from its own repair path.
 
 ## The false-convergence modes, and the guard for each
 
-Each of these is an observed way for a status check to report exit-3
+Each of these is an observed way for a status check to report [`CONVERGED`](../../../protocol/drive-exits.md)
 "converged" while findings are live. Each has a
 probe in the `<skill-dir>/__tests__/drive-pr-*.test.ts` suite.
 
@@ -549,7 +488,7 @@ top of the PR head read the same, and waiting on them cannot succeed. So
 head branch's remote ref lacks. With some, it names that HEAD to the gate
 (`--inherited-head`), which accepts exactly it, ahead of an API head that is
 its ancestor, and hands the round out to push them; commits that do not
-contain the remote ref stop the drive with exit `1`. With none, local HEAD
+contain the remote ref stop the drive with [`INDETERMINATE`](../../../protocol/drive-exits.md). With none, local HEAD
 is the pushed head and the gate polls the lag as above; uncommitted edits a
 pass left still name that HEAD, and owe the round that settles them once the
 API head reaches it. The gate also polls the lag when the head branch's ref
@@ -581,8 +520,7 @@ cannot reach `CONVERGED` at all. The zeroes convergence rests on are read out of
 sticky comment's neighbourhood (`summary-findings.ts` reads a missing sticky as
 zero findings; a review that posted nothing leaves zero threads), so a completed
 check-run with no published sticky makes "nothing left to say" and "nothing was
-ever said" the same observation. That state reports `AWAITING_REVIEWER` (exit
-`4`).
+ever said" the same observation. That state reports [`AWAITING_REVIEWER`](../../../protocol/drive-exits.md).
 
 ### 6. HITL threads spin forever
 
@@ -605,7 +543,7 @@ nothing will merge, silently. A push whose output prints `* [new branch]` has
 already gone somewhere wrong.
 
 **Guarded at both the start and the push, because either alone is not enough.** `drive.ts` checks liveness
-**first** on every pass and exits `5` before handing a round to an agent — that
+**first** on every pass and reports [`PR_NOT_OPEN`](../../../protocol/drive-exits.md) before handing a round to an agent — that
 stops the loop *starting* work it cannot land. But the pass then triages, fixes,
 gates and commits, which takes minutes, and a check taken before all that says
 nothing about the moment of the push. So the push itself goes through
@@ -624,12 +562,12 @@ worth exactly what the mandatory pre-push gates behind it are worth.
 
 ### 8. Unbounded spinning
 
-**Guard**: `bun "<skill-dir>/scripts/drive.ts" --max-rounds` (default `drive.max_rounds`, else 10). Hitting it exits `6` with an
+**Guard**: `bun "<skill-dir>/scripts/drive.ts" --max-rounds` (default `drive.max_rounds`, else 10). Hitting it reports [`MAX_ROUNDS`](../../../protocol/drive-exits.md) with an
 explicit non-convergence report naming the state that was still live — not a
 quiet stop that reads like success.
 
 **A second, earlier guard catches the spin `--max-rounds` only bounds**: the
-stall stop (exit `14`). Each ROUND_READY gate fingerprints the observable
+stall stop ([`STALLED`](../../../protocol/drive-exits.md)). Each ROUND_READY gate fingerprints the observable
 outcome surface — reviewed head, local head when measured, and the
 unresolved-thread, summary-finding and parked **key arrays** (identity sets,
 not counts — required fields, so a gate that measured counts but published no
@@ -709,7 +647,7 @@ is written to `.context/pr-drive-<PR>.md` (override with
 `$DRIVE_PR_HANDOFF_DIR`).
 
 The state's resumable subset also lives on the PR, as the **drive ledger**
-(`lib/state/ledger.ts`): one comment opening with `<!-- drive-pr-ledger -->`,
+(`lib/state/ledger.ts`): one comment opening with [ledger marker](../../../protocol/comment-markers.md),
 carrying the record envelope (`shared/records/envelope.ts`: kind
 `drive-ledger`, version `v`, the PR as its key, the writer with its host and
 boot as digests, and the time), `ledgerVersion`, a monotonic `generation`, the round, phase, last
@@ -805,11 +743,11 @@ drive between clones grants no fresh passes. It keeps this clone's own quota
 park, since the ledger carries no account to judge a wall by. A held item
 whose outcome the size cut dropped is not seeded, and the round triages it
 afresh. A ledger of another pull request is refused. A seed the state store
-refuses keeps its exit (`13` when another working tree holds the PR). A
-`ledgerVersion` or envelope version it does not read refuses with exit `1`,
+refuses keeps its exit ([`DRIVE_HELD_BY_OTHER_WORKTREE`](../../../protocol/drive-exits.md) when another working tree holds the PR). A
+`ledgerVersion` or envelope version it does not read refuses with [`INDETERMINATE`](../../../protocol/drive-exits.md),
 naming the version. `drive-state.ts`'s `reset` keeps the generation the state had reached, so the
 next arm does not seed back what the reset forgot. A forge that cannot be read
-at arm refuses the drive with exit `1`: whether another clone drives the pull
+at arm refuses the drive with [`INDETERMINATE`](../../../protocol/drive-exits.md): whether another clone drives the pull
 request is unknown. A driver that does not continue its own clone's ledger (a
 pull request with no ledger yet, another clone's stopped one, a takeover)
 posts a claim, so two clones arming at once do not both drive. A claim whose
@@ -844,7 +782,9 @@ either's `POST` is visible can still both post — the reconciliation shrinks th
 window to "both POSTs in flight past the whole staleness window" rather than
 eliminating it. See the reconciliation comment in `answer-summary-finding.ts`.
 
-### The single-instance locks (exit `11`)
+<a id="the-single-instance-locks-exit-11"></a>
+
+### The single-instance locks
 
 `drive.ts` holds **two** locks for the life of a drive, because a drive has two
 shared resources and neither key covers the other:
@@ -855,7 +795,7 @@ shared resources and neither key covers the other:
 | per-PR | `pr-drive-<PR>`, a row of the same table | two drivers in *different* worktrees on one PR — separate working trees, but one head branch and one clone-wide state |
 
 They are taken in that order, always, so contending drivers cannot deadlock.
-Either refusal exits `11` and names which lock and which owner — plus, when
+Either refusal reports [the lock or lease refusal](../../../protocol/drive-exits.md) and names which lock and which owner — plus, when
 the holder's claim carries its diagnostics line (below), the PR that
 owner is driving, its worktree, and its durable log — without touching state.
 
@@ -947,8 +887,7 @@ start retires the locks of a driver that is alive and working. A lease has
 to be renewed while the work happens.
 
 If a lock is recovered anyway, the owner finds out on its next refresh — the
-renewal finds no row carrying its token — and the drive **stops with exit
-`11`** rather than continuing without the lock. It releases nothing a
+renewal finds no row carrying its token — and the drive **stops with [`SINGLE_INSTANCE_LOCK`](../../../protocol/drive-exits.md)** rather than continuing without the lock. It releases nothing a
 successor can feel on the way out either, since release deletes only the row
 carrying that token.
 
@@ -1022,13 +961,13 @@ be inspected, so the doctor reads that holder `DEAD`, as it does one with a
 clean tree, and
 the takeover is admitted as the plain arm's lock recovery is; an existing tree
 that is unregistered or cannot be inspected stays `UNKNOWN` and is refused. Every other holder is
-refused with exit `11`, naming the verdict. With an empty lock the drive
+refused with [the lock or lease refusal](../../../protocol/drive-exits.md), naming the verdict. With an empty lock the drive
 ledger decides: another clone's driver past the lease window is taken over by
 a claim; this tree's own driver that the ledger still names `running` is
 admitted as `DEAD` (it released its locks as it ended without writing its
 stop, and what it left is this tree's, settled as any re-arm settles it);
-this clone's driver in another tree is exit `2`, naming that tree, whose
-leftovers it holds; and a ledger that names no running driver is exit `2`,
+this clone's driver in another tree is a usage refusal, naming that tree, whose
+leftovers it holds; and a ledger that names no running driver is a usage refusal,
 since there is nothing to take over. Once the takeover holds the locks it appends a
 record to the drive state's `takeovers` (from which actor and hashed account,
 to which, the verdict, the round, and `vanishedTree`, the tree that no longer
@@ -1052,27 +991,27 @@ When no driver of this clone holds the drive, `--take-over` reads the ledger:
 it is admitted (verdict `STALE`) only when the ledger names a running driver
 in another clone whose heartbeat is older than the lease window, the doctor's
 stall threshold (`stallThresholdMs`, the same floor that keeps an honest long
-round from reading `WEDGED`); a fresher heartbeat refuses with exit `11`.
+round from reading `WEDGED`); a fresher heartbeat refuses with [the lock or lease refusal](../../../protocol/drive-exits.md).
 With no running driver elsewhere, a ledger naming this tree's own driver
 running is a `DEAD` takeover, and this clone's driver in another tree, or no
-running driver at all, is exit `2`. Once it holds its locks the taker
-re-reads the ledger (a heartbeat that moved since refuses with `11`) and
+running driver at all, is a usage refusal. Once it holds its locks the taker
+re-reads the ledger (a heartbeat that moved since refuses with [`SESSION_LEASE_HELD`](../../../protocol/drive-exits.md)) and
 posts an append-only claim, `<!-- drive-pr-takeover-claim -->` with its tree,
 clone, the ledger generation it read and the time, and reads the claims
 back through the shared forge-claims module (`shared/records/forge-claims.ts`),
 again a few times while the listing does not show its own claim; a
 read-back that fails, or that never lists the claim, refuses the takeover
-with exit `1`, since it cannot tell a won claim from a lost one. The forge
+with [`INDETERMINATE`](../../../protocol/drive-exits.md), since it cannot tell a won claim from a lost one. The forge
 assigns increasing comment ids, so of the claims on one generation the
 earliest wins; a later claimant reads the earlier one back and stands down
-with exit `20`. The winner seeds, completes the takeover as above, and writes
+with [`TAKEN_OVER`](../../../protocol/drive-exits.md). The winner seeds, completes the takeover as above, and writes
 the ledger at once. A driver's own position is its own claim's id, or, for
 a driver continuing its own clone's ledger, the position that ledger
 records; a claim in force from another clone past that recorded position
 (posted while this clone was away) makes the continuation post a claim of
 its own, arbitrated as above, rather than adopt the newer claim as its
 position. At every round boundary, and again before every pass it spawns,
-review or repair, the driver reads the claims and exits `20`
+review or repair, the driver reads the claims and reports [`TAKEN_OVER`](../../../protocol/drive-exits.md)
 when a claim in force from another clone is newer than that position, or,
 for a driver that took the drive by its own claim, when another clone's
 earlier claim on the same generation shows up after a lagging read hid it.
@@ -1085,7 +1024,9 @@ heartbeat passes the lease window. The arbitration holds only once
 every driver of a PR runs a plugin version that reads the ledger: an older
 driver writes no heartbeat and reads no claim.
 
-### The session lease (exit `11`, from `drive-state.ts`, the round gate, **and** the posting scripts)
+<a id="the-session-lease-exit-11-from-drive-statets-the-round-gate-and-the-posting-scripts"></a>
+
+### The session lease
 
 The locks above are what makes the working tree a sound stand-in for a driver —
 and they cover `drive.ts` only. An **interactive** pass (an agent walking
@@ -1099,7 +1040,7 @@ and a concurrent session's minutes later — which corrupts the reviewer-scoring
 sample the outcome vocabulary feeds, and is unrepairable once posted.
 
 Every **state-mutating** `drive-state.ts` command except `clear-lease` therefore
-takes a lease over *(this working tree, this PR)* first, and exits `11` when
+takes a lease over *(this working tree, this PR)* first, and reports [the lock or lease refusal](../../../protocol/drive-exits.md) when
 another live session holds it, naming that session's pid and the liveness check
 that settles it. Run the process-check command printed in the refusal. It is
 chosen for the holder's platform and qualified for the recorded host when
@@ -1115,16 +1056,16 @@ wording, so the two refusal sites cannot drift. The readers take nothing: the
 session being refused is the one that most needs to see the state and the lease
 it lost.
 
-**`drive-status.ts` raises the same `11`**, with `state: "SESSION_LEASE_HELD"`
+**`drive-status.ts` raises the same [`SESSION_LEASE_HELD`](../../../protocol/drive-exits.md)**, with `state: "SESSION_LEASE_HELD"`
 in its JSON report, and it is the one a second interactive session meets first:
 the gate is SKILL.md § 1's opening command of every pass, and its round-counting
 `bump-round` is a mutating call like any other. It propagates that exit and the
 child's diagnostic verbatim rather than folding it into `INDETERMINATE` — a
 refusal that reaches the caller as "the state could not be read" sends it
 looking for an unwritable state store and withholds the pid, the liveness check
-and `clear-lease` that are the refusal's entire value. It is the only `11` in that
+and `clear-lease` that are the refusal's entire value. That lease refusal is unique in the
 script's contract, and it means what `drive-state.ts`'s means. The same call
-propagates the cross-tree `13` the same way, as
+propagates the cross-tree [`DRIVE_HELD_BY_OTHER_WORKTREE`](../../../protocol/drive-exits.md) the same way, as
 `state: "DRIVE_HELD_BY_OTHER_WORKTREE"` — see § PR-wide admission below for why
 the two are not one code.
 
@@ -1295,7 +1236,7 @@ below this gap would be open for exactly the sessions the per-PR lease exists to
 
 A *second* lease closes it, keyed by the working tree **alone** — every
 state-mutating command claims both leases, identified or not, and refuses
-with the identical `exit 11` on either one. It is not a lock (see "why a
+with the identical [the lock or lease refusal](../../../protocol/drive-exits.md) on either one. It is not a lock (see "why a
 lease rather than a lock" above — the same reasoning applies here unchanged:
 no long-lived process exists behind a `drive-state.ts` invocation to hold one
 for) and it is not
@@ -1385,8 +1326,8 @@ not be a remedy at all.
 
 ### PR-wide admission across working trees
 
-The `admit` command of `drive-state.ts` is a read-only preflight: exit `0` means this
-working tree may act, and `13` means another tree is driving the PR. A
+The `admit` command of `drive-state.ts` is a read-only preflight: success means this
+working tree may act, and [`DRIVE_HELD_BY_OTHER_WORKTREE`](../../../protocol/drive-exits.md) means another tree is driving the PR. A
 nonempty `$DRIVE_PR_SESSION` that is not a usable process id, or names a
 process that is no longer running, exits `2` before admission. The caller
 must treat that as an unconfirmed admission: `drive-status.ts` skips its
@@ -1398,7 +1339,7 @@ The lease above is scoped to *(working tree, PR)*, which left the cross-tree
 case open: nothing stopped two linked worktrees enumerating the same
 unresolved threads and each replying with its own outcome — the same doubled
 outcome replies measured within one tree, and the same
-unrepairability. So a claim also refuses, with **exit `13`**, while any *other*
+unrepairability. So a claim also refuses, with **[`DRIVE_HELD_BY_OTHER_WORKTREE`](../../../protocol/drive-exits.md)**, while any *other*
 tree holds a live lease on the PR.
 
 It is **derived, not stored**: `leaseFilesFor` already enumerates every tree's
@@ -1440,7 +1381,7 @@ the foreign lease existed.
 
 A tree in **another clone** has no lease here to read, so the same question
 is put to the drive ledger instead: at arm, while the ledger names a running
-driver in another clone, `drive.ts` refuses with exit `13`, naming the age of
+driver in another clone, `drive.ts` refuses with [`DRIVE_HELD_BY_OTHER_WORKTREE`](../../../protocol/drive-exits.md), naming the age of
 that driver's heartbeat and, once it is past the lease window, printing the
 `--take-over` command (§ Picking up a stopped drive).
 
@@ -1460,7 +1401,7 @@ If staleness were the only way one cleared, the asymmetry between the two
 holders would be wider than the missing pid alone requires: an identified
 session is released the instant its pid stops answering, however it ended, while
 a sessionless resolver that finished its work *perfectly* would leave a record
-refusing every other working tree (exit `13`) for a whole staleness window. A pid is
+refusing every other working tree ([`DRIVE_HELD_BY_OTHER_WORKTREE`](../../../protocol/drive-exits.md)) for a whole staleness window. A pid is
 missing evidence of *liveness*; it is not missing evidence of *completion*, and
 something in the arrangement does hold that second fact.
 
@@ -1659,7 +1600,7 @@ false "green":
   polls during recovery, including before an initial review pass that would
   otherwise stop at `CI_HOLD_WAIT`. A refused or unconfirmed request, an
   unsafe held event, or a cancellation still unreplaced 60 seconds after the
-  request with no active run parks `cancelled-ci` and exits `8`; its decision
+  request with no active run parks `cancelled-ci` and reports [`HITL_PARKED`](../../../protocol/drive-exits.md); its decision
   record and doctor recovery name the run. Observing recovery clears that
   operational park. A live CI hold is left for convergence to release.
   Cancellation stops counting only when a run of
@@ -1753,7 +1694,7 @@ then name a SHA nobody reviewed. The same window reopens, later and wider, in
 **Guard**: both re-read the head at the last possible moment. In
 `drive-status.ts` that is one function (`still_on_head`) called before **every**
 terminal return — `CONVERGED`, `HITL_PARKED`, `REVIEWER_FAILED`,
-`REVIEW_SKIPPED` and `PR_CONFLICTING` alike — reporting `HEAD_MOVED` (exit `4`) if it changed
+`REVIEW_SKIPPED` and `PR_CONFLICTING` alike — reporting [`HEAD_MOVED`](../../../protocol/drive-exits.md) if it changed
 (and, per § 15, if the PR's **base** changed instead — the same window
 reopens for a mergeability verdict that depends on both);
 `announce-merge-ready.ts` re-reads immediately before posting and refuses.
@@ -1773,11 +1714,11 @@ anyway, whereas the terminal states are the ones that stop it.
 needs to see: a PR that merges mid-evaluation keeps the exact same head, so the
 comparison passes and the drive is told `CONVERGED` / `HITL_PARKED` /
 `REVIEWER_FAILED` about a pull request that is no longer open — where the
-required answer is `PR_NOT_OPEN` (`5`), the state that stops the loop without a
+required answer is [`PR_NOT_OPEN`](../../../protocol/drive-exits.md), the state that stops the loop without a
 push. That is the same class the single function closes, arriving through the
 other half of the witness, so liveness and head are one API call and are
 asserted together. `announce-merge-ready.ts` reads both
-too, and exits `5` rather than posting "safe to merge" about a decision that has
+too, and reports [`PR_NOT_OPEN`](../../../protocol/drive-exits.md) rather than posting "safe to merge" about a decision that has
 already been taken.
 
 Deliberately left reading the head alone: `answer-summary-finding.ts` reads only the
@@ -1816,7 +1757,7 @@ parsed `CONFLICTING`; here the target is this process's own comment from seconds
 ago, and being wrong costs a re-run rather than a destroyed artefact.
 
 "Unless confirmed", not "if changed": an **unreadable** post-write read also
-withdraws, exiting `1` where a confirmed change exits `4`. Cannot-confirm and
+withdraws, reporting [`INDETERMINATE`](../../../protocol/drive-exits.md) where a confirmed change reports [`NOT_SETTLED`](../../../protocol/drive-exits.md). Cannot-confirm and
 confirmed-changed are the same absence of proof that the PR is still open on the
 reviewed head; treating only the second as unsafe — logging "verify by eye"
 and falling through to exit `0` with the announcement standing — would reopen
@@ -1877,7 +1818,8 @@ the head it last reviewed, while its check on that push still completes
 green. A merge of the base branch into the pull request's branch does this to
 a reviewer that skips a push with nothing to review in it: the pull request's
 own diff is unchanged. Without more, the gate cannot tell that head from one
-the reviewer has not reached yet, reports `STALE_REVIEW` (exit `4`) for as
+the reviewer has not reached yet, reports `STALE_REVIEW` (the
+[not-settled exit](../../../protocol/drive-exits.md)) for as
 long as the head stands, and a re-arm meets the same state on the same head.
 
 The reviewer can say so in its sticky comment: a **skip notice**, a block
@@ -1890,8 +1832,8 @@ head other than the PR head:
 | The skip notice | The gate |
 |---|---|
 | names the PR head, and the pull request's diff there equals its diff at the reviewed head | judges the PR head on the reviewed head's review: `reviewer.reviewedSha` stays the reviewed head, `reviewedShaSource` is `skip-notice`, and the drive can converge, the `reason` naming the skip |
-| names the PR head, and the diff changed | `REVIEW_SKIPPED` (exit `22`), terminal, quoting the notice |
-| names the PR head, and a commit the comparison needs cannot be read here, even after fetching it | `INDETERMINATE` (exit `1`): re-run |
+| names the PR head, and the diff changed | [`REVIEW_SKIPPED`](../../../protocol/drive-exits.md), terminal, quoting the notice |
+| names the PR head, and a commit the comparison needs cannot be read here, even after fetching it | [`INDETERMINATE`](../../../protocol/drive-exits.md): re-run |
 | names another head, or is absent | `STALE_REVIEW`, as before |
 
 The pull request's diff at a head is the diff from that head's merge base with
@@ -1932,14 +1874,14 @@ and no sticky comment:
 |---|---|
 | absent, CodeRabbit's current issue comment from `coderabbitai[bot]` includes the `Draft PR not reviewed` heading | a draft skip: on a draft, converge on its own work, mark Ready and wait for the review; on a Ready PR, `AWAITING_REVIEWER` |
 | absent with no recognized comment skip, or not completed | `AWAITING_REVIEWER` |
-| completed, its title `Review paused…` | `REVIEW_SKIPPED` (exit `22`), the reason naming the pause and quoting the title |
+| completed, its title `Review paused…` | [`REVIEW_SKIPPED`](../../../protocol/drive-exits.md), the reason naming the pause and quoting the title |
 | completed, its title `Review skipped: draft pull request`, on a draft | no wait: the draft converges on its own threads, findings and CI (`reviewedShaSource: "draft-skip"`), and `drive.ts` marks it Ready, which summons the review, and waits for it |
 | the same draft skip, on a pull request already Ready | `AWAITING_REVIEWER`: the skip predates the Ready mark |
 | completed, any other title `Review skipped…` | `REVIEW_SKIPPED`, the reason naming the skip and quoting the title |
 | completed `success` or `neutral`, the newest review naming the head | reviewed (`reviewedShaSource: "review-object"`) |
 | completed `success` or `neutral`, no newer review naming another commit | reviewed, with nothing new to say (`reviewedShaSource: "review-check-run"`) |
 | completed, but a review of another commit was submitted after the run completed | `STALE_REVIEW` |
-| completed `skipped` with another title, or another conclusion | `AWAITING_REVIEWER`, or `REVIEWER_FAILED` (exit `7`) as for any reviewer |
+| completed `skipped` with another title, or another conclusion | `AWAITING_REVIEWER`, or [`REVIEWER_FAILED`](../../../protocol/drive-exits.md) as for any reviewer |
 
 The completed run counts on its own because such a reviewer posts no review
 of a head it found nothing new on: a run on the head with no review object is
@@ -2175,31 +2117,31 @@ Neither that read failing nor the sweep itself failing can leave a stuck
 verdict standing over an unreconciled PR, because the guard is on the verdict
 rather than on either step: **every member of `UNRECONCILED_STOPPERS` is
 withheld until a sweep has run and succeeded on this invocation**, degrading to
-`INDETERMINATE` (1) instead. Named, not copied: `drive-status.ts` declares that
+[`INDETERMINATE`](../../../protocol/drive-exits.md) instead. Named, not copied: `drive-status.ts` declares that
 set once, and a prose copy of its membership goes stale the moment a code
 joins or leaves it.
 Nothing else licenses one, which is deliberate — a guard built as "successful
-sweep, or any of these signals" has a hole per signal. Exit 2 is not one of
-those signals: "2 is a property of the `gh` binary no retry clears" ignores that the sweep talks to GitHub over GraphQL, which an
+sweep, or any of these signals" has a hole per signal. [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) is not one of
+those signals: "an unsupported `gh` binary is a property no retry clears" ignores that the sweep talks to GitHub over GraphQL, which an
 old `gh` unable to report `--json mergeable` can still serve, so the sweep
-runs, and can succeed, before exit 2 is reached. 5 has nothing to reconcile; 4
+runs, and can succeed, before [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) is reached. [`PR_NOT_OPEN`](../../../protocol/drive-exits.md) has nothing to reconcile; [`NOT_SETTLED`](../../../protocol/drive-exits.md)
 does not assert the drive is over, so every caller answers it by coming back
 and that next invocation's pass entry sweeps. (In polling mode a failing sweep
-is additionally re-attempted on every poll, so a 4 returned after the window
+is additionally re-attempted on every poll, so [`NOT_SETTLED`](../../../protocol/drive-exits.md) returned after the window
 has been retried throughout — but that is a property of polling, not of the
 exclusion: under `--once` there is a single iteration and no in-invocation
 retry at all.) `--no-reconcile` and `--no-count` both suppress the sweep, so
 neither certifies an `UNRECONCILED_STOPPERS` verdict.
 
-3 (`CONVERGED`) is the one code where "requires zero unresolved threads, so no
+[`CONVERGED`](../../../protocol/drive-exits.md) is the one state where "requires zero unresolved threads, so no
 failed sweep can be hiding one behind it" is true of GitHub's own thread state
 but not of this script's `held`-state bookkeeping, which a resolved-thread's
 cleanup can leave stale (a superseding merit reply resolves the thread and
 then fails to release a stale prior hold for it) — and because the resolved
 thread has already left every future unresolved-thread listing, no later
 sweep ever revisits that cleanup.
-That gap is real, but folding 3 into `UNRECONCILED_STOPPERS` blanket — the same
-way 2 joined it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
+That gap is real, but folding [`CONVERGED`](../../../protocol/drive-exits.md) into `UNRECONCILED_STOPPERS` blanket — the same
+way [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) joined it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
 sweep unconditionally, so blanket membership would make `CONVERGED` unreachable
 through exactly the path built to reach it without a sweep — see the
 `announce-merge-ready.ts` paragraph just below. Nor is "the sweep was not
@@ -2296,11 +2238,11 @@ produced one conflict in a CI workflow file:
 - **Zero** `pull_request`-triggered CI ran on the head. The only check-run on the
   commit was a dormant `github-actions / AI review` workflow, `completed/skipped`.
 - So the posting reviewer never posted a check-run, and mode 4's guard — correctly —
-  reported `AWAITING_REVIEWER` (exit `4`) and re-polled every 30s to `--timeout`.
+  reported [`AWAITING_REVIEWER`](../../../protocol/drive-exits.md) and re-polled every 30s to `--timeout`.
 - Work state was genuinely clean: 0 unresolved threads, 0 unaddressed summary
   findings. The drive had nothing to do and no way to finish.
 
-Exit `4` means "not judgeable **yet** — becomes something else with time", which
+[`NOT_SETTLED`](../../../protocol/drive-exits.md) means "not judgeable **yet** — becomes something else with time", which
 is exactly what a conflict does not do. `drive.ts` propagated it verbatim, so the
 operator was told a reviewer was slow about a PR that needed a `git merge`.
 
@@ -2308,7 +2250,7 @@ operator was told a reviewer was slow about a PR that needed a `git merge`.
 `baseRefName` and `baseRefOid` from the same `gh pr view` snapshot as `state`
 and `headRefOid`. A conflict makes it **skip every reviewer gate** — each of
 those returns `AWAITING_REVIEWER`, which is the wait being eliminated — but it
-still enumerates the work, and reports `PR_CONFLICTING` (exit `9`) only when
+still enumerates the work, and reports [`PR_CONFLICTING`](../../../protocol/drive-exits.md) only when
 that enumeration is empty. `drive.ts` stops on it with a message naming the fix
 rather than flattening it into a generic failure.
 
@@ -2369,7 +2311,7 @@ The following properties of that guard are deliberate:
 - **`UNKNOWN` is not treated as "not conflicting".** It is what GitHub publishes
   while it recomputes after a push to the PR or its base, and it settles to
   `MERGEABLE` or `CONFLICTING` within seconds. It is reported as
-  `MERGEABILITY_UNKNOWN` (exit `4` — the same "becomes something else with
+  [`MERGEABILITY_UNKNOWN`](../../../protocol/drive-exits.md) (in the the same "becomes something else with
   time" bucket as `HEAD_LAG`), never let fall through to the reviewer/work
   checks: nothing downstream is safe to judge against a mergeability verdict
   GitHub itself had not finished computing, and treating `UNKNOWN` as settled
@@ -2380,7 +2322,7 @@ The following properties of that guard are deliberate:
 **Every field in the snapshot is required of the CLI, not negotiated.**
 `mergeable`, `mergeStateStatus`, `baseRefName` and `baseRefOid` have been available
 as JSON fields from `gh pr view` for years, so a `gh` without them is an unmet
-**prerequisite**: the script reports `UNSUPPORTED_CLI` and exits `2` naming the
+**prerequisite**: the script reports [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) naming the
 fix (upgrade the CLI), and never degrades into a weaker guard the caller
 believes is armed. That report goes through the normal JSON contract — a
 `--json` caller gets `state`, `exit` and the evidence here as everywhere else,
@@ -2489,7 +2431,7 @@ place a stale verdict reaches a person. GitHub itself blocks the merge behind
 that, so the failure mode is a re-run, not a bad merge.
 
 **Guard**: `still_on_head` re-reads `headRefOid` **and** `baseRefOid`
-together and reports `HEAD_MOVED` (exit `4`) if *either* changed since the
+together and reports [`HEAD_MOVED`](../../../protocol/drive-exits.md) if *either* changed since the
 opening snapshot — one function, called before every terminal return
 (`CONVERGED`, `HITL_PARKED`, `REVIEWER_FAILED`, `REVIEW_SKIPPED`,
 `PR_CONFLICTING` alike), per §

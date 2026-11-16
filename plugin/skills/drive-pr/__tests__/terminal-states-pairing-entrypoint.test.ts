@@ -25,8 +25,8 @@ import {
   closeTypeScriptService,
   driveStatusTsSourcePath,
   findBareLiteralExits,
-  runCheck,
 } from "./terminal-states-consistency.ts";
+import { runChapterCheck as runCheck } from "./protocol-test.ts";
 
 afterAll(closeTypeScriptService);
 

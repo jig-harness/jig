@@ -43,7 +43,7 @@ test("a dispatch receipt is new to a report from when it was written, not from w
     const published = new Date("2026-11-07T06:10:00.000Z");
     utimesSync(path, published, published);
     const reportRan = Date.parse("2026-11-07T06:05:00.000Z");
-    const roots = { dispatch: root, gc: join(root, "gc") };
+    const roots = { dispatch: root, gc };
     expect(upgradesSince(reportRan, roots).entries).toHaveLength(1);
     expect(
       upgradesSince(Date.parse("2026-11-07T06:11:00.000Z"), roots).entries,
