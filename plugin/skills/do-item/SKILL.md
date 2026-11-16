@@ -815,6 +815,14 @@ implementation. Skip this check for issues about the repository's own code.
    then read it again and stop, as on exit `4`, when it shows another
    assignee, or when the issue is gone or no longer in the mapped state.)
 
+   Linear and Jira inherited assignments poll for visible history within a
+   3-second window; calls in flight keep their transport's own deadline.
+   Without conflict evidence, a visibility timeout clears the claimant's lone
+   assignment. A detected replacement restores the replaced assignee while
+   the claimant still holds the item. A partial race keeps polling for that
+   evidence; on timeout it leaves the assignment untouched and asks for
+   reconciliation. The reason distinguishes each case.
+
    Then show the start on Orca's workspace board. In a worktree of
    [Orca](https://www.onorca.dev) this moves the worktree's card to In
    progress; anywhere else it does nothing, and it never fails the step:

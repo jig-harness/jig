@@ -656,6 +656,11 @@ export interface TrackerLabel {
  * attachment operations are in `attachment.ts`, its blocked fields' in
  * `blocked-port.ts`.
  */
+/** Verified assignment, or why the queue must refresh after it failed. */
+export type AssignmentResult =
+  | { assigned: true }
+  | { assigned: false; reason: "race" | "unverified" | "race-unverified" };
+
 export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
   readonly dispatchSource?: DispatchSource;
@@ -898,9 +903,9 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * GitHub adds the assignee; Linear and Jira, whose issues hold one
    * assignee and which offer no conditional write, assign and then verify
    * through the issue's history that the assignment replaced nobody, putting
-   * back anyone it did replace. False means refresh the queue.
+   * back anyone it did replace. A failed result means refresh the queue.
    */
-  assignUnassigned?(key: string, user: TrackerUser): Promise<boolean>;
+  assignUnassigned?(key: string, user: TrackerUser): Promise<AssignmentResult>;
   /**
    * The user an identity names, in the form `dispatch.identity` takes (a
    * GitHub login; a Linear user's email or display name; a Jira account

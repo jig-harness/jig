@@ -4,8 +4,75 @@ import {
   servedClaimStillStands,
 } from "../scripts/lib/served-claim.ts";
 import type { Tracker, TrackerUser } from "../scripts/lib/tracker/port.ts";
+import { assignVerified } from "../scripts/lib/tracker/assign-verified.ts";
 
 const person: TrackerUser = { id: "person", name: "dana" };
+
+test("an unresolved partial race requests assignment reconciliation without starting work", async () => {
+  const w = world(true);
+  w.tracker.assignUnassigned = async () => ({
+    assigned: false,
+    reason: "race-unverified",
+  });
+  const result = await claimServedIssue(w.tracker, "#1", {
+    person: "dana",
+    ancestor: "#3",
+  });
+  expect(result.outcome).toBe("stood_down");
+  expect("reason" in result && result.reason).toContain(
+    "reconcile the assignment",
+  );
+  expect(w.writes).toEqual([]);
+});
+
+test.each([false, true])(
+  "inherited assignment distinguishes visibility timeout from race (race: %s)",
+  async (race) => {
+    const w = world(true);
+    let now = 0;
+    w.tracker.assignUnassigned = async (key, user) =>
+      assignVerified(
+        {
+          assignee: async () => w.holders.get(key)?.[0]?.id ?? null,
+          assign: async (id) => {
+            w.holders.set(key, id === null ? [] : [{ id, name: id }]);
+          },
+          assignIfCurrent: async (expected, id) => {
+            if ((w.holders.get(key)?.[0]?.id ?? null) !== expected)
+              return false;
+            w.holders.set(key, id === null ? [] : [{ id, name: id }]);
+            return true;
+          },
+          history: async () =>
+            w.holders.get(key)?.length && race
+              ? [{ from: "other", to: user.id, at: "2026-11-01T00:00:01Z" }]
+              : [],
+        },
+        user.id,
+        {
+          clock: {
+            now: () => now,
+            sleep: async (ms) => {
+              now += ms;
+            },
+          },
+          timeoutMs: 10,
+        },
+      );
+    const result = await claimServedIssue(w.tracker, "#1", {
+      person: "dana",
+      ancestor: "#3",
+    });
+    expect(result.outcome).toBe("stood_down");
+    expect("reason" in result && result.reason).toContain(
+      race ? "assignment raced" : "could not be verified within the deadline",
+    );
+    expect(w.holders.get("#1")?.map((u) => u.id)).toEqual(
+      race ? ["other"] : [],
+    );
+    expect(w.writes).toEqual([]);
+  },
+);
 function world(inherited = false) {
   const holders = new Map<string, TrackerUser[]>([
     ["#1", inherited ? [] : [person]],
@@ -48,7 +115,7 @@ function world(inherited = false) {
     assignUnassigned: async (key: string, user: TrackerUser) => {
       writes.push("assign");
       holders.set(key, [user]);
-      return true;
+      return { assigned: true };
     },
     transition: async () => {
       writes.push("start");
@@ -142,7 +209,7 @@ test("an assignment racing the write is retained and the claim stands down", asy
   const w = world(true);
   w.tracker.assignUnassigned = async (key) => {
     w.holders.set(key, [person, { id: "other", name: "other" }]);
-    return false;
+    return { assigned: false, reason: "race" };
   };
   expect(
     (
@@ -247,7 +314,10 @@ test("GitHub's inherited assignment adds without replacing a racing assignee", a
       };
     throw new Error(`unexpected ${c.op}`);
   });
-  expect(await fake.t.assignUnassigned?.("#5", person)).toBe(false);
+  expect(await fake.t.assignUnassigned?.("#5", person)).toEqual({
+    assigned: false,
+    reason: "race",
+  });
   expect(fake.calls.some((c) => c.op === "TrackerAssign")).toBe(false);
 });
 
@@ -275,7 +345,9 @@ test("GitHub's inherited assignment selects only what the Assignable interface d
       };
     throw new Error(`unexpected ${c.op}`);
   });
-  expect(await fake.t.assignUnassigned?.("#5", person)).toBe(true);
+  expect(await fake.t.assignUnassigned?.("#5", person)).toEqual({
+    assigned: true,
+  });
   const query = fake.calls.find((c) => c.op === "TrackerAddAssignee")?.query;
   // `Assignable` is an interface with no `id` field: GitHub rejects a plain
   // `id` there at validation, so only `__typename` or a fragment may be read.
