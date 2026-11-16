@@ -1,4 +1,5 @@
 /** Hourly outbound call totals in the existing budget database; recording never stops a call. */
+import type { Database } from "bun:sqlite";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
@@ -130,6 +131,22 @@ export function operationName(query: string): string {
 function positive(n: number | undefined, fallback = 0): number {
   return n !== undefined && Number.isFinite(n) && n >= 0 ? n : fallback;
 }
+/**
+ * The row's quota owner and window sit beside it, in a table of their own, so
+ * a copy that writes the row's columns by position still can.
+ */
+function writeQuota(
+  db: Database,
+  keys: (string | number)[],
+  input: CallRecord,
+  cutoff: number,
+): void {
+  db.query("DELETE FROM outbound_cost_quota WHERE hour < ?").run(cutoff);
+  if (input.owner == null && input.window == null) return;
+  db.query(
+    "INSERT OR REPLACE INTO outbound_cost_quota VALUES (?,?,?,?,?,?,?,?)",
+  ).run(...keys, input.owner ?? null, input.window ?? null);
+}
 /** Record one actual attempt (or a local refusal with zero requests), retaining no payload or secret. */
 export function recordCall(input: CallRecord): void {
   try {
@@ -196,15 +213,12 @@ export function recordCall(input: CallRecord): void {
           (prior?.duration_ms ?? 0) + duration,
           JSON.stringify(failures),
         );
-        // The row's quota owner and window sit beside it, in a table of their
-        // own, so a copy that writes the row's columns by position still can.
-        db.query("DELETE FROM outbound_cost_quota WHERE hour < ?").run(
+        writeQuota(
+          db,
+          keys,
+          input,
           Math.ceil((at - LEDGER_RETENTION_MS) / HOUR) * HOUR,
         );
-        if (input.owner != null || input.window != null)
-          db.query(
-            "INSERT OR REPLACE INTO outbound_cost_quota VALUES (?,?,?,?,?,?,?,?)",
-          ).run(...keys, input.owner ?? null, input.window ?? null);
       });
     } finally {
       db.run("PRAGMA busy_timeout = 10000");
