@@ -118,7 +118,7 @@ it does not make the shipped skills themselves Orca-only.
 | What runs by itself | Dispatcher pickup, re-arm after a usage limit or answered question, re-drive of a stale pull request, and repository follow-up | Shipped machinery: [dispatcher](../plugin/README.md#the-dispatcher); unattended operation claim planned: item 33's live-host checks; generic follow-up skill planned: item 17 |
 | What runs by itself | Accounts and caps, guarded recovery proposals, notifications, dispatch labels, operator commands, serialized areas, outcome log and read-only dashboard | Shipped machinery: [dispatcher](../plugin/README.md#the-dispatcher), `steward`, `operator`; unattended operation claim planned: item 33 |
 | What runs by itself | Mechanically held pass boundaries and each need settled at its source | Planned: items 40 and 50 |
-| What runs by itself | Launch guard and a view inside Orca of what waits for a person | Planned: item 34 |
+| What runs by itself | Launch guard and a view inside Orca of what waits for a person | Shipped: the [Jig plugin for Orca](orca-integration.md#the-jig-plugin-for-orca) (launch guard, status bar, inbox panel); planned: item 34's guard identity, answer picks and merge button |
 | What runs by itself | One place to watch and steer the line, growing from the dispatch dashboard | Planned: item 42; the existing dashboard remains a read-only view |
 | What runs by itself | Hub across machines and dispatchers | Planned: item 49 |
 | What runs by itself | Delegated merge | Planned: item 9, with its own decision; every shipped scenario says a person merges |
