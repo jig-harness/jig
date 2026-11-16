@@ -134,8 +134,12 @@ endpoint sets the balance, and spending the counts do not explain goes to
 an unattributed row, never to an operation. That endpoint costs nothing
 against the primary allowance but can count against secondary limits, so
 it is read at most once a tick and its requests are counted. The tick then reads
-the record in place of asking `rate_limit` itself, and `load.forge_floor`
-reads the same record.
+the record in place of asking `rate_limit` itself, and asks only when no
+answer has reported the core window in the last minute, whatever answers
+reported the other windows; `load.forge_floor` reads the same record. A
+GraphQL request sent over HTTPS instead of through the client (with
+`JIG_GITHUB_GRAPHQL_URL` set) is admitted and recorded as a `gh api graphql`
+call is, under the record of the token it sends.
 
 The dispatcher's reads may use a share of each limit and leave the rest to
 passes and people. One setting covers every system; `tracker_share` stays

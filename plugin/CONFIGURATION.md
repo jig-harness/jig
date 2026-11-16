@@ -1152,7 +1152,7 @@ These are set per machine or per run, not committed:
 | `JIG_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
 | `JIG_HOME` | The folder holding the user layer's `jig.yaml`, instead of `~/.jig` |
 | `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
-| `JIG_FORGE_BUDGET` | `off` leaves the forge client's calls out of the machine's budget record (see `outbound_share`): nothing is admitted against it, nothing it answers is recorded, and `gh api` runs without `--include`. Unset, every call is governed |
+| `JIG_FORGE_BUDGET` | `off` leaves the forge's calls out of the machine's budget record (see `outbound_share`), the `gh` client's runs and the GraphQL requests sent over HTTPS to `JIG_GITHUB_GRAPHQL_URL` alike: nothing is admitted against it, nothing it answers is recorded, and `gh api` runs without `--include`. Unset, every call is governed |
 | `JIG_AFTER_VERSION_IN_CI` | `1` lets `changelog.after_version` run inside a CI job (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TF_BUILD` or `JENKINS_URL` set); set it only in a job that holds no secret |
 | `JIG_CODE_STATS_COMMAND_TIMEOUT_SEC` | Seconds `code_stats.classify_command` may run before it is stopped and the report fails; 300 by default |
 | `JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC` | Seconds `ci.log_command` may run for one commit status before it is stopped and the log read fails; 300 by default |

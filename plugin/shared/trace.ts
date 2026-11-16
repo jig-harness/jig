@@ -10,7 +10,7 @@ import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
 import { ghGovernance } from "./outbound/github-budget.ts";
-import { paceForge } from "./outbound/forge-pacing.ts";
+import { admitPaced, endedFailure } from "./outbound/forge-pacing.ts";
 import type { OutboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
@@ -202,48 +202,6 @@ function traceCommand<T extends { code: number; timedOut: boolean }>(
   });
 }
 
-type Governance = NonNullable<ReturnType<typeof ghGovernance>>;
-
-/** The failure of a call whose deadline passed or that was cancelled `when`. */
-function endedFailure(
-  deadlineAt: number,
-  signal: AbortSignal | undefined,
-  when: string,
-): OutboundFailure | null {
-  const late = currentMs() >= deadlineAt;
-  if (!late && !signal?.aborted) return null;
-  return {
-    code: late ? "too-costly" : "unreachable",
-    reason: `GitHub call ended ${when}; nothing was sent`,
-  };
-}
-
-/**
- * Pace, then admit, again after each store contention until the deadline or a
- * cancel: a retry never sends on a pacing slot that has since expired.
- */
-async function admitBefore(
-  governance: Governance,
-  deadlineAt: number,
-  signal: AbortSignal | undefined,
-): Promise<ReturnType<Governance["admit"]> | { failure: OutboundFailure }> {
-  for (;;) {
-    const paced = await paceForge(governance.owner, deadlineAt, signal);
-    if (paced !== null) return { failure: paced };
-    const failure = endedFailure(
-      deadlineAt,
-      signal,
-      "while waiting for budget admission",
-    );
-    if (failure !== null) return { failure };
-    try {
-      return governance.admit();
-    } catch (error) {
-      if (errnoCode(error) !== "SQLITE_BUSY") throw error;
-    }
-  }
-}
-
 /**
  * One run of `gh`, admitted against the credential's budget record and
  * observed into it (`outbound/github-budget.ts`): a run the record refuses
@@ -268,7 +226,7 @@ async function governedRun<T extends GhRun, O>(
     captured: (o.stdout ?? "pipe") === "pipe" && o.onOutput === undefined,
   });
   if (governance === null) return send(args);
-  const admitted = await admitBefore(governance, deadlineAt, o.signal);
+  const admitted = await admitPaced(governance, deadlineAt, o.signal);
   if ("failure" in admitted) return refuse(admitted.failure);
   if ("refused" in admitted) return refuse(admitted.refused);
   const late = endedFailure(deadlineAt, o.signal, "during budget admission");
