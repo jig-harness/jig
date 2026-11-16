@@ -208,9 +208,12 @@ function replacedSuites(
 /**
  * Whether a replaced run's job stays as evidence. It goes only when a
  * successor reports its name with a result, or when no successor reports the
- * name at all (a matrix template the later run expanded). A successor that
- * reports the name without a result (it skipped) answers nothing, so the job
- * stays, unless another successor did supply one. Jobs that passed never stay.
+ * name at all, nor any name of its matrix (a check the later run does not
+ * have). A successor that reports the name without a result (it skipped)
+ * answers nothing, so the job stays, unless another successor did supply one.
+ * A successor that reports it only under its matrix's expanded names answers
+ * it only when every one of them has a result: a matrix whose legs were
+ * skipped, wholly or partly, has not run the job. Jobs that passed never stay.
  */
 function answeredBySkip(
   job: JobEvidence,
@@ -220,20 +223,39 @@ function answeredBySkip(
   if (job.name === undefined) return false;
   if (job.conclusion !== null && PASSING_CONCLUSIONS.has(job.conclusion))
     return false;
-  const reports = jobs.filter(
+  const named = jobs.filter(
     (other) =>
-      other.name === job.name &&
+      other.name !== undefined &&
       other.suiteId !== undefined &&
       other.suiteId !== null &&
       successors.includes(other.suiteId),
   );
-  const hasResultJob = reports.some(
-    (other) =>
-      other.status === "completed" &&
-      other.conclusion !== null &&
-      RESULT_CONCLUSIONS.has(other.conclusion),
+  const exact = named.filter((other) => other.name === job.name);
+  const family = matrixFamily(job.name);
+  const reports =
+    exact.length > 0
+      ? exact
+      : named.filter((other) => matrixFamily(other.name ?? "") === family);
+  const names = new Set(reports.map((other) => other.name));
+  return [...names].some(
+    (name) =>
+      !reports.some(
+        (other) =>
+          other.name === name &&
+          other.status === "completed" &&
+          other.conclusion !== null &&
+          RESULT_CONCLUSIONS.has(other.conclusion),
+      ),
   );
-  return reports.length > 0 && !hasResultJob;
+}
+
+/**
+ * A job's name less the matrix leg GitHub appends in parentheses: a template
+ * cancelled before its matrix expanded and each expanded leg share it.
+ */
+function matrixFamily(name: string): string {
+  const leg = name.indexOf(" (");
+  return leg === -1 ? name : name.slice(0, leg);
 }
 
 /**

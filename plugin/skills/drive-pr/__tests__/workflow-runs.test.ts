@@ -263,6 +263,34 @@ describe("a cancelled check never reads as passing", () => {
     ).toBe("cancelled: tests");
   });
 
+  it("stays unknown when the replacing run skipped the job's matrix legs", () => {
+    const cancelled = [
+      workflowRun(40, "cancelled"),
+      workflowRun(41, "success", T4),
+    ];
+    for (const legs of [
+      [job("tests (1/2)", "skipped", 41), job("tests (2/2)", "skipped", 41)],
+      [job("tests (1/2)", "success", 41), job("tests (2/2)", "skipped", 41)],
+    ])
+      expect(
+        verdict(
+          [job("tests", "cancelled", 40), job("lint", "success", 41), ...legs],
+          cancelled,
+        ),
+      ).toBe("cancelled: tests");
+    // Every leg ran to a result: the cancelled template is replaced.
+    expect(
+      verdict(
+        [
+          job("tests", "cancelled", 40),
+          job("tests (1/2)", "success", 41),
+          job("tests (2/2)", "success", 41),
+        ],
+        cancelled,
+      ),
+    ).toBe("green");
+  });
+
   it("stays unknown when the workflow runs cannot be read, or there is none", () => {
     const runs = [job("gates", "cancelled", 40), job("gates", "success", 41)];
     // Unreadable: nothing is dropped, and the check runs read on their own.
