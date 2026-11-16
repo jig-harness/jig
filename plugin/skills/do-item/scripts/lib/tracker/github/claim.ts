@@ -82,9 +82,9 @@ export function claimOperations(
   }
 
   return {
-    async viewer() {
+    async viewer(signal) {
       const data = record(
-        await client.transport(VIEWER, {}, undefined, true),
+        await client.transport(VIEWER, {}, signal, true),
         "data",
       );
       return userOf(data.viewer, "viewer");
@@ -108,10 +108,10 @@ export function claimOperations(
       const after = await read(key);
       return after.users.length === 1 && after.users[0]?.id === user.id;
     },
-    async user(identity) {
+    async user(identity, signal) {
       const login = identity.trim();
       const data = record(
-        await client.transport(USER, { login }, undefined, true),
+        await client.transport(USER, { login }, signal, true),
         "data",
       );
       if (data.user === null || data.user === undefined)
