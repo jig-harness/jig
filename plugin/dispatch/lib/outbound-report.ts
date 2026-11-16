@@ -63,6 +63,29 @@ function balance(
   return { ...window, remaining };
 }
 
+/**
+ * Adds a row to the window of the quota owner's record it spent. A GitHub row
+ * written without its window spent the one its unit and operation suggest,
+ * counted as an estimate.
+ */
+function addWindow(entry: SystemSpending, row: LedgerRow): void {
+  const spentIn =
+    row.window != null
+      ? { window: row.window, inferred: false }
+      : row.system === "github"
+        ? rowWindow(row)
+        : null;
+  if (spentIn === null) return;
+  let spent = entry.windows.find((w) => w.window === spentIn.window);
+  if (spent === undefined) {
+    spent = { window: spentIn.window, cost: 0, estimated: 0 };
+    entry.windows.push(spent);
+  }
+  spent.cost += row.cost + row.unknownCost;
+  spent.estimated +=
+    row.estimated + row.unknownCost + (spentIn.inferred ? row.cost : 0);
+}
+
 /** Each system's exact caller totals and the latest quota observations carried to now. */
 export function systemSpending(
   report: LedgerReport,
@@ -113,24 +136,7 @@ export function systemSpending(
     }
     operation.cost += row.cost;
     operation.requests += row.requests;
-    // A GitHub row written without its window spent the one its unit and
-    // operation suggest, counted as an estimate.
-    const spentIn =
-      row.window != null
-        ? { window: row.window, inferred: false }
-        : row.system === "github"
-          ? rowWindow(row)
-          : null;
-    if (spentIn !== null) {
-      let spent = entry.windows.find((w) => w.window === spentIn.window);
-      if (spent === undefined) {
-        spent = { window: spentIn.window, cost: 0, estimated: 0 };
-        entry.windows.push(spent);
-      }
-      spent.cost += row.cost + row.unknownCost;
-      spent.estimated +=
-        row.estimated + row.unknownCost + (spentIn.inferred ? row.cost : 0);
-    }
+    addWindow(entry, row);
   }
   for (const b of report.balances)
     system(b.system).balances.push({
