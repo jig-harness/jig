@@ -396,6 +396,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.256.3] - 2026-11-16
+
+### Fixed
+
+- Steward submissions reserve their database write before reading, so a
+  concurrent dispatcher or session write cannot invalidate the submission's
+  snapshot and reject its records.
+
 ## [0.256.2] - 2026-11-16
 
 ### Fixed
@@ -9063,7 +9071,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.3...HEAD
+[0.256.3]: https://github.com/jig-harness/jig/compare/v0.256.2...v0.256.3
 [0.256.2]: https://github.com/jig-harness/jig/compare/v0.256.1...v0.256.2
 [0.256.1]: https://github.com/jig-harness/jig/compare/v0.256.0...v0.256.1
 [0.256.0]: https://github.com/jig-harness/jig/compare/v0.255.1...v0.256.0
