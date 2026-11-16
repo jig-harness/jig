@@ -19,6 +19,7 @@ import {
 } from "./outbound/github-budget.ts";
 import { setDiscoveryRunner } from "./outbound/github-owner.ts";
 import { drivePages, pagePlan } from "./outbound/gh-paginate.ts";
+import { ghRunScope } from "./outbound/github-scope.ts";
 import { type OutboundFailure, outboundFailure } from "./outbound/failure.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
@@ -418,10 +419,23 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   const request = (argv: string[], timeoutSec: number) =>
     ghRequest(argv, effective, timeoutSec, run, refuse, held);
   const plan = forgeBudgetOn(env) ? pagePlan(args, captured(opts), env) : null;
+  // A later page is addressed by the `Link` URL, which names no repository,
+  // so the pages after the first keep the first page's scope: they are
+  // charged to the same owner and sent with it as `GH_REPO`.
+  let pinned: string | null | undefined;
+  const paged = (argv: string[], timeoutSec: number) => {
+    if (pinned === undefined) {
+      pinned = ghRunScope(argv, env, (opts as { cwd?: string }).cwd);
+      return request(argv, timeoutSec);
+    }
+    if (pinned === null) return request(argv, timeoutSec);
+    const page = { ...effective, env: { ...env, GH_REPO: pinned } };
+    return ghRequest(argv, page, timeoutSec, run, refuse, held);
+  };
   return traceCommand("ghCall", "gh", deadline, () =>
     plan === null
       ? request(args, deadline)
-      : drivePages(plan, request, deadline, refuse),
+      : drivePages(plan, paged, deadline, refuse),
   );
 }
 

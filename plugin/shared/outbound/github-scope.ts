@@ -128,6 +128,8 @@ export function repoFlag(args: readonly string[]): string | null {
 
 /** The repository a positional `https://HOST/OWNER/REPO/(pull|issues|…)/N` argument names; `null` when there is none. */
 function positionalUrlRepo(args: readonly string[]): string | null {
+  // A `gh api` URL is a route on the API origin, not a repository page.
+  if (args[0] === "api") return null;
   for (const arg of args.slice(1)) {
     const match = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/[^/]+/i.exec(arg);
     if (match !== null) return lastTwo(`${match[1]}/${match[2]}`);

@@ -233,6 +233,32 @@ describe("a stored login whose client picks the account per repository", () => {
     expect(held.sent).toHaveLength(0);
   });
 
+  it("keeps the first page's repository for the pages a Link URL names", async () => {
+    const env = { GH_CONFIG_DIR: configDir("alice") };
+    const one = repository("https://github.com/example-org/one.git");
+    const { discover, asked } = picker(BY_REPO);
+    processOn(databasePath(), discover);
+    const page = (link: string, body: string) =>
+      ok(`HTTP/2.0 200 OK\n${link}\n\n${body}`);
+    const other = client(env, one, (argv) =>
+      argv.includes("repos/other-org/two/issues?per_page=100")
+        ? page(
+            'link: <https://api.github.com/repositories/123/issues?page=2>; rel="next"',
+            "[1]",
+          )
+        : page("x-ratelimit-resource: core", "[2]"),
+    );
+    const read = await other.run([
+      "api",
+      "--paginate",
+      "repos/other-org/two/issues",
+    ]);
+    expect(read.code).toBe(0);
+    expect(other.sent).toHaveLength(2);
+    // Neither page was charged to the working directory's repository.
+    expect(asked.map((a) => a.env.GH_REPO)).toEqual(["other-org/two"]);
+  });
+
   it("names the account whose allowance is spent when it refuses a call", async () => {
     const env = { GH_CONFIG_DIR: configDir("alice") };
     const two = repository("https://github.com/other-org/two");
