@@ -144,14 +144,8 @@ describe("Jira: an issue read without naming the size field", () => {
     const { client } = jira(routes({ ...SITE }), STORES);
     const unread = parseIssue(strip(raw), SITE_URL, [], [sizeField]);
     const stores = jiraFacetStores(client);
-    let caught: unknown;
-    try {
-      stores.read(unread);
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(TrackerRequestError);
-    expect(String((caught as Error).message)).toBe(
+    expect(() => stores.read(unread)).toThrow(TrackerRequestError);
+    expect(() => stores.read(unread)).toThrow(
       "issue ENG-1 was read without the field 'Size' that size is kept in",
     );
   });
