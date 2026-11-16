@@ -384,6 +384,21 @@ describe("appendEntry", () => {
     expect(authoritativeLines(fenced)).toEqual(["Example: `", identity]);
   });
 
+  it("does not carry inline code through a thematic break", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: `", "***", "<!--`", identity, "-->"].join("\n");
+
+    expect(entryHeadings(doc)).toEqual([]);
+    expect(authoritativeLines(doc)).toEqual(["Example: `", "***"]);
+  });
+
+  it("does not mistake an invalid backtick fence for an inline-code boundary", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: `<!--", "```not`a-fence", "", identity].join("\n");
+
+    expect(authoritativeLines(doc)).toEqual(["Example: `<!--", identity]);
+  });
+
   it("is not fooled by a non-heading line or a deeper heading", () => {
     expect(headingEntryKey(`> ### ${url}`)).toBe(null);
     expect(headingEntryKey(`text ${url}`)).toBe(null);

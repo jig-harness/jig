@@ -118,6 +118,9 @@ function inlineBoundary(line: string): boolean {
   return (
     line.trim() === "" ||
     /^ {0,3}#{1,6}(?:\s|$)/.test(line) ||
+    /^ {0,3}(?:\*[ \t]*){3,}$/.test(line) ||
+    /^ {0,3}(?:-[ \t]*){3,}$/.test(line) ||
+    /^ {0,3}(?:_[ \t]*){3,}$/.test(line) ||
     openingFence(line) !== null
   );
 }
@@ -206,7 +209,9 @@ function openingFence(line: string): { fence: Fence; info: string } | null {
   let end = start;
   while (line[end] === char) end += 1;
   const len = end - start;
-  return len < 3 ? null : { fence: { char, len }, info: line.slice(end) };
+  const info = line.slice(end);
+  if (len < 3 || (char === "`" && info.includes("`"))) return null;
+  return { fence: { char, len }, info };
 }
 
 /** Classify one Markdown line while retaining the current fenced block. */
@@ -223,8 +228,6 @@ function fenceLine(
       marker.info.trim() === "";
     return { fence: closes ? null : fence, consumed: true };
   }
-  if (marker.fence.char === "`" && marker.info.includes("`"))
-    return { fence: null, consumed: false };
   return { fence: marker.fence, consumed: true };
 }
 
