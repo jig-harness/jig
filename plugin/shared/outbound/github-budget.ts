@@ -604,6 +604,20 @@ export async function forgeOwner(
   return (await owners.resolve(env, deadlineMs)).owner;
 }
 
+/** Tell the ledger row which resource answered, and read the HTTP status off a captured answer. */
+function withObservedStatus<T extends GhRun>(
+  result: T,
+  headers: Headers | null,
+  attribution: GhAttribution | undefined,
+  readStatus: boolean,
+): T {
+  const resource = headers?.get("x-ratelimit-resource")?.trim();
+  if (attribution !== undefined && resource)
+    attribution.resource = resource.toLowerCase();
+  const status = readStatus ? ghResponseStatus(result) : null;
+  return status === null ? result : ({ ...result, httpStatus: status } as T);
+}
+
 /**
  * The governance of one run of `gh` with `args`; `null` for a run that sends
  * nothing to GitHub, or while the budget is off. `captured` says the run's
@@ -680,15 +694,12 @@ export function ghGovernance(
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";
       const { headers, body } = splitHeaders(stdout);
-      const resource = headers?.get("x-ratelimit-resource")?.trim();
-      if (opts.attribution !== undefined && resource)
-        opts.attribution.resource = resource.toLowerCase();
-      const status =
-        opts.captured && (strip || askedHeaders(args))
-          ? ghResponseStatus(result)
-          : null;
-      const observed =
-        status === null ? result : { ...result, httpStatus: status };
+      const observed = withObservedStatus(
+        result,
+        headers,
+        opts.attribution,
+        opts.captured && (strip || askedHeaders(args)),
+      );
       // A store that cannot take the answer governs nothing (`budget.ts`);
       // anything else that throws here is a defect, and stops the call.
       const failure = ghRunFailure(observed, tookMs);
