@@ -74,24 +74,11 @@ hook or the interface instead.
 
 ## Commands a repository supplies
 
-Each of these is a field whose value is a shell command. The skill runs it
-from the repository root, except where a row below says otherwise, and
-judges it by its exit code: 0 is success. The contract column says what else the command is given or must print.
-
-| Field                                   | Run by                                                               | Contract                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gates.command`                         | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push                                                                                                                                                                                                                                                                                               |
-| `drive.validation_plan_command`         | drive-pr, and the skills that verify a change                        | Reads the changed files, one per line, on standard input; prints the validation plan as JSON ([format](skills/drive-pr/README.md))                                                                                                                                                                                                                          |
-| `drive.load_guard_command`              | drive-pr                                                             | Returns once the machine can take heavy checks                                                                                                                                                                                                                                                                                                              |
-| `descar.lint_command`                   | descar                                                               | Takes document paths; finds review scars in them                                                                                                                                                                                                                                                                                                            |
-| `promote_memory.lint_command`           | promote-memory                                                       | `{dir}` and `{file}` stand for the memory folder and file; checks one memory against the repository                                                                                                                                                                                                                                                         |
-| `fix_ci.regenerate_commands`            | fix-ci                                                               | Each regenerates committed generated files a CI check compares                                                                                                                                                                                                                                                                                              |
-| `ci.log_command`                        | fix-ci, for a drive's CI-repair pass                                 | Reads `{"context", "target_url"}` of a failing commit status as JSON on standard input; prints that status's failed log, at most 64 KiB. Runs in a temporary copy of the default branch's files, not the pull request's checkout. Exit 3, the reason its first output line, when the log is gone; 300 s                                                                                                                                              |
-| `resolve_conflicts.generated[].command` | resolve-conflicts                                                    | Rebuilds the files its `paths` match when they conflict                                                                                                                                                                                                                                                                                                     |
-| `explain.figure_build_command`          | explain                                                              | Builds one explainer figure; the figure's stem is appended                                                                                                                                                                                                                                                                                                  |
-| `code_stats.classify_command`           | code-stats                                                           | Reads every tracked path, one per line, on standard input; prints one JSON object per line, `{"path", "area"?, "kind"?, "language"?, "module"?}`, whose values override the skill's own classification ([contract](skills/code-stats/README.md#the-classify-command)). Exit 0 within 300 seconds; any other exit, or a line it cannot use, fails the report |
-| `do_item.preflight_command`              | do-item, work-batch and the dispatcher's pickups, through `tracker.ts claim` | Read from the default branch, and run without the tracker and forge tokens. Reads the item's `get_issue.ts` JSON on standard input. Exit 0 lets the claim go on; exit 3 refuses it and the first line of standard output is the reason; any other exit, more than 64 KiB of output, or a run past 60 seconds, refuses too ([contract](CONFIGURATION.md#do_item)) |
-| `followup.arms[].check_command`          | followup, through `followup.ts check`                                | Read from the integration branch, and run without the tracker and forge tokens. Reads the merge facts (`followup.ts facts`' JSON) on standard input and prints one verdict, `{"verdict": "owed"\|"not-owed"\|"pending"\|"unread", "items": [...], "evidence": "..."}`, with evidence someone else can check. Any other exit than 0, output that is not a verdict, more than 64 KiB of output, or a run past 60 seconds (`JIG_FOLLOWUP_CHECK_TIMEOUT_SEC`) records the arm `unread`, never `not-owed` ([contract](CONFIGURATION.md#followup)) |
+The [repository commands chapter](protocol/repo-commands.md) lists the
+commands, who runs each, what it is given, what it must answer with, its
+exits and its deadline. Use it when implementing one of those commands.
+The [configuration reference](CONFIGURATION.md) gives each setting's
+accepted values and default.
 
 `issue_tracker.file_command` is different: no skill runs it. It is an
 instruction that `do-item`, `decide` and others hand to the agent, saying how
@@ -122,10 +109,12 @@ named in configuration:
   `review` checks a change against.
 - **Repository arms.** `followup.arms` adds the repository's own
   obligations to the follow-up after a merge: an instructions file read from
-  the integration branch, a read-only check command (the row above), or a
-  skill the repository, the user's home or another plugin already holds,
-  named by its slash command. Each is settled like the follow-up's own arms
-  and acts only within its fixed authority table
+  the integration branch, a read-only check command (its contract is the
+  `followup.arms` entry of the
+  [repository commands chapter](protocol/repo-commands.md)), or a skill the
+  repository, the user's home or another plugin already holds, named by its
+  slash command. Each is settled like the follow-up's own arms and acts only
+  within its fixed authority table
   ([CONFIGURATION.md](CONFIGURATION.md#followup)).
 
 ## Issue tracker
@@ -567,8 +556,9 @@ the [Codex notes](README.md#codex-notes): Codex does not fill in the skill's
 folder path, loads plugin agents only from its own folders, and the drive's
 default pass starts Claude Code. Any other agent tool can use the skills by
 copying or linking the whole `plugin/skills/` directory into its skill
-folder, keeping every skill beside the others, and `plugin/shared/` into a
-`shared/` folder beside that skill folder
+folder, keeping every skill beside the others, and `plugin/shared/` and
+`plugin/protocol/` into sibling `shared/` and `protocol/` folders beside that
+skill folder
 ([where it works](README.md#where-it-works)): skills' scripts import code
 from `shared/` and from sibling skills (`fix-ci` from
 `resolve-review-comments`, for one), so a single skill copied alone does not

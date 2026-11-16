@@ -176,14 +176,12 @@ repository, its driver is an agent, every blocker is finished) states them as
 one command, `do_item.preflight_command`. Every claim runs it first, before
 the claim lock and before anything is written, so `do-item`, `work-batch` and
 a dispatched pickup all honour it without any of them remembering to call it.
-It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
-3 refuses it: the claim exits 3, nothing is written, and the first line the
-command printed is the reason. Any other exit, or a run past 60 seconds,
-refuses too. The command text is read from the default branch, so a branch cannot
-change the command its own claim runs; the command runs in the current
-checkout, so a program it names inside the repository (`bun
-scripts/start-rules.ts`) is the branch's own copy, and the rules are only as
-trusted as that program: a branch can bypass a rule by editing a script the command runs, so name an executable that is trusted independently of the branch, such as one installed on the machine. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
+The [repository commands chapter](../../protocol/repo-commands.md) gives
+its input, exits, deadline and command-store rules. The command text comes
+from the default branch, but a repository-relative program it names is the
+branch's copy: name an executable trusted independently of the branch when
+the start rule must hold against a branch editing its own scripts.
+Telling the agent to proceed does not clear a refusal: the
 item or the command changes. A dispatched pickup the command refused shows
 in the dispatcher's queue as held, with the reason, until the item changes.
 
