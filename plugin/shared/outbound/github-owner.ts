@@ -313,6 +313,8 @@ export function githubOwnerResolver(deps: {
   >();
   const inflight = new Map<string, Promise<OwnerResolution>>();
   const seeded = new Set<string>();
+  /** Discovery windows not yet carried to their owner, by owner, until the lock is free. */
+  const unsettled = new Map<string, BudgetRecord>();
 
   const unverified = (env: Env, credential: string): OwnerResolution => ({
     credential,
@@ -359,6 +361,23 @@ export function githubOwnerResolver(deps: {
       seeded.delete(pair);
   };
 
+  /** Complete every carry owed to `owner`; one the lock refused is tried again at the next resolve. */
+  const settle = (env: Env, owner: string): void => {
+    seed(env, owner);
+    const seen = unsettled.get(owner);
+    if (seen === undefined) return;
+    if (
+      whenFree(() =>
+        deps.budget.update(
+          owner,
+          (prev) => withDiscoveryWindow(prev, seen, clock()),
+          true,
+        ),
+      )
+    )
+      unsettled.delete(owner);
+  };
+
   const ask = async (
     env: Env,
     credential: string,
@@ -395,15 +414,11 @@ export function githubOwnerResolver(deps: {
     // named, when that record was read during this discovery.
     if (user !== null && owner !== fallback.owner) {
       const seen = deps.budget.read(fallback.owner);
-      if (seen !== null && seen.observedAt >= began)
-        // The owner's own first run records its window when the lock is held.
-        whenFree(() =>
-          deps.budget.update(
-            owner,
-            (prev) => withDiscoveryWindow(prev, seen, clock()),
-            true,
-          ),
-        );
+      if (seen !== null && seen.observedAt >= began) {
+        // Carried at the owner's next resolve when the lock is held.
+        unsettled.set(owner, seen);
+        settle(env, owner);
+      }
     }
     // The default discovery is a run of `gh` the wrapper records itself; a
     // discovery given in its place is recorded here.
@@ -454,14 +469,17 @@ export function githubOwnerResolver(deps: {
     const host = githubHost(env);
     const slot = `${credential}@${host}`;
     const held = memo.get(slot);
-    if (held !== undefined && held.until > now) return held.resolution;
+    if (held !== undefined && held.until > now) {
+      settle(env, held.resolution.owner);
+      return held.resolution;
+    }
     const pending = inflight.get(slot);
     if (pending !== undefined) return within(pending, env, deadlineMs);
     const entry = deps.owners.read(credential, host);
     if (entry !== null && entry.retryAt > now) {
       const found = fromEntry(credential, entry);
       memo.set(slot, { resolution: found, until: entry.retryAt });
-      seed(env, found.owner);
+      settle(env, found.owner);
       return found;
     }
     const asked = ask(
@@ -478,7 +496,7 @@ export function githubOwnerResolver(deps: {
           resolution: found,
           until: until > clock() ? until : clock() + DISCOVERY_BACKOFF_MS,
         });
-        seed(env, found.owner);
+        settle(env, found.owner);
         return found;
       })
       .finally(() => inflight.delete(slot));
