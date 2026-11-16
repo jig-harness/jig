@@ -401,12 +401,14 @@ export interface OutOfTreeStep {
 
 /**
  * What a description's out-of-tree sections say: whether it has one at all
- * (`declared`), and each step it lists. A declared section with no step
- * (only "None", or nothing) says nothing is owed; a description with no
- * section says nothing either way.
+ * (`declared`), whether one of them says "None" or "N/A" (`saysNone`), and
+ * each step it lists. A declared section that says none and lists no step says
+ * nothing is owed; a declared section with neither is an unfilled template,
+ * and a description with no section says nothing either way.
  */
 export interface OutOfTreeSection {
   declared: boolean;
+  saysNone: boolean;
   steps: OutOfTreeStep[];
 }
 
@@ -440,7 +442,10 @@ export function outOfTreeSteps(body: string): OutOfTreeSection {
       else detail();
     }
   }
-  return { declared: found.length > 0, steps };
+  const none = found.some((lines) =>
+    lines.some((l) => saysNone(itemText(l)?.text ?? l.trim())),
+  );
+  return { declared: found.length > 0, saysNone: none, steps };
 }
 
 /** The steps a description's out-of-tree section lists; none when it has no such section. */

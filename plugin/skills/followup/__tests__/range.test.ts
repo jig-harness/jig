@@ -10,6 +10,8 @@ import {
   type GitRunner,
   mergeRange,
   previewRange,
+  type PrView,
+  settleSquash,
 } from "../scripts/lib/facts.ts";
 import { scanDiff } from "../scripts/lib/scaffolding.ts";
 import { gitRun, repository, write } from "./helpers.ts";
@@ -93,6 +95,49 @@ describe("the range a merge brought in", () => {
     const head = gitRun(root, "rev-parse", "feature");
     const range = await previewRange(runnerIn(root), "main", head);
     expect(range.ok && range.value).toEqual({ kind: "open", base: fork, head });
+  });
+});
+
+describe("a single-parent merge of several commits", () => {
+  const viewOf = (files: string[]): PrView =>
+    ({ commits: ["1", "2"], files }) as unknown as PrView;
+
+  test("a squash stays a squash although main moved after its parent", async () => {
+    const root = withFeature();
+    const before = gitRun(root, "rev-parse", "HEAD");
+    gitRun(root, "merge", "-q", "--squash", "feature");
+    gitRun(root, "commit", "-qm", "feature (#7)");
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const squash = { kind: "squash" as const, base: before, head: merge };
+    const settled = await settleSquash(
+      viewOf(["feature.ts", "shared.ts"]),
+      squash,
+      runnerIn(root),
+    );
+    expect(settled).toEqual(squash);
+  });
+
+  test("a rebase reaches back over every landed commit", async () => {
+    const root = withFeature();
+    const before = gitRun(root, "rev-parse", "HEAD");
+    gitRun(root, "cherry-pick", "feature~1", "feature");
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const squash = {
+      kind: "squash" as const,
+      base: gitRun(root, "rev-parse", "HEAD~1"),
+      head: merge,
+    };
+    const settled = await settleSquash(
+      viewOf(["feature.ts", "shared.ts"]),
+      squash,
+      runnerIn(root),
+    );
+    expect(settled).toEqual({
+      kind: "rebase",
+      base: before,
+      head: merge,
+      branchHead: merge,
+    });
   });
 });
 
