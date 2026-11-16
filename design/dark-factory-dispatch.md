@@ -460,9 +460,12 @@ guards keep one stage from starting twice:
   instead of a question: the marker it left stays until that time, so no
   host starts the follow-up early, its wrapper does not answer it, and the
   tick releases it after the reset; a later tick starts the follow-up again
-  as a first run, with no recovery tag and outside the recovery budget. The
+  as a first run, with no recovery tag and outside the recovery budget. A
+  pass that stopped on a question naming only a rate limit, with no routine
+  tag, waits the same way, until an hour after it ended. The
   third wait in a row is a person's, notified with the rate limit named
-  (`followup-waits.ts`). A run again of either kind never earns another: whichever
+  (`followup-waits.ts`); a person's restart (deleting the marker after that,
+  or a "Run it again" answer) starts the count again. A run again of either kind never earns another: whichever
   path ran it, its failure or death is a person's, so a follow-up is run
   again at most once by the two together, and both draw on the pull
   request's recovery budget. An older death, a failed outcome on an untagged
