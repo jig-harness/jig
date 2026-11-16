@@ -633,6 +633,7 @@ export function jiraClient(opts: ClientOptions): Client {
         site,
         await client.fieldLabels(signal),
         await client.facetFields(signal),
+        read.split(","),
       );
     },
 
@@ -656,7 +657,7 @@ export function jiraClient(opts: ClientOptions): Client {
       const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
-        parseIssue(i, site, extra, facet),
+        parseIssue(i, site, extra, facet, read),
       );
     },
 
