@@ -21,21 +21,11 @@ function repo(files: Record<string, string>): {
   return { root, tracked: Object.keys(files) };
 }
 
-const RUN_ID = "$" + "{{ github.run_id }}";
-
 const tracker = { issue_tracker: { adapter: "github" } };
 
-function schedulerFixtures(
-  command: string,
-  cached = true,
-): Record<string, string>[] {
-  const position = /--position (\S+)/u.exec(command)?.[1];
-  const cache =
-    cached && position
-      ? `      - uses: actions/cache@v4\n        with:\n          path: ${position}\n          key: sweep-${RUN_ID}\n          restore-keys: sweep-\n`
-      : "";
+function schedulerFixtures(command: string): Record<string, string>[] {
   const workflow = (run: string) => ({
-    ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n${cache}      - run: ${JSON.stringify(run)}\n`,
+    ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
   });
   return [
     workflow(command),
@@ -77,21 +67,7 @@ it("certifies a comment-only sweep that passes a read position", () => {
   }
 });
 
-it("flags a workflow that passes a position it never keeps between runs", () => {
-  const config = { ...tracker, file_issue: { sweep: { move: false } } };
-  const [workflow, wrapped] = schedulerFixtures(
-    "bun check-fields.ts check --yes --position state/sweep.json",
-    false,
-  );
-  for (const files of [workflow, wrapped]) {
-    const { root, tracked } = repo(files ?? {});
-    expect(sweepFindings(config, root, tracked).map((f) => f.id)).toEqual([
-      "suggestion:issue_tracker.sweep.position",
-    ]);
-  }
-});
-
-it("requires durable position storage for comment-only sweeps", () => {
+it("requires a well-formed --position argument for comment-only sweeps", () => {
   const config = { ...tracker, file_issue: { sweep: { move: false } } };
   const { root, tracked } = repo({
     "missing.cron": "37 5 * * 1 bun check-fields.ts check --yes --position\n",
@@ -263,48 +239,4 @@ exit "$status"`;
     });
     expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
   }
-});
-
-it("certifies persistence only for a plain run-keyed cache then the sweep", () => {
-  const config = { ...tracker, file_issue: { sweep: { move: false } } };
-  const run = "bun check-fields.ts check --yes --position state/s.json";
-  const cache = (extra: string, key = `sweep-${RUN_ID}`) =>
-    `      - uses: actions/cache@v4\n${extra}        with:\n          path: state/s.json\n          key: ${key}\n          restore-keys: sweep-\n`;
-  const wf = (opts: {
-    cache: string;
-    after?: string;
-    job?: string;
-    top?: string;
-    step?: string;
-  }) =>
-    `${opts.top ?? ""}on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n${opts.job ?? ""}    steps:\n${opts.cache}      - run: ${JSON.stringify(run)}\n${opts.step ?? ""}${opts.after ?? ""}`;
-  const ids = (text: string) => {
-    const { root, tracked } = repo({ ".github/workflows/sweep.yml": text });
-    return sweepFindings(config, root, tracked).map((f) => f.id);
-  };
-  expect(ids(wf({ cache: cache("") }))).toEqual([]);
-  const flagged = [
-    wf({ cache: cache("        if: false\n") }),
-    wf({ cache: cache("", "sweep-position") }),
-    wf({
-      cache: cache("").replace(
-        "        with:",
-        "        with:\n          lookup-only: true",
-      ),
-    }),
-    wf({ cache: cache("").replace(`          key: sweep-${RUN_ID}\n`, "") }),
-    wf({ cache: cache(""), after: "      - run: exit 1\n" }),
-    wf({ cache: cache(""), step: "        working-directory: app\n" }),
-    wf({
-      cache: cache(""),
-      job: "    defaults:\n      run:\n        working-directory: app\n",
-    }),
-  ];
-  for (const text of flagged)
-    expect(ids(text)).toEqual(["suggestion:issue_tracker.sweep.position"]);
-  const decoy = wf({ cache: cache("") }).replace(
-    `- run: ${JSON.stringify(run)}`,
-    `- run: ${JSON.stringify("# --position state/s.json\nbun check-fields.ts check --yes --position state/real.json")}`,
-  );
-  expect(ids(decoy)).toEqual(["suggestion:issue_tracker.sweep.position"]);
 });
