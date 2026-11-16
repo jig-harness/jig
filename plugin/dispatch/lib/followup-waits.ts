@@ -12,24 +12,38 @@
  *    a first run: no recovery tag, and nothing counted against the pull
  *    request's recovery budget.
  * 3. The waits in a row are counted from this host's launch records of the
- *    pull request's follow-ups, newest first, over those that recorded a
- *    result: at `WAITS_FOR_PERSON` the follow-up is a person's, notified as
+ *    pull request's follow-ups, oldest first, over those that recorded a
+ *    result or stopped on a rate-limit question: at `WAITS_FOR_PERSON` the follow-up is a person's, notified as
  *    a failed follow-up that names the fault, its marker answered failed.
+ *
+ * A pass that stopped on a question instead, whose question names a rate
+ * limit and carries no routine class's tag (`routine-questions.ts`), waits
+ * too: a pass from before passes recorded `waits`, or one that asked rather
+ * than recorded it. It waits until an hour after it ended, the reset its
+ * prompt names when the forge names none (`questionWait`).
+ *
+ * A person starts the count again: an attempt launched after the follow-up
+ * went to a person on its waits, which only a person's deleting the marker
+ * lets start, or one that carries a person's answer (their "Run it again"),
+ * is the first of a new count.
  *
  * The count reads the launch records alone: a wait lasts a day at most, and
  * a record is kept `receipts_days`.
  */
 import { stateRoot } from "../receipts.ts";
-import type { ReadRecord } from "./launches.ts";
+import { type ReadRecord, readEnded, readRecord } from "./launches.ts";
+import { routineClassOf } from "./routine-questions.ts";
+import { unwrittenResult } from "./session-startup.ts";
+import { questionOf } from "./session.ts";
 import type { SharedContext } from "./shared-launches.ts";
 import { stateDb } from "./state.ts";
 import type { MarkedPr } from "./types.ts";
-import { parseMs } from "../../shared/time.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** The waits in a row at which a follow-up is a person's. */
 export const WAITS_FOR_PERSON = 3;
 
-/** A follow-up's waits in a row, newest first. */
+/** A follow-up's waits in a row, up to the newest. */
 export interface WaitStreak {
   /** The launch record of the newest wait. */
   record: string;
@@ -39,28 +53,83 @@ export interface WaitStreak {
   until: string;
 }
 
+/** How long a pass that stopped on a rate-limit question waits after it ended: the reset its prompt names when the forge names none. */
+const QUESTION_WAIT_MS = 3_600_000;
+
+/** A question that names a rate limit, in the words the follow-up's prompt names the refusals it records `waits` for. */
+const RATE_LIMIT = /\brate[- ]?limit|\bHTTP 429\b/i;
+
+/**
+ * The reset a follow-up's ended pass waits for: the time its `waits` result
+ * names, or for a pass that stopped on a question naming only a rate limit,
+ * an hour after it ended; `null` when it does not wait.
+ */
+export function waitUntil(r: ReadRecord): string | null {
+  if (r.result === "waits") return r.waitsUntil ?? null;
+  return questionWait(r);
+}
+
+/**
+ * The reset of a pass that stopped on a rate-limit question: its question,
+ * as its session's last output or its closing report states it, names a
+ * rate limit and carries no routine class's tag; `null` for any other, and
+ * for one whose result the host could not write, whose question is the
+ * host's.
+ */
+function questionWait(r: ReadRecord): string | null {
+  if (r.result === "done" || r.state.kind !== "ended" || unwrittenResult(r))
+    return null;
+  const question = questionOf(r.state) ?? r.report?.report.question ?? null;
+  if (question === null || !RATE_LIMIT.test(question)) return null;
+  if (routineClassOf(question) !== null) return null;
+  const ended = parseMs(r.state.exit.at);
+  return Number.isFinite(ended) ? isoFromMs(ended + QUESTION_WAIT_MS) : null;
+}
+
 /** One attempt as the count reads it. */
 interface Attempt {
   id: string;
   createdAt: string;
-  result: string | null;
+  /** Whether it recorded a result, a wait or another. */
+  answered: boolean;
+  /** When its wait ends; `null` when it does not wait. */
   until: string | null;
+  /** It carries a person's answer: a person started it. */
+  answeredByPerson: boolean;
 }
 
-/** The waits in a row at the newest end of `attempts` that recorded a result; `null` when the newest result is not one. */
+/** An ended follow-up's attempt, as the count reads it. */
+function attemptOf(r: ReadRecord): Attempt {
+  const until = waitUntil(r);
+  return {
+    id: r.record.id,
+    createdAt: r.record.createdAt,
+    answered: r.result !== null || until !== null,
+    until,
+    answeredByPerson: r.record.answered !== undefined,
+  };
+}
+
+/**
+ * The waits in a row at the newest end of `attempts` that recorded a
+ * result; `null` when the newest result is not one. An attempt a person
+ * started, after the waits before it went to a person or with their answer,
+ * is the first of a new count.
+ */
 function streakOf(attempts: Attempt[]): WaitStreak | null {
   const answered = attempts
-    .filter((a) => a.result !== null)
+    .filter((a) => a.answered)
     .sort(
       (a, b) =>
-        b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+        a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
   let count = 0;
   for (const a of answered) {
-    if (a.result !== "waits" || a.until === null) break;
-    count += 1;
+    if (a.until === null) count = 0;
+    else if (count >= WAITS_FOR_PERSON || a.answeredByPerson) count = 1;
+    else count += 1;
   }
-  const newest = answered[0];
+  const newest = answered.at(-1);
   if (count === 0 || newest === undefined || newest.until === null) return null;
   return { record: newest.id, count, until: newest.until };
 }
@@ -79,58 +148,65 @@ export function waitStreak(
           r.record.repo === repo &&
           r.record.pr === pr,
       )
-      .map((r) => ({
-        id: r.record.id,
-        createdAt: r.record.createdAt,
-        result: r.result,
-        until: r.waitsUntil ?? null,
-      })),
+      .map(attemptOf),
   );
+}
+
+/** A launch row as the count reads it when its exit is not written. */
+interface StoredRow {
+  id: string;
+  created_at: string;
+  result: string | null;
+  result_until: string | null;
+}
+
+/**
+ * An earlier attempt read from the state database: as the tick reads it once
+ * its exit is written, else by its result alone, which, with no output to
+ * hold a question, waits only when it recorded `waits`.
+ */
+function storedAttempt(row: StoredRow, root: string): Attempt {
+  const ended = readEnded(row.id, root);
+  if (ended !== null) return attemptOf(ended);
+  const until = row.result === "failed" ? row.result_until : null;
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    answered: row.result !== null,
+    until,
+    answeredByPerson: readRecord(row.id, root)?.answered !== undefined,
+  };
 }
 
 /** The waits in a row up to and including `r`, read from the state database when only the record is at hand. */
 function storedStreak(r: ReadRecord, root: string): WaitStreak | null {
   const rows = stateDb(root)
     .query(
-      "SELECT id, created_at, result, result_until FROM launches WHERE action = 'followup' AND repo = ? AND pr = ? AND created_at <= ?",
+      "SELECT id, created_at, result, result_until FROM launches WHERE action = 'followup' AND repo = ? AND pr = ? AND created_at <= ? AND id != ?",
     )
-    .all(r.record.repo, r.record.pr, r.record.createdAt) as {
-    id: string;
-    created_at: string;
-    result: string | null;
-    result_until: string | null;
-  }[];
-  const attempts: Attempt[] = rows.map((row) => ({
-    id: row.id,
-    createdAt: row.created_at,
-    result:
-      row.result === "failed" && row.result_until !== null
-        ? "waits"
-        : row.result,
-    until: row.result_until,
-  }));
+    .all(
+      r.record.repo,
+      r.record.pr,
+      r.record.createdAt,
+      r.record.id,
+    ) as StoredRow[];
   // The record itself, as read, stands over its row.
-  const own = attempts.findIndex((a) => a.id === r.record.id);
-  const self: Attempt = {
-    id: r.record.id,
-    createdAt: r.record.createdAt,
-    result: r.result,
-    until: r.waitsUntil ?? null,
-  };
-  if (own === -1) attempts.push(self);
-  else attempts[own] = self;
+  const attempts = [
+    ...rows.map((row) => storedAttempt(row, root)),
+    attemptOf(r),
+  ];
   const streak = streakOf(attempts);
   return streak?.record === r.record.id ? streak : null;
 }
 
 /**
  * Whether an ended follow-up record waits out a rate limit, so its marker is
- * released after the reset rather than answered: it recorded `waits`, and
+ * released after the reset rather than answered: it waits (`waitUntil`), and
  * fewer than `WAITS_FOR_PERSON` results in a row were waits.
  */
 export function waitEnd(r: ReadRecord, root = stateRoot()): boolean {
   if (r.record.action !== "followup" || r.record.pr === null) return false;
-  if (r.result !== "waits" || r.waitsUntil === undefined) return false;
+  if (waitUntil(r) === null) return false;
   if (r.state.kind !== "ended" && r.state.kind !== "died") return false;
   const streak = storedStreak(r, root);
   return streak !== null && streak.count < WAITS_FOR_PERSON;
@@ -164,7 +240,7 @@ function endedOnWait(
   records: readonly ReadRecord[],
 ): WaitStreak | null {
   if (found === undefined || found.record.pr === null) return null;
-  if (found.result !== "waits") return null;
+  if (waitUntil(found) === null) return null;
   const streak = waitStreak(records, found.record.repo, found.record.pr);
   return streak?.record === found.record.id ? streak : null;
 }
