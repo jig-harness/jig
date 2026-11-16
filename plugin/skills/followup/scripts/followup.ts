@@ -65,6 +65,7 @@ import {
   type FactsFailure,
   gatherFacts,
   integrationBranchOf,
+  remoteDefaultBranch,
   PR_VIEW_FIELDS,
   prViewOf,
   type PrView,
@@ -283,7 +284,9 @@ async function factsCommand(args: string[]): Promise<number> {
   // The integration branch is established apart from the pull request: the
   // remote's default branch names it, and that branch's configuration may name
   // another.  The pull request's base is then checked against its policy.
-  const defaulted = await integrationBranchOf({}, remote, local);
+  const defaulted =
+    (await integrationBranchOf({}, remote, local)) ??
+    (await remoteDefaultBranch(remote, local));
   if (defaulted === null)
     stop(
       1,

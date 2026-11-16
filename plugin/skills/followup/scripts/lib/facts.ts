@@ -291,6 +291,16 @@ export async function integrationBranchOf(
     : null;
 }
 
+/** The remote's default branch, asked of the remote when the clone holds no `refs/remotes/<remote>/HEAD`. */
+export async function remoteDefaultBranch(
+  remote: string,
+  git: GitRunner,
+): Promise<string | null> {
+  const r = await git(["ls-remote", "--symref", remote, "HEAD"]);
+  const m = /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(r.stdout);
+  return r.code === 0 && m?.[1] !== undefined ? m[1] : null;
+}
+
 /** The bases a merge may land on: the integration branch and every base `pull_requests.base_rules` names. */
 export function allowedBases(
   values: Record<string, unknown>,
@@ -415,6 +425,12 @@ export async function rebaseRange(
   ]);
   if (original === null || rebased === null) return range;
   if (original.some((line, i) => line !== rebased[i])) return range;
+  // Matching times and subjects do not make the changes the same: `git cherry`
+  // marks a commit `-` only when its patch is already in the merge's history.
+  const cherry = await git(["cherry", merge, view.commits[count - 1] ?? ""]);
+  const marks = cherry.stdout.trim().split("\n");
+  if (cherry.code !== 0 || marks.length < count) return range;
+  if (!marks.every((line) => line.startsWith("- "))) return range;
   const parent = await git(["rev-parse", `${chain[0]}^`]);
   const base = parent.stdout.trim();
   if (parent.code !== 0 || !SHA.test(base)) return range;
@@ -432,9 +448,29 @@ async function mergedRange(
     await deps.fetch(["fetch", "--no-tags", deps.remote, merge]);
     read = await mergeRange(deps.git, merge);
   }
-  return read.ok
-    ? ok(await rebaseRange(view, merge, read.value, deps.git))
-    : read;
+  if (!read.ok) return read;
+  if (read.value.kind === "squash" && view.commits.length >= 2) {
+    // The landed commits are compared with the pull request's own, so the
+    // clone must hold both; a range narrowed because they are missing would
+    // drop the earlier commits' notes and obligations without saying so.
+    const missing = async (): Promise<boolean> =>
+      (
+        await Promise.all(
+          view.commits.map((oid) =>
+            deps.git(["cat-file", "-e", `${oid}^{commit}`]),
+          ),
+        )
+      ).some((r) => r.code !== 0);
+    if (await missing()) {
+      await deps.fetch(["fetch", "--no-tags", deps.remote, ...view.commits]);
+      if (await missing())
+        return failed(
+          "unreadable",
+          `the commits of PR #${view.number} are not in this clone, so a rebase merge cannot be told from a squash`,
+        );
+    }
+  }
+  return ok(await rebaseRange(view, merge, read.value, deps.git));
 }
 
 /** The range of a merged or open pull request, after fetching its base (and a preview's head). */
