@@ -1,12 +1,16 @@
 /**
- * Holding an agent tool worktree's HEAD from the final identity comparison
- * through its removal. Git offers no atomic check-and-remove, and a commit on
- * a detached head is on no ref: one made after the comparison would go with
- * the tree's HEAD and its log. Git takes `HEAD.lock` in the worktree's git
- * directory, with an exclusive create, before it moves HEAD, so while gc
- * holds that file a commit, checkout, switch or reset in the tree fails with
- * git's own "cannot lock ref" error instead of moving the head. `git worktree
- * remove` deletes the git directory, the lock with it.
+ * Holding a worktree's HEAD from the final identity comparison through its
+ * removal, by `git worktree remove` for an agent tool's tree and by `orca
+ * worktree rm` for one Orca manages. Git offers no atomic check-and-remove,
+ * and a commit on a detached head is on no ref: one made after the
+ * comparison would go with the tree's HEAD and its log. Git takes `HEAD.lock`
+ * in the worktree's git directory, with an exclusive create, before it moves
+ * HEAD, so while gc holds that file a commit, checkout, switch or reset in
+ * the tree fails with git's own "cannot lock ref" error instead of moving the
+ * head. Neither removal moves HEAD itself: Orca's removal reads the tree's
+ * status, stops its terminals, runs `git worktree remove` and then deletes
+ * only the branch ref, so the hold stands across it. `git worktree remove`
+ * deletes the git directory, the lock with it.
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -21,12 +25,83 @@ import {
 import { isAbsolute, join, resolve } from "node:path";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { gcGit as git } from "../git.ts";
-import type { WorktreeIdentity } from "./worktree-proof.ts";
+import {
+  unchangedSinceProof,
+  type WorktreeIdentity,
+} from "./worktree-proof.ts";
 
 /** A held head, released once the removal ran or was refused. */
 export interface HeadHold {
   /** Delete the lock while it is still the one this hold wrote. */
   release(): Outcome<undefined, "release-failed">;
+}
+
+/**
+ * The identity a tree's collection holds it to, or why the collection stops
+ * before its remove hook runs: no final proof recorded the tree's commit and
+ * branch, or its head cannot be held (`headHoldRefusal`).
+ */
+export async function holdableIdentity(
+  path: string,
+  identity: WorktreeIdentity | undefined,
+): Promise<
+  | { identity: WorktreeIdentity }
+  | { stop: { outcome: "failed" | "refused"; reason: string } }
+> {
+  if (identity === undefined)
+    return {
+      stop: {
+        outcome: "failed",
+        reason: "kept: no final proof recorded the tree's commit and branch",
+      },
+    };
+  const refusal = await headHoldRefusal(path);
+  if (!refusal.ok)
+    return { stop: { outcome: "failed", reason: refusal.failure.reason } };
+  return refusal.value === null
+    ? { identity }
+    : { stop: { outcome: "refused", reason: refusal.value } };
+}
+
+/**
+ * The comparison with the proof's identity that every check before removal
+ * ends with. Before the `final` one, the last before removal, the head is
+ * held, the hold added to `holds`, so no commit, switch or reset moves it
+ * between the comparison and the removal.
+ */
+export function unchangedAndHeld(
+  path: string,
+  identity: WorktreeIdentity,
+  final: boolean,
+  holds: HeadHold[],
+): Promise<Outcome<undefined, string>> {
+  return unchangedSinceProof(
+    path,
+    identity,
+    final
+      ? async () => {
+          const taken = await holdHead(path, identity);
+          if (!taken.ok) return taken;
+          holds.push(taken.value);
+          return ok(undefined);
+        }
+      : undefined,
+  );
+}
+
+/** Release every hold taken, emptying `holds`; why one could not be, or null. */
+export function releaseHolds(
+  holds: HeadHold[],
+  log: (line: string) => void,
+): string | null {
+  const reasons: string[] = [];
+  for (const hold of holds.splice(0)) {
+    const released = hold.release();
+    if (released.ok) continue;
+    reasons.push(released.failure.reason);
+    log(String(released.failure.cause ?? released.failure.reason));
+  }
+  return reasons.length === 0 ? null : reasons.join("; ");
 }
 
 /**

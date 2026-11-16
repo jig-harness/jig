@@ -60,6 +60,12 @@ export interface OrcaState {
   rm?: "exit" | "unreadable" | "lost-reply";
   /** Where `rm` reads gc's admission for the worktree, copying it to `admission-at-rm.json`. */
   guard?: string;
+  /**
+   * Where a process in the worktree tries a commit: `rm` before Orca removes
+   * it, writing the attempt's exit code and error output to `window-commit`;
+   * `ps` once, at the first registry read after the remove hook ran.
+   */
+  commitAt?: "rm" | "ps";
 }
 
 /** A fake `orca` reading and writing its registry in `state.json`. */
@@ -80,6 +86,12 @@ const answer = (result) => { console.log(JSON.stringify({ ok: true, result })); 
 const refuse = (code) => { console.log(JSON.stringify({ ok: false, error: { code, message: code } })); process.exit(1); };
 if (state.fail.includes(sub)) { console.error("orca: runtime unavailable"); process.exit(1); }
 const value = (flag) => args[args.indexOf(flag) + 1];
+const root = ${JSON.stringify(root)};
+const commit = (tree, message) =>
+  Bun.spawnSync(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-C", tree, "commit", "-q", "--allow-empty", "-m", message], { stdout: "pipe", stderr: "pipe" });
+if (sub === "ps" && state.commitAt === "ps" && existsSync(join(root, "hook-ran")) && !existsSync(join(root, "late-commit"))) {
+  writeFileSync(join(root, "late-commit"), String(commit(state.worktrees[0].path, "late").exitCode));
+}
 if (sub === "list") {
   if (value("--repo") !== "path:" + state.repo) refuse("repo_not_found");
   answer({ worktrees: state.worktrees.map(({ id, path }) => ({ id, path })), totalCount: state.worktrees.length, truncated: false });
@@ -106,6 +118,10 @@ if (sub === "rm") {
   }
   if (state.rm === "exit") { console.error("orca: connection lost"); process.exit(1); }
   if (state.rm === "unreadable") { console.log("orca: something went sideways"); process.exit(0); }
+  if (state.commitAt === "rm") {
+    const tried = commit(row.path, "window");
+    writeFileSync(join(root, "window-commit"), tried.exitCode + "\\n" + tried.stderr.toString());
+  }
   const removed = Bun.spawnSync(["git", "-C", state.repo, "worktree", "remove", row.path]);
   if (removed.exitCode !== 0) refuse("worktree_dirty");
   state.worktrees = state.worktrees.filter((entry) => entry !== row);

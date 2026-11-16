@@ -349,8 +349,31 @@ that lists the worktree twice refuses collection. The hook's supervisor starts w
 and `bunfig.toml`. Parking refuses while any of those overrides is set, since
 one may have moved the journal the findings were written to.
 
-Orca offers no reservation that stops a start between that last read and the
-removal. Jig's plugin for Orca closes that gap from inside Orca: its
+A process already in the checkout, in one of its terminals or left behind
+by the hook, can still commit after the proof, and a commit on a detached
+head is on no ref once the worktree goes. So collection holds an Orca
+checkout to the commit and branch its final proof saw, as it holds
+[a worktree an agent tool makes](#worktrees-an-agent-tool-makes): after the
+registry, the launch markers and the process holders are read, it checks
+that the checkout gained no changes, hidden index flags or operation, takes
+its `HEAD.lock` and compares its commit and branch with the proof's. It
+keeps the lock through `orca worktree rm`, which never moves the head
+itself: Orca reads the checkout's status, stops its terminals, removes it
+with `git worktree remove` and deletes only its branch, and only at the
+commit it found there. For an Orca checkout, then, gc guarantees that a
+commit made after the final proof keeps the worktree, the commit with it,
+and that a commit, checkout, switch or reset tried between the last
+comparison and the removal fails with git's own "cannot lock ref" error, so
+none is lost. A `HEAD.lock` another git process already holds keeps the
+worktree, and so does a repository on
+[reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), before
+the hook runs, as for an agent tool's worktree. gc deletes its lock once
+`orca worktree rm` returns, whatever the call answered, and the receipt says
+when it could not; a removal Orca goes on with after the call's deadline is
+outside the hold, and the launch guard claim stays for it as below.
+
+Orca offers no reservation that stops a start between the registry's last
+read and the removal. Jig's plugin for Orca closes that gap from inside Orca: its
 `agent.launch.before` hook refuses a launch into a worktree gc holds, and
 leaves a marker for every launch it lets through. gc and the plugin share
 that through the [launch guard record](#the-launch-guard-record). For each

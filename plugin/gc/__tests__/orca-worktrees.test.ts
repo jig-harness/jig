@@ -623,6 +623,60 @@ describe.skipIf(
     expect(existsSync(f.tree)).toBe(true);
   }, 60_000);
 
+  test("a commit tried on a detached checkout while orca worktree rm runs is refused, so none is lost", () => {
+    const f = setup();
+    commitAndPush(f, "work", { "work.txt": "work\n" });
+    detachWithMergedPull(
+      f,
+      f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]),
+    );
+    f.command(["git", "-C", f.tree, "push", "origin", "--delete", "topic"]);
+    idle(f);
+    f.writeState({ commitAt: "rm" });
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "collected",
+      reason: expect.stringContaining("orca worktree rm"),
+    });
+    const [code, ...error] = readFileSync(
+      join(f.root, "window-commit"),
+      "utf8",
+    ).split("\n");
+    expect(code).not.toBe("0");
+    expect(error.join("\n")).toContain("HEAD.lock");
+    expect(existsSync(f.tree)).toBe(false);
+    expect(
+      f.command(["git", "log", "--all", "--reflog", "--format=%s"]),
+    ).not.toContain("window");
+  }, 60_000);
+
+  test("a detached checkout that gains a commit after the remove hook is kept, the commit with it", () => {
+    const f = setup();
+    commitAndPush(f, "work", { "work.txt": "work\n" });
+    detachWithMergedPull(
+      f,
+      f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]),
+    );
+    f.command(["git", "-C", f.tree, "push", "origin", "--delete", "topic"]);
+    idle(f);
+    f.writeState({ commitAt: "ps" });
+    const result = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(result, 1);
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(receipt.resources[0]).toMatchObject({
+      outcome: "failed",
+      reason: expect.stringContaining("Worktree identity changed"),
+    });
+    expect(readFileSync(join(f.root, "late-commit"), "utf8")).toBe("0");
+    expect(existsSync(f.tree)).toBe(true);
+    expect(f.command(["git", "-C", f.tree, "log", "-1", "--format=%s"])).toBe(
+      "late",
+    );
+    expect(
+      existsSync(join(f.repo, ".git", "worktrees", "topic", "HEAD.lock")),
+    ).toBe(false);
+    expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
+  }, 60_000);
+
   test("a checkout Orca does not list stays a plain, report-only worktree", () => {
     const f = setup();
     idle(f);
