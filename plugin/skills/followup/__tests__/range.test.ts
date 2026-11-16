@@ -102,7 +102,8 @@ describe("a single-parent merge of several commits", () => {
   const viewOf = (
     commitSubjects: string[],
     files = ["feature.ts", "shared.ts"],
-  ): PrView => ({ commitSubjects, files }) as unknown as PrView;
+    headRefOid = "",
+  ): PrView => ({ commitSubjects, files, headRefOid }) as unknown as PrView;
 
   test("a squash stays a squash although main moved after its parent", async () => {
     const root = withFeature();
@@ -130,7 +131,11 @@ describe("a single-parent merge of several commits", () => {
       head: merge,
     };
     const settled = await settleSquash(
-      viewOf(["add feature", "edit shared"]),
+      viewOf(
+        ["add feature", "edit shared"],
+        undefined,
+        gitRun(root, "rev-parse", "feature"),
+      ),
       squash,
       runnerIn(root),
     );
@@ -168,6 +173,25 @@ describe("a landed history that cannot be trusted", () => {
     expect(settled.ok).toBe(false);
   });
 
+  test("subjects and files that match over different content are ambiguous", async () => {
+    const root = repository({ "a.ts": "1\n" });
+    write(root, "b.ts", "main's\n");
+    gitRun(root, "add", "-A");
+    gitRun(root, "commit", "-qm", "prepare");
+    write(root, "b.ts", "squashed\n");
+    gitRun(root, "commit", "-qam", "finish");
+    const settled = await settleSquash(
+      { ...view, headRefOid: "e".repeat(40) } as unknown as PrView,
+      {
+        kind: "squash",
+        base: gitRun(root, "rev-parse", "HEAD~1"),
+        head: gitRun(root, "rev-parse", "HEAD"),
+      },
+      runnerIn(root),
+    );
+    expect(settled.ok).toBe(false);
+  });
+
   test("an unreadable history is unreadable, not a squash", async () => {
     const root = repository({ "a.ts": "1\n" });
     const settled = await settleSquash(
@@ -195,6 +219,7 @@ describe("a rebase whose commits edit one file", () => {
       {
         commitSubjects: ["skip a", "annotate a"],
         files: ["a.test.ts"],
+        headRefOid: gitRun(root, "rev-parse", "feature"),
       } as unknown as PrView,
       {
         kind: "squash",
