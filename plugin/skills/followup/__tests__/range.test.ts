@@ -102,7 +102,8 @@ describe("a single-parent merge of several commits", () => {
   const viewOf = (
     commitSubjects: string[],
     files = ["feature.ts", "shared.ts"],
-  ): PrView => ({ commitSubjects, files }) as unknown as PrView;
+    headRefOid = "",
+  ): PrView => ({ commitSubjects, files, headRefOid }) as unknown as PrView;
 
   test("a squash stays a squash although main moved after its parent", async () => {
     const root = withFeature();
@@ -130,7 +131,11 @@ describe("a single-parent merge of several commits", () => {
       head: merge,
     };
     const settled = await settleSquash(
-      viewOf(["add feature", "edit shared"]),
+      viewOf(
+        ["add feature", "edit shared"],
+        undefined,
+        gitRun(root, "rev-parse", "feature"),
+      ),
       squash,
       runnerIn(root),
     );
@@ -168,6 +173,80 @@ describe("a landed history that cannot be trusted", () => {
     expect(settled.ok).toBe(false);
   });
 
+  test("subjects and files that match over different content are ambiguous", async () => {
+    const root = repository({ "a.ts": "1\n" });
+    gitRun(root, "checkout", "-q", "-b", "feature");
+    write(root, "b.ts", "the pull request's\n");
+    gitRun(root, "add", "-A");
+    gitRun(root, "commit", "-qm", "own");
+    const own = gitRun(root, "rev-parse", "HEAD");
+    gitRun(root, "checkout", "-q", "main");
+    write(root, "b.ts", "main's\n");
+    gitRun(root, "add", "-A");
+    gitRun(root, "commit", "-qm", "prepare");
+    write(root, "b.ts", "squashed\n");
+    gitRun(root, "commit", "-qam", "finish");
+    const settled = await settleSquash(
+      { ...view, headRefOid: own } as unknown as PrView,
+      {
+        kind: "squash",
+        base: gitRun(root, "rev-parse", "HEAD~1"),
+        head: gitRun(root, "rev-parse", "HEAD"),
+      },
+      runnerIn(root),
+    );
+    expect(settled.ok).toBe(false);
+  });
+
+  test("a pull request head missing from the clone is ambiguous", async () => {
+    const root = repository({ "a.ts": "1\n" });
+    write(root, "b.ts", "y\n");
+    gitRun(root, "add", "-A");
+    gitRun(root, "commit", "-qm", "prepare");
+    write(root, "b.ts", "z\n");
+    gitRun(root, "commit", "-qam", "finish");
+    const settled = await settleSquash(
+      { ...view, headRefOid: "e".repeat(40) } as unknown as PrView,
+      {
+        kind: "squash",
+        base: gitRun(root, "rev-parse", "HEAD~1"),
+        head: gitRun(root, "rev-parse", "HEAD"),
+      },
+      runnerIn(root),
+    );
+    expect(settled.ok).toBe(false);
+  });
+
+  test("a rebase that deletes a file still reaches back", async () => {
+    const root = repository({ "a.ts": "1\n", "gone.ts": "x\n" });
+    gitRun(root, "checkout", "-q", "-b", "feature");
+    gitRun(root, "rm", "-q", "gone.ts");
+    gitRun(root, "commit", "-qm", "prepare");
+    write(root, "a.ts", "2\n");
+    gitRun(root, "commit", "-qam", "finish");
+    gitRun(root, "checkout", "-q", "main");
+    const before = gitRun(root, "rev-parse", "HEAD");
+    gitRun(root, "cherry-pick", "feature~1", "feature");
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const settled = await settleSquash(
+      {
+        commitSubjects: ["prepare", "finish"],
+        files: ["a.ts", "gone.ts"],
+        headRefOid: gitRun(root, "rev-parse", "feature"),
+      } as unknown as PrView,
+      {
+        kind: "squash",
+        base: gitRun(root, "rev-parse", "HEAD~1"),
+        head: merge,
+      },
+      runnerIn(root),
+    );
+    expect(settled).toEqual({
+      ok: true,
+      value: { kind: "rebase", base: before, head: merge, branchHead: merge },
+    });
+  });
+
   test("an unreadable history is unreadable, not a squash", async () => {
     const root = repository({ "a.ts": "1\n" });
     const settled = await settleSquash(
@@ -195,6 +274,7 @@ describe("a rebase whose commits edit one file", () => {
       {
         commitSubjects: ["skip a", "annotate a"],
         files: ["a.test.ts"],
+        headRefOid: gitRun(root, "rev-parse", "feature"),
       } as unknown as PrView,
       {
         kind: "squash",

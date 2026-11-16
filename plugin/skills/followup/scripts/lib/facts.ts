@@ -362,16 +362,6 @@ export interface FactsDeps {
 
 export type FactsFailure = "unreadable" | "refused" | "rate-limited";
 
-/** A range read, or `null` with its reason added to `notes`. */
-function rangeOrNote(
-  read: Outcome<DiffRange, "unreadable">,
-  notes: string[],
-): DiffRange | null {
-  if (read.ok) return read.value;
-  notes.push(read.failure.reason);
-  return null;
-}
-
 /**
  * A single-parent merge is a squash or a rebase of several commits.  A rebase
  * lands one single-parent commit per pull request commit, with its message
@@ -431,12 +421,56 @@ export async function settleSquash(
   const own = new Set(view.files);
   const sameFiles =
     files.value.length === own.size && files.value.every((f) => own.has(f));
-  return sameFiles
+  if (!sameFiles)
+    return failed(
+      "unreadable",
+      "the landed commits share the pull request's subjects but not its files: whether they are its rebase is ambiguous",
+    );
+  return (await sameContent(view, git, squash.head))
     ? ok(widened)
     : failed(
         "unreadable",
-        "the landed commits share the pull request's subjects but not its files: whether they are its rebase is ambiguous",
+        "the landed commits share the pull request's subjects and files but not its content, or its head is not in the clone: whether they are its rebase is ambiguous",
       );
+}
+
+/**
+ * A path's tree entry at a commit: its mode and blob, `""` when the commit
+ * confirmably lacks the path, `null` when the commit cannot be read.
+ */
+async function entryAt(
+  git: GitRunner,
+  commit: string,
+  file: string,
+): Promise<string | null> {
+  const tree = await git([
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `${commit}^{tree}`,
+  ]);
+  if (tree.code !== 0) return null;
+  const entry = await git(["ls-tree", commit, "--", file]);
+  if (entry.code !== 0) return null;
+  return entry.stdout.split("\t")[0]?.trim() ?? "";
+}
+
+/**
+ * Whether every file the pull request lists is, at the landed head, what its
+ * own head holds: the same blob, or absent from both (a deletion or a rename
+ * away).  A commit that cannot be read is not a match.
+ */
+async function sameContent(
+  view: PrView,
+  git: GitRunner,
+  landedHead: string,
+): Promise<boolean> {
+  for (const file of view.files) {
+    const landed = await entryAt(git, landedHead, file);
+    const own = await entryAt(git, view.headRefOid, file);
+    if (landed === null || own === null || landed !== own) return false;
+  }
+  return true;
 }
 
 /** The range of a merged pull request, fetching its merge commit when the clone lacks it. */
@@ -450,6 +484,12 @@ async function mergedRange(
     await deps.fetch(["fetch", "--no-tags", deps.remote, merge]);
     read = await mergeRange(deps.git, merge);
   }
+  await deps.fetch([
+    "fetch",
+    "--no-tags",
+    deps.remote,
+    `refs/pull/${view.number}/head`,
+  ]);
   return read.ok ? settleSquash(view, read.value, deps.git) : read;
 }
 
@@ -459,7 +499,7 @@ async function rangeOf(
   mode: Mode,
   deps: FactsDeps,
   notes: string[],
-): Promise<DiffRange | null> {
+): Promise<Outcome<DiffRange, "unreadable">> {
   const baseRef = `${deps.remote}/${view.baseRefName}`;
   const head = mode === "preview" ? [`refs/pull/${view.number}/head`] : [];
   const fetched = await deps.fetch([
@@ -477,7 +517,7 @@ async function rangeOf(
     mode === "preview"
       ? await previewRange(deps.git, baseRef, view.headRefOid)
       : await mergedRange(view, deps);
-  return rangeOrNote(read, notes);
+  return read;
 }
 
 /** Whether the pull request lists a file a squash range does not change: the sign of a rebase merge. */
@@ -489,20 +529,17 @@ function listsMore(view: PrView, range: DiffRange, files: string[]): boolean {
 /** The changed files: the range's, else the pull request's own list. */
 async function filesOf(
   view: PrView,
-  range: DiffRange | null,
+  range: DiffRange,
   git: GitRunner,
   notes: string[],
 ): Promise<string[]> {
-  const read =
-    range === null
-      ? failed("unreadable", "the merge's range could not be read")
-      : await changedFilesOf(git, range);
+  const read = await changedFilesOf(git, range);
   if (!read.ok) {
     notes.push(read.failure.reason);
     notes.push("the changed files are the pull request's own list");
     return view.files;
   }
-  if (range !== null && listsMore(view, range, read.value))
+  if (listsMore(view, range, read.value))
     notes.push(
       "the pull request lists files the merge commit's range does not change: the merge may have rebased several commits, so read the pull request's own diff as well",
     );
@@ -571,20 +608,27 @@ async function changeFacts(
   deps: FactsDeps,
   notes: string[],
 ): Promise<
-  Pick<Facts, "range" | "changedFiles" | "changeAreas" | "scaffolding">
+  Outcome<
+    Pick<Facts, "range" | "changedFiles" | "changeAreas" | "scaffolding">,
+    "unreadable"
+  >
 > {
-  const range = await rangeOf(view, mode, deps, notes);
+  const read = await rangeOf(view, mode, deps, notes);
+  if (!read.ok) return read;
+  const range = read.value;
   const changedFiles = await filesOf(view, range, deps.git, notes);
-  const scaffolding =
-    range === null
-      ? []
-      : await scanAddedLines(deps.git, range.base, range.head, notes);
-  return {
+  const scaffolding = await scanAddedLines(
+    deps.git,
+    range.base,
+    range.head,
+    notes,
+  );
+  return ok({
     range,
     changedFiles,
     changeAreas: await deps.areas(changedFiles),
     scaffolding,
-  };
+  });
 }
 
 /** The merge facts of pull request `pr`. */
@@ -602,6 +646,7 @@ export async function gatherFacts(
   if (!base.ok) return base;
   const notes: string[] = [];
   const changes = await changeFacts(view, mode.value, deps, notes);
+  if (!changes.ok) return changes;
   return ok({
     schema: 1,
     pr: view.number,
@@ -614,7 +659,7 @@ export async function gatherFacts(
     headRefName: view.headRefName,
     headRefOid: view.headRefOid,
     mergeSha: view.mergeCommit?.oid ?? null,
-    ...changes,
+    ...changes.value,
     ...describedFacts(view, deps.values, notes),
     configOrigin: deps.configOrigin,
     notes,
