@@ -7,10 +7,12 @@ import {
 } from "../../../../shared/outcome.ts";
 import { ghCall } from "./proc.ts";
 
-/** Every timeline event, preserving why the forge or its response could not be read. */
 /**
- * `unreadable` when the forge could not be reached; `malformed` when it
- * answered with something that is not a timeline.
+ * Every timeline event, preserving why the forge or its response could not
+ * be read: `unreadable` when the forge could not be reached; `malformed` when
+ * it answered with something that is not a timeline. Read fresh
+ * (`paged-read.ts`): the hold-label transitions it gives guard a label
+ * change, a re-run, a reset and an announcement.
  */
 export async function readTimeline(
   pr: string,

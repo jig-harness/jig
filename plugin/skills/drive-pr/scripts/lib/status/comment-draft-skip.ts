@@ -7,7 +7,7 @@ import {
   reviewerLabel,
   reviewsDrafts,
 } from "../overlay.ts";
-import { ghCall } from "../proc.ts";
+import { slurpPages } from "../paged-read.ts";
 import { commentSaysDraftSkip } from "../reviewer-profiles.ts";
 
 /**
@@ -24,12 +24,11 @@ export async function commentDraftSkip(
 ): Promise<boolean | null> {
   // No other profile defines a comment skip, so no extra read is needed.
   if (app !== "coderabbitai") return false;
-  const r = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
+  // An observation for the evaluation's verdict (`paged-read.ts`).
+  const r = await slurpPages(
     `repos/${owner}/${repo}/issues/${pr}/comments?per_page=100`,
-  ]);
+    "observed",
+  );
   if (r.code !== 0) return null;
   const decoded = attempt("unreadable", "issue comments JSON", (): unknown =>
     JSON.parse(r.stdout),

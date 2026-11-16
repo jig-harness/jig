@@ -5,6 +5,7 @@ import {
   setForgeGovernor,
 } from "../outbound/github-budget.ts";
 import type { GhRun } from "../outbound/github.ts";
+import { restOperation } from "../outbound/gh-ledger.ts";
 import { currentMs } from "../time.ts";
 import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import { traceGhRunner } from "../trace.ts";
@@ -206,3 +207,9 @@ test.each([
     });
   },
 );
+
+test("a later page's route, named by the repository's id, keeps its shape", () => {
+  expect(
+    restOperation("GET", "repositories/212613049/commits/abc/check-runs"),
+  ).toBe("GET /repositories/{}/commits/{}/check-runs");
+});

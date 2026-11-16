@@ -27,6 +27,11 @@ import { validatorCache } from "./outbound/cache.ts";
  *                        skip re-asking while nothing has moved.
  *   `cachedRepoView`     Memoises the raw output of a successful `gh repo view`
  *                        across processes; owner/name never changes for a clone.
+ *   `ghObservedSlurp`    What `gh api --paginate --slurp` prints, read as an
+ *                        observation: every page revalidated with its ETag,
+ *                        and one reading per resource within an evaluation
+ *                        (`withObservedEvaluation`). See
+ *                        `outbound/observed-pages.ts`.
  *
  * Not a replacement for the field-rich reads (`mergeStateStatus`,
  * `baseRefOid`, review threads). REST and GraphQL disagree on mergeability and
@@ -68,7 +73,10 @@ import {
   type RunResult,
 } from "./proc.ts";
 import { githubCredential } from "./outbound/github-credential.ts";
+import { createObservedPages } from "./outbound/observed-pages.ts";
 import { currentMs } from "./time.ts";
+
+export { withObservedEvaluation } from "./outbound/observed-pages.ts";
 
 export interface CallContext {
   cwd?: string;
@@ -500,10 +508,17 @@ export function createConditionalCache({
     return r;
   }
 
+  const { ghObservedSlurp } = createObservedPages({
+    ghCall,
+    cacheDir: ghCacheDir,
+    repoScope,
+  });
+
   return {
     ghCacheDir,
     ghConditionalGet,
     ghConditionalProbe,
+    ghObservedSlurp,
     resetProbeBaselines,
     readPrLiveness,
     checkSignalsUnchanged,
@@ -515,6 +530,7 @@ export const {
   ghCacheDir,
   ghConditionalGet,
   ghConditionalProbe,
+  ghObservedSlurp,
   resetProbeBaselines,
   readPrLiveness,
   checkSignalsUnchanged,

@@ -65,6 +65,7 @@ import {
   stickyMarker,
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
+import { type PagedRead, slurpPages } from "./lib/paged-read.ts";
 import { reviewBodyReport } from "./lib/review-body.ts";
 import {
   type ReviewerPosition,
@@ -1153,11 +1154,10 @@ export function collectAddressed(
       //                   from it.
       //
       // The one-head rule's rationale once read as though it replaced the
-      // winddown exemption outright. It does not: the position rule expires
-      // at the FIRST later push, which is exactly the measured carry-forward
-      // loop (three consecutive rounds re-answering one verified-fixed
-      // finding). Dropping either clause here restores a measured failure,
-      // so both stay.
+      // winddown exemption outright. It does not: the position rule expires at
+      // the FIRST later push, which is exactly the measured carry-forward loop
+      // (three consecutive rounds re-answering one verified-fixed finding).
+      // Dropping either clause here restores a measured failure, so both stay.
       const where = position(sha);
       const honour =
         where === "behind" ||
@@ -1278,8 +1278,8 @@ interface ReviewComment {
  * The call goes through `lib/proc.ts` like every other `gh` call, so there is
  * one deadline implementation, and the raw-gh sweep covers this file too.
  */
-async function gh(args: string[]): Promise<string> {
-  const r = await ghCall(args);
+async function gh(args: string[], answer = ghCall(args)): Promise<string> {
+  const r = await answer;
   if (r.code !== 0) {
     throw new Error(
       `gh ${args.join(" ")} failed: ${
@@ -1291,6 +1291,12 @@ async function gh(args: string[]): Promise<string> {
     );
   }
   return r.stdout;
+}
+
+/** Every page of `path` (`gh api --paginate --slurp`), read as `read` says. */
+function slurp(path: string, read: PagedRead): Promise<string> {
+  const args = ["api", "--paginate", "--slurp", path];
+  return gh(args, slurpPages(path, read));
 }
 
 /**
@@ -1500,13 +1506,13 @@ async function main(): Promise<number> {
   }
   const repo = repoView.stdout.trim();
 
+  // `--check-addressed` guards the marker a reply is about to post, so it
+  // reads fresh; the report is an observation (`lib/paged-read.ts`).
   const issueComments: IssueComment[] = JSON.parse(
-    await gh([
-      "api",
-      "--paginate",
-      "--slurp",
+    await slurp(
       `repos/${repo}/issues/${prNumber}/comments?per_page=100`,
-    ]),
+      checkFingerprintsArg === undefined ? "observed" : "fresh",
+    ),
   ).flat();
 
   const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
@@ -1575,12 +1581,10 @@ async function main(): Promise<number> {
   }
 
   const reviewComments: ReviewComment[] = JSON.parse(
-    await gh([
-      "api",
-      "--paginate",
-      "--slurp",
+    await slurp(
       `repos/${repo}/pulls/${prNumber}/comments?per_page=100`,
-    ]),
+      "observed",
+    ),
   ).flat();
   // Scope anchoring to the round this sticky describes. The reviewer stamps
   // `ai-review-round` into its inline comments too, so "did THIS finding get a
@@ -1597,9 +1601,8 @@ async function main(): Promise<number> {
   // input nobody controls. Fail closed instead: with no round to scope by,
   // nothing anchors, so every bullet stays open work. That costs an answer on a
   // finding that may already have a thread; the other direction costs a live
-  // finding, silently.
-  // (`stickyRound` itself is read above, where the `--check-addressed` mode also
-  // needs it.)
+  // finding, silently. (`stickyRound` itself is read above, where the
+  // `--check-addressed` mode also needs it.)
   //
   // NOT a Set: duplicates are the signal. Two inline comments on one line means
   // two bullets there are anchored; one comment means one is.

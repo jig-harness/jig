@@ -67,6 +67,7 @@ function commandQuery(
 export function restOperation(method: string, path: string): string {
   const safe = new Set([
     "repos",
+    "repositories",
     "issues",
     "pulls",
     "comments",

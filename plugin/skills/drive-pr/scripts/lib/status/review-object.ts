@@ -21,7 +21,7 @@
  */
 import { isRecord } from "../../../../../shared/guards.ts";
 import { attempt } from "../../../../../shared/outcome.ts";
-import { ghCall } from "../proc.ts";
+import { slurpPages } from "../paged-read.ts";
 import { runTitleSays } from "../reviewer-profiles.ts";
 import type { CheckRun } from "./evidence.ts";
 import { parseMs } from "../../../../../shared/time.ts";
@@ -60,12 +60,11 @@ export async function reviewsBy(
   pr: string,
   login: string,
 ): Promise<ReviewObject[] | null> {
-  const r = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
+  // An observation for the verdict and the summary report (`paged-read.ts`).
+  const r = await slurpPages(
     `repos/${owner}/${repo}/pulls/${pr}/reviews?per_page=100`,
-  ]);
+    "observed",
+  );
   if (r.code !== 0) return null;
   const decoded = attempt("unreadable", "reviews JSON", (): unknown =>
     JSON.parse(r.stdout),

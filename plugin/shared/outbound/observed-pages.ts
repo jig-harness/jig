@@ -1,0 +1,448 @@
+/**
+ * Observed paged REST reads: what `gh api --paginate --slurp <path>` prints
+ * (a JSON array of the pages), read so that a resource nobody changed costs
+ * nothing against GitHub's primary REST limit and one evaluation reads it
+ * once.
+ *
+ * - **Within one evaluation** (`withObservedEvaluation`), every ask for the
+ *   same resource (the call's directory and repository, its credential, the
+ *   path) shares one reading. A failed reading is not kept: the next ask
+ *   reads again. Outside an evaluation nothing is shared, so a long-lived
+ *   process that polls never answers from an earlier poll.
+ * - **Across evaluations**, every page is kept on disk with its URL, ETag,
+ *   body and next link, in the forge's conditional-request cache
+ *   (`gh-conditional.ts`'s directory, scope and switches). The next reading
+ *   asks for each page with `If-None-Match`: a `304` reuses the kept body and
+ *   the kept next link (GitHub sends no `Link` header with a `304`), a `200`
+ *   takes the new body and its own `Link`. The walk follows the chain page by
+ *   page, at most `PAGE_CAP` pages, on the API origin only.
+ * - **A page added after the last one** leaves the last page's own ETag
+ *   unchanged, so a last page answered `304` is followed by a conditional ask
+ *   for the page after it by number (the **tail probe**): a `304`, or an
+ *   empty answer, says nothing was added; items say a page was, and the walk
+ *   goes on from it. The first reading of a last page asks the tail once
+ *   too, only to keep its ETag, so an unchanged resource is answered by
+ *   `304`s alone from the next evaluation on. Pages named by a cursor rather
+ *   than a number cannot be probed, so an unchanged last page of those is
+ *   read whole.
+ *
+ * FAIL CLOSED. A transport failure, a timeout, an answer that does not
+ * parse, a `304` with no kept page, a next page this reader cannot name, or
+ * more than `PAGE_CAP` pages is never read as "unchanged": the resource is
+ * read again whole, with no `If-None-Match`, exactly as the caller read it
+ * before (`gh api --paginate --slurp`), and that read's failure is the
+ * answer. A cache problem only makes a read cost more, never makes it wrong.
+ *
+ * A `304` is GitHub's confirmation that the page is current, so a walk
+ * answered by `304`s is as fresh as one answered by `200`s. What is not fresh
+ * is the evaluation's shared reading: a read that guards a write, a resolve
+ * or an announcement does not take it (it reads with its own `gh api` call).
+ */
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
+import { utimesSync } from "node:fs";
+import { resolve } from "node:path";
+import { definedFields } from "../defined-fields.ts";
+import { swallow } from "../errors.ts";
+import { entryFile, readJsonFile, writeJsonFile } from "../gh-cache-storage.ts";
+import { currentMs } from "../time.ts";
+import { coalesce } from "./coalesce.ts";
+import { PAGE_CAP, nextPageUrl } from "./gh-paginate.ts";
+import { githubCredential } from "./github-credential.ts";
+import { splitHeaders } from "./github-budget.ts";
+
+/** The answer of an observed read: the fields a `gh` run reports. */
+export interface ObservedRun {
+  code: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  bufferExceeded: boolean;
+  spawnFailed: boolean;
+  stderrTail: string;
+}
+
+/** Where and how the read runs; the same fields the caller's `gh` call took. */
+export interface ObservedOptions {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  /** Whole seconds the whole read may take, cache probes and pages included. */
+  timeoutSec?: number;
+  /** Sent as `X-Drive-Pr-Caller` on each page, so a test double tells callers apart. */
+  caller?: string;
+  /** The caller's error-output handling, kept for the whole read it falls back to. */
+  stderr?: "pipe" | "inherit" | "ignore";
+}
+
+type GhCall<R extends ObservedRun> = (
+  args: string[],
+  opts?: {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+    timeoutSec?: number;
+    stderr?: "pipe" | "inherit" | "ignore";
+  },
+) => Promise<R>;
+
+/** What the reader needs of the conditional-request cache it shares. */
+export interface ObservedDeps<R extends ObservedRun> {
+  ghCall: GhCall<R>;
+  /** The cache directory, or null when caching is off. */
+  cacheDir: () => string | null;
+  /** The repository scope a call in `ctx` reads, or null when it cannot be known. */
+  repoScope: (ctx: ObservedOptions) => Promise<string | null>;
+}
+
+const evaluation = new AsyncLocalStorage<Map<string, Promise<ObservedRun>>>();
+
+/**
+ * Run `fn` as one evaluation: the observed reads it makes, however many
+ * modules ask, read each resource once. Nested, the inner one starts afresh.
+ */
+export function withObservedEvaluation<T>(fn: () => T): T {
+  return evaluation.run(new Map(), fn);
+}
+
+const ENTRY_VERSION = 1;
+
+interface KeptPage {
+  url: string;
+  etag: string;
+  body: string;
+  next: string | null;
+}
+
+interface Entry {
+  pages: KeptPage[];
+  /** The page after the last one, as last asked: an ETag for its empty answer. */
+  tail: { url: string; etag: string } | null;
+}
+
+const isString = (v: unknown): v is string => typeof v === "string";
+
+function keptPage(v: unknown): KeptPage | null {
+  if (typeof v !== "object" || v === null) return null;
+  const p = v as Record<string, unknown>;
+  if (!isString(p.url) || !isString(p.etag) || !isString(p.body)) return null;
+  if (p.next !== null && !isString(p.next)) return null;
+  return { url: p.url, etag: p.etag, body: p.body, next: p.next };
+}
+
+/** A kept entry for `request`, or null when there is none or it does not read whole. */
+function readEntry(file: string, request: string): Entry | null {
+  const e = readJsonFile(file);
+  if (e === null || e.v !== ENTRY_VERSION || e.request !== request) return null;
+  if (!Array.isArray(e.pages)) return null;
+  const pages = e.pages.map(keptPage);
+  if (pages.some((p) => p === null)) return null;
+  const t = e.tail as Record<string, unknown> | null | undefined;
+  const tail =
+    t && isString(t.url) && isString(t.etag)
+      ? { url: t.url, etag: t.etag }
+      : null;
+  return { pages: pages as KeptPage[], tail };
+}
+
+/** How many items a page holds: its array, or an object's first array (`check_runs`); null when neither. */
+export function pageItems(body: string): number | null {
+  try {
+    const v: unknown = JSON.parse(body);
+    if (Array.isArray(v)) return v.length;
+    if (typeof v !== "object" || v === null) return null;
+    const list = Object.values(v).find(Array.isArray);
+    return list === undefined ? null : list.length;
+  } catch (error) {
+    swallow(error, "a page that is not JSON holds no countable items");
+    return null;
+  }
+}
+
+/** Query parameters that name a cursor, whose following page cannot be numbered. */
+const CURSORS = ["after", "before", "cursor", "page_token"];
+
+/**
+ * The page after `url` by its page number (`page=N+1`, the first page being
+ * 1); null for a URL whose pages are not numbered.
+ */
+export function followingPage(url: string): string | null {
+  const at = url.indexOf("?");
+  const base = at < 0 ? url : url.slice(0, at);
+  const params = new URLSearchParams(at < 0 ? "" : url.slice(at + 1));
+  if (CURSORS.some((c) => params.has(c))) return null;
+  const page = params.get("page") ?? "1";
+  if (!/^\d+$/.test(page)) return null;
+  params.set("page", String(Number(page) + 1));
+  return `${base}?${params.toString()}`;
+}
+
+/** The first page's URL: GitHub's largest page unless the caller chose one, as gh asks it. */
+function firstPage(path: string): string {
+  return /[?&]per_page=/.test(path)
+    ? path
+    : `${path}${path.includes("?") ? "&" : "?"}per_page=100`;
+}
+
+type LiveAnswer = {
+  status: 200;
+  etag: string;
+  body: string;
+  next: string | null;
+};
+type PageAnswer = LiveAnswer | { status: 304 };
+
+const ok = (stdout: string): ObservedRun => ({
+  code: 0,
+  stdout,
+  stderr: "",
+  timedOut: false,
+  bufferExceeded: false,
+  spawnFailed: false,
+  stderrTail: "",
+});
+
+const spent = (path: string): ObservedRun => {
+  const reason = `gh api ${path}: caller budget exhausted`;
+  return {
+    code: 124,
+    stdout: "",
+    stderr: `${reason}\n`,
+    timedOut: true,
+    bufferExceeded: false,
+    spawnFailed: false,
+    stderrTail: reason,
+  };
+};
+
+/** Bind observed reads to a conditional-request cache and its process transport. */
+export function createObservedPages<R extends ObservedRun>(
+  deps: ObservedDeps<R>,
+) {
+  const { ghCall } = deps;
+
+  /** Whole seconds left of the caller's budget; 0 once spent, undefined with none. */
+  function leftSec(ctx: ObservedOptions, startMs: number): number | undefined {
+    if (ctx.timeoutSec === undefined) return undefined;
+    return Math.max(
+      0,
+      Math.ceil(ctx.timeoutSec - (currentMs() - startMs) / 1000),
+    );
+  }
+
+  /** One page, conditional on `etag` when one is given; null for any answer that is not a whole 200 or 304. */
+  async function readPage(
+    url: string,
+    etag: string | null,
+    ctx: ObservedOptions,
+    left: number | undefined,
+  ): Promise<PageAnswer | null> {
+    const r = await ghCall(
+      [
+        "api",
+        "-i",
+        ...(etag ? ["-H", `If-None-Match: ${etag}`] : []),
+        ...(ctx.caller ? ["-H", `X-Drive-Pr-Caller: ${ctx.caller}`] : []),
+        url,
+      ],
+      definedFields({ cwd: ctx.cwd, env: ctx.env, timeoutSec: left }),
+    );
+    if (r.timedOut || r.bufferExceeded || r.spawnFailed) return null;
+    const status = /^HTTP\/\S+\s+(\d{3})/.exec(r.stdout);
+    if (!status) return null;
+    const { headers, body } = splitHeaders(r.stdout);
+    // `gh api` exits 1 on a 304, so the status line decides, not the exit.
+    if (status[1] === "304") return etag ? { status: 304 } : null;
+    if (status[1] !== "200" || r.code !== 0 || pageItems(body) === null)
+      return null;
+    return {
+      status: 200,
+      etag: headers?.get("etag") ?? "",
+      body,
+      next: nextPageUrl(headers, ctx.env ?? process.env),
+    };
+  }
+
+  /**
+   * Walk the chain from the first page, each page asked with the ETag kept
+   * for its URL, then the tail probe. The pages read and the tail asked, or
+   * null when any step cannot be trusted.
+   */
+  async function walk(
+    path: string,
+    kept: Entry | null,
+    ctx: ObservedOptions,
+    startMs: number,
+  ): Promise<{ entry: Entry; changed: boolean } | null> {
+    const byUrl = new Map((kept?.pages ?? []).map((p) => [p.url, p]));
+    const pages: KeptPage[] = [];
+    let tail = kept?.tail ?? null;
+    let changed = kept === null;
+    let url: string | null = firstPage(path);
+    // Asking the page after the last one, and whether the last one was live.
+    let probing = false;
+    let lastLive = false;
+    while (url !== null) {
+      if (pages.length >= PAGE_CAP) return null;
+      const left = leftSec(ctx, startMs);
+      const held = byUrl.get(url);
+      const tailEtag: string | null =
+        probing && tail?.url === url ? tail.etag : null;
+      const answer: PageAnswer | null =
+        left === 0
+          ? null
+          : await readPage(url, (held?.etag ?? tailEtag) || null, ctx, left);
+      // A live last page's own `Link` already said nothing follows it.
+      if (answer === null) return probing && lastLive ? done() : null;
+      const fresh: LiveAnswer | null = answer.status === 200 ? answer : null;
+      const live = fresh !== null;
+      if (probing) {
+        // A `304` to the empty tail's ETag, or an empty answer: nothing follows.
+        if (!live && held === undefined) break;
+        if (fresh !== null && (pageItems(fresh.body) ?? 0) === 0) {
+          if (tail?.url !== url || tail.etag !== fresh.etag) changed = true;
+          tail = { url, etag: fresh.etag };
+          break;
+        }
+        // A page follows the last one: it is read like any other.
+      }
+      const page: KeptPage | undefined = fresh
+        ? { url, etag: fresh.etag, body: fresh.body, next: fresh.next }
+        : held;
+      if (page === undefined) return null;
+      changed ||= live;
+      // An empty page after the first holds nothing a whole read would show.
+      if (pages.length === 0 || (pageItems(page.body) ?? 0) > 0)
+        pages.push(page);
+      probing = false;
+      lastLive = live;
+      if (page.next !== null) {
+        url = page.next;
+        continue;
+      }
+      const after = followingPage(page.url);
+      const known =
+        after === null
+          ? null
+          : (byUrl.get(after)?.etag ??
+            (tail?.url === after ? tail.etag : null));
+      // A live last page needs the probe only to keep the tail's ETag.
+      if (live && (after === null || known !== null)) break;
+      // An unchanged last page says nothing of a page added after it.
+      if (after === null) return null;
+      url = after;
+      probing = true;
+    }
+    return done();
+
+    function done() {
+      return { entry: { pages, tail }, changed };
+    }
+  }
+
+  /** The caller's own read, as it ran before: every page, no `If-None-Match`. */
+  function wholeRead(path: string, ctx: ObservedOptions, startMs: number) {
+    const left = leftSec(ctx, startMs);
+    if (left === 0) return Promise.resolve(spent(path));
+    const opts = definedFields({
+      cwd: ctx.cwd,
+      env: ctx.env,
+      stderr: ctx.stderr,
+      timeoutSec: left,
+    });
+    const args = ["api", "--paginate", "--slurp", path];
+    return Object.keys(opts).length === 0 ? ghCall(args) : ghCall(args, opts);
+  }
+
+  async function read(
+    path: string,
+    ctx: ObservedOptions,
+  ): Promise<ObservedRun> {
+    const startMs = currentMs();
+    const dir = deps.cacheDir();
+    const scope = dir === null ? null : await deps.repoScope(ctx);
+    if (dir === null || scope === null) return wholeRead(path, ctx, startMs);
+    const request = `pages ${path}`;
+    const file = entryFile(dir, scope, request);
+    const kept = readEntry(file, request);
+    const walked = await walk(path, kept, ctx, startMs);
+    if (walked === null) return wholeRead(path, ctx, startMs);
+    const { entry, changed } = walked;
+    if (changed)
+      writeJsonFile(dir, file, { v: ENTRY_VERSION, request, ...entry });
+    else touch(file);
+    return ok(
+      `[${entry.pages
+        .map((p) => p.body.trim())
+        .filter((b) => b !== "")
+        .join(",")}]`,
+    );
+  }
+
+  /**
+   * `gh api --paginate --slurp <path>`'s answer, read as an observation (see
+   * the module comment): shared within the current evaluation, revalidated
+   * page by page across evaluations, read whole whenever that cannot be
+   * trusted.
+   */
+  function ghObservedSlurp(
+    path: string,
+    ctx: ObservedOptions = {},
+  ): Promise<ObservedRun> {
+    const reads = evaluation.getStore();
+    if (reads === undefined) return read(path, ctx);
+    const shared = coalesce(reads, memoKey(path, ctx), async () => {
+      const answer = await read(path, ctx);
+      if (answer.code !== 0) reads.delete(memoKey(path, ctx));
+      return answer;
+    });
+    return withinBudget(shared, path, ctx);
+  }
+
+  return { ghObservedSlurp };
+}
+
+/**
+ * What a reading is shared under within one evaluation: the directory and
+ * the repository `gh` resolves `{owner}/{repo}` from, the credential the call
+ * sends (hashed), and the path.
+ */
+function memoKey(path: string, ctx: ObservedOptions): string {
+  const env = ctx.env ?? process.env;
+  return createHash("sha256")
+    .update(
+      [
+        resolve(ctx.cwd ?? process.cwd()),
+        env.GH_HOST ?? "",
+        env.GH_REPO ?? "",
+        githubCredential(env),
+        path,
+      ].join("\n--\n"),
+    )
+    .digest("hex");
+}
+
+/** A shared reading, waited on no longer than this caller's own budget. */
+function withinBudget(
+  shared: Promise<ObservedRun>,
+  path: string,
+  ctx: ObservedOptions,
+): Promise<ObservedRun> {
+  const budgetSec = ctx.timeoutSec;
+  if (budgetSec === undefined) return shared.then((r) => ({ ...r }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<ObservedRun>((done) => {
+    timer = setTimeout(() => done(spent(path)), budgetSec * 1000);
+  });
+  return Promise.race([shared.then((r) => ({ ...r })), late]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+/** Mark a kept entry used, so pruning drops the entries nobody revalidates first. */
+function touch(file: string): void {
+  try {
+    const nowSec = currentMs() / 1000;
+    utimesSync(file, nowSec, nowSec);
+  } catch (error) {
+    swallow(error, "an entry that cannot be touched is only pruned sooner");
+  }
+}
