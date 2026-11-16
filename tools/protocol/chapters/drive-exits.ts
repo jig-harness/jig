@@ -15,6 +15,8 @@ import {
   type TerminalStateCategory,
   type TerminalStateEntry,
 } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { checkHeldPhrases } from "../held.ts";
+import { checkDriveExitChapter } from "../drive-exit-gate.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { code, flag, table } from "../markdown.ts";
 
@@ -301,4 +303,77 @@ export const DRIVE_EXITS: Chapter = {
     })),
   takes: () => rows().map((r) => `${SOURCE_FILE}#TERMINAL_STATES.${r.name}`),
   excluded: EXCLUDED,
+  check: (root) => [
+    ...checkDriveExitChapter(root),
+    ...checkDriveExitPhrases(root),
+  ],
 };
+
+/** The operational copies outside the terminal-state table and its parser. */
+export function checkDriveExitPhrases(root: string) {
+  return checkHeldPhrases(root, "drive-exits", [
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **per-PR** lock`,
+      section: "### Step 4a: Standard start (no sub-issues)",
+    },
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **worktree** lock`,
+      section: "### Step 4a: Standard start (no sub-issues)",
+    },
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.CONVERGED}\` → the drive already reached a terminal state`,
+      section: "### Step 4a: Standard start (no sub-issues)",
+    },
+    ...(
+      [
+        [
+          `exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` (single-instance lock)`,
+          "### Arm",
+        ],
+        [
+          `Proceed only on exit \`${TERMINAL_STATES.ROUND_READY?.exitCode}\`. Anything else is the answer for *this* gate's own`,
+          "### 1. Gate",
+        ],
+        [
+          `For a driver pass carrying a \`WORKTREE_UNCLEAN\` notice, exit \`${TERMINAL_STATES.CONVERGED?.exitCode}\``,
+          "### 1. Gate",
+        ],
+        [
+          `**exit \`${DRIVE_EXIT.QUOTA_PARKED}\`,\n  QUOTA_PARKED**`,
+          "## Session-budget honesty",
+        ],
+        [
+          `\`drive.ts\` refuses that re-arm itself (exit \`${DRIVE_EXIT.QUOTA_PARKED}\`)`,
+          "## Session-budget honesty",
+        ],
+        [
+          `exit \`${DRIVE_EXIT.CONVERGED}\` inside the window → the drive already reached a terminal state`,
+          "### Arm",
+        ],
+        [
+          `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live **session in your tree** holds the drive lease`,
+          "### 6. Commit, then finish the round with *one* command",
+        ],
+        [
+          `| \`${TERMINAL_STATES.DRIVE_HELD_BY_OTHER_WORKTREE?.exitCode}\` | Another live **working tree** is driving this PR`,
+          "### 6. Commit, then finish the round with *one* command",
+        ],
+        [
+          `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live session holds this working tree's tree lease`,
+          "### 5. Sync the base, then validate the cumulative tree — every round",
+        ],
+        [
+          `also refuses (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\`) while a mailbox \`hold-push\` directive`,
+          "## Guardrails",
+        ],
+      ] as const
+    ).map(([text, section]) => ({
+      file: "plugin/skills/drive-pr/SKILL.md",
+      text,
+      section,
+    })),
+  ]);
+}

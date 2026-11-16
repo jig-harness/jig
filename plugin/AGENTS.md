@@ -193,10 +193,11 @@ Read [skills/drive-pr/references/consistency.md](skills/drive-pr/references/cons
 first. The suite runs from this repository's root (`bun test
 plugin/skills/drive-pr`; the root `bunfig.toml` supplies the preloads), never
 from the plugin cache, and
-the `skills/drive-pr/__tests__/terminal-states*.test.ts` suites
-check that every terminal state's exit code agrees across `scripts/`,
-`SKILL.md`, the README and `skills/drive-pr/references/terminal-states.md`,
-and that the dispatcher reads each from the registry rather than restating it. When a script's
+`bun tools/protocol/generate.ts --check` holds the
+[drive exit chapter](protocol/drive-exits.md), its held operational
+restatement and the emitters and dispatcher reads together. The
+`skills/drive-pr/__tests__/terminal-states*.test.ts` mutation suites exercise
+that chapter gate. When a script's
 behaviour changes, search `SKILL.md` and `references/` for sentences that
 state the old behaviour, in the same edit.
 
