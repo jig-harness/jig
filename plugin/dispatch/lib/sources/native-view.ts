@@ -297,11 +297,14 @@ export async function nativeSharedView(
   };
   const queue = [...native.open().map((h) => h.issue), ...native.progress()];
   const projectedRows = async () => {
+    const includes = source.includes;
     const included = await Promise.all(
       queue.map(
         async (row) =>
-          source.includes === undefined ||
-          (await source.includes((row as NativePool).nativeRow, callerBound)),
+          includes === undefined ||
+          (await forCaller(() =>
+            includes((row as NativePool).nativeRow, callerBound),
+          )),
       ),
     );
     return await Promise.all(queue.filter((_, i) => included[i]).map(project));
@@ -340,7 +343,10 @@ export async function nativeSharedView(
   return {
     ...native,
     // The snapshot is shared; each caller's own bound governs its projections.
-    ...(callerBound === undefined ? {} : { bound: callerBound }),
+    // Facts invoked through once() are shared transport reads.  They must
+    // receive the tick allowance, while forCaller() below still gives each
+    // caller its own shorter wait and projection allowance.
+    ...(sharedBound === undefined ? {} : { bound: sharedBound }),
     scope,
     get limited() {
       const failure = facts.failure();

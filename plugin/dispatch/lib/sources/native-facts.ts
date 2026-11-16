@@ -8,7 +8,9 @@ import {
   dispatchScopeFailure,
   recordDispatchScopeFailure,
 } from "../../../skills/do-item/scripts/lib/tracker/dispatch-shared.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
+import { ended, within } from "./bounded.ts";
 import type { FacetBound } from "./tracker-facets.ts";
 
 interface ScopeState {
@@ -56,10 +58,16 @@ export function nativeFacts(
     read: () => Promise<T>,
     onlyUnavailable = false,
   ): Promise<T> => {
+    // A limiter may run this callback long after it was queued.  Do not let
+    // queued shared work begin once the tick that owns it has ended.
+    if (ended(bound))
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
     const failure = reads.get("dispatch scope failure");
     if (failure !== undefined) return Promise.reject(await failure);
     try {
-      return await read();
+      return await (bound === undefined ? read() : within(read(), bound));
     } catch (error) {
       if (!onlyUnavailable || isUnavailable(error))
         recordDispatchScopeFailure(reads, error);

@@ -161,6 +161,14 @@ it("refuses a later caller after the shared tick ends", async () => {
   expect(f.calls).toHaveLength(before);
 });
 
+it("gives shared native facts the tick bound", async () => {
+  const f = fixture();
+  const caller = new AbortController();
+  const view = await f.open(caller.signal);
+
+  expect(view.bound?.signal).toBe(f.tick.signal);
+});
+
 it("keeps direct caller cancellation on an unshared transport read", async () => {
   const f = fixture();
   const caller = new AbortController();
