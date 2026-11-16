@@ -11,6 +11,7 @@ import type { FailureRow } from "./failures.ts";
 import type { LineLoad } from "./dashboard-contract.ts";
 import type { StewardTargetEvidence } from "./steward-evidence.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
+import { inTransaction } from "../../shared/records/db.ts";
 
 export const STEWARD_DEADLINE_SEC = 900;
 export const STEWARD_RESUME =
@@ -425,7 +426,7 @@ export function submitStewardRecords(
   if (!checked.ok) return checked;
   return attempt("unreadable", "the steward records could not be kept", () => {
     const db = stateDb(root);
-    return db.transaction(() => {
+    return inTransaction(db, () => {
       const row = db
         .query("SELECT submitted FROM steward_runs WHERE id = ?")
         .get(run) as { submitted: number } | null;
@@ -440,7 +441,7 @@ export function submitStewardRecords(
         "UPDATE launches SET result = 'done', result_at = ? WHERE id = ? AND result IS NULL",
       ).run(currentIso(), run);
       return "submitted" as const;
-    })();
+    });
   });
 }
 export function stewardRecords(
