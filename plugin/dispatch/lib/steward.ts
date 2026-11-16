@@ -2,6 +2,11 @@
 import { createHash } from "node:crypto";
 import { isMapping } from "../../shared/config-layers.ts";
 import { NEED_ACTS, type NeedAct } from "../../shared/acts.ts";
+import {
+  CONCLUDED_MAX,
+  STEWARD_CAUSES,
+  type StewardCause,
+} from "../../shared/closing-report.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { stateRoot } from "../receipts.ts";
@@ -10,6 +15,7 @@ import type { Action, DrivenPr } from "./types.ts";
 import type { FailureRow } from "./failures.ts";
 import type { LineLoad } from "./dashboard-contract.ts";
 import type { StewardTargetEvidence } from "./steward-evidence.ts";
+import type { UnreportedRun } from "./steward-causes.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
 import { inTransaction } from "../../shared/records/db.ts";
 
@@ -33,7 +39,16 @@ export type StewardRecord =
       value: string | number;
       reason: string;
     }
-  | { kind: "order"; targets: string[]; reason: string };
+  | { kind: "order"; targets: string[]; reason: string }
+  | {
+      kind: "cause";
+      /** The launch record of a run the digest lists in `unreported`. */
+      record: string;
+      cause: StewardCause;
+      /** What the run had got to, at most `CONCLUDED_MAX` characters. */
+      summary: string;
+      reason: string;
+    };
 
 /** What kind of judgment a member of the judgment backlog waits on. */
 export type BacklogKind =
@@ -42,12 +57,13 @@ export type BacklogKind =
   | "rearm"
   | "resume"
   | "facet"
-  | "need";
+  | "need"
+  | "cause";
 
 /** One item of the judgment backlog: its kind, its target and the facts that make it this occurrence. */
 export interface BacklogMember {
   kind: BacklogKind;
-  /** `PR #7`, an item key, or for a resume the ended launch's id. */
+  /** `PR #7`, an item key, or for a resume or a cause the ended launch's id. */
   target: string;
   facts: string;
 }
@@ -82,6 +98,8 @@ export interface StewardDigest {
   failures: FailureRow[];
   load: LineLoad | null;
   history?: unknown[];
+  /** The runs that ended with no report and no explanation, with their transcript excerpts: the only records a `cause` record may name. */
+  unreported?: UnreportedRun[];
   /** Facts read for this digest, never authority for applying a record. */
   targets?: StewardTargetEvidence[];
   /** Current targets are always first; only this many additional historical targets are read. */
@@ -123,6 +141,10 @@ export function recordBelongsToDigest(
     case "order":
       return record.targets.every((target) =>
         digest.queue.some((issue) => issue.identifier === target),
+      );
+    case "cause":
+      return (digest.unreported ?? []).some(
+        (run) => run.record === record.record,
       );
   }
 }
@@ -175,6 +197,7 @@ export function checkedRecords(
       need: ["kind", "target", "act", "ask", "reason"],
       facet: ["kind", "target", "facet", "value", "reason"],
       order: ["kind", "targets", "reason"],
+      cause: ["kind", "record", "cause", "summary", "reason"],
     };
     const keys = Object.hasOwn(shapes, String(r.kind))
       ? shapes[String(r.kind)]
@@ -202,6 +225,8 @@ function recordValues(r: Record<string, unknown>): boolean {
       return facetValues(r);
     case "order":
       return orderValues(r);
+    case "cause":
+      return causeValues(r);
     default:
       return false;
   }
@@ -231,6 +256,14 @@ function facetValues(r: Record<string, unknown>): boolean {
     ["size", "type"].includes(String(r.facet)) &&
     nonempty(r.value) &&
     r.value.length <= 100
+  );
+}
+function causeValues(r: Record<string, unknown>): boolean {
+  return (
+    nonempty(r.record) &&
+    (STEWARD_CAUSES as readonly unknown[]).includes(r.cause) &&
+    nonempty(r.summary) &&
+    [...r.summary].length <= CONCLUDED_MAX
   );
 }
 function orderValues(r: Record<string, unknown>): boolean {
@@ -289,8 +322,9 @@ export function forgetStewardRun(id: string, root = stateRoot()): void {
   stateDb(root).query("DELETE FROM steward_runs WHERE id = ?").run(id);
 }
 /**
- * Erase the output-bearing fields (each target's last-pass tail and each
- * pass's quoted question context) from digests older than the retention,
+ * Erase the output-bearing fields (each target's last-pass tail, each
+ * pass's quoted question context, and each unreported run's transcript
+ * excerpt and output tail) from digests older than the retention,
  * in step with launch pruning. The rest of the digest stays.
  */
 export function eraseStewardOutput(
@@ -342,14 +376,39 @@ function erasedPassFields(passes: unknown): boolean {
   return changed;
 }
 
+/** Empty each run's transcript excerpt and output tail; whether any held one. */
+function erasedExcerpts(unreported: unknown): boolean {
+  let changed = false;
+  for (const run of Array.isArray(unreported) ? unreported : []) {
+    if (!isMapping(run)) continue;
+    if (isMapping(run.excerpt) && run.excerpt.unavailable === undefined) {
+      run.excerpt = {
+        untrusted: true,
+        unavailable: "erased after the retention period",
+      };
+      changed = true;
+    }
+    if (run.output !== null && run.output !== undefined) {
+      run.output = null;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /**
  * Whether every structure that can hold output has the shape the erasers
  * walk, so a malformed one is tombstoned rather than left with its text.
  */
 function outputFieldsReadable(digest: unknown): boolean {
   if (!isMapping(digest)) return false;
-  const { targets, passes } = digest;
+  const { targets, passes, unreported } = digest;
   if (targets !== undefined && !Array.isArray(targets)) return false;
+  if (
+    unreported !== undefined &&
+    !(Array.isArray(unreported) && unreported.every(isMapping))
+  )
+    return false;
   if (!Array.isArray(passes) || !passes.every(isMapping)) return false;
   return (targets ?? []).every((t: unknown) => {
     if (!isMapping(t)) return false;
@@ -383,7 +442,8 @@ function erasedOutput(text: string): string | null {
     return UNREADABLE_TOMBSTONE;
   const erasedTargets = erasedTails(digest.targets);
   const erasedPasses = erasedPassFields(digest.passes);
-  const changed = erasedTargets || erasedPasses;
+  const erasedRuns = erasedExcerpts(digest.unreported);
+  const changed = erasedTargets || erasedPasses || erasedRuns;
   return changed ? JSON.stringify(digest) : null;
 }
 export function readStewardDigest(
@@ -414,7 +474,8 @@ function isStewardDigest(value: unknown): value is StewardDigest {
       value.passes,
       value.failures,
     ].every(Array.isArray) &&
-    (value.history === undefined || Array.isArray(value.history))
+    (value.history === undefined || Array.isArray(value.history)) &&
+    (value.unreported === undefined || Array.isArray(value.unreported))
   );
 }
 export function submitStewardRecords(

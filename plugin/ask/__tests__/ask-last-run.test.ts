@@ -4,7 +4,7 @@
  * when it ended, what its closing report concluded and the next step it
  * suggests, printed as `last.run` and carried in `--json` as `last.stage`
  * and `last.report`; a run that ended with `by: none` reads as ended
- * without a report.
+ * without a report, naming its transcript's copy while there is one.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -119,6 +119,15 @@ describe("jig ask's last run", () => {
       "last.run takeover, ended 2026-11-04T11:00:00.000Z: ended without a report",
     );
     expect(answer.last?.report).toEqual({ by: "none" });
+  });
+
+  it("names the transcript's copy on the host for a run that left no report", async () => {
+    const path = "/state/runs/20261104T100000Z-22222222/transcript.jsonl";
+    const { text, answer } = await ask(world({ by: "none", transcript: path }));
+    expect(text).toContain(
+      `ended without a report; its transcript's copy is ${path}`,
+    );
+    expect(answer.last?.report).toEqual({ by: "none", transcript: path });
   });
 
   it("says no report was kept for a row written before reports were", async () => {
