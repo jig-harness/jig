@@ -366,10 +366,12 @@ still gather their authoritative evidence afresh. Required-check witness
 waits measure elapsed time on one head, and overall reviewer waits keep
 their existing wall-clock deadline.
 
-Processes that send with the same GitHub credential key start their `gh`
-calls at least 200 milliseconds apart, through send slots recorded in the
-shared budget database. A suspended process can still delay a send it was
-already admitted for. Processes with different keys do not wait on one
+Processes that send with the same GitHub credential key are admitted to send
+their `gh` calls at least 200 milliseconds apart, through send slots recorded
+in the shared budget database. The spacing is between admissions, not between
+the starts themselves: a suspended or delayed process can start a send it was
+already admitted for closer to another process's send. Processes with
+different keys do not wait on one
 another. No future slot is reserved: a crashed caller can
 delay the next start by at most that interval. Waiting consumes the caller's
 deadline and observes cancellation; every send still passes budget admission
