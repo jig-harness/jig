@@ -396,6 +396,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.255.1] - 2026-11-16
+
+### Fixed
+
+- Keep driver round-control regression checks reliable during parallel CI execution by sharing fixture pacing and allowing complete multi-round probes to finish. Only internal tests change. **Consumer action:** none.
+
 ## [0.255.0] - 2026-11-16
 
 ### Added
@@ -9020,7 +9026,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.255.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.255.1...HEAD
+[0.255.1]: https://github.com/jig-harness/jig/compare/v0.255.0...v0.255.1
 [0.255.0]: https://github.com/jig-harness/jig/compare/v0.254.0...v0.255.0
 [0.254.0]: https://github.com/jig-harness/jig/compare/v0.253.1...v0.254.0
 [0.253.1]: https://github.com/jig-harness/jig/compare/v0.253.0...v0.253.1
