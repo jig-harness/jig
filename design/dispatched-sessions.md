@@ -512,8 +512,8 @@ without making it the default; step 7 waits on step 6, and step 8 on step
 
 ## Left out
 
-- **Building any of it.** This design changes no behaviour; the build order
-  is filed after it merges.
+- **Building the rest of it.** Steps 1 to 3 of the build order are built;
+  the steps after them are filed as the build reaches them.
 - **`jig gc`'s own fixes** (#990, #991), which come first.
 - **The closing report as a protocol chapter.** The Jig Protocol (#1016) may
   make the report's shape one of its chapters; this design defines the

@@ -18,15 +18,23 @@ export function reportQuestion(
   return kept?.report.question ?? asked;
 }
 
-/** The decision a need shows: the pass's framed result, else the one its report framed; none without either. */
+/**
+ * The decision a need shows, taken with its question: a report that asks a
+ * question brings its own decision (none when it framed none, never the
+ * pass's framed result of another question); otherwise the pass's framed
+ * result, else the report's decision; none without either.
+ */
 export function reportFramed(
   framed: FramedResult | undefined,
   kept: KeptReport | null | undefined,
 ): FramedResult | undefined {
-  if (framed !== undefined) return framed;
   const decision = kept?.report.decision;
-  if (kept == null || decision === undefined) return undefined;
-  return { decision, digest: decisionDigest(decision), at: kept.at };
+  const fromReport =
+    kept == null || decision === undefined
+      ? undefined
+      : { decision, digest: decisionDigest(decision), at: kept.at };
+  if (kept?.report.question !== undefined) return fromReport;
+  return framed ?? fromReport;
 }
 
 /** The evidence a need carries of its run's report: what it concluded; nothing without a report. */

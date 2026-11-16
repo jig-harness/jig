@@ -498,8 +498,8 @@ function endedWhy(
 }
 
 /**
- * The question a failed follow-up's pass stopped on: its launch record's,
- * else its outcome record's; `null` when neither keeps one, or when the
+ * The question a failed follow-up's pass stopped on: its launch record's
+ * trailing question, else its closing report's, else its outcome record's; `null` when neither keeps one, or when the
  * host could not write the pass's result, whose question is the host's.
  */
 function questionFor(
@@ -507,7 +507,12 @@ function questionFor(
   kept: FollowupOutcome | undefined,
 ): string | null {
   if (found !== undefined && unwrittenResult(found)) return null;
-  return questionOf(found?.state) ?? kept?.question ?? null;
+  return (
+    questionOf(found?.state) ??
+    found?.report?.report.question ??
+    kept?.question ??
+    null
+  );
 }
 
 /** What else a failed follow-up's notice says: that it was itself a run again, or that its outcome record's question does not read; empty for neither. */

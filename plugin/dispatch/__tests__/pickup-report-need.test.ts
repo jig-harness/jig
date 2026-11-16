@@ -143,4 +143,24 @@ describe("a pickup's closing report on What needs you", () => {
       concluded: CONCLUDED,
     });
   });
+
+  it("raises the question of a report alone when the pass wrote no Question: line", async () => {
+    const w = fixture();
+    await stopped(w, "stopping here\n", {
+      schema: "closing-report/v1",
+      concluded: CONCLUDED,
+      question: QUESTION,
+      suggested_next: {
+        step: "Choose whether the column stays.",
+        owner: "person",
+        act: "Decide",
+      },
+    });
+    const need = await needOf(w);
+    expect(need).toMatchObject({
+      cause: "pickup-question",
+      question: QUESTION,
+      concluded: CONCLUDED,
+    });
+  });
 });

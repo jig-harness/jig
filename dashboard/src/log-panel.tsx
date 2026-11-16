@@ -23,12 +23,12 @@ import { type LogFilter, pageQuery, viewQuery } from "./search.ts";
 import { type Theme, themeSearch } from "./theme.ts";
 import { WorkRuns } from "./work-runs.tsx";
 
-/** The window a piece of work's page opens on, so its earlier runs show too. */
-const WORK_WINDOW = "30d";
+/** The start of the range a piece of work's page opens on: before any run the log keeps, so every earlier run shows too. */
+const WORK_FROM = "1970-01-01T00:00:00Z";
 
 /** The filters a piece of work's page clears, so it lists every run of that work. */
 const WORK_PAGE_CLEARS: Partial<LogFilter> = {
-  from: "",
+  from: WORK_FROM,
   to: "",
   stage: "",
   account: "",
@@ -215,7 +215,7 @@ function Recurring({
   );
 }
 
-/** Opens a piece of work's page: the log filtered to its target alone, over a window wide enough for its earlier runs; `null` while the page cannot ask the host. */
+/** Opens a piece of work's page: the log filtered to its target alone, over a range from before the log's first row; `null` while the page cannot ask the host. */
 function openWork(
   setFilter: (patch: Partial<LogFilter>) => void,
   offline: boolean,
@@ -226,7 +226,6 @@ function openWork(
       ...WORK_PAGE_CLEARS,
       repo,
       target,
-      window: WORK_WINDOW,
     });
 }
 

@@ -416,7 +416,13 @@ export async function applyNotices(
 ): Promise<void> {
   const root = state.root ?? stateRoot();
   // The destination's read state as this tick found it, before any notice of its own marks it unread.
-  logNoticesRead(repo.slug, sessions, settings.branch, currentIso(), root);
+  logNoticesRead(
+    repo.slug,
+    sessions,
+    settings.branch,
+    (sessions.ok ? sessions.observedAt : undefined) ?? currentIso(),
+    root,
+  );
   openCard(repo, sessions, root);
   // `standing` is read when the card writes, after the tick has named its causes.
   const card = orcaCard(
