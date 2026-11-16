@@ -1303,7 +1303,7 @@ the installed plugin copy, outside a Git checkout.
 | `min_free_bytes` | 0, disabled; collect on other days when available space in the home filesystem falls below this threshold |
 | `archive_max_bytes` | 67108864 (64 MiB); the most the one-time archive of one worktree's ignored content may hold, for a worktree made before marking began ([the collector's README](gc/README.md#ignored-content)); 0 archives nothing, so that content keeps vetoing |
 | `orca.command` | Unset; the absolute path of Orca's command (`orca`, or `orca-ide` on Linux). When set, the worktrees kind tells worktrees Orca manages from plain ones and collects them through Orca ([the collector's README](gc/README.md#worktrees-orca-manages)), and the machine kind `orca-terminals` closes idle [run tabs](gc/README.md#run-tabs) |
-| `orca.terminal_idle_hours` | 24; hours a run tab must be idle (no command running in it, no output) before the `orca-terminals` kind closes it; allowed range 24–8760, so machine policy can only lengthen the guard |
+| `orca.terminal_idle_hours` | 24; hours since a run tab's last output (or its opening, when Orca reports no output time) before the `orca-terminals` kind may close it, and only while no command is running in it at collection time; a command that finished moments ago earns no further grace. Allowed range 24–8760, so machine policy can only lengthen the guard |
 
 The job records Bun's executable, the installed command's path, `HOME`,
 `PATH`, `JIG_HOME`, and any explicit `TMPDIR`, `LOCK_ROOT` or `LOCK_NAME`.
