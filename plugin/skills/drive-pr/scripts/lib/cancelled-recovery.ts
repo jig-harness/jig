@@ -1,13 +1,19 @@
-/** Recover cancelled workflows once per head, sharing one durable budget across entry points. */
+/**
+ * Recover cancelled workflows once per head, sharing one durable budget across
+ * entry points; each person's answer to the `cancelled-ci` park grants one more.
+ */
 import {
   withoutSuperseded,
   type JobEvidence,
   type WorkflowRun,
 } from "./status/workflow-runs.ts";
+import type { PendingVerdict } from "./state/pass-handoff.ts";
 export interface RecoveryRecord {
   firstSeen: number;
   requestedAt: number | null;
   workflowIds?: readonly number[];
+  /** Further re-runs a person's answer granted on this head. */
+  grants?: number;
 }
 export interface RecoveryDeps {
   now(): number;
@@ -22,6 +28,26 @@ export interface RecoveryDeps {
   rerun(run: number): Promise<{ code: number; stderr: string }>;
   park(pr: string, reason: string): Promise<void>;
 }
+/** The `cancelled-ci` park's option whose answer grants one more re-run. */
+export const RERUN_OPTION = "rerun";
+
+/**
+ * Whether a person's answers to the `cancelled-ci` park all choose the re-run
+ * option; a provisional decision, a disputed set or another option grants none.
+ */
+export function answerGrantsRerun(verdict: PendingVerdict): boolean {
+  if (verdict.key !== "cancelled-ci" || verdict.provisional === true)
+    return false;
+  const option = verdict.decision?.call.options.find(
+    (o) => o.id === RERUN_OPTION,
+  );
+  return (
+    option !== undefined &&
+    verdict.answers.length > 0 &&
+    verdict.answers.every((a) => a.choice?.option === option.name)
+  );
+}
+
 export async function recoverCancelled(
   pr: string,
   head: string,
@@ -56,10 +82,13 @@ export async function recoverCancelled(
   if (orphaned.length === 0) return "wait";
   const record = await deps.observe(pr, head);
   const now = deps.now();
+  const granted = (record.grants ?? 0) > 0;
   if (record.requestedAt !== null) {
     if (now - record.requestedAt < 60_000) return "wait";
     return await park(
-      "the once-per-head re-run was already requested and cancellation still has no replacement",
+      granted
+        ? "the re-run a person's answer granted was requested and cancellation still has no replacement"
+        : "the once-per-head re-run was already requested and cancellation still has no replacement",
     );
   }
   if (now - record.firstSeen < 30_000) return "wait";
@@ -79,14 +108,23 @@ export async function recoverCancelled(
     ))
   )
     return "wait";
-  const requested = await requestRuns(pr, head, orphaned, deps);
+  const requested = await requestRuns(
+    pr,
+    head,
+    orphaned,
+    deps,
+    granted ? "the re-run a person's answer granted" : "re-run 1/1",
+  );
   if (requested === "head-moved") return "unknown";
   if (requested !== null) return await park(requested);
   return "wait";
 
   async function park(why: string): Promise<"parked"> {
     const commands = orphaned.map((run) => `gh run rerun ${run.id}`).join("; ");
-    const reason = `Cancelled CI on head ${head}: run ${orphaned.map((run) => run.id).join(", ")}: ${why}. Inspect the workflow's event and permissions, then run ${commands} when safe and re-arm the drive.`;
+    const after = granted
+      ? ` (after ${record.grants} further re-run(s) a person's answer granted)`
+      : "";
+    const reason = `Cancelled CI on head ${head}: run ${orphaned.map((run) => run.id).join(", ")}: ${why}${after}. Answering "Re-run safely" and re-arming grants one more re-run, which the drive requests after the same checks; or inspect the workflow's event and permissions, run ${commands} when safe and re-arm the drive.`;
     await deps.park(pr, reason);
     console.error(reason);
     return "parked";
@@ -110,6 +148,7 @@ async function requestRuns(
   head: string,
   runs: readonly WorkflowRun[],
   deps: RecoveryDeps,
+  budget: string,
 ): Promise<string | null> {
   for (const run of runs) {
     if (!(await deps.confirm(pr, head))) return "head-moved";
@@ -117,7 +156,7 @@ async function requestRuns(
     if (answer.code !== 0)
       return `the forge refused or could not confirm the re-run: ${answer.stderr.trim()}`;
     console.error(
-      `cancelled CI recovery: requested run ${run.id} (re-run 1/1 on head ${head}); waiting for its replacement`,
+      `cancelled CI recovery: requested run ${run.id} (${budget} on head ${head}); waiting for its replacement`,
     );
   }
   return null;

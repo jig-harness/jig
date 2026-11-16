@@ -384,6 +384,10 @@ workflows do not hide a cancellation. It never replays an event created under
 the CI hold. A refused or unconfirmed request, or cancellation still unreplaced
 60 seconds after the request with no active replacement, parks `cancelled-ci`
 with a framed decision and exits `8`. The doctor names the run and recovery.
+A person's answer choosing "Re-run safely" (or approving it) grants that
+head one more re-run when the re-arm consumes it: the drive repeats the same
+checks, requests the re-run and waits for its replacement, and a later park
+says the granted re-run was spent.
 A successful replacement clears that operational park. Intentional held-run
 cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run

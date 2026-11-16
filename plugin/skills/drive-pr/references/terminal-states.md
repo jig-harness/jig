@@ -178,7 +178,7 @@ to a human or to a pass.
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
 | Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | exit `21` (`CI_REPAIR_SPENT`), handing the red CI back for repair; exit `1` when the budget is `0` |
-| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms | exit `8`, parked `cancelled-ci` |
+| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer | exit `8`, parked `cancelled-ci` |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | exit `23` (`CI_INFRA_PERSISTED`) |
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | exit `9`, with its `Fix:` command |
 
@@ -1660,8 +1660,11 @@ false "green":
   otherwise stop at `CI_HOLD_WAIT`. A refused or unconfirmed request, an
   unsafe held event, or a cancellation still unreplaced 60 seconds after the
   request with no active run parks `cancelled-ci` and exits `8`; its decision
-  record and doctor recovery name the run. Observing recovery clears that
-  operational park. A live CI hold is left for convergence to release.
+  record and doctor recovery name the run. A person's "Re-run safely" answer
+  (or approval), consumed by the re-arm, grants the head one more re-run
+  (`grants` in the same SQLite row), which the drive requests after the same
+  checks; a park after it says the granted re-run was spent. Observing
+  recovery clears that operational park. A live CI hold is left for convergence to release.
   Cancellation stops counting only when a run of
   the same workflow on the head, started no earlier, has completed with a
   result: by start time, because a concurrency group can cancel the higher run

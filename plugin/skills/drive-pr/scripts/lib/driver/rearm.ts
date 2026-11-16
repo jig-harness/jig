@@ -51,6 +51,8 @@ import {
 
 import { resolveStateDir } from "./../state/store.ts";
 import type { ConsumedVerdict } from "./../state/resolution-receipt.ts";
+import { answerGrantsRerun } from "./../cancelled-recovery.ts";
+import { grantCancellation } from "./../cancelled-recovery-state.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
 
@@ -349,8 +351,25 @@ export async function admitAnsweredParks(
   );
   if (res.code !== 0)
     return recoverFailedUnpark(pr, res.code, carried, fresh, file);
+  await grantAnsweredRerun(pr, fresh);
   await announceUnparked(pr, fresh, file);
   return rearmNotice([...carried, ...fresh], file);
+}
+
+/**
+ * A person's "Re-run safely" answer to the `cancelled-ci` park is the
+ * cancelled-run recovery's next budget: without it the drive would find the
+ * once-per-head re-run spent and park the same question again.
+ */
+async function grantAnsweredRerun(
+  pr: string,
+  fresh: readonly PendingVerdict[],
+): Promise<void> {
+  if (!fresh.some(answerGrantsRerun)) return;
+  const heads = await grantCancellation(pr);
+  console.error(
+    `re-arm: a person's answer granted one more cancelled-run re-run on ${heads} recorded head(s) of PR #${pr}; the drive repeats the recovery's checks before it requests it.`,
+  );
 }
 
 /** What `unpark --stdin` keeps of a verdict for its receipt. */

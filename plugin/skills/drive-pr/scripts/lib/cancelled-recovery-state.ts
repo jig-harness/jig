@@ -1,4 +1,4 @@
-/** The durable grace period and single re-run claim for a head. Additive SQLite state. */
+/** The durable grace period, single re-run claim and person-granted re-runs for a head. Additive SQLite state. */
 import { driveDb } from "./state/db.ts";
 import { canonicalPr, resolveStateDir } from "./state/store.ts";
 import type { RecoveryRecord } from "./cancelled-recovery.ts";
@@ -28,12 +28,13 @@ export async function readCancellation(
   const drive = driveDb(await resolveStateDir());
   const row = drive.db
     .query(
-      "SELECT first_seen, requested_at, workflow_ids FROM cancelled_ci WHERE clone = ? AND pr = ? AND head = ?",
+      "SELECT first_seen, requested_at, workflow_ids, grants FROM cancelled_ci WHERE clone = ? AND pr = ? AND head = ?",
     )
     .get(drive.clone, canonicalPr(pr), head) as {
     first_seen: number;
     requested_at: number | null;
     workflow_ids: string;
+    grants: number;
   } | null;
   if (row === null) return null;
   const workflowIds: unknown = JSON.parse(row.workflow_ids);
@@ -46,6 +47,7 @@ export async function readCancellation(
     firstSeen: row.first_seen,
     requestedAt: row.requested_at,
     workflowIds,
+    grants: row.grants,
   };
 }
 
@@ -69,4 +71,20 @@ export async function claimCancellation(
         head,
       ) !== null
   );
+}
+
+/**
+ * A person's answer to the `cancelled-ci` park authorises one more re-run on
+ * each head the pull request has a recovery record for: the claim is released
+ * and the grant counted, so the next recovery repeats every check the first
+ * one made (the exact head, the CI hold, the run's event) before it requests
+ * the re-run. Returns how many heads it released.
+ */
+export async function grantCancellation(pr: string): Promise<number> {
+  const drive = driveDb(await resolveStateDir());
+  return drive.db
+    .query(
+      "UPDATE cancelled_ci SET requested_at = NULL, workflow_ids = '[]', grants = grants + 1 WHERE clone = ? AND pr = ? RETURNING head",
+    )
+    .all(drive.clone, canonicalPr(pr)).length;
 }

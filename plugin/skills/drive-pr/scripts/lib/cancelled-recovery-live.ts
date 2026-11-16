@@ -4,7 +4,11 @@ import {
   claimCancellation,
   readCancellation,
 } from "./cancelled-recovery-state.ts";
-import { recoverCancelled, type RecoveryDeps } from "./cancelled-recovery.ts";
+import {
+  recoverCancelled,
+  RERUN_OPTION,
+  type RecoveryDeps,
+} from "./cancelled-recovery.ts";
 import { checkRuns } from "./ci-hold-state.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
@@ -64,40 +68,8 @@ const live: RecoveryDeps = {
   rerun: (id) => ghCall(["run", "rerun", String(id)]),
   async park(pr, reason) {
     const person = await resolveParkPerson(pr, "cancelled-ci", "finding", "");
-    const question = "How should the cancelled workflow recovery continue?";
-    const decision: ParkedDecision = {
-      schema: "parked-decision/v1",
-      class: "human-decision",
-      call: {
-        id: "a",
-        question,
-        options: [
-          {
-            id: "rerun",
-            name: "Re-run safely",
-            summary:
-              "Restart the cancelled workflow after checking its event and permissions.",
-            pay: ["Another CI run and a manual check."],
-          },
-          {
-            id: "repair",
-            name: "Repair workflow first",
-            summary:
-              "Fix the concurrency or event configuration before another run.",
-            pay: ["A workflow change and delayed merge."],
-          },
-        ],
-        recommended: "rerun",
-        why: "Inspect why automatic recovery could not finish; repair the workflow first if its event still carries the hold.",
-      },
-      steps: [
-        reason,
-        "Record the result in a pull-request comment and re-arm the drive.",
-      ],
-      alreadyDone:
-        "The drive checked the exact head, workflow replacements and CI hold history, and bounded automatic recovery to one re-run per head. " +
-        reason,
-    };
+    const decision = cancelledCiDecision(reason);
+    const question = decision.call.question;
     const store = await openStore(pr);
     const capacity = await parkAdmissionContext(pr, store.stateDir);
     await store.update((state) => {
@@ -123,6 +95,42 @@ const live: RecoveryDeps = {
     });
   },
 };
+
+/** The `cancelled-ci` park's framed decision for a recovery that stopped for `reason`. */
+export function cancelledCiDecision(reason: string): ParkedDecision {
+  return {
+    schema: "parked-decision/v1",
+    class: "human-decision",
+    call: {
+      id: "a",
+      question: "How should the cancelled workflow recovery continue?",
+      options: [
+        {
+          id: RERUN_OPTION,
+          name: "Re-run safely",
+          summary:
+            "On re-arm, the drive grants this head one more re-run, checks the head, the CI hold and the run's event again, requests the re-run and waits for its replacement.",
+          pay: [
+            "Another CI run; a run the CI hold or its event still refuses parks again with that reason.",
+          ],
+        },
+        {
+          id: "repair",
+          name: "Repair workflow first",
+          summary:
+            "Fix the concurrency or event configuration before another run.",
+          pay: ["A workflow change and delayed merge."],
+        },
+      ],
+      recommended: RERUN_OPTION,
+      why: "The drive repeats the automatic recovery's checks before it re-runs; repair the workflow first if its event still carries the hold or its concurrency keeps cancelling the run.",
+    },
+    steps: [reason, "Answer in a pull-request comment and re-arm the drive."],
+    alreadyDone:
+      "The drive checked the exact head, workflow replacements and CI hold history, and bounded automatic recovery to one re-run per head. " +
+      reason,
+  };
+}
 
 /** A required-check subset at acquisition; all cancelled workflow jobs at final convergence. */
 export async function recoverCancelledOnHead(

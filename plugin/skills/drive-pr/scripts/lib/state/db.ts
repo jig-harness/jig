@@ -25,7 +25,7 @@
  * | `imports` | clone: when its state directory's files were read in | the migration scripts and markers |
  * | `counters` | name: a number that only grows, such as the lease generation or a pull request's driver generation | — |
  * | `review_rounds` | clone, pull request and head: the review round that head was counted as (`review-rounds.ts`) | the review loop's counter in the working tree's Git directory |
- * | `cancelled_ci` | clone, pull request and head: grace observation and a single re-run claim, retained across re-arms like review-round evidence | — |
+ * | `cancelled_ci` | clone, pull request and head: grace observation, a single re-run claim and the further re-runs a person's answer granted, retained across re-arms like review-round evidence | — |
  *
  * A clone's state directory written by an earlier release is read into these
  * rows once, at the first open that finds no `imports` row for the clone
@@ -193,6 +193,10 @@ const MIGRATIONS: readonly Migration[] = [
       workflow_ids TEXT NOT NULL DEFAULT '[]',
       PRIMARY KEY (clone, pr, head)
     );`,
+  },
+  {
+    additive: true,
+    sql: "ALTER TABLE cancelled_ci ADD COLUMN grants INTEGER NOT NULL DEFAULT 0;",
   },
 ];
 
