@@ -396,6 +396,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.250.1] - 2026-11-16
+
+### Fixed
+
+- The dispatch dashboard can send answers to pickup, follow-up and drive recovery decisions on GitHub, prompts for a token, confirms every send, and shows the tick's outcome. Answered holds stay visible and say the work remains undone; the earlier hold label still works in answers. Posted answers trigger bounded faster refreshes.
+
 ## [0.250.0] - 2026-11-16
 
 ### Changed
@@ -8818,7 +8824,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.250.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.250.1...HEAD
+[0.250.1]: https://github.com/jig-harness/jig/compare/v0.250.0...v0.250.1
 [0.250.0]: https://github.com/jig-harness/jig/compare/v0.249.0...v0.250.0
 [0.249.0]: https://github.com/jig-harness/jig/compare/v0.248.2...v0.249.0
 [0.248.2]: https://github.com/jig-harness/jig/compare/v0.248.1...v0.248.2
