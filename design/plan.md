@@ -1252,7 +1252,8 @@ Practices a working repository validated, for modules that exist today:
   - a ledger of out-of-tree work that blocks promotion.
 - **M7**:
   - a skill that runs the post-merge stage M7 states, for any repository (the
-    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
+    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md);
+    its [design](followup.md));
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
