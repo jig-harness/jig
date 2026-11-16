@@ -91,7 +91,7 @@ function throwingSubmit(): Record<string, string> {
   // BUN_OPTIONS cannot quote a path, so the preload is a fixed file beside
   // the test, not one written under the temporary directory.
   return {
-    BUN_OPTIONS: `--preload=${join(import.meta.dir, "throwing-submit-preload.ts")}`,
+    BUN_OPTIONS: `--preload=${join(import.meta.dir, "fixtures", "throwing-submit-preload.ts")}`,
   };
 }
 
