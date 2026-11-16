@@ -38,6 +38,7 @@ it("reads typed parks without interpreting prose as fields", () => {
   const result = decisionOf(park);
   expect(result.question).toBe("Should we extend coverage?");
   expect(result.options?.[0]).toMatchObject({
+    id: "a",
     changes: "Costs: remains ordinary prose",
     costs: "More work",
     details: [{ label: "Obligation", text: "Review coverage" }],

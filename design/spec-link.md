@@ -13,7 +13,8 @@ hand them to the agent and the reviewer, and the pull request closes with
 each criterion met with evidence, deferred to a filed item, or not
 applicable. The delivery loop writes no spec and dictates no format.
 
-This is the design of [plan.md](plan.md) item 29, following the
+This is the design of the spec link, whose open steps are the backlog issues
+[#1311](https://github.com/jig-harness/jig/issues/1311) to [#1315](https://github.com/jig-harness/jig/issues/1315), following the
 [spec ecosystems research note](spec-ecosystems-research.md). The resolver
 with the `body` adapter, the conformance test every adapter passes and the
 `## Acceptance` section's renderer (step 1 of the build order) are built:

@@ -5,6 +5,7 @@
  * for keeps its free text.
  */
 import { describe, expect, it } from "bun:test";
+import { dispatcherDecisionDigest } from "../../shared/decisions/station-digest.ts";
 import { decisionDigest } from "../../shared/decisions/digest.ts";
 import type { ParkedDecision } from "../../shared/decisions/park.ts";
 import { buildLine } from "../lib/line.ts";
@@ -107,12 +108,15 @@ describe("a need's framed decision", () => {
     expect(decision?.options?.map((o) => [o.name, o.number])).toEqual([
       ["Run it again", 1],
       ["Record it done", 2],
-      ["Leave it to me", 3],
+      ["I'll handle it — hide this card", 3],
     ]);
     expect(decision?.digest).toBe(
       decision?.decision === undefined
         ? "none"
-        : decisionDigest(decision.decision),
+        : dispatcherDecisionDigest({
+            key: "followup",
+            decision: decision.decision,
+          }),
     );
   });
 
@@ -180,7 +184,9 @@ describe("a need's framed decision", () => {
       links: links([793]),
       adapter: "linear",
     }).needs[0]?.decisions[0];
-    expect(carried?.recommendation).toStartWith("Leave it to me:");
+    expect(carried?.recommendation).toStartWith(
+      "I'll handle it — hide this card:",
+    );
     expect(carried?.answer?.on).toBe("tracker");
   });
 
@@ -205,7 +211,7 @@ describe("a need's framed decision", () => {
     });
     expect(line.needs[0]?.decisions[0]?.options?.map((o) => o.name)).toEqual([
       "Detach the checkout",
-      "Leave it to me",
+      "I'll handle it — hide this card",
     ]);
   });
 

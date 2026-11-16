@@ -147,7 +147,13 @@ function planFound(
   if (fault !== null) return refused(fault);
   const digest = decision.digest ?? "";
   const item = stationItem(decision);
-  const resolved = resolveChoice(item, form, request.note, sender.login);
+  const resolved = resolveChoice(
+    item,
+    form,
+    request.note,
+    sender.login,
+    decision.answer?.framedBy === "dispatcher",
+  );
   if (!resolved.ok) return resolved;
   const { option, recommended, text, parts } = resolved.value;
   const posted = postTarget(ctx, need);

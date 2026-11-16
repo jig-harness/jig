@@ -1,7 +1,8 @@
 /**
  * Where each facet is kept: `issue_tracker.facets`, the stores each adapter
- * can hold, every adapter's default (today's stores), and today's keys read
- * as their facet's form (design/tracker-facets.md in the Jig repository).
+ * can hold (`ADAPTER_FACET_STORES` in `facet-values.ts`), every adapter's
+ * default (today's stores), and today's keys read as their facet's form
+ * (design/tracker-facets.md in the Jig repository).
  *
  *   issue_tracker:
  *     facets:
@@ -36,6 +37,11 @@ import {
 } from "../port.ts";
 import { firstRepeat } from "../settings-fields.ts";
 import {
+  ADAPTER_FACET_STORES,
+  FACET_STORES,
+  type StoreHold,
+} from "./facet-values.ts";
+import {
   canonical,
   DEFAULT_TYPES,
   fold,
@@ -46,40 +52,33 @@ import {
   valueMap,
 } from "./values.ts";
 
-const STORES: ReadonlyArray<FacetStoreKind> = ["native", "field", "label"];
+const STORES = Object.keys(FACET_STORES) as ReadonlyArray<FacetStoreKind>;
 const ENTRY_KEYS = ["store", "values", "field", "labels", "prefix"];
 
-/** The stores each adapter holds in this release, per facet. */
-export const ADAPTER_STORES: Readonly<
-  Record<string, Readonly<Record<Facet, ReadonlyArray<FacetStoreKind>>>>
-> = {
-  github: {
-    type: ["native", "field", "label"],
-    priority: ["native", "field", "label"],
-    size: ["field", "label"],
-  },
-  jira: {
-    type: ["native", "field", "label"],
-    priority: ["native", "label"],
-    size: ["field", "label"],
-  },
-  linear: {
-    type: ["label"],
-    priority: ["native", "label"],
-    size: ["native", "label"],
-  },
+type AdapterCells = Readonly<
+  Record<Facet, Readonly<Record<FacetStoreKind, StoreHold>>>
+>;
+
+/** Each adapter's cells of `ADAPTER_FACET_STORES`, by adapter name. */
+const CELLS: Readonly<Record<string, AdapterCells>> = ADAPTER_FACET_STORES;
+
+/** The stores `adapter` holds for `facet` in this release; `undefined` for an adapter the table does not list. */
+const heldStores = (
+  adapter: string,
+  facet: Facet,
+): ReadonlyArray<FacetStoreKind> | undefined => {
+  const cells = CELLS[adapter]?.[facet];
+  return cells && STORES.filter((store) => cells[store].held);
 };
 
-/** Why an adapter cannot hold a store, where the reason is the tracker's. */
-const REFUSALS: Readonly<Record<string, string>> = {
-  "github native size":
-    "an Effort issue field is a field store (store: field, field: Effort)",
-  "jira native size":
-    "each site's estimate is a custom field: store: field, field: <its name or id>",
-  "jira field priority":
-    "Jira keeps priority in its own priority field (store: native, with issue_tracker.jira.priorities)",
-  "linear native type": "Linear has no issue types",
-  "linear field": "the Linear adapter has no custom field to name",
+/** Why an adapter cannot hold a store for a facet, in the tracker's terms. */
+const refusal = (
+  adapter: string,
+  facet: Facet,
+  store: FacetStoreKind,
+): string | undefined => {
+  const cell = CELLS[adapter]?.[facet][store];
+  return cell === undefined || cell.held ? undefined : cell.meaning;
 };
 
 /** One facet's entry in `issue_tracker.facets`, as written. */
@@ -142,11 +141,9 @@ function storeOf(facet: Facet, v: unknown, adapter: string): FacetStoreKind {
       `${where} must be one of ${STORES.join(", ")} (got ${JSON.stringify(v)})`,
     );
   const store = v as FacetStoreKind;
-  const held = ADAPTER_STORES[adapter]?.[facet];
+  const held = heldStores(adapter, facet);
   if (held !== undefined && !held.includes(store)) {
-    const reason =
-      REFUSALS[`${adapter} ${store} ${facet}`] ??
-      REFUSALS[`${adapter} ${store}`];
+    const reason = refusal(adapter, facet, store);
     throw new TrackerConfigError(
       where,
       `${where}: the ${adapter} adapter cannot keep ${facet} in a ${store} store${reason === undefined ? "" : ` (${reason})`}; it keeps ${facet} in ${held.join(" or ")}`,
