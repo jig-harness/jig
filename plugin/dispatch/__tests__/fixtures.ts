@@ -729,6 +729,19 @@ export function world(): World {
   let later: { after: number; nodes: Array<Record<string, unknown>> } | null =
     null;
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
+    // This world scripts whole readings, not an update stream. Declare that
+    // its probe cannot establish completeness, so each tick takes that reading.
+    if (op === "TrackerDispatchChanges")
+      return { repository: { issues: conn([], "unmodelled-changes") } };
+    if (op === "TrackerDispatchIssues")
+      return Object.fromEntries(
+        Object.keys(v)
+          .filter((key) => /^number\d+$/.test(key))
+          .map((key) => [
+            `i${key.slice(6)}`,
+            { issue: issues.find((node) => node.number === v[key]) ?? null },
+          ]),
+      );
     if (op === "TrackerIssues" || op === "TrackerDispatchQueue") {
       listings += 1;
       if (later !== null && listings > later.after) issues = later.nodes;

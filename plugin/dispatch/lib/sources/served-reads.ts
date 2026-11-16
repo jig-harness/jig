@@ -72,6 +72,8 @@ export interface HeldIssue {
 
 interface Snapshot {
   version: 1;
+  /** Metadata invalidations that happened since the last full reading. */
+  revisions?: Record<string, number>;
   shape?: string;
   /** When the queue was last read whole or in part (the tick's clock). */
   readAt: number;
@@ -100,6 +102,8 @@ export interface ServedView {
   readonly limited: TrackerRateLimited | null;
   /** When the reading the view holds was taken. */
   readonly readAt: number;
+  /** A changed key or a full refresh invalidates facts even without a native timestamp change. */
+  metadataEpoch?(key: string): number;
   /** The assigned issues in the open states and the `blocked` state (the dispatch's queue). */
   open(): HeldIssue[];
   /** Every projected native row, before the served queue narrows its states. */
@@ -390,6 +394,7 @@ async function plan(
     identity,
     keys: watched(kept),
   });
+  if (!answer.complete) return full;
   if (answer.keys.length === 0)
     return {
       ...full,
@@ -398,7 +403,6 @@ async function plan(
       stale: new Set(),
       since: kept.since,
     };
-  if (!answer.complete) return full;
   return {
     ...full,
     source: "changed",
@@ -471,6 +475,23 @@ function seedReading(
   for (const issue of progress) remember(issue.identifier, issue);
 }
 
+/** Keep invalidations across unchanged ticks; a new full reading replaces them. */
+function metadataVersions(p: Plan, nowMs: number) {
+  const fullAt = p.source === "full" ? nowMs : (p.snapshot?.fullAt ?? nowMs);
+  const versions = new Map(
+    Object.entries(p.source === "full" ? {} : (p.snapshot?.revisions ?? {})),
+  );
+  const keyOf = (key: string) =>
+    key.toLowerCase().replace(/^([1-9]\d*)$/, "#$1");
+  if (p.stale !== "all")
+    for (const key of p.stale) versions.set(keyOf(key), nowMs);
+  return {
+    fullAt,
+    epoch: (key: string) => versions.get(keyOf(key)) ?? fullAt,
+    saved: () => Object.fromEntries(versions),
+  };
+}
+
 function assemble(
   tracker: Tracker,
   p: Plan,
@@ -479,6 +500,7 @@ function assemble(
   nowMs = 0,
 ): ServedView {
   const kept = p.snapshot;
+  const versions = metadataVersions(p, nowMs);
   const open = queue?.open ?? kept?.open ?? [];
   const progress = queue?.progress ?? kept?.progress ?? [];
   const memo = new Map<string, Promise<PoolIssue | null>>();
@@ -518,6 +540,7 @@ function assemble(
       : { unavailable: p.unavailable, unavailableCause: p.unavailableCause }),
     limited: p.limited,
     readAt,
+    metadataEpoch: versions.epoch,
     open: () => open,
     progress: () => progress,
     async pool(key) {
@@ -533,7 +556,8 @@ function assemble(
       save({
         version: 1,
         readAt,
-        fullAt: p.source === "full" ? nowMs : (kept?.fullAt ?? nowMs),
+        fullAt: versions.fullAt,
+        revisions: versions.saved(),
         since: p.since,
         open,
         progress,

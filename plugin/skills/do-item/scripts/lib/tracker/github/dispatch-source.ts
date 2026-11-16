@@ -9,6 +9,7 @@ import { demandOf } from "../dispatch-source.ts";
 import type { Client } from "./client.ts";
 import { issueFields, onePage, record, str } from "./read.ts";
 import { credentialToken, GitHubApiError, pageAll } from "./transport.ts";
+import { issueBatch } from "./dispatch-reads.ts";
 
 const FIELD_NODES = `nodes {
   __typename
@@ -204,6 +205,7 @@ export function dispatchSource(
       return Promise.all(nodes.map((value) => wrap(value, signal)));
     },
     issue,
+    issues: issueBatch(client, fields, wrap),
     async children(key, options) {
       const signal = readSignal(options);
       refuseStopped(signal);

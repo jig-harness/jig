@@ -109,7 +109,13 @@ export async function metadata(
   const kept = await cacheByVersion<Metadata>(
     cache,
     `versioned:${key}`,
-    issue.updatedAt,
+    // GitHub does not timestamp every relation or membership edit. Changed
+    // keys and scheduled full readings also invalidate these facts.
+    issue.updatedAt &&
+      tracker.adapter === "github" &&
+      tracker.dispatchSource !== undefined
+      ? `${issue.updatedAt}:${view.metadataEpoch?.(issue.identifier) ?? view.readAt}`
+      : issue.updatedAt,
     async () => {
       const assigned = await assigner(tracker, issue, identity, view);
       // An item no user assigned is not placed, so its relations are not read.
