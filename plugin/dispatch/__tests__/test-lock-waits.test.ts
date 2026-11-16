@@ -263,3 +263,16 @@ it("reads no announcement once the deadline has passed", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("reads no oversized announcement and none whose name carries no pid", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-wait-bound-"));
+  try {
+    const announcement = encodeLockWait();
+    const padded = announcement + " ".repeat(8192);
+    writeFileSync(join(dir, `jig-lock.heavy.waiting.${process.pid}`), padded);
+    writeFileSync(join(dir, "jig-lock.heavy.waiting.invalid"), announcement);
+    expect(readLockWaits(dir, join(dir, "jig-lock.heavy"))).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -3,7 +3,7 @@
  * the lock's signal handling so a reader can import them without taking on
  * the lock's process-wide handlers. Older lock readers still read the identity.
  */
-import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { decodeIdentity, isAliveSync, ownIdentity } from "./liveness.ts";
@@ -32,6 +32,23 @@ export function resourceLockPath(root: string, name: string): string {
   return join(root, `jig-lock.${safe}`);
 }
 
+/** An announcement is a few hundred bytes; a larger file is not one and is never read whole. */
+const MAX_ANNOUNCEMENT_BYTES = 4096;
+
+/** The file's text when it is a regular file within the announcement bound; `null` otherwise. */
+function readAnnouncement(path: string): string | null {
+  const fd = openSync(path, "r");
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_ANNOUNCEMENT_BYTES) return null;
+    const buffer = Buffer.alloc(MAX_ANNOUNCEMENT_BYTES);
+    const read = readSync(fd, buffer, 0, MAX_ANNOUNCEMENT_BYTES, 0);
+    return buffer.toString("utf8", 0, read);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export interface LockWait {
   pid: number;
   workspace: string;
@@ -54,9 +71,9 @@ function readWait(
   pid: string,
   deadline?: number,
 ): LockWait | null {
-  const path = join(root, entry);
-  if (!lstatSync(path).isFile()) return null;
-  const text = readFileSync(path, "utf8");
+  if (!/^[1-9][0-9]{0,9}$/.test(pid)) return null;
+  const text = readAnnouncement(join(root, entry));
+  if (text === null) return null;
   const identity = decodeIdentity(text);
   if (identity === null || String(identity.pid) !== pid) return null;
   const data: unknown = JSON.parse(text);
