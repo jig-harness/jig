@@ -311,9 +311,12 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 `linear.ts` (the facets an adapter keeps in the tracker's own fields are its
 own to read and write; it passes its tracker through `withFacets` in
 [`facets/tracker.ts`](skills/do-item/scripts/lib/tracker/facets/tracker.ts),
-which keeps every other facet in labels, and adds the stores it can hold to
-`ADAPTER_STORES` in
-[`facets/config.ts`](skills/do-item/scripts/lib/tracker/facets/config.ts)),
+which keeps every other facet in labels, and adds a row for each facet to
+`ADAPTER_FACET_STORES` in
+[`facets/facet-values.ts`](skills/do-item/scripts/lib/tracker/facets/facet-values.ts),
+saying for each store what it is on that tracker or why it is refused, from
+which the Protocol's [tracker facets chapter](protocol/tracker-facets.md)
+is generated),
 register it in `ADAPTERS` in
 [`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), give its key
 shape an entry in [`keys.ts`](skills/do-item/scripts/lib/tracker/keys.ts),
@@ -327,9 +330,10 @@ adapter maps its tracker onto the interface's vocabulary:
 - an issue key has the shape the adapter's `keys.ts` entry defines; every
   caller that finds a key in text, reads one from a branch name or names a
   file after one goes through that entry;
-- priority is a number from 0 (none) to 4 (low); a type is a type of the
-  repository's label taxonomy and a size a label of its size group, each
-  `null` for none, whatever the tracker shows;
+- priority is a number from 0 (none) to 4 (low)
+  ([the priorities](protocol/tracker-facets.md#priorities)); a type is a
+  type of the repository's label taxonomy and a size a label of its size
+  group, each `null` for none, whatever the tracker shows;
 - relations are directed and read from each issue's side: `relate A blocks
 B` makes B wait for A, and B reads it as `blocked_by` A; `relate A
 duplicate B` records A as the duplicate of B (the tracker may close A),

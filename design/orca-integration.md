@@ -11,11 +11,13 @@ and workspace names, and the [dispatcher](../GLOSSARY.md)'s
 [session runtime](../GLOSSARY.md), Orca first
 ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
 Of the rest of the execution line, the board, collection through Orca and
-a plugin that wakes the dispatcher are built. What remains is the gap that
-lets an agent start between collection's last check and the removal, the
-dispatcher's reading of an account's usage from Orca's command line, and
-what Orca 1.4.248 lets the plugin do beyond the wake-up: guard an agent's
-launch, and show the line where a person works. With this built, Orca is
+a plugin that wakes the dispatcher are built, as are the plugin's launch
+guard, status bar item and inbox. What remains is the launch guard's
+admission, which names only a worktree path, the dispatcher's reading of an
+account's usage from Orca's command line, a trial of binding a launch to an
+account, and the panel's picking of a parked decision's structured option
+(its free-text answer is built) and its merge button.
+With this built, Orca is
 the runtime and Jig is the process: Orca owns workspaces, sessions,
 accounts, the phone and the board; Jig owns what to start, when it is done
 and what it still owes, and the two meet only through Orca's command line
@@ -53,7 +55,7 @@ loads. Each class pays off before the next starts.
 | Setup and archive hooks | The workspace tool runs `.config/worktree-hooks/create` itself | Nothing yet: the plugin only logs a workspace created in the app; running the create hook once there waits on the dispatcher's open rules moving into the plugin ([dispatcher build step 3](dark-factory-dispatch.md#build-order)) | later |
 | Worktree removal | `jig gc`'s worktrees kind collects an Orca-managed checkout through Orca, after the remove hook and the reflection park, and reports any other | The plugin's launch guard refuses a launch Orca makes into a worktree gc is collecting; a removal made in Orca's app runs the remove hook and the reflection park once Orca offers a hook before the removal | plugin, contribute |
 | Scheduled automations | Nothing | Nothing: the dispatcher is a stateless tick on the machine's timer, with a report and a ledger, which an automation that runs an agent prompt is not | — |
-| Orchestration runs: a coordinator, supervised workers, decision gates | `do-item` delegates to subagents in one session | A later design: the implementer as a supervised worker, routed by item 31 | later |
+| Orchestration runs: a coordinator, supervised workers, decision gates | `do-item` delegates to subagents in one session | A later design: the implementer as a supervised worker, on its derived route ([agent-routing.md](agent-routing.md)) | later |
 | Plugins: worker events, hooks, panels, status bar items, commands | A worker that wakes the dispatcher when an agent waits, blocks or finishes | The launch guard, an account binding through the same hook (a spike), a status bar item, the Jig panel's inbox, an "Open the dashboard" command, and a wake-up when a workspace is removed | plugin |
 | The browser, on this machine or in a workspace on a paired host | Nothing | The [dashboard](dispatch-dashboard.md), opened by the plugin's command: this machine's, or a paired host's on that host's loopback, which Orca's browser reaches through the host | plugin |
 | Notifications and the phone | The dispatcher notifies a park once, as an unread card; the plugin shows each tick's receipt as an in-app notification | In the desktop app, the status bar's counts and overdue flag and the panel's inbox, each notice linking to its item in the dashboard's Inbox; on the phone, a push only when an agent needs input, which Orca sends for every finished turn today | plugin, contribute |
@@ -410,17 +412,25 @@ the page, a phone reaches the dashboard through a front only.
 
 ## Build order
 
-One pull request each, in this order; each is usable on its own.
+One pull request each; each is usable on its own. Steps 1 to 6 and the
+first parts of 8 and 9 are built. The steps still open run in parallel where
+nothing orders them: the admission's repository and worktree incarnation
+(step 6), the account binding spike (step 7), the dispatcher's usage reading
+(step 4's ask, once Orca offers it) and the panel's option picking and merge button
+(step 9).
 
 1. **This design** and its plan item.
 2. **The board from Jig's side** (built), after `drive-pr` links the card
    to its pull request: `orca-board.ts` into `plugin/shared/` with `--unread` and
    `--comment`, the moves in `drive-pr` and `followup`, `orca.board`.
-3. **Collection through the runtime** (built; step 6 closes its race): the worktrees kind's runtime column,
+3. **Collection through the runtime** (built; step 6 closes its identity gap): the worktrees kind's runtime column,
    the `orca.command` machine entry, the remove steps moved into the
    plugin, the registry in the proof, tests against a fake `orca` command;
-   collection is enabled, and an agent started after the registry read can
-   still race the removal until the launch guard is built.
+   collection is enabled, and the plugin's launch guard already refuses a
+   launch it can see; what remains is identity: an admission honoured only
+   for the repository that owns it, so another repository's list cannot
+   release it, and for the worktree incarnation it was taken on, so a
+   worktree recreated at the same path inherits no launch block.
 4. **The asks**, filed by a person, each with its pull request to Orca
    when a maintainer does not take it.
 5. **The plugin's wake-up** (built, in
@@ -441,7 +451,7 @@ One pull request each, in this order; each is usable on its own.
    JSON.
 9. **The Jig panel.** First the spike on fixtures that picks the drawing
    mode and the sidebar's fit, then the inbox with its answer box, then its
-   merge button once the dispatch board's Ready to merge is built. Each is
+   merge button. Each is
    its own pull request. The board and the threads are the dashboard's: the
    plugin's reading by `minReader`, its "Open the dashboard" command, and its
    install from the Orca catalog and the host's staged folder are steps of
@@ -467,9 +477,10 @@ One pull request each, in this order; each is usable on its own.
   and writes no comment), and acts in the plugin would split Jig's rules
   across two release channels.
 - **Orchestration runs as `do-item`'s delegation runtime.** Running the
-  implementer as a supervised Orca worker, routed by item 31, changes how
-  `do-item` delegates and waits on Orca's own loop settling; it is a design
-  of its own after item 33 and item 31.
+  implementer as a supervised Orca worker, on its derived route
+  ([agent-routing.md](agent-routing.md)), changes how `do-item` delegates
+  and waits on Orca's own loop settling; it is a design of its own after
+  item 33 and the routing steps [#1319](https://github.com/jig-harness/jig/issues/1319) to [#1321](https://github.com/jig-harness/jig/issues/1321).
 - **A Herdr counterpart of each part.** The board and the plugin have no
   Herdr equivalent today; the collection step's runtime column is where a
   Herdr worktree would be collected through `herdr worktree remove` when
