@@ -4,7 +4,12 @@
  * manual-operations label read from its configuration.
  */
 import { describe, expect, it } from "bun:test";
-import { manualOpsLabel, owedSteps, owesSteps } from "../lib/owed-steps.ts";
+import {
+  manualOpsLabel,
+  outOfTreeSteps,
+  owedSteps,
+  owesSteps,
+} from "../lib/owed-steps.ts";
 
 const body = (...lines: string[]) => lines.join("\n");
 
@@ -430,5 +435,23 @@ describe("blocks end what they hold", () => {
     const started = performance.now();
     owedSteps(`## Out-of-tree follow-ups\n${"a\n".repeat(24000)}`);
     expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
+describe("a step's detail", () => {
+  it("joins continuation lines and deeper plain items to their step", () => {
+    const body = [
+      "## Out-of-tree follow-ups",
+      "",
+      "- Enable the flag",
+      "  only in staging",
+      "  - then run the migration",
+      "- Rotate the key",
+    ].join("\n");
+    const { steps } = outOfTreeSteps(body);
+    expect(steps.map((s) => s.text)).toEqual([
+      "Enable the flag only in staging then run the migration",
+      "Rotate the key",
+    ]);
   });
 });

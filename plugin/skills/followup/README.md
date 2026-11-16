@@ -78,7 +78,7 @@ the pass. A rate limit is a wait, never a question.
 
 ## Configuration
 
-Two fields in `.config/jig.yaml`, both optional
+The fields in `.config/jig.yaml`, all optional
 ([CONFIGURATION.md](../../CONFIGURATION.md#followup)):
 
 ```yaml

@@ -427,7 +427,7 @@ async function releaseCommand(args: string[]): Promise<number> {
   const { facts } = loaded;
   const notesDir = notesDirOf(workingConfig());
   const integrationRef = `${facts.remote}/${facts.integrationBranch}`;
-  await gitIn(
+  const fetched = await gitIn(
     dir,
     FETCH_TIMEOUT_SEC,
   )([
@@ -438,9 +438,14 @@ async function releaseCommand(args: string[]): Promise<number> {
   ]);
   const local = gitIn(dir);
   const notes =
-    facts.range === null
-      ? { notes: [], error: "the facts hold no diff range" }
-      : await mergeNotes(local, facts.range, notesDir, integrationRef);
+    fetched.code !== 0
+      ? {
+          notes: [],
+          error: `the fetch of ${integrationRef} exited ${fetched.code}, so its state is stale`,
+        }
+      : facts.range === null
+        ? { notes: [], error: "the facts hold no diff range" }
+        : await mergeNotes(local, facts.range, notesDir, integrationRef);
   const statusScript = resolve(
     siblingSkill("changelog", resolve(import.meta.dir)),
     "scripts",
