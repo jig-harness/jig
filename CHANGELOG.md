@@ -396,6 +396,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.254.0] - 2026-11-16
+
+### Added
+
+- A pickup's decision on a Linear or Jira item is answered on the item
+  itself: the dispatcher's tick reads the item's comments under the same
+  rules as a pull request's (an answer counts only from a member of the
+  tracker's workspace who is not a guest, never from the user the
+  dispatcher's tracker credential acts as, and only when it names the
+  decision's current digest and every person's latest answer chooses the
+  same option), and `jig send pickup@owner/name#KEY answer pickup --approve
+  --decision <digest>` writes that answer on the item as the user the
+  tracker's credential acts as on your machine, refusing when that user is
+  the repository's factory identity. The tracker interface's comment facts
+  now name each comment's author, its link and its last edit on the Linear,
+  Jira and GitHub adapters, read in the request that already reads the
+  comments; a tracker whose adapter cannot name an author is not read, and
+  the need says why.
+
 ## [0.253.1] - 2026-11-16
 
 ### Fixed
@@ -8955,7 +8974,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.253.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.254.0...HEAD
+[0.254.0]: https://github.com/jig-harness/jig/compare/v0.253.1...v0.254.0
 [0.253.1]: https://github.com/jig-harness/jig/compare/v0.253.0...v0.253.1
 [0.253.0]: https://github.com/jig-harness/jig/compare/v0.252.0...v0.253.0
 [0.252.0]: https://github.com/jig-harness/jig/compare/v0.251.0...v0.252.0
