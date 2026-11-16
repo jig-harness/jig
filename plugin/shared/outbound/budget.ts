@@ -368,7 +368,7 @@ export interface BudgetGovernor {
     answer: BudgetAnswer,
     sentAt?: number,
     reservedIn?: string | null,
-  ): Unexplained | void;
+  ): Unexplained | undefined;
   /** Until when the credential is held after the answers recorded so far, epoch milliseconds; `null` when it is not. */
   heldUntil?(key: string): number | null;
   /**

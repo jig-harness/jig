@@ -355,6 +355,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
       observe: (key: string, answer: { limitedUntil?: number }) => {
         keys.push(key);
         limits.push(answer.limitedUntil ?? 0);
+        return undefined;
       },
     };
     const call = (retryAfter: string) =>

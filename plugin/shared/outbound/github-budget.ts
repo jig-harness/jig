@@ -541,7 +541,10 @@ interface Governed {
 const LEDGER_UNITS = { requests: "requests", complexity: "points" } as const;
 
 /** Put what a snapshot showed was spent beyond the record's count on the cost ledger's unattributed row. */
-function recordUnexplained(key: string, unexplained: Unexplained | void): void {
+function recordUnexplained(
+  key: string,
+  unexplained: Unexplained | undefined,
+): void {
   if (unexplained === undefined) return;
   for (const [name, unit] of Object.entries(LEDGER_UNITS)) {
     const cost = unexplained[name as keyof Unexplained];
