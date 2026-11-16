@@ -56,9 +56,9 @@ export interface OrcaState {
    * `unreadable` prints output that is not Orca's, both removing nothing;
    * `lost-reply` removes the worktree, then exits nonzero with no output, as
    * a reply lost on its way back; `accepted` answers that Orca is still
-   * deleting the worktree, removing nothing yet.
+   * deleting the worktree, removing nothing yet; `refused` refuses it.
    */
-  rm?: "exit" | "unreadable" | "lost-reply" | "accepted";
+  rm?: "exit" | "unreadable" | "lost-reply" | "accepted" | "refused";
   /** Where `rm` reads gc's admission for the worktree, copying it to `admission-at-rm.json`. */
   guard?: string;
   /**
@@ -120,6 +120,7 @@ if (sub === "rm") {
   if (state.rm === "exit") { console.error("orca: connection lost"); process.exit(1); }
   if (state.rm === "unreadable") { console.log("orca: something went sideways"); process.exit(0); }
   if (state.rm === "accepted") answer({ removing: true });
+  if (state.rm === "refused") refuse("worktree_dirty");
   if (state.commitAt === "rm") {
     const tried = commit(row.path, "window");
     writeFileSync(join(root, "window-commit"), tried.exitCode + "\\n" + tried.stderr.toString());
@@ -305,4 +306,52 @@ export function calls(f: ReturnType<typeof setup>): string[] {
   return existsSync(file)
     ? readFileSync(file, "utf8").split("\n").filter(Boolean)
     : [];
+}
+
+export function commitAndPush(
+  f: ReturnType<typeof setup>,
+  message: string,
+  files: Record<string, string>,
+): void {
+  for (const [name, text] of Object.entries(files))
+    writeFileSync(join(f.tree, name), text);
+  f.command(["git", "-C", f.tree, "add", "-A"]);
+  f.command(["git", "-C", f.tree, "commit", "-m", message]);
+  f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+  f.command(["git", "-C", f.tree, "fetch", "origin"]);
+  f.refreshGh();
+}
+
+/**
+ * Detach the checkout at its head and make `gh` answer the forge's pull
+ * requests for a commit with the merged pull request #12 at `head`, that it
+ * has no other commit (as the forge refuses one), and no pull request for any
+ * branch.
+ */
+export function detachWithMergedPull(
+  f: ReturnType<typeof setup>,
+  head: string,
+): void {
+  f.command(["git", "-C", f.tree, "switch", "--quiet", "--detach"]);
+  const pulls = [
+    {
+      number: 12,
+      state: "closed",
+      merged_at: "2026-11-01T00:00:00Z",
+      head: { sha: head, repo: { full_name: "acme/app" } },
+    },
+  ];
+  writeFakeProgram(
+    join(f.root, "bin", "gh"),
+    `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
+const args = process.argv.slice(2);
+if (args[0] === "api" && !args.at(-1).includes(${JSON.stringify(head)})) {
+  console.error("gh: No commit found for SHA: " + args.at(-1) + " (HTTP 422)");
+  process.exit(1);
+}
+console.log(JSON.stringify(args[0] === "api" ? ${JSON.stringify(pulls)} : []));
+`,
+  );
 }

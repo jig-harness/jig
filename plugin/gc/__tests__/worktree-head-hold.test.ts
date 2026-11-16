@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { encodeIdentity, lockIdentity } from "../../shared/liveness.ts";
 import { gitEnvironment } from "../git.ts";
 import { headHoldRefusal, holdHead } from "../kinds/worktree-head-hold.ts";
 import { worktreeIdentity } from "../kinds/worktree-proof.ts";
@@ -66,7 +67,8 @@ describe("holding a worktree's head", () => {
     const held = await holdHead(tree, seen);
     if (!held.ok) throw new Error(held.failure.reason);
     const lock = join(seen.admin, "HEAD.lock");
-    expect(readFileSync(lock, "utf8")).toStartWith(`jig gc ${process.pid} `);
+    expect(readFileSync(lock, "utf8")).toStartWith("jig gc {");
+    expect(readFileSync(lock, "utf8")).toContain(`"pid":${process.pid},`);
     const refused = git(tree, ["commit", "--allow-empty", "-m", "late"], 128);
     expect(refused.stderr.toString()).toContain("cannot lock ref 'HEAD'");
     expect(held.value.release()).toEqual({ ok: true, value: undefined });
@@ -98,6 +100,39 @@ describe("holding a worktree's head", () => {
       },
     });
     expect(readFileSync(lock, "utf8")).toBe("git's own\n");
+  });
+
+  test("a lock an ended gc run left is taken over, held, and released", async () => {
+    const { tree } = setup();
+    const seen = await identity(tree);
+    const lock = join(seen.admin, "HEAD.lock");
+    const child = Bun.spawn(["sleep", "30"]);
+    const ended = lockIdentity(child.pid);
+    child.kill();
+    await child.exited;
+    writeFileSync(
+      lock,
+      `jig gc ${encodeIdentity(ended)} ${crypto.randomUUID()}\n`,
+    );
+    const held = await holdHead(tree, seen);
+    if (!held.ok) throw new Error(held.failure.reason);
+    const refused = git(tree, ["commit", "--allow-empty", "-m", "late"], 128);
+    expect(refused.stderr.toString()).toContain("HEAD.lock");
+    expect(held.value.release().ok).toBe(true);
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  test("a lock a running gc holds is not taken over", async () => {
+    const { tree } = setup();
+    const seen = await identity(tree);
+    const lock = join(seen.admin, "HEAD.lock");
+    const token = `jig gc ${encodeIdentity(lockIdentity())} ${crypto.randomUUID()}\n`;
+    writeFileSync(lock, token);
+    expect(await holdHead(tree, seen)).toMatchObject({
+      ok: false,
+      failure: { code: "head-unheld" },
+    });
+    expect(readFileSync(lock, "utf8")).toBe(token);
   });
 
   test("a release leaves a lock another process wrote after the hold's", async () => {

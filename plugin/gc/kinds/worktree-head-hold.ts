@@ -24,7 +24,14 @@ import {
   writeSync,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { swallow } from "../../shared/errors.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  decodeIdentity,
+  encodeIdentity,
+  isAliveSync,
+  lockIdentity,
+} from "../../shared/liveness.ts";
 import { gcGit as git } from "../git.ts";
 import {
   unchangedSinceProof,
@@ -65,14 +72,35 @@ export async function holdableIdentity(
     return { stop: { outcome: "refused", reason: refusal.value } };
   // A lock already there would refuse the hold only after the hook ran.
   const lock = join(identity.admin, "HEAD.lock");
-  return existsSync(lock)
-    ? {
+  return !existsSync(lock) || endedRunsLock(lock) !== null
+    ? { identity }
+    : {
         stop: {
           outcome: "refused",
-          reason: `kept: ${lock} exists, held by a git process or left by an earlier collection; once nothing holds the worktree, delete it by hand`,
+          reason: `kept: ${lock} exists: a git process holds the worktree's HEAD, or one that stopped left the lock; the next run tries again, and a lock no process holds is deleted by hand`,
         },
-      }
-    : { identity };
+      };
+}
+
+/**
+ * The text of a lock an ended gc run wrote, which a later collection takes
+ * over: the head has stayed held since that run's last comparison. Null for
+ * a lock git or a running gc holds, or one whose writer cannot be judged.
+ */
+function endedRunsLock(lock: string): string | null {
+  let text: string;
+  try {
+    text = readFileSync(lock, "utf8");
+  } catch (error) {
+    // Gone since it was seen, or unreadable: not one to take over.
+    swallow(error, "a HEAD.lock that cannot be read is not taken over");
+    return null;
+  }
+  const match = /^jig gc (\{.*\}) [0-9a-f-]{36}\n$/.exec(text);
+  const writer = match === null ? null : decodeIdentity(match[1]);
+  if (writer === null) return null;
+  const verdict = isAliveSync(writer);
+  return verdict.ok && verdict.value.state === "dead" ? text : null;
 }
 
 /**
@@ -103,14 +131,15 @@ export function unchangedAndHeld(
 
 /**
  * Leave every hold taken in place, emptying `holds`, for a removal that may
- * still be under way: its lock goes with the tree's git directory. What the
- * receipt says of each lock left.
+ * still be under way: its lock goes with the tree's git directory, and a
+ * later collection of a tree that stayed takes it over. What the receipt says
+ * of each lock left.
  */
 export function keepHolds(holds: HeadHold[]): string | null {
   const locks = holds.splice(0).map((hold) => hold.lock);
   return locks.length === 0
     ? null
-    : `gc leaves ${locks.join(" and ")} in place, so the head stays held while the removal may still run; if the worktree stays, delete it by hand`;
+    : `gc leaves ${locks.join(" and ")} in place, so the head stays held while the removal may still run; the next collection takes it over`;
 }
 
 /** Release every hold taken, emptying `holds`; why one could not be, or null. */
@@ -151,7 +180,8 @@ function refusalUnder(store: string): string | null {
  * holds it, when the tree's git directory is no longer the one the proof
  * read, when the lock cannot be written, or as `headHoldRefusal` says. The
  * lock names `jig gc` and its process, for a person who finds one a stopped
- * run left behind.
+ * run left behind and for the next collection, which takes over the lock of
+ * a run that has ended.
  */
 export async function holdHead(
   path: string,
@@ -171,7 +201,7 @@ export async function holdHead(
       "kept: the worktree's git directory changed after the proof",
     );
   const lock = join(admin, "HEAD.lock");
-  const token = `jig gc ${process.pid} ${randomUUID()}\n`;
+  const token = `jig gc ${encodeIdentity(lockIdentity())} ${randomUUID()}\n`;
   let fd: number | null = null;
   try {
     fd = openSync(lock, "wx");
@@ -184,6 +214,8 @@ export async function holdHead(
     closeSync(fd);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
+    const left = code === "EEXIST" ? endedRunsLock(lock) : null;
+    if (fd === null && left !== null) return ok(heldAs(lock, left));
     if (fd === null && code === "EEXIST")
       return failed(
         "head-unheld",
@@ -197,7 +229,12 @@ export async function holdHead(
       error,
     );
   }
-  return ok({
+  return ok(heldAs(lock, token));
+}
+
+/** The hold of `lock` while it carries `token`. */
+function heldAs(lock: string, token: string): HeadHold {
+  return {
     lock,
     release: () => {
       try {
@@ -214,7 +251,7 @@ export async function holdHead(
         );
       }
     },
-  });
+  };
 }
 
 /**

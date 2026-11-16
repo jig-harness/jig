@@ -225,10 +225,11 @@ until the removal. From then on a commit, checkout, switch or reset in the
 tree fails with git's own "cannot lock ref" error instead of moving the
 head, so no commit can land on a detached head between the comparison and
 the removal, and none is lost. A `HEAD.lock` another git process already
-holds keeps the tree. When the removal does not happen, gc deletes its lock,
+holds keeps the tree, before its hook runs. When the removal does not happen, gc deletes its lock,
 and the receipt says when it could not; a run stopped by a signal before
-then can leave the lock behind, and the file names `jig gc` and its process,
-so a person can tell it from git's own and delete it. A repository that keeps
+then can leave the lock behind. The file names `jig gc` and its process, so
+a person can tell it from git's own, and the next collection takes over a
+lock whose run has ended. A repository that keeps
 its refs in [reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), git's newer reference storage, has no
 `HEAD.lock` to hold: there gc keeps the tree, on a branch or detached, before
 running its hook, since a tree on a branch can be detached and committed on
@@ -365,18 +366,20 @@ not the worktree's head. For an Orca checkout, then, gc guarantees that a
 commit made after the final proof keeps the worktree, the commit with it,
 and that a commit, checkout, switch or reset tried between the last
 comparison and the removal fails with git's own "cannot lock ref" error, so
-none is lost. A `HEAD.lock` that is already there keeps the worktree before
-its hook runs, whether a git process holds it or an earlier collection left
-it, and so does a repository on
-[reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as for
-an agent tool's worktree. gc deletes its lock once Orca's answer settles the
-removal: the worktree removed, or Orca's refusal, after which the receipt
-says when the lock could not be deleted. While the answer leaves it unknown
-whether the worktree is going (the cases below in which the launch guard
-claim stays, among them Orca saying it is still deleting the checkout in the
+none is lost. gc deletes its lock once Orca's answer settles the removal:
+the worktree removed, or Orca's refusal, after which the receipt says when
+the lock could not be deleted. While the answer leaves it unknown whether
+the worktree is going (the cases below in which the launch guard claim
+stays, among them Orca saying it is still deleting the checkout in the
 background), gc leaves the lock in place, since Orca may still be removing
-the worktree, and the receipt names it; a worktree that survives keeps the
-lock, which a person deletes by hand after inspecting it.
+the worktree, and the receipt names it. The next collection of a worktree
+that survived takes that lock over, since its contents name a gc run that
+has ended, and holds it through its own call to Orca: the head stays held
+from the first run's comparison on. Any other `HEAD.lock` (a git process's,
+a running gc's, or one whose writer cannot be judged) keeps the worktree
+before its hook runs, and so does a repository on
+[reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as for
+an agent tool's worktree.
 
 Orca offers no reservation that stops a start between the registry's last
 read and the removal. Jig's plugin for Orca closes that gap from inside Orca: its

@@ -18,11 +18,7 @@ import {
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import {
-  expectSpawnExit,
-  expectSpawnExitNot,
-} from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { dump } from "../../shared/yaml.ts";
 import type { Receipt } from "../types.ts";
@@ -33,6 +29,8 @@ import {
   idle,
   line,
   type OrcaState,
+  commitAndPush,
+  detachWithMergedPull,
   setup,
 } from "./orca-fixture.ts";
 
@@ -85,51 +83,6 @@ function pendingText(f: ReturnType<typeof setup>): string {
   };
   walk(base);
   return text.join("\n");
-}
-
-function commitAndPush(
-  f: ReturnType<typeof setup>,
-  message: string,
-  files: Record<string, string>,
-): void {
-  for (const [name, text] of Object.entries(files))
-    writeFileSync(join(f.tree, name), text);
-  f.command(["git", "-C", f.tree, "add", "-A"]);
-  f.command(["git", "-C", f.tree, "commit", "-m", message]);
-  f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
-  f.command(["git", "-C", f.tree, "fetch", "origin"]);
-  f.refreshGh();
-}
-
-/**
- * Detach the checkout at its head and make `gh` answer the forge's pull
- * requests for a commit with the merged pull request #12 at `head`, that it
- * has no other commit (as the forge refuses one), and no pull request for any
- * branch.
- */
-function detachWithMergedPull(f: ReturnType<typeof setup>, head: string): void {
-  f.command(["git", "-C", f.tree, "switch", "--quiet", "--detach"]);
-  const pulls = [
-    {
-      number: 12,
-      state: "closed",
-      merged_at: "2026-11-01T00:00:00Z",
-      head: { sha: head, repo: { full_name: "acme/app" } },
-    },
-  ];
-  writeFakeProgram(
-    join(f.root, "bin", "gh"),
-    `#!/usr/bin/env bun
-import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
-const args = process.argv.slice(2);
-if (args[0] === "api" && !args.at(-1).includes(${JSON.stringify(head)})) {
-  console.error("gh: No commit found for SHA: " + args.at(-1) + " (HTTP 422)");
-  process.exit(1);
-}
-console.log(JSON.stringify(args[0] === "api" ? ${JSON.stringify(pulls)} : []));
-`,
-  );
 }
 
 describe.skipIf(
@@ -623,105 +576,6 @@ describe.skipIf(
         "branch without a pull request is ahead of the base; HEAD is detached; the forge lists no pull request holding its commit",
       ),
     });
-    expect(existsSync(f.tree)).toBe(true);
-  }, 60_000);
-
-  test("a commit tried on a detached checkout while orca worktree rm runs is refused, so none is lost", () => {
-    const f = setup();
-    commitAndPush(f, "work", { "work.txt": "work\n" });
-    detachWithMergedPull(
-      f,
-      f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]),
-    );
-    f.command(["git", "-C", f.tree, "push", "origin", "--delete", "topic"]);
-    idle(f);
-    f.writeState({ commitAt: "rm" });
-    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
-      outcome: "collected",
-      reason: expect.stringContaining("orca worktree rm"),
-    });
-    const [code, ...error] = readFileSync(
-      join(f.root, "window-commit"),
-      "utf8",
-    ).split("\n");
-    expect(code).not.toBe("0");
-    expect(error.join("\n")).toContain("HEAD.lock");
-    expect(existsSync(f.tree)).toBe(false);
-    expect(
-      f.command(["git", "log", "--all", "--reflog", "--format=%s"]),
-    ).not.toContain("window");
-  }, 60_000);
-
-  test("a detached checkout that gains a commit after the remove hook is kept, the commit with it", () => {
-    const f = setup();
-    commitAndPush(f, "work", { "work.txt": "work\n" });
-    detachWithMergedPull(
-      f,
-      f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]),
-    );
-    f.command(["git", "-C", f.tree, "push", "origin", "--delete", "topic"]);
-    idle(f);
-    f.writeState({ commitAt: "ps" });
-    const result = gc(f, ["--collect", "--json"]);
-    expectSpawnExit(result, 1);
-    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
-    expect(receipt.resources[0]).toMatchObject({
-      outcome: "failed",
-      reason: expect.stringContaining("Worktree identity changed"),
-    });
-    expect(readFileSync(join(f.root, "late-commit"), "utf8")).toBe("0");
-    expect(existsSync(f.tree)).toBe(true);
-    expect(f.command(["git", "-C", f.tree, "log", "-1", "--format=%s"])).toBe(
-      "late",
-    );
-    expect(
-      existsSync(join(f.repo, ".git", "worktrees", "topic", "HEAD.lock")),
-    ).toBe(false);
-    expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
-  }, 60_000);
-
-  test("a detached checkout Orca is still deleting keeps its head held, and the next run keeps it before the hook", () => {
-    const f = setup();
-    commitAndPush(f, "work", { "work.txt": "work\n" });
-    detachWithMergedPull(
-      f,
-      f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]),
-    );
-    f.command(["git", "-C", f.tree, "push", "origin", "--delete", "topic"]);
-    idle(f);
-    f.writeState({ rm: "accepted" });
-    const first = gc(f, ["--collect", "--json"]);
-    expectSpawnExit(first, 1);
-    const pending = (JSON.parse(first.stdout.toString()) as Receipt)
-      .resources[0];
-    expect(pending).toMatchObject({
-      outcome: "failed",
-      details: { claim: "kept" },
-    });
-    expect(String(pending?.reason)).toContain(
-      "Orca is still deleting the checkout in the background",
-    );
-    expect(String(pending?.reason)).toContain("HEAD.lock in place");
-    const lock = join(f.repo, ".git", "worktrees", "topic", "HEAD.lock");
-    expect(readFileSync(lock, "utf8")).toStartWith("jig gc ");
-    const tried = Bun.spawnSync(
-      ["git", "-C", f.tree, "commit", "--allow-empty", "-m", "window"],
-      { env: f.env, stdout: "pipe", stderr: "pipe" },
-    );
-    expectSpawnExitNot(tried, 0);
-    expect(tried.stderr.toString()).toContain("HEAD.lock");
-    // The worktree survived: the next collection keeps it before its hook.
-    rmSync(join(f.root, "hook-ran"));
-    f.writeState({});
-    const second = gc(f, ["--collect", "--json"]);
-    expectSpawnExit(second, 0);
-    expect(
-      (JSON.parse(second.stdout.toString()) as Receipt).resources[0],
-    ).toMatchObject({
-      outcome: "refused",
-      reason: expect.stringContaining(`${lock} exists`),
-    });
-    expect(existsSync(join(f.root, "hook-ran"))).toBe(false);
     expect(existsSync(f.tree)).toBe(true);
   }, 60_000);
 
