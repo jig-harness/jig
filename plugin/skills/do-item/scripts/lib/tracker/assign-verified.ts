@@ -23,6 +23,12 @@ export interface AssigneeChange {
 export interface VerifiedAssignOps {
   assignee(): Promise<string | null>;
   assign(id: string | null): Promise<void>;
+  /**
+   * Change the assignee only when an adapter-local read still finds `expected`.
+   * The tracker offers no conditional write, so this narrows, but cannot close,
+   * the race between that read and its write.
+   */
+  assignIfCurrent(expected: string | null, id: string | null): Promise<boolean>;
   history(): Promise<AssigneeChange[]>;
 }
 
@@ -69,6 +75,21 @@ function retain(
   observed: readonly AssigneeChange[],
   listing: readonly AssigneeChange[],
 ): AssigneeChange[] {
+  // A complete listing is authoritative for tied timestamps: the tracker order
+  // is the only ordering information it supplies. Retain observations only
+  // while the latest listing is still missing one of them.
+  const remaining = new Map<string, number>();
+  for (const c of listing)
+    remaining.set(identity(c), (remaining.get(identity(c)) ?? 0) + 1);
+  if (
+    observed.every((c) => {
+      const left = remaining.get(identity(c)) ?? 0;
+      if (left === 0) return false;
+      remaining.set(identity(c), left - 1);
+      return true;
+    })
+  )
+    return ordered(listing);
   return ordered([...observed, ...unseen(listing, observed)]);
 }
 
@@ -134,7 +155,7 @@ async function resolveCheck(
   check: AssignmentCheck,
 ): Promise<AssignmentResult | null> {
   if (!check.ok && check.replaced !== null) {
-    if ((await ops.assignee()) === user) await ops.assign(check.replaced);
+    await ops.assignIfCurrent(user, check.replaced);
     return { assigned: false, reason: "race" };
   }
   return check.ok ? { assigned: true } : null;
@@ -147,8 +168,9 @@ async function finishUnverified(
   raced: boolean,
 ): Promise<AssignmentResult> {
   if (raced) return { assigned: false, reason: "race-unverified" };
-  // Re-read immediately before clearing: never remove a different owner.
-  if ((await ops.assignee()) === user) await ops.assign(null);
+  // The adapter re-reads immediately before clearing: never remove an owner
+  // that appeared between this verifier's read and the cleanup mutation.
+  await ops.assignIfCurrent(user, null);
   return { assigned: false, reason: "unverified" };
 }
 

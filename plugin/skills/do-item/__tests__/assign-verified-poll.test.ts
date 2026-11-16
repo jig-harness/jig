@@ -32,6 +32,13 @@ function world(visibleAfter: number, race = false) {
         current = id;
         writes.push(id);
       },
+      assignIfCurrent: async (expected: string | null, id: string | null) => {
+        if (current !== expected) return false;
+        changes.push({ from: current, to: id, at: "2026-11-01T00:00:01Z" });
+        current = id;
+        writes.push(id);
+        return true;
+      },
       history: async () => (++reads >= visibleAfter ? [...changes] : []),
     },
   };
@@ -81,9 +88,10 @@ test("waits for a lagging assignee read as well as the history", async () => {
 
 test("does not clear a new owner seen on the final cleanup read", async () => {
   const w = world(Infinity);
-  const read = w.ops.assignee;
-  let reads = 0;
-  w.ops.assignee = async () => (++reads === 6 ? "other" : read());
+  w.ops.assignIfCurrent = async (_expected, _id) => {
+    // Simulate an adapter's final ownership read observing a new owner.
+    return false;
+  };
   expect(await assignVerified(w.ops, "me", w.options)).toEqual({
     assigned: false,
     reason: "unverified",
@@ -170,4 +178,50 @@ test("a coherent sequence that cleared another owner before our write verifies f
   });
   expect(w.writes).toEqual(["me"]);
   expect(w.now()).toBe(10);
+});
+
+test("uses a complete listing to reconcile tied-time history observed partially", async () => {
+  let current: string | null = null;
+  let histories = 0;
+  let now = 0;
+  const first: AssigneeChange = {
+    from: "other",
+    to: null,
+    at: "2026-11-01T00:00:01Z",
+  };
+  const complete: AssigneeChange[] = [
+    { from: null, to: "other", at: first.at },
+    first,
+    { from: null, to: "me", at: "2026-11-01T00:00:02Z" },
+  ];
+  expect(
+    await assignVerified(
+      {
+        assignee: async () => current,
+        assign: async (id) => {
+          current = id;
+        },
+        assignIfCurrent: async (expected, id) => {
+          if (current !== expected) return false;
+          current = id;
+          return true;
+        },
+        history: async () => {
+          histories++;
+          return histories === 1 ? [] : histories === 2 ? [first] : complete;
+        },
+      },
+      "me",
+      {
+        clock: {
+          now: () => now,
+          sleep: async (ms) => {
+            now += ms;
+          },
+        },
+        timeoutMs: 30,
+        pollMs: 10,
+      },
+    ),
+  ).toEqual({ assigned: true });
 });

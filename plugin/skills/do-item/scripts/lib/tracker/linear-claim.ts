@@ -165,6 +165,11 @@ export function claimOperations(
         {
           assignee: async () => (await read(key)).assignee?.id ?? null,
           assign: (id) => assignId(key, id, id ?? "nobody"),
+          async assignIfCurrent(expected, id) {
+            if ((await read(key)).assignee?.id !== expected) return false;
+            await assignId(key, id, id ?? "nobody");
+            return true;
+          },
           history: () => history(key),
         },
         user.id,

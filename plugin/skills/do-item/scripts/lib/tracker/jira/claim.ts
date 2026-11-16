@@ -65,6 +65,13 @@ export function claimOperations(
           assignee: async () =>
             (await client.mustIssue(key)).assignee?.accountId ?? null,
           assign: (id) => assignId(key, id),
+          async assignIfCurrent(expected, id) {
+            const current =
+              (await client.mustIssue(key)).assignee?.accountId ?? null;
+            if (current !== expected) return false;
+            await assignId(key, id);
+            return true;
+          },
           history: async () =>
             (await client.changelog(key)).flatMap((e) =>
               e.items

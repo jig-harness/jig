@@ -37,6 +37,12 @@ test.each([false, true])(
           assign: async (id) => {
             w.holders.set(key, id === null ? [] : [{ id, name: id }]);
           },
+          assignIfCurrent: async (expected, id) => {
+            if ((w.holders.get(key)?.[0]?.id ?? null) !== expected)
+              return false;
+            w.holders.set(key, id === null ? [] : [{ id, name: id }]);
+            return true;
+          },
           history: async () =>
             w.holders.get(key)?.length && race
               ? [{ from: "other", to: user.id, at: "2026-11-01T00:00:01Z" }]

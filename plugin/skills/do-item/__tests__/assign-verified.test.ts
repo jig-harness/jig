@@ -228,6 +228,7 @@ function jiraWorld(
     assignee?: string | null;
     race?: boolean;
     incomplete?: boolean;
+    noHistory?: boolean;
   } = {},
 ) {
   let assignee: string | null = options.assignee ?? null;
@@ -240,16 +241,17 @@ function jiraWorld(
         ? MEMBER
         : { ...FACTORY, accountId: id };
   const change = (to: string | null) => {
-    changelog.push({
-      id: String(changelog.length + 1),
-      created: at(changelog.length + 1),
-      author: FACTORY,
-      items: [
-        options.incomplete
-          ? { fieldId: "assignee", to }
-          : { fieldId: "assignee", from: assignee, to },
-      ],
-    });
+    if (!options.noHistory)
+      changelog.push({
+        id: String(changelog.length + 1),
+        created: at(changelog.length + 1),
+        author: FACTORY,
+        items: [
+          options.incomplete
+            ? { fieldId: "assignee", to }
+            : { fieldId: "assignee", from: assignee, to },
+        ],
+      });
     assignee = to;
   };
   const { t } = jira((c: Call) => {
@@ -257,7 +259,8 @@ function jiraWorld(
     if (c.route === "GET issue/ENG-1")
       return issue({ key: "ENG-1", assignee: account(assignee) });
     if (c.route === "PUT issue/ENG-1/assignee") {
-      const to = String(c.body.accountId);
+      const value = c.body.accountId;
+      const to = value === null ? null : String(value);
       writes.push(to);
       if (options.race && writes.length === 1) change(MEMBER.accountId);
       change(to);
@@ -310,5 +313,15 @@ describe("Jira: assigning an unassigned issue", () => {
     });
     expect(w.writes).toEqual([me.id, MEMBER.accountId]);
     expect(w.now()).toBe(MEMBER.accountId);
+  });
+
+  it("sends a null cleanup request and leaves the issue unassigned", async () => {
+    const w = jiraWorld({ noHistory: true });
+    expect(await w.t.assignUnassigned?.("ENG-1", me)).toEqual({
+      assigned: false,
+      reason: "unverified",
+    });
+    expect(w.writes).toEqual([me.id, null]);
+    expect(w.now()).toBeNull();
   });
 });
