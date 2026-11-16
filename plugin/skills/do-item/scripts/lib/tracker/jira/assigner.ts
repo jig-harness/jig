@@ -14,9 +14,9 @@
  */
 
 import type { Assigner, Tracker } from "../port.ts";
+import { AssignerUnknown } from "../assigner-unknown.ts";
 import type { Client } from "./client.ts";
 import type { JiraIssue } from "./read.ts";
-import { JiraApiError } from "./transport.ts";
 
 /** The account the assignment is asked about: the given one, else the current assignee. */
 async function wantedAccount(
@@ -27,13 +27,13 @@ async function wantedAccount(
 ): Promise<string> {
   const current = issue.assignee;
   if (current === null)
-    throw new JiraApiError(`issue ${issue.key} is assigned to nobody`);
+    throw new AssignerUnknown(`issue ${issue.key} is assigned to nobody`);
   const who =
     assignee === undefined
       ? current.accountId
       : await client.accountId(assignee, signal);
   if (current.accountId !== who)
-    throw new JiraApiError(
+    throw new AssignerUnknown(
       `issue ${issue.key} is no longer assigned to ${assignee ?? who}`,
     );
   return who;
@@ -53,7 +53,7 @@ async function latestAssigner(
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .at(-1);
   if (latest === undefined)
-    throw new JiraApiError(
+    throw new AssignerUnknown(
       `issue ${key}: its changelog holds no assignment of ${who}`,
     );
   return latest.author;

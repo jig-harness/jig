@@ -12,6 +12,8 @@
  * marker the pool requires decides between hosts that take the same item.
  */
 import { cacheForTracker } from "./tracker-cache.ts";
+import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
+import { readFailureOfError } from "../read-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -86,8 +88,10 @@ async function madeReadyBy(
     by = await read(issue);
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    return row(
+    return failedRow(
+      issue,
       `in the ready pool (${issue.state.name}), but who made it ready cannot be read: ${failureText(error)}`,
+      error,
     );
   }
   if (!by.trusted)
@@ -120,7 +124,12 @@ function moverReader(
 }
 
 /** A pool that picks up nothing, with the row that says why. */
-function unread(tracker: Tracker, names: string, reason: string): PoolReading {
+function unread(
+  tracker: Tracker,
+  names: string,
+  reason: string,
+  ...thrown: [] | [unknown]
+): PoolReading {
   return {
     ...NONE,
     states: names,
@@ -130,6 +139,7 @@ function unread(tracker: Tracker, names: string, reason: string): PoolReading {
         target: `${tracker.adapter} ${tracker.team}`,
         record: "tracker",
         reason,
+        ...(thrown.length === 0 ? {} : failedFields(thrown[0])),
       },
     ],
   };
@@ -181,6 +191,22 @@ function rowOf(issue: PoolIssue, reason: string): { row: Unplaced } {
   };
 }
 
+/** Failed calls count with their class; definite negative evidence is an answer, not a failed call. */
+function failedFields(error: unknown): Partial<Unplaced> {
+  if (error instanceof AssignerUnknown) return {};
+  const failure = readFailureOfError(error);
+  return { readFailed: true, ...(failure === undefined ? {} : { failure }) };
+}
+
+function failedRow(
+  issue: PoolIssue,
+  reason: string,
+  error: unknown,
+): { row: Unplaced } {
+  const { row } = rowOf(issue, reason);
+  return { row: { ...row, ...failedFields(error) } };
+}
+
 /**
  * The served queue's open-blocker rule, for a pool item: it waits while a
  * blocker is open or cannot be read (`openBlockers`, `queueHold`), and the
@@ -196,9 +222,10 @@ async function blockerHold(
     open = await blockers(issue);
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    return rowOf(
+    return failedRow(
       issue,
       `in the ready pool (${issue.state.name}), but its blockers cannot be read: ${failureText(error)}`,
+      error,
     );
   }
   const held = queueHold({ issue, blockers: open, unblocks: 0 }, policy);
@@ -395,6 +422,7 @@ export async function readPoolPickups(
       tracker,
       names,
       `the ready pool (${names}) could not be read: ${failureText(error)}`,
+      error,
     );
   }
   const out = await placeAll(

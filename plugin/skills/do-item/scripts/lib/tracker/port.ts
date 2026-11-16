@@ -832,9 +832,9 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * the history's definite answer that no user made the assignment (it holds no
    * assignment of `assignee`, or one made by an integration or an automation)
    * throws `AssignerUnknown` for it, which a caller may keep until the issue
-   * changes; any other throw is a read to try again. Linear classifies this
-   * way; the GitHub and Jira adapters throw their API errors for it. An aborted
-   * `signal` ends the read.
+   * changes; any other throw is a read to try again. An issue that is no
+   * longer assigned to that account is a definite absent answer too. An
+   * aborted `signal` ends the read.
    */
   assignedBy(
     key: string,

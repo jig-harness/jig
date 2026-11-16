@@ -24,6 +24,7 @@
 import { cacheForTracker } from "./tracker-cache.ts";
 import { sharedView, type ServedView } from "./served-reads.ts";
 import { nativeQueueRequirements } from "../../../skills/do-item/scripts/lib/tracker/dispatch-source.ts";
+import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
@@ -110,7 +111,8 @@ async function readClaimed(
     target: `items in ${workingNames(tracker)}`,
     record: "tracker",
     reason: `the items ${identity} claimed could not be read, so stalls and double claims are not checked: ${why}`,
-    ...(cut === undefined ? {} : { readFailed: true as const, failure: cut }),
+    readFailed: true,
+    ...(cut === undefined ? {} : { failure: cut }),
   });
   if (ended(tick)) return unread(passedBefore("they were read"), CUT_AT_BOUND);
   try {
@@ -141,7 +143,7 @@ async function readClaimed(
     if (isRateLimited(error)) throw error;
     return unread(
       failureText(error),
-      ended(tick) ? (readFailureOfError(error) ?? CUT_AT_BOUND) : undefined,
+      readFailureOfError(error) ?? (ended(tick) ? CUT_AT_BOUND : undefined),
     );
   }
 }
@@ -243,12 +245,16 @@ async function readAssignedBy(
         url: issue.url,
         record: "tracker",
         reason: `who assigned it cannot be read: ${failureText(error)}`,
-        ...(ended(tick)
-          ? {
+        // A complete negative assignment answer is informational; every
+        // other throw fails the read, even when no call class explains it.
+        ...(error instanceof AssignerUnknown
+          ? {}
+          : {
               readFailed: true as const,
-              failure: readFailureOfError(error) ?? CUT_AT_BOUND,
-            }
-          : {}),
+              ...(readFailureOfError(error) === undefined && !ended(tick)
+                ? {}
+                : { failure: readFailureOfError(error) ?? CUT_AT_BOUND }),
+            }),
       },
     };
   }
@@ -306,7 +312,7 @@ async function trustedAndClaimed(
   view?: ServedView,
   tick?: FacetBound,
 ): Promise<
-  | { limited: TrackerRateLimited }
+  | { limited: TrackerRateLimited; unplaced: Unplaced[] }
   | {
       wanted: WantedItem[];
       unplaced: Unplaced[];
@@ -320,7 +326,7 @@ async function trustedAndClaimed(
     view,
     tick,
   );
-  if (limited !== undefined) return { limited };
+  if (limited !== undefined) return { limited, unplaced };
   try {
     return {
       wanted,
@@ -340,7 +346,7 @@ async function trustedAndClaimed(
             })),
     };
   } catch (error) {
-    if (isRateLimited(error)) return { limited: error };
+    if (isRateLimited(error)) return { limited: error, unplaced };
     throw error;
   }
 }
@@ -566,8 +572,17 @@ async function readFactoryPickups(
     );
   const issues = assigned.value;
   const read = await trustedAndClaimed(tracker, identity, issues, view, tick);
-  if ("limited" in read)
-    return limitedFactory(tracker, identity, read.limited, stores, view);
+  if ("limited" in read) {
+    const limited = limitedFactory(
+      tracker,
+      identity,
+      read.limited,
+      stores,
+      view,
+    );
+    limited.unplaced.unshift(...read.unplaced);
+    return limited;
+  }
   if (view?.unavailable !== undefined)
     return unavailableFactory(tracker, identity, view, stores);
   const { wanted, unplaced } = read;
