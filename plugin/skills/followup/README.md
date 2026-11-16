@@ -47,7 +47,12 @@ merge.
 Each arm ends **owed** (done or filed, with the item), **not owed** (with a
 checkable fact; "nothing found" is not one), **pending** (it settles by
 itself, such as a rollout in progress) or **unread** (what decides it could
-not be read). The run cannot end while an arm has no verdict.
+not be read). The run cannot end while an arm has no verdict. A pending arm
+ends a run the dispatcher started as a wait: the dispatcher starts the
+follow-up again after the time the run names, and tells a person when the
+arm is still pending past `dispatch.followup_within`. A run started by hand
+reports the pending arm, and a person runs it again once the arm can
+settle.
 
 ## The script
 

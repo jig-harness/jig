@@ -333,7 +333,7 @@ Then end as `settle` says:
 | Ending | When | Run by hand | Started by the dispatcher |
 |---|---|---|---|
 | done | every arm settled | `jig dispatch marker done <PR> --comment <marker>` | record done with the `jig dispatch result` command your prompt names |
-| wait | an arm is `pending` | report each pending arm, mark done, and run the follow-up again once it can settle | report each pending arm and record done; the dispatcher does not take a pending wait as a result, so the follow-up is not started again by itself |
+| wait | an arm is `pending` | report each pending arm, mark done, and run the follow-up again once it can settle | report each pending arm, then record `waits --until <when to look again> --reason pending --arm "<arm>"` with the `jig dispatch result` command your prompt names (the time at most a day ahead; the arm as `settle` prints it); the dispatcher starts the follow-up again after that time, and tells a person if the arm is still pending past `dispatch.followup_within` |
 | failed | an arm is `unread` | `jig dispatch marker failed <PR> --comment <marker>` | record failed |
 | preview | an open pull request | nothing to mark | nothing to record |
 

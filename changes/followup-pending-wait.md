@@ -13,7 +13,9 @@ release: minor
   the arm pending once `dispatch.followup_within` has passed since the first
   pass that found it so is notified as a failed follow-up naming the arm.
   `--reason` absent is `rate-limit`, so existing callers keep their meaning.
-  The follow-up pass's prompt says how to record it.
+  The follow-up pass's prompt says how to record it, and the `followup`
+  skill's `settle` ends a dispatched run with a pending arm that way, the
+  arm named.
 - `dispatch.followup_command` defaults to `/jig:followup`, the plugin's
   follow-up skill, on a host whose machine file lists `followup` among the
   repository's `stages`. The stage stays opt-in per host: where it is off, a

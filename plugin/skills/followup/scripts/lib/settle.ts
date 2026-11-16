@@ -133,6 +133,18 @@ export function renderSettled(s: Settled): string {
   return lines.join("\n");
 }
 
+/** The longest arm text `jig dispatch result … --arm` takes. */
+const ARM_MAX = 200;
+
+/** The pending arms and what each waits for, in one line short enough for `--arm`. */
+export function pendingArm(s: Settled): string {
+  const text = s.rows
+    .filter((r) => r.verdict === "pending")
+    .map((r) => `${r.arm}: ${r.evidence.replace(/\s+/g, " ").trim()}`)
+    .join("; ");
+  return text.length <= ARM_MAX ? text : `${text.slice(0, ARM_MAX - 1)}…`;
+}
+
 /** How the session ends the run, for each way it was started. */
 function endingLines(s: Settled): string[] {
   const marker = s.marker === null ? "<marker>" : String(s.marker);
@@ -152,9 +164,8 @@ function endingLines(s: Settled): string[] {
     case "wait":
       return [
         `End: a wait, on ${s.because.join(", ")} (each settles by itself; the follow-up looks again later).`,
-        "- Until the dispatcher takes a pending wait, report each pending arm and end as done:",
-        `  - run by hand: ${markerDone}, and run the follow-up again once it can settle`,
-        "  - started by the dispatcher: record done with the `jig dispatch result` command your prompt names, after reporting the pending arms",
+        `- Run by hand: report each pending arm, ${markerDone}, and run the follow-up again once it can settle`,
+        `- Started by the dispatcher: report each pending arm, then record \`waits --until <when to look again> --reason pending --arm "<arm>"\` with the \`jig dispatch result\` command your prompt names, the time at most a day ahead and the arm in one line: ${pendingArm(s)}`,
       ];
     case "failed":
       return [
