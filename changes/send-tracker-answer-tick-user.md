@@ -11,8 +11,8 @@ release: patch
   comments. The refusal says to answer as another tracker user or give the
   dispatcher a tracker user of its own. From another host the writer is
   still checked against the factory identity (`dispatch.identity`); where
-  the repository names none, the answer posts with a notice that the tick
-  may not read it.
+  the repository names none, or the machine cannot tell whether it owns the
+  repository, the answer posts with a notice that the tick may not read it.
 - When the only answers on such an item are by the dispatcher's own tracker
   user, the tick now reads the decision as unread and says why, and
   `jig ask pickup@…` shows that reason instead of a plain wait.

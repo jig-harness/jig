@@ -1665,11 +1665,11 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   in this machine's newest line, your own words (the tick carries out an
   option), and, on another tracker's item, a tracker that cannot name who
   wrote a comment, a credential that acts as the factory identity, or a
-  send from the host that owns the repository (or from one whose dispatch
-  file cannot say whether it owns it), whose tick reads with that same
-  credential and never counts its user's comments; from another host, where
-  the repository names no factory identity, it is sent with a notice that
-  the tick may not read it;
+  send from the host that owns the repository, whose tick reads with that
+  same credential and never counts its user's comments; where the user the
+  tick leaves out cannot be told here (the repository names no factory
+  identity, or this machine cannot tell whether it owns the repository), it
+  is sent with a notice that the tick may not read it;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
