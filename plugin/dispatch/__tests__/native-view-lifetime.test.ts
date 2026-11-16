@@ -9,6 +9,9 @@ import { sharedView } from "../lib/sources/served-reads.ts";
 import { tickReads } from "../lib/tick-reads.ts";
 import { orcaRuntime } from "../lib/runtime/orca.ts";
 import { currentMs } from "../../shared/time.ts";
+import { metadata } from "../lib/sources/served-metadata.ts";
+import { within } from "../lib/sources/bounded.ts";
+import { OutboundError } from "../../shared/outbound/failure.ts";
 
 function fixture() {
   const node = (number: number) =>
@@ -19,10 +22,18 @@ function fixture() {
       extra: { subIssues: conn([]) },
     });
   let duringBatch: (() => void) | undefined;
+  let duringQueue: (() => void) | undefined;
+  let duringChanges: (() => void) | undefined;
   const fake = gitHub(
     (call) => {
-      if (call.op === "TrackerDispatchQueue")
+      if (call.op === "TrackerDispatchQueue") {
+        duringQueue?.();
         return { repository: { issues: conn([node(1)]) } };
+      }
+      if (call.op === "TrackerDispatchChanges") {
+        duringChanges?.();
+        return { repository: { issues: conn([]) } };
+      }
       if (call.op === "TrackerDispatchIssue")
         return { repository: { issue: node(Number(call.variables.number)) } };
       if (call.op === "TrackerDispatchIssues") {
@@ -72,7 +83,7 @@ function fixture() {
     signal: tick.signal,
   });
   assert(reads.servedViews);
-  const views = reads.servedViews;
+  let views = reads.servedViews;
   const open = (signal: AbortSignal, shared = true) =>
     sharedView(
       shared ? views : undefined,
@@ -83,11 +94,27 @@ function fixture() {
     );
   return {
     ...fake,
+    tracker,
+    cache,
     open,
     tick,
     preload,
     duringBatch: (run: () => void) => {
       duringBatch = run;
+    },
+    duringQueue: (run: () => void) => {
+      duringQueue = run;
+    },
+    duringChanges: (run: () => void) => {
+      duringChanges = run;
+    },
+    nextTick: () => {
+      const next = tickReads(orcaRuntime(), undefined, {
+        deadline: now + 300_000,
+        signal: tick.signal,
+      });
+      assert(next.servedViews);
+      views = next.servedViews;
     },
   };
 }
@@ -104,16 +131,106 @@ it("continues bounded lazy issue batches after the successful prefetch allowance
   );
   expect(rows).toHaveLength(98);
   expect(rows.every((row) => row !== null)).toBe(true);
-  expect(
-    f.calls.filter((call) => call.op === "TrackerDispatchIssues"),
-  ).toHaveLength(5);
+  const batches = f.calls.filter((call) => call.op === "TrackerDispatchIssues");
+  expect(batches).toHaveLength(5);
   expect(
     f.calls.filter((call) => call.op === "TrackerDispatchIssue"),
   ).toHaveLength(0);
-  expect(f.calls[0]?.signal?.aborted).toBe(false);
-  expect(f.calls.slice(1).every((call) => call.signal?.aborted === false)).toBe(
-    true,
+  expect(batches.every((call) => call.signal?.aborted === false)).toBe(true);
+});
+
+it("shares child transport after its first caller expires", async () => {
+  const f = fixture();
+  const initial = await f.open(f.preload.signal);
+  const queued = await initial.pool("#1");
+  const child = await f.tracker.dispatchSource.issue("#2");
+  assert(queued && child);
+  const issue = {
+    ...queued,
+    assignee: null,
+    isEpic: true,
+    hasOpenChildren: true,
+  };
+  const entered = Promise.withResolvers<void>();
+  const complete = Promise.withResolvers<void>();
+  let reads = 0;
+  f.tracker.getIssue = async () => null;
+  f.tracker.dispatchSource.children = async (_key, bound) => {
+    reads += 1;
+    entered.resolve();
+    assert(bound);
+    assert(bound.signal && bound.deadline !== undefined);
+    return within(
+      complete.promise.then(() => [child]),
+      { signal: bound.signal, deadline: bound.deadline },
+    );
+  };
+  const caller = new AbortController();
+  const first = await f.open(caller.signal);
+  const reading = metadata(f.tracker, issue, "dana", f.cache, [], first);
+  try {
+    await entered.promise;
+    caller.abort();
+    await expect(reading).rejects.toThrow();
+    const next = await f.open(new AbortController().signal);
+    const result = metadata(f.tracker, issue, "dana", f.cache, [], next);
+    complete.resolve();
+    expect((await result).children.map((row) => row.identifier)).toEqual([
+      "#2",
+    ]);
+    expect(reads).toBe(1);
+    expect(next.unavailable).toBeUndefined();
+  } finally {
+    complete.resolve();
+  }
+});
+
+it("starts no queued shared callbacks after the tick ends", async () => {
+  const f = fixture();
+  const view = await f.open(new AbortController().signal);
+  const entered = Promise.withResolvers<void>();
+  const complete = Promise.withResolvers<string>();
+  let started = 0;
+  const reads = Array.from({ length: 32 }, (_, index) =>
+    view.once(`queued fact ${index}`, async () => {
+      started += 1;
+      entered.resolve();
+      return complete.promise;
+    }),
   );
+  await entered.promise;
+  const before = started;
+  expect(before).toBeLessThan(reads.length);
+  f.tick.abort();
+  complete.resolve("done");
+  const results = await Promise.allSettled(reads);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(results.every((result) => result.status === "rejected")).toBe(true);
+  expect(started).toBe(before);
+});
+
+it("starts no queued shared callbacks after the scope fails", async () => {
+  const f = fixture();
+  const view = await f.open(new AbortController().signal);
+  const entered = Promise.withResolvers<void>();
+  const complete = Promise.withResolvers<string>();
+  let started = 0;
+  const reads = Array.from({ length: 32 }, (_, index) =>
+    view.once(`failed scope fact ${index}`, async () => {
+      started += 1;
+      entered.resolve();
+      return complete.promise;
+    }),
+  );
+  await entered.promise;
+  const before = started;
+  expect(before).toBeLessThan(reads.length);
+  complete.reject(new OutboundError("unreachable", "fixture read failed"));
+  await Promise.allSettled(reads);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(started).toBe(before);
+  expect(view.unavailable).toBeDefined();
+  expect(f.tick.signal.aborted).toBe(false);
 });
 
 it.each(["pool", "raw", "once"] as const)(
@@ -180,6 +297,29 @@ it("keeps direct caller cancellation on an unshared transport read", async () =>
   await expect(view.pool("#2")).rejects.toThrow();
   const batch = f.calls.find((call) => call.op === "TrackerDispatchIssues");
   expect(batch?.signal?.aborted).toBe(true);
+});
+
+it("keeps the initial shared queue read within the caller allowance", async () => {
+  const f = fixture();
+  const caller = new AbortController();
+  f.duringQueue(() => caller.abort());
+
+  await expect(f.open(caller.signal)).rejects.toThrow();
+  const queue = f.calls.find((call) => call.op === "TrackerDispatchQueue");
+  expect(queue?.signal?.aborted).toBe(true);
+});
+
+it("keeps the initial shared change probe within the caller allowance", async () => {
+  const f = fixture();
+  const first = await f.open(f.preload.signal);
+  first.save();
+  f.nextTick();
+  const caller = new AbortController();
+  f.duringChanges(() => caller.abort());
+
+  await expect(f.open(caller.signal)).rejects.toThrow();
+  const probe = f.calls.find((call) => call.op === "TrackerDispatchChanges");
+  expect(probe?.signal?.aborted).toBe(true);
 });
 
 it("stops the remaining batch chunks when the shared tick ends in flight", async () => {

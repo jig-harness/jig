@@ -199,18 +199,21 @@ export async function nativeSharedView(
                 }),
               );
               return coalesce(reads, probeKey, () =>
-                facts.guarded(() =>
-                  changedSince(
-                    {
-                      ...query,
-                      since,
-                      keys,
-                      identities,
-                      ...(partitions.size === 0 ? {} : { watermarks }),
-                      ...(partitions.size === 0 ? {} : { boundaryRows }),
-                    },
-                    sharedBound?.signal,
-                  ),
+                facts.guarded(
+                  () =>
+                    changedSince(
+                      {
+                        ...query,
+                        since,
+                        keys,
+                        identities,
+                        ...(partitions.size === 0 ? {} : { watermarks }),
+                        ...(partitions.size === 0 ? {} : { boundaryRows }),
+                      },
+                      callerBound?.signal,
+                    ),
+                  false,
+                  callerBound,
                 ),
               );
             },
@@ -219,7 +222,7 @@ export async function nativeSharedView(
       stateName: () => null,
       stateMaps: () => [],
       queueIssues: async () =>
-        (await facts.queue(identity, sharedBound)).map(queued),
+        (await facts.queue(identity, callerBound)).map(queued),
       poolIssue: async (key) => {
         const row = await facts.issue(key);
         return row === null ? null : carrier(row);
@@ -244,7 +247,9 @@ export async function nativeSharedView(
     opening = engine.open(
       nativeTracker,
       identity,
-      // Lazy shared reads belong to the tick; each caller keeps its own allowance.
+      // The view's lazy facts belong to the tick. Its queue/probe methods
+      // retain callerBound above, so the initial transport keeps its facet
+      // allowance without shortening later shared reads.
       {
         nowMs: options.nowMs,
         headroom: options.headroom,
@@ -370,7 +375,11 @@ export async function nativeSharedView(
     },
     all: () => rows,
     once: (key, read) =>
-      forCaller(() => facts.once(key, () => native.once(key, read))),
+      forCaller(() =>
+        facts.once(key, () =>
+          native.once(key, (bound) => facts.guarded(() => read(bound), true)),
+        ),
+      ),
     open: () => open,
     progress: () => progress,
     raw: (key) =>

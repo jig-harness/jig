@@ -57,17 +57,20 @@ export function nativeFacts(
   const guarded = async <T>(
     read: () => Promise<T>,
     onlyUnavailable = false,
+    readBound: FacetBound | undefined = bound,
   ): Promise<T> => {
     // A limiter may run this callback long after it was queued.  Do not let
     // queued shared work begin once the tick that owns it has ended.
-    if (ended(bound))
+    if (ended(readBound))
       return Promise.reject(
         new OutboundError("unreachable", "stopped at the tick’s deadline"),
       );
     const failure = reads.get("dispatch scope failure");
     if (failure !== undefined) return Promise.reject(await failure);
     try {
-      return await (bound === undefined ? read() : within(read(), bound));
+      return await (readBound === undefined
+        ? read()
+        : within(read(), readBound));
     } catch (error) {
       if (!onlyUnavailable || isUnavailable(error))
         recordDispatchScopeFailure(reads, error);
@@ -96,7 +99,7 @@ export function nativeFacts(
       readBound: FacetBound | undefined = bound,
     ): Promise<DispatchRawIssue[]> {
       const reading = scope.queues.then(() =>
-        guarded(() => source.queue(identity, readBound)),
+        guarded(() => source.queue(identity, readBound), false, readBound),
       );
       scope.queues = reading.catch(() => undefined);
       const rows = await reading;
