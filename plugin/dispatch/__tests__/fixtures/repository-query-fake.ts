@@ -11,7 +11,9 @@
  * many as `threads-<pr>` says (none without it). The query fails while `prs-open-fail` or
  * `repository-query-fail` exists. The comments query over named pull
  * requests (`commentsQuery`) answers each from the same files, and fails
- * while `comments-query-fail` exists.
+ * while `comments-query-fail` exists. A pull request whose comment listing
+ * `forge-fails.json` refuses has more comments than the query gives, so the
+ * tick lists them on their own.
  */
 import { existsSync, readFileSync } from "node:fs";
 
@@ -88,6 +90,12 @@ function files(dir: string) {
       () => ({ isResolved: false }),
     ),
   });
+  /** Whether `forge-fails.json` refuses the listing of a pull request's comments: the query then leaves them to that listing. */
+  const refused = (pr: number) =>
+    has("forge-fails.json") &&
+    (json("forge-fails.json") as Array<{ match: string }>).some((r) =>
+      r.match.includes(`issues/${pr}/comments`),
+    );
   /** A pull request's comments as the query gives them: one page, and whether there are more. */
   const comments = (pr: number) => {
     const listed = json(
@@ -98,7 +106,9 @@ function files(dir: string) {
       ].find(has) as string,
     ) as RestComment[];
     return {
-      pageInfo: { hasNextPage: listed.length > COMMENTS_PAGE },
+      pageInfo: {
+        hasNextPage: listed.length > COMMENTS_PAGE || refused(pr),
+      },
       nodes: listed.slice(0, COMMENTS_PAGE).map(queryComment),
     };
   };

@@ -172,7 +172,8 @@ with nothing pushed, or the item was an epic.
 - The steward settles what needs reading with a `settle` record: link the
   item to a pull request no launch opened, or release a stale claim
   ([The steward's remit](#the-stewards-remit)).
-- What remains is framed: **Release the claim**, **Leave it to me**.
+- What remains is framed: **Release the claim**, **I'll handle it — hide
+  this card**.
 
 #### A release blocked
 
@@ -299,7 +300,7 @@ branch.
   [rescue branch](../GLOSSARY.md), a local branch the tick never pushes and
   `jig gc` never collects, and is then detached rather than asked about
   (#964). Off, the need stays framed: **Detach the checkout**,
-  **Leave it to me**.
+  **I'll handle it — hide this card**.
 - The busy-holder notice has a cause of its own (#629).
 
 #### A step a person owes after a merge

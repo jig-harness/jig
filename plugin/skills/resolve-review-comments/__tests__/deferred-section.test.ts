@@ -5,6 +5,7 @@
  * through a tracker adapter (the GitHub adapter over a fake transport) with
  * the type, priority and size it records, and replacing it with its issue.
  */
+import { persistedTracker } from "./persisted-tracker.ts";
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -334,7 +335,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     existing: Array<{ number: number; body: string }> = [],
   ) {
     let next = 40;
-    return gitHub(
+    const fixture = gitHub(
       (c) => {
         if (c.op === "TrackerSearch")
           return {
@@ -371,6 +372,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
       },
       { taxonomy: JIG_TAXONOMY },
     );
+    return { ...fixture, t: persistedTracker(fixture.t) };
   }
 
   test("replaces each entry with its issue, leaving the rest of the body", async () => {
@@ -388,21 +390,21 @@ describe("file-deferred.ts files each entry through the tracker", () => {
       label: "pr-followup",
       facets: FACETS,
     });
-    expect(r.filed.map((f) => f.key)).toEqual(["#41", "#42"]);
+    expect(r.filed.map((f) => f.key)).toEqual(["#41", "#41"]);
     expect(r.remaining).toEqual([]);
     const entries = deferredEntries(forge.state.body);
-    expect(entries.map((e) => e.filed?.key)).toEqual(["#41", "#42"]);
+    expect(entries.map((e) => e.filed?.key)).toEqual(["#41", "#41"]);
     expect(forge.state.body).toStartWith("## Summary\n\nWhat changed.");
     expect(forge.state.body).toContain(
       "filed as [#41](https://github.com/acme/app/issues/41)",
     );
     const created = calls.filter((c) => c.op === "TrackerCreate");
-    expect(created).toHaveLength(2);
+    expect(created).toHaveLength(1);
     const input = created[0]?.variables.input as {
       title: string;
       body: string;
     };
-    expect(input.title).toBe("Deferred from PR #42: Finding 1 is real.");
+    expect(input.title).toBe("PR #42 bug review follow-ups");
     expect(input.body).toContain("Filed by `file-deferred.ts`");
     expect(input.body).toContain("reason 1");
   });
@@ -504,7 +506,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     const { t, calls } = trackerThatFiles([
       {
         number: 7,
-        body: `Mentions ${comment}.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}\n${textLine({ text: deferredEntries(body)[0]?.text ?? "" })}`,
+        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}\n${textLine({ text: deferredEntries(body)[0]?.text ?? "" })}`,
       },
     ]);
     const r = await fileDeferred(forge, t, "42", {
@@ -550,12 +552,10 @@ describe("file-deferred.ts files each entry through the tracker", () => {
       facets: FACETS,
     });
     expect(r.why).toBeNull();
-    const created = calls.filter((c) => c.op === "TrackerCreate");
-    expect(
-      String(
-        (created[1]?.variables.input as { body?: string } | undefined)?.body,
-      ),
-    ).toContain("second, corrected");
+    expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(1);
+    expect((await t.getIssue("#41"))?.description).toContain(
+      "second, corrected",
+    );
   });
 
   test("an entry removed or changed between filing and recording is reported, not counted as recorded", async () => {
@@ -943,14 +943,29 @@ describe("what an entry records", () => {
 });
 
 describe("the route a deferral takes", () => {
-  test("the pull request body when the adapter is not Linear", () => {
-    expect(deferralRoute({ issue_tracker: { adapter: "github" } }, {})).toEqual(
-      {
-        route: "pr-body",
-        why: "the batch step files on Linear only, and issue_tracker.adapter is github",
-      },
-    );
-    expect(deferralRoute({}, {}).route).toBe("pr-body");
+  test("the batch step on GitHub and a configured Jira adapter", () => {
+    expect(
+      deferralRoute({ issue_tracker: { adapter: "github" } }, {}).route,
+    ).toBe("defer-batch");
+    expect(
+      deferralRoute(
+        {
+          issue_tracker: {
+            adapter: "jira",
+            team: "JIG",
+            jira: { site: "https://example.atlassian.net" },
+          },
+        },
+        {},
+      ).route,
+    ).toBe("defer-batch");
+    expect(deferralRoute({}, {}).route).toBe("defer-batch");
+  });
+
+  test("the pull request body for a Jira adapter that cannot file", () => {
+    expect(
+      deferralRoute({ issue_tracker: { adapter: "jira" } }, {}).route,
+    ).toBe("pr-body");
   });
 
   test("the pull request body on Linear with no credential", () => {
@@ -982,6 +997,6 @@ describe("the route a deferral takes", () => {
     );
     const out = await new Response(proc.stdout).text();
     await expectSpawnExited(proc, 0);
-    expect(out).toStartWith("pr-body: ");
+    expect(out).toBe("defer-batch\n");
   });
 });
