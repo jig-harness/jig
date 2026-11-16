@@ -163,6 +163,21 @@ describe("settling a run", () => {
     expect(text).toContain("jig dispatch marker done 7 --comment 42");
   });
 
+  test("escapes backslashes before table delimiters in report evidence", () => {
+    const run = settled(runOf());
+    const changed = {
+      ...run,
+      verdicts: {
+        ...run.verdicts,
+        release: { ...run.verdicts.release!, evidence: "path\\|value" },
+      },
+    };
+    const answer = settle(changed);
+    expect(answer.ok).toBe(true);
+    if (answer.ok)
+      expect(renderSettled(answer.value)).toContain("path\\\\\\|value");
+  });
+
   test("a pending arm ends as a wait, an unread one as failed", () => {
     const wait = settle(settled(runOf(), { release: "pending" }));
     expect(wait.ok && wait.value.ending).toBe("wait");
