@@ -24,7 +24,8 @@
  *   ending, the end carrying how long it waited: `serial-holds.ts`, and a
  *   park leaving its ledger, answered, decided provisionally or removed,
  *   an answered one timed when its receipt says it was resolved:
- *   `park-events.ts`).
+ *   `park-events.ts`, and, once per tick of the `notify` stage, the notices
+ *   workspace's read state: `notices-read.ts`).
  *
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
@@ -119,6 +120,8 @@ export interface EventRow {
   durationMs?: number;
   /** For a park that left its ledger (`park-events.ts`): what it was and how it was settled. */
   park?: ParkFacts;
+  /** For `notices_read` (`notices-read.ts`): whether the notices workspace was read; `null` when its state is not known. */
+  read?: boolean | null;
   /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
   title?: string;
   url?: string;

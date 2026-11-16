@@ -25,6 +25,14 @@ Survey how code review and continuous improvement work.
 5. Measurement: is review quality measured at all (missed-defect tracking, vendor parity, eval fixtures, telemetry)?
 6. Learning loop: when a reviewer (or gate) misses a real defect, does anything systematic happen? Look for miss taxonomies, regression fixtures, checklist growth, retrospective flows. Is reflection triggered by an *observable* (a round-count threshold, say) or by the author remembering — and does its record carry the measurement that triggered it? Say whose habit it is: turned on in a person's own configuration (with Jig's plugin, the user layer `~/.jig/jig.yaml`, which you can only learn by asking) or in the repository's, which turns it on for everyone working there.
 7. Task/memory systems: tracker taxonomy (do labels drive process?), persistent agent memory, phase formulas with required gates.
+   Trace deferred review findings to their destination on each supported
+   tracker: are they backlog batches keyed by pull request and type, linked
+   to their originating issue and epic without becoming children? Check that
+   later findings append to the open batch, with the highest priority and
+   union of categories. At epic closure, where do person-only checks go, and
+   does the finishing pull request remove delivered scope from the active plan
+   and roadmap? Accept a native epic type that needs no separate kind as well
+   as an epic flag that retains a work type.
 8. HITL codification: which decisions are explicitly reserved for humans (merge, release, destructive ops, scope expansion), and where is that written?
 
 Synthesize: (A) the improvement flywheel as practiced (or its absence); (B) portable mechanisms vs entangled content; (C) measurement blind spots; (D) HITL boundary completeness.

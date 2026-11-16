@@ -15,6 +15,7 @@
  * Labels are compared ignoring case, and the taxonomy's spelling is filed.
  * The size group is the size facet's, as the filing check reads it.
  */
+import { listed } from "../../../do-item/scripts/lib/tracker/facets/complete.ts";
 import {
   areasOf,
   type ChangeAreaCatalog,
@@ -31,13 +32,6 @@ import {
 export type CatalogSource =
   | { catalog: ChangeAreaCatalog }
   | { catalog: null; why: string };
-
-/** "a, b and c". */
-function listed(items: string[]): string {
-  return items.length <= 1
-    ? (items[0] ?? "")
-    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
-}
 
 /** The required groups, the size group aside, an issue carrying only `label` has no label of. */
 export function unfilledGroups(
@@ -64,9 +58,12 @@ export function entryLabels(
   file: FindingFile,
   taxonomy: Taxonomy | null,
   catalog: () => CatalogSource,
+  present: string[] = [],
 ): { labels: string[] } | { why: string } {
-  const missing = unfilledGroups(label, taxonomy);
-  if (taxonomy === null || missing.length === 0) return { labels: [label] };
+  const initial = [...new Set([label, ...present])];
+  const missing =
+    taxonomy === null ? [] : missingGroups(initial, taxonomy, [SIZE_GROUP]);
+  if (taxonomy === null || missing.length === 0) return { labels: initial };
   const lacks = `it lacks a ${listed(missing)} label`;
   if ("none" in file)
     return {
@@ -85,7 +82,7 @@ export function entryLabels(
       (source.catalog.get(a)?.trackerLabels ?? []).map((l) => l.toLowerCase()),
     ),
   );
-  const labels = [label];
+  const labels = initial;
   for (const id of missing) {
     const group = taxonomy.groups.find((g) => g.id === id);
     const found = (group?.labels ?? []).filter((l) =>

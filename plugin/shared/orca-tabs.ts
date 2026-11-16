@@ -220,7 +220,8 @@ export function readRunTabs(root: string): RunTab[] {
     .filter((tab): tab is RunTab => tab !== null);
 }
 
-function forget(root: string, handle: string): void {
+/** Delete the record of the tab `handle`; a missing record is already gone. */
+export function forgetRunTab(root: string, handle: string): void {
   rmSync(tabFile(root, handle), { force: true });
 }
 
@@ -323,7 +324,7 @@ export async function closeRunTab(
   if (rows === null) return "busy";
   const state = tabState(tab, rows);
   if (state === "gone") {
-    forget(deps.root, tab.handle);
+    forgetRunTab(deps.root, tab.handle);
     return "gone";
   }
   if (state === "busy")
@@ -340,11 +341,11 @@ export async function closeRunTab(
   );
   const envelope = orcaEnvelope(done.stdout);
   if (done.code === 0 && envelope?.ok === true) {
-    forget(deps.root, tab.handle);
+    forgetRunTab(deps.root, tab.handle);
     return "closed";
   }
   if (envelope?.ok === false && envelope.code === "terminal_handle_stale") {
-    forget(deps.root, tab.handle);
+    forgetRunTab(deps.root, tab.handle);
     return "gone";
   }
   return {
