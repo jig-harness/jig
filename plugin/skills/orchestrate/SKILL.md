@@ -185,10 +185,10 @@ the context to fill. Hand over only with their agreement, never silently.
 
 Once the person agrees:
 
-1. Bring the durable record of step 12 up to date, so it holds the current
-   state, each decision with its date, what waits on the person, the acts
-   this session still owes, the cautions learned, and a first act for the
-   successor.
+1. Have step 12's record session bring the durable record up to date, so
+   it holds the current state, each decision with its date, what waits on
+   the person, the acts this session still owes, the cautions learned, and
+   a first act for the successor.
 2. Start the successor through the host's session facility, opened in the
    surface the person works in (prefer the one this session runs in, such as
    a chat view rather than a terminal), as a new session running
@@ -197,11 +197,13 @@ Once the person agrees:
    record stays the single source of the state, so the directive cannot
    drift from it. Where the host has no such facility, give the person the
    exact command to run, the runtime's agent command with that directive,
-   and wait for them to say it started.
+   and wait for them to say it started. Where step 12 could persist no
+   record, tell the person to give the successor the record they saved.
 3. After a minute or so, confirm the successor is alive: it is listed and
-   its session is live. If it is gone, start it again with a directive
-   that says its first act may be partly done, so it checks before
-   repeating it.
+   its session is live, or, where the person started it, they say it is
+   still running. If it is gone, start it again (or give the person the
+   command again) with a directive that says its first act may be partly
+   done, so it checks before repeating it.
 4. Tell the person the successor now holds the topic. This session then
    stops acting: it sends no further commands and launches nothing, so two
    sessions never act on the same line at once.
