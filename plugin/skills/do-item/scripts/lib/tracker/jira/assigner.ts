@@ -48,7 +48,9 @@ async function latestAssigner(
 ): Promise<Record<string, unknown> | null> {
   const latest = (await client.changelog(key, signal))
     .filter((e) =>
-      e.items.some((i) => i.fieldId === "assignee" && i.to === who),
+      e.items.some(
+        (i) => i.fieldId === "assignee" && i.explicit && i.to === who,
+      ),
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .at(-1);

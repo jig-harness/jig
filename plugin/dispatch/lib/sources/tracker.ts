@@ -583,8 +583,11 @@ async function readFactoryPickups(
     limited.unplaced.unshift(...read.unplaced);
     return limited;
   }
-  if (view?.unavailable !== undefined)
-    return unavailableFactory(tracker, identity, view, stores);
+  if (view?.unavailable !== undefined) {
+    const unavailable = unavailableFactory(tracker, identity, view, stores);
+    unavailable.unplaced.unshift(...read.unplaced);
+    return unavailable;
+  }
   const { wanted, unplaced } = read;
   const claimed = await scopedClaims(
     tracker,

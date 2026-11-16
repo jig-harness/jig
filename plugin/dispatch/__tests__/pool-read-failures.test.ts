@@ -7,7 +7,7 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
 import { OutboundError } from "../../shared/outbound/failure.ts";
-import { currentMs } from "../../shared/time.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { dispatchSection } from "../lib/section.ts";
 import { readPickups } from "../lib/sources/tracker.ts";
 import { limitedRow } from "../lib/sources/served-failures.ts";
@@ -66,7 +66,7 @@ describe("ready-pool failed-read accounting", () => {
     );
     expect(row.failure).toEqual({
       class: "rate-limited",
-      until: new Date(reset).toISOString(),
+      until: isoFromMs(reset),
     });
     expect(row.scopeFailure).toBe("fixture-scope");
     expect(row.readFailed).toBeUndefined();

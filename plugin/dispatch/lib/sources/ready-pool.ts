@@ -27,7 +27,7 @@ import type {
 import type { PickupReads } from "../pickup-reads.ts";
 import { queueHold, rankQueue } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
-import { ended, within } from "./bounded.ts";
+import { CUT_AT_BOUND, ended, within } from "./bounded.ts";
 import type { FacetBound } from "./tracker-facets.ts";
 import type { DispatchSection, Unplaced, WantedItem } from "../types.ts";
 import type { ServedPolicy } from "./served.ts";
@@ -143,6 +143,19 @@ function unread(
       },
     ],
   };
+}
+
+/** A deadline that prevents a pool read is a failed, retryable read. */
+function deadlineUnread(
+  tracker: Tracker,
+  names: string,
+  reason: string,
+): PoolReading {
+  const result = unread(tracker, names, reason);
+  const row = result.unplaced[0];
+  if (row !== undefined)
+    result.unplaced[0] = { ...row, readFailed: true, failure: CUT_AT_BOUND };
+  return result;
 }
 
 /** The wanted item for a pool issue a trusted person made ready. */
@@ -329,6 +342,8 @@ async function placeAll(
         url: issue.url,
         record: "tracker",
         reason: `in the ready pool (${issue.state.name}), but the tick's deadline passed before who made it ready was read`,
+        readFailed: true,
+        failure: CUT_AT_BOUND,
       });
       continue;
     }
@@ -387,7 +402,7 @@ export async function readPoolPickups(
     // The claim assigns the item to the credential's user: it must be the
     // identity the pool is attributed to and monitored under.
     if (ended(bound))
-      return unread(
+      return deadlineUnread(
         tracker,
         names,
         `the ready pool (${names}) could not be read: the tick's deadline passed before the read could start`,
@@ -403,7 +418,7 @@ export async function readPoolPickups(
         `the ready pool (${names}) is not read: the tracker credential acts as ${viewer.name}, not as the dispatch identity ${identity}, so a claim would assign pool items to the wrong user`,
       );
     if (ended(bound))
-      return unread(
+      return deadlineUnread(
         tracker,
         names,
         `the ready pool (${names}) could not be read: the tick's deadline passed before the read could start`,
