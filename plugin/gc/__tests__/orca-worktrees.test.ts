@@ -18,7 +18,10 @@ import {
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExitNot,
+} from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { dump } from "../../shared/yaml.ts";
@@ -705,7 +708,7 @@ describe.skipIf(
       ["git", "-C", f.tree, "commit", "--allow-empty", "-m", "window"],
       { env: f.env, stdout: "pipe", stderr: "pipe" },
     );
-    expect(tried.exitCode).not.toBe(0);
+    expectSpawnExitNot(tried, 0);
     expect(tried.stderr.toString()).toContain("HEAD.lock");
     // The worktree survived: the next collection keeps it before its hook.
     rmSync(join(f.root, "hook-ran"));
