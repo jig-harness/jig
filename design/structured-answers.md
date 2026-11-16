@@ -859,11 +859,13 @@ keeps a comment in its own document format, which need not keep a hidden
 record as written. It refuses words (the tick carries out an option), an
 option the decision does not offer, a missing or stale digest, and, on
 another tracker's item, a tracker whose comments do not name their author
-and a credential that acts as the user the tick leaves out: the factory
-identity, or, where the repository names none, the user the owning host's
-tracker credential acts as. On the host that owns the repository that user
-is the one a send writes as, so a send there is refused; from another host
-it cannot be told, and the plan's notice says the tick may not read it.
+and a credential that acts as the user the tick leaves out, the user the
+owning host's tracker credential acts as. On the host that owns the
+repository that is the user a send writes as, so a send there is refused,
+as is one from a machine that cannot tell whether it owns the repository.
+From another host the user is taken to be the factory identity; where the
+repository names none it cannot be told, and the plan's notice says the
+tick may not read the answer.
 
 #### The tick acts
 

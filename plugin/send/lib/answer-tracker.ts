@@ -16,12 +16,13 @@
  * checked for (`answer-station.ts`): the tracker names who wrote each
  * comment, without which the tick cannot count an answer there; the
  * tracker's user here is not the user the tick leaves out, the user its own
- * tracker credential acts as; and `--as`, when given, names that user. That
- * user is the repository's factory identity (`dispatch.identity`) when it
- * names one. Without one, it is the user the tracker credential of the host
- * that owns the repository acts as, where the tick runs: on that host, the
- * user a send writes as, so a send there is refused; on another it cannot be
- * told, which the plan's notice says.
+ * tracker credential acts as; and `--as`, when given, names that user. The
+ * tick runs on the host that owns the repository, with the credential a
+ * send there uses, so a send there is refused, as is one from a machine
+ * that cannot tell whether it owns the repository. From another host, the
+ * user the tick leaves out is taken to be the repository's factory identity
+ * (`dispatch.identity`); without one it cannot be told, which the plan's
+ * notice says.
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import type { TrackerKeyForm } from "../../shared/address.ts";
@@ -56,8 +57,8 @@ type OneAnswer = Extract<AnswerRequest, { all: false }>;
 export interface TrackerHere {
   tracker: Tracker;
   identity: string | null;
-  /** Whether this machine owns the repository, so its tick reads answers with this machine's tracker credential; `null` when its dispatch file does not read. */
-  owner: boolean | null;
+  /** Whether this machine owns the repository, so its tick reads answers with this machine's tracker credential, or why that cannot be told. */
+  owner: Outcome<boolean, "unreadable">;
   /** The item key form of the tracker, when the settings were read from the repository; the item is checked against it. */
   keys?: TrackerKeyForm;
 }
@@ -134,9 +135,10 @@ const INSTEAD =
 
 /**
  * Whether the tick would read an answer `viewer` writes: refused when
- * `viewer` is the user the tick leaves out, or when the factory identity it
- * is taken to be cannot be looked up; otherwise the notice to show when who
- * the tick leaves out cannot be told here, `null` when it can.
+ * `viewer` is the user the tick leaves out, or when whether it is cannot be
+ * told (this machine's ownership of the repository, or the factory identity
+ * that user is taken to be, does not read); otherwise the notice to show
+ * when who the tick leaves out cannot be told here, `null` when it can.
  */
 async function readByTick(
   ctx: AskContext,
@@ -144,13 +146,18 @@ async function readByTick(
   viewer: TrackerUser,
 ): Promise<Outcome<string | null, "refused">> {
   const { identity, tracker, owner } = here;
-  if (identity === null && owner === true)
+  const { repo } = ctx.address;
+  if (!owner.ok)
     return refused(
-      `the repository names no factory identity (dispatch.identity), and this machine owns ${ctx.address.repo}, so its tick reads the answers with the tracker credential a send here uses, which acts as ${viewer.name}; the tick never counts a comment by the user its own tracker credential acts as, so it would not read this answer: ${INSTEAD}`,
+      `whether this machine owns ${repo}, so that its tick reads the answers with the tracker credential a send here uses, cannot be told: ${owner.failure.reason}`,
+    );
+  if (owner.value)
+    return refused(
+      `this machine owns ${repo}, so its tick reads the answers with the tracker credential a send here uses, which acts as ${viewer.name}; the tick never counts a comment by the user its own tracker credential acts as, so it would not read this answer: ${INSTEAD}`,
     );
   if (identity === null)
     return ok(
-      `the repository names no factory identity (dispatch.identity), and ${owner === null ? "this machine's dispatch file does not read" : "this machine does not own the repository"}, so whether ${viewer.name} is the user the tick's own tracker credential acts as on the host that owns it cannot be told here; if it is, the tick will not read this answer: ${INSTEAD}`,
+      `the repository names no factory identity (dispatch.identity), and this machine does not own it, so whether ${viewer.name} is the user the tick's own tracker credential acts as on the host that owns it cannot be told here; if it is, the tick will not read this answer: ${INSTEAD}`,
     );
   const factory = await readHere(ctx, "the factory identity", (signal) =>
     tracker.user(identity, signal),

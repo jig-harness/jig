@@ -3,9 +3,9 @@
  * decision on an item of a tracker other than the forge: written through
  * the tracker as the comment a person could type there, as the user the
  * tracker's credential acts as here; refused, with why, by a tracker that
- * cannot name who wrote a comment, to the repository's factory identity and,
- * where the repository names none, on the host that owns it, whose tick
- * leaves out the user a send there writes as.
+ * cannot name who wrote a comment, to the repository's factory identity,
+ * and on the host that owns the repository, whose tick leaves out the user a
+ * send there writes as.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -24,7 +24,7 @@ import { closeStateDb } from "../../dispatch/lib/state.ts";
 import type { Action } from "../../dispatch/lib/types.ts";
 import { reading } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
-import { ok } from "../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type {
   Tracker,
   TrackerUser,
@@ -177,7 +177,7 @@ const plan = (
     as?: string;
     dryRun?: boolean;
     identity?: string | null;
-    owner?: boolean | null;
+    owner?: Outcome<boolean, "unreadable">;
   } = {},
 ) =>
   planTrackerAnswer(context(), request, {
@@ -190,7 +190,7 @@ const plan = (
           options.identity === undefined
             ? "factory@example.com"
             : options.identity,
-        owner: options.owner ?? false,
+        owner: options.owner ?? ok(false),
       }),
   });
 
@@ -263,59 +263,59 @@ describe("jig send … answer on an item of another tracker", () => {
     }
   });
 
-  it("refuses, writing nothing, on the host that owns the repository when it names no factory identity", async () => {
-    for (const dryRun of [false, true]) {
-      const t = tracker(DANA);
-      const planned = await plan(t, approve(DIGEST), {
-        identity: null,
-        owner: true,
-        dryRun,
-      });
-      expect(planned?.ok).toBe(false);
-      const reason =
-        planned !== null && !planned.ok ? planned.failure.reason : "";
-      expect(reason).toContain(
-        `this machine owns ${REPO}, so its tick reads the answers with the tracker credential a send here uses, which acts as Dana Lee`,
-      );
-      expect(reason).toContain(
-        "answer on the tracker as another user, or give the dispatcher a tracker user of its own",
-      );
-      expect(t.posted).toEqual([]);
-    }
+  it("refuses, writing nothing, on the host that owns the repository, whether or not it names a factory identity", async () => {
+    for (const identity of [null, "factory@example.com"])
+      for (const dryRun of [false, true]) {
+        const t = tracker(DANA);
+        const planned = await plan(t, approve(DIGEST), {
+          identity,
+          owner: ok(true),
+          dryRun,
+        });
+        expect(planned?.ok).toBe(false);
+        const reason =
+          planned !== null && !planned.ok ? planned.failure.reason : "";
+        expect(reason).toContain(
+          `this machine owns ${REPO}, so its tick reads the answers with the tracker credential a send here uses, which acts as Dana Lee`,
+        );
+        expect(reason).toContain(
+          "answer on the tracker as another user, or give the dispatcher a tracker user of its own",
+        );
+        expect(t.posted).toEqual([]);
+      }
   });
 
-  it("refuses the factory identity on the host that owns the repository too", async () => {
-    const t = tracker(FACTORY);
-    const planned = await plan(t, approve(DIGEST), { owner: true });
+  it("refuses, writing nothing, when whether this machine owns the repository cannot be told", async () => {
+    const t = tracker(DANA);
+    const planned = await plan(t, approve(DIGEST), {
+      owner: failed("unreadable", "the dispatch file does not read"),
+    });
     expect(planned?.ok).toBe(false);
     expect(
       planned !== null && !planned.ok ? planned.failure.reason : "",
-    ).toContain("the factory identity factory@example.com");
+    ).toContain(
+      `whether this machine owns ${REPO}, so that its tick reads the answers with the tracker credential a send here uses, cannot be told: the dispatch file does not read`,
+    );
     expect(t.posted).toEqual([]);
   });
 
-  it("posts a writer other than the factory identity, from the owning host or another", async () => {
-    for (const owner of [true, false]) {
-      const t = tracker(DANA);
-      const planned = await plan(t, approve(DIGEST), { owner });
-      if (planned === null || !planned.ok)
-        throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
-      expect(planned.value.notice).not.toContain("cannot be told here");
-      await planned.value.write();
-      expect(t.posted).toHaveLength(1);
-    }
+  it("posts, from a host that does not own the repository, a writer other than the factory identity", async () => {
+    const t = tracker(DANA);
+    const planned = await plan(t, approve(DIGEST));
+    if (planned === null || !planned.ok)
+      throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
+    expect(planned.value.notice).not.toContain("cannot be told here");
+    await planned.value.write();
+    expect(t.posted).toHaveLength(1);
   });
 
   it("posts from a host that does not own a repository naming no factory identity, saying the tick may not read it", async () => {
     const t = tracker(DANA);
-    const planned = await plan(t, approve(DIGEST), {
-      identity: null,
-      owner: false,
-    });
+    const planned = await plan(t, approve(DIGEST), { identity: null });
     if (planned === null || !planned.ok)
       throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
     expect(planned.value.notice).toContain(
-      "the repository names no factory identity (dispatch.identity), and this machine does not own the repository, so whether Dana Lee is the user the tick's own tracker credential acts as on the host that owns it cannot be told here",
+      "the repository names no factory identity (dispatch.identity), and this machine does not own it, so whether Dana Lee is the user the tick's own tracker credential acts as on the host that owns it cannot be told here",
     );
     await planned.value.write();
     expect(t.posted).toHaveLength(1);
@@ -335,7 +335,8 @@ describe("jig send … answer on an item of another tracker", () => {
     const planned = await planTrackerAnswer(ctx, approve(DIGEST), {
       as: undefined,
       dryRun: false,
-      open: () => ok({ tracker: tracker(DANA), identity: null, owner: false }),
+      open: () =>
+        ok({ tracker: tracker(DANA), identity: null, owner: ok(false) }),
     });
     expect(planned).toBeNull();
   });
@@ -416,11 +417,8 @@ describe("jig send … answer on another tracker's item, from the command line",
     return { w, ops, digest: decision.digest ?? "" };
   }
 
-  it("refuses on the host that owns a repository naming no factory identity, posting nothing", async () => {
+  it("refuses on the host that owns the repository, posting nothing", async () => {
     const { w, ops, digest } = trackerWorld();
-    w.config(
-      `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO_OF_WORLD}\n  facets:\n    type: { store: label }\n    priority: { store: label }\n`,
-    );
     mkdirSync(join(w.home, ".jig"), { recursive: true });
     writeFileSync(
       join(w.home, ".jig", "dispatch.yaml"),

@@ -156,7 +156,7 @@ function stateOf(
 /** The need's reason, and why the tick did not read the answers to its decisions, where it did not. */
 function needWhy(need: LineNeed): string {
   const unread = need.decisions.flatMap((d) =>
-    d.unread === undefined ? [] : [`its answer is unreadable: ${d.unread}`],
+    d.unread === undefined ? [] : [`its answers are unreadable: ${d.unread}`],
   );
   return [need.reason, ...unread].join("; ");
 }

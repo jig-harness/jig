@@ -192,7 +192,7 @@ describe("jig ask pickup", () => {
     const { waitsOn } = JSON.parse(r.stdout) as AskAnswer;
     expect(
       typeof waitsOn === "object" && "why" in waitsOn ? waitsOn.why : "",
-    ).toBe(`stalled pickup; its answer is unreadable: ${why}`);
+    ).toBe(`stalled pickup; its answers are unreadable: ${why}`);
   });
 
   it("exits 1 for an item the tracker does not have, and 2 for a key not in its form", async () => {
