@@ -1776,7 +1776,11 @@ steward pass has judged yet. Its members are
 - an ended pass that recommends a resume;
 - a queued item missing a priority, type or size;
 - a need with no framing: one neither its pass, its drive's parks nor the
-  tick frames as a decision a person answers in a word.
+  tick frames as a decision a person answers in a word;
+- a pickup's or a follow-up's run that ended without a closing report and
+  whose end its wrapper did not explain, at most five no pass has seen, the
+  latest first
+  ([A run with no report](dispatched-sessions.md#when-a-runs-tab-closes)).
 
 The trigger reads the backlog only. An empty backlog starts no pass, and
 neither does one whose every member a pass of the repository's latest 20
@@ -1788,7 +1792,9 @@ read, so a file that sets it keeps loading, and changes nothing.
 The digest the pass reads carries the backlog, the unframed needs and,
 beside them, each framed need with the framing it already carries. A `need`
 record may name only a target among the digest's unframed needs; one for
-any other target is refused. A tick that starts no pass says why on its
+any other target is refused. The runs without a report are listed with
+an excerpt of each run's transcript copy, and a `cause` record may name only
+one of them. A tick that starts no pass says why on its
 receipt and in the line the dashboard reads: the backlog was empty, its
 members were all judged, or the hourly budget was spent.
 

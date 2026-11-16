@@ -142,6 +142,8 @@ export interface LastReport {
   concluded?: string;
   suggested_next?: SuggestedNext;
   cause?: ReportCause;
+  /** For a run that left no report: the path of its transcript's copy on the host, while there is one. */
+  transcript?: string;
 }
 
 /** One record kind the answer consulted. */

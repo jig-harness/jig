@@ -396,6 +396,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.258.0] - 2026-11-16
+
+### Added
+
+- A pickup's or a follow-up's run that ends without a closing report, and whose end its wrapper cannot explain, now has the end of its transcript copied to `~/.local/state/jig/dispatch/runs/<record>/` (at most 2 MiB, credentials redacted, readable only by you), found by the session id Claude Code was given or the one a Codex pass printed. The dashboard's run line and `jig ask`'s `last.run` name the copy's path. The copy is removed seven days after the steward records the run's cause, and at the latest after `receipts_days`; Jig keeps no copy of a reported run's transcript and never deletes the vendor's files. See [plugin/README.md](plugin/README.md#the-closing-report).
+- The steward's digest lists those runs with an excerpt of each copy (the run's last assistant turns and the tool errors after its last success, as evidence), and the steward submits a new `cause` record for each: a cause from its closed list and a summary of what the run had got to. The next tick writes it onto the run's outcome row as its closing report, `by: steward`, redacted as a pass's report is. It writes no tracker state and starts no pass. See [the steward](plugin/skills/steward/README.md).
+- When a pass leaves no report, its wrapper records what it saw as the report, `by: wrapper`: a pass that could not start (`startup`, or `usage-limit` on the vendor's notice), one it stopped at its deadline (`deadline`), and every steward pass, with the cause it saw, else `unknown`.
+
 ## [0.257.0] - 2026-11-16
 
 The dispatch dashboard shows how many pull requests are ready to merge outside its own window.
@@ -9118,7 +9126,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.257.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.258.0...HEAD
+[0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0
 [0.257.0]: https://github.com/jig-harness/jig/compare/v0.256.7...v0.257.0
 [0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7
 [0.256.6]: https://github.com/jig-harness/jig/compare/v0.256.5...v0.256.6

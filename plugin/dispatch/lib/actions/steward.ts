@@ -42,6 +42,7 @@ import {
   type StewardTrigger,
 } from "../steward-backlog.ts";
 import { parkClassesOf } from "../steward-resume.ts";
+import { unreportedRuns } from "../steward-causes.ts";
 import type { StationContext } from "../line-station.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
@@ -101,19 +102,17 @@ export async function applySteward(
     };
     return;
   }
-  const found = await backlogOf(state, observation, station);
-  if (!found.ok) return skip(found.failure.reason);
-  const backlog = found.value.backlog;
-  const trigger = stewardTrigger(
-    backlog.members,
-    judgedMembers(
-      repo.slug,
-      state.root,
-      new Set(
-        state.records.filter((r) => holds(r.state)).map((r) => r.record.id),
-      ),
+  const judged = judgedMembers(
+    repo.slug,
+    state.root,
+    new Set(
+      state.records.filter((r) => holds(r.state)).map((r) => r.record.id),
     ),
   );
+  const found = await backlogOf(state, observation, station, judged);
+  if (!found.ok) return skip(found.failure.reason);
+  const backlog = found.value.backlog;
+  const trigger = stewardTrigger(backlog.members, judged);
   if (trigger.kind !== "due") {
     report.steward = notStarted(trigger);
     return;
@@ -259,6 +258,7 @@ async function backlogOf(
   state: ApplyState,
   observation: RepoObservation,
   station: StationContext,
+  judged: ReadonlySet<string>,
 ): Promise<Outcome<{ backlog: Backlog; queue: PoolIssue[] }, QueueFailure>> {
   const queued = await stewardQueue(observation.tracked, () =>
     readRoomMs(state),
@@ -266,7 +266,7 @@ async function backlogOf(
   if (!queued.ok) return queued;
   return ok({
     backlog: stewardBacklog(
-      backlogInput(state, observation, station, queued.value),
+      backlogInput(state, observation, station, queued.value, judged),
     ),
     queue: queued.value,
   });
@@ -313,6 +313,7 @@ function backlogInput(
   observation: RepoObservation,
   station: StationContext,
   queue: PoolIssue[],
+  judged: ReadonlySet<string>,
 ): BacklogInput {
   const { opened, forge } = observation;
   const labels = parseTrackerLabels(opened.values);
@@ -327,6 +328,8 @@ function backlogInput(
     parkClasses: parkClassesOf(opened.values),
     labels: { hitl: labels.hitl, manualOps: labels.manualOps },
     station,
+    judged,
+    ...(state.root === undefined ? {} : { root: state.root }),
   };
 }
 
@@ -373,6 +376,7 @@ async function digestOf(
       repo.slug,
       judgedResumes(repo.slug, state.root),
     ),
+    unreported: unreportedRuns(state.records, backlog.members, state.root),
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
     history: stewardHistory(repo.slug, state.root),
