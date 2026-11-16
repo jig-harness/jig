@@ -9,7 +9,9 @@ import {
   changedFilesOf,
   type GitRunner,
   mergeRange,
+  type PrView,
   previewRange,
+  rebaseRange,
 } from "../scripts/lib/facts.ts";
 import { scanDiff } from "../scripts/lib/scaffolding.ts";
 import { gitRun, repository, write } from "./helpers.ts";
@@ -93,6 +95,65 @@ describe("the range a merge brought in", () => {
     const head = gitRun(root, "rev-parse", "feature");
     const range = await previewRange(runnerIn(root), "main", head);
     expect(range.ok && range.value).toEqual({ kind: "open", base: fork, head });
+  });
+});
+
+describe("a multi-commit pull request landed by rebase", () => {
+  const viewOf = (commits: string[]): PrView => ({
+    number: 7,
+    url: "",
+    title: "",
+    state: "MERGED",
+    mergeCommit: null,
+    baseRefName: "main",
+    headRefName: "feature",
+    headRefOid: "",
+    body: "",
+    labels: [],
+    files: [],
+    commits,
+  });
+
+  test("a squash of several commits keeps its first-parent range", async () => {
+    const root = withFeature();
+    const commits = gitRun(
+      root,
+      "rev-list",
+      "--reverse",
+      "main..feature",
+    ).split("\n");
+    gitRun(root, "merge", "-q", "--squash", "feature");
+    gitRun(root, "commit", "-qm", "feature (#7)");
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const git = runnerIn(root);
+    const read = await mergeRange(git, merge);
+    if (!read.ok) throw new Error("unreadable");
+    expect(await rebaseRange(viewOf(commits), merge, read.value, git)).toEqual(
+      read.value,
+    );
+  });
+
+  test("a rebase keeps the landed sequence: the base is below its first commit", async () => {
+    const root = withFeature();
+    const commits = gitRun(
+      root,
+      "rev-list",
+      "--reverse",
+      "main..feature",
+    ).split("\n");
+    const before = gitRun(root, "rev-parse", "HEAD");
+    gitRun(root, "cherry-pick", ...commits);
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const git = runnerIn(root);
+    const read = await mergeRange(git, merge);
+    if (!read.ok) throw new Error("unreadable");
+    const range = await rebaseRange(viewOf(commits), merge, read.value, git);
+    expect(range).toEqual({
+      kind: "rebase",
+      base: before,
+      head: merge,
+      branchHead: merge,
+    });
   });
 });
 

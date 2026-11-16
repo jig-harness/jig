@@ -189,15 +189,15 @@ there is the commit that added it at the merge: a later merge's note of the
 same name is that merge's); and `status`, the changelog skill's `status.ts`
 report (`report`, its `exit` and `stderr`), read from a throwaway checkout
 of the integration branch, since the working tree is the branch `status.ts`
-reads. Then:
+reads. Take the rows in order, the first that holds:
 
 | What `status.ts` and the notes say | Verdict |
 |---|---|
+| `notesRead` is not null | `unread`, with that reason: a note's state could not be read |
 | No note of the merge is `waiting`, or it added none | Go on to the tags |
 | A waiting note is in the report's `errors` | `owed`, a person's step: the release cannot read it |
 | A waiting note and the report's `releaseRun.state` `running` | `pending`: read again once the run finishes |
 | A waiting note, and `releaseRun.state` `success`, `failure` or `none` on a second read | `owed`, a person's step: the workflow did not consume it (link `releaseRun.url`), unless `status.ts` lists the note in the report's `waiting` and none requests a release: the format waits for the next release, so `not-owed`, naming the note |
-| `notesRead` is not null | `unread`, with that reason: a note's state could not be read |
 | `releaseRun.state` `unknown`, or `report` is null | `unread`, with its `exit` and `stderr` |
 
 Then the tags, on every merge (a tag an earlier release left owed is owed
@@ -351,9 +351,10 @@ Then end as `settle` says:
 | failed | an arm is `unread` | `jig dispatch marker failed <PR> --comment <marker>` | record failed |
 | preview | an open pull request | nothing to mark | nothing to record |
 
-Mark the marker done as soon as the last act succeeds. In a session the
-dispatcher started, its closing report comes last, with the
-`jig dispatch report` command its prompt names.
+In a run by hand, mark the marker done as soon as the last act succeeds and
+the ending is done or wait. In a session the dispatcher started, the wrapper
+ends the marker; record only what the table's last column says. Its closing
+report comes last, with the `jig dispatch report` command its prompt names.
 
 ## Questions, waits and rate limits
 

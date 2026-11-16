@@ -43,7 +43,6 @@ import { parseArgs } from "node:util";
 import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import {
   consumerRoot,
-  readConfig,
   remoteName,
   siblingSkill,
 } from "../../../shared/consumer.ts";
@@ -65,6 +64,7 @@ import {
   type Facts,
   type FactsFailure,
   gatherFacts,
+  integrationBranchOf,
   PR_VIEW_FIELDS,
   prViewOf,
   type PrView,
@@ -125,11 +125,6 @@ function must<T>(outcome: Outcome<T>, code: number): T {
 }
 
 const root = (): string => consumerRoot();
-
-/** The merged configuration of the working tree's layers. */
-function workingConfig(): Record<string, unknown> {
-  return must(attempt("config-invalid", "the configuration", readConfig), 2);
-}
 
 function gitIn(dir: string, timeoutSec = GIT_TIMEOUT_SEC) {
   return (args: string[]) =>
@@ -283,9 +278,24 @@ async function factsCommand(args: string[]): Promise<number> {
   // that decides its authority.
   const viewed = await viewPr(pr);
   if (!viewed.ok) stop(FACTS_EXIT[viewed.failure.code], viewed.failure.reason);
-  const integration = viewed.value.baseRefName;
-  if (integration === "") stop(1, `PR #${pr} names no base branch`);
-  const read = await settingsFor(dir, remote, integration);
+  if (viewed.value.baseRefName === "")
+    stop(1, `PR #${pr} names no base branch`);
+  // The integration branch is established apart from the pull request: the
+  // remote's default branch names it, and that branch's configuration may name
+  // another.  The pull request's base is then checked against its policy.
+  const defaulted = await integrationBranchOf({}, remote, local);
+  if (defaulted === null)
+    stop(
+      1,
+      `the remote's default branch is unknown, so the integration branch cannot be established; run git remote set-head ${remote} --auto`,
+    );
+  const bootstrap = await settingsFor(dir, remote, defaulted);
+  const integration =
+    (await integrationBranchOf(bootstrap.values, remote, local)) ?? defaulted;
+  const read =
+    integration === defaulted
+      ? bootstrap
+      : await settingsFor(dir, remote, integration);
   const gathered = await gatherFacts(pr, integration, {
     view: viewPr,
     git: local,
@@ -425,7 +435,9 @@ async function releaseCommand(args: string[]): Promise<number> {
   });
   const { dir, run: loaded } = loadRun(values.pr);
   const { facts } = loaded;
-  const notesDir = notesDirOf(workingConfig());
+  const notesDir = notesDirOf(
+    (await settingsFor(dir, facts.remote, facts.integrationBranch)).values,
+  );
   const integrationRef = `${facts.remote}/${facts.integrationBranch}`;
   const fetched = await gitIn(
     dir,
