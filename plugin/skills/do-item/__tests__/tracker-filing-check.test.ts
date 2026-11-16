@@ -133,6 +133,42 @@ describe("the filing check inside createIssue", () => {
   });
 });
 
+it("spares a group its requirement on a type the group is not required on", async () => {
+  const typed = lintTaxonomy({
+    version: 1,
+    types: [{ id: "bug" }, { id: "chore" }],
+    statuses: [{ id: "triage" }],
+    groups: [
+      {
+        id: "size",
+        required: true,
+        not_required_on: ["chore"],
+        labels: [{ id: "small" }],
+      },
+      {
+        id: "repo",
+        required: true,
+        not_required_on: ["chore"],
+        labels: [{ id: "jig" }],
+      },
+    ],
+  }).taxonomy;
+  const inner = {
+    createIssue: async () => ({ identifier: "#9", url: null }),
+  } as unknown as Tracker;
+  const t = checkedTracker(inner, facets, typed);
+  // A size-less chore, and a chore with a size but no repo label.
+  await expect(
+    t.createIssue(issue({ type: "chore", labels: [] }, ["size"])),
+  ).resolves.toEqual({ identifier: "#9", url: null });
+  await expect(
+    t.createIssue(issue({ type: "chore", labels: [] })),
+  ).resolves.toEqual({ identifier: "#9", url: null });
+  await expect(
+    t.createIssue(issue({ type: "bug", labels: [] }, ["size"])),
+  ).rejects.toThrow("no size and no repo label");
+});
+
 it("refuses a broken taxonomy slot instead of disabling its required facet", async () => {
   let filed = false;
   const inner = {

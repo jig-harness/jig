@@ -19,6 +19,7 @@ import {
   type Taxonomy,
 } from "../../../../../file-issue/scripts/lib/taxonomy.ts";
 import {
+  groupRequired,
   missingGroups,
   SIZE_GROUP,
 } from "../../../../../file-issue/scripts/lib/validate.ts";
@@ -45,17 +46,26 @@ export function incompleteness(
     filed ?? { labels: issue.labels, nativeType: nativeTypeOf(issue, facets) },
     facets,
   );
-  if (usable(facets.size) && !epic && (issue.size ?? "").trim() === "")
+  // An epic by its issue type stands for the epic label, and the type itself
+  // for its own id, as when `validate-labels` reads the same issue.
+  const typeId = (issue.type ?? "").trim();
+  const presentFrom = (labels: string[]) => {
+    const present = new Set(labels);
+    if (epic) present.add(facets.epic);
+    if (typeId !== "") present.add(typeId);
+    return present;
+  };
+  // The size is judged on the labels the adapter filed, the groups on those asked for.
+  const sizeGroup = taxonomy?.groups.find((g) => g.id === SIZE_GROUP);
+  const sizeSpared =
+    epic ||
+    (sizeGroup !== undefined &&
+      !groupRequired(sizeGroup, presentFrom(filed?.labels ?? issue.labels)));
+  if (usable(facets.size) && !sizeSpared && (issue.size ?? "").trim() === "")
     missing.push("size");
   if (taxonomy !== null)
     missing.push(
-      ...missingGroups(
-        // An epic by its issue type stands for the epic label, as it does
-        // when `validate-labels` reads the same issue.
-        epic ? [...issue.labels, facets.epic] : issue.labels,
-        taxonomy,
-        [SIZE_GROUP],
-      ),
+      ...missingGroups([...presentFrom(issue.labels)], taxonomy, [SIZE_GROUP]),
     );
   return missing;
 }
