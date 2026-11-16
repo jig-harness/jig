@@ -75,6 +75,12 @@ export interface GuardedRemoval {
    * success or Orca's explicit refusal, releases a submitted admission.
    */
   settle(removed: Outcome<unknown>): void;
+  /**
+   * Whether the admission is submitted, by this collection or by the dead
+   * one it took over, and no answer of `orca worktree rm` settled it: Orca
+   * may be deleting the worktree still. Read after `settle`.
+   */
+  unsettled(): boolean;
 }
 
 /**
@@ -111,7 +117,7 @@ export async function guardedCollection(
   const claimKept = (): string | null =>
     admission.submitted === null || answered
       ? null
-      : `the launch guard claim stays: orca worktree rm was called under it at ${admission.submitted} and gave no answer, so the next collection asks again`;
+      : `the launch guard claim stays: orca worktree rm was called under it at ${admission.submitted} and its answer left the removal unsettled, so the next collection asks again`;
   const noting = (reason: string): string => {
     const why = claimKept();
     return why === null ? reason : `${reason}; ${why}`;
@@ -142,6 +148,7 @@ export async function guardedCollection(
       settle: (removed) => {
         answered = removalAnswered(removed);
       },
+      unsettled: () => claimKept() !== null,
     });
     return {
       ...done,
