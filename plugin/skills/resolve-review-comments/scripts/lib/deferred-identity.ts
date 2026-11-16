@@ -141,70 +141,99 @@ function inlineLine(
   state: InlineState,
   hasFutureClosing: (delimiter: string) => boolean,
 ): { state: InlineState; consumed: boolean } {
-  let { inComment, codeDelimiter } = state;
-  if (!inComment && codeDelimiter !== null && line.trim() === "") {
-    codeDelimiter = null;
+  let current = state;
+  if (
+    !current.inComment &&
+    current.codeDelimiter !== null &&
+    line.trim() === ""
+  ) {
+    current = { inComment: false, codeDelimiter: null };
   }
 
   let cursor = 0;
   let visible = false;
   while (cursor < line.length) {
-    if (inComment) {
-      const end = line.indexOf("-->", cursor);
-      if (end < 0) {
-        return {
-          state: { inComment: true, codeDelimiter },
-          consumed: !visible,
-        };
-      }
-      inComment = false;
-      cursor = end + 3;
-      continue;
-    }
-    if (codeDelimiter !== null) {
-      const close = closingRun(line, cursor, codeDelimiter);
-      if (close === null) {
-        return { state: { inComment, codeDelimiter }, consumed: !visible };
-      }
-      codeDelimiter = null;
-      cursor = close;
-      continue;
-    }
-    if (line[cursor] === "\\") {
-      visible = true;
-      cursor += 2;
-      continue;
-    }
-    if (line.startsWith("<!--", cursor)) {
-      inComment = true;
-      cursor += 4;
-      continue;
-    }
-    if (line[cursor] === "`") {
-      const end = backtickRun(line, cursor);
-      const delimiter = line.slice(cursor, end);
-      const close = closingRun(line, end, delimiter);
-      if (close === null) {
-        if (inlineBoundary(line) || !hasFutureClosing(delimiter)) {
-          visible = true;
-          cursor = end;
-          continue;
-        }
-        return {
-          state: { inComment, codeDelimiter: delimiter },
-          consumed: !visible,
-        };
-      }
-      // Preserve ordinary text that happens to contain an inline-code example.
-      // The callers still reject records hidden by a span that crosses lines.
-      visible = true;
-      cursor = close;
-      continue;
-    }
-    if (!/\s/.test(line[cursor] ?? "")) visible = true;
-    cursor += 1;
+    const step = inlineStep(line, cursor, current, hasFutureClosing);
+    current = step.state;
+    if (step.stop) break;
+    cursor = step.next;
+    visible ||= step.visible;
   }
-  return { state: { inComment, codeDelimiter }, consumed: !visible };
+  return { state: current, consumed: !visible };
+}
+
+/** One scan step: continue at `next`, or stop with the line's rest hidden. */
+type InlineStep =
+  | { stop: false; next: number; visible: boolean; state: InlineState }
+  | { stop: true; state: InlineState };
+
+function inlineStep(
+  line: string,
+  cursor: number,
+  state: InlineState,
+  hasFutureClosing: (delimiter: string) => boolean,
+): InlineStep {
+  const { inComment, codeDelimiter } = state;
+  if (inComment) {
+    const end = line.indexOf("-->", cursor);
+    if (end < 0) return { stop: true, state };
+    return {
+      stop: false,
+      next: end + 3,
+      visible: false,
+      state: { inComment: false, codeDelimiter },
+    };
+  }
+  if (codeDelimiter !== null) {
+    const close = closingRun(line, cursor, codeDelimiter);
+    if (close === null) return { stop: true, state };
+    return {
+      stop: false,
+      next: close,
+      visible: false,
+      state: { inComment, codeDelimiter: null },
+    };
+  }
+  if (line[cursor] === "\\") {
+    return { stop: false, next: cursor + 2, visible: true, state };
+  }
+  if (line.startsWith("<!--", cursor)) {
+    return {
+      stop: false,
+      next: cursor + 4,
+      visible: false,
+      state: { inComment: true, codeDelimiter },
+    };
+  }
+  if (line[cursor] === "`")
+    return backtickStep(line, cursor, state, hasFutureClosing);
+  return {
+    stop: false,
+    next: cursor + 1,
+    visible: !/\s/.test(line[cursor] ?? ""),
+    state,
+  };
+}
+
+function backtickStep(
+  line: string,
+  cursor: number,
+  state: InlineState,
+  hasFutureClosing: (delimiter: string) => boolean,
+): InlineStep {
+  const end = backtickRun(line, cursor);
+  const delimiter = line.slice(cursor, end);
+  const close = closingRun(line, end, delimiter);
+  // Preserve ordinary text that happens to contain an inline-code example.
+  // The callers still reject records hidden by a span that crosses lines.
+  if (close !== null) return { stop: false, next: close, visible: true, state };
+  if (inlineBoundary(line) || !hasFutureClosing(delimiter)) {
+    return { stop: false, next: end, visible: true, state };
+  }
+  return {
+    stop: true,
+    state: { inComment: state.inComment, codeDelimiter: delimiter },
+  };
 }
 
 function openingFence(line: string): { fence: Fence; info: string } | null {
