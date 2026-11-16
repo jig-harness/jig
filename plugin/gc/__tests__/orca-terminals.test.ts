@@ -471,7 +471,13 @@ console.log(JSON.stringify({ ok: true, result }));
       );
       expectSpawnExit(run, 0);
       const receipt = JSON.parse(run.stdout.toString()) as Receipt;
-      expect(receipt.resources[0]?.outcome).not.toBe("collected");
+      expect(receipt.resources).toHaveLength(1);
+      expect(receipt.resources[0]).toMatchObject({
+        kind: "orca-terminals",
+        resource: "term_old",
+        outcome: "refused",
+      });
+      expect(receipt.resources[0]?.reason).toContain("has a child process");
       expect(readFileSync(log, "utf8")).not.toContain("close");
       expect(existsSync(join(tabs, "term_old.json"))).toBe(true);
     } finally {
