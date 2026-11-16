@@ -134,7 +134,10 @@ export interface ServedView {
 }
 
 /** The views of one tick, shared by its repositories. */
-export type ServedViews = Map<string, Promise<ServedView>>;
+export type ServedViews = Map<string, Promise<ServedView>> & {
+  /** The whole tick's bound, independent of a caller's facet-read allowance. */
+  readonly bound?: FacetBound;
+};
 
 function snapshotOf(value: unknown): Snapshot | null {
   if (typeof value !== "object" || value === null) return null;

@@ -83,9 +83,12 @@ export function nativeFacts(
   return {
     failure: () => dispatchScopeFailure(reads),
     guarded,
-    async queue(identity: string): Promise<DispatchRawIssue[]> {
+    async queue(
+      identity: string,
+      readBound: FacetBound | undefined = bound,
+    ): Promise<DispatchRawIssue[]> {
       const reading = scope.queues.then(() =>
-        guarded(() => source.queue(identity, bound)),
+        guarded(() => source.queue(identity, readBound)),
       );
       scope.queues = reading.catch(() => undefined);
       const rows = await reading;
