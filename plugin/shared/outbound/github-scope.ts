@@ -12,8 +12,8 @@
  *
  * 1. the `-R`/`--repo` value (`-R x`, `-Rx`, `-R=x`, `--repo x`,
  *    `--repo=x`); a `HOST/OWNER/REPO` or URL value gives its last two path
- *    segments; failing that, a positional `https://HOST/OWNER/REPO/…`
- *    argument;
+ *    segments; failing that, a positional `https://HOST/OWNER/REPO` or
+ *    `https://HOST/OWNER/REPO/…` argument;
  * 2. for `gh api`, a route that starts `repos/<owner>/<repo>`;
  * 3. `GH_REPO` in the run's environment;
  * 4. the remote `gh repo set-default` chose, else the `origin` remote, of
@@ -114,7 +114,8 @@ export function repoOfRemote(url: string): string | null {
 
 /**
  * The repository a command line's `-R`/`--repo` names, else the one a
- * positional `https://HOST/OWNER/REPO/(pull|issues|…)/N` argument names;
+ * positional `https://HOST/OWNER/REPO` (or a page under it, such as
+ * `…/pull/N`) argument names;
  * `null` when it names none. The positional arguments are those left when
  * the flags and their values are skipped, so a URL inside `--body` is
  * content, and a `gh api` URL is a route, never a repository page.
@@ -148,10 +149,12 @@ function repoFlagValue(
     : arg.slice(2).replace(/^=/, "");
 }
 
-/** The repository the first positional repository-page URL of `positional` names; `null` when there is none. */
+/** The repository the first positional repository or repository-page URL of `positional` names; `null` when there is none. */
 function positionalUrlRepo(positional: readonly string[]): string | null {
   for (const arg of positional) {
-    const match = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/[^/]+/i.exec(arg);
+    const match = /^https?:\/\/[^/]+\/([^/?#]+)\/([^/?#]+)(?:[/?#]|$)/i.exec(
+      arg,
+    );
     if (match !== null) return lastTwo(`${match[1]}/${match[2]}`);
   }
   return null;

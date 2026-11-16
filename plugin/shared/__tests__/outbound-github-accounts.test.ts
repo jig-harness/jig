@@ -411,6 +411,16 @@ describe("the repository a run addresses", () => {
       repoFlag(["api", "https://api.github.com/repos/other-org/two/issues"]),
     ).toBeNull();
     expect(repoFlag(["issue", "view", "-w", url])).toBe("other-org/two");
+    // A repository-root URL selects the repository too; an owner alone does not.
+    expect(repoFlag(["repo", "view", "https://github.com/other-org/two"])).toBe(
+      "other-org/two",
+    );
+    expect(
+      repoFlag(["repo", "view", "https://github.com/other-org/two.git/"]),
+    ).toBe("other-org/two");
+    expect(
+      repoFlag(["repo", "view", "https://github.com/other-org"]),
+    ).toBeNull();
     // A switch's alias does not hide the repository flag after it.
     expect(repoFlag(["pr", "review", "1", "-a", "-R", "other-org/two"])).toBe(
       "other-org/two",
