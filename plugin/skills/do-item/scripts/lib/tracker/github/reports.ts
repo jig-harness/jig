@@ -455,13 +455,13 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       return out;
     },
 
-    async issueComments(key) {
+    async issueComments(key, signal) {
       if (!/^#[1-9]\d*$/.test(key))
         throw new TrackerRequestError(
           "invalid",
           `not an issue key of ${home.owner}/${home.name}: ${key}`,
         );
-      const { id, comments } = await readers.comments(key);
+      const { id, comments } = await readers.comments(key, signal);
       return {
         uuid: id,
         comments: comments.map((c): CommentFact => ({ ...c })),

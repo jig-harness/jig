@@ -21,6 +21,7 @@ import {
   settleEnds,
   type ReadRecord,
   writeRecord,
+  isLaunchRecord,
 } from "../lib/launches.ts";
 import { launchHeads } from "../lib/failed-rearms.ts";
 import { markedSince } from "../lib/launch-report.ts";
@@ -81,6 +82,30 @@ function record(id: string, over: Partial<LaunchRecord> = {}): LaunchRecord {
     ...over,
   };
 }
+
+it("refuses malformed stored test-lock observations while reading older records", () => {
+  const original = record("wait-observation");
+  const wait = {
+    pid: 12,
+    workspace: "/work/w",
+    since: "2026-11-01T10:00:00.000Z",
+    observedAt: "2026-11-01T10:01:00.000Z",
+    waiting: true,
+  };
+  expect(isLaunchRecord(original)).toBe(true);
+  expect(isLaunchRecord({ ...original, testLockWait: wait })).toBe(true);
+  for (const bad of [
+    null,
+    {},
+    { ...wait, pid: 0 },
+    { ...wait, pid: 1.5 },
+    { ...wait, workspace: null },
+    { ...wait, since: "invalid" },
+    { ...wait, observedAt: "invalid" },
+    { ...wait, waiting: "yes" },
+  ])
+    expect(isLaunchRecord({ ...original, testLockWait: bad })).toBe(false);
+});
 
 function ended(r: LaunchRecord, code: number, at: string): ReadRecord {
   const exit: LaunchExit = { at, code, signal: null };

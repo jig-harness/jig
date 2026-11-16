@@ -9,6 +9,7 @@ import { inTransaction, stateDb } from "./state.ts";
 import type { FramedResult } from "./framed-result.ts";
 import { storedEndedRow } from "./closing-report-store.ts";
 import { currentIso } from "../../shared/time.ts";
+import { testLockNote } from "./test-lock-note.ts";
 
 /**
  * A row's answer. A `waits` result is kept as `failed` with the time in
@@ -86,8 +87,8 @@ function reclassifyEnded(
   if (row === null || (row.stage !== "pickup" && row.stage !== "followup"))
     return;
   const storedExit = db
-    .query("SELECT exit FROM launches WHERE id = ?")
-    .get(id) as { exit: string | null };
+    .query("SELECT exit, record FROM launches WHERE id = ?")
+    .get(id) as { exit: string | null; record: string };
   const exit: unknown =
     storedExit.exit === null ? null : JSON.parse(storedExit.exit);
   const placed = sessionResultClass(
@@ -95,8 +96,10 @@ function reclassifyEnded(
     isMapping(exit) ? exit.said : undefined,
   );
   if (placed === null) throw new Defect("a recorded result must classify");
+  // The ended row named the last wait for the test lock; the new reason keeps it.
+  const wait = testLockNote(JSON.parse(storedExit.record), undefined, true);
   row.class = placed.class;
-  row.reason = placed.reason;
+  row.reason = wait === null ? placed.reason : `${placed.reason}; ${wait}`;
   row.next =
     row.stage === "pickup" && (result === "done" || result === "waits")
       ? next

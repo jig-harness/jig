@@ -28,8 +28,11 @@ export function claimOperations(
   }
 
   return {
-    async viewer() {
-      const me = await client.transport({ method: "GET", path: "myself" });
+    async viewer(signal) {
+      const me = await client.transport(
+        { method: "GET", path: "myself" },
+        signal,
+      );
       const id =
         typeof me === "object" && me !== null
           ? (me as Record<string, unknown>).accountId
@@ -75,9 +78,12 @@ export function claimOperations(
         user.id,
       );
     },
-    async user(identity) {
+    async user(identity, signal) {
       // The account id resolves as the dispatcher's assigned-issues read resolves it.
-      return { id: await client.accountId(identity), name: identity.trim() };
+      return {
+        id: await client.accountId(identity, signal),
+        name: identity.trim(),
+      };
     },
   };
 }

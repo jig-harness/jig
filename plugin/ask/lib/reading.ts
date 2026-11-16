@@ -60,20 +60,28 @@ export function reading(
 export const PAST_DEADLINE = `the answer's deadline (${ANSWER_DEADLINE_MS / 1000} s) passed before it was read`;
 
 /**
- * `work`, or `null` when it does not settle within `sec` seconds: for a read
- * whose own interface takes no deadline (a tracker adapter's).
+ * `work`, or `null` when it does not settle within `sec` seconds, the signal
+ * it was given aborted then: for a read whose own interface takes no
+ * deadline (a tracker adapter's).
  */
 export async function within<T>(
   sec: number,
-  work: () => Promise<T>,
+  work: (signal: AbortSignal) => Promise<T>,
 ): Promise<{ value: T } | null> {
   if (sec <= 0) return null;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = new AbortController();
   const late = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), sec * 1000);
+    timer = setTimeout(() => {
+      stop.abort();
+      resolve(null);
+    }, sec * 1000);
   });
   try {
-    return await Promise.race([work().then((value) => ({ value })), late]);
+    return await Promise.race([
+      work(stop.signal).then((value) => ({ value })),
+      late,
+    ]);
   } finally {
     clearTimeout(timer);
   }

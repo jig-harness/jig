@@ -57,6 +57,7 @@ import {
 } from "./launches.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import {
   type LaunchPrReading,
@@ -124,12 +125,17 @@ function sessionsFor(
   const outside = holdingRecords(item, launches).filter(
     (r) => r.record.workspace === null || !paths.has(r.record.workspace.path),
   );
+  const waits = holdingRecords(item, launches).flatMap((r) => {
+    const note = testLockNote(r.record);
+    return note === null ? [] : [`launch record ${r.record.id} ${note}`];
+  });
   const parts = [
     ...(live.length > 0 ? [liveAgents(live)] : []),
     ...outside.map(
       (r) =>
         `launch record ${r.record.id} (${r.state.kind}) in ${r.record.workspace?.path ?? "no workspace yet"}`,
     ),
+    ...waits,
   ];
   const who = [
     ...live.map((w) => `workspace ${w.id}`),
@@ -444,7 +450,17 @@ function stalledPickup(
 ): Action {
   const idle = input.nowMs - since;
   const note = stallNote(pr);
-  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}`;
+  const latest = input.launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item.key ||
+          r.record.batchItems?.some((i) => i.key === item.key)),
+    )
+    .sort((a, b) => b.record.createdAt.localeCompare(a.record.createdAt))[0];
+  const wait =
+    latest?.record.testLockWait === undefined ? "" : `; ${endedHow(latest)}`;
+  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}${wait}`;
   return {
     stage: "notify",
     target: item.key,

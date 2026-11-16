@@ -143,9 +143,9 @@ export function claimOperations(
   }
 
   return {
-    async viewer() {
+    async viewer(signal) {
       return userOf(
-        record(await transport(VIEWER, {}), "data").viewer,
+        record(await transport(VIEWER, {}, signal), "data").viewer,
         "viewer",
       );
     },
@@ -171,9 +171,9 @@ export function claimOperations(
       if (record(data.commentDelete, "commentDelete").success !== true)
         throw new LinearClaimError(`Linear did not delete a comment on ${key}`);
     },
-    async user(identity) {
+    async user(identity, signal) {
       const who = identity.trim();
-      const data = record(await transport(USERS, { who }), "data");
+      const data = record(await transport(USERS, { who }, signal), "data");
       const nodes = record(data.users, "users").nodes;
       if (!Array.isArray(nodes))
         throw new LinearClaimError("users.nodes: expected a list");

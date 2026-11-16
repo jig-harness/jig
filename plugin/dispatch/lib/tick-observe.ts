@@ -131,6 +131,7 @@ import type {
   WantedItem,
 } from "./types.ts";
 import { currentIso, isoFromMs } from "../../shared/time.ts";
+import { observeTestLockWaits } from "./test-lock-waits.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -631,6 +632,14 @@ async function observeRunning(
   bound?: TickBound,
 ): Promise<void> {
   const { records } = launches;
+  observeTestLockWaits(
+    records,
+    repo.slug,
+    undefined,
+    undefined,
+    undefined,
+    bound,
+  );
   if (launches.sample) await sampleThreads(records, repo.slug, drives, threads);
   observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil((launches.timeoutMs ?? 60_000) / 1000);
