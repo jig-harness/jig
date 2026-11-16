@@ -132,7 +132,7 @@ describe("recording a verdict", () => {
     expect(recorded.ok).toBe(true);
     if (recorded.ok)
       expect(recorded.value.verdicts["deferred-findings"]).toMatchObject({
-        verdict: "owed",
+        verdict: "owed" as const,
         items: ["ENG-40", "ENG-41"],
       });
   });
@@ -169,7 +169,12 @@ describe("settling a run", () => {
       ...run,
       verdicts: {
         ...run.verdicts,
-        release: { ...run.verdicts.release!, evidence: "path\\|value" },
+        release: {
+          verdict: "owed" as const,
+          items: [],
+          at: run.startedAt,
+          evidence: "path\\|value",
+        },
       },
     };
     const answer = settle(changed);
