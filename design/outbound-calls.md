@@ -174,9 +174,12 @@ account per repository with the stored login (a `gh` wrapper that, with no
 token in the environment, chooses among the stored logins by the repository
 a command addresses) sends one credential as several accounts, so the
 stored login's owner is asked and kept per repository a call addresses: the
-`-R`/`--repo` value, else a `gh api` route under `repos/<owner>/<repo>`,
-else `GH_REPO`, else the `origin` remote of the call's working directory
-(a local `git config` read, once per directory in a process). The question
+`-R`/`--repo` value, else a positional repository-page URL, else a `gh api`
+route under `repos/<owner>/<repo>`, else `GH_REPO`, else the repository
+`gh repo set-default` chose, else the `origin` remote, of the call's working
+directory (two local `git config` reads, each bounded at 2 seconds and
+reused for 30 seconds). The pages of a paged read keep the first page's
+repository. The question
 is asked with `GH_REPO` set to that repository and from the call's working
 directory, so the client picks the account it picks for the call; it costs
 one `GET /user` a day for each repository the stored login addresses. A

@@ -400,6 +400,26 @@ describe("the repository a run addresses", () => {
     ).toBe("other-org/two");
   });
 
+  it("reads a positional repository URL only where it is a positional argument", () => {
+    const url = "https://github.com/other-org/two/issues/1";
+    // Content and API routes are not repository selectors.
+    expect(
+      repoFlag(["pr", "create", "--title", "fix", "--body", url]),
+    ).toBeNull();
+    expect(repoFlag(["issue", "create", "--label", url])).toBeNull();
+    expect(
+      repoFlag(["api", "https://api.github.com/repos/other-org/two/issues"]),
+    ).toBeNull();
+    expect(repoFlag(["issue", "view", "-w", url])).toBe("other-org/two");
+    // A switch's alias does not hide the repository flag after it.
+    expect(repoFlag(["pr", "review", "1", "-a", "-R", "other-org/two"])).toBe(
+      "other-org/two",
+    );
+    expect(repoFlag(["pr", "merge", "1", "-r", "-R", "other-org/two"])).toBe(
+      "other-org/two",
+    );
+  });
+
   it("reads a gh api route under repos/", () => {
     expect(apiRepo(["api", "repos/Example-Org/One/pulls?per_page=5"])).toBe(
       "example-org/one",

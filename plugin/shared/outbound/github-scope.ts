@@ -40,12 +40,17 @@ type Env = Record<string, string | undefined>;
 /** How long the local `git config` read of a directory's remote may take. */
 const ORIGIN_DEADLINE_MS = 2_000;
 
-/** Flags of the common subcommands whose value is free text, never a flag. */
+/**
+ * Flags of the common subcommands whose value is free text, never a flag.
+ * A short alias that is valued in one subcommand and a switch in another
+ * (`-a`, `-m`, `-p`, `-r`) is left out: skipping its next word would hide a
+ * `-R` after a switch, while reading it as a switch only misreads a value
+ * that is itself a repository flag.
+ */
 const TEXT_VALUED = new Set([
   "-b",
   "-l",
   "--label",
-  "-a",
   "--assignee",
   "-F",
   "--body-file",
@@ -57,13 +62,10 @@ const TEXT_VALUED = new Set([
   "--base",
   "-H",
   "--head",
-  "-r",
   "--reviewer",
-  "-p",
   "--project",
   "--body",
   "--title",
-  "-m",
   "--message",
   "--subject",
   "--search",
@@ -110,11 +112,18 @@ export function repoOfRemote(url: string): string | null {
   return lastTwo(scp[1] ?? "");
 }
 
-/** The repository a command line's `-R`/`--repo` names; `null` when it names none. */
+/**
+ * The repository a command line's `-R`/`--repo` names, else the one a
+ * positional `https://HOST/OWNER/REPO/(pull|issues|…)/N` argument names;
+ * `null` when it names none. The positional arguments are those left when
+ * the flags and their values are skipped, so a URL inside `--body` is
+ * content, and a `gh api` URL is a route, never a repository page.
+ */
 export function repoFlag(args: readonly string[]): string | null {
+  const positional: string[] = [];
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i] ?? "";
-    if (arg === "--") return null;
+    if (arg === "--") break;
     if (VALUED.has(arg) || TEXT_VALUED.has(arg)) {
       i += 1;
       continue;
@@ -122,15 +131,14 @@ export function repoFlag(args: readonly string[]): string | null {
     if (arg === "-R" || arg === "--repo") return repoOfName(args[i + 1]);
     if (arg.startsWith("--repo=")) return repoOfName(arg.slice(7));
     if (arg.startsWith("-R")) return repoOfName(arg.slice(2).replace(/^=/, ""));
+    if (!arg.startsWith("-")) positional.push(arg);
   }
-  return positionalUrlRepo(args);
+  return args[0] === "api" ? null : positionalUrlRepo(positional);
 }
 
-/** The repository a positional `https://HOST/OWNER/REPO/(pull|issues|…)/N` argument names; `null` when there is none. */
-function positionalUrlRepo(args: readonly string[]): string | null {
-  // A `gh api` URL is a route on the API origin, not a repository page.
-  if (args[0] === "api") return null;
-  for (const arg of args.slice(1)) {
+/** The repository the first positional repository-page URL of `positional` names; `null` when there is none. */
+function positionalUrlRepo(positional: readonly string[]): string | null {
+  for (const arg of positional) {
     const match = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/[^/]+/i.exec(arg);
     if (match !== null) return lastTwo(`${match[1]}/${match[2]}`);
   }
