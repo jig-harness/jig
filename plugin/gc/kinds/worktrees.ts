@@ -185,7 +185,6 @@ async function orcaInventory(
       (root) => within(normalize(path), root) || underRoot(path, root),
     );
   const stale = goneClaims(mine, repository);
-  // Claims settled, or reported, without Orca's list.
   const unlisted = [...unreadableClaims(), ...supersededClaims(mine)];
   if (selected.length === 0 && stale.length === 0)
     return ok([...selected, ...unlisted]);
