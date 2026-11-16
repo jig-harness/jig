@@ -16,7 +16,7 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 const PLUGIN = join(import.meta.dir, "..", "..", "..");
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const HERDR_RENAME =
-  /workspace["'`,\s]+(?:\/\*[\s\S]*?\*\/[\s,]*)?["'`]?rename\b/;
+  /workspace["'`,\s]+(?:(?:\/\*[\s\S]*?\*\/|\/\/[^\n]*\n)[\s,]*)*["'`]?rename\b/;
 const RENAMES = [/--display-name/, HERDR_RENAME];
 
 const dirs: string[] = [];
@@ -29,6 +29,7 @@ test("the Herdr recognizer sees quoting and comment variants", () => {
     'run(["workspace", "rename", id, name])',
     "run(['workspace', 'rename', id, name])",
     'run(["workspace", /* op */ "rename", id, name])',
+    "run(['workspace', // operation\n'rename', id, name])",
     'run(["workspace", `rename`, id, name])',
     "herdr workspace rename w1 name",
   ])
@@ -61,8 +62,10 @@ test("the tracker scripts read a file that still sets workspace_name", () => {
   );
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env))
-    if (!k.startsWith("GIT_") && v !== undefined) env[k] = v;
+    if (!k.startsWith("GIT_") && !k.startsWith("JIG") && v !== undefined)
+      env[k] = v;
   env.JIG_OVERLAY = overlay;
+  env.JIG_USER_LAYER = "off";
   for (const op of ["states", "labels"]) {
     const r = spawnSync(process.execPath, [join(SCRIPTS, "tracker.ts"), op], {
       encoding: "utf8",
