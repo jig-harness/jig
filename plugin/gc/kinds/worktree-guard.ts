@@ -75,6 +75,12 @@ export interface GuardedRemoval {
    * success or Orca's explicit refusal, releases a submitted admission.
    */
   settle(removed: Outcome<unknown>): void;
+  /**
+   * Whether the admission is submitted, by this collection or by the dead
+   * one it took over, and no answer of `orca worktree rm` settled it: Orca
+   * may be deleting the worktree still. Read after `settle`.
+   */
+  unsettled(): boolean;
 }
 
 /**
@@ -142,6 +148,7 @@ export async function guardedCollection(
       settle: (removed) => {
         answered = removalAnswered(removed);
       },
+      unsettled: () => claimKept() !== null,
     });
     return {
       ...done,

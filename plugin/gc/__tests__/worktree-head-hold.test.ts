@@ -106,7 +106,11 @@ describe("holding a worktree's head", () => {
     const { tree } = setup();
     const seen = await identity(tree);
     const lock = join(seen.admin, "HEAD.lock");
-    const child = Bun.spawn(["sleep", "30"]);
+    const child = Bun.spawn([
+      process.execPath,
+      "-e",
+      "setTimeout(() => {}, 30000)",
+    ]);
     const ended = lockIdentity(child.pid);
     child.kill();
     await child.exited;

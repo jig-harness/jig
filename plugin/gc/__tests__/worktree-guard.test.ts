@@ -112,6 +112,12 @@ const accepted: Answer = {
   stderr: "",
 };
 
+const notRemoved = (result: Record<string, unknown>): Answer => ({
+  code: 0,
+  stdout: JSON.stringify({ ok: true, result }),
+  stderr: "",
+});
+
 const emptyRefusal = (error: Record<string, string>): Answer => ({
   code: 1,
   stdout: JSON.stringify({ ok: false, error }),
@@ -137,6 +143,16 @@ describe("the admission around orca worktree rm", () => {
       "Orca stopping its wait while it deletes",
       stillDeleting,
       "Orca is still deleting the checkout in the background",
+    ],
+    [
+      "a success that names no removal",
+      notRemoved({}),
+      "does not say the worktree was removed",
+    ],
+    [
+      "a success that says the worktree stays",
+      notRemoved({ removed: false }),
+      "does not say the worktree was removed",
     ],
     [
       "an answer on accepting the removal",

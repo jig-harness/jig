@@ -231,6 +231,13 @@ function removalAnswer(
       "orca-unreadable",
       `${what}: unreadable output ${orcaFailure(done)}`,
     );
+  // Only an affirmative removal is done: another successful envelope says
+  // nothing of whether the checkout is gone.
+  if (envelope.ok !== true || envelope.result.removed !== true)
+    return failed(
+      "orca-unreadable",
+      `${what}: its answer does not say the worktree was removed ${orcaFailure(done)}`,
+    );
   return ok(undefined);
 }
 

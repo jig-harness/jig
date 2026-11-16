@@ -498,8 +498,12 @@ async function collectThroughOrca(
     // An archive written before a step that then failed stays, named in the
     // receipt, and expires with the receipts.
     if (!removed.ok) {
-      // Orca may be deleting the worktree still: the hold stays, as the claim.
-      const left = removalUnsettled(removed) ? keepHolds(holds) : null;
+      // Orca may be deleting the worktree still, by this call or by the dead
+      // run's whose admission was taken over: the hold stays, as the claim.
+      const left =
+        removalUnsettled(removed) || guard.unsettled()
+          ? keepHolds(holds)
+          : null;
       const kept = failure(removed);
       const answer =
         left === null ? kept : { ...kept, reason: `${kept.reason}; ${left}` };
