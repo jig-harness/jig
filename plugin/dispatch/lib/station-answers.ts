@@ -101,7 +101,12 @@ function readStationAnswers(
   const parsed = comments
     .filter((c) => c.author.toLowerCase() !== mine)
     .flatMap((c) => {
-      const answer = parseAnswerComment(item, c, "conversation");
+      const answer = parseAnswerComment(
+        item,
+        c,
+        "conversation",
+        decision.answer?.framedBy === "dispatcher",
+      );
       if (answer === null) return [];
       // A structured answer acts only when it names the framing it answers.
       return answer.choice !== undefined && answer.digest !== decision.digest

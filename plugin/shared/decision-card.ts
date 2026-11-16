@@ -160,6 +160,7 @@ export function choiceInText<O extends { id?: string; name: string }>(
   text: string,
   options: readonly O[],
   isRecommended: (option: O) => boolean,
+  allowRetiredHoldAlias = false,
 ): { option: O; form: WrittenChoice["form"] } | null {
   const normalized = normalizeAnswerText(text);
   const form =
@@ -172,7 +173,9 @@ export function choiceInText<O extends { id?: string; name: string }>(
   const matches =
     form === "approve"
       ? options.filter(isRecommended)
-      : options.filter((o) => optionNameMatches(o, normalized.slice(7)));
+      : options.filter((o) =>
+          optionNameMatches(o, normalized.slice(7), allowRetiredHoldAlias),
+        );
   const [option] = matches;
   return matches.length === 1 && option !== undefined ? { option, form } : null;
 }
@@ -182,8 +185,14 @@ export function choiceInLine<O extends { name: string }>(
   text: string,
   options: readonly O[],
   isRecommended: (option: O) => boolean,
+  allowRetiredHoldAlias = false,
 ): { option: O; form: WrittenChoice["form"] } | null {
-  return choiceInText(splitAnswerDigest(text).text, options, isRecommended);
+  return choiceInText(
+    splitAnswerDigest(text).text,
+    options,
+    isRecommended,
+    allowRetiredHoldAlias,
+  );
 }
 
 /** An option's place on a card: the recommended option is 1, the others follow in the decision's order. */

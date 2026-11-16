@@ -13,15 +13,17 @@ export function normalizeAnswerText(text: string): string {
     .trimEnd();
 }
 
-/** Whether `answer` names `option`, including the dispatcher's retired hold spelling. */
+/** Whether `answer` names `option`, optionally including the dispatcher's retired hold spelling. */
 export function optionNameMatches(
   option: { id?: string; name: string },
   answer: string,
+  allowRetiredHoldAlias = false,
 ): boolean {
   const normalized = normalizeAnswerText(answer);
   return (
     normalizeAnswerText(option.name) === normalized ||
-    (option.id === "hold" &&
+    (allowRetiredHoldAlias &&
+      option.id === "hold" &&
       ((option.name === "I'll handle it — hide this card" &&
         normalized === "leave it to me") ||
         (option.name === "Leave it to me" &&

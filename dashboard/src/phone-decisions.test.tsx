@@ -35,6 +35,7 @@ test("hold tells the person the work stays undone and accepts both labels", () =
       "choose Leave it to me",
       call.options,
       (o) => o.id === call.recommended,
+      true,
     )?.option.id,
   ).toBe("hold");
   expect(
@@ -42,6 +43,7 @@ test("hold tells the person the work stays undone and accepts both labels", () =
       `choose ${HOLD}`,
       [{ id: "hold", name: "Leave it to me" }],
       () => false,
+      true,
     )?.option.name,
   ).toBe("Leave it to me");
   expect(
@@ -65,7 +67,15 @@ test("station-card own words recognize the retired hold label as a choice", () =
     failedRearm: null,
   });
   const [row] = decisionRows([
-    decisionOf({ key: "drive", kind: "finding", lines: [], decision }),
+    {
+      ...decisionOf({ key: "drive", kind: "finding", lines: [], decision }),
+      answer: {
+        station: "drive",
+        address: "drive@example-org/web#7",
+        on: "pull-request",
+        framedBy: "dispatcher",
+      },
+    },
   ]);
   assert(row);
   const answer = rowAnswer(
@@ -74,6 +84,55 @@ test("station-card own words recognize the retired hold label as a choice", () =
   );
   expect(answer.fault).toContain("choosing");
   expect(answer.fault).toContain(HOLD);
+});
+
+test("a session option named hold has no dispatcher alias", () => {
+  const [row] = decisionRows([
+    {
+      ...decisionOf({
+        key: "session",
+        kind: "finding",
+        lines: [],
+        decision: {
+          schema: "parked-decision/v1",
+          class: "scope",
+          call: {
+            id: "a",
+            question: "Who should handle this?",
+            options: [
+              {
+                id: "hold",
+                name: HOLD,
+                summary: "Hide it.",
+                pay: ["Work remains."],
+              },
+              {
+                id: "leave",
+                name: "Leave it to me",
+                summary: "Keep it.",
+                pay: ["You do it."],
+              },
+            ],
+            recommended: "leave",
+            why: "The session owns this choice.",
+          },
+          steps: [],
+          alreadyDone: "Read the request.",
+        },
+      }),
+      answer: {
+        station: "drive",
+        address: "drive@example-org/web#7",
+        on: "pull-request",
+        framedBy: "session",
+      },
+    },
+  ]);
+  assert(row);
+  expect(
+    rowAnswer(row, withText(row, null, "free", "choose Leave it to me", 0))
+      .fault,
+  ).toContain("choosing Leave it to me");
 });
 test("station cards target the comment reader's issue or pull request", () => {
   for (const [on, url, pr] of [
