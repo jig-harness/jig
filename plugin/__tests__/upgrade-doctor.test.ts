@@ -325,8 +325,9 @@ test.skipIf(onWindows)(
   "jig upgrade reports a successful scoped command that leaves the old record and exits nonzero",
   () => {
     const m = machine(SCHEDULERS[0]);
+    expectSpawnExit(m.jig(["install", "gc", "--yes"]), 0);
     const { kept } = scopedRecord(m);
-    m.release("0.3.0", m.plugin);
+    const launcher = nextRelease(m);
     m.agentState((state) => {
       state.claude.scopedUpdateNoop = true;
     });
@@ -339,6 +340,7 @@ test.skipIf(onWindows)(
         version: string;
         scoped?: Record<string, unknown>[];
       }[];
+      jobs: { target: string; outcome: string }[];
     };
     const claude = report.harnesses.find((h) => h.harness === "claude");
     expect(claude).toMatchObject({ outcome: "updated", version: "0.3.0" });
@@ -353,6 +355,15 @@ test.skipIf(onWindows)(
     expect(result.stderr.toString()).toContain(
       `for ${kept} (project scope): left`,
     );
+    expect(report.jobs).toContainEqual(
+      expect.objectContaining({ target: "jig-gc", outcome: "refreshed" }),
+    );
+    expect(
+      readFileSync(
+        join(m.home, ".local", "state", "jig", "gc", "launcher", "launcher.ts"),
+        "utf8",
+      ),
+    ).toBe(readFileSync(launcher, "utf8"));
     const record = JSON.parse(
       readFileSync(
         join(m.home, ".claude", "plugins", "installed_plugins.json"),
