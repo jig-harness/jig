@@ -23,12 +23,21 @@ import {
 } from "../../../plugin/shared/records/registry.ts";
 import { SEND_VERBS } from "../../../plugin/send/lib/verb-values.ts";
 import { STATIONS } from "../../../plugin/shared/address.ts";
+import {
+  ADAPTER_FACET_STORES,
+  type AdapterStoreCells,
+  FACET_STORE_REASONS,
+  FACET_STORES,
+  FACET_TABLE,
+  PRIORITIES,
+} from "../../../plugin/skills/do-item/scripts/lib/tracker/facets/facet-values.ts";
 import { TERMINAL_STATES } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { CHAPTERS } from "../chapters.ts";
 import { ADDRESSES } from "../chapters/addresses.ts";
 import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
+import { TRACKER_FACETS } from "../chapters/tracker-facets.ts";
 
 const root = join(import.meta.dir, "..", "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -389,5 +398,89 @@ describe("addresses and the verbs of jig send", () => {
       names.filter((n) => !(text ?? "").includes(`\n| \`${n}\` |`));
     expect(missing(stationsSection, stations)).toEqual([]);
     expect(missing(verbsSection, verbs)).toEqual([]);
+  });
+});
+
+describe("tracker facets", () => {
+  // Enumerated from the tables on their own, not through the chapter.
+  const facets = Object.keys(FACET_TABLE);
+  const priorities = ["none", ...Object.keys(PRIORITIES)];
+  const stores = Object.keys(FACET_STORES);
+  const table: AdapterStoreCells = ADAPTER_FACET_STORES;
+  const cells = Object.entries(table).flatMap(([adapter, byFacet]) =>
+    Object.entries(byFacet).flatMap(([facet, byStore]) =>
+      Object.entries(byStore).map(([store, v]) => ({
+        name: `${adapter}:${facet}:${store}`,
+        ...v,
+      })),
+    ),
+  );
+  const reasons = Object.keys(FACET_STORE_REASONS);
+  const values = TRACKER_FACETS.values();
+  const of = (kind: string) =>
+    values.filter((v) => v.kind === kind).map((v) => String(v.name));
+
+  test("renders every facet, priority, store, adapter's store and reason, in the tables' order, and nothing else", () => {
+    expect(of("facet")).toEqual(facets);
+    expect(of("priority")).toEqual(priorities);
+    expect(of("store")).toEqual(stores);
+    expect(of("adapter-store")).toEqual(cells.map((c) => c.name));
+    expect(of("reason")).toEqual(reasons);
+    expect(values).toHaveLength(
+      facets.length +
+        priorities.length +
+        stores.length +
+        cells.length +
+        reasons.length,
+    );
+    expect(TRACKER_FACETS.excluded).toEqual([]);
+  });
+
+  test("carries each priority's number and whether each adapter holds each store, as the tables hold them", () => {
+    for (const [name, spec] of Object.entries(PRIORITIES))
+      expect(
+        values.find((v) => v.kind === "priority" && v.name === name)?.number,
+      ).toBe(spec.number);
+    for (const cell of cells)
+      expect(
+        values.find((v) => v.kind === "adapter-store" && v.name === cell.name),
+      ).toMatchObject({ held: cell.held, meaning: cell.meaning });
+  });
+
+  test("shows each table's entries in its own section", () => {
+    const [facetSection, prioritySection, storeSection, , reasonSection] =
+      TRACKER_FACETS.sections.map((s) => s.render());
+    const missing = (text: string | undefined, names: readonly string[]) =>
+      names.filter((n) => !(text ?? "").includes(`\n| \`${n}\` |`));
+    expect(missing(facetSection, facets)).toEqual([]);
+    // A priority's row opens with its number, then its configuration name.
+    for (const [name, spec] of Object.entries(PRIORITIES))
+      expect(prioritySection).toContain(`\n| ${spec.number} | \`${name}\` |`);
+    expect(missing(storeSection, stores)).toEqual([]);
+    expect(missing(reasonSection, reasons)).toEqual([]);
+  });
+
+  test("shows a row per adapter and facet, with a cell per store, refused where the adapter does not hold it", () => {
+    const section = TRACKER_FACETS.sections[3]?.render() ?? "";
+    const rows = section.split("\n").slice(2);
+    expect(rows).toHaveLength(cells.length / stores.length);
+    const refused = cells.filter((c) => !c.held).length;
+    expect(section.split("| refused: ").length - 1).toBe(refused);
+    // Each row's cells are the source entry's, in the order of the stores.
+    for (const [adapter, byFacet] of Object.entries(table))
+      for (const [facet, byStore] of Object.entries(byFacet)) {
+        const row = rows.filter((r) =>
+          r.includes(`(\`${adapter}\`) | \`${facet}\` |`),
+        );
+        expect(row).toHaveLength(1);
+        const rendered = (row[0] ?? "").split(" | ").slice(2);
+        const expected = stores.map((s) => byStore[s]);
+        expect(rendered).toHaveLength(expected.length);
+        expected.forEach((hold, i) => {
+          const text = (rendered[i] ?? "").replace(/^\s+|[\s|]+$/g, "");
+          expect(text.startsWith("refused: ")).toBe(!hold?.held);
+          expect(text).toContain((hold?.meaning ?? "").replaceAll("<", "&lt;"));
+        });
+      }
   });
 });
