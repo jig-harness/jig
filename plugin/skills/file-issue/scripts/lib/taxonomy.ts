@@ -17,7 +17,8 @@
  *   groups      closed single-select families beyond `types` (a size, a
  *               repository): at most one label of a group per issue, and one
  *               when the group is `required`, except on an issue carrying a
- *               flag its `not_required_on` lists (no size on an epic)
+ *               flag or type its `not_required_on` lists (no size on an
+ *               epic)
  *   categories  prefixed multi-select families (`area:billing`): a label's
  *               name is the category's `prefix` and its id. A category lists
  *               its `labels`, accepts any slug `open` matches (a regular
@@ -305,7 +306,7 @@ function readGroup({ id, entry }: Entry, problems: string[]): LabelGroup {
   const notRequiredOn = textValues(entry.not_required_on);
   if (notRequiredOn === undefined)
     problems.push(
-      `${what} has a 'not_required_on:' that is not a list of flag ids`,
+      `${what} has a 'not_required_on:' that is not a list of flag or type ids`,
     );
   else if (notRequiredOn.length > 0 && !required)
     problems.push(
@@ -557,12 +558,14 @@ export function lintTaxonomy(doc: unknown): TaxonomyLint {
     ...categories.flatMap((c) => c.labels),
   ]);
   problems.push(...referenceProblems(flags, categories, labels));
-  const flagIds = new Set(ids("flags"));
+  // A group's requirement is lifted on a flag or on a type: an epic kept as
+  // an issue type has no flag to lift it on.
+  const liftIds = new Set([...ids("flags"), ...ids("types")]);
   for (const g of groups)
-    for (const flag of g.notRequiredOn)
-      if (!flagIds.has(flag))
+    for (const id of g.notRequiredOn)
+      if (!liftIds.has(id))
         problems.push(
-          `group '${g.id}' is not required on '${flag}', which is not a flag of this taxonomy`,
+          `group '${g.id}' is not required on '${id}', which is neither a flag nor a type of this taxonomy`,
         );
   return {
     count,
