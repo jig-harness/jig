@@ -124,16 +124,28 @@ export function repoFlag(args: readonly string[]): string | null {
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i] ?? "";
     if (arg === "--") break;
-    if (VALUED.has(arg) || TEXT_VALUED.has(arg)) {
-      i += 1;
-      continue;
-    }
-    if (arg === "-R" || arg === "--repo") return repoOfName(args[i + 1]);
-    if (arg.startsWith("--repo=")) return repoOfName(arg.slice(7));
-    if (arg.startsWith("-R")) return repoOfName(arg.slice(2).replace(/^=/, ""));
-    if (!arg.startsWith("-")) positional.push(arg);
+    if (VALUED.has(arg) || TEXT_VALUED.has(arg)) i += 1;
+    else if (isRepoFlag(arg))
+      return repoOfName(repoFlagValue(arg, args[i + 1]));
+    else if (!arg.startsWith("-")) positional.push(arg);
   }
   return args[0] === "api" ? null : positionalUrlRepo(positional);
+}
+
+/** Whether `arg` is `-R`, `--repo`, or either with its value attached. */
+function isRepoFlag(arg: string): boolean {
+  return arg.startsWith("-R") || arg === "--repo" || arg.startsWith("--repo=");
+}
+
+/** The value of the repository flag `arg`: attached to it, else the next word. */
+function repoFlagValue(
+  arg: string,
+  next: string | undefined,
+): string | undefined {
+  if (arg === "-R" || arg === "--repo") return next;
+  return arg.startsWith("--repo=")
+    ? arg.slice(7)
+    : arg.slice(2).replace(/^=/, "");
 }
 
 /** The repository the first positional repository-page URL of `positional` names; `null` when there is none. */
