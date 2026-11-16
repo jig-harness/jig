@@ -423,16 +423,19 @@ gone from both, and collecting that line deletes the admission. Only the
 repository an admission names settles it from Orca's list: two repositories
 may declare a common worktree root, and one's list cannot hold the other's
 worktree. While Orca's list cannot be read the admission stays. An admission
-written before admissions named their repository (version 1) is listed the
-same way but never collected: its line is unverified, and the admission
-stays until a person removes it after inspection. A worktree made again at a
-claimed path is another incarnation of it, which does not inherit the claim:
-each run also lists, as a line of its own with `details.claim: superseded`
-whose resource is the admission's file, every admission a collector of that
-repository that ended left on an incarnation of the worktree other than the
-one standing at its path, and collecting that line deletes the admission
-after reading the incarnation once more. A live collector's admission is
-never touched.
+another repository's collection wrote, or one written before admissions
+named their repository (version 1), is listed the same way but never
+collected: its line is unverified and says why, and the admission stays
+until a run of its own repository settles it or a person removes it after
+inspection. A worktree made again at a claimed path is another incarnation
+of it, which does not inherit the claim: each run also lists, as a line of
+its own with `details.claim: superseded` whose resource is the admission's
+file, every admission a collector that ended left on a path under the
+declared roots where a worktree born later than the one it claimed now
+stands, and collecting that line deletes the admission after reading the
+incarnation once more. The disk is that proof, so any repository whose
+roots hold the path settles it. A live collector's admission is never
+touched.
 
 The launch markers are read once right after the admission, before the hook
 runs, and again after the registry's last read. A worktree the guard keeps is
@@ -510,9 +513,13 @@ in nanoseconds, joined by `:`; absent when gc could not read it), `holder`
 the collecting process's identity (`shared/liveness.ts`), and `submitted`,
 present once gc is about to call `orca worktree rm` under it, when it did so,
 in the same form as `at`. Orca can give a worktree made again at a path the
-id the old one had, so the id cannot tell the two apart; a different
-`incarnation` can, and gc acts only on a difference. Version 1, which earlier
-releases wrote, has no `repository` and no `incarnation`; gc still reads it.
+id the old one had, so the id cannot tell the two apart. gc takes the
+worktree at the path as made again only when its birth time is later than
+the one `incarnation` records: an inode number can change on a remount and
+a birth time can be set back, so neither a changed inode nor an earlier
+birth time counts, and without both birth times nothing does. Version 1,
+which earlier releases wrote, has no `repository` and no `incarnation`; gc
+still reads it.
 
 ```json
 {
@@ -586,13 +593,20 @@ launch marker in that state (a launch marker also when its `path`,
 `workspaceId` or `agent` is missing) counts as present: the plugin refuses the launch,
 and gc keeps the worktree and leaves the file for a person to inspect. So
 does an admission whose `submitted` is present but not a time, and a version
-2 admission without its `repository`. A reader
+2 admission without its `repository` or whose `incarnation` is present but
+not a non-empty string. A reader
 ignores a kind's field it does not know, so a field added to a kind keeps
 its version: the plugin's hook, which refuses a launch into any worktree
 with an admission present, reads an admission with `submitted` as it reads
-one without. A submitted admission excludes launches whatever its holder's
-state: a reader that ever treats a dead holder's admission as abandoned may
-do so only for one without `submitted`.
+one without. The admission's `repository` and `incarnation` changed its
+version instead, because a reader that ignored them would release a claim
+from a list or a disk that cannot show its worktree gone: a release of gc
+that reads only version 1 keeps a version 2 admission as one it cannot read,
+for a person to inspect, and never releases it. A submitted admission
+excludes launches whatever its holder's state: a reader that ever treats a
+dead holder's admission as abandoned may do so only for one without
+`submitted`, except that gc releases one whose worktree a later one has
+superseded at its path, since what it claimed is then gone.
 
 **Constants.**
 

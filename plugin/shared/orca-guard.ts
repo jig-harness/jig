@@ -19,7 +19,8 @@
  * as Orca reports it, unnormalised. An admission also names the repository
  * whose collection wrote it and the incarnation of the worktree it claims
  * (`incarnationOf`), so only that repository settles it from Orca's list,
- * and a worktree made again at the same path does not inherit it. Every file carries the record envelope
+ * and a worktree made again at the same path does not inherit it
+ * (`supersedes`). Every file carries the record envelope
  * (`records/envelope.ts`) and is published whole: written to a temporary
  * file in its directory and renamed (or, for an admission, linked) into
  * place, so a reader never sees a partial one. gc marks its admission
@@ -105,12 +106,10 @@ export function repositoryOwner(repository: string): string {
 }
 
 /**
- * The incarnation of what stands at `path`: its inode and birth time, which a
- * worktree made again at the same path does not share (Orca can reuse the
- * worktree's id, so the id cannot tell them apart). `null` when nothing
- * stands there or it cannot be read. A difference proves another
- * incarnation; equal values prove nothing more than that the inode and birth
- * time agree, so a reader only ever acts on a difference.
+ * The incarnation of what stands at `path`: its inode and its birth time in
+ * nanoseconds, joined by `:` (Orca can reuse the worktree's id at a path made
+ * again, so the id cannot tell the two apart). `null` when nothing stands
+ * there or it cannot be read. Only `supersedes` decides from it.
  */
 export function incarnationOf(path: string): string | null {
   try {
@@ -362,21 +361,35 @@ function stage(
   }
 }
 
-/** Whether an admission written for the incarnation `recorded` is provably not for `current`. */
-function otherIncarnation(
-  recorded: string | null,
+/** An incarnation's birth time in nanoseconds, or `null` when it names none. */
+function bornAt(incarnation: string | null): bigint | null {
+  const born = /^\d+:(\d+)$/.exec(incarnation ?? "")?.[1];
+  return born === undefined || /^0+$/.test(born) ? null : BigInt(born);
+}
+
+/**
+ * Whether what stands at a path now (`current`) is a worktree made after the
+ * one an admission was written for (`recorded`): born strictly later. A
+ * worktree made again is always born later, while an inode number can change
+ * on a remount and a birth time can be set back, so neither an inode nor an
+ * earlier birth time is taken as proof. Without both birth times it is not.
+ */
+export function supersedes(
   current: string | null,
+  recorded: string | null,
 ): boolean {
-  return recorded !== null && current !== null && recorded !== current;
+  const now = bornAt(current);
+  const then = bornAt(recorded);
+  return now !== null && then !== null && now > then;
 }
 
 /**
  * Write gc's admission, for `repository`'s collection, of the worktree Orca
  * reports at `path`, naming the incarnation that stands there now: published
  * whole by a link, which fails while another admission stands. One whose
- * holder is judged dead is taken over, keeping its submitted mark unless it
- * was written for another incarnation of the worktree (that removal is
- * settled: what it removed is gone); one held by a live or unjudgeable
+ * holder is judged dead is taken over, keeping its submitted mark unless the
+ * worktree standing now `supersedes` the one it was written for (that
+ * removal is settled: what it removed is gone); one held by a live or unjudgeable
  * process, or that does not read, refuses this one and stays for a person to
  * inspect.
  */
@@ -414,10 +427,7 @@ export function admit(
   if (!staged.ok) return staged;
   try {
     const placed = publish(staged.value, file, (from) => {
-      if (
-        from.submitted === null ||
-        otherIncarnation(from.incarnation, incarnation)
-      )
+      if (from.submitted === null || supersedes(incarnation, from.incarnation))
         return null;
       writeFileSync(staged.value, body(from.submitted));
       return from.submitted;
@@ -704,10 +714,11 @@ export function releaseAbsent(
 
 /**
  * Delete the admission for the worktree at `path` when its holder is judged
- * dead and it was written for an incarnation other than the one standing at
- * `path` now (read last): what it claimed is gone, and the worktree made
- * again there is not its to keep. An admission that names no incarnation, or
- * a worktree whose incarnation cannot be read, is kept.
+ * dead and what stands at `path` now (read last) `supersedes` the incarnation
+ * it was written for: what it claimed is gone, and the worktree made again
+ * there is not its to keep. An admission that names no incarnation, or a
+ * worktree whose incarnation cannot be read, is kept. The disk is the proof,
+ * so the release does not depend on which repository took it.
  */
 export function releaseSuperseded(
   path: string,
@@ -716,7 +727,7 @@ export function releaseSuperseded(
   return releaseSettled(
     path,
     (standing) =>
-      otherIncarnation(standing.incarnation, incarnationOf(path))
+      supersedes(incarnationOf(path), standing.incarnation)
         ? null
         : `the worktree at ${path} is still the one the claim was written for, or its incarnation cannot be told`,
     root,

@@ -184,10 +184,7 @@ async function orcaInventory(
     );
   const stale = goneClaims(mine, repository);
   // Claims settled, or reported, without Orca's list.
-  const unlisted = [
-    ...unreadableClaims(),
-    ...supersededClaims(mine, repository),
-  ];
+  const unlisted = [...unreadableClaims(), ...supersededClaims(mine)];
   if (selected.length === 0 && stale.length === 0)
     return ok([...selected, ...unlisted]);
   const managed = await orcaWorktrees(command, repository);

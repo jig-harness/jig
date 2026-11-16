@@ -223,17 +223,20 @@ describe.skipIf(
     expect(admissions(f)).toHaveLength(1);
   }, 60_000);
 
-  test("a claim another repository's collection left on a gone worktree is not this repository's to release", () => {
+  test("a claim another repository's collection left on a gone worktree is reported, not released, by this repository", () => {
     const f = setup();
-    crashAfterMark(f, join(f.root, "other-repository"));
+    const other = join(f.root, "other-repository");
+    crashAfterMark(f, other);
     const text = readFileSync(admissionFile(f), "utf8");
     f.command(["git", "worktree", "remove", "--force", f.tree]);
     f.writeState({ worktrees: [] });
-    const result = gc(f, ["--collect", "--json"]);
-    expectSpawnExit(result, 0);
-    expect((JSON.parse(result.stdout.toString()) as Receipt).resources).toEqual(
-      [],
-    );
+    const kept = line(gc(f, ["--collect", "--json"]));
+    expect(kept).toMatchObject({
+      resource: f.tree,
+      outcome: "unverified",
+      details: { claim: "gone" },
+    });
+    expect(kept.reason).toContain(`the collection of ${other}`);
     expect(readFileSync(admissionFile(f), "utf8")).toBe(text);
   }, 60_000);
 

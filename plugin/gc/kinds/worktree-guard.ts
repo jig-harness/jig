@@ -24,6 +24,7 @@ import {
   releaseSuperseded,
   repositoryOwner,
   type StaleAdmission,
+  supersedes,
   staleAdmissions,
   sweepLaunches,
   unreadableAdmissions,
@@ -194,58 +195,54 @@ export function isGoneClaim(resource: Resource): boolean {
 }
 
 /**
- * The admissions collectors that ended left on worktrees `mine` accepts, and
- * whether `repository` owns each: an admission names the repository whose
- * collection wrote it, and only that repository's list of Orca's worktrees
- * can hold the worktree. One written before admissions named a repository is
- * owned by none.
+ * Why `repository`'s list of Orca's worktrees cannot settle `admission`, or
+ * `null` when it can: an admission names the repository whose collection
+ * wrote it, and only that repository's list can hold the worktree.
  */
-function claimsUnder(
-  mine: (path: string) => boolean,
+function notOwned(
+  admission: StaleAdmission,
   repository: string,
-  root: string,
-): { admission: StaleAdmission; owned: boolean }[] {
-  const owner = repositoryOwner(repository);
-  return staleAdmissions(root)
-    .filter(({ path }) => mine(path))
-    .map((admission) => ({
-      admission,
-      owned: admission.repository === owner,
-    }));
+): string | null {
+  const absence =
+    "so absence from this repository's list of Orca's worktrees does not show the worktree gone; it blocks launches at its path until";
+  if (admission.repository === null)
+    return `it was written before launch guard admissions named their repository, ${absence} it is removed after inspection`;
+  return admission.repository === repositoryOwner(repository)
+    ? null
+    : `it was written by the collection of ${admission.repository}, ${absence} a run of that repository settles it, or it is removed after inspection`;
 }
-
-/** The receipt detail on a gone claim no repository's list can settle: it names no repository. */
-const UNOWNED =
-  "it was written before launch guard admissions named their repository, so absence from this repository's list of Orca's worktrees does not show the worktree gone; it blocks launches at its path until it is removed after inspection";
 
 /**
  * A resource for each admission a collector that ended left on a worktree
- * `mine` accepts and that is gone from the disk, written by `repository`'s
- * collection or by one that named no repository; the caller keeps only those
- * Orca's list does not hold either. Collecting one deletes the admission,
- * which nothing else would, since a gone worktree is never collected again.
- * One that names no repository is reported, never collected.
+ * `mine` accepts and that is gone from the disk; the caller keeps only those
+ * Orca's list does not hold either. Collecting one written by `repository`'s
+ * collection deletes the admission, which nothing else would, since a gone
+ * worktree is never collected again. One written by another repository's
+ * collection, or by one that named no repository, is reported, never
+ * collected.
  */
 export function goneClaims(
   mine: (path: string) => boolean,
   repository: string,
   root = guardRoot(),
 ): Resource[] {
-  return claimsUnder(mine, repository, root)
-    .filter(
-      ({ admission, owned }) =>
-        (owned || admission.repository === null) && !onDisk(admission.path),
-    )
-    .map(({ admission: { path, submitted }, owned }) => ({
-      id: path,
-      details: {
-        runtime: "orca",
-        orcaPath: path,
-        claim: GONE,
-        ...(submitted === null ? {} : { submitted }),
-        ...(owned ? {} : { unowned: UNOWNED }),
-      },
-    }));
+  return staleAdmissions(root)
+    .filter(({ path }) => mine(path) && !onDisk(path))
+    .map((admission) => {
+      const unowned = notOwned(admission, repository);
+      return {
+        id: admission.path,
+        details: {
+          runtime: "orca",
+          orcaPath: admission.path,
+          claim: GONE,
+          ...(admission.submitted === null
+            ? {}
+            : { submitted: admission.submitted }),
+          ...(unowned === null ? {} : { unowned }),
+        },
+      };
+    });
 }
 
 /** The receipt detail that marks a resource as a dead collector's claim on an earlier incarnation of a worktree. */
@@ -257,21 +254,21 @@ export function isSupersededClaim(resource: Resource): boolean {
 }
 
 /**
- * A resource for each admission `repository`'s collection left, when it
- * ended, on a worktree `mine` accepts that has been made again: what stands
- * at its path is another incarnation than the one it claimed. The removal it
- * claimed is settled, and the new worktree would otherwise inherit its block
- * on launches. Its id is the admission's file, since the worktree at the
- * path is a resource of its own.
+ * A resource for each admission a collector that ended left on a worktree
+ * `mine` accepts that has been made again: what stands at its path
+ * supersedes the incarnation it claimed. The removal it claimed is settled,
+ * and the new worktree would otherwise inherit its block on launches. The
+ * disk is the proof, so any repository whose roots hold the path settles it,
+ * whichever repository's collection wrote it. Its id is the admission's file,
+ * since the worktree at the path is a resource of its own.
  */
 export function supersededClaims(
   mine: (path: string) => boolean,
-  repository: string,
   root = guardRoot(),
 ): Resource[] {
-  return claimsUnder(mine, repository, root)
-    .filter(({ admission, owned }) => owned && superseded(admission))
-    .map(({ admission: { file, path, submitted } }) => ({
+  return staleAdmissions(root)
+    .filter((admission) => mine(admission.path) && superseded(admission))
+    .map(({ file, path, submitted }) => ({
       id: file,
       details: {
         runtime: "orca",
@@ -282,11 +279,9 @@ export function supersededClaims(
     }));
 }
 
-/** Whether another incarnation than the one `admission` claimed stands at its path. */
+/** Whether what stands at `admission`'s path supersedes the incarnation it claimed. */
 function superseded(admission: StaleAdmission): boolean {
-  if (admission.incarnation === null) return false;
-  const now = incarnationOf(admission.path);
-  return now !== null && now !== admission.incarnation;
+  return supersedes(incarnationOf(admission.path), admission.incarnation);
 }
 
 /** The proof of a superseded claim: decided again when it is collected, under its lock. */

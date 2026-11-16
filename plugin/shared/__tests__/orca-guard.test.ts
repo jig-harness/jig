@@ -48,6 +48,7 @@ import {
   releaseAbsent,
   releaseSuperseded,
   repositoryOwner,
+  supersedes,
   staleAdmissions,
   sweepLaunches,
 } from "../orca-guard.ts";
@@ -589,6 +590,18 @@ describe("the incarnation an admission names", () => {
     expect(incarnationOf(tree)).not.toBe(before);
   }
 
+  it("is superseded only by one born strictly later, whatever the inode says", () => {
+    expect(supersedes("7:200", "7:100")).toBe(true);
+    expect(supersedes("8:200", "7:100")).toBe(true);
+    expect(supersedes("8:100", "7:100")).toBe(false);
+    expect(supersedes("8:50", "7:100")).toBe(false);
+    expect(supersedes("8:200", "7:0")).toBe(false);
+    expect(supersedes("8:0", "7:100")).toBe(false);
+    expect(supersedes(null, "7:100")).toBe(false);
+    expect(supersedes("8:200", null)).toBe(false);
+    expect(supersedes("8:200", "not an incarnation")).toBe(false);
+  });
+
   it("is what stands at the worktree's path when gc admits it, and none where nothing does", () => {
     const { tree, root } = worktree();
     const admitted = admit(tree, REPO, root);
@@ -637,7 +650,9 @@ describe("the incarnation an admission names", () => {
     const { tree, root } = worktree();
     const crashed = admit(tree, REPO, root, undefined, deadHolder());
     if (!crashed.ok) throw new Error(crashed.failure.reason);
-    crashed.value.submit(Date.parse("2026-11-05T12:00:00.000Z"));
+    crashed.value.submit(
+      Temporal.Instant.from("2026-11-05T12:00:00.000Z").epochMilliseconds,
+    );
     remake(tree);
     const next = admit(tree, REPO, root);
     if (!next.ok) throw new Error(next.failure.reason);

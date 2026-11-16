@@ -12,5 +12,7 @@ release: patch
   worktree made again at a claimed path no longer inherits the old claim's
   block on agent launches: each run lists such a claim with
   `details.claim: superseded` and collecting it releases the claim. A gone
-  claim written by an earlier release, which names no repository, is
-  reported for a person to inspect instead of being released.
+  claim another repository wrote, or one written by an earlier release,
+  which names no repository, is reported unverified instead of being
+  released. An earlier release of `jig gc` running on the same machine
+  keeps a version 2 admission as one it cannot read.
