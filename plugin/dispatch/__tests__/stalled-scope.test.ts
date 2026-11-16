@@ -4,6 +4,7 @@
  * record of this host or a claim marker took; under `assigned`, every one.
  */
 import { describe, expect, it } from "bun:test";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
 import { OutboundError } from "../../shared/outbound/failure.ts";
 import { claimMarkerBody } from "../../skills/do-item/scripts/lib/claim-marker.ts";
 import type {
@@ -276,6 +277,35 @@ describe("markClaims", () => {
       expect(r && waitsOut(r, 0, settings, NOW)).toBe(true);
     expect(refused && waitsOut(refused, 0, settings, NOW)).toBe(false);
     expect(refused && toldAtOnce(refused)).toBe(true);
+  });
+});
+
+describe("markClaims under the tracker's own rate limit", () => {
+  it("defers the item and every later one, the first carrying its class and reset", async () => {
+    const resetAt = Date.parse("2026-11-11T09:00:00Z");
+    const { t } = tracker({
+      "#1": new TrackerRateLimited("linear", resetAt, "spent"),
+    });
+    const read = await markClaims(
+      t,
+      "factory-bot",
+      ["#1", "#2"].map((key) => item({ key })),
+      memoryCache(),
+    );
+    expect(read.claimed.map((c) => c.claimMarker)).toEqual([
+      "unread",
+      "unread",
+    ]);
+    expect(
+      read.unplaced.map((u) => [u.target, u.readFailed, u.failure]),
+    ).toEqual([
+      [
+        "#1",
+        undefined,
+        { class: "rate-limited", until: "2026-11-11T09:00:00.000Z" },
+      ],
+      ["#2", undefined, undefined],
+    ]);
   });
 });
 

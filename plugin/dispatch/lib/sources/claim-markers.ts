@@ -84,7 +84,7 @@ export async function markClaims(
     claimed.push(found ? { ...item, claimMarker: "found" } : item);
   // A request that failed, or that the tick's bound ended before, is a
   // failed read, with the failed call's class where it has one; the
-  // tracker's rate limit is a deferral.
+  // tracker's rate limit is a deferral that carries its class too.
   const unread = (
     item: ClaimedItem,
     why: string,
@@ -96,12 +96,8 @@ export async function markClaims(
       target: item.key,
       record: "tracker",
       reason: `whether a claim marker took it could not be read, so its stall watch waits for a read: ${why}`,
-      ...(failed
-        ? {
-            readFailed: true as const,
-            ...(cause === undefined ? {} : { failure: cause }),
-          }
-        : {}),
+      ...(failed ? { readFailed: true as const } : {}),
+      ...(cause === undefined ? {} : { failure: cause }),
     });
   };
   let limited = false;

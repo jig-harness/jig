@@ -2,6 +2,7 @@
 import { ghCall, ghRepoEnv } from "../proc.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { swallow } from "../../../../../shared/errors.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 import type { OutboundFailure } from "../../../../../shared/outbound/failure.ts";
 import { ghRunFailure } from "../../../../../shared/outbound/github.ts";
 import type { ParkedItem } from "../state/schema.ts";
@@ -40,6 +41,7 @@ export async function threadComments(
   timeoutSec?: number,
   failed?: (failure: OutboundFailure) => void,
 ): Promise<CommentLike[] | null> {
+  const began = currentMs();
   const res = await ghCall(
     ["api", "graphql", "-f", `query=${THREAD_QUERY}`, "-f", `id=${key}`],
     {
@@ -49,7 +51,7 @@ export async function threadComments(
     },
   );
   if (res.code !== 0) {
-    const failure = ghRunFailure(res);
+    const failure = ghRunFailure(res, currentMs() - began);
     if (failure !== null) failed?.(failure);
     return null;
   }
