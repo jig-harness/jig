@@ -396,6 +396,45 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.253.0] - 2026-11-16
+
+### Added
+
+- `jig budget` and the low-quota need show GitHub spending that no counted
+  call explains. When the `rate_limit` endpoint reports a balance below what
+  the machine's budget record had counted for the same window, the
+  difference is recorded on an `(unattributed)` row of the cost ledger, in
+  requests for the core limit and points for GraphQL, never on an operation.
+  `jig budget` prints it as unattributed, and its `--json` groups carry
+  `unattributed: true`.
+
+### Fixed
+
+- A GitHub GraphQL request sent over HTTPS (with `JIG_GITHUB_GRAPHQL_URL`
+  set: the GitHub tracker adapter and the GitHub reflection store) now keeps
+  to the machine's budget record as a `gh` run with the same token does. It
+  is paced and admitted before it is sent, reserving a GraphQL point. It
+  records the balance its answer reports. A refusal it meets holds the token
+  for every process, and a refusal a `gh` run met holds it.
+  `JIG_FORGE_BUDGET=off` leaves these requests out as well.
+- A dispatched follow-up whose pass stopped on a question naming a rate
+  limit no longer waits for a person. This covers a pass from before
+  passes recorded `waits`, and one that asked instead of recording it. The
+  dispatcher now treats it as a wait until an hour after the pass ended, then
+  starts the follow-up again. A question that also carries a
+  [routine question](GLOSSARY.md) tag keeps that class's handling.
+  **Consumer action:** none.
+- A person who restarts a follow-up that went to them after three
+  rate-limit waits in a row now gets a fresh count. Deleting its marker, or
+  choosing "Run it again", starts that count again. Before, the follow-up
+  could come straight back to the person on its next wait.
+  **Consumer action:** none.
+- The extension guide, the mechanisms page, the glossary and the factory
+  page no longer say the review skill's deferral step calls Linear directly:
+  deferred findings file through the tracker interface on GitHub Issues,
+  Linear and Jira.
+- The audit now flags comment-only scheduled issue sweeps that omit `--position <file>`, explaining that issues past the read cap are never reached; a sweep that passes the flag certifies as before.
+
 ## [0.252.0] - 2026-11-16
 
 ### Added
@@ -8909,7 +8948,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.252.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.253.0...HEAD
+[0.253.0]: https://github.com/jig-harness/jig/compare/v0.252.0...v0.253.0
 [0.252.0]: https://github.com/jig-harness/jig/compare/v0.251.0...v0.252.0
 [0.251.0]: https://github.com/jig-harness/jig/compare/v0.250.1...v0.251.0
 [0.250.1]: https://github.com/jig-harness/jig/compare/v0.250.0...v0.250.1
