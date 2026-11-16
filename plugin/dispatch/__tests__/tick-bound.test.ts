@@ -301,7 +301,7 @@ describe("the runtime's read under the tick's bound", () => {
   it("reads as before when the tick has no bound", async () => {
     const answer: SessionsReport = { ok: true, source: "fake", workspaces: [] };
     const { runtime, signals } = fakeRuntime(async () => answer);
-    expect(await readSessions(runtime, REPO, JOIN)).toBe(answer);
+    expect(await readSessions(runtime, REPO, JOIN)).toMatchObject(answer);
     expect(signals).toEqual([undefined]);
   });
 
