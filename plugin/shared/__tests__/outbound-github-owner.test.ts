@@ -445,6 +445,26 @@ describe("discovery is bounded and reused", () => {
     expect(record?.limitedUntil).toBeNull();
   });
 
+  it("carries a discovery that reports the window spent, so the owner is held at zero", async () => {
+    const path = databasePath();
+    const unverified = unverifiedOwner("github.com");
+    const resetAt = currentMs() + 3_600_000;
+    const machine = processOn(path, async () => {
+      machine.store.update(unverified, () => ({
+        ...held(0),
+        limitedUntil: null,
+        why: null,
+        requests: { limit: 5000, remaining: 0, resetAt },
+        observedAt: currentMs(),
+      }));
+      return { user: { id: 7, login: "user7" } };
+    });
+    const found = await machine.owners.resolve({ GH_TOKEN: "token-b" });
+    const record = machine.store.read(found.owner);
+    expect(record?.requests.remaining).toBe(0);
+    expect(record?.requests.resetAt).toBe(resetAt);
+  });
+
   it("does not wait on a held store lock: discovery asks nothing and answers at once", async () => {
     const path = databasePath();
     let asked = 0;
