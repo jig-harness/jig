@@ -8,6 +8,7 @@ import {
 import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 import { type LaunchRecord, type ReadRecord, writeRecord } from "./launches.ts";
 import { sep } from "node:path";
+import { ended, type TickBound } from "./sources/bounded.ts";
 
 export interface TestLockWait extends LockWait {
   observedAt: string;
@@ -15,9 +16,15 @@ export interface TestLockWait extends LockWait {
 }
 
 /** One host read; Windows keeps aggregate readings until its identity check can verify creation time. */
-function testLockWaits(): LockWait[] {
+function testLockWaits(bound?: TickBound): LockWait[] {
   const { root, name } = lockPlace(process.env);
-  return readLockWaits(root, resourceLockPath(root, name));
+  if (ended(bound)) return [];
+  // The bound's deadline is epoch milliseconds; the liveness probes keep to the monotonic clock.
+  const deadline =
+    bound === undefined
+      ? undefined
+      : performance.now() + (bound.deadline - currentMs());
+  return readLockWaits(root, resourceLockPath(root, name), deadline);
 }
 
 /** Whether a wait ran in the launch's workspace or a directory inside it. */
@@ -34,10 +41,12 @@ function inWorkspace(wait: LockWait, record: LaunchRecord): boolean {
 export function observeTestLockWaits(
   records: ReadRecord[],
   repo: string,
-  waits = testLockWaits(),
+  waits?: LockWait[],
   now = currentMs(),
   save: (record: LaunchRecord) => void = writeRecord,
+  bound?: TickBound,
 ): void {
+  const seen = waits ?? testLockWaits(bound);
   const owners = (wait: LockWait) =>
     records.filter(
       ({ record, state }) =>
@@ -49,7 +58,7 @@ export function observeTestLockWaits(
     if (record.repo !== repo) continue;
     const found =
       state.kind === "alive"
-        ? waits
+        ? seen
             .filter(
               (w) =>
                 inWorkspace(w, record) &&

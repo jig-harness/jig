@@ -52,6 +52,7 @@ import {
 } from "./launches.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import {
   type LaunchPrReading,
@@ -119,12 +120,17 @@ function sessionsFor(
   const outside = holdingRecords(item, launches).filter(
     (r) => r.record.workspace === null || !paths.has(r.record.workspace.path),
   );
+  const waits = holdingRecords(item, launches).flatMap((r) => {
+    const note = testLockNote(r.record);
+    return note === null ? [] : [`launch record ${r.record.id} ${note}`];
+  });
   const parts = [
     ...(live.length > 0 ? [liveAgents(live)] : []),
     ...outside.map(
       (r) =>
         `launch record ${r.record.id} (${r.state.kind}) in ${r.record.workspace?.path ?? "no workspace yet"}`,
     ),
+    ...waits,
   ];
   const who = [
     ...live.map((w) => `workspace ${w.id}`),

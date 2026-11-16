@@ -129,7 +129,7 @@ it("does not attribute a workspace's old wait to a later launch", () => {
     [r],
     "o/r",
     [{ pid: 12, workspace: "/work/w", since: "2026-11-01T11:00:00.000Z" }],
-    0,
+    Temporal.Instant.from("2026-11-01T13:00:00.000Z").epochMilliseconds,
     () => undefined,
   );
   expect(r.record.testLockWait).toBeUndefined();
@@ -210,4 +210,56 @@ it("reads waits without taking on the lock's signal handlers", () => {
   );
   expectSpawnExit(probe, 0);
   expect(probe.stdout.toString().trim()).toBe("0");
+});
+
+it("names a wait in a follow-up's drift reason", () => {
+  const now = Temporal.Instant.from(
+    "2026-11-01T12:59:00.000Z",
+  ).epochMilliseconds;
+  const r = {
+    record: {
+      id: "f",
+      action: "followup",
+      repo: "o/r",
+      createdAt: "2026-11-01T10:00:00.000Z",
+      workspace: { path: "/work/f" },
+      testLockWait: {
+        pid: 12,
+        workspace: "/work/f",
+        since: "2026-11-01T12:00:00.000Z",
+        observedAt: "2026-11-01T12:59:00.000Z",
+        waiting: true,
+      },
+    },
+    state: { kind: "alive" },
+    result: null,
+  } as unknown as ReadRecord;
+  const drift = planDrift({
+    slug: "o/r",
+    section: { followupWithinMs: 3600000 } as DispatchSection,
+    launches: [r],
+    sessions: { ok: true, source: "test", workspaces: [] },
+    created: new Map(),
+    itemStates: new Map(),
+    waiting: new Set(),
+    nowMs: now,
+  });
+  expect(drift.actions[0]?.reason).toContain(
+    "waiting for the test lock for 59m",
+  );
+});
+
+it("reads no announcement once the deadline has passed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-wait-deadline-"));
+  try {
+    writeFileSync(
+      join(dir, `jig-lock.heavy.waiting.${process.pid}`),
+      encodeLockWait(),
+    );
+    expect(
+      readLockWaits(dir, join(dir, "jig-lock.heavy"), performance.now() - 1),
+    ).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

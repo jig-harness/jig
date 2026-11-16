@@ -47,8 +47,44 @@ export function encodeLockWait(): string {
   });
 }
 
-/** Read only live, attributable announcements; an older announcement has no workspace. */
-export function readLockWaits(root: string, lockPath: string): LockWait[] {
+/** One entry's wait when its file is a live announcement of the pid its name gives; `null` otherwise. */
+function readWait(
+  root: string,
+  entry: string,
+  pid: string,
+  deadline?: number,
+): LockWait | null {
+  const path = join(root, entry);
+  if (!lstatSync(path).isFile()) return null;
+  const text = readFileSync(path, "utf8");
+  const identity = decodeIdentity(text);
+  if (identity === null || String(identity.pid) !== pid) return null;
+  const data: unknown = JSON.parse(text);
+  if (
+    !isMapping(data) ||
+    typeof data.workspace !== "string" ||
+    typeof data.since !== "string" ||
+    !Number.isFinite(parseMs(data.since))
+  )
+    return null;
+  const live = isAliveSync(identity, undefined, deadline);
+  if (!live.ok) {
+    swallow(
+      live.failure,
+      "a waiter's identity could not be checked, so its wait is not attributed",
+    );
+    return null;
+  }
+  if (live.value.state !== "alive") return null;
+  return { pid: identity.pid, workspace: data.workspace, since: data.since };
+}
+
+/** Read only live, attributable announcements; an older announcement has no workspace. `deadline` (`performance.now()` milliseconds) stops the scan and bounds each liveness probe. */
+export function readLockWaits(
+  root: string,
+  lockPath: string,
+  deadline?: number,
+): LockWait[] {
   let entries: string[];
   try {
     entries = readdirSync(root);
@@ -59,36 +95,11 @@ export function readLockWaits(root: string, lockPath: string): LockWait[] {
   const prefix = `${basename(lockPath)}.waiting.`;
   return entries.flatMap((entry): LockWait[] => {
     if (!entry.startsWith(prefix)) return [];
+    // Out of time: the announcements still unread are not attributed.
+    if (deadline !== undefined && performance.now() >= deadline) return [];
     try {
-      const path = join(root, entry);
-      if (!lstatSync(path).isFile()) return [];
-      const text = readFileSync(path, "utf8");
-      const identity = decodeIdentity(text);
-      if (
-        identity === null ||
-        String(identity.pid) !== entry.slice(prefix.length)
-      )
-        return [];
-      const data: unknown = JSON.parse(text);
-      if (
-        !isMapping(data) ||
-        typeof data.workspace !== "string" ||
-        typeof data.since !== "string" ||
-        !Number.isFinite(parseMs(data.since))
-      )
-        return [];
-      const live = isAliveSync(identity);
-      if (!live.ok) {
-        swallow(
-          live.failure,
-          "a waiter's identity could not be checked, so its wait is not attributed",
-        );
-        return [];
-      }
-      if (live.value.state !== "alive") return [];
-      return [
-        { pid: identity.pid, workspace: data.workspace, since: data.since },
-      ];
+      const wait = readWait(root, entry, entry.slice(prefix.length), deadline);
+      return wait === null ? [] : [wait];
     } catch (error) {
       swallow(error, "an unreadable or ended waiter is not attributed");
       return [];
