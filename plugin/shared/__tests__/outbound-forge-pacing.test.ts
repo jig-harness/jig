@@ -143,7 +143,7 @@ it("does not claim after cancellation or the caller deadline", async () => {
 it("sends when the pacing storage is unavailable, as the budget's does", async () => {
   const deps = {
     now: () => 1000,
-    sleep: async () => {},
+    sleep: async () => undefined,
     claim: () => ({
       ok: false as const,
       failure: {

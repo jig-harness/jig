@@ -350,13 +350,13 @@ export function githubOwnerResolver(deps: {
     const earlier = deps.budget.read(legacy);
     if (earlier === null) return;
     const now = clock();
-    try {
-      deps.budget.update(owner, (prev) => carried(prev, earlier, now), true);
-    } catch (error) {
-      if (errnoCode(error) !== "SQLITE_BUSY") throw error;
-      // Carried at the next resolve, once the lock is free.
+    // Carried at the next resolve when the lock is held.
+    if (
+      !whenFree(() =>
+        deps.budget.update(owner, (p) => carried(p, earlier, now), true),
+      )
+    )
       seeded.delete(pair);
-    }
   };
 
   const ask = async (
@@ -378,8 +378,7 @@ export function githubOwnerResolver(deps: {
       });
     } catch (error) {
       // A busy store sends nothing either: discovery waits for a later check.
-      if (!isRateLimited(error) && errnoCode(error) !== "SQLITE_BUSY")
-        throw error;
+      if (!isRateLimited(error)) busyOrThrow(error);
       return entry?.verified === true ? fromEntry(credential, entry) : fallback;
     }
     const began = currentMs();
@@ -397,16 +396,14 @@ export function githubOwnerResolver(deps: {
     if (user !== null && owner !== fallback.owner) {
       const seen = deps.budget.read(fallback.owner);
       if (seen !== null && seen.observedAt >= began)
-        try {
+        // The owner's own first run records its window when the lock is held.
+        whenFree(() =>
           deps.budget.update(
             owner,
             (prev) => withDiscoveryWindow(prev, seen, clock()),
             true,
-          );
-        } catch (error) {
-          // The owner's own first run records its window instead.
-          if (errnoCode(error) !== "SQLITE_BUSY") throw error;
-        }
+          ),
+        );
     }
     // The default discovery is a run of `gh` the wrapper records itself; a
     // discovery given in its place is recorded here.
@@ -507,6 +504,22 @@ export function githubOwnerResolver(deps: {
   };
 
   return { resolve, known };
+}
+
+/** Rethrow `error` unless it is a store's contention. */
+function busyOrThrow(error: unknown): void {
+  if (errnoCode(error) !== "SQLITE_BUSY") throw error;
+}
+
+/** Run a nonblocking store write; `false` when the store's lock was held. */
+function whenFree(write: () => void): boolean {
+  try {
+    write();
+    return true;
+  } catch (error) {
+    busyOrThrow(error);
+    return false;
+  }
 }
 
 /** Whether a window holds a balance that has not reset by `now`. */
