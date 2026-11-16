@@ -86,9 +86,12 @@ bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" arms
 It lists the core arms this run settles, in order, and the ones it skips
 with why: one the repository turned off (`followup.off`), the release arm
 where no `changelog.file` is set, the workspace board outside Orca or before
-the merge. Before the first arm, run `followup.ts authority` and read the table in
-force: an act it marks `ask`, `person` or `never` overrides any instruction
-of an arm below. Work each arm, then record its verdict:
+the merge.
+
+Read the authority table in force (the `authority` command, printed in full
+in Step 3) before the first arm: an act it marks `ask`, `person` or `never`
+overrides any instruction of an arm below. Work each arm, then record its
+verdict:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" record <arm> <owed|not-owed|pending|unread> --evidence "<the checkable fact>" --item <ref>
