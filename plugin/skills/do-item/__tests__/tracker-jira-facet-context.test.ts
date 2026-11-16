@@ -47,6 +47,21 @@ describe("Jira: an issue whose type has no context for the size field", () => {
     expect((await t.poolIssue("ENG-1"))?.size).toBeNull();
   });
 
+  it("marks the size of a pool issue whose type has no context for it as not applicable", async () => {
+    const { t } = jira(
+      routes({
+        ...SITE,
+        "GET issue/ENG-2": issue({ key: "ENG-2", type: "Bug" }),
+      }),
+      STORES,
+    );
+    const pooled = await t.poolIssue("ENG-2");
+    expect([pooled?.size, pooled?.inapplicableFacets]).toEqual([
+      null,
+      ["size"],
+    ]);
+  });
+
   it("reads a Bug and a Sub-task found by a search without the size field", async () => {
     const { t, calls } = jira(
       routes({

@@ -475,6 +475,7 @@ export function withFacets(
   /** Whether an issue lacks `f`; an epic needs no size where `epicExempt`. */
   function lacks(issue: PoolIssue, f: Facet, epicExempt: boolean): boolean {
     if (f === "size" && epicExempt && issue.isEpic) return false;
+    if (issue.inapplicableFacets?.includes(f)) return false;
     return f === "priority" ? issue.priority === 0 : issue[f] === null;
   }
 
@@ -499,7 +500,10 @@ export function withFacets(
     const outside = open.filter((i) => i.state.type !== "triage");
     const counts: IncompletePage["counts"] = {};
     for (const f of query.missing) {
-      const required = outside.filter((i) => !(f === "size" && i.isEpic));
+      const required = outside.filter(
+        (i) =>
+          !(f === "size" && i.isEpic) && !i.inapplicableFacets?.includes(f),
+      );
       counts[f] = {
         required: required.length,
         lacking: required.filter((i) => lacks(i, f, false)).length,

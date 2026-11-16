@@ -282,7 +282,9 @@ async function stillEligible(
   const missing = issue.missing.filter((f) =>
     f === "priority"
       ? now.priority === 0
-      : (f !== "size" || !now.isEpic) && now[f] === null,
+      : (f !== "size" || !now.isEpic) &&
+        !now.inapplicableFacets?.includes(f) &&
+        now[f] === null,
   );
   const labels = [...now.labels, ...(now.hiddenLabels ?? [])].map((l) =>
     l.toLowerCase(),
