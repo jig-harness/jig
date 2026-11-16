@@ -396,6 +396,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.256.7] - 2026-11-16
+
+### Fixed
+
+- Jira: with a facet such as size kept in a custom field, an issue whose type
+  has no context for that field (an Epic, a Bug or a Sub-task, where the field
+  belongs to one work issue type) could not be read at all: `get_issue.ts`
+  answered `read-failed`, so do-item could not read an item's parent epic and
+  did not delegate the item. Jira leaves such a field out of the issue, and
+  the issue now reads as having no value in it. The error that remains, for
+  an issue read without asking for the field, names the field.
+
 ## [0.256.6] - 2026-11-16
 
 ### Fixed
@@ -9098,7 +9110,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.6...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.7...HEAD
+[0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7
 [0.256.6]: https://github.com/jig-harness/jig/compare/v0.256.5...v0.256.6
 [0.256.5]: https://github.com/jig-harness/jig/compare/v0.256.4...v0.256.5
 [0.256.4]: https://github.com/jig-harness/jig/compare/v0.256.3...v0.256.4
