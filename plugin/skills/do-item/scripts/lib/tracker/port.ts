@@ -327,10 +327,7 @@ export const CLOSED_STATE_TYPES = [
  * states of one category), and a claim re-check compares ids.
  */
 export interface PoolIssue {
-  /**
-   * The tracker's own issue type, where the read took it: an adapter with
-   * type-specific workflows, or one that reads `isEpic` from it.
-   */
+  /** The tracker's own issue type, where the read took it (type-specific workflows, `isEpic`). */
   nativeType?: string | null;
   /** Complete labels hidden by ordinary pool display, for migration validation. */
   hiddenLabels?: string[];
