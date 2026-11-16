@@ -294,7 +294,9 @@ describe("its waiting card and bare requests", () => {
       "One repository block per repository",
       "one line per entry, in its order",
       "**Not listed:** drives that are running",
-      "`Nothing\nwaits on a person.`",
+      "**Not read:** <each repository `incomplete` lists",
+      "an empty `incomplete`, put `Nothing\nwaits on a person.`",
+      "`Nothing waits on a person in what was read.`",
     ])
       expect(card).toContain(part);
   });

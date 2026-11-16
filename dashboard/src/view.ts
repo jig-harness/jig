@@ -111,8 +111,9 @@ export function timerBanner(
  * A banner for each repository whose part of the line is past the timer's
  * next tick and its longest recent one while the line itself is current:
  * the ticks since ran, and none of them read it. Each names the repository,
- * when its part was read, and why the ticks since did not read it: another
- * tick held it busy, or they read other repositories.
+ * when its part was read, and why the ticks since did not read it: the
+ * newest that tried was refused, another tick held it busy, or they read
+ * other repositories.
  */
 export function staleBanners(
   line: LineSnapshot,
@@ -123,15 +124,17 @@ export function staleBanners(
     if (repo.readAt === undefined) return [];
     const read = Date.parse(repo.readAt);
     if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
-    const name = repo.slug ?? repo.path;
+    const name = repo.slug ?? repo.lastSlug ?? repo.path;
     const since = (line.ticks ?? []).filter(
       (t) => Date.parse(t.startedAt) > read,
     );
     const busy = since.filter((t) => t.busy.includes(repo.path)).length;
     const why =
-      busy === 0
-        ? `None of the ${plural(since.length, "tick")} since read it.`
-        : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
+      repo.refused !== null
+        ? `The newest tick that tried could not read it (${repo.refused}).`
+        : busy === 0
+          ? `None of the ${plural(since.length, "tick")} since read it.`
+          : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
     return [
       {
         key: repo.path,

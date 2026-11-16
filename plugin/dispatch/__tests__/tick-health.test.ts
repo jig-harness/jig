@@ -17,6 +17,7 @@ import {
   tickHealthOf,
   withTick,
 } from "../lib/tick-health.ts";
+import { readNothing } from "../lib/line-unread.ts";
 
 const STARTED = "2026-11-07T10:00:00.000Z";
 
@@ -31,6 +32,7 @@ function receipt(over: Partial<HealthReceipt> = {}): HealthReceipt {
       {
         path: "/srv/web",
         slug: "acme/web",
+        refused: null,
         phasesMs: { open: 500, forge: 30_000, plan: 20 },
         shared: {
           medium: "forge",
@@ -46,6 +48,7 @@ function receipt(over: Partial<HealthReceipt> = {}): HealthReceipt {
       {
         path: "/srv/api",
         slug: null,
+        refused: null,
         phasesMs: { open: 300 },
         defect: { code: "defect", phase: "forge", reason: "a bug" },
       },
@@ -82,7 +85,38 @@ describe("a tick's entry on the strip", () => {
       busy: [],
       lowBudget: null,
       defects: 1,
+      refused: [],
     });
+  });
+
+  it("names every repository it could not read, so a tick that read none of them is not recorded as one that ran well", () => {
+    const refusal =
+      "the forge cannot say which repository this is: the rate limit holds the call, so nothing was sent";
+    const tick = tickHealthOf(
+      receipt({
+        repos: [
+          { path: "/srv/web", slug: null, refused: refusal },
+          { path: "/srv/api", slug: null, refused: refusal },
+        ],
+      }),
+      true,
+    );
+    expect(tick.exitStatus).toBe(0);
+    expect(tick.defects).toBe(0);
+    expect(tick.refused).toEqual(["/srv/web", "/srv/api"]);
+    expect(readNothing(tick)).toBe(true);
+    const some = tickHealthOf(
+      receipt({
+        repos: [
+          { path: "/srv/web", slug: "acme/web", refused: null },
+          { path: "/srv/api", slug: null, refused: refusal },
+        ],
+      }),
+      true,
+    );
+    expect(some.refused).toEqual(["/srv/api"]);
+    expect(readNothing(some)).toBe(false);
+    expect(readNothing(tickHealthOf(receipt({ repos: [] }), true))).toBe(false);
   });
 
   it("counts busy repositories, the low budget's skipped reads and the tick's own defect, and takes the budget from the gate", () => {
@@ -114,7 +148,7 @@ describe("a tick's entry on the strip", () => {
         startedAt: STARTED,
         finishedAt: STARTED,
         exitStatus: 0,
-        repos: [{ path: "/srv/web", slug: "acme/web" }],
+        repos: [{ path: "/srv/web", slug: "acme/web", refused: null }],
       },
       true,
     );

@@ -296,7 +296,7 @@ export interface LineRepo {
   stages: string[];
   /** Its configured tracker (`issue_tracker.adapter`: `github`, `linear`, `jira`, …; GitHub when the configuration names none); `null` when its tracker configuration does not read; absent from a line written before it was kept, and when the tick could not open the repository. */
   tracker?: { adapter: string; repository?: string } | null;
-  /** Why nothing could be dispatched for it; `null` when it was read. */
+  /** Why nothing could be dispatched for it at the newest tick that tried; `null` when it was read. Beside an earlier tick's `runId` when that tick's part of the line was kept because this one could not identify the repository. */
   refused: string | null;
   /** The records that did not read at the newest tick. */
   failedReads: Array<{ record: string; source: string; detail: string }>;
@@ -385,6 +385,8 @@ export interface LineTick {
   lowBudget: string[] | null;
   /** The defects it recorded: its own, its repositories' and their stages'. */
   defects: number;
+  /** The repositories it reported on but could not read, as `repos` names them; absent from an entry written before refusals were kept. */
+  refused?: string[];
 }
 
 /** The host's gauges the load factor reads (`load.ts`). */

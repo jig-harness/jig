@@ -106,7 +106,9 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
   in the unfiltered list. Open an
   address (`jig ask` on it) only to say more about one entry. When `unread`
   is non-null or `tick` is null, relay why the line is unavailable, and
-  offer to ask about one address instead.
+  offer to ask about one address instead. When `incomplete` lists
+  repositories, the newest tick could not read them: what waits there is
+  as of the reading each names, or unknown; say so.
 - **A pick-up** is answered only on a machine with a checkout of its
   repository; elsewhere `ask` refuses and says why. Relay that.
 - **Exit `1`** means the key names nothing: no such pull request or item.
@@ -145,6 +147,8 @@ every time, from one `jig ask --waiting`:
 - `<address>`: <the act that settles it>, since <the date>. <the title>
   <when the entry names a question for a person: the question, quoted as the record's words>
 
+**Not read:** <each repository `incomplete` lists: as read at <its readAt> | never read; why it was refused>
+
 **Not listed:** drives that are running or that settle by themselves. Name a pull request or an item for its status card.
 ```
 
@@ -152,9 +156,11 @@ One repository block per repository the answer lists, in its order, and
 one line per entry, in its order. First check `unread` and `tick`: when
 `unread` is non-null or `tick` is null, relay the unavailable-line reason
 in place of the card, and ask which pull request or item to look at.
-Only with a read tick and an empty waiting list, put `Nothing
-waits on a person.` in place of the blocks. Open no address to fill the
-card.
+Put the **Not read** line only when `incomplete` lists a repository.
+Only with a read tick, an empty waiting list and an empty `incomplete`, put `Nothing
+waits on a person.` in place of the blocks; with an empty waiting list and
+repositories not read, put `Nothing waits on a person in what was read.`
+Open no address to fill the card.
 
 ### Filling in the card
 

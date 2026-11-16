@@ -5,15 +5,18 @@
  * sessions, its Ready cards and its own entry) comes from the newest tick
  * that read it, and the entry names that tick and when it started (`runId`,
  * `readAt`), so the page can say which part is old and why. A repository the
- * tick reported on replaces its whole part, even a report that found no
- * slug and so brought no cards. The rest belongs
+ * tick read replaces its whole part. A report that found no slug read
+ * nothing: its entry carries this tick's refusal, and the part the line
+ * before held under the slug its path last had stays, with that part's tick
+ * and time on the entry, so a need does not leave the line because a read
+ * failed (`line-unread.ts` names such repositories). The rest belongs
  * to the whole machine (the accounts, the line's own tick and times, the
  * receipt beside it, except the recent tick durations and their maximum,
  * which every tick that reads adds its own to): a tick the timer asked for every repository writes it,
  * busy ones or not, and a wake-up for a few leaves it as it was, so a timer
  * that stopped still shows as one while woken ticks run.
  */
-import type { LineSnapshot } from "./dashboard-contract.ts";
+import type { LineRepo, LineSnapshot } from "./dashboard-contract.ts";
 
 /** The line with each repository's entry marked as read by the tick `runId` that started at `at`. */
 export function readBy(
@@ -29,7 +32,8 @@ export function readBy(
 
 /**
  * `fresh`, built from the repositories one tick read, with every other
- * repository's part kept from `previous`, in the machine file's order
+ * repository's part kept from `previous`, those it reported on but could not
+ * identify included, in the machine file's order
  * (`listed`); the machine's part is `fresh`'s when the tick wrote it
  * (`machine: "fresh"`), else `previous`'s. A repository the machine file no
  * longer lists is dropped with its part; one no tick has read yet has no
@@ -56,15 +60,19 @@ export function mergeLine(
   );
   const paths = new Set(listed.map((r) => r.path));
   const freshPaths = new Map(current.map((r) => [r.path, r]));
+  // A path this tick did not identify keeps its part under the slug it last had.
+  const unidentified = (path: string): boolean =>
+    (freshPaths.get(path)?.slug ?? null) === null;
   const kept = new Set(
-    previous.repos.flatMap((r) =>
-      r.slug === null ||
-      !paths.has(r.path) ||
-      freshPaths.has(r.path) ||
-      read.has(r.slug)
+    previous.repos.flatMap((r) => {
+      const slug = knownSlug(r);
+      return slug === undefined ||
+        !paths.has(r.path) ||
+        !unidentified(r.path) ||
+        read.has(slug)
         ? []
-        : [r.slug],
-    ),
+        : [slug];
+    }),
   );
   const part = <T extends { repo: string }>(
     before: readonly T[],
@@ -105,19 +113,30 @@ export function mergeLine(
     ready: part(previous.ready ?? [], fresh.ready ?? []),
     repos: listed.flatMap(({ path }) => {
       const now = freshPaths.get(path);
-      if (now !== undefined) return [now];
       const before = keptPaths.get(path);
-      return before === undefined
-        ? []
-        : [
-            {
-              ...before,
+      const from =
+        before === undefined
+          ? undefined
+          : {
               runId: before.runId ?? previous.runId,
               readAt: before.readAt ?? previous.startedAt,
-            },
-          ];
+            };
+      if (now === undefined)
+        return before === undefined ? [] : [{ ...before, ...from }];
+      // An unidentified entry whose part was kept names the tick that part is from.
+      const slug = before === undefined ? undefined : knownSlug(before);
+      return [
+        now.slug === null && slug !== undefined && kept.has(slug)
+          ? { ...now, ...from }
+          : now,
+      ];
     }),
   };
+}
+
+/** The slug of a repository's entry, else the slug its path last had. */
+function knownSlug(r: LineRepo): string | undefined {
+  return r.slug ?? r.lastSlug;
 }
 
 /**
@@ -135,7 +154,7 @@ export function identifiedSlugs(
   );
   for (const old of before?.repos ?? []) {
     const now = line.repos.find((r) => r.path === old.path);
-    const known = old.slug ?? old.lastSlug;
+    const known = knownSlug(old);
     if (
       known !== undefined &&
       now !== undefined &&
@@ -157,7 +176,7 @@ export function withLastSlugs(
     repos: line.repos.map((r) => {
       if (r.slug !== null) return r;
       const old = before?.repos.find((b) => b.path === r.path);
-      const known = old?.slug ?? old?.lastSlug;
+      const known = old === undefined ? undefined : knownSlug(old);
       return known === undefined ? r : { ...r, lastSlug: known };
     }),
   };

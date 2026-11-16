@@ -514,6 +514,32 @@ describe("the answer", () => {
     });
   });
 
+  it("says the line is incomplete, rather than that nothing needs a person, when a repository's newest read was refused", () => {
+    const line = lineOf("quiet");
+    const refusal =
+      "the forge cannot say which repository this is: the rate limit holds the call, so nothing was sent";
+    const unread: LineSnapshot = {
+      ...line,
+      repos: line.repos.map((r, i) =>
+        i === 0
+          ? {
+              ...r,
+              slug: null,
+              ...(r.slug === null ? {} : { lastSlug: r.slug }),
+              refused: refusal,
+              readAt: iso(15, 0),
+            }
+          : r,
+      ),
+    };
+    const band = answerBand(unread, CLOCK, true, false);
+    expect(band.title).toBe("Nothing needs a person in what was read.");
+    expect(band.sub).toContain(
+      `1 repository not read: ${line.repos[0]?.slug}, as of 15:00`,
+    );
+    expect(band.loud).toBe(true);
+  });
+
   it("counts a session not moving when no need is open, so the answer matches the action panel", () => {
     const line = lineOf("quiet");
     const [session] = line.sessions;

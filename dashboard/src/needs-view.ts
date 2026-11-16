@@ -16,6 +16,7 @@ import {
   type NeedAct,
 } from "../../plugin/shared/acts.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
+import { refusedRepos } from "../../plugin/dispatch/lib/line-unread.ts";
 import { answerStateWords } from "../../plugin/shared/decision-card.ts";
 import { ago, clock, plural } from "./format.ts";
 import type { EveryoneAnswerState } from "./icons.ts";
@@ -393,6 +394,7 @@ export function answerBand(
   const needs = orderedNeeds(line.needs);
   const first = needs[0];
   const tickClock = clock(Date.parse(line.startedAt), timeZone);
+  const unread = unreadText(line, timeZone);
   if (first !== undefined) {
     const oldest = Math.min(...needs.map((n) => Date.parse(n.since)));
     const stuckText =
@@ -403,14 +405,36 @@ export function answerBand(
         : needs.length === 1
           ? "1 needs a person."
           : `${needs.length} need a person.`,
-      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first)}.`,
+      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first)}.${unread === null ? "" : ` ${unread}`}`,
       loud: true,
     };
   }
-  return quietBand(line, nowMs, { moving, stuck, tickClock, pastTense });
+  return quietBand(line, nowMs, {
+    moving,
+    stuck,
+    tickClock,
+    pastTense,
+    unread,
+  });
 }
 
-/** The answer when no need is open: sessions not moving still count, and a quiet line says what runs and what waits. */
+/**
+ * The repositories whose newest read was refused, as `jig ask --waiting`
+ * names them, each with the tick its part is from: `1 repository not read:
+ * acme/web, as of 15:00.`; `null` when the line read every one.
+ */
+function unreadText(line: LineSnapshot, timeZone: string): string | null {
+  const unread = refusedRepos(line);
+  if (unread.length === 0) return null;
+  const each = unread.map((r) =>
+    r.readAt === null
+      ? `${r.repo}, never read`
+      : `${r.repo}, as of ${clock(Date.parse(r.readAt), timeZone)}`,
+  );
+  return `${plural(unread.length, "repository", "repositories")} not read: ${each.join("; ")}.`;
+}
+
+/** The answer when no need is open: sessions not moving still count, a repository not read is named, and a quiet line says what runs and what waits. */
 function quietBand(
   line: LineSnapshot,
   nowMs: number,
@@ -419,9 +443,10 @@ function quietBand(
     stuck: number;
     tickClock: string;
     pastTense: boolean;
+    unread: string | null;
   },
 ): AnswerView {
-  const { moving, stuck, tickClock, pastTense } = facts;
+  const { moving, stuck, tickClock, pastTense, unread } = facts;
   const walled = line.accounts.filter((a) => wallIsUp(a, nowMs)).length;
   const wallText =
     walled > 0 ? `; ${plural(walled, "account")} behind a wall` : "";
@@ -429,19 +454,30 @@ function quietBand(
     line.queue.length > 0
       ? `${plural(line.queue.length, "item")} queued`
       : "queue empty";
+  const unreadLead = unread === null ? "" : `${unread} `;
+  const sub = `${unreadLead}${plural(moving, "session")} working${wallText}; ${queueText}.`;
   if (stuck > 0)
     return {
       title: pastTense
         ? `${plural(stuck, "session")} not moving at the ${tickClock} tick.`
         : `${plural(stuck, "session")} not moving.`,
-      sub: `${plural(moving, "session")} working${wallText}; ${queueText}.`,
+      sub,
+      loud: true,
+    };
+  // A repository the line could not read may hold a need it cannot show, so the answer does not say nothing does.
+  if (unread !== null)
+    return {
+      title: pastTense
+        ? `Nothing needed a person in what the ${tickClock} tick read.`
+        : "Nothing needs a person in what was read.",
+      sub,
       loud: true,
     };
   return {
     title: pastTense
       ? `Nothing needed a person at the ${tickClock} tick.`
       : "Nothing needs a person.",
-    sub: `${plural(moving, "session")} working${wallText}; ${queueText}.`,
+    sub,
     loud: false,
   };
 }
