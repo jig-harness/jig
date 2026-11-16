@@ -106,15 +106,8 @@ export async function recoverCancelled(
       ),
   );
   if (orphaned.length === 0) return "wait";
-  let record = await deps.observe(pr, head);
   const now = deps.now();
-  if (
-    record.requestedAt !== null &&
-    record.grantPending === true &&
-    now - record.requestedAt >= 60_000 &&
-    (await deps.releaseGrant?.(pr, head)) === true
-  )
-    record = await deps.observe(pr, head);
+  const record = await observeReleasing(pr, head, now, deps);
   const granted = (record.grants ?? 0) > 0;
   if (record.requestedAt !== null) {
     if (now - record.requestedAt < 60_000) return "wait";
@@ -162,6 +155,25 @@ export async function recoverCancelled(
     console.error(reason);
     return "parked";
   }
+}
+
+/** The head's record, its claim released first when a pending grant waited on it. */
+async function observeReleasing(
+  pr: string,
+  head: string,
+  now: number,
+  deps: RecoveryDeps,
+): Promise<RecoveryRecord> {
+  const record = await deps.observe(pr, head);
+  const aged =
+    record.requestedAt !== null && now - record.requestedAt >= 60_000;
+  if (
+    aged &&
+    record.grantPending === true &&
+    (await deps.releaseGrant?.(pr, head)) === true
+  )
+    return await deps.observe(pr, head);
+  return record;
 }
 
 function unreplacedCancelledJobs(
