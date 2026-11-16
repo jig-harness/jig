@@ -396,6 +396,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.256.6] - 2026-11-16
+
+### Fixed
+
+- Keep tracker failures visible when the dispatcher reads claimed items, assignment authors and ready-pool evidence: temporary failures wait below the notification threshold, refused credentials are reported immediately, and a definite missing assignment remains an ordinary answer. **Consumer action:** none.
+
 ## [0.256.5] - 2026-11-16
 
 ### Changed
@@ -9092,7 +9098,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.5...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.6...HEAD
+[0.256.6]: https://github.com/jig-harness/jig/compare/v0.256.5...v0.256.6
 [0.256.5]: https://github.com/jig-harness/jig/compare/v0.256.4...v0.256.5
 [0.256.4]: https://github.com/jig-harness/jig/compare/v0.256.3...v0.256.4
 [0.256.3]: https://github.com/jig-harness/jig/compare/v0.256.2...v0.256.3
