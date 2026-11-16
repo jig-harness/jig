@@ -502,6 +502,28 @@ describe("a group not required on an epic", () => {
     ).toEqual([]);
   });
 
+  test("an epic kept as a type lifts the requirement as a flag does", () => {
+    const typed = lintTaxonomyText(
+      [
+        "version: 1",
+        "types: [{ id: feature }, { id: epic }]",
+        "statuses: [{ id: todo }]",
+        "groups:",
+        "  - { id: size, required: true, not_required_on: [epic], labels: [{ id: small }] }",
+      ].join("\n"),
+    );
+    expect(typed.problems).toEqual([]);
+    const by = { epic: "epic", epicTypes: ["Epic"] };
+    const result = validateLabels(
+      [],
+      typed.taxonomy as Taxonomy,
+      { type: "epic", priority: 3 },
+      { nativeType: "Epic", epics: by },
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.missing).toEqual([]);
+  });
+
   test("names a flag the file lacks, or a group with no requirement to lift", () => {
     expect(
       lintTaxonomyText(
@@ -510,7 +532,7 @@ describe("a group not required on an epic", () => {
         ),
       ).problems,
     ).toEqual([
-      "group 'size' is not required on 'nope', which is not a flag of this taxonomy",
+      "group 'size' is not required on 'nope', which is neither a flag nor a type of this taxonomy",
     ]);
     expect(
       lintTaxonomyText(
