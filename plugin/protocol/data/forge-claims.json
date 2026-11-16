@@ -1,0 +1,820 @@
+{
+  "chapter": "forge-claims",
+  "title": "Forge claims: takeover, launch and merge-ready",
+  "version": 1,
+  "status": "provisional",
+  "planItems": [
+    {
+      "item": 40,
+      "epic": 517
+    },
+    {
+      "item": 49,
+      "epic": 865
+    }
+  ],
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "record for a claim's kind in the records registry, marker for one of its hidden markers, field for a field of its record, and value for a closed value of one of the launch claim's fields."
+    },
+    "claim": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The registered name of the claim's kind the value belongs to: drive-takeover-claim, dispatch-launch-claim or drive-merge-ready."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The kind's registered name, one hidden marker as its comment opens after `<!-- `, a field's name (a field of a launch's end as `end.<field>`), or a closed value as `<field>.<value>` (`action.rearm`)."
+    },
+    "type": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the JSON type of its value (string, integer, boolean, object, or string[] for a list of strings); null for every other value."
+    },
+    "nullable": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, whether null is a value it may carry; null for every other value."
+    },
+    "carried": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, which of the kind's claims carry it: always, sometimes, or for a field of a launch's end every end, every ended end, every died end, some ended ends or some died ends. Null for every other value."
+    },
+    "version": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a record, the version Jig's writers write now, which its envelope's v carries; null otherwise."
+    },
+    "key": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a record, the whole shape of its envelope's key as a regular expression; null otherwise."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What it means to a reader that meets it, and what that reader does with it."
+    }
+  },
+  "values": [
+    {
+      "kind": "record",
+      "claim": "drive-takeover-claim",
+      "name": "drive-takeover-claim",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": 1,
+      "key": "^takeover:\\d+$",
+      "meaning": "A driver's claim to take a drive over from another clone's stopped driver, one per ledger generation: of the claims on one generation the earliest trusted one wins, and the others stand down."
+    },
+    {
+      "kind": "marker",
+      "claim": "drive-takeover-claim",
+      "name": "drive-pr-takeover-claim",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "A driver's claim to take a drive over from another clone's stopped driver, one per ledger generation: of the claims on one generation the earliest trusted one wins, and the others stand down."
+    },
+    {
+      "kind": "marker",
+      "claim": "drive-takeover-claim",
+      "name": "drive-pr-takeover-claim-data",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "A driver's claim to take a drive over from another clone's stopped driver, one per ledger generation: of the claims on one generation the earliest trusted one wins, and the others stand down."
+    },
+    {
+      "kind": "record",
+      "claim": "dispatch-launch-claim",
+      "name": "dispatch-launch-claim",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": 1,
+      "key": "^drive$",
+      "meaning": "A dispatching host's claim of one launch of the pull request's drive (a re-arm, a re-drive, an arm or a takeover), and how that launch ended, so no other host dispatching the repository launches it twice."
+    },
+    {
+      "kind": "marker",
+      "claim": "dispatch-launch-claim",
+      "name": "jig-dispatch-launch-claim",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "A dispatching host's claim of one launch of the pull request's drive (a re-arm, a re-drive, an arm or a takeover), and how that launch ended, so no other host dispatching the repository launches it twice."
+    },
+    {
+      "kind": "marker",
+      "claim": "dispatch-launch-claim",
+      "name": "jig-dispatch-launch-claim-data",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "A dispatching host's claim of one launch of the pull request's drive (a re-arm, a re-drive, an arm or a takeover), and how that launch ended, so no other host dispatching the repository launches it twice."
+    },
+    {
+      "kind": "record",
+      "claim": "drive-merge-ready",
+      "name": "drive-merge-ready",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": 1,
+      "key": "^merge-ready:[0-9a-f]{7,64}$",
+      "meaning": "A driver's announcement that one head of the pull request is converged, green, mergeable and clean, posted only while that holds and withdrawn when it stops holding."
+    },
+    {
+      "kind": "marker",
+      "claim": "drive-merge-ready",
+      "name": "drive-pr-merge-ready",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "A driver's announcement that one head of the pull request is converged, green, mergeable and clean, posted only while that holds and withdrawn when it stops holding."
+    },
+    {
+      "kind": "marker",
+      "claim": "drive-merge-ready",
+      "name": "drive-pr-merge-ready-data",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "A driver's announcement that one head of the pull request is converged, green, mergeable and clean, posted only while that holds and withdrawn when it stops holding."
+    },
+    {
+      "kind": "field",
+      "claim": "drive-takeover-claim",
+      "name": "generation",
+      "type": "integer",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The ledger generation the claimant read before it claimed: the claim's key is `takeover:<generation>`, and of the trusted claims on one generation the earliest wins."
+    },
+    {
+      "kind": "field",
+      "claim": "drive-takeover-claim",
+      "name": "actor",
+      "type": "string",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The claiming driver's session, as the drive ledger names its driver: the driver that takes the drive over."
+    },
+    {
+      "kind": "field",
+      "claim": "drive-takeover-claim",
+      "name": "clone",
+      "type": "string",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The clone the claiming driver runs in: a driver that finds a claim in force from another clone stops at its next round boundary."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "generation",
+      "type": "integer",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The attempt the claim makes, from 1: a launch claims the attempt after the latest, and of the claims on one attempt the earliest trusted one wins."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "pr",
+      "type": "integer",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The number of the pull request the claim is on; a claim whose record names another pull request does not read."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "action",
+      "type": "string",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "What the launch does: one of the actions listed above."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "record",
+      "type": "string",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The claiming host's launch record, in the dispatcher's form `<yyyymmdd>T<hhmmss>Z-<8 hex>`."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "host",
+      "type": "string",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The claiming host, as a digest of its dispatcher's database instance: a public comment names no machine, and that host recognises its own claim. Only that host writes the launch's end."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "facts",
+      "type": "string",
+      "nullable": false,
+      "carried": "always",
+      "version": null,
+      "key": null,
+      "meaning": "The drive ledger's facts the launch acts on, in words (its generation, its exit, its heartbeat); empty where it acts on none."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "change",
+      "type": "string",
+      "nullable": false,
+      "carried": "sometimes",
+      "version": null,
+      "key": null,
+      "meaning": "For a re-drive, the change it acts on (a head, and for a stop on a conflict its base's head), which is re-driven once."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "earlier",
+      "type": "string[]",
+      "nullable": false,
+      "carried": "sometimes",
+      "version": null,
+      "key": null,
+      "meaning": "For a re-drive, the changes an earlier launch of the same launch record acted on, which are not re-driven either."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "owner",
+      "type": "boolean",
+      "nullable": false,
+      "carried": "sometimes",
+      "version": null,
+      "key": null,
+      "meaning": "Whether the claiming host owns the repository's board, notifications and history rows; absent where that host does not say."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "conflictStop",
+      "type": "boolean",
+      "nullable": false,
+      "carried": "sometimes",
+      "version": null,
+      "key": null,
+      "meaning": "Written only as true: the re-drive is of a drive that stopped on a conflict with its base, which a person settles when the re-drive leaves it so."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end",
+      "type": "object",
+      "nullable": false,
+      "carried": "sometimes",
+      "version": null,
+      "key": null,
+      "meaning": "How the launch ended, written onto the claim by the host that made it; absent while it has not ended, as far as that host has written. A claim on the latest attempt with no end holds the pull request's launches for every host."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.state",
+      "type": "string",
+      "nullable": false,
+      "carried": "every end",
+      "version": null,
+      "key": null,
+      "meaning": "How the launch ended: one of the end states listed above."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.at",
+      "type": "string",
+      "nullable": false,
+      "carried": "every end",
+      "version": null,
+      "key": null,
+      "meaning": "When the launch ended, as an ISO 8601 time."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.exit",
+      "type": "integer",
+      "nullable": true,
+      "carried": "every ended end",
+      "version": null,
+      "key": null,
+      "meaning": "The stage's exit, in the numbering of the drive's exit codes; null when it ended on a signal."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.outcome",
+      "type": "string",
+      "nullable": true,
+      "carried": "some ended ends",
+      "version": null,
+      "key": null,
+      "meaning": "Null, as a drive's launch writes it. A launch's end has one form for a drive and a follow-up, so a reader also accepts a follow-up's answer here, `done` or `failed`, and an end without the field."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.by",
+      "type": "string",
+      "nullable": false,
+      "carried": "some ended ends",
+      "version": null,
+      "key": null,
+      "meaning": "Who wrote the run's closing report (agent, driver, wrapper, steward or person), or none when it left none. The report's own text stays on the host; a value a reader does not know reads as absent."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.cause",
+      "type": "string",
+      "nullable": false,
+      "carried": "some ended ends",
+      "version": null,
+      "key": null,
+      "meaning": "Why the run fell short, from the closing report's closed list of causes, when the report named one; a value a reader does not know reads as absent."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.reason",
+      "type": "string",
+      "nullable": false,
+      "carried": "every died end",
+      "version": null,
+      "key": null,
+      "meaning": "Why the launch died, in words."
+    },
+    {
+      "kind": "field",
+      "claim": "dispatch-launch-claim",
+      "name": "end.executed",
+      "type": "boolean",
+      "nullable": false,
+      "carried": "some died ends",
+      "version": null,
+      "key": null,
+      "meaning": "Written only as false, with durable evidence that the launch's reservation never executed; absent otherwise."
+    },
+    {
+      "kind": "value",
+      "claim": "dispatch-launch-claim",
+      "name": "action.rearm",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "The launch re-arms the pull request's drive: an arm where no drive ran, a re-arm of a stopped one, or, with `change`, a re-drive."
+    },
+    {
+      "kind": "value",
+      "claim": "dispatch-launch-claim",
+      "name": "action.takeover",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "The launch takes the drive over from a driver whose ledger still says it runs but whose heartbeat has gone silent past the lease window."
+    },
+    {
+      "kind": "value",
+      "claim": "dispatch-launch-claim",
+      "name": "end.state.ended",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "The launch ran and its stage exited: `exit` is the exit."
+    },
+    {
+      "kind": "value",
+      "claim": "dispatch-launch-claim",
+      "name": "end.state.died",
+      "type": null,
+      "nullable": null,
+      "carried": null,
+      "version": null,
+      "key": null,
+      "meaning": "The launch did not run to its exit: `reason` says why, and nothing more is known of its stage."
+    }
+  ],
+  "schemas": {
+    "drive-takeover-claim": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "drive-takeover-claim"
+                },
+                "v": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1
+                },
+                "key": {
+                  "type": "string",
+                  "pattern": "^takeover:\\d+$"
+                },
+                "writer": {
+                  "type": "object",
+                  "properties": {
+                    "login": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "host": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "bootId": {
+                      "type": "string"
+                    },
+                    "pid": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "start": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["host"],
+                  "additionalProperties": true
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["kind", "v", "key", "writer", "at"],
+              "additionalProperties": true
+            },
+            {
+              "allOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["generation"],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": {
+                      "type": "string"
+                    },
+                    "clone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["actor", "clone"],
+                  "additionalProperties": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "actor": {
+              "type": "string"
+            },
+            "clone": {
+              "type": "string"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "at": {
+              "type": "string"
+            },
+            "kind": false
+          },
+          "required": ["actor", "clone", "generation", "at"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "dispatch-launch-claim": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dispatch-launch-claim"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^drive$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "pr": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["generation", "pr"],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "enum": ["rearm", "takeover"]
+                },
+                "record": {
+                  "type": "string",
+                  "pattern": "^\\d{8}T\\d{6}Z-[a-f\\d]{8}$"
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "facts": {
+                  "type": "string"
+                },
+                "change": {
+                  "type": "string"
+                },
+                "earlier": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "owner": {
+                  "type": "boolean"
+                },
+                "conflictStop": true,
+                "end": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "const": "ended"
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "exit": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outcome": {
+                          "anyOf": [
+                            {
+                              "enum": ["done", "failed"]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "by": true,
+                        "cause": true
+                      },
+                      "required": ["state", "at", "exit"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "const": "died"
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "executed": {
+                          "const": false
+                        }
+                      },
+                      "required": ["state", "at", "reason"],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              },
+              "required": ["action", "record", "host", "facts"],
+              "additionalProperties": true
+            }
+          ]
+        }
+      ]
+    },
+    "drive-merge-ready": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "drive-merge-ready"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^merge-ready:[0-9a-f]{7,64}$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

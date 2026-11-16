@@ -871,7 +871,7 @@ states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
 repository supplies, on the follow-up claim and its result, on rule
 matchers in configuration, and the provisional chapters on addresses and the
-verbs of `jig send` and on tracker facets
+verbs of `jig send`, on forge claims and on tracker facets
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
 Open, in order: the other provisional chapters.
