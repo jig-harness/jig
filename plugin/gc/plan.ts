@@ -264,6 +264,20 @@ async function entriesPlan(
   }
   return ok(kinds);
 }
+/** The machine-wide kinds, which no single repository selects. */
+function machineKinds(machine: MachineConfig): CollectionKind[] {
+  const kinds: CollectionKind[] = [];
+  if (machine.receipts && !machine.disabled.includes("receipts"))
+    kinds.push(receiptsKind(machine.receipts_days));
+  const orca = machineOrca(machine);
+  if (
+    orca !== undefined &&
+    machine.orca !== undefined &&
+    !machine.disabled.includes("orca-terminals")
+  )
+    kinds.push(orcaTerminalsKind(orca, machine.orca.terminal_idle_hours));
+  return kinds;
+}
 /**
  * The kinds a run evaluates, or why it plans none: the machine's
  * configuration cannot be read, or a repository's declaration is refused.
@@ -300,16 +314,7 @@ export async function collectionPlan(options: {
     if (!planned.ok) return planned;
     kinds.push(...planned.value);
   }
-  if (!selected && machine.receipts && !machine.disabled.includes("receipts"))
-    kinds.push(receiptsKind(machine.receipts_days));
-  const orca = machineOrca(machine);
-  if (
-    !selected &&
-    orca !== undefined &&
-    machine.orca !== undefined &&
-    !machine.disabled.includes("orca-terminals")
-  )
-    kinds.push(orcaTerminalsKind(orca, machine.orca.terminal_idle_hours));
+  if (!selected) kinds.push(...machineKinds(machine));
   return ok(
     kinds.filter((kind) => !options.kind || kind.name === options.kind),
   );
