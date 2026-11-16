@@ -89,6 +89,51 @@ describe("a run's report on its line", () => {
     expect(report).toMatchObject({ missing: true, line: NO_REPORT });
   });
 
+  it("shows the path of the transcript's copy on the host for a run that left no report", () => {
+    const {
+      concluded: _concluded,
+      suggested_next: _next,
+      cause: _cause,
+      ...bare
+    } = RUN;
+    const path = "/home/x/.local/state/jig/dispatch/runs/r1/transcript.jsonl";
+    const report = runReport({ ...bare, by: "none", transcript: path });
+    expect(report).toMatchObject({ missing: true, transcript: path });
+    expect(report?.line).toBe(`${NO_REPORT} · transcript copy: ${path}`);
+    expect(report?.evidence).toContainEqual({ k: "transcript copy", v: path });
+    const view = rowView(
+      { ...bare, by: "none", transcript: path },
+      ROW_CLOCK,
+      NO_FORGES,
+    );
+    expect(view.run?.line).toContain(path);
+  });
+
+  it("reads a cause the steward recorded from the transcript like any report, by steward", () => {
+    const report = runReport({
+      ...RUN,
+      by: "steward",
+      concluded: "It had opened the branch and stopped on a failing test.",
+      suggested_next: {
+        step: "None suggested: the run left no closing report, and the steward recorded its cause from its transcript.",
+        owner: "none",
+      },
+      cause: "tool-failed",
+      transcript: "/state/runs/r1/transcript.jsonl",
+    });
+    expect(report).toMatchObject({
+      by: "steward",
+      missing: false,
+      cause: "tool-failed",
+    });
+    expect(report?.line).toContain("cause: tool-failed");
+    expect(report?.evidence).toContainEqual({ k: "report by", v: "steward" });
+    expect(report?.evidence).toContainEqual({
+      k: "transcript copy",
+      v: "/state/runs/r1/transcript.jsonl",
+    });
+  });
+
   it("says nothing of a report for a row from before reports were kept, nor for an event", () => {
     const { by: _by, ...old } = RUN;
     expect(runReport(old)).toBeNull();
