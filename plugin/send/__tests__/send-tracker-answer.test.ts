@@ -297,10 +297,14 @@ describe("jig send … answer on another tracker's item, from the command line",
       "{}",
       w.state,
     );
+    // The default branch names the tracker and factory identity; the checkout's own copy names neither.
+    w.config(
+      `dispatch:\n  identity: factory-bot\nissue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO_OF_WORLD}\n  facets:\n    type: { store: label }\n    priority: { store: label }\n`,
+    );
     mkdirSync(join(w.repo, ".config"), { recursive: true });
     writeFileSync(
       join(w.repo, ".config", "jig.yaml"),
-      `dispatch:\n  identity: factory-bot\nissue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO_OF_WORLD}\n  facets:\n    type: { store: label }\n    priority: { store: label }\n`,
+      `issue_tracker:\n  adapter: github\n  github:\n    repository: other/elsewhere\n`,
     );
     server = Bun.serve({
       port: 0,

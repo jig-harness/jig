@@ -19,14 +19,18 @@
  * (`dispatch.identity`), whose comments the tick never counts; and `--as`,
  * when given, names that user.
  */
-import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
+import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
+import type { TrackerKeyForm } from "../../shared/address.ts";
+import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { readSection, trackerConfigOf } from "../../dispatch/lib/section.ts";
+import { readDefaultConfig } from "../../ask/lib/forge.ts";
+import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { failureText } from "../../dispatch/lib/text.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import type {
   Tracker,
   TrackerUser,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
-import { type RepoTracker, trackerAt } from "../../ask/lib/pickup.ts";
 import { within } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import type { AnswerRequest } from "./answer-request.ts";
@@ -47,22 +51,57 @@ type OneAnswer = Extract<AnswerRequest, { all: false }>;
 export interface TrackerHere {
   tracker: Tracker;
   identity: string | null;
+  /** The item key form of the tracker, when the settings were read from the repository; the item is checked against it. */
+  keys?: TrackerKeyForm;
 }
 
-/** The tracker of `repo`'s checkout here, opened; why not otherwise. */
-export function openTrackerHere(
-  repo: RepoTracker | null,
+/**
+ * The tracker of the repository, opened from the settings the tick reads:
+ * the configuration file its default branch holds on the forge, never the
+ * checkout's, so an unmerged edit cannot send the answer to another tracker
+ * or remove the factory identity it is checked against. The checkout only
+ * supplies the root the adapter opens from; why not opened otherwise.
+ */
+export async function openTrackerHere(
+  ctx: AskContext,
   checkout: string | null,
-): Outcome<TrackerHere, "refused"> {
-  if (repo === null && checkout === null)
+): Promise<Outcome<TrackerHere, "refused">> {
+  if (checkout === null)
     return refused("no checkout of the repository is known here");
-  const known = repo === null ? trackerAt(checkout ?? "") : ok(repo);
-  if (!known.ok) return refused(known.failure.reason);
-  const { config, root, identity } = known.value;
-  const opened = attempt("refused", "the tracker does not open here", () =>
-    openTracker(config, root),
+  const { repo } = ctx.address;
+  const where = `${OVERLAY_RELPATH} on ${repo}'s default branch`;
+  const text = await readDefaultConfig(ctx.reading, repo);
+  if (!text.ok)
+    return refused(
+      `the tracker and factory identity of ${repo} cannot be told: ${where} did not read (${text.failure.reason})`,
+    );
+  const read = readSection(text.value, where);
+  if (!read.ok)
+    return failed(
+      "refused",
+      `${where} does not read: ${read.failure.reason}`,
+      read.failure.cause,
+    );
+  const { values, section } = read.value;
+  const config = attempt("refused", `${where} does not read`, () =>
+    trackerConfigOf(values, repo),
   );
-  return opened.ok ? ok({ tracker: opened.value, identity }) : opened;
+  if (!config.ok) return config;
+  const keys = issueKeysOf(config.value);
+  if (keys === null)
+    return refused(
+      `${where} names no tracker team, so its item keys have no form`,
+    );
+  const opened = attempt("refused", "the tracker does not open here", () =>
+    openTracker(config.value, checkout),
+  );
+  return opened.ok
+    ? ok({
+        tracker: opened.value,
+        identity: section.identity,
+        keys: (input: string) => keys.normalize(input),
+      })
+    : opened;
 }
 
 /** A tracker read here, bounded by the reading's deadline: its value, or why it did not read. */
@@ -156,7 +195,9 @@ export async function planTrackerAnswer(
   options: {
     as: string | undefined;
     dryRun: boolean;
-    open: () => Outcome<TrackerHere, "refused">;
+    open: () =>
+      | Outcome<TrackerHere, "refused">
+      | Promise<Outcome<TrackerHere, "refused">>;
   },
 ): Promise<Planned | null> {
   const needs = lineNeeds(ctx);
@@ -167,10 +208,14 @@ export async function planTrackerAnswer(
   const { need, decision } = found;
   const fault = requestFault(request, options, decision);
   if (fault !== null) return refused(fault);
-  const opened = options.open();
+  const opened = await options.open();
   if (!opened.ok) return opened;
-  const { tracker } = opened.value;
+  const { tracker, keys } = opened.value;
   const item = need.target;
+  if (keys !== undefined && keys(item) !== item)
+    return refused(
+      `${item} is not an item key of the tracker the repository's default branch names, so the answer is not written there`,
+    );
   if (tracker.commentAuthors !== true)
     return refused(
       `${item} is an item of the ${tracker.adapter} tracker, which does not name who wrote each comment, so the tick cannot count an answer there; settle it on the tracker by hand`,

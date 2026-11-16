@@ -168,15 +168,12 @@ async function planFor(
   }
   if (request.verb === "answer" && !request.all) {
     // An item of another tracker is answered as the tracker's user here.
-    const onTracker = await planTrackerAnswer(
-      contextFor(resolved, r, null),
-      request,
-      {
-        as,
-        dryRun,
-        open: () => openTrackerHere(resolved.tracker, resolved.checkout),
-      },
-    );
+    const trackerCtx = contextFor(resolved, r, null);
+    const onTracker = await planTrackerAnswer(trackerCtx, request, {
+      as,
+      dryRun,
+      open: () => openTrackerHere(trackerCtx, resolved.checkout),
+    });
     if (onTracker !== null) return onTracker;
   }
   const login = writerLogin(await readLogin(r), as, "the forge");
