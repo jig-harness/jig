@@ -30,6 +30,7 @@ import { checkPoolQuery, inWindow } from "../requests.ts";
 import { epicTypesOfLabel } from "../../../../../../shared/tracker-labels.ts";
 import type { Client, IssueListing } from "./client.ts";
 import { dispatchSource } from "./dispatch-source.ts";
+import { changeProbe } from "./dispatch-reads.ts";
 import { STATE_TYPES } from "./model.ts";
 import {
   ancestorFields,
@@ -65,6 +66,7 @@ type ReportOps = Pick<
   | "openPopulation"
   | "facetReport"
   | "dispatchSource"
+  | "changedSince"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -327,6 +329,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   }
 
   return {
+    changedSince: changeProbe(client),
     dispatchSource: dispatchSource(client, (raw, signal) =>
       pool(parseIssue(raw, ctx), raw, signal),
     ),
