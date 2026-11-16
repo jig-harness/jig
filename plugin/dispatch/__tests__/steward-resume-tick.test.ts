@@ -36,6 +36,7 @@ import {
 } from "../lib/steward.ts";
 import { framedResultOf } from "../lib/framed-result.ts";
 import { recordResult } from "../lib/launch-result.ts";
+import { recordReport } from "../lib/closing-report-store.ts";
 import { pickupPassArgv, followupPassArgv } from "../lib/session.ts";
 import { stateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -130,6 +131,22 @@ function fixture(kind: "pickup" | "followup", batch = false, output = OUTPUT) {
       said: output.split("\n").at(-1) ?? "",
       context: output,
     },
+    dispatchState(w),
+  );
+  // The pass wrote its closing report, so it is not put to the steward as a run without one.
+  recordReport(
+    OLD,
+    {
+      schema: "closing-report/v1",
+      concluded: "Stopped on a routine question.",
+      suggested_next: {
+        step: "Answer the question.",
+        owner: "person",
+        act: "Decide",
+      },
+      cause: "needs-person",
+    },
+    "agent",
     dispatchState(w),
   );
   keepStewardRun(
