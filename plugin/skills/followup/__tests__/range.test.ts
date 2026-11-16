@@ -99,8 +99,10 @@ describe("the range a merge brought in", () => {
 });
 
 describe("a single-parent merge of several commits", () => {
-  const viewOf = (files: string[]): PrView =>
-    ({ commits: ["1", "2"], files }) as unknown as PrView;
+  const viewOf = (
+    commitSubjects: string[],
+    files = ["feature.ts", "shared.ts"],
+  ): PrView => ({ commitSubjects, files }) as unknown as PrView;
 
   test("a squash stays a squash although main moved after its parent", async () => {
     const root = withFeature();
@@ -110,14 +112,14 @@ describe("a single-parent merge of several commits", () => {
     const merge = gitRun(root, "rev-parse", "HEAD");
     const squash = { kind: "squash" as const, base: before, head: merge };
     const settled = await settleSquash(
-      viewOf(["feature.ts", "shared.ts"]),
+      viewOf(["add feature", "edit shared"]),
       squash,
       runnerIn(root),
     );
-    expect(settled).toEqual(squash);
+    expect(settled).toEqual({ ok: true, value: squash });
   });
 
-  test("a rebase reaches back over every landed commit", async () => {
+  test("a rebase reaches back over every landed commit, whatever files they touch", async () => {
     const root = withFeature();
     const before = gitRun(root, "rev-parse", "HEAD");
     gitRun(root, "cherry-pick", "feature~1", "feature");
@@ -128,15 +130,82 @@ describe("a single-parent merge of several commits", () => {
       head: merge,
     };
     const settled = await settleSquash(
-      viewOf(["feature.ts", "shared.ts"]),
+      viewOf(["add feature", "edit shared"]),
       squash,
       runnerIn(root),
     );
     expect(settled).toEqual({
-      kind: "rebase",
-      base: before,
-      head: merge,
-      branchHead: merge,
+      ok: true,
+      value: { kind: "rebase", base: before, head: merge, branchHead: merge },
+    });
+  });
+});
+
+describe("a landed history that cannot be trusted", () => {
+  const view = {
+    commitSubjects: ["prepare", "finish"],
+    files: ["b.ts"],
+  } as unknown as PrView;
+
+  test("a subject collision with an unrelated commit is ambiguous", async () => {
+    const root = repository({ "a.ts": "1\n" });
+    write(root, "unrelated.ts", "x\n");
+    gitRun(root, "add", "-A");
+    gitRun(root, "commit", "-qm", "prepare");
+    write(root, "b.ts", "y\n");
+    gitRun(root, "add", "-A");
+    gitRun(root, "commit", "-qm", "finish");
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const settled = await settleSquash(
+      view,
+      {
+        kind: "squash",
+        base: gitRun(root, "rev-parse", "HEAD~1"),
+        head: merge,
+      },
+      runnerIn(root),
+    );
+    expect(settled.ok).toBe(false);
+  });
+
+  test("an unreadable history is unreadable, not a squash", async () => {
+    const root = repository({ "a.ts": "1\n" });
+    const settled = await settleSquash(
+      view,
+      { kind: "squash", base: "a".repeat(40), head: "f".repeat(40) },
+      runnerIn(root),
+    );
+    expect(settled.ok).toBe(false);
+  });
+});
+
+describe("a rebase whose commits edit one file", () => {
+  test("still reaches back over the first commit", async () => {
+    const root = repository({ "a.test.ts": "test('a', () => {});\n" });
+    gitRun(root, "checkout", "-q", "-b", "feature");
+    write(root, "a.test.ts", "test.skip('a', () => {});\n");
+    gitRun(root, "commit", "-qam", "skip a");
+    write(root, "a.test.ts", "test.skip('a', () => {});\n// note\n");
+    gitRun(root, "commit", "-qam", "annotate a");
+    gitRun(root, "checkout", "-q", "main");
+    const before = gitRun(root, "rev-parse", "HEAD");
+    gitRun(root, "cherry-pick", "feature~1", "feature");
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const settled = await settleSquash(
+      {
+        commitSubjects: ["skip a", "annotate a"],
+        files: ["a.test.ts"],
+      } as unknown as PrView,
+      {
+        kind: "squash",
+        base: gitRun(root, "rev-parse", "HEAD~1"),
+        head: merge,
+      },
+      runnerIn(root),
+    );
+    expect(settled).toEqual({
+      ok: true,
+      value: { kind: "rebase", base: before, head: merge, branchHead: merge },
     });
   });
 });

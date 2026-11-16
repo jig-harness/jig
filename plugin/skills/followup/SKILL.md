@@ -50,8 +50,8 @@ pull request starts over):
 | Field | What it holds |
 |---|---|
 | `mode` | `post-merge` for a merged pull request, `preview` for an open one (go to [Before the merge: preview](#before-the-merge-preview)); any other state is refused, exit `3` |
-| `integrationBranch`, `baseBranch` | The repository's integration branch (`repository.base_branch`, else the remote's HEAD) and the pull request's base; a base that is neither it nor a `pull_requests.base_rules` base is refused, exit `3` |
-| `mergeSha`, `range` | The merge commit, and the range it brought in, from its parents: `squash` (one parent) or `merge-commit` (two; `branchHead` is the branch's own head), `base..head`; a preview's `open` range is the branch since it left its base |
+| `integrationBranch`, `baseBranch` | The repository's integration branch (the remote's HEAD, unless the configuration read from that branch names another: never the preview's own) and the pull request's base; a base that is neither it nor a `pull_requests.base_rules` base is refused, exit `3` |
+| `mergeSha`, `range` | The merge commit, and the range it brought in, from its parents: `squash` (one parent), `rebase` (one single-parent commit per pull request commit, found by their message subjects) or `merge-commit` (two; `branchHead` is the branch's own head), `base..head`; a preview's `open` range is the branch since it left its base |
 | `changedFiles`, `changeAreas` | The files the range changes, and the change areas they touch with their `postDeploy` actions (from `drive.validation_plan_command`, else the change-area catalog); `known: false` says why they could not be read |
 | `item`, `epics` | The tracker item the merge closes (a `Closes <key>` in the description, else the key the branch name carries) and the epics a `Part of <key>` names; an epic is never the item |
 | `outOfTree` | The `## Out-of-tree follow-ups` section: whether it is `declared`, whether it `saysNone`, and each step with whether it is checked off |
@@ -112,8 +112,10 @@ write.
 
 ### tracker: the item and its epic
 
-Without an `item`, skip the item steps and record that fact (no closing
-keyword and no key in the branch name); every `epics` entry is still
+When `itemRead` is false the tracker linkage could not be read: record the
+tracker arm `unread` with the reason in `notes`, never `not-owed`. Without an
+`item` and with `itemRead` true, skip the item steps and record that fact (no
+closing keyword and no key in the branch name); every `epics` entry is still
 reconciled by step 4, and the deferred findings still apply. Record
 `not-owed` only when `epics` is empty too.
 
