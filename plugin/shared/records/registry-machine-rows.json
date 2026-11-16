@@ -147,6 +147,13 @@
   ],
   "plainMachine": [
     [
+      "dispatch-transcript-copy",
+      "dispatch/lib/transcript-copy.ts",
+      "~/.local/state/jig/dispatch/runs/<record>/transcript.jsonl, copy.json",
+      1,
+      "The end of a run's vendor transcript, at most 2 MiB with credentials redacted, kept for a pickup's or a follow-up's run that left no closing report, and what was copied or why nothing was. The steward reads its excerpt to record the run's cause, and a person reads it from the path the run's outcome row names. It is removed seven days after the steward's cause is applied, and at the latest after the machine file's receipts_days."
+    ],
+    [
       "gc-receipt",
       "gc/receipts.ts",
       "~/.local/state/jig/gc/<date>/<run id>.json",

@@ -40,7 +40,7 @@ runs, what it hands over to.
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
 | [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
-| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, and frames what still needs a person; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
+| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, frames what still needs a person, and records why a run that left no closing report fell short; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
@@ -618,9 +618,25 @@ everything wrong in one refusal, so the pass can fix it and run the command
 again. It may run more than once, before or after the result: the last
 report that passes stands, and none touches the result. The launch record
 keeps the report whole; the outcome log's `ended` row keeps its fields and
-who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
-left none), with `cause` and `by` as columns. A run that ends without a
-report still leaves its `Question:` line.
+who wrote it (`by`: `agent` for a pass's own report, `wrapper`, `steward`,
+or `none` for a run that left none), with `cause` and `by` as columns. A
+run that ends without a report still leaves its `Question:` line.
+
+When a pass leaves no report, its wrapper records what it saw, `by:
+wrapper`: a pass that could not start (`startup`, or `usage-limit` on the
+vendor's notice), one it stopped at its deadline (`deadline`), and every
+steward pass, with the cause it saw, else `unknown`. A pickup's or a
+follow-up's pass whose end the wrapper cannot explain stays `by: none`, and
+the wrapper (or, for a run whose wrapper died, the tick) copies the end of
+its transcript, found by its session id (the one the tick gave Claude Code,
+or the one a Codex pass printed), at most 2 MiB with credentials redacted,
+to `~/.local/state/jig/dispatch/runs/<record>/`, readable only by you; the
+run's row names the copy (`transcript`). Where the steward runs, it reads an
+excerpt of the copy and records the run's cause and a summary of what it had
+got to, which the next tick writes onto the row, `by: steward`. The copy is
+removed seven days after that, and at the latest after `receipts_days`.
+Jig keeps no copy of a reported run's transcript and never deletes the
+vendor's files.
 
 A drive runs many passes, and most of its stops are decided by `drive.ts`
 after a pass has ended, so no pass knows it is the last. Each pass instead
@@ -655,9 +671,11 @@ piece of work, newest first, each with its report, the next step the
 report suggests beside the tick's own next owner where the two name
 different owners, with nothing decided between them. *Needs you* shows a
 report's `question` and framed `decision` where it shows a pass's
-`Question:` line, with what the run concluded beside them. `jig ask`'s
-answer prints the last run's stage, when it ended, what it concluded and
-the next step it suggests as `last.run`.
+`Question:` line, with what the run concluded beside them. A run that ended
+without a report shows the path of its transcript's copy while there is
+one. `jig ask`'s answer prints the last run's stage, when it ended, what it
+concluded and the next step it suggests as `last.run`, or, for a run that
+left no report, the copy's path.
 
 #### Every need is a decision
 
@@ -711,7 +729,9 @@ account and load admission. It starts when the repository's
 [judgment backlog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds work no earlier pass
 judged, at once rather than on a cadence, and an empty or already judged
 backlog starts none. It can propose a transient-stop retry, a missing issue
-facet, queue tie order and the act and ask for a need nothing has framed. It can also propose one fixed resume of
+facet, queue tie order, the act and ask for a need nothing has framed, and
+the cause of a pickup's or a follow-up's run that left no closing report
+(above), read from the excerpt of its transcript as evidence. It can also propose one fixed resume of
 an ended dispatched pass that recommended an option outside the human-decision
 registry. The follow-up lane's own routine retry runs first. The next tick
 applies its closed records under the current holds and recovery budget;
@@ -1568,7 +1588,7 @@ whose configuration names the tracker.
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
 | `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
-| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report |
+| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
 **What it reads.** A `drive` or a `followup` reads the pull request and its

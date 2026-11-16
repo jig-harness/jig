@@ -14,6 +14,20 @@ It frames the act and ask for a need that remains a person's and arrived
 with no framing; a need its pass, its drive or the tick already framed as a
 decision is left as it is.
 
+A pickup's or a follow-up's run that ended without a closing report, and
+whose end its wrapper could not explain, is listed in the steward's digest
+with an excerpt of its transcript: its last assistant turns and every tool
+error after its last success. The steward reads the excerpt as evidence and
+records the run's cause, from a closed list, with a short summary of what
+the run had got to; the next tick writes it onto the run's line in the
+outcome log as its closing report, by the steward. It writes nothing to the
+tracker, runs no CI and starts no pass. The steward's own passes are never
+put to it: one that leaves no report is recorded by its wrapper. Without the
+steward, or once its hourly passes are spent, the run stays "ended without
+a report" on the dashboard, with the path of its transcript's copy on the
+host. The copy is kept seven days after the cause is recorded, and at the
+latest for the machine file's `receipts_days`.
+
 A resume the tick cannot apply is refused once, with its reason, and the
 digest then stops offering that pass: the pass framed a decision for a person,
 ended done, was already resumed, or holds no single recommended option. A
@@ -51,7 +65,8 @@ Keep the repository's other machine-file settings when adding these fields.
 A pass starts when the repository's judgment backlog holds work no earlier
 pass judged: a stalled pickup or failed follow-up with no running session, a
 stopped drive a re-arm could resolve, an ended pass recommending a resume, a
-queued item missing a facet, or a need nothing has framed yet. An empty or
+queued item missing a facet, a need nothing has framed yet, or a run that
+ended without a report. An empty or
 already judged backlog starts no pass, and the receipt and the dashboard say
 which. The host starts at most three steward passes an hour across its
 repositories, under account and host-load admission. It uses the complex tier's model of

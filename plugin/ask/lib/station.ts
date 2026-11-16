@@ -130,6 +130,9 @@ export function lastOfRow(row: EndedRow): Last {
               ? {}
               : { suggested_next: row.suggested_next }),
             ...(row.cause === undefined ? {} : { cause: row.cause }),
+            ...(row.transcript === undefined
+              ? {}
+              : { transcript: row.transcript }),
           },
         }),
   };
