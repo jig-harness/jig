@@ -98,7 +98,7 @@ async function evaluate(
   persist: () => void,
 ): Promise<void> {
   const proof = await prove(kind, resource);
-  if (proof.thrown) receipt.exitStatus = 1;
+  if (proof.thrown || proof.failing) receipt.exitStatus = 1;
   const line: ReceiptLine = {
     kind: kind.name,
     ...scope(kind),

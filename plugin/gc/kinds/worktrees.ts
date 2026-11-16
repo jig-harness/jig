@@ -48,8 +48,10 @@ import {
   guardedCollection,
   type GuardedRemoval,
   isGoneClaim,
+  inventoryFailureLine,
   isSupersededClaim,
   LAUNCH_VETO,
+  proveInventoryFailure,
   proveGone,
   proveSuperseded,
   releaseGone,
@@ -189,9 +191,10 @@ async function orcaInventory(
     return ok([...selected, ...unlisted]);
   const managed = await orcaWorktrees(command, repository);
   if (!managed.ok) {
-    // Claims settled or reported without Orca's list are still evaluated; no
-    // worktree is offered for collection while its runtime is unknown.
-    return unlisted.length === 0 ? managed : ok(unlisted);
+    // Claims settled without Orca's list are still evaluated, no worktree is
+    // offered while its runtime is unknown, and the failure stays on the receipt.
+    if (unlisted.length === 0) return managed;
+    return ok([inventoryFailureLine(managed.failure.reason), ...unlisted]);
   }
   const listed = listedIn(managed.value);
   // A checkout gone from the disk can still be registered with Git: the claim
@@ -841,6 +844,8 @@ function proveEarly(
   resource: Resource,
   repository: string,
 ): Proof | Promise<Proof> | null {
+  const incomplete = proveInventoryFailure(resource);
+  if (incomplete !== null) return incomplete;
   const claim =
     orca === undefined ? null : proveClaim(orca, resource, repository);
   if (claim !== null) return claim;

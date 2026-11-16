@@ -409,3 +409,21 @@ export function releaseGone(
       }
     : { outcome: "refused", reason: `kept: ${released.failure.reason}` };
 }
+
+/** The receipt line for an Orca list that could not be read, kept beside the claim lines settled without it. */
+export function inventoryFailureLine(reason: string): Resource {
+  return { id: "*", details: { inventoryFailure: reason } };
+}
+/** The proof of that line: unverified, and the run ends nonzero; null for any other resource. */
+export function proveInventoryFailure(resource: Resource): Proof | null {
+  if (
+    !isMapping(resource.details) ||
+    typeof resource.details.inventoryFailure !== "string"
+  )
+    return null;
+  return {
+    state: "unverified",
+    reason: `inventory incomplete: ${resource.details.inventoryFailure}`,
+    failing: true,
+  };
+}

@@ -285,6 +285,27 @@ describe.skipIf(
     expect(rmCalls(f)).toEqual([]);
   }, 60_000);
 
+  test("a superseded claim is released while Orca's unreadable list stays on the receipt and fails the run", () => {
+    const f = setup();
+    crashAfterMark(f);
+    const file = admissionFile(f);
+    f.command(["git", "worktree", "remove", "--force", f.tree]);
+    f.command(["git", "worktree", "add", f.tree, "topic"]);
+    f.writeState({ fail: ["list"] });
+    const result = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(result, 1);
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(
+      receipt.resources.find((entry) => entry.resource === file)?.outcome,
+    ).toBe("collected");
+    expect(
+      receipt.resources.find((entry) => entry.resource === "*"),
+    ).toMatchObject({
+      outcome: "unverified",
+    });
+    expect(receipt.exitStatus).toBe(1);
+  }, 60_000);
+
   test("a live collection's submitted admission is left alone, even once its worktree is gone", () => {
     const f = setup();
     const held = admit(f.tree, f.repo, f.guard);
