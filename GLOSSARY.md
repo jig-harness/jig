@@ -3069,7 +3069,9 @@ make, use the entry's term instead.
   released on every exit and judged abandoned when its owner is no longer
   alive; one submitted to Orca stays until the removal is known to have
   settled, since the owner dying or the call failing does not say whether
-  Orca finished.
+  Orca finished. It names the repository whose collection took it, the only
+  one that settles it from Orca's list, and the *worktree incarnation* it was
+  taken on, so a worktree made again at the path does not inherit it.
 - **Temporal** — the platform's date and time API, which Jig's code uses
   instead of `Date`: an `Instant` is a moment, a `ZonedDateTime` a moment
   on a named calendar, a `PlainDate` a day, a `Duration` a length, all

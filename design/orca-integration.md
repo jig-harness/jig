@@ -12,8 +12,7 @@ and workspace names, and the [dispatcher](../GLOSSARY.md)'s
 ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
 Of the rest of the execution line, the board, collection through Orca and
 a plugin that wakes the dispatcher are built, as are the plugin's launch
-guard, status bar item and inbox. What remains is the launch guard's
-admission, which names only a worktree path, the dispatcher's reading of an
+guard, status bar item and inbox. What remains is the dispatcher's reading of an
 account's usage from Orca's command line, a trial of binding a launch to an
 account, and the panel's picking of a parked decision's structured option
 (its free-text answer is built) and its merge button.
@@ -125,13 +124,20 @@ launch that passed just before the admission even before Orca's registry
 lists it, and keeps that worktree. gc releases an admission it never submitted on every
 exit: when a proof, a teardown step or the call itself fails or throws before
 `orca worktree rm` is called. The admission names its owner by the
-machine-wide holder record, and gc marks it submitted just before it calls
+machine-wide holder record, the repository whose collection took it and
+the incarnation of the worktree it was taken on (what stands at the path:
+its inode and birth time, since Orca can reuse a worktree's id at a path
+made again), and gc marks it submitted just before it calls
 `orca worktree rm`. Orca documents no query that says whether a removal
 finished, and the registry and the worktree list show only what exists, so
-gc relies on no settlement evidence it cannot observe. Only two things
+gc relies on no settlement evidence it cannot observe. Only three things
 release a submitted admission: the removal call's own reply, success or an
-explicit refusal, and the worktree's absence from Orca's list and from the
-disk. Every other outcome is ambiguous (a timeout at the removal command's
+explicit refusal; the worktree's absence from the list of Orca's worktrees
+of the repository the admission names, and from the disk; and another
+incarnation of the worktree at its path, which proves the one it claimed
+gone. Another repository's list cannot hold the worktree, so its absence
+there proves nothing, and a worktree made again at the path does not
+inherit the old claim's block. Every other outcome is ambiguous (a timeout at the removal command's
 deadline, a throw, a nonzero exit, output gc cannot read, a crashed gc), and
 so is a crash between the mark and the call, which looks the same afterwards:
 the claim stays and the hook keeps refusing launches into that worktree. The
@@ -141,8 +147,9 @@ claim from the dead or finished owner, repeats its idle proof and calls
 releases the claim. Repeating the call is safe because the claim still
 excludes every launch the hook mediates and the proof is read afresh. A
 worktree that is gone is never collected again, so each run of the worktrees
-kind also lists every claim a collector that ended left on a worktree gone
-from Orca's list and from the disk, and collecting that line deletes it. A
+kind also lists every claim a collector of its repository that ended left on
+a worktree gone from Orca's list and from the disk, or made again since, and
+collecting that line deletes it. A
 removal that keeps failing holds its worktree closed to launches and, while
 the worktree's idle proof still holds, appears in each run's receipt with the
 reason the claim stays, until the cause is fixed. A worktree whose proof finds
@@ -414,8 +421,7 @@ the page, a phone reaches the dashboard through a front only.
 
 One pull request each; each is usable on its own. Steps 1 to 6 and the
 first parts of 8 and 9 are built. The steps still open run in parallel where
-nothing orders them: the admission's repository and worktree incarnation
-(step 6), the account binding spike (step 7), the dispatcher's usage reading
+nothing orders them: the account binding spike (step 7), the dispatcher's usage reading
 (step 4's ask, once Orca offers it) and the panel's option picking and merge button
 (step 9).
 
@@ -437,7 +443,8 @@ nothing orders them: the admission's repository and worktree incarnation
    [its own repository](https://github.com/jig-harness/orca-plugin); the
    listing is open): the manifest, the worker, validation in its own CI.
 6. **The launch guard.** In Jig, the launch guard record: gc's admission taken
-   before its last registry read and released after the removal, a launch
+   before its last registry read and released after the removal, naming the
+   repository that took it and the worktree's incarnation, a launch
    noted after the admission keeping the worktree, the heartbeat's
    freshness, and a receipt that says guarded or unguarded. Then, in the
    plugin, the `agent.launch.before` hook that reads the record and refuses

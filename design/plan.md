@@ -705,10 +705,7 @@ dispatcher when an agent's status changes, refuses a launch into a worktree
 opens a panel on the person's inbox, where a park is answered.
 [design/orca-integration.md](orca-integration.md) has how it works, in
 classes built in order. Still open, one pull request per step, in
-parallel where nothing orders them: the launch guard admission names only
-a worktree path today, and the step makes it record the repository that
-owns the worktree and the worktree's incarnation
-([#1201](https://github.com/jig-harness/jig/issues/1201)); a spike on
+parallel where nothing orders them: a spike on
 binding a launch to the dispatcher's chosen account through the
 `agent.launch.before` hook, for Claude Code and for Codex
 ([#1306](https://github.com/jig-harness/jig/issues/1306)); the
@@ -730,10 +727,7 @@ per account from the command line, a phone
 push only when an agent needs input, and a hook before a workspace's
 removal.
 
-Done when a launch guard admission is honoured only for the repository
-that owns it and the worktree incarnation it was taken on, so another
-repository's list cannot release it and a worktree recreated at the same
-path inherits no launch block; the spike's answer is recorded and, where a
+Done when the spike's answer is recorded and, where a
 launch binds to its account, the dispatcher starts pickups through Orca on
 the account it chose, or, where it does not, the design records why; the dispatcher's account cap reads `orca account
 usage --json` where Orca has it, an `unavailable` row holding its account;
