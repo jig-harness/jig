@@ -81,7 +81,7 @@ async function readHere<T>(
   }
 }
 
-/** Why `viewer` may not answer: it is the factory identity, whose comments the tick never counts; `null` when it may, or when that cannot be told. */
+/** Why `viewer` may not answer: it is the factory identity, whose comments the tick never counts, or the identity could not be looked up; `null` when it may. */
 async function factoryFault(
   ctx: AskContext,
   here: TrackerHere,
@@ -92,7 +92,9 @@ async function factoryFault(
   const factory = await readHere(ctx, "the factory identity", () =>
     tracker.user(identity),
   );
-  return factory.ok && factory.value.id === viewer.id
+  if (!factory.ok)
+    return `the factory identity ${identity} could not be looked up, so it cannot be told apart from the user the tracker's credential acts as: ${factory.failure.reason}`;
+  return factory.value.id === viewer.id
     ? `the tracker's credential here acts as ${viewer.name}, the factory identity ${identity}, whose comments the tick never counts as an answer; answer on the tracker as yourself`
     : null;
 }

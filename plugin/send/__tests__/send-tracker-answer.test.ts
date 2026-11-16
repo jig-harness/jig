@@ -202,6 +202,18 @@ describe("jig send … answer on an item of another tracker", () => {
     ]);
   });
 
+  it("refuses when the factory identity cannot be looked up", async () => {
+    const t = tracker(DANA, {
+      user: async () => {
+        throw new Error("lookup down");
+      },
+    } as Partial<Tracker>);
+    const planned = await plan(t);
+    expect(planned?.ok).toBe(false);
+    expect(JSON.stringify(planned)).toContain("could not be looked up");
+    expect(t.posted).toEqual([]);
+  });
+
   it("prints the command to send on a dry run and refuses a real send that names no digest", async () => {
     const dry = await plan(tracker(DANA), approve(), { dryRun: true });
     expect(dry?.ok && dry.value.detail).toContainEqual([

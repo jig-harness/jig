@@ -30,6 +30,20 @@ function tracker(nodes: unknown[]) {
 }
 
 describe("Linear adapter: comment authors", () => {
+  it("keeps a malformed edit time as written so the answer reader rejects the comment", async () => {
+    const { t } = tracker([
+      {
+        id: "c1",
+        body: "answer pickup: approve",
+        createdAt: "2026-09-02T00:00:00.000Z",
+        editedAt: "not-a-time",
+        user: { id: "u-dana", name: "Dana Lee", guest: false },
+      },
+    ]);
+    const { comments } = await t.issueComments("ENG-1");
+    expect(comments[0]?.editedAt).toBe("not-a-time");
+  });
+
   it("names each comment's author, its link and its last edit, in one request", async () => {
     const { t, queries } = tracker([
       {

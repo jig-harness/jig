@@ -239,13 +239,14 @@ function sessionKey(cause: NeedCause): StationKey | null {
 function answeredOf(
   action: Action,
   decision: LineDecision,
-): Pick<LineDecision, "answers" | "answerState" | "acted"> {
+): Pick<LineDecision, "answers" | "answerState" | "unread" | "acted"> {
   const answered = action.answered;
   if (answered === undefined || answered.digest !== decision.digest) return {};
   const acted = answered.acted;
   return {
     ...(answered.answers.length === 0 ? {} : { answers: answered.answers }),
     ...(answered.state === undefined ? {} : { answerState: answered.state }),
+    ...(answered.unread === undefined ? {} : { unread: answered.unread }),
     ...(acted === undefined
       ? {}
       : {

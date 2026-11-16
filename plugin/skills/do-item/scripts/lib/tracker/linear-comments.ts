@@ -58,10 +58,9 @@ export function commentFacts(nodes: unknown[], key: string): CommentFact[] {
       trusted: trustedUser(c.user),
       author: authorOf(c.user),
       ...(typeof c.url === "string" && c.url !== "" ? { url: c.url } : {}),
-      editedAt:
-        typeof c.editedAt === "string" && Number.isFinite(parseMs(c.editedAt))
-          ? c.editedAt
-          : null,
+      // A supplied but malformed edit time is kept as written so the answer
+      // reader rejects the comment; only an absent one reads as never edited.
+      editedAt: typeof c.editedAt === "string" ? c.editedAt : null,
     };
   });
   return comments.sort(

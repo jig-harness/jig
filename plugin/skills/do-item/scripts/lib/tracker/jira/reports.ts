@@ -487,16 +487,16 @@ export function reportOperations(
       return out;
     },
 
-    async issueComments(key) {
+    async issueComments(key, signal) {
       requireOwnKey(key);
-      const issue = await client.mustIssue(key);
+      const issue = await client.mustIssue(key, signal);
       const comments = [];
-      for (const c of await client.comments(issue.key))
+      for (const c of await client.comments(issue.key, signal))
         comments.push({
           id: c.id,
           body: c.body,
           createdAt: c.createdAt,
-          trusted: await client.trusted(c.author),
+          trusted: await client.trusted(c.author, signal),
           author: commentAuthor(c.author),
           url: commentUrl(client.site, issue.key, c.id),
           editedAt: c.editedAt,

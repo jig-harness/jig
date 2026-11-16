@@ -750,7 +750,7 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * comments in the same order, which the claim marker's earliest-wins rule
    * rests on.
    */
-  issueComments(key: string): Promise<IssueComments>;
+  issueComments(key: string, signal?: AbortSignal): Promise<IssueComments>;
   /** Delete a comment of the issue by its id (`CommentFact.id`). */
   deleteComment(key: string, id: string): Promise<void>;
 

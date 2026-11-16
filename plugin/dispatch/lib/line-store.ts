@@ -122,6 +122,7 @@ const DECISION_FIELDS: Fields = {
     })(value),
   answerState: (value) =>
     value === undefined || value === "stale" || value === "disputed",
+  unread: (value) => value === undefined || isString(value),
   answer: (value) =>
     value === undefined ||
     hasFields(value, {

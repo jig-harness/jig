@@ -267,6 +267,20 @@ describe("the answers on an item of another tracker", () => {
     ]);
   });
 
+  it("keeps a label apart when a user's real name spells another user's label", async () => {
+    const { tracker } = onTracker([
+      fact("answer pickup: approve", { id: "u1", name: "Sam" }),
+      fact("answer pickup: approve", { id: "u2", name: "Sam" }),
+      fact("answer pickup: approve", { id: "u3", name: "Sam (u1)" }),
+    ]);
+    const read = await stationPorts(inputs({ tracker })).trackerComments(
+      "ENG-12",
+    );
+    const labels = read.ok ? read.value.map((c) => c.author.toLowerCase()) : [];
+    expect(labels).toHaveLength(3);
+    expect(new Set(labels).size).toBe(3);
+  });
+
   it("does not read a tracker that cannot name who wrote a comment, one that did not open, or one that fails, and says why", async () => {
     const cases: Array<[Tracker | null, string]> = [
       [

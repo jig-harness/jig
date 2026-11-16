@@ -1034,7 +1034,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       });
     },
 
-    async issueComments(key) {
+    async issueComments(key, signal) {
       if (keyRe.exec(key) === null)
         throw new Error(`not a ${team} issue id: ${key}`);
       let uuid = "";
@@ -1050,6 +1050,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
           return issue.comments;
         },
         `comments of ${key}`,
+        signal,
       );
       const comments = commentFacts(nodes, key);
       return { uuid, comments } satisfies IssueComments;

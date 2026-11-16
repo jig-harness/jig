@@ -245,11 +245,9 @@ export function gitHubTracker(client: Client): Tracker {
             n.viewerDidAuthor === true,
           author: authorOf(n.author),
           ...(typeof n.url === "string" && n.url !== "" ? { url: n.url } : {}),
-          editedAt:
-            typeof n.lastEditedAt === "string" &&
-            Number.isFinite(parseMs(n.lastEditedAt))
-              ? n.lastEditedAt
-              : null,
+          // A supplied but malformed edit time is kept as written so the
+          // answer reader rejects the comment.
+          editedAt: typeof n.lastEditedAt === "string" ? n.lastEditedAt : null,
         };
       }),
     };

@@ -45,7 +45,13 @@ function plainText(body: string): string {
   return body.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 }
 
-/** Each author's name as answers show it: a name two users share carries the user's id. */
+/**
+ * Each author's label as answers show it, one per user id: the answer reader
+ * tells people apart by this label alone, so no two users share one. A name
+ * two users share carries the user's id, and a label that still equals
+ * another user's (a name that spells out `Sam (u1)`) is made distinct by
+ * the id again.
+ */
 function namesOf(comments: readonly CommentFact[]): Map<string, string> {
   const ids = new Map<string, Set<string>>();
   for (const { author } of comments) {
@@ -53,14 +59,24 @@ function namesOf(comments: readonly CommentFact[]): Map<string, string> {
     const key = author.name.toLowerCase();
     ids.set(key, (ids.get(key) ?? new Set()).add(author.id));
   }
-  const names = new Map<string, string>();
-  for (const { author } of comments) {
-    if (author == null) continue;
-    const shared = (ids.get(author.name.toLowerCase())?.size ?? 0) > 1;
-    names.set(
-      author.id,
-      shared ? `${author.name} (${author.id})` : author.name,
+  const authors = new Map<string, string>();
+  for (const { author } of comments)
+    if (author != null) authors.set(author.id, author.name);
+  const wanted = new Map<string, string>();
+  for (const [id, name] of authors)
+    wanted.set(
+      id,
+      (ids.get(name.toLowerCase())?.size ?? 0) > 1 ? `${name} (${id})` : name,
     );
+  const taken = new Set<string>();
+  const names = new Map<string, string>();
+  for (const [id, label] of [...wanted].sort(([x], [y]) =>
+    x.localeCompare(y),
+  )) {
+    let unique = label;
+    while (taken.has(unique.toLowerCase())) unique = `${unique} (${id})`;
+    taken.add(unique.toLowerCase());
+    names.set(id, unique);
   }
   return names;
 }
@@ -90,25 +106,25 @@ function trackerConversation(
 
 /** `work`'s value, or why it failed or did not settle within `TRACKER_READ_MS`. */
 async function bounded<T>(
-  work: () => Promise<T>,
+  work: (signal: AbortSignal) => Promise<T>,
   what: string,
 ): Promise<Outcome<T, "unreadable">> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = new AbortController();
   const late = new Promise<Outcome<T, "unreadable">>((resolve) => {
-    timer = setTimeout(
-      () =>
-        resolve(
-          failed(
-            "unreadable",
-            `${what} did not read within ${TRACKER_READ_MS / 1000} s`,
-          ),
+    timer = setTimeout(() => {
+      stop.abort();
+      resolve(
+        failed(
+          "unreadable",
+          `${what} did not read within ${TRACKER_READ_MS / 1000} s`,
         ),
-      TRACKER_READ_MS,
-    );
+      );
+    }, TRACKER_READ_MS);
   });
   const read = (async (): Promise<Outcome<T, "unreadable">> => {
     try {
-      return ok(await work());
+      return ok(await work(stop.signal));
     } catch (error) {
       return failed(
         "unreadable",
@@ -149,7 +165,7 @@ export async function readTrackerAnswers(
   );
   if (!me.ok) return me;
   const read = await bounded(
-    () => tracker.issueComments(item),
+    (signal) => tracker.issueComments(item, signal),
     `the comments of ${item}`,
   );
   return read.ok
