@@ -109,11 +109,19 @@ test("jig budget shows spending no counted call explains as unattributed, never 
     durationMs: 0,
   });
   const run = (json: boolean) => {
-    const args = JSON.stringify(json ? ["budget", "--json"] : ["budget"]);
-    const script = `import {main} from ${JSON.stringify(jig)}; import {withLedgerPath} from ${JSON.stringify(ledger)}; process.exit(await withLedgerPath(${JSON.stringify(path)},()=>main(${args})));`;
+    // The script is fixed text; the values reach it through the environment.
+    const script =
+      "const {main} = await import(process.env.TEST_JIG); const {withLedgerPath} = await import(process.env.TEST_LEDGER); process.exit(await withLedgerPath(process.env.TEST_PATH, () => main(JSON.parse(process.env.TEST_ARGS))));";
     const result = Bun.spawnSync([process.execPath, "--eval", script], {
       stdout: "pipe",
       stderr: "pipe",
+      env: {
+        ...process.env,
+        TEST_JIG: jig,
+        TEST_LEDGER: ledger,
+        TEST_PATH: path,
+        TEST_ARGS: JSON.stringify(json ? ["budget", "--json"] : ["budget"]),
+      },
     });
     expectSpawnExit(result, 0);
     return result.stdout.toString();
