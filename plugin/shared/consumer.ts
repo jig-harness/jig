@@ -18,6 +18,7 @@ import {
   sourceOf,
 } from "./config-layers.ts";
 import { JigError } from "./errors.ts";
+import { checkRules, RULE_FIELDS } from "./rule-matcher.ts";
 
 export { OVERLAY_RELPATH };
 
@@ -194,8 +195,23 @@ export function layeredConfig(
   repositoryText?: string | null,
 ): LayeredConfig {
   const config = loadLayeredConfig(root, env, repositoryText);
+  refuseMalformedRules(config);
   loaded.set(config.values, config);
   return config;
+}
+
+/**
+ * Every rule of a field the rule matcher reads, checked before any skill
+ * acts on the configuration: a rule naming an unknown fact or giving a
+ * value of the wrong kind fails the read, naming the field and the file or
+ * variable that set it.
+ */
+function refuseMalformedRules(config: LayeredConfig): void {
+  const checked = checkRules(config.values);
+  if (checked.ok) return;
+  const { reason } = checked.failure;
+  const field = fieldInMessage(reason, Object.keys(RULE_FIELDS));
+  throw new JigError("config-invalid", `${reason}: ${sourceOf(config, field)}`);
 }
 
 /**
