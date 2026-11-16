@@ -15,6 +15,13 @@ import {
   githubCredential,
   setForgeGovernor,
 } from "../../../shared/outbound/github-budget.ts";
+import { claimForgeSlot } from "../../../shared/outbound/forge-pacing.ts";
+import {
+  heldSystems,
+  holdUnanswered,
+  stopHolding,
+} from "../../../shared/outbound/hold.ts";
+import { setDefaultLedgerPath } from "../../../shared/outbound/ledger.ts";
 import { ghRunFailure } from "../../../shared/outbound/github.ts";
 import type { OutboundFailure } from "../../../shared/outbound/failure.ts";
 import { closeDatabase } from "../../../shared/records/db.ts";
@@ -384,5 +391,53 @@ describe("a GitHub request over HTTPS in the shared budget record", () => {
       (error: unknown) => error,
     );
     expect((untouched as GitHubApiError).sent).toBe(false);
+  });
+  it("holds no system and sends nothing when a request is cancelled while waiting for its pacing slot", async () => {
+    const path = databasePath();
+    setDefaultLedgerPath(path);
+    holdUnanswered(`${path}.hold`);
+    cleanups.push(() => {
+      stopHolding();
+      setDefaultLedgerPath(null);
+    });
+    const env = { ...ENV, JIG_FORGE_BUDGET: "on" };
+    setForgeGovernor(
+      budgetGovernor(sqliteBudgetStore(path), { share: () => null }),
+    );
+    // Another process took the credential's slot, so the request must wait.
+    const owner = githubCredential(env);
+    const claimed = claimForgeSlot(owner, currentMs(), path);
+    expect(claimed.ok && claimed.value).toBe(0);
+    let fetched = 0;
+    const counting = (async () => {
+      fetched += 1;
+      return Response.json({ data: {} });
+    }) as unknown as typeof fetch;
+    const controller = new AbortController();
+    const pending = httpTransport(
+      "https://github.example/graphql",
+      TOKEN,
+      counting,
+      env,
+    )(QUERY, {}, controller.signal, false).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    controller.abort(new Error("stop"));
+    const refused = await pending;
+    expect(refused).toBeInstanceOf(GitHubApiError);
+    expect((refused as GitHubApiError).sent).toBe(false);
+    expect(fetched).toBe(0);
+    expect(heldSystems().size).toBe(0);
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const next = await httpTransport(
+      "https://github.example/graphql",
+      TOKEN,
+      counting,
+      env,
+    )(QUERY, {}, undefined, false);
+    expect(next).toBeDefined();
+    expect(fetched).toBe(1);
   });
 });
