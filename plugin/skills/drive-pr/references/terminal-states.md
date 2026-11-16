@@ -1671,7 +1671,8 @@ false "green":
   id in favour of a lower one started in the same second; with a job that
   ran, because a run that skipped everything has looked at nothing. A cancelled
   job stays unknown when the replacing run reports its name as skipped, or
-  reports it only under its matrix's expanded names and skipped any of them. A
+  reports it only under its matrix's expanded names and any of them has no
+  result. A
   failed job in a cancelled run still counts as failing, regardless of when it
   started; when every failing check is such a job, with no failing commit
   status beside them, and at least one cancelled job still lacks a replacement,

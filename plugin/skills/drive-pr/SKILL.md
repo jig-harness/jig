@@ -369,8 +369,8 @@ still counts as failing. Once a run of the same workflow on this head, started n
 earlier, has completed with a result, the cancelled run's checks no longer
 count, under whatever name they carry, except that an unsuccessful check stays
 when the replacing runs report its name only as skipped, or report it only
-under its matrix's expanded names (`tests (1/2)` for `tests`) and skipped any
-of them. The event that started
+under its matrix's expanded names (`tests (1/2)` for `tests`) and any of them
+has no result. The event that started
 either run does not matter. A failure beside a cancelled check is still a failure, and
 reads `failing: …`. When every failing check is a job of a run that concluded
 `cancelled` (an always-run aggregator fails when a job it needs was cancelled),

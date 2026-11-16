@@ -211,9 +211,12 @@ function replacedSuites(
  * name at all, nor any name of its matrix (a check the later run does not
  * have). A successor that reports the name without a result (it skipped)
  * answers nothing, so the job stays, unless another successor did supply one.
- * A successor that reports it only under its matrix's expanded names answers
- * it only when every one of them has a result: a matrix whose legs were
- * skipped, wholly or partly, has not run the job. Jobs that passed never stay.
+ * A successor that reports it only under its matrix's expanded names
+ * (`tests (1/2)` for `tests`) answers it only when every one of them has a
+ * result: a matrix whose legs were skipped, wholly or partly, has not run the
+ * job. A separate job whose name merely extends this one's reads as a leg, so
+ * the ambiguity keeps the check rather than passing it. Jobs that passed
+ * never stay.
  */
 function answeredBySkip(
   job: JobEvidence,
@@ -231,11 +234,11 @@ function answeredBySkip(
       successors.includes(other.suiteId),
   );
   const exact = named.filter((other) => other.name === job.name);
-  const family = matrixFamily(job.name);
+  const prefix = `${matrixTemplate(job.name)} (`;
   const reports =
     exact.length > 0
       ? exact
-      : named.filter((other) => matrixFamily(other.name ?? "") === family);
+      : named.filter((other) => other.name?.startsWith(prefix) === true);
   const names = new Set(reports.map((other) => other.name));
   return [...names].some(
     (name) =>
@@ -250,12 +253,15 @@ function answeredBySkip(
 }
 
 /**
- * A job's name less the matrix leg GitHub appends in parentheses: a template
- * cancelled before its matrix expanded and each expanded leg share it.
+ * The name a job's matrix legs extend with ` (<leg>)`: the job's own name, or,
+ * for a template cancelled before its matrix expanded, that name less its
+ * last parenthesised suffix, the one still holding a `${{ … }}` expression.
  */
-function matrixFamily(name: string): string {
-  const leg = name.indexOf(" (");
-  return leg === -1 ? name : name.slice(0, leg);
+function matrixTemplate(name: string): string {
+  const leg = name.lastIndexOf(" (");
+  return leg !== -1 && name.slice(leg).includes("${{")
+    ? name.slice(0, leg)
+    : name;
 }
 
 /**
