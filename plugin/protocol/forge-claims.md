@@ -14,7 +14,7 @@ twice, or still be announced once it no longer is. A
 is that record: a comment on the pull request that says who took which
 piece of work, decided by one rule that every reader applies the same way.
 
-This chapter covers three of them:
+This chapter covers these:
 
 - **The takeover claim** (`drive-takeover-claim`): a driver in another
   clone claims the drive of the pull request, either to
@@ -111,11 +111,11 @@ form its schema gives it. A reader never guesses what such a claim meant:
   announce refuses instead, for a person to settle.
 
 A field this chapter does not list is not read, and a reader keeps reading
-the rest of the claim. Three fields are read loosely: an end's `by` and
+the rest of the claim. Some fields are read loosely: an end's `by` and
 `cause` read as absent when they name a value the closing report does not
 list, and a launch's `conflictStop` reads as false unless it is `true`.
 
-Two earlier forms still read: a takeover claim written before claims carried
+Earlier forms still read: a takeover claim written before claims carried
 the envelope, whose data marker holds `actor`, `clone`, `generation` and
 `at` with no `kind`; and an announcement written before it carried a record,
 which only ends with its head marker.

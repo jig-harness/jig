@@ -1,5 +1,5 @@
 /**
- * The chapter on three forge claims: the takeover claim, the dispatcher's
+ * The chapter on the forge claims: the takeover claim, the dispatcher's
  * launch claim and the merge-ready announcement, generated from their kinds
  * in the records registry and their tables (`FORGE_CLAIM_FIELDS`,
  * `LAUNCH_CLAIM_VALUES`). The follow-up claim, a forge claim too, has a

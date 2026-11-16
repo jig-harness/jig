@@ -253,7 +253,7 @@ of the claim it lost. A claim in a form
 written before the envelope still reads. Each claim's fields, the values
 its reader accepts and its JSON Schema are in its Protocol chapter:
 [the follow-up claim's](protocol/followup-claim.md) and
-[the other three's](protocol/forge-claims.md). What this cannot close: two claims
+[the takeover, launch and merge-ready claims'](protocol/forge-claims.md). What this cannot close: two claims
 whose read-backs each lag past the other's comment both read themselves the
 winner, and a re-check that lags the same way passes. The earlier comment
 still wins at the first read that lists both, and each kind's callers act on

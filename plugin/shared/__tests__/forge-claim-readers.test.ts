@@ -6,7 +6,7 @@
  * marker), every optional field present and absent, and each way a field can
  * break. The readers validate against the shape descriptions the Protocol's
  * schemas are generated from (`records/forge-claim-shapes.ts`); these cases
- * hold them to what they read before.
+ * pin what each reader accepts and the reason each refusal gives.
  */
 import { describe, expect, it } from "bun:test";
 import { claimBody, readClaim } from "../records/forge-claims.ts";

@@ -1,5 +1,5 @@
 /**
- * The shapes of three forge claims' records beside their envelope: the
+ * The shapes of forge claims' records beside their envelope: the
  * takeover claim, the launch claim and the merge-ready announcement. Each
  * claim's reader (`skills/drive-pr/scripts/lib/state/ledger.ts`,
  * `launch-claims.ts`, `skills/drive-pr/scripts/lib/announce.ts`) accepts a
@@ -9,9 +9,8 @@
  * repeats its generation, that a launch claim names the pull request it is
  * on, and that an announcement's record and its head marker name one head.
  *
- * Fields a reader has always read loosely stay loose here (an unknown value
- * of a launch's `conflictStop`, or of its end's `by` and `cause`, reads as
- * absent), so that every claim a reader accepted before still reads.
+ * Some fields are read loosely: an unknown value of a launch's
+ * `conflictStop`, or of its end's `by` and `cause`, reads as absent.
  */
 import { s, type Shape } from "../shapes.ts";
 import { LAUNCH_CLAIM_VALUES } from "./forge-claim-values.ts";
@@ -76,8 +75,10 @@ export const LAUNCH_END_STATE_SHAPES = {
 export const LAUNCH_END_SHAPE = s.union([ENDED_END_SHAPE, DIED_END_SHAPE]);
 
 /**
- * The launch claim's own fields beside the pull request it names, in the
- * order its reader reports the first that does not read.
+ * The launch claim's own fields beside the pull request it names. Its reader
+ * reports the first that does not read in the order of `LAUNCH_FIELD_FAULTS`
+ * (`launch-claims.ts`), and the end's through `endFault`: a field that can
+ * fail to read needs its reason there.
  */
 export const LAUNCH_PAYLOAD_FIELDS = {
   action: s.enum(Object.keys(LAUNCH_CLAIM_VALUES.action) as LaunchAction[]),
