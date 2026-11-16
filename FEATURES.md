@@ -66,7 +66,9 @@ merge or rebase so both sides' intent survives. When continuous integration
 ([CI](GLOSSARY.md)) turns red, the drive runs a repair round of its own,
 within a budget. The drive stops in one named end state, such as converged,
 waiting on a person or conflicting. A person merges. Outside a drive, an
-agent fixes a failed CI run from its log.
+agent fixes a failed CI run from its log. After the merge, an agent settles
+what the merge still owes, from the tracker item to the release, with the
+evidence for each.
 
 A drive survives its driver. Its state lives in a
 [drive ledger](GLOSSARY.md) on the pull request, so a drive started on one
@@ -86,7 +88,8 @@ restarts the drive.
   [`drive-pr`](plugin/skills/drive-pr/README.md),
   [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md),
   [`fix-ci`](plugin/skills/fix-ci/SKILL.md),
-  [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md)
+  [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md),
+  [`followup`](plugin/skills/followup/README.md)
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a converged drive arming the merge it certified
