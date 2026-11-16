@@ -29,6 +29,8 @@ export interface CallRecord {
   operation: string;
   caller?: string;
   requests?: number;
+  /** Of `requests`, how many a conditional request had answered `304 Not Modified`. */
+  notModified?: number;
   cost?: number | null;
   unit?: string;
   estimated?: boolean;
@@ -45,6 +47,8 @@ export interface LedgerRow {
   caller: string;
   unit: string;
   requests: number;
+  /** Of `requests`, how many a conditional request had answered `304 Not Modified`; 0 for a row written without the count. */
+  notModified?: number;
   cost: number;
   unknownCost: number;
   estimated: number;
@@ -153,6 +157,20 @@ function writeQuota(
     "INSERT OR REPLACE INTO outbound_cost_quota VALUES (?,?,?,?,?,?,?,?)",
   ).run(...keys, input.owner ?? null, input.window ?? null);
 }
+/** Add an attempt's `304 Not Modified` answers to its row's count, kept beside the row like its quota. */
+function writeNotModified(
+  db: Database,
+  keys: (string | number)[],
+  input: CallRecord,
+  cutoff: number,
+): void {
+  db.query("DELETE FROM outbound_cost_not_modified WHERE hour < ?").run(cutoff);
+  const count = positive(input.notModified);
+  if (count === 0) return;
+  db.query(
+    "INSERT INTO outbound_cost_not_modified VALUES (?,?,?,?,?,?,?) ON CONFLICT DO UPDATE SET not_modified = not_modified + excluded.not_modified",
+  ).run(...keys, count);
+}
 /** Record one actual attempt (or a local refusal with zero requests), retaining no payload or secret. */
 export function recordCall(input: CallRecord): void {
   try {
@@ -219,12 +237,9 @@ export function recordCall(input: CallRecord): void {
           (prior?.duration_ms ?? 0) + duration,
           JSON.stringify(failures),
         );
-        writeQuota(
-          db,
-          keys,
-          input,
-          Math.ceil((at - LEDGER_RETENTION_MS) / HOUR) * HOUR,
-        );
+        const cutoff = Math.ceil((at - LEDGER_RETENTION_MS) / HOUR) * HOUR;
+        writeQuota(db, keys, input, cutoff);
+        writeNotModified(db, keys, input, cutoff);
       });
     } finally {
       db.run("PRAGMA busy_timeout = 10000");
@@ -248,6 +263,7 @@ interface RawRow {
   failures: string;
   owner?: string | null;
   quota_window?: string | null;
+  not_modified?: number | null;
 }
 /** Read without creating or migrating a database; absent storage is an empty report. */
 export function ledgerReport(
@@ -277,11 +293,22 @@ export function ledgerReport(
       db
         .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
         .get(table) !== null;
-    // A database an earlier copy created has no quota table: its rows name
-    // no owner or window, and a reader infers them.
-    const quota = has("outbound_cost_quota")
-      ? "SELECT c.*, q.owner AS owner, q.quota_window AS quota_window FROM outbound_cost c LEFT JOIN outbound_cost_quota q ON q.hour=c.hour AND q.system=c.system AND q.credential=c.credential AND q.operation=c.operation AND q.caller=c.caller AND q.unit=c.unit"
-      : "SELECT c.*, NULL AS owner, NULL AS quota_window FROM outbound_cost c";
+    // A database an earlier copy created has no quota table, nor a count of
+    // not-modified answers: its rows name no owner or window, which a reader
+    // infers, and count no 304 answers.
+    const beside = (table: string, alias: string) =>
+      has(table)
+        ? ` LEFT JOIN ${table} ${alias} ON ${alias}.hour=c.hour AND ${alias}.system=c.system AND ${alias}.credential=c.credential AND ${alias}.operation=c.operation AND ${alias}.caller=c.caller AND ${alias}.unit=c.unit`
+        : "";
+    const quotaJoin = beside("outbound_cost_quota", "q");
+    const notModifiedJoin = beside("outbound_cost_not_modified", "n");
+    const quota = `SELECT c.*, ${
+      quotaJoin === ""
+        ? "NULL AS owner, NULL AS quota_window"
+        : "q.owner AS owner, q.quota_window AS quota_window"
+    }, ${
+      notModifiedJoin === "" ? "NULL" : "n.not_modified"
+    } AS not_modified FROM outbound_cost c${quotaJoin}${notModifiedJoin}`;
     const rows = hasLedger
       ? (db
           .query(
@@ -330,9 +357,11 @@ export function ledgerReport(
             failures,
             owner,
             quota_window,
+            not_modified,
             ...row
           }) => ({
             ...row,
+            notModified: not_modified ?? 0,
             unknownCost: unknown_cost,
             durationMs: duration_ms,
             failures: JSON.parse(failures),

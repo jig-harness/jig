@@ -42,4 +42,17 @@ export const BUDGET_MIGRATIONS: readonly Migration[] = [
       PRIMARY KEY (hour, system, credential, operation, caller, unit)
     );`,
   },
+  {
+    // How many of an hourly ledger row's requests a conditional request
+    // answered `304 Not Modified` (`ledger.ts`), beside the row for the same
+    // reason as the quota table: a copy that writes the row's columns by
+    // position still writes it.
+    additive: true,
+    sql: `CREATE TABLE outbound_cost_not_modified (
+      hour INTEGER NOT NULL, system TEXT NOT NULL, credential TEXT NOT NULL,
+      operation TEXT NOT NULL, caller TEXT NOT NULL, unit TEXT NOT NULL,
+      not_modified INTEGER NOT NULL,
+      PRIMARY KEY (hour, system, credential, operation, caller, unit)
+    );`,
+  },
 ];

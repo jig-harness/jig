@@ -204,6 +204,9 @@ function accountAnswer(
     observation.estimated = true;
     return body;
   }
+  // A conditional request charged nothing was answered 304: counted apart,
+  // so the ledger shows per route how many reads found nothing changed.
+  observation.notModified = conditional === 0 ? 1 : 0;
   observation.cost =
     reported ??
     conditional ??

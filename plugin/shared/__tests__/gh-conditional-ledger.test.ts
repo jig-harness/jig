@@ -63,6 +63,7 @@ test.each([false, true])(
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       requests: 1,
+      notModified: 1,
       cost: 0,
       estimated: false,
       failure: null,
@@ -96,6 +97,7 @@ test("a conditional 200 costs one primary request", async () => {
   );
   expect(events[0]).toMatchObject({
     requests: 1,
+    notModified: 0,
     cost: 1,
     estimated: false,
     failure: null,

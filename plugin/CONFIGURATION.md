@@ -2211,10 +2211,14 @@ from a table of the subcommands Jig runs (`gh pr view` spends GraphQL
 points, `gh run list` core requests); a subcommand the table does not know
 is `unknown`, never guessed. A row written before owners were kept names
 neither, and the reports infer its window from its unit and operation.
-The ledger holds 7 days; an unavailable database never stops an outbound call.
+A row whose requests include conditional reads GitHub answered
+`304 Not Modified` counts those answers in `outbound_cost_not_modified`
+beside it, so a route's unchanged re-reads show apart from its other
+requests. The ledger holds 7 days; an unavailable database never stops an outbound call.
 
 `jig budget [--hours <1..168>] [--json]` reads the last 24 hours by default,
-with per-operation and per-caller totals and the latest known balances.
+with per-operation and per-caller totals (requests, how many of them were
+answered `304 Not Modified`, cost) and the latest known balances.
 The dispatch receipt's outbound section shows the tick's own spending and
 costliest operations per system. Linear reports measured complexity points;
 GitHub reports points when the query includes its cost, with unknown or

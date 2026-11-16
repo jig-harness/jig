@@ -8,6 +8,8 @@ export interface Attempt {
   credential: string;
   operation: string;
   requests: number;
+  /** Of `requests`, how many a conditional request had answered `304 Not Modified`. */
+  notModified?: number;
   cost: number | null;
   unit: string;
   estimated: boolean;
