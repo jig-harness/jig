@@ -11,6 +11,8 @@ import {
 } from "../../plugin/shared/shapes.ts";
 import { jsonText } from "./json.ts";
 
+import type { Finding } from "../../lib/findings.ts";
+
 /** Where the chapters, their index page and their data files live. */
 export const PROTOCOL_DIR = "plugin/protocol";
 export const DATA_DIR = `${PROTOCOL_DIR}/data`;
@@ -80,6 +82,8 @@ export interface Chapter {
   takes(): readonly string[];
   /** Entries of the imported tables the chapter deliberately leaves out. */
   readonly excluded: readonly string[];
+  /** Held restatements and code bindings this chapter checks beside its generated values. */
+  check?(root: string): readonly Finding[];
   /** The JSON documents this chapter publishes, derived from their readers' descriptions. */
   readonly schemas?: readonly {
     readonly name: string;

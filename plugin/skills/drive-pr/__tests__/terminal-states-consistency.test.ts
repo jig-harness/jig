@@ -24,8 +24,8 @@ import { delimiter, join } from "node:path";
 import {
   closeTypeScriptService,
   findMissingRequired,
-  runCheck,
 } from "./terminal-states-consistency.ts";
+import { runChapterCheck as runCheck } from "./protocol-test.ts";
 
 afterAll(closeTypeScriptService);
 
