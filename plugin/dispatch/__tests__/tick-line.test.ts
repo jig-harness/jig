@@ -346,7 +346,10 @@ describe("the line a tick leaves", () => {
       exitWritten(w, receipt.repos[0]?.launches[0]?.record ?? ""),
     );
     const line = storedLine(w)?.line;
-    expect(line?.repos[0]?.tracker).toEqual({ adapter: "github" });
+    expect(line?.repos[0]?.tracker).toEqual({
+      adapter: "github",
+      repository: SLUG,
+    });
     expect(line?.sessions[0]?.target).toBe("PR #7");
     expect(line?.sessions[0]?.links?.items.map((i) => i.key)).toEqual([
       "#4",

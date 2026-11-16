@@ -293,6 +293,7 @@ function choiceFromText(
   text: string,
   digest?: string,
   note?: string,
+  allowRetiredHoldAlias = false,
 ): AnswerChoice | undefined {
   const call = answerDecision(item)?.call;
   if (call === undefined) return undefined;
@@ -315,6 +316,7 @@ function choiceFromText(
     text,
     call.options,
     (o) => o.id === call.recommended,
+    allowRetiredHoldAlias,
   );
   if (chosen === null) return undefined;
   const { option, form } = chosen;
@@ -331,9 +333,16 @@ function choiceOf(
   item: ParkedItem,
   text: string,
   note?: string,
+  allowRetiredHoldAlias = false,
 ): AnswerChoice | undefined {
   const suffix = splitAnswerDigest(text);
-  return choiceFromText(item, suffix.text, suffix.digest, note);
+  return choiceFromText(
+    item,
+    suffix.text,
+    suffix.digest,
+    note,
+    allowRetiredHoldAlias,
+  );
 }
 
 /**
@@ -375,6 +384,7 @@ export function parseAnswerComment(
   item: ParkedItem,
   c: CommentLike,
   place: "thread" | "conversation",
+  allowRetiredHoldAlias = false,
 ): PendingAnswer | null {
   if (item.at === undefined || !isAnswer(c, parseMs(item.at))) return null;
   const lines = answerLines(item, c.body);
@@ -405,7 +415,13 @@ export function parseAnswerComment(
     // identity claim: an obsolete framing must not fall through as free prose.
     if (
       suffix.digest !== undefined &&
-      choiceFromText(item, suffix.text) !== undefined
+      choiceFromText(
+        item,
+        suffix.text,
+        undefined,
+        undefined,
+        allowRetiredHoldAlias,
+      ) !== undefined
     )
       return [suffix.digest];
     return embeddedDigests(item, text);
@@ -416,7 +432,7 @@ export function parseAnswerComment(
   const choice =
     stale || structured === null
       ? undefined
-      : choiceOf(item, structured.text, structured.note);
+      : choiceOf(item, structured.text, structured.note, allowRetiredHoldAlias);
   return {
     author: c.author,
     at: answerTime(c),

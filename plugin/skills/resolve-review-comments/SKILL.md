@@ -803,7 +803,7 @@ still present on the new head was not fixed.
 A pass reaches this listing only when the loop runs a round. A pull request
 whose only open findings are annotations is not held back by them: the drive
 can converge over them until they count as open work
-([roadmap item 30](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#30-scanner-findings-block-convergence)).
+([#1316](https://github.com/jig-harness/jig/issues/1316)).
 
 ### 4. Verify and push
 

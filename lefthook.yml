@@ -58,6 +58,7 @@ pre-commit:
         - "plugin/shared/rule-matcher-values.ts"
         - "plugin/shared/shapes.ts"
         - "plugin/shared/time.ts"
+        - "plugin/skills/do-item/scripts/lib/tracker/facets/facet-values.ts"
         - "plugin/skills/drive-pr/scripts/lib/state/ledger-shapes.ts"
         - "plugin/skills/drive-pr/scripts/lib/state/ledger-values.ts"
         - "plugin/skills/drive-pr/scripts/lib/state/mailbox-shapes.ts"

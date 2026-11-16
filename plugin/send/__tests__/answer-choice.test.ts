@@ -81,4 +81,29 @@ describe("shellWord", () => {
     expect(shellWord("#scope")).toBe("'#scope'");
     expect(shellWord("scope#1")).toBe("scope#1");
   });
+
+  it("resolves the retired hold spelling only for a dispatcher-framed card", () => {
+    const parked = framedPark("F_h", "escalated");
+    const call = parked.decision?.call;
+    if (call === undefined) throw new Error("fixture has no decision");
+    const [first, ...rest] = call.options;
+    if (first === undefined) throw new Error("fixture has no option");
+    const hold = {
+      ...first,
+      id: "hold",
+      name: "I'll handle it — hide this card",
+    };
+    const item = {
+      ...parked,
+      decision: {
+        ...parked.decision,
+        call: { ...call, options: [hold, ...rest] },
+      },
+    } as ParkedItem;
+    const form = { kind: "choose", option: "Leave it to me" } as const;
+    const session = resolveChoice(item, form, undefined, "maintainer");
+    expect(session.ok).toBe(false);
+    const station = resolveChoice(item, form, undefined, "maintainer", true);
+    expect(station.ok && station.value.option.id).toBe("hold");
+  });
 });
