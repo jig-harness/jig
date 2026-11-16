@@ -72,10 +72,25 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       value.standing === null ||
       isStandingAnswer(value.standing)) &&
     (value.answered === undefined || isCarriedAnswer(value.answered)) &&
-    optionalTime(value.endedAt) &&
-    optionalTime(value.cancelledAt) &&
-    optionalTime(value.openedAt) &&
+    [value.endedAt, value.cancelledAt, value.openedAt].every(optionalTime) &&
+    optionalTestLockWait(value.testLockWait) &&
     isRedrive(value.redrive)
+  );
+}
+
+/** Whether a value is absent or a stored test-lock observation. */
+function optionalTestLockWait(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isMapping(value) &&
+      Number.isSafeInteger(value.pid) &&
+      (value.pid as number) > 0 &&
+      typeof value.workspace === "string" &&
+      typeof value.since === "string" &&
+      Number.isFinite(parseMs(value.since)) &&
+      typeof value.observedAt === "string" &&
+      Number.isFinite(parseMs(value.observedAt)) &&
+      typeof value.waiting === "boolean")
   );
 }
 

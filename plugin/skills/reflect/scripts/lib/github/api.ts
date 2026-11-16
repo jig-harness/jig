@@ -123,9 +123,10 @@ export class GitHubClient {
   }
 
   /**
-   * A mutation, paced, and retried only after a rate-limit refusal. A
-   * failure other than a rate limit or a refused credential may have been
-   * applied, and says so.
+   * A mutation, paced, and retried only after a rate-limit refusal that
+   * names its wait. A failure other than a rate limit or a refused
+   * credential may have been applied, and says so; a rate limit, GitHub's
+   * or the budget record's, did nothing.
    */
   async write(
     query: string,
@@ -139,7 +140,7 @@ export class GitHubClient {
       if (
         error instanceof GitHubApiError &&
         error.unavailable &&
-        !isRateLimited(error) &&
+        error.code !== "rate-limited" &&
         !isAuthFailure(error)
       )
         throw new GitHubApiError(
