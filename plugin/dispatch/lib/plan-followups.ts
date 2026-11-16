@@ -71,6 +71,7 @@ import { outcomeOf } from "./followup-outcomes.ts";
 import type { FollowupRelease } from "./followup-releases.ts";
 import { trustedMarkers } from "./followup-marker.ts";
 import { holding } from "./holding.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 import { holds, type ReadRecord, targetOf } from "./launches.ts";
 import { followupFailedNotice, staleClaimNotice } from "./notices.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
@@ -311,6 +312,12 @@ function planForeignMarker(
   );
 }
 
+/** The record's test-lock wait as a reason suffix, empty when it recorded none. */
+function waitNote(found: ReadRecord): string {
+  const note = testLockNote(found.record);
+  return note === null ? "" : `; ${note}`;
+}
+
 /** A pull request the tick's own marker claims, by the record it names and the outcome. */
 function planTickMarker(
   input: FollowupInput,
@@ -362,7 +369,7 @@ function planTickMarker(
     plan.running.push({
       target,
       stage: "followup",
-      reason: `launch record ${id} (${found.state.kind}) holds its follow-up, claimed by marker comment ${marker.id}`,
+      reason: `launch record ${id} (${found.state.kind}) holds its follow-up, claimed by marker comment ${marker.id}${waitNote(found)}`,
       evidence: { record: id, marker: marker.id },
     });
     return;

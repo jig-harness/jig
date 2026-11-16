@@ -134,6 +134,8 @@ export interface LaunchAttempt {
 
 /** The tick's part of a record. */
 export interface LaunchRecord {
+  /** The last attributable test-lock wait this host observed, retained after it ends. */
+  testLockWait?: import("./test-lock-waits.ts").TestLockWait;
   stewardResume?: string;
   stewardDecision?: number;
   stewardContext?: string;

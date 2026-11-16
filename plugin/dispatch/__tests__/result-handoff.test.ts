@@ -185,3 +185,44 @@ it("keeps a completed pickup's unreadable handoff unknown", async () => {
     { class: "converged", next: null },
   ]);
 });
+
+it("keeps the last test-lock wait in a pickup's reason when its result arrives after logging", async () => {
+  const w = world();
+  current = w;
+  const root = dispatchState(w);
+  earlierRecord(w, {
+    id: "waited-result",
+    account: "a",
+    action: "pickup",
+    item: "#12",
+    testLockWait: {
+      pid: 77,
+      workspace: w.repo,
+      since: "2026-10-30T20:10:00.000Z",
+      observedAt: "2026-10-30T20:20:00.000Z",
+      waiting: false,
+    },
+  });
+  recordExit(
+    "waited-result",
+    { at: "2026-11-01T12:00:00.000Z", code: 0, signal: null },
+    root,
+  );
+  const snapshot = readEnded("waited-result", root);
+  if (snapshot === null) throw new TypeError("missing fixture launch");
+  await logEnded([snapshot], {
+    all: [snapshot],
+    drives: [],
+    merged: async () => null,
+    nowIso: "2026-11-01T12:01:00.000Z",
+    root,
+  });
+  expect(recordResult("waited-result", "done", root, null)).toBe(true);
+  expect(readRows(undefined, undefined, root)).toMatchObject([
+    {
+      reason: expect.stringContaining(
+        "was last seen waiting for the test lock",
+      ),
+    },
+  ]);
+});

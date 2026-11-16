@@ -100,6 +100,20 @@ const stalled = (plan: ReturnType<typeof planPickups>) =>
   plan.actions.filter((a) => a.cause === "stalled").map((a) => a.target);
 
 describe("the stall watch's scope", () => {
+  it("names a stalled pickup's last observed validation wait", () => {
+    const launch = endedPickup("#7", true);
+    launch.record.testLockWait = {
+      pid: 12,
+      workspace: "/work/w",
+      since: "2026-11-11T06:00:00.000Z",
+      observedAt: "2026-11-11T06:29:00.000Z",
+      waiting: false,
+    };
+    const plan = planPickups(input("claimed", [item()], [launch]));
+    expect(plan.actions.find((a) => a.cause === "stalled")?.reason).toContain(
+      "last seen waiting for the test lock for 29m",
+    );
+  });
   it("leaves an identity's item no launch record or claim marker took quiet under claimed, and reports it under assigned", () => {
     const quiet = planPickups(input("claimed", [item()]));
     expect(quiet.actions).toEqual([]);
