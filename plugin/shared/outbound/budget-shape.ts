@@ -3,7 +3,7 @@ import type { BudgetRecord, BudgetWindow } from "./budget.ts";
 
 // Whether a value read back from the store has the shape of a window.
 
-export const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
+const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
   v === null || (typeof v === "number" && Number.isFinite(v) && ok(v));
 
 const nonNegative = (n: number): boolean => n >= 0;
@@ -30,7 +30,7 @@ function validOverflow(overflow: unknown): boolean {
   );
 }
 
-export function validWindow(w: unknown): w is BudgetWindow {
+function validWindow(w: unknown): w is BudgetWindow {
   if (typeof w !== "object" || w === null) return false;
   const r = w as Record<string, unknown>;
   return (
