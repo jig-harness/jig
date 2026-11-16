@@ -371,5 +371,16 @@ describe("jig send … answer on another tracker's item, from the command line",
       ops.filter((o) => o.op === "TrackerComment").map((o) => o.variables.body),
     ).toEqual([`answer pickup: approve [${digest}]`]);
     expect(w.writes()).toEqual([]);
+    // The default branch's tracker and factory identity are the ones asked, never the checkout's.
+    const issueAsks = ops.filter((o) => o.op === "TrackerIssue");
+    expect(issueAsks.length).toBeGreaterThan(0);
+    for (const ask of issueAsks) {
+      const text = JSON.stringify(ask.variables);
+      expect(text).toContain(REPO_OF_WORLD.split("/")[1]);
+      expect(text).not.toContain("elsewhere");
+    }
+    const userAsks = ops.filter((o) => o.op === "TrackerUser");
+    expect(userAsks.length).toBeGreaterThan(0);
+    for (const ask of userAsks) expect(ask.variables.login).toBe("factory-bot");
   });
 });
