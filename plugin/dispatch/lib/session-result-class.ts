@@ -18,7 +18,7 @@ export function sessionResultClass(
   if (result === "waits" && wait?.reason === "pending")
     return {
       class: "unknown",
-      reason: `result waits: ${armWords(wait)} is still pending; the follow-up starts again after the time it named`,
+      reason: `result waits: ${armWords(wait)} is still pending, as of the time it named`,
     };
   if (result === "waits")
     return {

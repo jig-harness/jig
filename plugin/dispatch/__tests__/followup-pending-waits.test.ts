@@ -32,6 +32,7 @@ import {
   waitFor,
 } from "./launch-fixtures.ts";
 import { applyTick, claudeRuns } from "./pickup-fixtures.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 
 let current: World | null = null;
 afterEach(() => {
@@ -109,7 +110,7 @@ async function released(w: World, id: string): Promise<void> {
 
 /** Move a launch record's launch back by `ms`, as if its pass had started that long ago. */
 function launchedEarlier(w: World, id: string, ms: number): void {
-  const at = new Date(Date.now() - ms).toISOString();
+  const at = isoFromMs(currentMs() - ms);
   stateDb(dispatchState(w))
     .query(
       "UPDATE launches SET created_at = ?, record = json_set(record, '$.createdAt', ?) WHERE id = ?",
@@ -119,7 +120,7 @@ function launchedEarlier(w: World, id: string, ms: number): void {
 
 it("holds a follow-up whose arm is still pending until the time it named, never as a rate limit, and starts it again as a first run", async () => {
   const w = fixture();
-  const until = new Date(Date.now() + 3_600_000).toISOString();
+  const until = isoFromMs(currentMs() + 3_600_000);
   const first = await pending(w, until);
   // The wrapper did not answer the marker: another host reads no failure.
   expect(markers(w)).toHaveLength(1);
@@ -135,7 +136,7 @@ it("holds a follow-up whose arm is still pending until the time it named, never 
 
   stateDb(dispatchState(w))
     .query("UPDATE launches SET result_until = ? WHERE id = ?")
-    .run(new Date(Date.now() - 1000).toISOString(), first);
+    .run(isoFromMs(currentMs() - 1000), first);
   await released(w, first);
 
   const runs = claudeRuns(w).length;
@@ -148,7 +149,7 @@ it("holds a follow-up whose arm is still pending until the time it named, never 
 
 it("hands a follow-up to a person, naming the pending arm, once followup_within has passed since its first pending wait", async () => {
   const w = fixture();
-  const past = () => new Date(Date.now() - 1000).toISOString();
+  const past = () => isoFromMs(currentMs() - 1000);
   const first = await pending(w, past());
   await released(w, first);
   // The first pass found the arm pending two hours ago, past the default hour.
@@ -235,7 +236,7 @@ it("counts pending waits apart from rate-limit waits", () => {
 it("reads a waits result with no --reason as a rate limit's, and refuses a pending wait on a pickup", () => {
   const w = world();
   current = w;
-  const until = new Date(Date.now() + 10 * 60_000).toISOString();
+  const until = isoFromMs(currentMs() + 10 * 60_000);
   const row = (id: string) =>
     stateDb(dispatchState(w))
       .query(
@@ -278,12 +279,13 @@ it("reads a waits result with no --reason as a rate limit's, and refuses a pendi
     result_wait: JSON.stringify({ reason: "pending", arm: "deploy" }),
   });
 
-  // An arm on a rate limit's wait, or a reason the command does not know, is refused.
+  // An arm on a rate limit's wait, a pending wait with no arm, or a reason the command does not know, is refused.
   const refused = "20261110T120200Z-cccccccc";
   earlierRecord(w, { id: refused, account: "a", action: "followup", pr: 9 });
   for (const extra of [
     ["--arm", "deploy"],
     ["--reason", "later"],
+    ["--reason", "pending"],
   ])
     expect(
       resultMain(

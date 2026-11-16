@@ -39,7 +39,9 @@
  * is the first of a new run.
  *
  * The run reads the launch records alone: a wait lasts a day at most, and
- * a record is kept `receipts_days`.
+ * a record is kept `receipts_days`. A pending run's origin is its first
+ * record, so a host whose `receipts_days` is shorter than its
+ * `dispatch.followup_within` keeps no origin long enough to spend it.
  */
 import { stateRoot } from "../receipts.ts";
 import { type ReadRecord, readEnded, readRecord } from "./launches.ts";
@@ -324,11 +326,11 @@ export function waitOver(streak: WaitStreak, nowMs: number): boolean {
   return !Number.isFinite(at) || at <= nowMs;
 }
 
-/** A duration in whole minutes or hours, as the configuration writes it. */
+/** A duration in the largest whole unit that holds it exactly: hours, minutes or seconds. */
 function durationWords(ms: number): string {
-  return ms % 3_600_000 === 0
-    ? `${ms / 3_600_000}h`
-    : `${Math.round(ms / 60_000)}m`;
+  if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
+  if (ms % 60_000 === 0) return `${ms / 60_000}m`;
+  return `${ms / 1000}s`;
 }
 
 /** What a follow-up that waits met, and how long it waits, in words. */

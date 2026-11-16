@@ -311,7 +311,8 @@ function waitsFlags(rest: readonly string[]): Map<string, string> | null {
 /** What `--reason` and `--arm` say a wait waits for; `null` when they do not read. */
 function waitFor(reason = "rate-limit", raw?: string): WaitFor | null {
   if (!(WAIT_REASONS as readonly string[]).includes(reason)) return null;
-  if (raw === undefined) return { reason: reason as WaitReason };
+  if (raw === undefined)
+    return reason === "pending" ? null : { reason: reason as WaitReason };
   const arm = oneLine(raw);
   if (reason !== "pending" || arm === "" || arm.length > ARM_MAX) return null;
   return { reason: "pending", arm };
