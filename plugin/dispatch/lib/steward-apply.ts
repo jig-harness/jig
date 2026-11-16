@@ -4,6 +4,7 @@ import { factsOf } from "./actions/drive-hold.ts";
 import { replayable, type ApplyState } from "./actions/launch.ts";
 import { localRecoverySpent } from "./no-cause-stops.ts";
 import { RECOVERY_FACTS, sameFacts } from "./recovery-facts.ts";
+import { applyStewardCause } from "./steward-causes.ts";
 import { applyStewardFacet } from "./steward-facets.ts";
 import { projectStewardNeed } from "./steward-needs.ts";
 import { resumeSteward } from "./steward-resume.ts";
@@ -215,6 +216,8 @@ async function applyOne(
       return resumeSteward(state, observation, kept.id, kept.value);
     case "facet":
       return applyFacet(state, observation, kept, kept.value, digest.value);
+    case "cause":
+      return applyStewardCause(state, observation, kept, kept.value);
     case "rearm":
       return applyRearm(
         state,

@@ -19,6 +19,7 @@ import {
   rearmableBySteward,
   STEWARD_REFUSED_OPEN,
 } from "./steward.ts";
+import { causeMembers } from "./steward-causes.ts";
 import { missingFacets } from "./steward-facets.ts";
 import { resumeSource } from "./steward-resume.ts";
 import type { Action, DrivenPr, Running } from "./types.ts";
@@ -40,6 +41,10 @@ export interface BacklogInput {
   /** The hold labels a facet is never filled under. */
   labels: { hitl?: string; manualOps?: string };
   station: StationContext;
+  /** The members earlier passes judged, so the runs without a report the digest lists are ones no pass saw. */
+  judged?: ReadonlySet<string>;
+  /** The dispatcher's state directory, where the runs' transcript copies are. */
+  root?: string;
 }
 
 export interface Backlog {
@@ -174,6 +179,12 @@ export function stewardBacklog(input: BacklogInput): Backlog {
     ...rearmMembers(input),
     ...resumeMembers(input),
     ...facetMembers(input),
+    ...causeMembers(
+      input.records,
+      input.slug,
+      input.judged ?? new Set(),
+      input.root,
+    ),
   ];
   const keyed = new Map(members.map((m) => [memberKey(m), m]));
   return {
