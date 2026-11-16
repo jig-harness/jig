@@ -15,15 +15,20 @@
  * Checked before the write, beside what every answer to a need's decision is
  * checked for (`answer-station.ts`): the tracker names who wrote each
  * comment, without which the tick cannot count an answer there; the
- * tracker's user here is not the repository's factory identity
- * (`dispatch.identity`), whose comments the tick never counts; and `--as`,
- * when given, names that user.
+ * tracker's user here is not the user the tick leaves out, the user its own
+ * tracker credential acts as; and `--as`, when given, names that user. That
+ * user is the repository's factory identity (`dispatch.identity`) when it
+ * names one. Without one, it is the user the tracker credential of the host
+ * that owns the repository acts as, where the tick runs: on that host, the
+ * user a send writes as, so a send there is refused; on another it cannot be
+ * told, which the plan's notice says.
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import type { TrackerKeyForm } from "../../shared/address.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { readSection, trackerConfigOf } from "../../dispatch/lib/section.ts";
 import { readDefaultConfig } from "../../ask/lib/forge.ts";
+import { ownsRepository } from "../../ask/lib/local.ts";
 import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { failureText } from "../../dispatch/lib/text.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
@@ -47,10 +52,12 @@ import { type Planned, refused, writerLogin } from "./plan.ts";
 
 type OneAnswer = Extract<AnswerRequest, { all: false }>;
 
-/** The tracker an answer is written through here, and the repository's factory identity. */
+/** The tracker an answer is written through here, the repository's factory identity, and whether the tick that reads the answer runs here. */
 export interface TrackerHere {
   tracker: Tracker;
   identity: string | null;
+  /** Whether this machine owns the repository, so its tick reads answers with this machine's tracker credential; `null` when its dispatch file does not read. */
+  owner: boolean | null;
   /** The item key form of the tracker, when the settings were read from the repository; the item is checked against it. */
   keys?: TrackerKeyForm;
 }
@@ -99,6 +106,7 @@ export async function openTrackerHere(
     ? ok({
         tracker: opened.value,
         identity: section.identity,
+        owner: ownsRepository(repo),
         keys: (input: string) => keys.normalize(input),
       })
     : opened;
@@ -120,30 +128,50 @@ async function readHere<T>(
   }
 }
 
-/** Why `viewer` may not answer: it is the factory identity, whose comments the tick never counts, or the identity could not be looked up; `null` when it may. */
-async function factoryFault(
+/** What the person can do instead of an answer the tick would not read. */
+const INSTEAD =
+  "answer on the tracker as another user, or give the dispatcher a tracker user of its own";
+
+/**
+ * Whether the tick would read an answer `viewer` writes: refused when
+ * `viewer` is the user the tick leaves out, or when the factory identity it
+ * is taken to be cannot be looked up; otherwise the notice to show when who
+ * the tick leaves out cannot be told here, `null` when it can.
+ */
+async function readByTick(
   ctx: AskContext,
   here: TrackerHere,
   viewer: TrackerUser,
-): Promise<string | null> {
-  const { identity, tracker } = here;
-  if (identity === null) return null;
+): Promise<Outcome<string | null, "refused">> {
+  const { identity, tracker, owner } = here;
+  if (identity === null && owner === true)
+    return refused(
+      `the repository names no factory identity (dispatch.identity), and this machine owns ${ctx.address.repo}, so its tick reads the answers with the tracker credential a send here uses, which acts as ${viewer.name}; the tick never counts a comment by the user its own tracker credential acts as, so it would not read this answer: ${INSTEAD}`,
+    );
+  if (identity === null)
+    return ok(
+      `the repository names no factory identity (dispatch.identity), and ${owner === null ? "this machine's dispatch file does not read" : "this machine does not own the repository"}, so whether ${viewer.name} is the user the tick's own tracker credential acts as on the host that owns it cannot be told here; if it is, the tick will not read this answer: ${INSTEAD}`,
+    );
   const factory = await readHere(ctx, "the factory identity", (signal) =>
     tracker.user(identity, signal),
   );
   if (!factory.ok)
-    return `the factory identity ${identity} could not be looked up, so it cannot be told apart from the user the tracker's credential acts as: ${factory.failure.reason}`;
+    return refused(
+      `the factory identity ${identity} could not be looked up, so it cannot be told apart from the user the tracker's credential acts as: ${factory.failure.reason}`,
+    );
   return factory.value.id === viewer.id
-    ? `the tracker's credential here acts as ${viewer.name}, the factory identity ${identity}, whose comments the tick never counts as an answer; answer on the tracker as yourself`
-    : null;
+    ? refused(
+        `the tracker's credential here acts as ${viewer.name}, the factory identity ${identity}, whose comments the tick never counts as an answer; ${INSTEAD}`,
+      )
+    : ok(null);
 }
 
-/** The sender an answer through `here` writes as: the user its credential acts as, unless that user may not answer. */
+/** The sender an answer through `here` writes as, the user its credential acts as, with the notice its plan adds; refused when the tick would not read that user's answer. */
 async function trackerSender(
   ctx: AskContext,
   here: TrackerHere,
   options: { as: string | undefined; dryRun: boolean },
-): Promise<Outcome<Sender, "refused">> {
+): Promise<Outcome<{ sender: Sender; notice: string | null }, "refused">> {
   const { tracker } = here;
   const viewer = await readHere(
     ctx,
@@ -153,13 +181,16 @@ async function trackerSender(
   if (!viewer.ok) return viewer;
   const login = writerLogin(viewer.value.name, options.as, "the tracker");
   if (!login.ok) return login;
-  const factory = await factoryFault(ctx, here, viewer.value);
-  if (factory !== null) return refused(factory);
+  const read = await readByTick(ctx, here, viewer.value);
+  if (!read.ok) return read;
   return ok({
-    login: login.value,
-    writesAs: `${login.value}, the user the tracker's credential acts as here`,
-    dryRun: options.dryRun,
-    as: options.as,
+    sender: {
+      login: login.value,
+      writesAs: `${login.value}, the user the tracker's credential acts as here`,
+      dryRun: options.dryRun,
+      as: options.as,
+    },
+    notice: read.value,
   });
 }
 
@@ -220,23 +251,26 @@ export async function planTrackerAnswer(
     return refused(
       `${item} is an item of the ${tracker.adapter} tracker, which does not name who wrote each comment, so the tick cannot count an answer there; settle it on the tracker by hand`,
     );
-  const sender = await trackerSender(ctx, opened.value, options);
-  if (!sender.ok) return sender;
-  const chosen = stationChoice(ctx, request, sender.value, decision);
+  const sent = await trackerSender(ctx, opened.value, options);
+  if (!sent.ok) return sent;
+  const { sender, notice } = sent.value;
+  const chosen = stationChoice(ctx, request, sender, decision);
   if (!chosen.ok) return chosen;
   const { lines, detail } = chosen.value;
   return ok({
     address: ctx.name,
     repo: ctx.address.repo,
     verb: "answer",
-    writesAs: sender.value.writesAs,
+    writesAs: sender.writesAs,
     record: `a comment on ${item} on the ${tracker.adapter} tracker: ${lines.map((l) => `"${l}"`).join(" and ")}`,
     where: need.url ?? item,
     reader: STATION_READER(ctx),
     tick: TICK,
     undo: STATION_UNDO,
-    notice:
+    notice: [
       "the tick acts only on an answer that names the decision's digest, by a member the tracker vouches for other than the user the dispatcher's own tracker credential acts as, and only when every person's latest answer chooses the same option",
+      ...(notice === null ? [] : [notice]),
+    ].join("; "),
     detail,
     write: () => postOn(tracker, item, lines, need.url ?? item),
   });

@@ -78,6 +78,15 @@ function slugAt(path: string): string | null {
   return repo === null ? null : `${repo.owner}/${repo.name}`;
 }
 
+/** Whether this machine's dispatch file lists `repo` as one it owns, so its tick reads the repository's answers; `null` when the dispatch file does not read. */
+export function ownsRepository(repo: string): boolean | null {
+  const machine = machineFile();
+  if (!machine.ok) return null;
+  return (machine.value?.repositories ?? []).some(
+    (r) => r.owner && slugAt(r.path) === repo,
+  );
+}
+
 /** What a written repository resolves against: the dispatch file's repositories and the checkout this runs in. */
 export function repositoryChoices(
   machine: MachineConfig | null,

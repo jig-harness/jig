@@ -153,6 +153,14 @@ function stateOf(
   return { state: "not assigned", detail: `${where}, assigned to ${who}` };
 }
 
+/** The need's reason, and why the tick did not read the answers to its decisions, where it did not. */
+function needWhy(need: LineNeed): string {
+  const unread = need.decisions.flatMap((d) =>
+    d.unread === undefined ? [] : [`its answer is unreadable: ${d.unread}`],
+  );
+  return [need.reason, ...unread].join("; ");
+}
+
 function waitsOnOf(
   state: string,
   needs: readonly LineNeed[],
@@ -162,7 +170,7 @@ function waitsOnOf(
   // The tick's own need comes first: a session that runs may be the one waiting on a person.
   const need = needs[0];
   if (need !== undefined)
-    return personWait(personAct(need.cause), need.reason, {
+    return personWait(personAct(need.cause), needWhy(need), {
       act: actOfLineNeed(need),
     });
   if (held) return "none";

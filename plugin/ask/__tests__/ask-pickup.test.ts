@@ -3,7 +3,8 @@
  * checkout's configuration names (the GitHub adapter, over a fake GraphQL
  * endpoint), with its key checked against that tracker's form first; an item
  * assigned to the factory identity reads as assigned, an item the tracker
- * does not have exits 1, and a pick-up makes no forge call.
+ * does not have exits 1, and a pick-up makes no forge call; a need whose
+ * answer the tick could not read says why.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -13,6 +14,15 @@ import {
   issueNode,
   oneIssue,
 } from "../../skills/do-item/__tests__/github-fixtures.ts";
+import type {
+  LineNeed,
+  LineSnapshot,
+} from "../../dispatch/lib/dashboard-contract.ts";
+import {
+  stationContextOf,
+  stationDecision,
+} from "../../dispatch/lib/line-station.ts";
+import { writeLine } from "../../dispatch/lib/line-store.ts";
 import type { AskAnswer } from "../lib/answer.ts";
 import { type AskWorld, askWorld, REPO } from "./ask-fixtures.ts";
 
@@ -96,6 +106,60 @@ function world(): AskWorld {
   return w;
 }
 
+/** The newest tick's line in `w`, holding a stalled pickup need on #12 whose decision's answers did not read for `unread`. */
+function unreadNeed(w: AskWorld, unread: string): void {
+  const decision = stationDecision(
+    {
+      stage: "notify",
+      target: "#12",
+      record: "tracker",
+      reason: "stalled pickup",
+      cause: "stalled",
+      evidence: { state: "In Progress" },
+    },
+    stationContextOf(REPO, {
+      tracker: { adapter: "linear" },
+      links: { itemsOf: () => null, prsOf: () => [] },
+    }),
+  );
+  if (decision === null) throw new TypeError("the fixture frames no decision");
+  const need: LineNeed = {
+    cause: "stalled",
+    stage: "pickup",
+    repo: REPO,
+    target: "#12",
+    pr: null,
+    item: "#12",
+    url: null,
+    title: null,
+    since: "2026-11-12T10:00:00.000Z",
+    reason: "stalled pickup",
+    decisions: [{ ...decision, unread }],
+    notified: null,
+    workspaces: [],
+  };
+  const line = {
+    version: 1,
+    runId: "2026-11-12T10-00-00-000Z-1-aaaaaaaa",
+    startedAt: "2026-11-12T10:00:00.000Z",
+    finishedAt: "2026-11-12T10:01:00.000Z",
+    exitStatus: 0,
+    apply: true,
+    applyWithheld: null,
+    intervalMs: 300_000,
+    longestTickMs: 60_000,
+    plugin: "1.2.3",
+    accounts: [],
+    lastAccount: null,
+    sessions: [],
+    needs: [need],
+    queue: [],
+    ready: [],
+    repos: [],
+  } as unknown as LineSnapshot;
+  writeLine(line, "{}", w.state);
+}
+
 describe("jig ask pickup", () => {
   it("reads the item through the tracker and places its claim", async () => {
     const w = world();
@@ -116,6 +180,19 @@ describe("jig ask pickup", () => {
     const r = await w.ask([`pickup@${REPO}#13`, "--json"]);
     expectSpawnExit(r, 0);
     expect((JSON.parse(r.stdout) as AskAnswer).state).toBe("claimed");
+  });
+
+  it("says a need's answer is unreadable, and why, rather than only that it waits", async () => {
+    const w = world();
+    const why =
+      "the only answer on #12 is by Jig Factory, the user the dispatcher's own tracker credential acts as, whose comments the tick never counts as an answer";
+    unreadNeed(w, why);
+    const r = await w.ask([`pickup@${REPO}#12`, "--json"]);
+    expectSpawnExit(r, 0);
+    const { waitsOn } = JSON.parse(r.stdout) as AskAnswer;
+    expect(
+      typeof waitsOn === "object" && "why" in waitsOn ? waitsOn.why : "",
+    ).toBe(`stalled pickup; its answer is unreadable: ${why}`);
   });
 
   it("exits 1 for an item the tracker does not have, and 2 for a key not in its form", async () => {

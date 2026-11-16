@@ -3,7 +3,9 @@
  * decision on an item of a tracker other than the forge: written through
  * the tracker as the comment a person could type there, as the user the
  * tracker's credential acts as here; refused, with why, by a tracker that
- * cannot name who wrote a comment and to the repository's factory identity.
+ * cannot name who wrote a comment, to the repository's factory identity and,
+ * where the repository names none, on the host that owns it, whose tick
+ * leaves out the user a send there writes as.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -171,12 +173,25 @@ const approve = (decision?: string): Extract<AnswerRequest, { all: false }> =>
 const plan = (
   t: Tracker,
   request = approve(DIGEST),
-  options: { as?: string; dryRun?: boolean } = {},
+  options: {
+    as?: string;
+    dryRun?: boolean;
+    identity?: string | null;
+    owner?: boolean | null;
+  } = {},
 ) =>
   planTrackerAnswer(context(), request, {
     as: options.as,
     dryRun: options.dryRun ?? false,
-    open: () => ok({ tracker: t, identity: "factory@example.com" }),
+    open: () =>
+      ok({
+        tracker: t,
+        identity:
+          options.identity === undefined
+            ? "factory@example.com"
+            : options.identity,
+        owner: options.owner ?? false,
+      }),
   });
 
 describe("jig send … answer on an item of another tracker", () => {
@@ -248,6 +263,64 @@ describe("jig send … answer on an item of another tracker", () => {
     }
   });
 
+  it("refuses, writing nothing, on the host that owns the repository when it names no factory identity", async () => {
+    for (const dryRun of [false, true]) {
+      const t = tracker(DANA);
+      const planned = await plan(t, approve(DIGEST), {
+        identity: null,
+        owner: true,
+        dryRun,
+      });
+      expect(planned?.ok).toBe(false);
+      const reason =
+        planned !== null && !planned.ok ? planned.failure.reason : "";
+      expect(reason).toContain(
+        `this machine owns ${REPO}, so its tick reads the answers with the tracker credential a send here uses, which acts as Dana Lee`,
+      );
+      expect(reason).toContain(
+        "answer on the tracker as another user, or give the dispatcher a tracker user of its own",
+      );
+      expect(t.posted).toEqual([]);
+    }
+  });
+
+  it("refuses the factory identity on the host that owns the repository too", async () => {
+    const t = tracker(FACTORY);
+    const planned = await plan(t, approve(DIGEST), { owner: true });
+    expect(planned?.ok).toBe(false);
+    expect(
+      planned !== null && !planned.ok ? planned.failure.reason : "",
+    ).toContain("the factory identity factory@example.com");
+    expect(t.posted).toEqual([]);
+  });
+
+  it("posts a writer other than the factory identity, from the owning host or another", async () => {
+    for (const owner of [true, false]) {
+      const t = tracker(DANA);
+      const planned = await plan(t, approve(DIGEST), { owner });
+      if (planned === null || !planned.ok)
+        throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
+      expect(planned.value.notice).not.toContain("cannot be told here");
+      await planned.value.write();
+      expect(t.posted).toHaveLength(1);
+    }
+  });
+
+  it("posts from a host that does not own a repository naming no factory identity, saying the tick may not read it", async () => {
+    const t = tracker(DANA);
+    const planned = await plan(t, approve(DIGEST), {
+      identity: null,
+      owner: false,
+    });
+    if (planned === null || !planned.ok)
+      throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
+    expect(planned.value.notice).toContain(
+      "the repository names no factory identity (dispatch.identity), and this machine does not own the repository, so whether Dana Lee is the user the tick's own tracker credential acts as on the host that owns it cannot be told here",
+    );
+    await planned.value.write();
+    expect(t.posted).toHaveLength(1);
+  });
+
   it("leaves a decision answered on the forge to the forge's reader", async () => {
     const forge = {
       ...NEED,
@@ -262,7 +335,7 @@ describe("jig send … answer on an item of another tracker", () => {
     const planned = await planTrackerAnswer(ctx, approve(DIGEST), {
       as: undefined,
       dryRun: false,
-      open: () => ok({ tracker: tracker(DANA), identity: null }),
+      open: () => ok({ tracker: tracker(DANA), identity: null, owner: false }),
     });
     expect(planned).toBeNull();
   });
@@ -342,6 +415,34 @@ describe("jig send … answer on another tracker's item, from the command line",
     w.env.JIG_GITHUB_GRAPHQL_URL = `http://127.0.0.1:${server.port}/graphql`;
     return { w, ops, digest: decision.digest ?? "" };
   }
+
+  it("refuses on the host that owns a repository naming no factory identity, posting nothing", async () => {
+    const { w, ops, digest } = trackerWorld();
+    w.config(
+      `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO_OF_WORLD}\n  facets:\n    type: { store: label }\n    priority: { store: label }\n`,
+    );
+    mkdirSync(join(w.home, ".jig"), { recursive: true });
+    writeFileSync(
+      join(w.home, ".jig", "dispatch.yaml"),
+      `repositories:\n  - path: ${w.repo}\n    stages: [pickup]\n`,
+    );
+    const address = `pickup@${REPO_OF_WORLD}#14`;
+    for (const extra of [["--dry-run"], ["--decision", digest]]) {
+      const r = await w.send([
+        address,
+        "answer",
+        "pickup",
+        "--approve",
+        ...extra,
+      ]);
+      expectSpawnExit(r, 1);
+      expect(r.stderr).toContain(
+        "so its tick reads the answers with the tracker credential a send here uses, which acts as maintainer",
+      );
+    }
+    expect(ops.some((o) => o.op === "TrackerComment")).toBe(false);
+    expect(w.writes()).toEqual([]);
+  });
 
   it("posts the answer on the item through the tracker, and nothing on the forge", async () => {
     const { w, ops, digest } = trackerWorld();
