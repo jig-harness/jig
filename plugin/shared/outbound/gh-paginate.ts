@@ -163,30 +163,23 @@ export function endCursorOf(value: unknown): string | null {
 
 /** The first `pageInfo` at or below `value` in document order, as its cursor (`null` when it names no next page); `undefined` when there is none. */
 function cursorIn(value: unknown): { cursor: string | null } | undefined {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = cursorIn(item);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  if (!isRecord(value)) return undefined;
+  if (!isRecord(value) && !Array.isArray(value)) return undefined;
   for (const [key, child] of Object.entries(value)) {
-    if (
-      key === "pageInfo" &&
-      isRecord(child) &&
-      typeof child.hasNextPage === "boolean"
-    )
-      return {
-        cursor:
-          child.hasNextPage && typeof child.endCursor === "string"
-            ? child.endCursor
-            : null,
-      };
-    const found = cursorIn(child);
+    const found =
+      (key === "pageInfo" ? pageInfoCursor(child) : undefined) ??
+      cursorIn(child);
     if (found !== undefined) return found;
   }
   return undefined;
+}
+
+function pageInfoCursor(info: unknown): { cursor: string | null } | undefined {
+  if (!isRecord(info) || typeof info.hasNextPage !== "boolean")
+    return undefined;
+  const { hasNextPage, endCursor } = info;
+  return {
+    cursor: hasNextPage && typeof endCursor === "string" ? endCursor : null,
+  };
 }
 
 function json(body: string): unknown {
@@ -240,22 +233,33 @@ export function pagePlan(
   if (at < 0) return null;
   // `--include` is the page's own, so the wrapper reads its headers; the
   // budget then leaves them on the output for the wrapper to take off.
-  if (apiRoute(args) === "graphql") {
-    if (templated) return null;
-    const page = (cursor: string | null) => [
-      ...stripped(args, (f) => cursor !== null && /^endCursor=/.test(f)),
-      ...(cursor === null ? [] : ["-f", `endCursor=${cursor}`]),
-      "--include",
-    ];
-    return {
-      first: page(null),
-      next: (_headers, body) => {
-        const cursor = endCursorOf(json(body));
-        return cursor === null ? null : page(cursor);
-      },
-      assemble: inTurn(slurp),
-    };
-  }
+  if (apiRoute(args) === "graphql")
+    return templated ? null : graphqlPlan(args, slurp);
+  return restPlan(args, at, { slurp, templated }, env);
+}
+
+function graphqlPlan(args: readonly string[], slurp: boolean): PagePlan {
+  const page = (cursor: string | null) => [
+    ...stripped(args, (f) => cursor !== null && /^endCursor=/.test(f)),
+    ...(cursor === null ? [] : ["-f", `endCursor=${cursor}`]),
+    "--include",
+  ];
+  return {
+    first: page(null),
+    next: (_headers, body) => {
+      const cursor = endCursorOf(json(body));
+      return cursor === null ? null : page(cursor);
+    },
+    assemble: inTurn(slurp),
+  };
+}
+
+function restPlan(
+  args: readonly string[],
+  at: number,
+  mode: { slurp: boolean; templated: boolean },
+  env: Record<string, string | undefined>,
+): PagePlan | null {
   const method = methodOf(args);
   const fields = args.some(isField);
   if (method === null ? fields : method !== "GET") return null;
@@ -266,6 +270,11 @@ export function pagePlan(
   const route = first[firstAt] ?? "";
   if (!fields && firstAt >= 0 && !/[?&]per_page=/.test(route))
     first[firstAt] = `${route}${route.includes("?") ? "&" : "?"}per_page=100`;
+  const assemble = mode.slurp
+    ? inTurn(true)
+    : mode.templated
+      ? inTurn(false)
+      : merged;
   return {
     first: [...first, "--include"],
     next: (headers) => {
@@ -275,7 +284,7 @@ export function pagePlan(
       rest[at] = url;
       return [...stripped(rest, () => true), "--include"];
     },
-    assemble: slurp ? inTurn(true) : templated ? inTurn(false) : merged,
+    assemble,
   };
 }
 
@@ -313,12 +322,8 @@ export async function drivePages<T extends GhRun & { stdout?: string }>(
       typeof result.stdout === "string" ? result.stdout : "",
     );
     const answered = { ...result, stdout: body };
-    if (result.code !== 0 || result.held !== undefined) {
-      // A refused page sent nothing, and a failing first page is a single
-      // call's failure; a later failure keeps what the pages before it said.
-      if (page === 1) return answered;
-      return { ...answered, stdout: plan.assemble(outputs) };
-    }
+    if (result.code !== 0 || result.held !== undefined)
+      return failedPage(answered, page, plan, outputs);
     outputs.push(body);
     last = answered;
     const next = plan.next(headers, body);
@@ -336,4 +341,18 @@ export async function drivePages<T extends GhRun & { stdout?: string }>(
       };
     argv = next;
   }
+}
+
+/**
+ * A refused page sent nothing, and a failing first page is a single call's
+ * failure; a later failure keeps what the pages before it said.
+ */
+function failedPage<T extends GhRun & { stdout?: string }>(
+  answered: T,
+  page: number,
+  plan: PagePlan,
+  outputs: readonly string[],
+): T {
+  if (page === 1) return answered;
+  return { ...answered, stdout: plan.assemble([...outputs]) };
 }

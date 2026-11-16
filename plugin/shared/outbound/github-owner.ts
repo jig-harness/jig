@@ -454,26 +454,7 @@ export function githubOwnerResolver(deps: {
     // discovery given in its place is recorded here.
     if (deps.discover !== undefined)
       ledgerLookup(credential, owner, answer, currentMs() - began);
-    const next: OwnerEntry =
-      user !== null
-        ? {
-            owner,
-            verified: true,
-            login: user.login,
-            checkedAt: now,
-            retryAt:
-              now +
-              (githubToken(env) === null
-                ? LOGIN_OWNER_TTL_MS
-                : TOKEN_OWNER_TTL_MS),
-          }
-        : {
-            owner,
-            verified: entry?.verified === true,
-            login: entry?.login ?? null,
-            checkedAt: now,
-            retryAt: now + DISCOVERY_BACKOFF_MS,
-          };
+    const next = nextEntry(user, owner, entry, now, githubToken(env) !== null);
     deps.owners.write(credential, githubHost(env), next);
     return fromEntry(credential, next);
   };
@@ -671,4 +652,29 @@ function carried(
   now: number,
 ): BudgetRecord {
   return owner === null ? earlier : mergedRecord(owner, earlier, now);
+}
+
+/** The owner record a discovery leaves: verified by an answer, else backed off. */
+function nextEntry(
+  user: GithubUser | null,
+  owner: string,
+  entry: OwnerEntry | null,
+  now: number,
+  hasToken: boolean,
+): OwnerEntry {
+  if (user !== null)
+    return {
+      owner,
+      verified: true,
+      login: user.login,
+      checkedAt: now,
+      retryAt: now + (hasToken ? TOKEN_OWNER_TTL_MS : LOGIN_OWNER_TTL_MS),
+    };
+  return {
+    owner,
+    verified: entry?.verified === true,
+    login: entry?.login ?? null,
+    checkedAt: now,
+    retryAt: now + DISCOVERY_BACKOFF_MS,
+  };
 }
