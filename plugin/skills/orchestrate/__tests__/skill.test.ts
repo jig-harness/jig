@@ -58,7 +58,8 @@ describe("orchestrate's contract", () => {
     expect(step).toContain("confirm the successor is alive");
     expect(step).toContain("If it is gone, start it again");
     expect(step).toContain("repeat this confirmation after every replacement");
-    expect(step).toContain("keep ownership of the topic");
+    expect(step).toContain("keeps ownership but stays quiescent");
+    expect(step).toContain("sends no commands, launches nothing");
     expect(step).toContain("Only once a successor is confirmed alive");
     expect(step).toContain("stops acting");
   });
