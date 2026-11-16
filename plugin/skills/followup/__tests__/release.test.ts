@@ -94,7 +94,7 @@ describe("an unreadable branch state", () => {
         : real(args);
     const read = await mergeNotes(
       failing,
-      { base, head: merge },
+      { kind: "squash", base, head: merge },
       "changes",
       "main",
     );
