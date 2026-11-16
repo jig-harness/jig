@@ -16,6 +16,7 @@
  */
 
 import { demandOf } from "./dispatch-source.ts";
+import { batch as readBatches } from "../../../../../shared/outbound/batch.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import type {
   CoreQueueIssue,
@@ -261,15 +262,16 @@ async function readByKey<T extends { identifier: string }>(
   signal?: AbortSignal,
 ): Promise<Map<string, T>> {
   const found = new Map<string, T>();
-  const groups = keyGroups(wanted);
-  if (groups.length === 0) return found;
-  const nodes = await opts.pageAll(
-    boundedBatch(opts.transport, wanted.length, read.size),
-    read.query,
-    { filter: { or: groups } },
-    (d) => d.issues,
-    `${wanted.length} issue(s) by key ${read.what}`.trim(),
-    signal,
+  const keys = wanted.filter((key) => KEY.test(key));
+  const nodes = await readBatches(keys, read.size, (chunk) =>
+    opts.pageAll(
+      boundedBatch(opts.transport, chunk.length, read.size),
+      read.query,
+      { filter: { or: keyGroups(chunk) } },
+      (d) => d.issues,
+      `${chunk.length} issue(s) by key ${read.what}`.trim(),
+      signal,
+    ),
   );
   for (const node of nodes) {
     const issue = parse(node);

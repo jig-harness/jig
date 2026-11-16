@@ -79,6 +79,9 @@ async function signals(pr: string): Promise<FinalCiSignals | null> {
 }
 
 export class FinalCiWait {
+  private nextProbeAt = 0;
+  private probeIntervalMs = 10_000;
+  private witness: { head: string; since: number } | null = null;
   private waiting: {
     signals: FinalCiSignals;
     at: number;
@@ -88,19 +91,41 @@ export class FinalCiWait {
   private readonly pr: string;
   private readonly maxAgeMs: number;
   private readonly deps: FinalCiWaitDeps;
+  private readonly witnessUnitMs: number;
 
   constructor(
     pr: string,
     maxAgeMs = ghCacheDir() === null ? 0 : waitingChecksMaxAgeMs(),
     deps: FinalCiWaitDeps = { now: systemClock.now, signals },
+    witnessUnitMs = 10_000,
   ) {
     this.pr = pr;
     this.maxAgeMs = maxAgeMs;
     this.deps = deps;
+    this.witnessUnitMs = witnessUnitMs;
   }
 
   clear(): void {
     this.waiting = null;
+    this.nextProbeAt = 0;
+    this.probeIntervalMs = 10_000;
+  }
+
+  resetWitness(): void {
+    this.witness = null;
+  }
+
+  /** The legacy setting is a duration in ten-second units, never a poll count. */
+  witnessSpent(head: string, limit: number): boolean {
+    if (this.witness?.head !== head)
+      this.witness = { head, since: this.deps.now() };
+    return this.deps.now() >= this.witnessDeadline(limit);
+  }
+
+  witnessDeadline(limit: number): number {
+    return limit > 0 && this.witness !== null
+      ? this.witness.since + limit * this.witnessUnitMs
+      : Infinity;
   }
 
   /** Prime before live witnesses, so an intervening change cannot be absorbed. */
@@ -128,6 +153,7 @@ export class FinalCiWait {
   async skip(
     witnessWaits: number,
     witnessLimit: number,
+    witnessDeadline = this.witnessDeadline(witnessLimit),
   ): Promise<"witness" | "pending" | null> {
     const previous = this.waiting;
     if (previous === null) return null;
@@ -136,15 +162,21 @@ export class FinalCiWait {
     if (
       age < 0 ||
       age >= this.maxAgeMs ||
+      (previous.unwitnessed && this.deps.now() >= witnessDeadline) ||
       (previous.unwitnessed && witnessLimit > 0 && witnessWaits >= witnessLimit)
     ) {
       this.clear();
       return null;
     }
+    // This is only permission to keep waiting, never evidence for a verdict.
+    // Local controls still run every ten seconds in the driver boundary.
+    if (this.deps.now() < this.nextProbeAt)
+      return previous.unwitnessed ? "witness" : "pending";
     const current = await this.deps.signals(this.pr);
     const ageAfterRead = this.deps.now() - previous.at;
     if (
       current === null ||
+      (previous.unwitnessed && this.deps.now() >= witnessDeadline) ||
       ageAfterRead < 0 ||
       ageAfterRead >= this.maxAgeMs ||
       !current.unchanged ||
@@ -154,6 +186,8 @@ export class FinalCiWait {
       this.clear();
       return null;
     }
+    this.probeIntervalMs = Math.min(60_000, this.probeIntervalMs * 2);
+    this.nextProbeAt = current.observedAt + this.probeIntervalMs;
     return previous.unwitnessed ? "witness" : "pending";
   }
 }
