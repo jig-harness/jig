@@ -5,7 +5,7 @@ status: approved
 description: "The dispatch dashboard's page may post a parked decision's answer: from the browser, to the forge's API, with a fine-grained token the person pastes into that browser and that the host never receives; the dashboard's server keeps no write route, the dispatcher never relays an answer, and the answer is trusted as one `jig send` writes from a terminal until item 40 tells a pass's comment from a person's"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-11-15
+last_updated: 2026-11-16
 owner: maintainers
 decision_date: 2026-11-12
 supersedes: ~
@@ -74,9 +74,10 @@ from the browser, as the person:
   terminal, by the person's login, until item 40 settles how a pass's
   comments are told from a person's.
 
-Send is offered only where a station reads an answer comment, a parked
-drive's decisions today; any other card keeps Copy and says why it has no
-Send.
+Send is offered only where a station reads an answer comment on a GitHub
+issue or pull request (a parked drive's decisions, and the pickup,
+follow-up and recovery decisions the dispatcher frames); any other card
+keeps Copy and says why it has no Send.
 
 ### A send with no answer
 
