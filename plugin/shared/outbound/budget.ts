@@ -23,7 +23,7 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { swallow } from "../errors.ts";
+import { errnoCode, swallow } from "../errors.ts";
 import { JigError } from "../outcome.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
@@ -171,6 +171,8 @@ export interface AdmitOptions {
   rollMs?: number;
   /** Told the window the request actually reserved in: `null` when it reserved nothing, whatever `reserve` asked. */
   onReserved?: (reservedIn: string | null) => void;
+  /** Throw a store's contention to the caller rather than wait for it. */
+  nonblocking?: boolean;
 }
 
 /** No request may leave for the credential before `resetAt`. */
@@ -212,10 +214,12 @@ export interface BudgetStore {
   /**
    * Apply `change` to the record in one transaction, so two processes' answers
    * do not lose one another; a `null` result leaves the record as it was.
+   * `nonblocking` throws a store's `SQLITE_BUSY` instead of waiting for it.
    */
   update(
     key: string,
     change: (prev: BudgetRecord | null) => BudgetRecord | null,
+    nonblocking?: boolean,
   ): void;
 }
 
@@ -300,18 +304,23 @@ export function sqliteBudgetStore(path = budgetPath()): BudgetStore {
         return null;
       }
     },
-    update(key, change) {
+    update(key, change, nonblocking) {
       try {
         const d = open();
         if (d === null) return;
-        inTransaction(d, () => {
-          const next = change(get(d, key));
-          if (next === null) return;
-          d.query(
-            "INSERT OR REPLACE INTO tracker_budget (key, value) VALUES (?, ?)",
-          ).run(key, JSON.stringify(next));
-        });
+        inTransaction(
+          d,
+          () => {
+            const next = change(get(d, key));
+            if (next === null) return;
+            d.query(
+              "INSERT OR REPLACE INTO tracker_budget (key, value) VALUES (?, ?)",
+            ).run(key, JSON.stringify(next));
+          },
+          nonblocking ? 0 : undefined,
+        );
       } catch (error) {
+        if (nonblocking && errnoCode(error) === "SQLITE_BUSY") throw error;
         swallow(error, "write the tracker budget");
       }
     },
@@ -851,7 +860,7 @@ export function budgetGovernor(
       };
       // The decision and the reservation of one request are one transaction,
       // so concurrent callers each spend their own part of the balance.
-      store.update(key, (record) => {
+      const decide = (record: BudgetRecord | null): BudgetRecord | null => {
         if (record === null) return null;
         const refusal = refusalFor(
           adapter,
@@ -868,7 +877,8 @@ export function budgetGovernor(
         const next = reserved(record, now, name, opts.rollMs);
         out.reservedIn = next === null ? null : name;
         return next;
-      });
+      };
+      store.update(key, decide, opts.nonblocking);
       if (out.refusal !== null) throw out.refusal;
       opts.onReserved?.(out.reservedIn);
       return now;

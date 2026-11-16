@@ -738,7 +738,7 @@ export interface RepoReport {
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;
-    /** `answered-hold`: a need a person answered Leave it to me, kept off Needs you for its facts (`station-answers.ts`). */
+    /** `answered-hold`: a need a person answered with the hold option, kept off Needs you for its facts (`station-answers.ts`). */
     class: LedgerClass | PickupClass | FollowupClass | "answered-hold";
     why: string;
   }>;

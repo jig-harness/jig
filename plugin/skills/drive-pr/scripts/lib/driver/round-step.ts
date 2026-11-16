@@ -150,6 +150,11 @@ async function waitForRoundBoundary(
     );
     return SINGLE_INSTANCE_LOCK_EXIT;
   }
+  // Local stop/hold/resume is checked before remote work, at the fixed
+  // ten-second waiting cadence regardless of bulk CI observation backoff.
+  const mailboxAtRoundStart = await context.mailboxCheckpoint();
+  if (typeof mailboxAtRoundStart === "number") return mailboxAtRoundStart;
+  if (mailboxAtRoundStart === "resumed") context.finalCiWait.clear();
   // Another clone's takeover claim, newer than this driver's own, ends the
   // drive here, before another pass could reply beside its successor.
   const takenOver = await standDownOnNewerClaim(context.pr);
@@ -159,13 +164,10 @@ async function waitForRoundBoundary(
   // previews and never sweeps: the sweep unresolves threads and parks.
   const reversed = context.dryRun ? null : await sweepProvisional(context.pr);
   if (reversed !== null) return reversed;
-  const mailboxAtRoundStart = await context.mailboxCheckpoint();
-  if (typeof mailboxAtRoundStart === "number") return mailboxAtRoundStart;
-  if (mailboxAtRoundStart === "resumed") context.finalCiWait.clear();
   // Reuse only a keep-waiting decision. Terminal claims still pass through
   // live status, release, final-ready and final status below.
   const skippedFinalCi = await context.finalCiWait.skip(
-    context.witnessWaits,
+    0,
     context.witnessWaitLimit,
   );
   if (skippedFinalCi !== null) {
