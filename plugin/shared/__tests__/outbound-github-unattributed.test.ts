@@ -158,31 +158,46 @@ describe("the unattributed row of the cost ledger", () => {
     expect(rows.filter((r) => r.operation === UNATTRIBUTED)).toEqual([]);
   });
 
-  it("settles a cost-only answer's extra points in the shared record, so a fresh process and a later ordinary balance explain them alike", async () => {
+  it("keeps a cost-only answer's extra points against a snapshot sent before it, and skips them once a newer snapshot holds them", () => {
+    let now = 1_000_000;
     const store = memoryBudgetStore();
-    setForgeGovernor(budgetGovernor(store, { share: () => null }));
-    const reset = Math.floor(currentMs() / 1000) + 1800;
-    let remaining = 4500;
-    const gh = client((argv) => {
-      if (argv.includes("rate_limit"))
-        return JSON.stringify({
-          resources: { graphql: { limit: 5000, remaining, reset } },
-        });
-      return JSON.stringify({ data: { rateLimit: { cost: 9 } } });
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
     });
-    const rows: CallRecord[] = [];
-    await withLedgerWriter(
-      (row) => rows.push(row),
-      async () => {
-        await gh(["api", "rate_limit"]);
-        await gh(["api", "graphql", "-f", "query={ viewer { login } }"]);
-        // Another process sharing the store takes the snapshot: no local state.
-        setForgeGovernor(budgetGovernor(store, { share: () => null }));
-        remaining = 4491;
-        await gh(["api", "rate_limit"]);
-      },
-    );
-    expect(rows.filter((r) => r.operation === UNATTRIBUTED)).toEqual([]);
+    const reset = 1_800_000;
+    const window = (remaining: number) => ({
+      limit: 5000,
+      remaining,
+      resetAt: reset,
+    });
+    const snapshot = (remaining: number) => ({
+      snapshot: true,
+      complexity: window(remaining),
+    });
+    const complexity = () => store.read(KEY)?.complexity.remaining;
+    governor.observe(KEY, snapshot(2509), now);
+    const snapshotSentAt = now;
+    now += 10;
+    const sentAt = governor.admit("GitHub", KEY, {
+      windows: ["complexity"],
+      reserve: "complexity",
+    });
+    now += 10;
+    // The query cost nine points: one reserved, eight beyond it.
+    governor.observe(KEY, { extraComplexity: 8 }, sentAt, "complexity");
+    expect(complexity()).toBe(2500);
+    // The earlier snapshot answers late, with the balance before the query.
+    now += 10;
+    governor.observe(KEY, snapshot(2509), snapshotSentAt);
+    expect(complexity()).toBe(2500);
+    // A snapshot sent after the query already holds its cost: nothing twice.
+    now += 10;
+    const laterSent = now;
+    governor.observe(KEY, snapshot(91), laterSent);
+    now += 10;
+    governor.observe(KEY, { extraComplexity: 8 }, sentAt, "complexity");
+    expect(complexity()).toBe(91);
   });
 
   it("records nothing when the counted requests explain the balance, or the balance is another window's", () => {

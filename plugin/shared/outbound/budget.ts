@@ -332,15 +332,31 @@ function currentShare(): number | null {
  */
 export type Unexplained = Partial<Record<"requests" | "complexity", number>>;
 
-/** The complexity window less the points an ordinary answer measured beyond its reservation. */
+/**
+ * The complexity window less the points an ordinary answer measured beyond
+ * its reservation. The deduction counts as an ordinary answer's, so a
+ * snapshot sent before it cannot raise the balance back above it. It is
+ * skipped where the stored balance already holds the spending or belongs to
+ * another window: a snapshot sent at or after the request (its balance
+ * includes what the request cost), or a window that reset since.
+ */
 function withExtraSpent(
   window: BudgetWindow,
   answer: BudgetAnswer,
+  now: number,
+  sentAt: number | undefined,
 ): BudgetWindow {
   const extra = answer.snapshot === true ? 0 : (answer.extraComplexity ?? 0);
-  return extra > 0 && window.remaining !== null
-    ? { ...window, remaining: Math.max(0, window.remaining - extra) }
-    : window;
+  if (extra <= 0 || window.remaining === null) return window;
+  const sent = sentAt ?? now;
+  if (window.resetAt !== null && window.resetAt <= sent) return window;
+  if (window.snapshotSentAt != null && window.snapshotSentAt >= sent)
+    return window;
+  return {
+    ...window,
+    remaining: Math.max(0, window.remaining - extra),
+    answeredOrdinarilyAt: now,
+  };
 }
 
 /** Admits requests for a credential and records what the answers said. */
@@ -842,6 +858,8 @@ export function budgetGovernor(
         const complexity = withExtraSpent(
           take(base.complexity, answer.complexity, "complexity"),
           answer,
+          now,
+          sentAt,
         );
         unexplained =
           answer.snapshot === true
