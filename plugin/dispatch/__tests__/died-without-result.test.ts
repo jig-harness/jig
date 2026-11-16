@@ -18,10 +18,27 @@ function ended(question?: string): ReadRecord {
   } as unknown as ReadRecord;
 }
 
+/** A follow-up whose wrapper died before writing a result, optionally after its closing report. */
+function died(question?: string): ReadRecord {
+  return {
+    record: { action: "followup" },
+    result: null,
+    state: { kind: "died", reason: "cancelled", process: { pid: 0 } },
+    report:
+      question === undefined
+        ? null
+        : { at: "2026-11-15T00:00:00.000Z", report: { question } },
+  } as unknown as ReadRecord;
+}
+
 it("a failing exit with no result and no question died", () => {
   expect(diedWithoutResult(ended())).toBe(true);
 });
 
 it("a failing exit whose closing report asks a question did not die", () => {
   expect(diedWithoutResult(ended("Which base?"))).toBe(false);
+});
+
+it("a wrapper death whose closing report asks a question did not die", () => {
+  expect(diedWithoutResult(died("Which base?"))).toBe(false);
 });

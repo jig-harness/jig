@@ -137,7 +137,10 @@ export function diedWithoutResult(r: ReadRecord): boolean {
   if (r.record.action !== "followup" || r.result !== null) return false;
   if (retryableStartup(r)) return false;
   if (unwrittenResult(r)) return true;
-  if (r.state.kind === "died") return true;
+  if (r.state.kind === "died")
+    return (
+      questionOf(r.state) === null && r.report?.report.question === undefined
+    );
   if (r.state.kind !== "ended") return false;
   const { code, signal } = r.state.exit;
   return (
