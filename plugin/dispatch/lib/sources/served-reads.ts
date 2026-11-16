@@ -485,9 +485,15 @@ function metadataVersions(p: Plan, nowMs: number) {
     key.toLowerCase().replace(/^([1-9]\d*)$/, "#$1");
   if (p.stale !== "all")
     for (const key of p.stale) versions.set(keyOf(key), nowMs);
+  // A child can move away from a parent without updating that former parent.
+  // Metadata caches include the parent's children, so any observed change
+  // invalidates membership-derived metadata for this partial reading.
+  if (p.source === "changed" && p.stale !== "all" && p.stale.size > 0)
+    versions.set("*", nowMs);
   return {
     fullAt,
-    epoch: (key: string) => versions.get(keyOf(key)) ?? fullAt,
+    epoch: (key: string) =>
+      Math.max(versions.get(keyOf(key)) ?? fullAt, versions.get("*") ?? fullAt),
     saved: () => Object.fromEntries(versions),
   };
 }

@@ -173,13 +173,17 @@ it("keeps an unrelated update from refreshing the queue and probes foreign depen
     },
   }));
   assert(t.changedSince);
-  expect(
-    await t.changedSince({
-      since,
-      identity: "dana",
-      keys: ["#1", "Acme/Other#9"],
-    }),
-  ).toEqual({ keys: ["Acme/Other#9"], complete: true, latest: updatedAt });
+  const before = Date.now();
+  const answer = await t.changedSince({
+    since,
+    identity: "dana",
+    keys: ["#1", "Acme/Other#9"],
+  });
+  expect(answer.keys).toEqual(["Acme/Other#9"]);
+  expect(answer.complete).toBe(true);
+  // The boundary is taken before either repository read, so a mutation to
+  // the first repository during the second read remains visible next time.
+  expect(Date.parse(answer.latest ?? "")).toBeGreaterThanOrEqual(before);
   expect(calls.map((call) => call.variables.name)).toEqual(["app", "other"]);
 });
 

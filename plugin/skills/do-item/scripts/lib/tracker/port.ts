@@ -637,7 +637,7 @@ export interface ChangeQuery {
   keys: ReadonlyArray<string>;
 }
 
-/** What `changedSince` found: the issues that changed, whether that list is all of them, and the latest update among them. */
+/** What `changedSince` found: the issues that changed, whether that list is all of them, and a safe next-probe watermark. */
 export interface ChangeAnswer {
   keys: string[];
   complete: boolean;

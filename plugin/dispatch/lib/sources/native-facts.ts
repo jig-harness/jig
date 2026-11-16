@@ -82,6 +82,13 @@ export function nativeFacts(
             reading.then(
               (found) =>
                 found.get(key) ?? guarded(() => source.issue(key, bound), true),
+              () => {
+                // A malformed or inaccessible member makes the native batch
+                // atomic, but must not poison readable siblings' per-key
+                // fallback for the rest of this tick.
+                reads.delete(rowKey(key));
+                return guarded(() => source.issue(key, bound), true);
+              },
             ),
           );
       }

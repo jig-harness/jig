@@ -250,6 +250,10 @@ export function changeProbe(
 ): NonNullable<Tracker["changedSince"]> {
   return async (query, signal) => {
     refuseStopped(signal);
+    // A probe can read several repositories. Advance only to a boundary that
+    // predates every read, otherwise an update to an early repository can be
+    // hidden by a later repository's newer timestamp.
+    const watermark = new Date().toISOString();
     const watched = new Map<string, string[]>();
     for (const key of query.keys) {
       const id = keyOf(client.ref(key), client.home).toLowerCase();
@@ -265,7 +269,6 @@ export function changeProbe(
       ...query.keys.map((key) => slug(client.ref(key)).toLowerCase()),
     ]);
     const changed = new Set<string>();
-    let latest: string | null = null;
     for (const name of repositories) {
       const repo = repoOf(name);
       const page = await readChanges(client, repo, query.since, signal);
@@ -279,13 +282,11 @@ export function changeProbe(
       answer.keys.forEach((key) => {
         changed.add(key);
       });
-      if (answer.latest !== null && (latest === null || answer.latest > latest))
-        latest = answer.latest;
     }
     return {
       keys: [...changed],
       complete: true,
-      latest,
+      latest: changed.size === 0 ? null : watermark,
     } satisfies ChangeAnswer;
   };
 }
