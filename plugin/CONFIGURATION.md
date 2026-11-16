@@ -1805,7 +1805,7 @@ drive's base branch, and the claim markers on a claimed tracker item. The
 item's row in the report carries the class of the call that failed, and
 the repository's turn follows that class as above, except `not-found`: a
 per-item read that fails that way is a failed read, not an absence, so
-the tick exits 1 as for `invalid`, without telling a person. A read that answered
+the tick exits 1 as for `invalid`, with notification at `failures.notify_after`. A read that answered
 in a form that does not read, such as a damaged ledger or marker, carries
 no class and fails the turn.
 
