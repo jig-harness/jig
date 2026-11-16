@@ -366,6 +366,12 @@ describe("the repository a run addresses", () => {
     ).toBeNull();
     expect(repoFlag(["pr", "view", "--", "-R", "example-org/one"])).toBeNull();
     expect(repoFlag(["pr", "view", "-R", "just-a-name"])).toBeNull();
+    expect(
+      repoFlag(["issue", "list", "--label", "-Rother-org/two"]),
+    ).toBeNull();
+    expect(
+      repoFlag(["pr", "view", "https://github.com/Other-Org/Two/pull/1"]),
+    ).toBe("other-org/two");
   });
 
   it("reads a gh api route under repos/", () => {
@@ -414,6 +420,28 @@ describe("the repository a run addresses", () => {
     const one = repository("git@github.com:Example-Org/One.git");
     expect(originRepo(one)).toBe("example-org/one");
     expect(originRepo(scratch())).toBeNull();
+  });
+
+  it("follows the default repository gh chose over origin", () => {
+    const fork = repository("git@github.com:me/one.git");
+    for (const argv of [
+      [
+        "git",
+        "-C",
+        fork,
+        "remote",
+        "add",
+        "upstream",
+        "git@github.com:Example-Org/One.git",
+      ],
+      ["git", "-C", fork, "config", "remote.upstream.gh-resolved", "base"],
+    ])
+      expectSpawnExit(
+        Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" }),
+        0,
+        argv.join(" "),
+      );
+    expect(originRepo(fork)).toBe("example-org/one");
   });
 
   it("takes the flag, then the api route, then GH_REPO, then the working directory", () => {

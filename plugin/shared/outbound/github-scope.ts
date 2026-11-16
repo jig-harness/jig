@@ -12,12 +12,13 @@
  *
  * 1. the `-R`/`--repo` value (`-R x`, `-Rx`, `-R=x`, `--repo x`,
  *    `--repo=x`); a `HOST/OWNER/REPO` or URL value gives its last two path
- *    segments;
+ *    segments; failing that, a positional `https://HOST/OWNER/REPO/…`
+ *    argument;
  * 2. for `gh api`, a route that starts `repos/<owner>/<repo>`;
  * 3. `GH_REPO` in the run's environment;
- * 4. the `origin` remote of the run's working directory, read by a local
- *    `git config` run (no network, a 2-second deadline), once per directory
- *    in a process. A remote in https, `ssh://` or `user@host:owner/repo`
+ * 4. the remote `gh repo set-default` chose, else the `origin` remote, of
+ *    the run's working directory, read by local `git config` runs (no
+ *    network, a 2-second deadline each) and kept for 30 seconds. A remote in https, `ssh://` or `user@host:owner/repo`
  *    form gives its last two path segments, whatever its host, since an SSH
  *    host alias is a common way to pick an account; a local path gives none.
  *
@@ -32,6 +33,7 @@ import { apiRoute, VALUED } from "./gh-route.ts";
 import { githubToken } from "./github-credential.ts";
 import { gitIdentityEnv } from "../git-env.ts";
 import { swallow } from "../errors.ts";
+import { currentMs } from "../time.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -41,6 +43,24 @@ const ORIGIN_DEADLINE_MS = 2_000;
 /** Flags of the common subcommands whose value is free text, never a flag. */
 const TEXT_VALUED = new Set([
   "-b",
+  "-l",
+  "--label",
+  "-a",
+  "--assignee",
+  "-F",
+  "--body-file",
+  "-t",
+  "--template",
+  "-M",
+  "--milestone",
+  "-B",
+  "--base",
+  "-H",
+  "--head",
+  "-r",
+  "--reviewer",
+  "-p",
+  "--project",
   "--body",
   "--title",
   "-m",
@@ -103,6 +123,15 @@ export function repoFlag(args: readonly string[]): string | null {
     if (arg.startsWith("--repo=")) return repoOfName(arg.slice(7));
     if (arg.startsWith("-R")) return repoOfName(arg.slice(2).replace(/^=/, ""));
   }
+  return positionalUrlRepo(args);
+}
+
+/** The repository a positional `https://HOST/OWNER/REPO/(pull|issues|…)/N` argument names; `null` when there is none. */
+function positionalUrlRepo(args: readonly string[]): string | null {
+  for (const arg of args.slice(1)) {
+    const match = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/[^/]+/i.exec(arg);
+    if (match !== null) return lastTwo(`${match[1]}/${match[2]}`);
+  }
   return null;
 }
 
@@ -113,36 +142,77 @@ export function apiRepo(args: readonly string[]): string | null {
   return match === null ? null : lastTwo(`${match[1]}/${match[2]}`);
 }
 
-/** What this process read of each directory's `origin` remote, by its resolved path. */
-const origins = new Map<string, string | null>();
+/** The most directories whose remote this process keeps an answer for. */
+const ORIGINS_KEPT = 256;
 
-/** The repository the `origin` remote of `dir` names; `null` when there is none or it cannot be read. */
+/** How long a read of a directory's remote is reused, so a changed remote is read again. */
+const ORIGIN_TTL_MS = 30_000;
+
+/** What this process read of each directory's repository, by its resolved path. */
+const origins = new Map<string, { repo: string | null; at: number }>();
+
+/** One local `git config` read of `dir`: its stdout, or `null` when the read failed (a spawn error, a timeout), which is not an absence. */
+function gitConfig(dir: string, args: readonly string[]): string | null {
+  try {
+    // Scrubbed of the variables that point git at another repository, so
+    // the answer is about the directory asked about.
+    const read = spawnSync("git", ["-C", dir, "config", ...args], {
+      env: gitIdentityEnv(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: ORIGIN_DEADLINE_MS,
+      windowsHide: true,
+    });
+    if (read.error !== undefined || typeof read.stdout !== "string")
+      return null;
+    // Exit 1 is git's "no such key"; anything else is a failed read.
+    return read.status === 0 || read.status === 1 ? read.stdout : null;
+  } catch (error) {
+    swallow(error, "a directory whose remote cannot be read addresses none");
+    return null;
+  }
+}
+
+/**
+ * The repository the client addresses for an unqualified command in `dir`:
+ * the remote `gh repo set-default` chose (`remote.<name>.gh-resolved`),
+ * else the `origin` remote; `null` when there is none or it cannot be read.
+ * A successful read is reused for a short while; a failed one is not kept.
+ */
 export function originRepo(dir: string): string | null {
   const at = resolve(dir);
   const known = origins.get(at);
-  if (known !== undefined) return known;
-  let found: string | null = null;
-  try {
-    // Scrubbed of the variables that point git at another repository, so
-    // the answer is the remote of the directory asked about.
-    const read = spawnSync(
-      "git",
-      ["-C", at, "config", "--get", "remote.origin.url"],
-      {
-        env: gitIdentityEnv(),
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: ORIGIN_DEADLINE_MS,
-        windowsHide: true,
-      },
-    );
-    if (read.status === 0 && typeof read.stdout === "string")
-      found = repoOfRemote(read.stdout);
-  } catch (error) {
-    swallow(error, "a directory whose remote cannot be read addresses none");
+  if (known !== undefined && currentMs() - known.at < ORIGIN_TTL_MS)
+    return known.repo;
+  let remote = "origin";
+  const resolved = gitConfig(at, [
+    "--get-regexp",
+    "^remote\\..*\\.gh-resolved$",
+  ]);
+  if (resolved === null) return null;
+  for (const line of resolved.split("\n")) {
+    const match = /^remote\.(.+)\.gh-resolved\s+(\S+)/.exec(line);
+    if (match === null) continue;
+    if (match[2] === "base") remote = match[1] ?? remote;
+    else {
+      const named = repoOfName(match[2]);
+      if (named !== null) return keep(at, named);
+    }
   }
-  origins.set(at, found);
-  return found;
+  const url = gitConfig(at, ["--get", `remote.${remote}.url`]);
+  if (url === null) return null;
+  return keep(at, repoOfRemote(url));
+}
+
+/** Remember `repo` as the answer for `at`, dropping the oldest entry past the bound. */
+function keep(at: string, repo: string | null): string | null {
+  origins.delete(at);
+  origins.set(at, { repo, at: currentMs() });
+  if (origins.size > ORIGINS_KEPT) {
+    const oldest = origins.keys().next().value;
+    if (oldest !== undefined) origins.delete(oldest);
+  }
+  return repo;
 }
 
 /**
