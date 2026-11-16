@@ -29,7 +29,7 @@ import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
 import { commentAuthor, commentUrl } from "./comments.ts";
-import { dispatchSource } from "./dispatch-source.ts";
+import { DISPATCH_FIELDS, dispatchSource } from "./dispatch-source.ts";
 import type { JiraFacetStores } from "./facets.ts";
 import { type JiraIssue, parseIssue, stateInputOf, record } from "./read.ts";
 import {
@@ -383,6 +383,7 @@ export function reportOperations(
         client.site,
         await client.fieldLabels(signal),
         await client.facetFields(signal),
+        DISPATCH_FIELDS,
       );
       return poolOf(
         issue,
