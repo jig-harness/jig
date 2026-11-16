@@ -43,7 +43,6 @@ import { parseArgs } from "node:util";
 import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import {
   consumerRoot,
-  readConfig,
   remoteName,
   siblingSkill,
 } from "../../../shared/consumer.ts";
@@ -126,11 +125,6 @@ function must<T>(outcome: Outcome<T>, code: number): T {
 }
 
 const root = (): string => consumerRoot();
-
-/** The merged configuration of the working tree's layers. */
-function workingConfig(): Record<string, unknown> {
-  return must(attempt("config-invalid", "the configuration", readConfig), 2);
-}
 
 function gitIn(dir: string, timeoutSec = GIT_TIMEOUT_SEC) {
   return (args: string[]) =>
@@ -270,42 +264,60 @@ const FACTS_EXIT: Record<FactsFailure, number> = {
   "rate-limited": 5,
 };
 
-/** The integration branch: the repository's own, never the pull request's base. */
-async function integrationOf(dir: string, remote: string): Promise<string> {
-  const name = await integrationBranchOf(workingConfig(), remote, gitIn(dir));
-  return (
-    name ??
-    stop(
-      2,
-      "the integration branch is unknown: set repository.base_branch or fetch the remote's HEAD",
-    )
-  );
-}
-
-/**
- * The integration branch and the settings its freshly fetched snapshot holds.
- * A stacked pull request must not choose the snapshot that decides its
- * authority, so a failed fetch or an unreadable snapshot stops the run.
- */
-async function trustedPolicy(
+/** The settings a freshly fetched snapshot of `branch` holds; a failed fetch or an unreadable snapshot stops the run. */
+async function fetchedPolicy(
   dir: string,
   remote: string,
-): Promise<{ integration: string; read: RunSettings }> {
-  const integration = await integrationOf(dir, remote);
-  const policyRef = `${remote}/${integration}`;
+  branch: string,
+): Promise<RunSettings> {
+  const policyRef = `${remote}/${branch}`;
+  const refspec = `+refs/heads/${branch}:refs/remotes/${policyRef}`;
   const fetch = gitIn(dir, FETCH_TIMEOUT_SEC);
-  const refspec = `+refs/heads/${integration}:refs/remotes/${policyRef}`;
   const fetched = await fetch(["fetch", "--no-tags", remote, refspec]);
   if (fetched.code !== 0)
     stop(
       1,
       `the fetch of ${policyRef} exited ${fetched.code}: its policy may be stale`,
     );
-  const read = await settingsFor(dir, remote, integration);
+  const read = await settingsFor(dir, remote, branch);
   const unread =
     read.origin !== "integration branch" && !process.env.JIG_OVERLAY;
   if (unread) stop(1, `the configuration at ${policyRef} cannot be read`);
-  return { integration, read };
+  return read;
+}
+
+/** The `repository.base_branch` a snapshot names when it is not `head`. */
+function otherBranch(
+  values: Record<string, unknown>,
+  head: string,
+): string | null {
+  const named = valueAt(values, "repository.base_branch");
+  return typeof named === "string" && named !== "" && named !== head
+    ? named
+    : null;
+}
+
+/**
+ * The integration branch and the settings its snapshot holds.  The remote's
+ * HEAD bootstraps the choice, since the working tree and the pull request are
+ * the preview's own; the configuration read from that branch may name another
+ * `repository.base_branch`, whose snapshot then decides.
+ */
+async function trustedPolicy(
+  dir: string,
+  remote: string,
+): Promise<{ integration: string; read: RunSettings }> {
+  const head = await integrationBranchOf({}, remote, gitIn(dir));
+  if (head === null)
+    return stop(
+      2,
+      `the remote's HEAD is unknown: run git remote set-head ${remote} -a`,
+    );
+  const first = await fetchedPolicy(dir, remote, head);
+  const named = otherBranch(first.values, head);
+  return named === null
+    ? { integration: head, read: first }
+    : { integration: named, read: await fetchedPolicy(dir, remote, named) };
 }
 
 async function factsCommand(args: string[]): Promise<number> {

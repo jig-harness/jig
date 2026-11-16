@@ -99,8 +99,8 @@ describe("the range a merge brought in", () => {
 });
 
 describe("a single-parent merge of several commits", () => {
-  const viewOf = (files: string[]): PrView =>
-    ({ commits: ["1", "2"], files }) as unknown as PrView;
+  const viewOf = (commitSubjects: string[]): PrView =>
+    ({ commitSubjects }) as unknown as PrView;
 
   test("a squash stays a squash although main moved after its parent", async () => {
     const root = withFeature();
@@ -110,14 +110,14 @@ describe("a single-parent merge of several commits", () => {
     const merge = gitRun(root, "rev-parse", "HEAD");
     const squash = { kind: "squash" as const, base: before, head: merge };
     const settled = await settleSquash(
-      viewOf(["feature.ts", "shared.ts"]),
+      viewOf(["add feature", "edit shared"]),
       squash,
       runnerIn(root),
     );
     expect(settled).toEqual(squash);
   });
 
-  test("a rebase reaches back over every landed commit", async () => {
+  test("a rebase reaches back over every landed commit, whatever files they touch", async () => {
     const root = withFeature();
     const before = gitRun(root, "rev-parse", "HEAD");
     gitRun(root, "cherry-pick", "feature~1", "feature");
@@ -128,7 +128,7 @@ describe("a single-parent merge of several commits", () => {
       head: merge,
     };
     const settled = await settleSquash(
-      viewOf(["feature.ts", "shared.ts"]),
+      viewOf(["add feature", "edit shared"]),
       squash,
       runnerIn(root),
     );

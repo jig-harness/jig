@@ -477,3 +477,19 @@ describe("a declaration's completeness", () => {
     expect(section.steps).toHaveLength(1);
   });
 });
+
+describe("a nested step's detail", () => {
+  it("keeps a parent's detail with the parent, not the nested step above it", () => {
+    const body = [
+      "## Out-of-tree follow-ups",
+      "",
+      "- [ ] Enable the flag",
+      "  - [x] Confirm approval",
+      "  - only in staging",
+    ].join("\n");
+    expect(outOfTreeSteps(body).steps).toEqual([
+      { text: "Enable the flag only in staging", done: false },
+      { text: "Confirm approval", done: true },
+    ]);
+  });
+});

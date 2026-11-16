@@ -412,40 +412,50 @@ export interface OutOfTreeSection {
   steps: OutOfTreeStep[];
 }
 
+/** A step's text with detail added to the nearest step above that is less indented than the detail: a nested step's own detail stays with it, its parent's with the parent. */
+function addDetail(
+  steps: { text: string; indent: number }[],
+  from: number,
+  text: string,
+  indent: number,
+): void {
+  if (text === "") return;
+  const own = steps.slice(from);
+  const target = own.findLast((step) => step.indent < indent) ?? own.at(-1);
+  if (target) target.text = `${target.text} ${text}`;
+}
+
 /** The steps of a description's out-of-tree sections, each with its text; none when it has no such section. */
 export function outOfTreeSteps(body: string): OutOfTreeSection {
   const found = sections(body);
-  const steps: OutOfTreeStep[] = [];
+  const steps: { text: string; indent: number; done: boolean }[] = [];
   for (const lines of found) {
     // The first step's indent is the steps' own; a plain item deeper than it, and any continuation line, is a step's detail.
     const first = steps.length;
     let top: number | null = null;
     for (const l of lines) {
       const item = itemOf(l);
-      const detail = (): void => {
-        const text = (
-          item === null ? l.trim() : (itemText(l)?.text ?? "")
-        ).replace(/^\s+/, "");
-        const last = steps[steps.length - 1];
-        if (text !== "" && steps.length > first && last)
-          last.text = `${last.text} ${text}`;
-      };
+      const indent = indentOf(l);
       if (item === null) {
-        detail();
+        addDetail(steps, first, l.trim(), indent);
         continue;
       }
       top ??= item.indent;
       const text = itemText(l)?.text ?? "";
-      if (item.kind === "done") steps.push({ text, done: true });
+      if (item.kind === "done") steps.push({ text, indent, done: true });
       else if (item.kind === "open" || item.indent <= top)
-        steps.push({ text, done: false });
-      else detail();
+        steps.push({ text, indent, done: false });
+      else addDetail(steps, first, text, indent);
     }
   }
   const none = found.some((lines) =>
     lines.some((l) => saysNone(itemText(l)?.text ?? l.trim())),
   );
-  return { declared: found.length > 0, saysNone: none, steps };
+  return {
+    declared: found.length > 0,
+    saysNone: none,
+    steps: steps.map(({ text, done }) => ({ text, done })),
+  };
 }
 
 /** The steps a description's out-of-tree section lists; none when it has no such section. */

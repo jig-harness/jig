@@ -145,6 +145,8 @@ export interface PrView {
   labels: string[];
   files: string[];
   commits: string[];
+  /** The first line of each commit's message, oldest first. */
+  commitSubjects: string[];
 }
 
 /** The `gh pr view` fields `parsePrView` reads. */
@@ -181,6 +183,7 @@ export function parsePrView(text: string): PrView | null {
     labels: names(raw.labels, "name"),
     files: names(raw.files, "path"),
     commits: names(raw.commits, "oid"),
+    commitSubjects: names(raw.commits, "messageHeadline"),
   };
 }
 
@@ -370,40 +373,40 @@ function rangeOrNote(
 }
 
 /**
- * A single-parent merge is a squash or a rebase of several commits; the
- * pull request's own file list tells them apart.  The first-parent range of a
- * squash changes exactly those files; the range back over as many commits as
- * the pull request had does, for a rebase, and a squash's older history does
- * not.
+ * A single-parent merge is a squash or a rebase of several commits.  A rebase
+ * lands one single-parent commit per pull request commit, with its message
+ * subject; a squash lands one commit whose subject is the pull request's own.
+ * Only a landed sequence whose subjects are the pull request's, in order,
+ * widens the range back over it; anything else stays the squash it reads as.
  */
 export async function settleSquash(
   view: PrView,
   squash: DiffRange,
   git: GitRunner,
 ): Promise<DiffRange> {
-  const count = view.commits.length;
-  if (squash.kind !== "squash" || count < 2 || view.files.length === 0)
-    return squash;
-  const wanted = new Set(view.files);
-  const changesWanted = async (range: DiffRange): Promise<boolean> => {
-    const read = await changedFilesOf(git, range);
-    return (
-      read.ok &&
-      read.value.length === wanted.size &&
-      read.value.every((f) => wanted.has(f))
-    );
-  };
-  if (await changesWanted(squash)) return squash;
-  const parent = await git(["rev-parse", `${squash.head}~${count}`]);
-  const base = parent.stdout.trim();
-  if (parent.code !== 0 || !SHA.test(base)) return squash;
-  const rebase: DiffRange = {
-    kind: "rebase",
-    base,
-    head: squash.head,
-    branchHead: squash.head,
-  };
-  return (await changesWanted(rebase)) ? rebase : squash;
+  const wanted = view.commitSubjects;
+  if (squash.kind !== "squash" || wanted.length < 2) return squash;
+  const log = await git([
+    "log",
+    "--first-parent",
+    `-n${wanted.length}`,
+    "--format=%P%x1f%s%x1e",
+    squash.head,
+  ]);
+  if (log.code !== 0) return squash;
+  const landed = log.stdout
+    .split("\x1e")
+    .map((r) => r.replace(/^\n/, ""))
+    .filter((r) => r !== "")
+    .map((r) => r.split("\x1f") as [string, string]);
+  const linear = landed.every(([parents]) => SHA.test(parents.trim()));
+  const subjects = landed.map(([, subject]) => subject.trim()).reverse();
+  const same =
+    landed.length === wanted.length &&
+    subjects.every((subject, i) => subject === wanted[i]?.trim());
+  const base = landed.at(-1)?.[0].trim() ?? "";
+  if (!linear || !same) return squash;
+  return { kind: "rebase", base, head: squash.head, branchHead: squash.head };
 }
 
 /** The range of a merged pull request, fetching its merge commit when the clone lacks it. */
