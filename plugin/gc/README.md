@@ -57,6 +57,7 @@ user's own fetches. See
 | `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Registered test scopes can be collected only when their persistent registration proves every holder gone; incomplete registrations and other scratch remain report-only.                                                                                                                                                                                                                                                                                                                  |
 | `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded, except the worktrees an agent tool makes inside the clone ([below](#worktrees-an-agent-tool-makes)). Ignored local content needs preservation evidence unless a rule accounts for it ([below](#ignored-content)); the receipt lists every path set aside and the rule that set it aside. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); an agent tool's worktree is marked `runtime: agent-tool` and collected with git; any other eligible worktree remains report-only until the opener shares session admission. |
 | `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. Removes the one-time archives of collected worktrees' ignored content past the same retention.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `orca-terminals` | Machine kind, planned when the machine entry names Orca's command (`orca.command`); closes [run tabs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) whose run was killed before it closed its own tab, and parked run tabs nobody returned to ([below](#run-tabs)). |
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
@@ -217,9 +218,23 @@ parks its reflection findings, as for an Orca checkout. Right before removal
 it checks again that the tree's commit and branch are the ones the final
 proof saw, that it gained no changes, hidden index flags or operation, and
 that no process holds it: the hook may run for minutes, and a commit on a
-detached head would be on no ref once the tree is gone. Then it removes the
-tree with `git worktree remove` without `--force`, which deletes ignored
-content such as dependency directories, under a deadline of its own; a
+detached head would be on no ref once the tree is gone. Git has no
+check-and-remove in one step, so gc takes the tree's `HEAD.lock` in its git
+directory after the last scans and before that comparison, and holds it
+until the removal. From then on a commit, checkout, switch or reset in the
+tree fails with git's own "cannot lock ref" error instead of moving the
+head, so no commit can land on a detached head between the comparison and
+the removal, and none is lost. A `HEAD.lock` another git process already
+holds keeps the tree. When the removal does not happen, gc deletes its lock,
+and the receipt says when it could not; a run stopped by a signal before
+then can leave the lock behind, and the file names `jig gc` and its process,
+so a person can tell it from git's own and delete it. A repository that keeps
+its refs in [reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), git's newer reference storage, has no
+`HEAD.lock` to hold: there gc keeps the tree, on a branch or detached, before
+running its hook, since a tree on a branch can be detached and committed on
+after the last comparison. Then it removes the tree with `git worktree remove`
+without `--force`, which deletes ignored content such as dependency
+directories, under a deadline of its own; a
 removal cut short leaves the tree partly deleted, and the receipt says so.
 
 A tree the kind keeps (an open pull request, unpushed commits, changes, a
@@ -258,6 +273,39 @@ so one with commits of its own is kept. A tree detached at a commit of the
 base branch is judged by the pull request the forge lists as bringing that
 commit in, whose commits a remote branch keeps; where the forge lists none,
 it is judged as a tree without a pull request.
+
+### Run tabs
+
+A run Jig starts in an Orca terminal tab closes its own tab when it ends
+with nothing left for a person, and records the tab under
+`~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`). A run
+killed before its end leaves the tab and its record
+behind, and a tab parked for a person stays until someone closes it. The
+`orca-terminals` kind joins those records to `orca terminal list --json`,
+read with the machine entry's `orca.command`, and proves each tab:
+
+- **kept** while its shell is gone or its PID was reused (the record no
+  longer proves the tab is the run's), while the shell has any child process
+  (a command someone typed into it), or while its last output in Orca's
+  listing, or its opening when Orca has no output time, falls inside the
+  guard: `orca.terminal_idle_hours`, 24 hours by default, which the machine
+  can lengthen and never shorten. A process table that cannot be read counts
+  every tab as busy.
+- **closed** once it is idle past the guard. Collection reads Orca's listing
+  and the process table again, then closes the recorded terminal with
+  `orca terminal close --terminal <handle>`, never the whole tab, so a pane a
+  person added beside it stays. Orca refusing the close is recorded as live.
+- **forgotten** when Orca's listing no longer names it: only the record is
+  deleted, and Orca is not called. A listing that leaves out a host or is cut
+  short proves nothing about a tab it does not name, which stays
+  `unverified`.
+
+A tab whose shell is gone keeps its record until Orca stops listing the
+tab; closing the tab by hand lets the next run delete the record. A report
+(`jig gc --kind orca-terminals`) lists every recorded tab with its proof and
+closes nothing. The records are read from the machine's Jig state, never
+from a directory the environment names, so a tab Jig did not record is never
+touched. With no records, Orca is not called.
 
 ### Worktrees Orca manages
 

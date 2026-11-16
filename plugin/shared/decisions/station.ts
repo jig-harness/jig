@@ -101,9 +101,9 @@ const OPTIONS: Readonly<Record<StationOptionId, Omit<ParkedOption, "id">>> = {
     pay: ["A session the record still describes is no longer tracked."],
   },
   hold: {
-    name: "Leave it to me",
+    name: "I'll handle it — hide this card",
     summary:
-      "The dispatcher takes no step on it for these facts and stops listing it under Needs you; it lists it again when they change.",
+      "Nothing is done; the work stays where it is. The dispatcher hides this card for these facts and lists it again when they change.",
     pay: ["You settle it by hand."],
   },
 };
@@ -115,6 +115,7 @@ function stationOption(id: StationOptionId): ParkedOption {
 
 /** The id of a dispatcher option named `name`; `undefined` for a name no dispatcher option has. */
 export function stationOptionId(name: string): StationOptionId | undefined {
+  if (name === "Leave it to me") return "hold";
   return (Object.keys(OPTIONS) as StationOptionId[]).find(
     (id) => OPTIONS[id].name === name,
   );
@@ -401,6 +402,8 @@ export interface StationAnswer {
   address: string;
   /** Where the answer comment goes: the pull request, an issue on the forge, or an item on another tracker. */
   on: "pull-request" | "issue" | "tracker";
+  /** The configured GitHub issue repository, when it differs from the code repository. */
+  repository?: string;
   /** `session`: the stage's own pass framed it; `dispatcher`: the tick did, and carries out the option chosen. */
   framedBy: "session" | "dispatcher";
 }

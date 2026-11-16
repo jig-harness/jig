@@ -915,9 +915,18 @@ make, use the entry's term instead.
   without an *acceptance verdict*. It stands in for a review nobody ran and
   never overrides a rejecting one.
 - **Tail** — an open child of an *epic* that the epic was never scoped to
-  finish, such as a legal sign-off, an operator step or review debt. At
+  finish, such as a legal sign-off, an operator step, review debt or a
+  person-only check (plain `hitl` or `ops-pending`). At
   closure a tail is linked back and given a comment naming the epic, then
-  unparented and moved to the standing destination for its kind.
+  unparented and moved to the standing destination for its kind. New review
+  deferrals go straight to the backlog with related links; they never become
+  children merely because their origin belongs to the epic.
+- **Person-checks list** — one standing open issue that holds the checks only
+  a person can perform after an epic's designed scope is delivered. At
+  closure, person-only tails move there; an epic's own owed operator step is
+  filed there too, so the epic can close without declaring the check done.
+  The destination is named by `issue_tracker.person_checks`; its closure
+  wiring is planned ([M9](modules/M9-tasks-memory/README.md)).
 - **Execution plan** — the order of an *epic*'s children, kept on the epic
   as a section with a machine-readable block (`execution-plan-v1`): each
   child's precedence band (its depth in the order), its lane (a group of
@@ -966,6 +975,10 @@ make, use the entry's term instead.
   branch. A missing linked working directory does not prove its commits
   disappeared from the clone's shared Git storage; inspect the surviving
   branch references and reflogs before reconstructing work.
+- **Reftable** — Git's newer format for storing references (branches, tags and
+  `HEAD`) in compact binary tables instead of one file per reference. A
+  repository chooses it at creation with `--ref-format=reftable`; tools that
+  rely on a reference's lock file, such as `HEAD.lock`, find none there.
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
@@ -1956,6 +1969,14 @@ make, use the entry's term instead.
   chapter's prose are written by hand
   ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
   (a spec is what a work item links).
+- **Rule matcher** — the one piece of the plugin that decides whether a rule
+  in a repository's configuration matches a tracker item or a change, for
+  every field that selects something (a base branch, a review gate, an
+  agent) by their facts: the item's labels, title or size, the paths the
+  change touches. A rule lists values per fact and matches when any one of
+  them does; each field says whether the first matching rule decides or
+  every one applies. Its *Protocol chapter* is *Rule matchers in
+  configuration* ([plugin/protocol/rule-matchers.md](plugin/protocol/rule-matchers.md)).
 - **Protocol chapter** — one contract's part of the *Jig Protocol*: a status
   line with its own version, prose written by hand, and generated sections
   listing every value with its meaning. A **stable** chapter only grows
@@ -2518,6 +2539,9 @@ make, use the entry's term instead.
 - **Incarnation** — the id a *dispatcher*'s state database got when it was
   created. A *hub* uses it to tell a host's records from those of an earlier
   database of the same host.
+- **Worktree incarnation** — which creation of a worktree at a path a record
+  was taken on, so a worktree removed and recreated at the same path is a
+  new one. Not the *incarnation* of a dispatcher's database.
 - **Capabilities** — named flags a call to the *hub* carries, and the hub
   answers with its own, so either side adds a feature without changing the
   other.
@@ -2593,7 +2617,9 @@ make, use the entry's term instead.
   closes itself when its run ends with nothing for a person (converged,
   merged, taken over, re-armable, stopped by a person); a run that parks or
   fails keeps its tab, and the next run for the same pull request or item
-  closes it. A tab a person opened is never closed.
+  closes it; `jig gc` closes one whose run was killed, or that nobody
+  returned to, once it has been idle past its guard. A tab a person opened
+  is never closed.
 - **Pull request state labels (dispatch labels)** (after their setting `dispatch.labels`) — the labels that show where a pull request stands,
   from any forge client, and through which a person steers its drive and
   the *dispatcher*: off unless a repository turns them on, all under one

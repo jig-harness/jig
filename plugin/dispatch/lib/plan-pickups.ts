@@ -33,6 +33,11 @@
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
  */
+import {
+  reportEvidence,
+  reportFramed,
+  reportQuestion,
+} from "./report-needs.ts";
 import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
@@ -293,6 +298,7 @@ function endedNeed(
       state: item.state,
       account: record.account,
       ended: endedHow(latest),
+      ...reportEvidence(latest.report),
     },
     cause: "pickup-ended",
     notice: pickupNotice(
@@ -514,10 +520,14 @@ function questionAsked(
   // What a pass whose result the host could not write asked is the host's fault, never a person's question.
   const unwritten = unwrittenResult(latest);
   if (unwritten && (input.rerunsHeld ?? null) !== null) return null;
-  const question = unwritten
+  const asked = unwritten
     ? `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
     : endedQuestion(latest);
-  if (question === null) return null;
+  if (asked === null) return null;
+  // A pass whose result the host could not write wrote no report a person reads.
+  const report = unwritten ? null : latest.report;
+  const question = reportQuestion(report, asked);
+  const framed = unwritten ? undefined : reportFramed(latest.framed, report);
   const { record } = latest;
   const reason = unwritten
     ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again: ${question}`
@@ -534,11 +544,10 @@ function questionAsked(
       state: item.state,
       account: record.account,
       question,
+      ...reportEvidence(report),
     },
     cause: "pickup-question",
-    ...(latest.framed === undefined || unwritten
-      ? {}
-      : { framed: latest.framed }),
+    ...(framed === undefined ? {} : { framed }),
     notice: pickupNotice(
       slug,
       `${item.key} question, record ${record.id}`,

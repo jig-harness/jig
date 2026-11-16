@@ -1,14 +1,10 @@
 /**
- * Where a card's Send posts, or why a card has no Send. Send writes the
- * comment Copy takes as a comment on the pull request, and only a drive
- * reads an answer from one: its re-arm reads the `answer <key>:` lines on
- * its pull request. So Send is offered for a parked drive's decisions alone,
- * and only on GitHub's own site, the one forge whose API the page's content
- * security policy lets it reach; and only on a page that came over a path
- * that protects the token (`transportFault`).
+ * Send follows the station's declared comment target, or a parked drive's
+ * pull request. The link must match that target on github.com; a tracker
+ * whose station cannot read comment answers keeps Copy alone.
  */
 
-/** The pull request a card's answers are posted on. */
+/** The pull request or GitHub issue a card's answers are posted on. */
 export interface SendTarget {
   /** `owner/name`. */
   repo: string;
@@ -25,30 +21,51 @@ export function sendTargetOf(need: {
   url: string | null;
   /** Whether the card holds a drive's parked decisions. */
   parked: boolean;
+  answerOn?: "pull-request" | "issue" | "tracker";
+  answerRepository?: string;
+  target?: string;
 }): { to: SendTarget } | { absent: string } {
-  if (!need.parked || need.pr === null)
-    return {
-      absent:
-        "No Send here: only a drive's parked decisions are read from an answer comment. Settle this one where its link goes.",
-    };
-  if (need.url === null)
-    return {
-      absent:
-        "No Send here: the record holds no link to this pull request, so the page cannot tell which forge it is on. Copy the answers and paste them.",
-    };
-  const found = GITHUB_PULL.exec(need.url);
-  if (found === null)
-    return {
-      absent: `No Send here: Send posts to github.com only, and this pull request is at ${hostOf(need.url)}. Copy the answers and paste them.`,
-    };
   if (
-    found[1]?.toLowerCase() !== need.repo.toLowerCase() ||
-    Number(found[2]) !== need.pr
+    !need.parked &&
+    need.answerOn !== "pull-request" &&
+    need.answerOn !== "issue"
   )
     return {
-      absent: `No Send here: the record's link names another pull request than ${need.repo} #${need.pr}. Copy the answers and paste them.`,
+      absent:
+        "No Send here: this station cannot read an answer comment here. Settle this one where its link goes.",
     };
-  return { to: { repo: need.repo, number: need.pr } };
+  const kind = need.answerOn === "issue" ? "issue" : "pull request";
+  const repo =
+    need.answerOn === "issue"
+      ? (need.answerRepository ?? need.repo)
+      : need.repo;
+  if (need.url === null)
+    return {
+      absent: `No Send here: the record holds no link to this ${kind}, so the page cannot tell which forge it is on. Copy the answers and paste them.`,
+    };
+  const pattern =
+    need.answerOn === "issue"
+      ? /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)$/
+      : GITHUB_PULL;
+  const found = pattern.exec(need.url);
+  const number =
+    need.answerOn === "issue"
+      ? Number(/^#(\d+)$/.exec(need.target ?? "")?.[1])
+      : need.pr;
+  if (found === null)
+    return {
+      absent: `No Send here: Send posts to github.com only, and this ${kind} is at ${hostOf(need.url)}. Copy the answers and paste them.`,
+    };
+  if (
+    found[1]?.toLowerCase() !== repo.toLowerCase() ||
+    Number(found[2]) !== number ||
+    !Number.isSafeInteger(number) ||
+    (number ?? 0) <= 0
+  )
+    return {
+      absent: `No Send here: the record's link names another ${kind} than ${repo} ${need.target ?? `#${need.pr}`}. Copy the answers and paste them.`,
+    };
+  return { to: { repo, number: number as number } };
 }
 
 function hostOf(url: string): string {

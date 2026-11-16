@@ -187,7 +187,11 @@ was sent: the caller reads the item again before it writes again.
   when it is answered.
 - A tick exits 0 when every failed read is of a class that clears by
   waiting and under its threshold. The failure ledger counts in a row per
-  cause, and a `rate-limited` read does not count before its reset.
+  cause, and a `rate-limited` read does not count before its reset. A
+  read a turn makes for one item (a pull request's comments, a parked
+  drive's thread, a base branch's head, a claim marker) carries its call's
+  class on the item's row and counts the same way; one that answered but
+  does not parse carries none and fails the turn.
 - A pass that meets `rate-limited` before it changed anything records that
   it waits until the reset, and the dispatcher starts it again then.
 
@@ -226,10 +230,6 @@ was sent: the caller reads the item again before it writes again.
 
 One pull request per remaining step.
 
-- **Reuse.** Move the existing queue snapshots and assignment caches into
-   `cache`, `coalesce` and `batch`. The remaining reads adopt the library:
-   the deferral script's tracker calls through the adapter, and the nested
-   page sizes of the issue and ledger queries.
 - **The gates and the lens.**
 
 ## Left out

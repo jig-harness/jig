@@ -90,9 +90,7 @@ restarts the drive.
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a converged drive arming the merge it certified
-  (roadmap item 9); the route applied to the implementer and recorded on the
-  pull request (roadmap item 31); the drive's CI-repair round running
-  `fix-ci` (Later)
+  (roadmap item 9); the drive's CI-repair round running `fix-ci` (Later)
 
 ## A line that runs with nobody at the keyboard
 
@@ -165,7 +163,10 @@ machine stays where it is. A machine whose jobs an older release installed
 runs `jig upgrade` once to turn this on.
 The dispatcher starts sessions through a [session runtime](GLOSSARY.md).
 Orca is the first, and another runtime joins by implementing the same
-interface.
+interface. In Orca, a [plugin](https://github.com/jig-harness/orca-plugin)
+shows the line in the status bar and opens a panel on the person's inbox,
+where they answer a park. It also refuses a launch into a worktree `jig gc`
+is removing.
 
 - **Skills:** [`do-item`](plugin/skills/do-item/SKILL.md),
   [`steward`](plugin/skills/steward/README.md),
@@ -175,8 +176,9 @@ interface.
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),
   [M3](modules/M3-change-area-catalog/)
-- **On the roadmap:** a launch guard and an Orca panel for what waits on a
-  person (item 34)
+- **On the roadmap:** a launch guard that tells repositories and recreated
+  worktrees apart, and answer picks and a merge button in the Orca panel
+  (item 34)
 
 ## Review in tiers, with an arbiter for contested findings
 
@@ -376,9 +378,8 @@ them to take part. Old receipts can be collected, keeping the latest
 report for each repository and kind.
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), a
-  runnable workspace lifecycle for other runtimes (Later); collecting what is
-  only reported, and more kinds (roadmap item 24)
+- **On the roadmap:** a runnable workspace lifecycle for other runtimes
+  (Later); collecting what is only reported, and more kinds (roadmap item 24)
 
 ## One configuration file, read in layers
 

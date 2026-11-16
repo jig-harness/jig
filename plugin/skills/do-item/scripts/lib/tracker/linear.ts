@@ -29,6 +29,7 @@ import {
 import { linearAttachments, type LinearFiles } from "./linear-attachments.ts";
 import { cancellableRequest } from "./cancellation.ts";
 import { commentFacts, trustedUser } from "./linear-comments.ts";
+import { batch } from "../../../../../shared/outbound/batch.ts";
 import { pager } from "./graphql.ts";
 import {
   assignedOperations,
@@ -95,7 +96,9 @@ export const pageAll = pager({
 
 // ── Issue pickup ───────────────────────────────────────────────────────────
 
-const NESTED = 250;
+// Keep the issue/children and ledger requests below 3,000 returned objects:
+// 25 issues with at most 100 labels each, plus their scalar parent records.
+const NESTED = 25;
 const LABELS = "labels(first: 100) { pageInfo { hasNextPage } nodes { name } }";
 
 const issueQuery = (extra: string) => `
@@ -186,7 +189,7 @@ query TrackerComments($id: String!, $after: String) {
 const CHILDREN_QUERY = `
 query TrackerChildren($id: String!, $after: String) {
   issue(id: $id) {
-    children(first: 100, after: $after) {
+    children(first: ${NESTED}, after: $after) {
       pageInfo { hasNextPage endCursor }
       nodes { identifier title state { name type } ${LABELS} }
     }
@@ -335,7 +338,7 @@ query TrackerCommentSearch($filter: CommentFilter!, $after: String) {
   }
 }`;
 
-const LEDGER_PAGE = 250;
+const LEDGER_PAGE = 25;
 
 function ledgerQuery(withProject: boolean): string {
   const filter = withProject
@@ -802,8 +805,29 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         if (err instanceof LinearApiError && err.notFound) return null;
         throw err;
       }
-      const issue = record(data, "data").issue;
-      return issue === null ? null : parseIssue(issue);
+      const raw = record(data, "data").issue;
+      if (raw === null) return null;
+      const issue = record(raw, `issue ${key}`);
+      const children = record(issue.children, `issue ${key}.children`);
+      if (!complete(children)) {
+        // Re-read the connection through the pager, which checks duplicate
+        // identities and cursors instead of trusting a partial child list.
+        const nodes = await pageAll(
+          transport,
+          CHILDREN_QUERY,
+          { id: key },
+          (d) => record(d.issue, `issue ${key}`).children,
+          `children of ${key}`,
+        );
+        return parseIssue({
+          ...issue,
+          children: {
+            pageInfo: { hasNextPage: false },
+            nodes,
+          },
+        });
+      }
+      return parseIssue(issue);
     },
 
     async listComments(key, signal) {
@@ -884,18 +908,18 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
           }),
         ),
       ];
-      for (let i = 0; i < numbers.length; i += 50) {
-        const nodes = await pageAll(
+      const nodes = await batch(numbers, 50, async (chunk) =>
+        pageAll(
           transport,
           BY_NUMBER_QUERY,
-          { teamKey: team, numbers: numbers.slice(i, i + 50) },
+          { teamKey: team, numbers: chunk },
           (d) => d.issues,
           "issues by number",
-        );
-        for (const n of nodes) {
-          const fact = parseIssueFact(n);
-          out.set(fact.id, fact);
-        }
+        ),
+      );
+      for (const n of nodes) {
+        const fact = parseIssueFact(n);
+        out.set(fact.id, fact);
       }
       return out;
     },

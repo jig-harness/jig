@@ -21,6 +21,22 @@ import {
 import { Mark } from "./marks.tsx";
 import { type LogFilter, pageQuery, viewQuery } from "./search.ts";
 import { type Theme, themeSearch } from "./theme.ts";
+import { WorkRuns } from "./work-runs.tsx";
+
+/** The start of the range a piece of work's page opens on: before any run the log keeps, so every earlier run shows too. */
+const WORK_FROM = "1970-01-01T00:00:00Z";
+
+/** The filters a piece of work's page clears, so it lists every run of that work. */
+const WORK_PAGE_CLEARS: Partial<LogFilter> = {
+  from: WORK_FROM,
+  to: "",
+  stage: "",
+  account: "",
+  class: "",
+  reason: "",
+  cause: "",
+  by: "",
+};
 
 const REASON_WAIT_MS = 300;
 
@@ -199,6 +215,144 @@ function Recurring({
   );
 }
 
+/** Opens a piece of work's page: the log filtered to its target alone, over a range from before the log's first row; `null` while the page cannot ask the host. */
+function openWork(
+  setFilter: (patch: Partial<LogFilter>) => void,
+  offline: boolean,
+): ((repo: string, target: string) => void) | null {
+  if (offline) return null;
+  return (repo, target) =>
+    setFilter({
+      ...WORK_PAGE_CLEARS,
+      repo,
+      target,
+    });
+}
+
+/** The log's filter controls. */
+function LogFields({
+  answer,
+  filter,
+  setFilter,
+  offline,
+  fromShown,
+  toShown,
+}: {
+  answer: RowsAnswer;
+  filter: LogFilter;
+  setFilter: (patch: Partial<LogFilter>) => void;
+  offline: boolean;
+  fromShown: string;
+  toShown: string;
+}) {
+  return (
+    <div className="fields">
+      <FilterSelect
+        label="Repository"
+        value={filter.repo}
+        options={answer.options.repo}
+        disabled={offline}
+        onChange={(repo) => setFilter({ repo })}
+      />
+      <FilterSelect
+        label="Stage"
+        value={filter.stage}
+        options={answer.options.stage}
+        disabled={offline}
+        onChange={(stage) => setFilter({ stage })}
+      />
+      <FilterSelect
+        label="Account"
+        value={filter.account}
+        options={answer.options.account}
+        disabled={offline}
+        onChange={(account) => setFilter({ account })}
+      />
+      <FilterSelect
+        label="Cause"
+        value={filter.cause}
+        options={answer.options.cause}
+        disabled={offline}
+        onChange={(cause) => setFilter({ cause })}
+      />
+      <FilterSelect
+        label="Report by"
+        value={filter.by}
+        options={answer.options.by}
+        disabled={offline}
+        onChange={(by) => setFilter({ by })}
+      />
+      <ReasonField
+        value={filter.reason}
+        disabled={offline}
+        onChange={(reason) => setFilter({ reason })}
+      />
+      <TimeField
+        label="From"
+        shown={fromShown}
+        disabled={offline}
+        onChange={(from) => setFilter({ from, to: toShown })}
+      />
+      <TimeField
+        label="To"
+        shown={toShown}
+        disabled={offline}
+        onChange={(to) => setFilter({ from: fromShown, to })}
+      />
+    </div>
+  );
+}
+
+/** The filters in force, each with what removes it, and one that removes them all. */
+function ActiveFilters({
+  filter,
+  setFilter,
+  offline,
+}: {
+  filter: LogFilter;
+  setFilter: (patch: Partial<LogFilter>) => void;
+  offline: boolean;
+}) {
+  const active = activeFilters(filter);
+  return active.length === 0 ? null : (
+    <div className="active">
+      <span className="mut">Filtered by</span>
+      {active.map((a) => (
+        <button
+          className="fbtn"
+          type="button"
+          aria-label={`Remove filter ${a.label}`}
+          disabled={offline}
+          onClick={() => setFilter(a.clear)}
+          key={a.label}
+        >
+          <span>{a.label}</span>
+          <span aria-hidden="true">×</span>
+        </button>
+      ))}
+      <button
+        className="fbtn"
+        type="button"
+        disabled={offline}
+        onClick={() =>
+          setFilter({
+            repo: "",
+            stage: "",
+            account: "",
+            class: "",
+            reason: "",
+            cause: "",
+            by: "",
+            target: "",
+          })
+        }
+      >
+        Clear all
+      </button>
+    </div>
+  );
+}
+
 export function LogPanel({
   theme,
   answer,
@@ -221,17 +375,18 @@ export function LogPanel({
     answer === null ? "" : inputOf(Date.parse(answer.from), rowClock.timeZone);
   const toShown =
     answer === null ? "" : inputOf(Date.parse(answer.to), rowClock.timeZone);
-  const active = activeFilters(filter);
   return (
     <section className="panel" id="history" aria-labelledby="h-log">
       <div className="panelHead">
         <h2 id="h-log">How it went</h2>
         <PanelHelp panel="How it went">
-          The outcome log: one row per ended launch, with its class and the
-          reason it gave. Filter by time, repository, stage, account, class and
-          reason; the filters are the page's address, so Copy link shares this
-          view. A class that recurs on a stage of a repository, on three of the
-          last seven days, is listed above the rows.
+          The outcome log: one row per ended launch, with its class, the reason
+          it gave and what its closing report concluded and suggests next.
+          Filter by time, repository, stage, account, class, reason, the
+          report's cause and who wrote it; open a row for all runs of its work.
+          The filters are the page's address, so Copy link shares this view. A
+          class that recurs on a stage of a repository, on three of the last
+          seven days, is listed above the rows.
         </PanelHelp>
         <span className="sm mut">
           The outcome log, newest first. Tap a row for its whole reason.
@@ -244,80 +399,19 @@ export function LogPanel({
         </p>
       ) : (
         <>
-          <div className="fields">
-            <FilterSelect
-              label="Repository"
-              value={filter.repo}
-              options={answer.options.repo}
-              disabled={offline}
-              onChange={(repo) => setFilter({ repo })}
-            />
-            <FilterSelect
-              label="Stage"
-              value={filter.stage}
-              options={answer.options.stage}
-              disabled={offline}
-              onChange={(stage) => setFilter({ stage })}
-            />
-            <FilterSelect
-              label="Account"
-              value={filter.account}
-              options={answer.options.account}
-              disabled={offline}
-              onChange={(account) => setFilter({ account })}
-            />
-            <ReasonField
-              value={filter.reason}
-              disabled={offline}
-              onChange={(reason) => setFilter({ reason })}
-            />
-            <TimeField
-              label="From"
-              shown={fromShown}
-              disabled={offline}
-              onChange={(from) => setFilter({ from, to: toShown })}
-            />
-            <TimeField
-              label="To"
-              shown={toShown}
-              disabled={offline}
-              onChange={(to) => setFilter({ from: fromShown, to })}
-            />
-          </div>
-          {active.length === 0 ? null : (
-            <div className="active">
-              <span className="mut">Filtered by</span>
-              {active.map((a) => (
-                <button
-                  className="fbtn"
-                  type="button"
-                  aria-label={`Remove filter ${a.label}`}
-                  disabled={offline}
-                  onClick={() => setFilter(a.clear)}
-                  key={a.label}
-                >
-                  <span>{a.label}</span>
-                  <span aria-hidden="true">×</span>
-                </button>
-              ))}
-              <button
-                className="fbtn"
-                type="button"
-                disabled={offline}
-                onClick={() =>
-                  setFilter({
-                    repo: "",
-                    stage: "",
-                    account: "",
-                    class: "",
-                    reason: "",
-                  })
-                }
-              >
-                Clear all
-              </button>
-            </div>
-          )}
+          <LogFields
+            answer={answer}
+            filter={filter}
+            setFilter={setFilter}
+            offline={offline}
+            fromShown={fromShown}
+            toShown={toShown}
+          />
+          <ActiveFilters
+            filter={filter}
+            setFilter={setFilter}
+            offline={offline}
+          />
           <div className="linkLine copyRow">
             <span>
               Link to this view:{" "}
@@ -330,6 +424,12 @@ export function LogPanel({
             />
             <span>The copied link carries this server’s token.</span>
           </div>
+          <WorkRuns
+            rows={answer.rows}
+            filter={filter}
+            rowClock={rowClock}
+            forges={forges}
+          />
           <Recurring answer={answer} setFilter={setFilter} offline={offline} />
           <p className="meta m">{metaLine(answer, rowClock)}</p>
           {answer.total > 0 ? null : (
@@ -342,6 +442,7 @@ export function LogPanel({
             rows={answer.rows}
             rowClock={rowClock}
             forges={forges}
+            onWork={openWork(setFilter, offline)}
           />
         </>
       )}

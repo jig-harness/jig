@@ -84,8 +84,8 @@ a tracker charges each query a cost, and each ends a request that takes too
 long. Every agent and timer on a machine shares one login's allowance. Jig
 gets one way to make these calls. It reuses an answer it holds, asks a
 budget the whole machine shares, and keeps each request small enough to be
-answered. Next are reuse of unchanged answers and identical reads, and
-gates that enforce the transport boundary and query cost ceilings.
+answered. Next are gates that enforce the transport boundary and query cost
+ceilings, and checking the spending on a running dispatch host.
 
 ### 57. Starting work that will not collide first
 
@@ -219,15 +219,22 @@ Orca stays supported.
 [Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
 tooling supports, beside Herdr, the runtime it targets first. A small
 plugin Orca loads runs a dispatcher tick the moment an agent stops or
-waits. On an Orca host the plugin will also refuse to start an agent in a
-worktree `jig gc` is removing, for every launch Orca makes through its
-launchers, so a launch gc's last check could miss is turned away. The
-protection is best-effort: a restored session, a hook that fails and a
-plugin that is down are not covered. The plugin will show what waits on a person in Orca's
-status bar and in a panel. The panel opens on that person's inbox, and a
-command opens the dashboard in Orca's own browser for the board and each piece of
-work. The dispatcher will read each account's usage
-from Orca's command line once Orca offers it. The plugin is Orca-bound.
+waits. On an Orca host it refuses to start an agent in a worktree
+`jig gc` is removing, for every launch Orca makes through its launchers.
+A launch that slips past gc's last check is turned away. The protection
+is best-effort: a restored session, a hook that fails and a plugin that
+is down are not covered. Orca's status bar shows how many questions wait on a
+person, and how many pull requests are ready to merge once the plugin's
+line carries them. A panel lists
+what waits on that person, who answers a parked question there. Next,
+the guard will tell apart repositories that share a worktree folder, and
+a worktree recreated at the same path. A person will pick a parked
+decision's answer in the panel as on the dashboard, and merge a pull
+request that is ready to merge with one click. A command will open the
+dashboard in Orca's own browser for the board and each piece of work.
+The dispatcher will read each account's usage from Orca's command line
+once Orca offers it. A trial will find whether a launch can be bound to
+the account the dispatcher chose. The plugin is Orca-bound.
 
 ## Next
 
@@ -236,8 +243,8 @@ path. Then come what lets a second team adopt Jig: one control plane for a
 team on several machines and one trusted statement of what Jig writes. The
 line comes to a team's chat with the control plane. Then come work that arrives complete, and reviews that
 catch what checks cannot. Last come the practices
-the modules and skills lack, measurement, the developer machine and its
-runtimes, and the runs that wait on a person.
+the modules and skills lack, measurement, the developer machine and the runs
+that wait on a person.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -397,31 +404,6 @@ tiers, the change note, batchability, autonomy. A type lightens the work
 only where no flag label, catalog review or gate asks for more, and an item
 whose type is unknown gets the deepest treatment.
 
-### 29. The spec a work item links
-
-A work item names where its requirements and acceptance criteria live, in
-its own body or in whatever spec framework the repository already uses, and
-Jig resolves that reference read-only, through an adapter per layout, into
-requirements, acceptance criteria and tasks with their ids. The implementing
-agent and the reviewer get the list, and the pull request accounts for every
-criterion: met with evidence, deferred to a filed item, or not applicable.
-The delivery loop writes no spec and dictates no format; the tools that
-write specs well are recommended beside the adapter that reads each.
-
-### 31. Routing work to an agent, a model and an effort
-
-Delegation already picks an agent from the issue's change areas, labels and
-title, and `do-item` reports the complexity tier, the model and the effort
-the work's type, its size and flag labels and the change areas' mandatory
-reviews call for, with Claude's and OpenAI's model families known, by
-rules a repository declares with defaults it overrides. The agent still
-runs on whichever model and effort the session was started with, whatever
-the work. Routing will apply that route to the implementer, opt-in, with
-the reason recorded on the pull request where the review loop's reports
-join it to the outcome, and a person's choice always able to override it.
-Until then, the workspace launcher's Orca provider hands the agent's start
-to the person; its Herdr provider starts the configured agent.
-
 ### 23. Seed review lenses
 
 [`review`](plugin/skills/review/SKILL.md) runs [review lenses](GLOSSARY.md)
@@ -433,16 +415,6 @@ comments that say what the code does now ([M4](modules/M4-docs-governance/README
 and types that admit no invalid value (M15). Each runs only when the diff
 gives it something to check, comments until measurement shows it may block,
 and can be loaded by a repository's own automated reviewer.
-
-### 30. Scanner findings block convergence
-
-A static-analysis app that reports to the pull request as annotations rather
-than review threads (SonarQube Cloud does) has its findings worked by the
-review loop when a round runs, but a drive with only annotations can converge
-without starting one. They will count as open work beside threads and summary
-findings; a finding that stands can be recorded against the head so a later
-head is checked again; and the tool's own dismissal is made where the tool
-offers one.
 
 ### 25. Dependency-review feedback
 
@@ -510,17 +482,6 @@ guards, report first, fail closed, a receipt per run); a repository enables
 the kinds it mints with its own facts, a machine sets the schedule, and
 [M12](modules/M12-parallel-agent-ergonomics/README.md) gains the practice.
 
-### 19. Herdr as the primary workspace runtime
-
-[Herdr](https://herdr.dev) is the [workspace runtime](GLOSSARY.md) Jig's
-tooling is built and tested for first
-([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-Opening a tracker issue as a Herdr workspace, on the machine or on a remote
-host, and M12's worktree lifecycle in Herdr are available
-([the Herdr workspace tool](tools/herdr/README.md)); what remains is checking
-the drive, pickup and review skills inside Herdr on macOS and Linux. That
-check waits on a repository that runs its agents in Herdr.
-
 ### 7. The Notion store, verified against Notion
 
 The [Notion store](plugin/skills/reflect/README.md#notion-store) for
@@ -578,10 +539,9 @@ See the [distribution design](design/distribution.md).
   start it twice; reflection findings parked on a server's host before a
   removal, which today refuses while unsent ones are there; hooks on a
   server's host supervised as they are on a machine; the drive, pickup and
-  review skills checked inside Orca worktrees on a server, as item 19 does
-  for Herdr; and the tool and the launcher's Orca provider on Windows, where
-  the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell
-  first.
+  review skills checked inside Orca worktrees on a server; and the tool and
+  the launcher's Orca provider on Windows, where the tool's host steps
+  (`sh`, `test`, `mkdir`) need the host's own shell first.
 - **The mailbox as every session's inbox.** Open the drive mailbox to every
   session the execution line starts once a second mechanical nudge needs it.
 - **Change-area consumer lint.** The

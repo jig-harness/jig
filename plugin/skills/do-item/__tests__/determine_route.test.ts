@@ -30,6 +30,10 @@ import { DEFAULT_TYPES, parseWorkTypes } from "../scripts/lib/work-types.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "determine_route.ts");
 
+/** `do_item.agents.codearea_areas` as the rule matcher reads it. */
+const areas = (map: Record<string, string>) =>
+  Object.entries(map).map(([key, result]) => ({ key, result }));
+
 const facts = (over: Partial<RouteFacts> = {}): RouteFacts => ({
   agent: "general-purpose",
   type: "bug",
@@ -134,7 +138,7 @@ describe("the raises", () => {
     });
     expect(r.effort).toBe("high");
     expect(r.reasons).toContain(
-      "effort: high (flag has-migration raised medium)",
+      "effort: high (raised from medium: routing.raise.flags, for the item's label has-migration)",
     );
   });
 
@@ -158,7 +162,7 @@ describe("the raises", () => {
     });
     expect(r.effort).toBe("high");
     expect(r.reasons).toContain(
-      "effort: high (area payments's mandatory review (security-review) raised medium)",
+      "effort: high (raised from medium: area payments's mandatory review (security-review))",
     );
   });
 
@@ -181,7 +185,9 @@ describe("the raises", () => {
       knownSizes: ["xs", "small", "medium", "large", "xl"],
     });
     expect(r.effort).toBe("high");
-    expect(r.reasons).toContain("effort: high (size xl raised medium)");
+    expect(r.reasons).toContain(
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
+    );
   });
 
   it("never raises on a batchable size", () => {
@@ -194,7 +200,7 @@ describe("the raises", () => {
       "medium",
     );
     expect(route({ ...sized, sizes: ["xl"] }).reasons).toContain(
-      "effort: high (size xl raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
     );
   });
 
@@ -218,7 +224,7 @@ describe("the raises", () => {
     });
     expect(r.effort).toBe("high");
     expect(r.reasons).toContain(
-      "effort: high (human-in-the-loop label hitl raised medium)",
+      "effort: high (raised from medium: human-in-the-loop label hitl)",
     );
   });
 
@@ -241,9 +247,9 @@ describe("the raises", () => {
     });
     expect(r.reasons.filter((x) => x.startsWith("effort:"))).toEqual([
       "effort: low (type task)",
-      "effort: medium (flag security raised low)",
-      "effort: high (area auth's mandatory review (sec) raised medium)",
-      "effort: max (size large raised high)",
+      "effort: medium (raised from low: routing.raise.flags, for the item's label security)",
+      "effort: high (raised from medium: area auth's mandatory review (sec))",
+      "effort: max (raised from high: routing.raise.sizes, for the item's size large)",
       "effort: max (human-in-the-loop label hitl: already the highest effort)",
     ]);
   });
@@ -262,7 +268,7 @@ describe("the raises", () => {
     const r = route({ catalog: null });
     expect(r.effort).toBe("max");
     expect(r.reasons).toContain(
-      "effort: high (the catalog cannot be read, so its flags are taken to apply raised medium)",
+      "effort: high (raised from medium: the catalog cannot be read, so its flags are taken to apply)",
     );
   });
 });
@@ -310,19 +316,21 @@ describe("catalogFacts", () => {
   });
 
   it("collects every area's flags", () => {
-    expect(catalogFacts(catalog, [], {}).flags).toEqual(["has-migration"]);
+    expect(catalogFacts(catalog, [], areas({})).flags).toEqual([
+      "has-migration",
+    ]);
   });
 
   it("reads the mandatory reviews of the seeded areas and their impliedBy closure", () => {
     expect(
-      catalogFacts(catalog, ["Area:API"], { "area:api": "api" }).reviews,
+      catalogFacts(catalog, ["Area:API"], areas({ "area:api": "api" })).reviews,
     ).toEqual([{ area: "payments", skills: ["security-review"] }]);
   });
 
   it("does not count an area whose review names no skill", () => {
-    expect(catalogFacts(catalog, ["docs"], { docs: "docs" }).reviews).toEqual(
-      [],
-    );
+    expect(
+      catalogFacts(catalog, ["docs"], areas({ docs: "docs" })).reviews,
+    ).toEqual([]);
   });
 
   it.each([
@@ -342,10 +350,12 @@ describe("catalogFacts", () => {
         pay: { paths: ["p/**"], ...fields },
       },
     });
-    expect(() => catalogFacts(malformed, ["api"], { api: "api" })).toThrow(
-      CatalogFieldError,
+    expect(() =>
+      catalogFacts(malformed, ["api"], areas({ api: "api" })),
+    ).toThrow(CatalogFieldError);
+    expect(() => catalogFacts(malformed, [], areas({}))).toThrow(
+      `areas.pay.${field}`,
     );
-    expect(() => catalogFacts(malformed, [], {})).toThrow(`areas.pay.${field}`);
   });
 
   it("refuses an impliedBy naming an id no area has rather than dropping its review", () => {
@@ -359,14 +369,14 @@ describe("catalogFacts", () => {
         },
       },
     });
-    expect(() => catalogFacts(misspelled, ["api"], { api: "api" })).toThrow(
-      "areas.payments.impliedBy names apix",
-    );
+    expect(() =>
+      catalogFacts(misspelled, ["api"], areas({ api: "api" })),
+    ).toThrow("areas.payments.impliedBy names apix");
   });
 
   it("refuses a label mapped to an id no area has rather than dropping its review", () => {
     expect(() =>
-      catalogFacts(catalog, ["area:pay"], { "area:pay": "paymnets" }),
+      catalogFacts(catalog, ["area:pay"], areas({ "area:pay": "paymnets" })),
     ).toThrow(
       "do_item.agents.codearea_areas maps area:pay to paymnets, which no area of the catalog is",
     );
@@ -374,10 +384,14 @@ describe("catalogFacts", () => {
 
   it("ignores a misspelled mapping for a label the item does not carry", () => {
     expect(
-      catalogFacts(catalog, ["area:api"], {
-        "area:api": "api",
-        "area:pay": "paymnets",
-      }).reviews,
+      catalogFacts(
+        catalog,
+        ["area:api"],
+        areas({
+          "area:api": "api",
+          "area:pay": "paymnets",
+        }),
+      ).reviews,
     ).toEqual([{ area: "payments", skills: ["security-review"] }]);
   });
 });
@@ -657,7 +671,7 @@ describe("determine_route.ts", () => {
     );
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).reasons).toContain(
-      "effort: high (size xl raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
     );
   });
 
@@ -676,7 +690,7 @@ describe("determine_route.ts", () => {
     );
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).reasons).toContain(
-      "effort: high (size xl raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size xl)",
     );
   });
 
@@ -690,7 +704,7 @@ describe("determine_route.ts", () => {
     );
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).reasons).toContain(
-      "effort: high (size medium raised medium)",
+      "effort: high (raised from medium: routing.raise.sizes, for the item's size medium)",
     );
   });
 

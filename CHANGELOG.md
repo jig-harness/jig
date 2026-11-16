@@ -396,6 +396,190 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.252.0] - 2026-11-16
+
+### Added
+
+- The dispatch dashboard shows each run's closing report. On the History view, every run's line says what it concluded, the next step it suggests and why it fell short, or that it ended without a report; the log filters on the report's cause and on who wrote it; and a row opens to all runs of its piece of work, newest first, each with its report and, where the report's suggested next step names another owner than the tick's own next owner, both side by side. *Needs you* shows a report's question and framed decision where it showed a pass's `Question:` line, with what the run concluded beside them. See [plugin/README.md](plugin/README.md#the-closing-report).
+- `jig ask`'s answer gains a `last.run` line: the last run's stage, when it ended, what it concluded and the next step it suggests, or that it ended without a report. `--json` carries them as `last.stage` and `last.report`, and the operator skill's status card relays them.
+- Where the `notify` stage runs, each of its ticks writes one `notices_read` event to the outcome log with the notices workspace's read state, the observation the stage's retirement measure reads. The dashboard's log leaves these rows out unless its class filter names `event: notices_read`, and the steward's digest leaves them out of the history it judges from; `jig dispatch log` lists them.
+- `jig gc` has a machine kind, `orca-terminals`, that closes the Orca run tabs a killed run left behind and parked run tabs nobody returned to. It is planned when the user file's `gc` section names `orca.command`; a tab is closed only once its shell runs no command and it has been idle past `gc.orca.terminal_idle_hours` (24 by default). It closes the recorded terminal, never its whole tab, so a pane a person added beside it stays; `jig gc --kind orca-terminals` reports each tab with its proof and closes nothing.
+
+### Changed
+
+- Deferred review findings enter the backlog in one open issue per pull
+  request and issue type on every supported tracker. Later findings append
+  to the same issue, with the highest priority and union of categories;
+  native related links preserve the originating issue and epic without
+  adding children to their scope. **Consumer action:** advised at
+  instructions. Replace runbook rules that parent deferred findings to an
+  epic with backlog batches and related links. Existing follow-ups are not
+  backfilled. **Detect:** `text:Parent the follow-up`,
+  `text:Findings deferred while the epic is live still go to the epic`.
+- M9 and the audit now distinguish delivered epic scope from person-only
+  tails, place those checks on one standing person-checks list at closure,
+  and allow a native Epic issue type without a separate kind. Closure wiring
+  for that list remains planned.
+
+### Fixed
+
+- A dispatcher tick no longer fails when a read it makes for one item meets
+  a rate limit or gets no answer from the forge or the tracker. Those reads
+  are a pull request's comments (its drive ledger, launch claims and
+  follow-up markers), a parked drive's thread answers, a conflicting
+  drive's base branch head, and a claimed item's claim markers. The item's
+  row now carries the failed call's
+  [failure class](GLOSSARY.md), and the tick handles it as it already
+  handles a repository's read: it exits 0 below `failures.notify_after`, and
+  tells a person at once of a refused credential. A ledger or marker that
+  does not parse still fails the tick. See
+  [When an outside system refuses or does not answer](plugin/CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer).
+  **Consumer action:** none.
+
+## [0.251.0] - 2026-11-16
+
+### Added
+
+- The Jig Protocol has a provisional chapter on tracker facets
+  ([plugin/protocol/tracker-facets.md](plugin/protocol/tracker-facets.md)):
+  the facts every issue carries beside its labels (type, priority and
+  size), the number of each priority, the stores a facet may be kept in,
+  which stores each tracker adapter holds for each facet and why it refuses
+  the others, and the reasons `tracker.ts facet-stores` gives for the store
+  in force. Its values are generated from the tables the tracker reads its
+  configuration with, and its data file,
+  `plugin/protocol/data/tracker-facets.json`, carries them for a program
+  that reads an issue's facets or a repository's stores.
+
+### Changed
+
+- The verification record in `plugin/phone-access.md` now holds the results
+  of the Tailscale Serve front's checks: the front and its version, tokenless
+  HTTPS access, the `Host` allowlist, the QR code scanned on a phone and, in
+  part, installing the page as an app on a phone. The phone browser's product
+  and version, the installed app's behaviour, copy, clipboard-refusal, refusal,
+  forged-header, Serve route and reverse-proxy rows are still not run.
+- The `drive-pr` and `resolve-review-comments` skills say that the work to
+  count scanner annotations as open work is now tracked as
+  [#1316](https://github.com/jig-harness/jig/issues/1316). Before, they
+  pointed to roadmap item 30, which has left the roadmap. What either skill
+  does is unchanged. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` no longer loses a commit made on a detached agent tool worktree in
+  the moment between its last check of the tree and `git worktree remove`.
+  It now holds the tree's `HEAD.lock` from just before that check until the
+  removal, so a commit, checkout, switch or reset in the tree then fails
+  with git's own "cannot lock ref" error instead of moving the head. A lock
+  a stopped run leaves behind names `jig gc`. In a repository that keeps its
+  refs in reftable, where that lock holds nothing, every tree is kept
+  before its remove hook runs
+  ([plugin/gc/README.md](plugin/gc/README.md#worktrees-an-agent-tool-makes)).
+- The drive-pr README now says plainly how forge send pacing works:
+  processes that send with the same GitHub credential key are admitted to send
+  at least 200 milliseconds apart (a delayed send can still start closer to
+  another), and processes with different keys do not wait on one another.
+
+## [0.250.1] - 2026-11-16
+
+### Fixed
+
+- The dispatch dashboard can send answers to pickup, follow-up and drive recovery decisions on GitHub, prompts for a token, confirms every send, and shows the tick's outcome. Answered holds stay visible and say the work remains undone; the earlier hold label still works in answers. Posted answers trigger bounded faster refreshes.
+
+## [0.250.0] - 2026-11-16
+
+### Changed
+
+- Final-CI waiting backs off unchanged observations up to a sixty-second
+  scheduling delay while keeping control checks responsive and witness
+  expiry based on elapsed time. Forge callers sharing a credential space
+  request starts through the shared budget record, with cancellation and
+  deadline bounds and recovery after a caller crashes.
+
+## [0.249.0] - 2026-11-15
+
+Every configuration field that chooses something by an item's or a
+change's facts is now decided by one rule matcher, specified in a new
+Protocol chapter.
+
+### Added
+
+- One rule matcher decides every configuration field that selects by an
+  item's or a change's facts (`pull_requests.base_rules`,
+  `pull_requests.labels_from_issue`, `pull_requests.reviewers_from_issue`,
+  `do_item.gates`, `do_item.guidance`, `do_item.agents.labels`,
+  `do_item.agents.codearea_areas`, `do_item.agents.title_keywords`,
+  `routing.complex_flags`, `routing.raise.flags`, `routing.raise.sizes` and
+  `work_batch.solo_flags`). The new Protocol chapter *Rule matchers in
+  configuration* (`plugin/protocol/rule-matchers.md`) says which facts a rule may test, how each is compared, how a rule
+  combines its values and how each field's rules resolve, with a data file
+  and a JSON Schema for a rule. Today's forms of every field keep working
+  as written. **Consumer action:** none.
+- `determine_agent.ts` reads `do_item.gates` and prints, under `gates`, the
+  review gates an item meets and those only its planned paths could, with
+  why each applies; do-item applies what it printed.
+  **Consumer action:** none.
+
+### Changed
+
+- **Breaking:** The shared configuration reader refuses a rule that names
+  an unknown fact or gives a value of the wrong kind in any of these
+  fields, naming the field and the file that set it, before any skill acts
+  on it, and the audit reports it. A malformed rule a skill never read
+  (such as a `do_item.gates` entry) used to be ignored; now every skill,
+  `jig gc` and `jig dispatch` stop on it. A `do_item.gates` entry do-item
+  refuses (no labels or paths, no skill, an unknown field, a glob that does
+  not compile) now also stops `determine_agent.ts`, `determine_route.ts`,
+  work-batch and the dispatcher's batch planning, where before nothing read
+  the field. An empty key in `do_item.agents.labels`, `codearea_areas` or
+  `title_keywords` is refused too (an empty title keyword used to match
+  every title). **Consumer action:** required at configuration. Run the
+  audit's configuration fit and fix each rule it refuses: `rejected:every
+  skill (rule matcher)` and `rejected:do-item (review gates)`.
+- **Breaking:** `work_batch.solo_flags`, and the solo-only flags work-batch
+  derives, match an item's labels ignoring case, as every other label rule
+  does: an issue labelled `Privacy-Review` is now held out of a batch by
+  `solo_flags: [privacy-review]`, where before it was batched. The
+  dispatcher's batch grouping reads the same rule.
+  **Consumer action:** advised at configuration. Check that no label you
+  batch differs from a solo-only flag only in case; rename it if it should
+  stay batchable. **Detect:** `config:work_batch.solo_flags`.
+- A route's reasons name the configuration rule that matched in the
+  matcher's wording: `tier: complex (routing.complex_flags, for the item's
+  label has-migration)` and `effort: high (raised from medium:
+  routing.raise.flags, for the item's label has-migration)`, where they read
+  `flag has-migration` before. **Consumer action:** advised at instructions.
+  Update a runbook or script that reads the old reason text.
+  **Detect:** `text:raised medium`.
+- Path globs are compiled by one shared module, so a glob in a configuration
+  field and in the change-area catalog means the same.
+  **Consumer action:** none.
+
+## [0.248.2] - 2026-11-15
+
+### Fixed
+
+- Worktree collection keeps the forge diagnostic when a pull request lookup
+  exceeds its deadline, alongside the deadline reason. The configuration guide
+  links to one definition of the lookup timeout, and lookup tests remove their
+  scratch directories. **Consumer action:** none.
+
+## [0.248.1] - 2026-11-15
+
+### Changed
+
+- Tracker and forge reads share the outbound library’s caching, duplicate-read
+  grouping and bounded batches. Quiet ticks reuse unchanged assignment answers,
+  while failed reads are retried on the next tick. The change probe compares
+  check-state totals instead of downloading each check. **Consumer action:** none.
+
+### Fixed
+
+- Review-finding deferrals use the tracker adapter’s governed transport, and
+  issue children are read in bounded pages. Forge cost reports identify REST
+  routes even when command flags precede the route. **Consumer action:** none.
+
 ## [0.248.0] - 2026-11-15
 
 ### Added
@@ -8725,7 +8909,14 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.248.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.252.0...HEAD
+[0.252.0]: https://github.com/jig-harness/jig/compare/v0.251.0...v0.252.0
+[0.251.0]: https://github.com/jig-harness/jig/compare/v0.250.1...v0.251.0
+[0.250.1]: https://github.com/jig-harness/jig/compare/v0.250.0...v0.250.1
+[0.250.0]: https://github.com/jig-harness/jig/compare/v0.249.0...v0.250.0
+[0.249.0]: https://github.com/jig-harness/jig/compare/v0.248.2...v0.249.0
+[0.248.2]: https://github.com/jig-harness/jig/compare/v0.248.1...v0.248.2
+[0.248.1]: https://github.com/jig-harness/jig/compare/v0.248.0...v0.248.1
 [0.248.0]: https://github.com/jig-harness/jig/compare/v0.247.2...v0.248.0
 [0.247.2]: https://github.com/jig-harness/jig/compare/v0.247.1...v0.247.2
 [0.247.1]: https://github.com/jig-harness/jig/compare/v0.247.0...v0.247.1

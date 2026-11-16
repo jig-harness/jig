@@ -120,6 +120,17 @@ const DECISION_FIELDS: Fields = {
           note: (n) => n === undefined || isString(n),
         }),
     })(value),
+  acted: (value) =>
+    value === undefined ||
+    value === null ||
+    hasFields(value, {
+      option: isString,
+      author: isString,
+      answer: (v) => v === undefined || isString(v),
+      outcome: (v) =>
+        v === null || v === "done" || v === "refused" || v === "held",
+      detail: nullOr(isString),
+    }),
   answerState: (value) =>
     value === undefined || value === "stale" || value === "disputed",
   answer: (value) =>
@@ -129,6 +140,7 @@ const DECISION_FIELDS: Fields = {
       address: isString,
       on: (v) => v === "pull-request" || v === "issue" || v === "tracker",
       framedBy: (v) => v === "session" || v === "dispatcher",
+      repository: (v) => v === undefined || isString(v),
     }),
 };
 
@@ -151,6 +163,8 @@ const ENTRY_FIELDS = {
     since: isTime,
     reason: isString,
     question: (value) =>
+      value === undefined || value === null || isString(value),
+    concluded: (value) =>
       value === undefined || value === null || isString(value),
     decisions: listOf(DECISION_FIELDS),
     workspaces: Array.isArray,
@@ -264,6 +278,9 @@ const LINE_FIELDS: Fields = {
   timeZone: (value) => value === undefined || isZone(value),
   lastAccount: nullOr(isString),
   needs: listOf(ENTRY_FIELDS.needs),
+  answeredHolds: (value) =>
+    value === undefined ||
+    listOf({ repo: isString, target: isString, why: isString })(value),
   sessions: listOf(ENTRY_FIELDS.sessions),
   accounts: listOf(ENTRY_FIELDS.accounts),
   queue: listOf(ENTRY_FIELDS.queue),

@@ -27,7 +27,7 @@
  */
 
 import { formatField } from "../../../../shared/config-layers.ts";
-import { isDistinctNameList } from "../../../../shared/guards.ts";
+import { ruleField, ruleList } from "../../../../shared/rule-matcher.ts";
 import {
   EFFORTS,
   type Effort,
@@ -188,12 +188,14 @@ export interface RoutingRules {
   reported: string[];
 }
 
-function labelList(value: unknown, field: string): string[] {
-  if (!isDistinctNameList(value))
-    throw new RoutingError(
-      `${field} must be a list of distinct nonempty label names`,
-    );
-  return [...value];
+/** A field written as a list of its one fact's values, read by the rule matcher: the values. */
+function ruleValues(value: unknown, field: string): string[] {
+  const rule = ruleList(field, value);
+  if (!rule.ok) throw new RoutingError(rule.failure.reason);
+  if (typeof rule.value === "string")
+    throw new RoutingError(`${field} must be a list here`);
+  const [fact] = ruleField(field).facts;
+  return fact === undefined ? [] : [...(rule.value[fact] ?? [])];
 }
 
 /** A tier as written, a legacy name read as the tier it became. */
@@ -308,9 +310,9 @@ function parseRaise(raw: unknown): RoutingRules["raise"] {
   );
   refuseUnknownKeys(raise, RAISE_FIELDS, "routing.raise");
   if (raise.flags !== undefined && raise.flags !== "catalog")
-    out.flags = labelList(raise.flags, "routing.raise.flags");
+    out.flags = ruleValues(raise.flags, "routing.raise.flags");
   if (raise.sizes !== undefined)
-    out.sizes = labelList(raise.sizes, "routing.raise.sizes");
+    out.sizes = ruleValues(raise.sizes, "routing.raise.sizes");
   if (raise.reviews !== undefined) {
     if (typeof raise.reviews !== "boolean")
       throw new RoutingError("routing.raise.reviews must be true or false");
@@ -386,7 +388,7 @@ export function parseRouting(
     complexFlags:
       section.complex_flags === undefined || section.complex_flags === null
         ? [...DEFAULT_COMPLEX_FLAGS]
-        : labelList(section.complex_flags, "routing.complex_flags"),
+        : ruleValues(section.complex_flags, "routing.complex_flags"),
     raise: parseRaise(section.raise),
     models,
     familyTiers,
