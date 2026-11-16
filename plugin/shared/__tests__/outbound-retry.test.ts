@@ -48,6 +48,32 @@ function options(read: boolean, waits: number[] = []) {
 }
 
 describe("retryRead", () => {
+  it("returns a refusal that was received even when the call is cancelled after it", async () => {
+    const controller = new AbortController();
+    const refusal = outboundFailure("rate-limited", "slow down");
+    const answer = await retryRead(
+      async () => {
+        controller.abort(new Error("stop"));
+        return refusal;
+      },
+      { ...options(true), signal: controller.signal },
+    );
+    expect(answer).toBe(refusal);
+  });
+
+  it("still throws a cancellation that follows an answer to return", async () => {
+    const controller = new AbortController();
+    await expect(
+      retryRead(
+        async () => {
+          controller.abort(new Error("stop"));
+          return "ok" as const;
+        },
+        { ...options(true), signal: controller.signal },
+      ),
+    ).rejects.toThrow("stop");
+  });
+
   for (const code of FAILURE_CLASSES) {
     const once = retriedOnce(code);
     it(`${once ? "sends a read once more" : "does not send a read again"} after ${code}`, async () => {

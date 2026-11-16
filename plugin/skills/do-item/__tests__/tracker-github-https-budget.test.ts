@@ -321,8 +321,32 @@ describe("a GitHub request over HTTPS in the shared budget record", () => {
     );
     expect(refused).toBeInstanceOf(GitHubApiError);
     expect((refused as GitHubApiError).sent).toBe(true);
+    expect((refused as GitHubApiError).code).toBe("rate-limited");
     const record = sqliteBudgetStore(path).read(githubCredential(ENV));
     expect(record?.limitedUntil ?? 0).toBeGreaterThan(currentMs() + 100_000);
+  });
+
+  it("keeps a GraphQL refusal in a received success response when the call is cancelled", async () => {
+    const controller = new AbortController();
+    const answered = (async () => {
+      const res = new Response(
+        JSON.stringify({ errors: [{ type: "RATE_LIMITED", message: "slow" }] }),
+        { status: 200 },
+      );
+      queueMicrotask(() => controller.abort(new Error("stop")));
+      return res;
+    }) as unknown as typeof fetch;
+    const refused = await httpTransport(
+      "https://github.example/graphql",
+      TOKEN,
+      answered,
+    )(QUERY, {}, controller.signal, false).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(GitHubApiError);
+    expect((refused as GitHubApiError).code).toBe("rate-limited");
+    expect((refused as GitHubApiError).sent).toBe(true);
   });
 
   it("keeps a cancellation after the request went out marked as sent, and one before it unsent", async () => {

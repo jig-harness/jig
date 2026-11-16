@@ -449,6 +449,28 @@ function cutAnswer(
     : errorOf({ ...refused, sent: true });
 }
 
+/** A cancelled request whose response was read in full: the refusal it carried, a GraphQL one in a successful response included, else the cancellation. */
+function receivedCutAnswer(
+  res: Response,
+  text: string,
+  body: unknown,
+  began: number,
+  bound: AbortSignal,
+): GitHubApiError {
+  const status = gitHubHttpFailure(
+    res.status,
+    res.headers,
+    text,
+    currentMs() - began,
+  );
+  const named = errorsFailure(
+    body,
+    status,
+    status === null ? res.headers : null,
+  );
+  return cutAnswer(named?.failure ?? status, bound);
+}
+
 /** One HTTPS request's answer. */
 async function postOnce(
   fetchImpl: typeof fetch,
@@ -510,16 +532,13 @@ async function postOnce(
       res,
     );
   }
+  const body = parsedOrNull(text);
   if (cancelled(bound))
     return {
-      answer: cutAnswer(
-        gitHubHttpFailure(res.status, res.headers, text, currentMs() - began),
-        bound,
-      ),
+      answer: receivedCutAnswer(res, text, body, began, bound),
       headers: res.headers,
       text,
     };
-  const body = parsedOrNull(text);
   observation.cost = githubCost(body);
   const failure = gitHubHttpFailure(
     res.status,
