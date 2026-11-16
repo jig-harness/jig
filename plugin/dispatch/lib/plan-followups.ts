@@ -22,8 +22,8 @@
  * | this host's, its pass died with no result and no question, or could not record its result or exit on this host (whatever it said), not itself a run again, launched while `failures.rerun_died` was not `0`, while the host's health check fails | running: held as it stands, whatever its age, with no notice and no release; the host's own need is the one a person sees |
  * | the same, while the host's health check passes: a death within the session lease, or an unwritten result at any age | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
  * | this host's, its outcome failed on a question tagged with a routine class, or failed before passes tagged their questions, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once with the class's standing answer (every class's, for one that failed before), within the same recovery budget (`routine-reruns.ts`) |
- * | this host's, its pass recorded `waits` for a rate limit, fewer than 3 in a row | running: held until the reset it named; then the tick releases the marker, and a later tick starts the follow-up again as a first run (`followup-waits.ts`) |
- * | this host's, its pass recorded `waits` 3 times in a row | a failed follow-up: notified, the rate limit named, never started again |
+ * | this host's, its pass recorded `waits` for a rate limit, or stopped on a question that names only a rate limit, fewer than 3 in a row since a person last started it | running: held until the reset it named (an hour after a question), whatever answer its marker carries; then the tick releases the marker, and a later tick starts the follow-up again as a first run (`followup-waits.ts`) |
+ * | this host's, its pass waited so 3 times in a row | a failed follow-up: notified, the rate limit named with the question it stopped on, never started again until a person deletes its marker or chooses to run it again, which starts a new count |
  * | this host's, its outcome failed on an untagged question or none, its run again failed, died or could not record its result, a death older than the session lease, one launched under `failures.rerun_died: 0`, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one (never one from a pass whose result could not be written: that question is the host's fault), never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
  *
@@ -486,14 +486,14 @@ function failedTick(
   return action;
 }
 
-/** Why a follow-up whose pass ended short of done is a person's: the rate limit it met too often, else what it said. */
+/** Why a follow-up whose pass ended short of done is a person's: the rate limit it met too often, else what it said, and what it said either way. */
 function endedWhy(
   id: string,
   spent: ReturnType<typeof waitsSpent>,
   said: string,
 ): string {
   return spent !== null
-    ? spentWords(id, spent)
+    ? `${spentWords(id, spent)}${said}`
     : `its pass under launch record ${id} ended without recording done${said}`;
 }
 
