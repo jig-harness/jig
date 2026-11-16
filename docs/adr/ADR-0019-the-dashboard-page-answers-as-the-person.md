@@ -59,8 +59,11 @@ from the browser, as the person:
   `jig send`'s comment builds it, and the page posts it directly to the
   forge's REST API.
 - Send is held back until an option is picked on the card: an approval
-  nobody picked is Copy's alone. A guarded pick sends on the second step,
-  as it copies.
+  nobody picked is Copy's alone. Every send takes a second step: Send
+  shows the target, the login and the exact answer, and Confirm send
+  posts. A change to the target, the decision's framing, the answer or the
+  token asks for a new confirmation. A guarded pick also takes the second
+  step to copy.
 - Send is offered only when the page came over HTTPS, from loopback
   (`localhost`, 127.0.0.0/8, `::1`); on any other plain-HTTP address the card says why it
   has none.
@@ -96,7 +99,7 @@ uncertain:
   answers before it posted (with their links), which one may or may not
   have posted, and which were not attempted. An earlier uncertainty that a
   later failure did not replace stays beside it as "Still unchecked", and
-  the card offers **I checked the pull request; allow Send again**.
+  the card offers **I checked the linked target; allow Send again**.
 - **When Send may send again.** Send refuses to post an answer that is
   uncertain for the same writer and decision. A different answer, another
   writer's token, or a decision this send refused or never attempted sends
@@ -124,8 +127,8 @@ person's latest answer counts.
 
 ### Benefits
 
-- A person answers a parked decision in one tap from any browser,
-  a phone's included, with no terminal and no route into the host.
+- A person answers a parked decision from any browser, with a pick and a
+  confirming tap, a phone's included, with no terminal and no route into the host.
 - The comment is the one `jig send` and a paste write, so the re-arm and
   every reader of answers read it unchanged.
 
@@ -150,6 +153,7 @@ Reopen this when one of these holds:
 
 - item 40 settles how a person's answer is told from a pass's, and that
   proof needs something the browser does not hold;
-- a station other than the drive reads an answer from a comment, or
-  another forge's pull requests are parked on;
+- a station reads an answer from somewhere other than a comment on a
+  GitHub issue or pull request, or another forge's pull requests are
+  parked on;
 - a second person acts through one dashboard.
