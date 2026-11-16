@@ -288,9 +288,6 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **Reuse**: answers cached by update time or the system's validator,
-  identical reads in a run sent once and reads by key in one request,
-  through the shared library that the existing queue snapshots adopt.
 - **Gates and a review lens**: no call leaves by another door than a
   transport, no query selects a list without a page size or passes its
   declared cost ceiling, and a change to an integration is reviewed
@@ -877,8 +874,9 @@ chapters rendered on the site. Built in steps, one pull request each;
 built so far: the generator, its gate, the chapter on the drive's end
 states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
-repository supplies and on the follow-up claim and its result, and the
-provisional chapter on addresses and the verbs of `jig send`
+repository supplies, on the follow-up claim and its result, on rule
+matchers in configuration, and the provisional chapter on addresses and the
+verbs of `jig send`
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
 Open, in order: the stable chapters' restatements as links

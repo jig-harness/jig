@@ -1,4 +1,5 @@
 /** One tick's native item reads and failure wall, shared by every person in a scope. */
+import { coalesce } from "../../../shared/outbound/coalesce.ts";
 import type {
   DispatchRawIssue,
   DispatchSource,
@@ -14,18 +15,6 @@ interface ScopeState {
   queues: Promise<unknown>;
 }
 const states = new WeakMap<Map<string, Promise<unknown>>, ScopeState>();
-
-function scopeRead<T>(
-  reads: Map<string, Promise<unknown>>,
-  key: string,
-  read: () => Promise<T>,
-): Promise<T> {
-  const kept = reads.get(key) as Promise<T> | undefined;
-  if (kept !== undefined) return kept;
-  const value = read();
-  reads.set(key, value);
-  return value;
-}
 
 /** Reads only; each adapter still owns the request and its interpretation. */
 export function nativeFacts(
@@ -64,7 +53,7 @@ export function nativeFacts(
       );
   };
   const issue = (key: string) =>
-    scopeRead(reads, rowKey(key), () =>
+    coalesce(reads, rowKey(key), () =>
       guarded(() => source.issue(key, bound), true),
     );
   return {
@@ -107,6 +96,6 @@ export function nativeFacts(
       );
     },
     once: <T>(key: string, read: () => Promise<T>) =>
-      scopeRead(reads, `dispatch fact ${key}`, () => guarded(read, true)),
+      coalesce(reads, `dispatch fact ${key}`, () => guarded(read, true)),
   };
 }
