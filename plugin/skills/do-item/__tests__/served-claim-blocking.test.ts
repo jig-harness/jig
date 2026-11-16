@@ -43,7 +43,7 @@ function world(chain: string[] = ["#1", "#2", "#3"]) {
     assignUnassigned: async (key: string, user: TrackerUser) => {
       writes.push(`assign ${key}`);
       holders.set(key, [user]);
-      return true;
+      return { assigned: true };
     },
     transition: async (key: string) => {
       writes.push(`start ${key}`);

@@ -12,8 +12,8 @@ version: 1
 # issue's type facet, which this repository keeps in GitHub's native issue
 # type (`issue_tracker.facets.type` in `.config/jig.yaml`), and which
 # `issue_tracker.types` maps to work types (bug and feature to themselves,
-# docs, chore and infra to task). The tracker scripts and issue forms write
-# GitHub's own issue type (Bug, Feature, Docs, Chore, Infra), rather than a
+# docs, chore, infra and epic to task). The tracker scripts and issue forms write
+# GitHub's own issue type (Bug, Feature, Docs, Chore, Infra, Epic), rather than a
 # type label (plugin/CONFIGURATION.md § issue_tracker).
 types:
   - id: bug
@@ -26,6 +26,13 @@ types:
     notes: maintenance with no behaviour change
   - id: infra
     notes: CI, gates, release and test infrastructure
+  - id: epic
+    notes: >-
+      the unit progress is reported on, such as a roadmap item: its outcome
+      needs more than one pull request, its status rolls up from its
+      sub-issues, and it closes when the plan item it mirrors leaves
+      design/plan.md, never on a count of open children. One deliverable
+      split into parts for convenience is not an epic
 
 # statuses — CLOSED. The canonical workflow states do-item moves an issue
 # through; `issue_tracker.states` names the label each open one is.
@@ -113,18 +120,6 @@ categories:
 
 # flags — each fires a named process.
 flags:
-  - id: epic
-    scope: container
-    fires: [status-roll-up, acceptance-review]
-    apply_when:
-      - the issue is the unit progress is reported on, such as a roadmap item
-      - its outcome needs more than one pull request
-    do_not_apply_when:
-      - the issue is one deliverable split into parts for convenience
-    notes: >-
-      its status rolls up from its sub-issues; it closes when the plan item
-      it mirrors leaves design/plan.md, never on a count of open children
-
   - id: roadmap
     scope: container
     fires: plan-mirror
@@ -134,8 +129,7 @@ flags:
     notes: >-
       design/plan.md is the source of truth for what the item builds and
       when it is done; the issue holds the sub-issues and the discussion.
-      The epic it requires is the epic label or an issue type
-      issue_tracker.labels.epic_types lists, such as Epic
+      The epic it requires is an issue of the epic type
 
   - id: pr-followup
     scope: shipping-item

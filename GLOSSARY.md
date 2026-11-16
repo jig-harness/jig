@@ -142,6 +142,10 @@ make, use the entry's term instead.
 - **Context window** — the amount of text a language model can take in at
   once, counted in *tokens*: the instructions, the conversation and every
   file it has read share it.
+- **Compaction** — what an agent runtime does when a session's *context
+  window* fills: it replaces the earlier conversation with a shorter summary
+  so the session can go on. Details the summary leaves out, such as a
+  decision or an owed act, are lost to that session.
 - **Token** — the unit a language model reads and is billed in, a word or
   part of one; English prose runs at about 4 characters a token.
 - **Load path** — the way a file reaches a runtime's context: read natively,

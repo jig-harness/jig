@@ -396,6 +396,34 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.256.1] - 2026-11-16
+
+### Changed
+
+- A label taxonomy may list a type in a group's `not_required_on`, so a
+  repository that keeps its epics as an issue type (`issue_tracker.labels.epic_types`)
+  lifts the size requirement on the type itself, with no `epic` flag beside it.
+  The lint's message for an unknown id now says "neither a flag nor a type".
+
+### Fixed
+
+- Served pickups on Linear and Jira wait for delayed assignment history before standing down. A stand-down distinguishes a race from an unverifiable assignment, removes the pickup's lone assignment on timeout without conflict evidence, and asks for reconciliation when partial race history cannot establish whom to restore. **Consumer action:** none.
+- Assignment verification now preserves a complete tracker history's ordering for tied timestamps and rechecks ownership inside cleanup operations, preserving a different owner that check observes. The tracker cannot prevent a change between that read and its mutation. **Consumer action:** none.
+
+## [0.256.0] - 2026-11-16
+
+### Added
+
+- `orchestrate` now hands a long coordination over to a fresh session before
+  its context fills. At a natural pause it suggests the handover to the
+  person; once they agree it brings the durable record up to date (state,
+  dated decisions, what waits on the person, owed acts, cautions and a first
+  act for the successor). It then starts the successor in the surface the
+  person works in with a short directive pointing at the record, or gives
+  the person the exact command where the host cannot start one, confirms
+  the successor is running and then stops acting
+  ([procedure](plugin/skills/orchestrate/SKILL.md)).
+
 ## [0.255.1] - 2026-11-16
 
 ### Fixed
@@ -9026,7 +9054,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.255.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.1...HEAD
+[0.256.1]: https://github.com/jig-harness/jig/compare/v0.256.0...v0.256.1
+[0.256.0]: https://github.com/jig-harness/jig/compare/v0.255.1...v0.256.0
 [0.255.1]: https://github.com/jig-harness/jig/compare/v0.255.0...v0.255.1
 [0.255.0]: https://github.com/jig-harness/jig/compare/v0.254.0...v0.255.0
 [0.254.0]: https://github.com/jig-harness/jig/compare/v0.253.1...v0.254.0

@@ -57,7 +57,7 @@ function world(spec: Spec) {
     adapter: "github",
     team: "example/repo",
     stateName: (state: string) => state,
-    assignUnassigned: async () => true,
+    assignUnassigned: async () => ({ assigned: true }),
     assignedIssues: async (_: string, states: string[]) =>
       states.includes("in_progress") ? [] : spec.assigned,
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),

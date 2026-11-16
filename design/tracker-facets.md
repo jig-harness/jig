@@ -730,14 +730,16 @@ record, followed by reverting the configuration commit.
 
 Jig moves to GitHub's stores once the move exists (build step 3). Its
 organization's issue types are its taxonomy's types, Bug, Feature, Docs,
-Chore and Infra: a person retires GitHub's default Task type from the
+Chore, Infra and Epic: a person retires GitHub's default Task type from the
 organization before the move, so the web interface offers no type that
 names nothing. Its Priority field has the default options, and its Effort
 field's options are `xs`, `small`, `medium`, `large` and `xl`, so its
 configuration names the stores (`store: native` for type and priority,
 `store: field` with `field: Effort` for size) and needs no value map. Its
-`issue_tracker.types` keeps mapping `docs`, `chore` and `infra` to the
-`task` work type. Its open issues then carry no type, priority or size
+`issue_tracker.types` keeps mapping `docs`, `chore`, `infra` and `epic` to
+the `task` work type. An epic is an issue of the `epic` type, which
+`issue_tracker.labels.epic_types` names `Epic`; no issue carries an `epic`
+label, since an issue has one type and a label beside it could contradict it. Its open issues then carry no type, priority or size
 label, and its closed issues keep theirs. Until the move its configuration
 names the label store for each of the three facets (`store: label`), set in
 the pull request of build step 2 that adds types to the issue forms: the
