@@ -750,6 +750,9 @@ function planMerged(
       record: "forge",
       reason: `its follow-up markers could not be read: ${pr.markers.unreadable}`,
       readFailed: true,
+      ...(pr.markers.failure === undefined
+        ? {}
+        : { failure: pr.markers.failure }),
     });
     return;
   }

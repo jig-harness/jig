@@ -1798,6 +1798,17 @@ message to tell them apart. What a host sees:
 | `not-found` | what was asked for does not exist or is not visible | not sent again | an absence, read as such |
 | `invalid` | the system refused the request as malformed, or answered in a form that does not read | not sent again | the tick exits 1, and the failure ledger tells a person at `failures.notify_after` |
 
+The same holds for a read the tick makes for one item: a pull request's
+comments (its drive ledger, its launch claims, its follow-up markers), the
+answers to a parked drive's review thread, the head of a conflicting
+drive's base branch, and the claim markers on a claimed tracker item. The
+item's row in the report carries the class of the call that failed, and
+the repository's turn follows that class as above, except `not-found`: a
+per-item read that fails that way is a failed read, not an absence, so
+the tick exits 1 as for `invalid`, with notification at `failures.notify_after`. A read that answered
+in a form that does not read, such as a damaged ledger or marker, carries
+no class and fails the turn.
+
 A repository whose forge read waits shows, in the tick's report, the last
 reading a tick took whole, with its time and its age. A tick's receipt names
 each system it held (`unanswered`). A tracker read that was sent once
