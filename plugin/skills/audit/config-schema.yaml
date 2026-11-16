@@ -1419,14 +1419,14 @@ fields:
     nullable: true
     read_by: [followup]
     repository_only: true
-    since: next
+    since: 0.259.0
   followup.authority:
     type: map
     keys: [tracker-status, file-items, read-only-checks, board-card, release-workflow, deploy-rerun, post-deploy-action, stop-driver, other-repository, origin-boundary, merge]
     values_type: { type: enum, values: [own, ask, person, never] }
     nullable: true
     read_by: [followup]
-    since: next
+    since: 0.259.0
   followup.arms:
     type: list
     items:

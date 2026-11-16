@@ -62,8 +62,8 @@ async function childrenOf(
     return view.once(`children ${issue.identifier}`, () =>
       tracker.openChildren(issue.identifier),
     );
-  const rows = await view.once(`native children ${issue.identifier}`, () =>
-    source.children(issue.identifier, view.bound),
+  const rows = await view.once(`native children ${issue.identifier}`, (bound) =>
+    source.children(issue.identifier, bound),
   );
   return (
     await Promise.all(rows.map((raw) => source.project(raw, view.bound)))
