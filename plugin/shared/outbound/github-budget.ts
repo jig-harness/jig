@@ -82,7 +82,10 @@ import {
   unverifiedAccount,
 } from "./github-owner.ts";
 import { ghRunScope } from "./github-scope.ts";
+import { errorMessages, refusedUser } from "./github-refusal.ts";
 import { apiRoute } from "./gh-route.ts";
+
+export { refusedUser } from "./github-refusal.ts";
 import { swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import {
@@ -681,15 +684,6 @@ function recordUnexplained(
   }
 }
 
-/** The user a refusal's text names as the one whose allowance is spent: GitHub's "rate limit exceeded for user ID N". */
-export function refusedUser(text: string): number | null {
-  const match = /rate limit (?:already )?exceeded for user ID (\d+)/i.exec(
-    text,
-  );
-  const id = Number(match?.[1] ?? "");
-  return Number.isSafeInteger(id) && id > 0 ? id : null;
-}
-
 /** Whose allowance a governed request's record keeps, and where a refusal naming another user goes. */
 interface Whose {
   /** Said in a refusal: whose allowance the record keeps. */
@@ -809,7 +803,12 @@ function governed(
         now,
         refusedText,
       );
-      const other = otherUser(whose, key, failure, `${refusedText}\n${body}`);
+      const other = otherUser(
+        whose,
+        key,
+        failure,
+        `${refusedText}\n${errorMessages(body)}`,
+      );
       if (other !== null) {
         // The answer spent the named user's allowance: it holds that
         // user's record, and the reservation goes back to the record the

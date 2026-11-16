@@ -17,6 +17,7 @@ import {
   sqliteOwnerStore,
 } from "../outbound/github-owner.ts";
 import { refusedUser, setForgeGovernor } from "../outbound/github-budget.ts";
+import { errorMessages } from "../outbound/github-refusal.ts";
 import {
   apiRepo,
   ghRunScope,
@@ -439,5 +440,35 @@ describe("the repository a run addresses", () => {
       ),
     ).toBe(7);
     expect(refusedUser("You have exceeded a secondary rate limit")).toBeNull();
+  });
+
+  it("reads a named user only from an error answer's own messages", () => {
+    expect(
+      refusedUser(
+        errorMessages('{"message":"API rate limit exceeded for user ID 42."}'),
+      ),
+    ).toBe(42);
+    expect(
+      refusedUser(
+        errorMessages(
+          '{"errors":[{"type":"RATE_LIMITED","message":"API rate limit already exceeded for user ID 9."}]}',
+        ),
+      ),
+    ).toBe(9);
+    // A page of content quoting GitHub's words names nobody.
+    expect(
+      refusedUser(
+        errorMessages(
+          '[{"body":"we saw: API rate limit exceeded for user ID 5"}]',
+        ),
+      ),
+    ).toBeNull();
+    expect(
+      refusedUser(
+        errorMessages(
+          '{"data":{"issue":{"body":"API rate limit exceeded for user ID 5"}}}',
+        ),
+      ),
+    ).toBeNull();
   });
 });
