@@ -20,7 +20,11 @@ export function limitedRow(
     record: "tracker",
     reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
   };
-  return view === null ? row : scopeFailureRow(tracker, view, row.reason);
+  // A rate limit retains its class as a deferral, without a failed read.
+  return {
+    ...(view === null ? row : scopeFailureRow(tracker, view, row.reason)),
+    failure: { class: "rate-limited", until },
+  };
 }
 
 /** The one unplaced row an identity's failed read leaves. */
