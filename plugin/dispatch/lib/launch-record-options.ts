@@ -60,6 +60,9 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalStrings(value.codexPassArgs) &&
     optionalSeconds(value.passTimeoutSec) &&
     optionalSeconds(value.rerunDied) &&
+    (value.followupWithinMs === undefined ||
+      (Number.isSafeInteger(value.followupWithinMs) &&
+        (value.followupWithinMs as number) > 0)) &&
     optionalBooleans(value, [
       "rearmConsumed",
       "pooled",

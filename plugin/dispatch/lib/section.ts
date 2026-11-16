@@ -21,6 +21,8 @@ import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
 import type { AdoptRule, DispatchSection, StalledScope } from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
+/** The command a follow-up runs where the repository names none: the plugin's own follow-up skill. */
+export const DEFAULT_FOLLOWUP_COMMAND = "/jig:followup";
 /** `stalled_after` and `blocked_after`'s default. */
 const DEFAULT_WAIT_MS = 30 * 60_000;
 /** The expectations' defaults: `drive_rounds_flat`, `pickup_within`, `followup_within`. */
@@ -454,6 +456,22 @@ export function dispatchSection(
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });
+}
+
+/**
+ * The command a repository's follow-ups run on this host: its
+ * `dispatch.followup_command`, else `DEFAULT_FOLLOWUP_COMMAND` where this
+ * host's machine file lists `followup` among the repository's `stages`;
+ * `null`, no follow-ups, otherwise. The default applies only where the
+ * stage is on, so a repository that names no command and runs no
+ * follow-up on this host costs no read of its merged pull requests.
+ */
+export function followupCommandOn(
+  section: Pick<DispatchSection, "followupCommand">,
+  stages: ReadonlySet<string>,
+): string | null {
+  if (section.followupCommand !== null) return section.followupCommand;
+  return stages.has("followup") ? DEFAULT_FOLLOWUP_COMMAND : null;
 }
 
 /**

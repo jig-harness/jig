@@ -426,6 +426,7 @@ function sessionClass(
   const result = sessionResultClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,
+    r.waitsFor,
   );
   if (result !== null) return result;
   const s = r.state;

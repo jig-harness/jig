@@ -1,14 +1,25 @@
 /** Classification shared by the tick and a session reporting after its tick. */
+import { armWords, type WaitFor } from "./wait-for.ts";
 import type { SessionResult } from "./launches.ts";
 import type { OutcomeClass } from "./log.ts";
 import { questionIn } from "./session.ts";
 
-/** The recorded result and question have the same precedence at every logging boundary. */
+/**
+ * The recorded result and question have the same precedence at every
+ * logging boundary. A follow-up that waits on an arm still pending fits no
+ * class of the closed list: it is `unknown`, its reason naming the arm.
+ */
 export function sessionResultClass(
   result: SessionResult | null,
   said: unknown,
+  wait?: WaitFor,
 ): { class: OutcomeClass; reason: string } | null {
   if (result === "done") return { class: "converged", reason: "result done" };
+  if (result === "waits" && wait?.reason === "pending")
+    return {
+      class: "unknown",
+      reason: `result waits: ${armWords(wait)} is still pending; the follow-up starts again after the time it named`,
+    };
   if (result === "waits")
     return {
       class: "quota wall",

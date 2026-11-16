@@ -69,7 +69,12 @@ import type {
   SessionsReader,
   SessionsReport,
 } from "./runtime/port.ts";
-import { branchPattern, readSection, trackerConfigOf } from "./section.ts";
+import {
+  branchPattern,
+  followupCommandOn,
+  readSection,
+  trackerConfigOf,
+} from "./section.ts";
 import { type PhaseTimer, settled } from "./phase-timer.ts";
 import {
   type RepoReflection,
@@ -279,6 +284,9 @@ export async function openRepo(
       enabled: true,
       servedAuthors: authors,
     };
+  const facts = entryFacts(entry);
+  // The follow-up's default command applies only where this host runs the stage.
+  section.followupCommand = followupCommandOn(section, facts.stages);
   const report: RepoReport = {
     ...emptyReport(path, ""),
     refused: null,
@@ -294,7 +302,7 @@ export async function openRepo(
     where,
     report,
     reflection,
-    ...entryFacts(entry),
+    ...facts,
   };
 }
 

@@ -7,7 +7,7 @@
  *
  * | Markers | The tick |
  * | --- | --- |
- * | none trusted | wants a follow-up (an untrusted one is ignored, and named); held while this host's last pass of it waits for a rate limit's reset |
+ * | none trusted | wants a follow-up (an untrusted one is ignored, and named); held while this host's last pass of it waits for a rate limit's reset or on an arm still pending |
  * | more than one trusted | reports them, naming the earliest, which holds the follow-up for the marker commands; a person settles which run stands |
  * | a trusted one that does not read | reports it, starts nothing |
  * | a manual run's, marked done | quiet: done |
@@ -22,8 +22,8 @@
  * | this host's, its pass died with no result and no question, or could not record its result or exit on this host (whatever it said), not itself a run again, launched while `failures.rerun_died` was not `0`, while the host's health check fails | running: held as it stands, whatever its age, with no notice and no release; the host's own need is the one a person sees |
  * | the same, while the host's health check passes: a death within the session lease, or an unwritten result at any age | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
  * | this host's, its outcome failed on a question tagged with a routine class, or failed before passes tagged their questions, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once with the class's standing answer (every class's, for one that failed before), within the same recovery budget (`routine-reruns.ts`) |
- * | this host's, its pass recorded `waits` for a rate limit, or stopped on an untagged question that names a rate limit, fewer than 3 in a row since a person last started it | running: held until the reset it named (an hour after a question), whatever answer other than done its marker carries; then the tick releases the marker, and a later tick starts the follow-up again as a first run (`followup-waits.ts`) |
- * | this host's, its pass waited so 3 times in a row | a failed follow-up: notified, the rate limit named with the question it stopped on, never started again until a person deletes its marker or chooses to run it again, which starts a new count |
+ * | this host's, its pass recorded `waits` for a rate limit, or stopped on an untagged question that names a rate limit, fewer than 3 such waits in a row since a person last started it; or recorded `waits --reason pending` before `dispatch.followup_within` passed since the run's first pending wait | running: held until the time it named (an hour after a question), whatever answer other than done its marker carries; then the tick releases the marker, and a later tick starts the follow-up again as a first run (`followup-waits.ts`) |
+ * | this host's, its pass waited on a rate limit so 3 times in a row, or found its arm still pending once `dispatch.followup_within` had passed since the run's first pending wait | a failed follow-up: notified, the rate limit or the pending arm named, with the question it stopped on, never started again until a person deletes its marker or chooses to run it again, which starts a new run |
  * | this host's, its outcome failed on an untagged question or none, its run again failed, died or could not record its result, a death older than the session lease, one launched under `failures.rerun_died: 0`, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one (never one from a pass whose result could not be written: that question is the host's fault), never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
  *
@@ -89,7 +89,6 @@ import { type RoutineRerun, routineRerun } from "./routine-reruns.ts";
 import {
   owedWait,
   spentWords,
-  WAITS_FOR_PERSON,
   waitOver,
   waitStreak,
   waitsSpent,
@@ -434,8 +433,9 @@ function stoppedOn(owed: RoutineRerun): string {
 }
 
 /**
- * A follow-up whose pass waits for a rate limit's reset, as running until
- * the tick releases its marker; whether it was one.
+ * A follow-up whose pass waits for a rate limit's reset or on an arm still
+ * pending, as running until the tick releases its marker; whether it was
+ * one.
  */
 function plannedWait(
   input: FollowupInput,
@@ -449,7 +449,7 @@ function plannedWait(
   if (wait === null) return false;
   const id = marker.run.record;
   const after = waitOver(wait, input.nowMs)
-    ? "; the reset has passed, so the tick releases its marker"
+    ? "; that time has passed, so the tick releases its marker"
     : ": the tick releases its marker after that";
   plan.running.push({
     target,
@@ -627,11 +627,7 @@ function wantFollowup(
   want: Want,
 ): void {
   const wait = waitStreak(input.launches, input.slug, pr.number);
-  if (
-    wait !== null &&
-    wait.count < WAITS_FOR_PERSON &&
-    !waitOver(wait, input.nowMs)
-  ) {
+  if (wait !== null && !wait.spent && !waitOver(wait, input.nowMs)) {
     plan.running.push({
       target: `PR #${pr.number}`,
       stage: "followup",
