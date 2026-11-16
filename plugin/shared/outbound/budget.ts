@@ -337,8 +337,10 @@ export type Unexplained = Partial<Record<"requests" | "complexity", number>>;
  * its reservation. The deduction counts as an ordinary answer's, so a
  * snapshot sent before it cannot raise the balance back above it. It is
  * skipped where the stored balance already holds the spending or belongs to
- * another window: a snapshot sent at or after the request (its balance
- * includes what the request cost), or a window that reset since.
+ * another window: a snapshot sent after the request (its balance includes
+ * what the request cost), or a window that reset since. A snapshot sent in
+ * the same millisecond is ambiguous, and the deduction stays: a balance
+ * counted twice errs low, one never counted errs high.
  */
 function withExtraSpent(
   window: BudgetWindow,
@@ -350,7 +352,7 @@ function withExtraSpent(
   if (extra <= 0 || window.remaining === null) return window;
   const sent = sentAt ?? now;
   if (window.resetAt !== null && window.resetAt <= sent) return window;
-  if (window.snapshotSentAt != null && window.snapshotSentAt >= sent)
+  if (window.snapshotSentAt != null && window.snapshotSentAt > sent)
     return window;
   return {
     ...window,

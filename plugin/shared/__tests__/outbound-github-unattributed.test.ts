@@ -200,6 +200,28 @@ describe("the unattributed row of the cost ledger", () => {
     expect(complexity()).toBe(91);
   });
 
+  it("keeps a cost-only answer's extra points against a snapshot sent in the same millisecond as the request", () => {
+    const now = 1_000_000;
+    const store = memoryBudgetStore();
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    const complexity = {
+      limit: 5000,
+      remaining: 2509,
+      resetAt: 1_800_000,
+    };
+    governor.observe(KEY, { snapshot: true, complexity }, now);
+    const sentAt = governor.admit("GitHub", KEY, {
+      windows: ["complexity"],
+      reserve: "complexity",
+    });
+    expect(sentAt).toBe(now);
+    governor.observe(KEY, { extraComplexity: 8 }, sentAt, "complexity");
+    expect(store.read(KEY)?.complexity.remaining).toBe(2500);
+  });
+
   it("records nothing when the counted requests explain the balance, or the balance is another window's", () => {
     let now = 1_000_000;
     const store = memoryBudgetStore();
