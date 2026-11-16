@@ -18,7 +18,7 @@ describe("orchestrate's contract", () => {
   test("keeps the validated procedure bounded, with a person owning decisions", () => {
     const steps = [...skill.matchAll(/^### (\d+)\. (.+)$/gm)];
     expect(steps.map((s) => Number(s[1]))).toEqual(
-      Array.from({ length: 14 }, (_, i) => i + 1),
+      Array.from({ length: 15 }, (_, i) => i + 1),
     );
     expect(skill).toContain(
       "never implements, edits repository files, commits, pushes or merges",
@@ -29,6 +29,29 @@ describe("orchestrate's contract", () => {
     expect(skill).toContain("stop and state the question");
     expect(skill).toContain("plain file outside the repository");
     expect(skill).toContain("re-measures");
+  });
+
+  test("suggests a handover at a pause and leaves one session acting", () => {
+    const handover = /^### 15\. (.+)$([\s\S]*?)(?=^## |^### |(?![\s\S]))/m.exec(
+      skill,
+    );
+    expect(handover?.[1]).toBe("Hand over before the context fills");
+    const step = (handover?.[2] ?? "").replace(/\s+/g, " ");
+    expect(step).toContain("natural pause");
+    expect(step).toContain("suggest a handover to the person");
+    for (const item of [
+      "the current state",
+      "each decision with its date",
+      "what waits on the person",
+      "the acts this session still owes",
+      "the cautions learned",
+      "a first act for the successor",
+    ])
+      expect(step).toContain(item);
+    expect(step).toContain("points at the record");
+    expect(step).toContain("give the person the exact command");
+    expect(step).toContain("confirm the successor is alive");
+    expect(step).toContain("stops acting");
   });
 
   test("every sibling invocation resolves to an installed skill", () => {

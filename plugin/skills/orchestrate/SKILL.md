@@ -173,5 +173,40 @@ Every survey figure carries its date and how it was counted, and the filing
 session re-measures it before putting it in an issue. Live counts change
 between surveys, so an old count must not become a new issue's premise.
 
+### 15. Hand over before the context fills
+
+A coordinating session that runs until its context is full loses state to
+compaction or a forced restart, and with it a decision or an owed act.
+Watch for the signs of a long session: the person has returned many times,
+many delegated results have been read, decisions have been carried across
+hours. At a natural pause, with no delegated work about to return and no
+question half-asked, suggest a handover to the person rather than wait for
+the context to fill. Hand over only with their agreement, never silently.
+
+Once the person agrees:
+
+1. Bring the durable record of step 12 up to date, so it holds the current
+   state, each decision with its date, what waits on the person, the acts
+   this session still owes, the cautions learned, and a first act for the
+   successor.
+2. Start the successor through the host's session facility, opened in the
+   surface the person works in (prefer the one this session runs in, such as
+   a chat view rather than a terminal), as a new session running
+   `/jig:orchestrate` with a directive that points at the record. Keep the
+   directive short ("resume from <record>; begin with its first act"): the
+   record stays the single source of the state, so the directive cannot
+   drift from it. Where the host has no such facility, give the person the
+   exact command to run, the runtime's agent command with that directive,
+   and wait for them to say it started.
+3. After a minute or so, confirm the successor is alive: it is listed and
+   its session is live. If it is gone, start it again with a directive
+   that says its first act may be partly done, so it checks before
+   repeating it.
+4. Tell the person the successor now holds the topic. This session then
+   stops acting: it sends no further commands and launches nothing, so two
+   sessions never act on the same line at once.
+
+## Reporting
+
 Keep reports short and lead with what changed. Use one decision per numbered
 line, without file dumps, so the person can see what needs their answer.
