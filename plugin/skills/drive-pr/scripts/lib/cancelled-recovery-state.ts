@@ -93,6 +93,7 @@ export async function grantCancellation(
 ): Promise<number> {
   const drive = driveDb(await resolveStateDir());
   const aged = "requested_at < ?";
+  const cutoff = currentMs() - 60_000;
   return drive.db
     .query(
       `UPDATE cancelled_ci SET
@@ -104,9 +105,9 @@ export async function grantCancellation(
          AND (granted_for IS NULL OR granted_for <> ?) RETURNING head`,
     )
     .all(
-      currentMs() - 60_000,
-      currentMs() - 60_000,
-      currentMs() - 60_000,
+      cutoff,
+      cutoff,
+      cutoff,
       answer,
       drive.clone,
       canonicalPr(pr),

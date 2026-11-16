@@ -266,19 +266,23 @@ function matrixTemplate(name: string): string {
     : name;
 }
 
-/** The last ` (` outside every `${{ … }}` expression, or -1. */
+/**
+ * The last top-level ` (` outside every `${{ … }}` expression, or -1: a
+ * parenthesis nested inside a suffix does not start a new one, so the suffix
+ * enclosing a nested literal group is the one found.
+ */
 function lastLegStart(name: string): number {
   let last = -1;
-  let i = 0;
-  while (i < name.length) {
+  let depth = 0;
+  for (let i = 0; i < name.length; i++) {
     if (name.startsWith("${{", i)) {
       const end = name.indexOf("}}", i + 3);
       if (end === -1) break;
-      i = end + 2;
-      continue;
-    }
-    if (name.startsWith(" (", i)) last = i;
-    i++;
+      i = end + 1;
+    } else if (name[i] === "(") {
+      if (depth === 0 && name[i - 1] === " ") last = i - 1;
+      depth++;
+    } else if (name[i] === ")") depth = Math.max(0, depth - 1);
   }
   return last;
 }

@@ -356,10 +356,22 @@ describe("a cancelled check never reads as passing", () => {
 
   it("finds a template's matrix suffix outside its expressions", () => {
     const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
-    const template = "suite (linux, ${{ format(' ({0})', matrix.shard) }}/3)";
+    const template = `suite (linux, \${{ format(' ({0})', matrix.shard) }}/3)`;
     const legs = (conclusion: string) => [
       job(template, "cancelled", 40),
       job("suite (linux, 1/3)", conclusion, 41),
+      job("lint", "success", 41),
+    ];
+    expect(verdict(legs("skipped"), runs)).toBe(`cancelled: ${template}`);
+    expect(verdict(legs("success"), runs)).toBe("green");
+  });
+
+  it("finds the enclosing matrix suffix around a nested literal group", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    const template = `suite (${"$"}{{ matrix.os }} (unit))`;
+    const legs = (conclusion: string) => [
+      job(template, "cancelled", 40),
+      job("suite (linux (unit))", conclusion, 41),
       job("lint", "success", 41),
     ];
     expect(verdict(legs("skipped"), runs)).toBe(`cancelled: ${template}`);
