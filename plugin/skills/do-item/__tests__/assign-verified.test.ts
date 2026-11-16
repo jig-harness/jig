@@ -133,7 +133,7 @@ function linearWorld(
 ) {
   let assignee: string | null = options.assignee ?? null;
   const history: Array<Record<string, unknown>> = [];
-  const writes: string[] = [];
+  const writes: (string | null)[] = [];
   let tick = 0;
   const change = (to: string | null) => {
     tick++;
@@ -158,7 +158,8 @@ function linearWorld(
           },
         };
       case "TrackerAssign": {
-        const to = (variables.input as { assigneeId: string }).assigneeId;
+        const to = (variables.input as { assigneeId: string | null })
+          .assigneeId;
         writes.push(to);
         if (options.race && writes.length === 1) change(OTHER.id);
         change(to);
@@ -185,28 +186,39 @@ function linearWorld(
 describe("Linear: assigning an unassigned issue", () => {
   it("assigns, and verifies the assignment came from nobody", async () => {
     const w = linearWorld();
-    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toBe(true);
+    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toEqual({
+      assigned: true,
+    });
     expect(w.writes).toEqual([ME.id]);
     expect(w.now()).toBe(ME.id);
   });
 
   it("writes nothing to an issue someone already holds", async () => {
     const w = linearWorld({ assignee: OTHER.id });
-    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toBe(false);
+    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toEqual({
+      assigned: false,
+      reason: "race",
+    });
     expect(w.writes).toEqual([]);
   });
 
   it("puts back an assignee its write replaced, and refuses", async () => {
     const w = linearWorld({ race: true });
-    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toBe(false);
+    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toEqual({
+      assigned: false,
+      reason: "race",
+    });
     expect(w.writes).toEqual([ME.id, OTHER.id]);
     expect(w.now()).toBe(OTHER.id);
   });
 
-  it("refuses, restoring nobody, when the history cannot verify the write", async () => {
+  it("clears its assignment when the history cannot verify the write", async () => {
     const w = linearWorld({ noHistory: true });
-    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toBe(false);
-    expect(w.writes).toEqual([ME.id]);
+    expect(await w.t.assignUnassigned?.("ENG-4", ME)).toEqual({
+      assigned: false,
+      reason: "unverified",
+    });
+    expect(w.writes).toEqual([ME.id, null]);
   });
 });
 
@@ -220,7 +232,7 @@ function jiraWorld(
 ) {
   let assignee: string | null = options.assignee ?? null;
   const changelog: Array<Record<string, unknown>> = [];
-  const writes: string[] = [];
+  const writes: (string | null)[] = [];
   const account = (id: string | null) =>
     id === null
       ? null
@@ -268,13 +280,18 @@ describe("Jira: assigning an unassigned issue", () => {
 
   it("assigns, and verifies the assignment came from nobody", async () => {
     const w = jiraWorld();
-    expect(await w.t.assignUnassigned?.("ENG-1", me)).toBe(true);
+    expect(await w.t.assignUnassigned?.("ENG-1", me)).toEqual({
+      assigned: true,
+    });
     expect(w.writes).toEqual([me.id]);
   });
 
   it("writes nothing to an issue someone already holds", async () => {
     const w = jiraWorld({ assignee: MEMBER.accountId });
-    expect(await w.t.assignUnassigned?.("ENG-1", me)).toBe(false);
+    expect(await w.t.assignUnassigned?.("ENG-1", me)).toEqual({
+      assigned: false,
+      reason: "race",
+    });
     expect(w.writes).toEqual([]);
   });
 
@@ -287,7 +304,10 @@ describe("Jira: assigning an unassigned issue", () => {
 
   it("puts back an assignee its write replaced, and refuses", async () => {
     const w = jiraWorld({ race: true });
-    expect(await w.t.assignUnassigned?.("ENG-1", me)).toBe(false);
+    expect(await w.t.assignUnassigned?.("ENG-1", me)).toEqual({
+      assigned: false,
+      reason: "race",
+    });
     expect(w.writes).toEqual([me.id, MEMBER.accountId]);
     expect(w.now()).toBe(MEMBER.accountId);
   });

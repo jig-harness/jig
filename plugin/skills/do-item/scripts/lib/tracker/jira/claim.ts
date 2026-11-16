@@ -18,7 +18,10 @@ export function claimOperations(
   Tracker,
   "viewer" | "assignees" | "assign" | "user" | "assignUnassigned"
 > {
-  async function assignId(key: string, accountId: string): Promise<void> {
+  async function assignId(
+    key: string,
+    accountId: string | null,
+  ): Promise<void> {
     const issue = await client.mustIssue(key);
     await client.transport({
       method: "PUT",

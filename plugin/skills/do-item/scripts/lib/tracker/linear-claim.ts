@@ -104,7 +104,11 @@ export function claimOperations(
     };
   }
 
-  async function assignId(key: string, assigneeId: string, name: string) {
+  async function assignId(
+    key: string,
+    assigneeId: string | null,
+    name: string,
+  ) {
     const { id } = await read(key);
     const data = record(
       await transport(ASSIGN, { id, input: { assigneeId } }),
@@ -160,7 +164,7 @@ export function claimOperations(
       return assignVerified(
         {
           assignee: async () => (await read(key)).assignee?.id ?? null,
-          assign: (id) => assignId(key, id, id),
+          assign: (id) => assignId(key, id, id ?? "nobody"),
           history: () => history(key),
         },
         user.id,
