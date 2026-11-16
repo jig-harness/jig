@@ -41,10 +41,12 @@ export async function readPark(
     ...loaders,
   });
   if (!("unreadable" in found) && found.unread.length > 0) {
-    // A park with no time is unreadable whatever its thread's call did, so it stays unclassified.
+    // A park with no time is also an unclassified defect beside its thread's failed call, so a class that waiting does not clear still wins over it.
     const failure = combinedFailure(
-      found.unread.map((p) =>
-        p.at === undefined ? undefined : failures.get(p.key),
+      found.unread.flatMap((p) =>
+        p.at === undefined
+          ? [failures.get(p.key), undefined]
+          : [failures.get(p.key)],
       ),
     );
     return {
