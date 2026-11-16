@@ -398,17 +398,24 @@ async function landedIdentity(
  * chain holds one commit per original commit, each with the original's
  * author time and subject.  A squash merge does not: its parent is whatever
  * main held, so the chain fails the comparison and the squash range stays.
- * Anything unreadable stays a squash too, the narrower range.
+ * A comparison that cannot be made is `unreadable`, never a squash: the
+ * narrower range would drop the earlier commits' notes and obligations
+ * without saying so.
  */
 export async function rebaseRange(
   view: PrView,
   merge: string,
   range: DiffRange,
   git: GitRunner,
-): Promise<DiffRange> {
+): Promise<Outcome<DiffRange, "unreadable">> {
   const count = view.commits.length;
-  if (range.kind !== "squash" || count < 2) return range;
-  if (!view.commits.every((oid) => SHA.test(oid))) return range;
+  if (range.kind !== "squash" || count < 2) return ok(range);
+  if (!view.commits.every((oid) => SHA.test(oid))) return ok(range);
+  const unreadable = (what: string) =>
+    failed(
+      "unreadable",
+      `${what} for PR #${view.number}, so a rebase merge cannot be told from a squash`,
+    );
   const landed = await git([
     "rev-list",
     "--first-parent",
@@ -417,24 +424,28 @@ export async function rebaseRange(
     String(count),
     merge,
   ]);
+  if (landed.code !== 0) return unreadable("the merge's history is unreadable");
   const chain = landed.stdout.trim().split("\n");
-  if (landed.code !== 0 || chain.length !== count) return range;
+  if (chain.length !== count) return ok(range);
   const [original, rebased] = await Promise.all([
     landedIdentity(git, view.commits),
     landedIdentity(git, chain),
   ]);
-  if (original === null || rebased === null) return range;
-  if (original.some((line, i) => line !== rebased[i])) return range;
+  if (original === null || rebased === null)
+    return unreadable("the commits' author times and subjects are unreadable");
+  if (original.some((line, i) => line !== rebased[i])) return ok(range);
   // Matching times and subjects do not make the changes the same: `git cherry`
   // marks a commit `-` only when its patch is already in the merge's history.
   const cherry = await git(["cherry", merge, view.commits[count - 1] ?? ""]);
+  if (cherry.code !== 0) return unreadable("`git cherry` failed");
   const marks = cherry.stdout.trim().split("\n");
-  if (cherry.code !== 0 || marks.length < count) return range;
-  if (!marks.every((line) => line.startsWith("- "))) return range;
+  if (marks.length < count) return ok(range);
+  if (!marks.every((line) => line.startsWith("- "))) return ok(range);
   const parent = await git(["rev-parse", `${chain[0]}^`]);
   const base = parent.stdout.trim();
-  if (parent.code !== 0 || !SHA.test(base)) return range;
-  return { kind: "rebase", base, head: merge, branchHead: merge };
+  if (parent.code !== 0 || !SHA.test(base))
+    return unreadable("the first landed commit's parent is unreadable");
+  return ok({ kind: "rebase", base, head: merge, branchHead: merge });
 }
 
 /** The range of a merged pull request, fetching its merge commit when the clone lacks it. */
@@ -470,7 +481,7 @@ async function mergedRange(
         );
     }
   }
-  return ok(await rebaseRange(view, merge, read.value, deps.git));
+  return rebaseRange(view, merge, read.value, deps.git);
 }
 
 /** The range of a merged or open pull request, after fetching its base (and a preview's head). */

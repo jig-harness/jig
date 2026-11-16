@@ -128,9 +128,31 @@ describe("a multi-commit pull request landed by rebase", () => {
     const git = runnerIn(root);
     const read = await mergeRange(git, merge);
     if (!read.ok) throw new Error("unreadable");
-    expect(await rebaseRange(viewOf(commits), merge, read.value, git)).toEqual(
-      read.value,
-    );
+    expect(await rebaseRange(viewOf(commits), merge, read.value, git)).toEqual({
+      ok: true,
+      value: read.value,
+    });
+  });
+
+  test("a failed `git cherry` is unreadable, never the squash range", async () => {
+    const root = withFeature();
+    const commits = gitRun(
+      root,
+      "rev-list",
+      "--reverse",
+      "main..feature",
+    ).split("\n");
+    gitRun(root, "cherry-pick", ...commits);
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const git = runnerIn(root);
+    const read = await mergeRange(git, merge);
+    if (!read.ok) throw new Error("unreadable");
+    const failing: typeof git = async (args) =>
+      args[0] === "cherry"
+        ? { ...(await git(["--version"])), code: 128, stdout: "" }
+        : git(args);
+    const out = await rebaseRange(viewOf(commits), merge, read.value, failing);
+    expect(out.ok).toBe(false);
   });
 
   test("a rebase keeps the landed sequence: the base is below its first commit", async () => {
@@ -149,10 +171,8 @@ describe("a multi-commit pull request landed by rebase", () => {
     if (!read.ok) throw new Error("unreadable");
     const range = await rebaseRange(viewOf(commits), merge, read.value, git);
     expect(range).toEqual({
-      kind: "rebase",
-      base: before,
-      head: merge,
-      branchHead: merge,
+      ok: true,
+      value: { kind: "rebase", base: before, head: merge, branchHead: merge },
     });
   });
 });
