@@ -416,13 +416,20 @@ export async function applyNotices(
 ): Promise<void> {
   const root = state.root ?? stateRoot();
   // The destination's read state as this tick found it, before any notice of its own marks it unread.
-  logNoticesRead(
+  const observed = logNoticesRead(
     repo.slug,
     sessions,
     settings.branch,
     (sessions.ok ? sessions.observedAt : undefined) ?? currentIso(),
     root,
   );
+  if (!observed)
+    report.unplaced.push({
+      target: "the notices workspace read observation",
+      record: "runtime",
+      reason:
+        "the notices_read event was not written and waits for a later tick",
+    });
   openCard(repo, sessions, root);
   // `standing` is read when the card writes, after the tick has named its causes.
   const card = orcaCard(

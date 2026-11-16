@@ -128,7 +128,7 @@ export function retryableStartup(r: ReadRecord): boolean {
 /**
  * Whether a follow-up's pass ended with no result through no fault of its
  * own: its wrapper died, or the pass ended on a signal or a failing exit, with
- * no result recorded and no question stated; or, whatever its exit and its
+ * no result recorded and no question stated (in its launch record or its closing report); or, whatever its exit and its
  * question, its result or exit could not be written on the host
  * (`unwrittenResult`). One that recorded `failed`, stopped on a question, or
  * exited cleanly without a result, with everything written, is not one.
@@ -140,7 +140,11 @@ export function diedWithoutResult(r: ReadRecord): boolean {
   if (r.state.kind === "died") return true;
   if (r.state.kind !== "ended") return false;
   const { code, signal } = r.state.exit;
-  return (code !== 0 || signal !== null) && questionOf(r.state) === null;
+  return (
+    (code !== 0 || signal !== null) &&
+    questionOf(r.state) === null &&
+    r.report?.report.question === undefined
+  );
 }
 
 /** Whether a pass that ended has no result and the host kept evidence that its result or exit could not be written. */
