@@ -709,8 +709,8 @@ opens a panel on the person's inbox, where a park is answered.
 [design/orca-integration.md](orca-integration.md) has how it works, in
 classes built in order. Still open, one pull request per step, in
 parallel where nothing orders them: the launch guard admission names only
-a worktree path, and records the repository that owns it and the
-worktree's incarnation
+a worktree path today, and the step makes it record the repository that
+owns the worktree and the worktree's incarnation
 ([#1201](https://github.com/jig-harness/jig/issues/1201)); a spike on
 binding a launch to the dispatcher's chosen account through the
 `agent.launch.before` hook, for Claude Code and for Codex
@@ -721,8 +721,7 @@ dispatcher's account cap reading each account's usage from
 panel, picking a parked decision's answer as the dashboard does
 ([jig-harness/orca-plugin#21](https://github.com/jig-harness/orca-plugin/issues/21))
 and a merge button on a merge-now entry that runs the pinned merge command
-as the person, once the dispatch board's Ready to merge (item 36) puts
-merge-now entries on the line
+as the person
 ([#1308](https://github.com/jig-harness/jig/issues/1308)). The board and
 each piece of work open in the dashboard (item 42), which item 42's
 "Open the dashboard" command for the plugin will open in Orca's own
@@ -730,7 +729,7 @@ browser. Orca stays
 optional: every view of the dashboard works in any browser, and each thing
 the plugin adds has a Herdr or plain-text equivalent. Also open: what Jig
 asks of Orca, filed by a person, each with its pull request offered: usage
-per account from the command line (filed as stablyai/orca#33138), a phone
+per account from the command line, a phone
 push only when an agent needs input, and a hook before a workspace's
 removal.
 

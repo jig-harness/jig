@@ -11,11 +11,12 @@ and workspace names, and the [dispatcher](../GLOSSARY.md)'s
 [session runtime](../GLOSSARY.md), Orca first
 ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
 Of the rest of the execution line, the board, collection through Orca and
-a plugin that wakes the dispatcher are built. What remains is the gap that
-lets an agent start between collection's last check and the removal, the
-dispatcher's reading of an account's usage from Orca's command line, and
-what Orca 1.4.248 lets the plugin do beyond the wake-up: guard an agent's
-launch, and show the line where a person works. With this built, Orca is
+a plugin that wakes the dispatcher are built, as are the plugin's launch
+guard, status bar item and inbox. What remains is the launch guard's
+admission, which names only a worktree path, the dispatcher's reading of an
+account's usage from Orca's command line, a trial of binding a launch to an
+account, and the panel's answer to a parked decision and its merge button.
+With this built, Orca is
 the runtime and Jig is the process: Orca owns workspaces, sessions,
 accounts, the phone and the board; Jig owns what to start, when it is done
 and what it still owes, and the two meet only through Orca's command line
@@ -410,7 +411,12 @@ the page, a phone reaches the dashboard through a front only.
 
 ## Build order
 
-One pull request each, in this order; each is usable on its own.
+One pull request each; each is usable on its own. Steps 1 to 6 and the
+first parts of 8 and 9 are built. The steps still open run in parallel where
+nothing orders them: the admission's repository and worktree incarnation
+(step 6), the account binding spike (step 7), the dispatcher's usage reading
+(step 4's ask, once Orca offers it) and the panel's answer and merge button
+(step 9).
 
 1. **This design** and its plan item.
 2. **The board from Jig's side** (built), after `drive-pr` links the card
@@ -441,7 +447,7 @@ One pull request each, in this order; each is usable on its own.
    JSON.
 9. **The Jig panel.** First the spike on fixtures that picks the drawing
    mode and the sidebar's fit, then the inbox with its answer box, then its
-   merge button once the dispatch board's Ready to merge is built. Each is
+   merge button. Each is
    its own pull request. The board and the threads are the dashboard's: the
    plugin's reading by `minReader`, its "Open the dashboard" command, and its
    install from the Orca catalog and the host's staged folder are steps of

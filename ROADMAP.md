@@ -223,8 +223,9 @@ waits. On an Orca host it refuses to start an agent in a worktree
 `jig gc` is removing, for every launch Orca makes through its launchers.
 A launch that slips past gc's last check is turned away. The protection
 is best-effort: a restored session, a hook that fails and a plugin that
-is down are not covered. Orca's status bar shows how many pull requests
-are ready to merge and how many questions wait on a person. A panel lists
+is down are not covered. Orca's status bar shows how many questions wait on a
+person, and how many pull requests are ready to merge once the plugin's
+line carries them. A panel lists
 what waits on that person, who answers a parked question there. Next,
 the guard will tell apart repositories that share a worktree folder, and
 a worktree recreated at the same path. A person will pick a parked
