@@ -292,18 +292,14 @@ any other.
 | `list` | `{"since":…}` (optional) | JSONL events | Every event, or every event at or after `since`, each id once: copies of one event are returned as one, and of different events under one id, the one whose stored text sorts first. A store may ignore `since` and return all. It never returns a ranked, capped or partial set: when it cannot read everything, it exits non-zero. Naming a finding's class works from this listing, and a capped one cannot show that a class does not exist, so the class would be coined again under a new name |
 | `diagnose` | none | JSONL notices | What the store holds that disagrees with the events as `list` returns them, one notice per line: `{"kind":"id-conflict","id":…,"copies":[{"ref":…,"text":…}]}` for different events under one id, `{"kind":"status-edited","ref":…,"shown":…,"computed":…}` for a status a person changed by hand where a store shows one, and `{"kind":"untrusted-record","ref":…}` for records a store ignored because of who wrote them. A store with none of these returns nothing |
 
-Exit codes: 0 done; 1 failed (the reason on standard error); 2 usage; 3
-unavailable (unreachable, or not signed in), which `reflect` treats as "keep
-the findings in the journal" rather than an error.
-
-**Deadlines.** The caller runs every operation under
-`reflection.timeout_sec` (default 120 seconds), and `list` and `diagnose`
-under five times that, since they read the whole store; when the deadline
-passes, the caller stops the store command and everything it started, then
-treats the operation as unavailable. A store bounds its own retries to fit
-inside that deadline. An `append` cut off part-way is safe to repeat: ids are
-fixed before the first attempt, and the journal still holds every finding not
-yet marked contributed.
+The [repository commands chapter](../../protocol/repo-commands.md) gives
+`reflection.command`'s success and unavailable exits, invocation and
+deadline rules. A failed operation exits 1 with the reason on standard
+error; a usage error exits 2. Read the chapter when implementing a store
+so its unavailable answer leaves findings in the journal and its retries
+fit inside the caller's deadline. An append interrupted part-way is safe
+to repeat: ids are fixed before the first attempt, and the journal still
+holds every finding not yet marked contributed.
 
 A store must not change an event it returns: `list` gives back each event as
 `append` received it. What a store shows people beside the events is its own
@@ -527,9 +523,10 @@ the command above).
 - **The record is in the comments.** Below each finding and each decision,
   in a collapsed section named *Record*, is its event as one line in a
   `json jig-reflection-event` code block. `list` reads events from these
-  blocks and nothing else; a store comment opens with the line
-  `<!-- jig-reflection-events -->`, and other comments are left alone, so
-  people discuss a finding in comments of their own. A record that does not
+  blocks and nothing else. A store comment opens with the event marker
+  for `reflection-github-store` in the
+  [hidden comment markers chapter](../../protocol/comment-markers.md#the-kinds-that-carry-markers);
+  use it to distinguish records from comments where people discuss a finding. A record that does not
   hold a valid event is an error naming its comment. In the readable text,
   `@` and `#` are kept from mentioning people or linking issues.
 - **Only writers' records count.** A comment is read as a record only when
@@ -581,10 +578,10 @@ the command above).
 
 ## Command store
 
-`reflection.store: command` runs `reflection.command` (a list of words, or a
-line split on spaces with quotes keeping words together; no shell runs it) as
-the store, with the operation appended. That is how a repository or a person
-plugs in a store of their own; run the conformance suite against it first.
+`reflection.store: command` chooses a repository's own store. The
+[repository commands chapter](../../protocol/repo-commands.md) gives
+`reflection.command`'s invocation; run the conformance suite against a new
+store before using it.
 
 ## Where reflection is asked for
 

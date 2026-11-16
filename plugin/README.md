@@ -762,16 +762,12 @@ with the host's own permission settings (`drive.pass_args`, and
 `drive.codex_bypass` and `drive.codex_pass_args` for a Codex account; see
 [a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)), never with
 one the dispatcher adds. So it starts on Orca, which cannot yet bind an
-interactive session to an account. A hidden-marker comment on the merged
-pull request is the claim: the dispatcher posts one naming its launch
-record before it starts the pass, reads the markers back, and stands down
-when an earlier one is there. A follow-up a person runs by hand claims the
-same way, marks its marker done once it succeeded, which also sets the
-pull request's `jig:followed-up` state label, and says it failed with
-`marker failed`, which sets `jig:followup-failed` and leaves the marker
-claiming the follow-up; since that label is all `marker failed` records,
-it exits `1` when the label is not written, and says it recorded nothing
-where the labels are off:
+interactive session to an account. The
+[follow-up claim chapter](protocol/followup-claim.md) gives the
+claim's form, its trusted-author rule, the runs and outcomes it carries and
+what a reader does when another marker holds it. Read it before writing a
+follow-up command that interprets those records. A person's command claims,
+checks and ends the marker through these operations:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker claim <PR> [--repo owner/name]
@@ -780,16 +776,12 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker failed <PR> --comment <id> [--repo owner/name]
 ```
 
-`claim` exits `3` when an earlier marker holds the follow-up, and `check`
-does when one has appeared since, so the run stops before it acts. Only a
-marker written by the dispatcher's own login or by an owner, member or
-collaborator counts. When a dispatched follow-up's pass ends, its wrapper
-writes the result onto the marker (`outcome: done` or `failed`), where
-another host reads it, and the next run writes it there when the wrapper
-could not; the wrapper then sets the pull request's state label
-(`jig:followed-up` or `jig:followup-failed`) where the labels are on, and
-the result is also kept in an outcome record per pull request
-that never expires. A follow-up that failed, or whose marker names a
+When a dispatched follow-up's pass ends, its wrapper writes the result
+onto the marker, where another host reads it, and the next run writes it
+there when the wrapper could not. The wrapper also projects the result as
+one of the [follow-up state labels](protocol/pr-labels.md#state-labels)
+where labels are on, and keeps an outcome record per pull request that
+never expires. A follow-up that failed, or whose marker names a
 launch record this machine no longer has and carries no answer, is notified
 and never started again: delete its marker to have it run again. A pass that
 died during its work (its wrapper gone, or a signal or a failing exit) with
@@ -998,35 +990,21 @@ comment keeps it, and the morning report (`drives.ts --report`) lists the
 workspaces the dispatcher launched into by the mark on their launch records,
 each with the name it carries now.
 
-A drive stopped with exit 12 gets one recovery pass per head commit in its existing branch tree. The pass inspects the uncommitted work and commits and pushes what belongs to the change, discards only known disposable work, or stops for unclear ownership. A missing tree is reported; no replacement tree is opened. A second exit 12 at the same head waits for a person, whose notice names `jig send drive@owner/name#N rearm`.
+A drive stopped with [`WORKTREE_UNCLEAN`](protocol/drive-exits.md) gets one recovery pass per head commit in its existing branch tree. The pass inspects the uncommitted work and commits and pushes what belongs to the change, discards only known disposable work, or stops for unclear ownership. A missing tree is reported; no replacement tree is opened. A second such stop at the same head waits for a person, whose notice names `jig send drive@owner/name#N rearm`.
 
 **Pull request state labels** (`dispatch.labels` in the repository's
 [configuration](CONFIGURATION.md#dispatch), off by default) show where each
 driven pull request stands, from any forge client, and let a person steer
-the same way. Each pull request carries one state label (`jig:driving`,
-`jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
-`jig:followup-failed` under the default prefix), projected from its drive
-ledger by one mapping its writers share, each writing when what it owns
-changes: the drive itself when it arms (`jig:driving`) and when it stops,
-by the exit table it shares with the dispatcher (`jig:converged` at the
-head it verified; `jig:parked` for a park, a stop a person settles or
-made, and a stop the dispatcher re-drives, which a run turns into
-`jig:stale`), the follow-up when it ends, done or failed, whoever
-runs it, and the dispatcher's every `--apply` run, which also writes
-`jig:stale` and `jig:held` (from the serialized areas below) and corrects
-any label that disagrees, so a label changed by hand, or left behind by a
-drive that was killed, comes back. A drive's and a follow-up's writes need
-no dispatcher: a repository that only drives pull requests gets the labels
-too. Every writer reads `dispatch.labels` from the default branch, so all
-of them use one prefix. A run re-reads a pull request's ledger just before
-it writes, and leaves one whose ledger changed since it read it to a later
-run; no state label is ever read to decide what to start. The command
-labels are a person's commands, which the dispatcher reads and never
-adds: `jig:drive` on a pull request with no drive ledger arms a drive on
-it (the `rearm` stage, once per head commit) and is replaced by the state
-label once the ledger exists. `jig:rearm` asks to restart a stopped drive in its existing branch tree, on an admitted account, and is consumed after launch; it never restarts a running drive or one a person stopped. `jig:hold` keeps every stage off the
-pull request while it is there, reported at every run and removed only by
-a person. Marker labels without the prefix sit beside the set: the
+the same way. The
+[pull-request labels chapter](protocol/pr-labels.md) lists the state
+and command labels, their writers and their meanings. A state label is a
+view of the ledger; a command label lets a person ask the dispatcher to act.
+Read the chapter when filtering pull requests or choosing a command label.
+Every writer reads `dispatch.labels` from the default branch, so all use
+one prefix. A run re-reads the ledger just before writing, and leaves one
+that changed to a later run. A drive's and a follow-up's writes need no
+dispatcher: a repository that only drives pull requests gets the labels too.
+Marker labels without the prefix sit beside the set: the
 repository's manual-operations label (`issue_tracker.labels.manual_ops`,
 `manual-ops` by default) on a pull request whose
 `## Out-of-tree follow-ups` section lists a step not yet checked off, set
@@ -1107,16 +1085,20 @@ the model, the duration, a drive's rounds, and an outcome class from a
 closed list, with a reason that carries the stage's own answer (the exit,
 the recorded result, or the last state):
 
+The [drive exits chapter](protocol/drive-exits.md) gives the drive's state
+names, codes and meanings. The dispatcher groups those answers with other
+stages' results into these outcome classes:
+
 | Class | What ended there |
 | --- | --- |
-| converged | a drive's convergence, `CONVERGED` (`0`); a pickup's or follow-up's result `done` |
-| merged | a drive whose pull request merged while it ran, `PR_NOT_OPEN` (`5`) |
-| quota wall | a usage limit, `QUOTA_PARKED` (`16`), or a session that ended with no result while its wall stood |
-| parked for a person | a park, `HITL_PARKED` (`8`); a follow-up pass that stopped on a question |
-| stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
+| converged | a drive converged; a pickup or follow-up recorded success |
+| merged | a drive's pull request merged while it ran |
+| quota wall | a usage limit, or a session that ended with no result while its wall stood |
+| parked for a person | a drive parked, or a follow-up stopped on a question |
+| stalled | a drive stalled, reached its round limit or was replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
-| refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
-| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `REVIEW_SKIPPED` (`22`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`), `CI_INFRA_PERSISTED` (`23`); a result `failed` |
+| refused | a stage's own refusal or a stop it was given |
+| gates failed | a stage that ran to its end without achieving it, or recorded failure |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 
@@ -1586,7 +1568,7 @@ whose configuration names the tracker.
 | Field | What it says |
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
-| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
+| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
 | `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
@@ -1681,7 +1663,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
-| `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
+| the [mailbox directives](protocol/mailbox.md#the-inbox), with the target argument for `resume` | `drive` | a directive in the mailbox of the working tree that holds the drive on this machine | the driver, at the checkpoints the [mailbox chapter](protocol/mailbox.md) names |
 
 **It checks before it writes.** It reads the address first, through `jig
 ask`'s readers, and refuses (exit `1`) a request the station cannot take:
@@ -1838,10 +1820,10 @@ the tracker until the tick starts the pick-up. An `answer` the re-arm has
 read cannot be taken back, which is why it is checked, shown and sent in
 your own words; until then, deleting the comment withdraws it.
 
-A drive stopped with `WORKTREE_UNCLEAN` (exit `12`) gets one automatic
+A drive stopped with [`WORKTREE_UNCLEAN`](protocol/drive-exits.md) gets one automatic
 recovery pass per pull-request head, in the tree holding its branch. That
 pass is told to commit and push edits belonging to the change, or discard
-them when they do not belong. A second exit `12` at that head waits for a
+them when they do not belong. A second such stop at that head waits for a
 person; after inspecting the handoff, request another attempt with
 `jig send drive@<owner>/<name>#<PR> rearm`. A missing tree waits for a
 person too: recovery never opens a replacement tree without the edits.

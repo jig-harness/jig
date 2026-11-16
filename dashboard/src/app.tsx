@@ -14,6 +14,7 @@ import type {
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { receiptUrl } from "./api.ts";
 import { PanelBoundary } from "./boundary.tsx";
+import { ReadyBadge } from "./badge.ts";
 import { tabCounts } from "./cards.ts";
 import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
 import { KeyBar } from "./key-bar.tsx";
@@ -349,6 +350,7 @@ function Page({
       style={{ colorScheme: schemeOf(theme) }}
       ref={setPopupRoot}
     >
+      <ReadyBadge ready={counts.merge} />
       <PopupRoot.Provider value={popupRoot}>
         <StandingSource.Provider value={{ line, clock }}>
           <Strip

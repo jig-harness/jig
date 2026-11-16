@@ -34,7 +34,10 @@ areas:
   drive-pr:
     title: "drive-pr skill"
     category: skill
-    paths: ["plugin/skills/drive-pr/**"]
+    paths:
+      - "plugin/skills/drive-pr/**"
+      - "tools/protocol/drive-exit-gate.ts"
+      - "tools/protocol/chapters/drive-exits.ts"
     workspace: []
     # Its scripts import the plugin's shared code and spawn the other two
     # skills' scripts, and its tests run with the shared test preloads and
@@ -436,6 +439,40 @@ areas:
           - "plugin/send/lib/verb-values.ts"
           - "plugin/shared/address.ts"
           - "plugin/shared/autonomy-values.ts"
+          - "lib/findings.ts"
+          - "plugin/README.md"
+          - "plugin/skills/do-item/SKILL.md"
+          - "plugin/skills/drive-pr/SKILL.md"
+          - "plugin/skills/drive-pr/scripts/drive-status.ts"
+          - "plugin/skills/drive-pr/scripts/drive.ts"
+          - "plugin/skills/drive-pr/scripts/lib/driver/**"
+          - "plugin/skills/drive-pr/scripts/lib/state/lease.ts"
+          - "plugin/skills/drive-pr/scripts/lib/state/lease-model.ts"
+          - "plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts"
+          - "plugin/skills/drive-pr/__tests__/terminal-states-dispatch.ts"
+          - "plugin/skills/drive-pr/__tests__/terminal-state-source-files.ts"
+          - "plugin/skills/drive-pr/__tests__/protocol-check.ts"
+          - "plugin/skills/drive-pr/__tests__/protocol-test.ts"
+          - "plugin/dispatch/run.ts"
+          - "plugin/dispatch/lib/launches.ts"
+          - "plugin/dispatch/lib/actions/drive-hold.ts"
+          - "plugin/dispatch/lib/log.ts"
+          - "plugin/dispatch/lib/sources/ledgers.ts"
+          - "plugin/dispatch/lib/log-ended.ts"
+          - "plugin/dispatch/lib/labels.ts"
+          - "plugin/dispatch/lib/contention.ts"
+          - "plugin/ask/lib/drive.ts"
+          - "plugin/shared/orca-tabs.ts"
+          - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
+          - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
+          - "plugin/shared/pr-labels/projection.ts"
+          - "plugin/shared/repo-commands.ts"
+          - "plugin/shared/records/registry*.ts"
+          - "plugin/shared/records/registry-machine-rows.json"
+          - "plugin/shared/records/not-records.ts"
+          - "plugin/shared/records/envelope.ts"
+          - "plugin/shared/records/followup-values.ts"
+          - "plugin/shared/records/writer.ts"
           - "plugin/shared/errors.ts"
           - "plugin/shared/fixture-observer.ts"
           - "plugin/shared/guards.ts"
@@ -484,6 +521,9 @@ areas:
           every file a chapter's sections import, directly or through the
           files they import, which tools/protocol/__tests__/sources.test.ts
           holds to the code.
+          The check also reads the drive's held restatements and code
+          bindings through its compiler-backed consistency check; these
+          inputs are listed alongside the generated tables' sources.
 
   dashboard:
     title: "The source of the page jig dispatch dashboard serves"

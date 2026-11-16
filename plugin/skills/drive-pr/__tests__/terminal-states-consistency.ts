@@ -1,132 +1,22 @@
 #!/usr/bin/env bun
 /**
- * drive-pr terminal-state ↔ exit-code drift check, across the prose corpus,
- * `drive.ts` itself, `drive-status.ts`'s own out-of-band sites and
- * `lib/state/lease.ts`.
+ * The drive-exits Protocol chapter's compiler-backed consistency engine.
+ * `plugin/skills/drive-pr/__tests__/protocol-check.ts` runs it for the chapter gate, and
+ * the terminal-states mutation suites exercise the same gate.
  *
- * `<skill-dir>/scripts/lib/status/terminal-states.ts`'s
- * `TERMINAL_STATES` const is now the single source of truth for which
- * `state` name pairs with which exit code (`evaluate.ts`'s own sites are
- * bound to it in code — see that module's header for why the site count is
- * not restated here). The prose restatements are not, and were never going
- * to be: `drive-status.ts`'s own "Exit codes"
- * doc comment, `SKILL.md` § Terminal states, `references/terminal-states.md`
- * § Exit codes and `README.md`'s exit table each restate a subset of
- * the same pairing by hand, with nothing to keep any of them in step with
- * the code or with each other.
+ * The held operational table in SKILL.md and drive-status.ts's header must
+ * name real (state, exit) pairs from TERMINAL_STATES. Extraction is pinned
+ * to each corpus entry's row form and heading; population floors and
+ * required identifiers reject rows that disappear from extraction.
  *
- * This is a RUNG-2 check (freshness ladder: drop / derive-at-render · CI check
- * that commits nothing · commit a generated artifact) — it re-derives the
- * canonical (exitCode, stateName) set from `TERMINAL_STATES` and scans each
- * prose file for a row that states a DIFFERENT pairing than the table
- * carries. Nothing is written to disk; a materialised `_generated/` table
- * would still manufacture merge conflicts on the repo's highest-churn
- * subsystem, which is exactly the
- * class of churn this check exists to police without adding to.
+ * The engine also checks driver and lease constants' provenance, bare
+ * literal exits, drive-status.ts's out-of-band name/branch pairings, and
+ * dispatcher modules' registry reads. It holds structural values and code
+ * bindings; the chapter's prose and the surrounding operational wording
+ * still need semantic review.
  *
- * WHAT THIS DOES NOT DO (a scanning gate states its own scope): it
- * derives a STRUCTURAL fact (does a documented pair exist in the code's own
- * table), never whether the surrounding PROSE is accurate. A row can state a
- * real, correct pair and still be a stale or misleading sentence; this check
- * has nothing to say about that.
- *
- * EXTRACTION STRATEGY (parse or pin: a hand-rolled recognizer over
- * independently-styled prose tables is defeated by each new decoy shape in
- * turn).
- * There is no shared machine-readable format to parse here — four Markdown
- * pipe tables, each styled differently by whoever wrote it, plus one doc
- * comment that isn't a table at all — so each is PINNED to its own known
- * row shape rather than driven through one generic table parser that would
- * have to guess column order and cell styling per file. What is shared, and
- * genuinely generic, is the "is this cell a bare state identifier" test,
- * applied two ways: (1) strip `**`/backtick wrapping, split multi-name
- * cells on ` / `, and keep only tokens that are the WHOLE (trimmed) cell
- * content, matching `^[A-Z][A-Z0-9_]*$`; (2) independently, pull out every
- * `` `IDENT` `` backtick span embedded ANYWHERE in the cell, matching the
- * same pattern — this is what lets a human-prose row (`README.md`'s
- * own style) still be checked once it names its canonical state inline, e.g.
- * "**PR not open** (`PR_NOT_OPEN`)". A cell with NEITHER a whole-cell
- * identifier nor an embedded backtick span — "PR not open" alone, or
- * "**Stalled**" alone — is prose describing the row with nothing to check,
- * and is silently skipped rather than guessed at — the same "prefer omission
- * over hand-maintained approximation" instinct the repository applies to
- * counts, applied here to extraction. Driver-only states
- * (`MAX_ROUNDS`, `STALLED`, `WORKTREE_UNCLEAN`, `SINGLE_INSTANCE_LOCK`) and
- * the `RETIRED` tombstone are deliberately left un-annotated in the
- * human-facing docs today, matching the convention `references/
- * terminal-states.md` already uses (a bare `—` for these rows): the
- * driver-only ones produce no `--json` report at all, and the tombstone is
- * never emitted, so naming either here would be more precision than the
- * underlying data actually has. `SESSION_LEASE_HELD` is un-annotated in
- * those same docs too, but for a DIFFERENT reason, not this one — checked
- * against `terminal-states.ts`: its category is `state`, not `driver-only`;
- * it IS a real value `report.state` carries, set outside `evaluate` at
- * `drive-status.ts`'s own round-gate lease bump, and it CAN appear in the
- * `--json` report. It stays un-annotated in the human-facing prose docs
- * today, even though the code-level checks below do bind it in code.
- *
- * Below the prose-corpus check are TWO code-level checks, over real files
- * rather than prose about them:
- *
- *   `drive.ts` exports a named constant for each of its
- *   driver-only exits, each one derived via `terminal-states.ts`'s own
- *   `driverOnlyExitCode('<NAME>')` rather than an independent literal —
- *   `findExitConstantMismatches`, `findConstantProvenanceMismatches`, and
- *   `findBareLiteralExits` below verify that binding against the REAL file,
- *   not prose about it. See their own doc comments for the distinct
- *   regressions each one closes.
- *
- *   The same binding covers `drive-status.ts`'s non-`evaluate` sites.
- *   `lib/state/lease.ts` exports `SESSION_LEASE_HELD_EXIT`
- *   and `DRIVE_HELD_ELSEWHERE_EXIT`, both derived via `terminal-states.ts`'s
- *   `outOfBandExitCode('<NAME>')` — the `driverOnlyExitCode` sibling for the
- *   two `state`-category entries `drive-status.ts` sets OUTSIDE `evaluate`
- *   — and `drive-status.ts` imports both rather than hand-writing `11`/`13`
- *   at its `case 0` sites and at its own PR-wide admission preflight. The
- *   same three functions used for
- *   `drive.ts` above are reused here, generalized to accept a helper-function
- *   name, its expected import specifier, and the exit-code set to scan for —
- *   see `OUT_OF_BAND_EXIT_NAMES` and its own call sites in `runCheck`
- *   below. Deliberately NOT extended to `lib/state/lease.ts`'s OWN internal
- *   per-tree `fail(11, ...)` refusal sites (`assertNoForeignDrive` and
- *   siblings): those are a `fail` call argument, not a `return` statement,
- *   at every one of those sites, a differently-shaped check these scans do
- *   not cover.
- *
- *   `drive-status.ts` routes `report.state` and the emitted/returned exit
- *   code for an out-of-band state through ONE
- *   `outOfBand(report, name, reason)` lookup, so
- *   the two cannot be written to disagree with EACH OTHER. That says
- *   nothing about whether `name` is the RIGHT one for the branch calling
- *   it — `outOfBand(report, 'SESSION_LEASE_HELD', ...)` compiles and keeps
- *   `report.state`/the exit code internally coherent even inside an
- *   `if (bump.code === DRIVE_HELD_ELSEWHERE_EXIT)` block, which is still a
- *   real misclassification the checks above cannot see (none of them ever
- *   inspects an `outOfBand` call's own arguments).
- *   `findOutOfBandNamePairingMismatches` below closes that gap: for every
- *   `outOfBand(report, 'NAME', ...)` call inside an `if (X.code === IDENT)`
- *   block in `drive-status.ts`, it verifies `outOfBandExitCode('NAME')` —
- *   the state the call actually reports — matches `IDENT`'s own resolved
- *   value — the state the enclosing comparison dispatched on. Reuses
- *   `resolvesToCodePropertyAccess` (the `.code` side) and the same
- *   import-resolution discipline `isExitCodeHelperCall` already applies to
- *   `driverOnlyExitCode`/`outOfBandExitCode` (symbol-resolved, never
- *   name-text matched).
- *
- * Exit codes:
- *   0 — every documented (exit, state) pair in the prose corpus matches a
- *       TERMINAL_STATES entry, drive.ts's own driver-only exit constants
- *       still read from it with no bare-literal regression, lease.ts's/
- *       drive-status.ts's own out-of-band exit constants and call sites do
- *       too, AND every drive-status.ts `outOfBand` call names the state its
- *       own enclosing comparison actually dispatched on
- *   1 — a prose file states a pair the table does not contain, a file in the
- *       corpus could not be read at all, a drive.ts or lease.ts exit constant
- *       no longer equals its TERMINAL_STATES entry (or is no longer bound via
- *       its helper function), drive.ts/drive-status.ts contains a bare
- *       exit-code literal that bypasses its named constant, or a
- *       drive-status.ts `outOfBand` call names a different state than the
- *       one its enclosing `.code === IDENT` comparison dispatched on
+ * Exit 0 means every check passed; exit 1 names a mismatched pair, an
+ * unreadable or incomplete corpus, or a broken code binding.
  *
  * Test seam (never set in prod):
  *   DRIVE_PR_TERMINAL_STATES_TEST_FILES  colon-separated `path=role` pairs
@@ -182,12 +72,12 @@ import {
 
 const SKILL_ROOT = resolve(import.meta.dir, "..");
 
-export type CorpusRole =
+type CorpusRole =
   | "drive-status-header"
   | "skill-md-table"
   | "pipe-table-exit-first";
 
-export interface CorpusFile {
+interface CorpusFile {
   readonly path: string;
   readonly role: CorpusRole;
   /**
@@ -360,54 +250,6 @@ const CORPUS_FILES: readonly CorpusFile[] = [
       "REVIEW_SKIPPED",
       "PASS_DEADLINE",
       "QUOTA_PARKED",
-      "MAILBOX_STOPPED",
-      "MAILBOX_PAUSE_TIMEOUT",
-      "TAKEN_OVER",
-    ],
-  },
-  {
-    path: "references/terminal-states.md",
-    role: "pipe-table-exit-first",
-    heading: "## Exit codes",
-    minPairs: 16,
-    requiredIdentifiers: [
-      "ROUND_READY",
-      "CONVERGED",
-      "HEAD_LAG",
-      "AWAITING_REVIEWER",
-      "STALE_REVIEW",
-      "HEAD_MOVED",
-      "MERGEABILITY_UNKNOWN",
-      "PR_NOT_OPEN",
-      "REVIEWER_FAILED",
-      "HITL_PARKED",
-      "PR_CONFLICTING",
-      "REVIEW_SKIPPED",
-      "DRIVE_HELD_BY_OTHER_WORKTREE",
-      "INDETERMINATE",
-      "PASS_DEADLINE",
-      "QUOTA_PARKED",
-      "MAILBOX_STOPPED",
-      "MAILBOX_PAUSE_TIMEOUT",
-      "TAKEN_OVER",
-      "UNSUPPORTED_CLI",
-    ],
-  },
-  {
-    path: "README.md",
-    role: "pipe-table-exit-first",
-    heading: "## The exit states — what you do now",
-    minPairs: 7,
-    documentsDriveTsRemap: true,
-    requiredIdentifiers: [
-      "CONVERGED",
-      "PR_NOT_OPEN",
-      "HITL_PARKED",
-      "PR_CONFLICTING",
-      "NOT_SETTLED",
-      "REVIEWER_FAILED",
-      "REVIEW_SKIPPED",
-      "DRIVE_HELD_BY_OTHER_WORKTREE",
       "MAILBOX_STOPPED",
       "MAILBOX_PAUSE_TIMEOUT",
       "TAKEN_OVER",
@@ -4128,7 +3970,7 @@ function reportCorpusProblems({
       "\nEach identifier above is REQUIRED by this file's own `requiredIdentifiers`",
     );
     console.error(
-      "(__tests__/terminal-states-consistency.ts CORPUS_FILES) — the file used to",
+      "(the drive exit chapter checker's CORPUS_FILES) — the file used to",
     );
     console.error(
       "document it and no longer does, even though the file's total row count may",
@@ -4520,14 +4362,4 @@ export async function runCheck(): Promise<number> {
   );
   console.log("   the surrounding sentence describing it is still correct.");
   return 0;
-}
-
-if (import.meta.main) {
-  let code: number;
-  try {
-    code = await runCheck();
-  } finally {
-    await closeTypeScriptService();
-  }
-  process.exit(code);
 }

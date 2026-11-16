@@ -61,6 +61,9 @@ gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,head
 The dispatcher (`jig dispatch`, [the plugin's README](../../../plugin/README.md#the-dispatcher))
 starts this pass by itself for a merged pull request, and a marker comment
 on the pull request is what keeps two runs from settling the same merge.
+The [follow-up claim chapter](../../../plugin/protocol/followup-claim.md)
+gives that marker's record, runs and outcomes; read it when interpreting
+an existing claim.
 Before any arm acts, claim it:
 
 ```bash
@@ -68,10 +71,10 @@ jig dispatch marker claim "$PR"     # prints {"pr": …, "comment": <id>}
 MARKER=<id>
 ```
 
-Only exit `0` means this run holds the follow-up. Exit `3` means an earlier
-marker holds it: another run has it. Any other exit (`1` the forge could not
-be read, `2` the marker is missing or not trusted) proves no ownership. On
-every nonzero exit stop here and say so; retry later rather than go on. When the dispatcher started this session, its
+Only a successful claim means this run holds the follow-up. On every
+nonzero exit, stop here and report the refusal; the
+[follow-up claim chapter](../../../plugin/protocol/followup-claim.md)
+gives its meaning. Retry later rather than go on. When the dispatcher started this session, its
 prompt names the marker it posted: that claim is this session's, so use
 that id as `MARKER` and post none of your own.
 
@@ -90,14 +93,16 @@ done, so the dispatcher never starts the follow-up again:
 jig dispatch marker done "$PR" --comment "$MARKER"
 ```
 
-Marking it done also sets the pull request's `followed-up` state label
-where the repository turns the state labels on. A session the dispatcher
+Marking it done also sets the pull request's state label from the
+[pull-request labels chapter](../../../plugin/protocol/pr-labels.md#state-labels)
+where the repository turns those labels on. A session the dispatcher
 started records its result with the `jig dispatch result` command its
 prompt names instead, and, as its last act, its closing report with the
 `jig dispatch report` command the prompt names. A run that stops short leaves its marker as it is,
 and says so with
 `jig dispatch marker failed "$PR" --comment "$MARKER"`, which sets the
-`followup-failed` state label: the label is where the failure shows, and the
+chapter's failed-follow-up state label: the label is where the failure
+shows, and the
 dispatcher does not read it as a failed outcome (it treats the marker as
 held). A person marks it done or deletes it to have the follow-up run again. Once it is
 older than `dispatch.followup_stale_after` with no session on the pull
@@ -444,7 +449,8 @@ reversed, so the person merging reads them before they merge. The report
 lists only the pull requests the signed-in account authored or wrote a drive
 ledger on, so a pull request someone else opened and drives from another
 clone may be missing: when its entry is absent, read that pull request's
-drive ledger comment (`<!-- drive-pr-ledger -->`) and its provisional replies
+[drive ledger comment](../../../plugin/protocol/comment-markers.md#the-kinds-that-carry-markers)
+and its provisional replies
 directly rather than listing none. A provisional entry whose status is
 `unread`, or a report that exits 0 with errors in its top-level `unread`
 field, is not a complete inventory: say which part is unread and retry before

@@ -874,8 +874,7 @@ matchers in configuration, and the provisional chapters on addresses and the
 verbs of `jig send` and on tracker facets
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
-Open, in order: the stable chapters' restatements as links
-and the other provisional chapters.
+Open, in order: the other provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the
