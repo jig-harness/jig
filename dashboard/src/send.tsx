@@ -1,6 +1,6 @@
 /**
  * Send: a card's answers posted from this browser, as the person, on the pull
- * request a parked drive reads them from. Each decision the card answers
+ * request or GitHub issue its station reads them from. Each decision the card answers
  * goes as its own comment, the `drive-answer` record `jig send` writes
  * (`shared/decisions/answer-record.ts`): the answer line Copy takes for it,
  * any note line, and the hidden record naming the person's login and
@@ -9,9 +9,9 @@
  * server never sees the token or the comments.
  *
  * Send posts only once an option is picked on the card: an approval nobody
- * picked is Copy's alone. A guarded pick sends on the second step, as it
- * copies. A card that no drive reads an answer comment for, whose pull
- * request is not on github.com, or a page served over plain HTTP outside
+ * picked is Copy's alone. Every Send confirms its target and text on the second step.
+ * A card whose station cannot read an answer comment, whose target
+ * is not on github.com, or a page served over plain HTTP outside
  * loopback (`transportFault`) has no Send and says why.
  *
  * The settings panel takes the token, tests it by asking GitHub who it signs
@@ -46,6 +46,7 @@ import {
 } from "./github.ts";
 import type { NeedView } from "./needs-view.ts";
 import { type SendTarget, transportFault } from "./send-target.ts";
+import { watchAnswer } from "./send-watch.ts";
 import { keepSent, useSentHere } from "./sent.ts";
 import type { Picking } from "./use-picking.ts";
 
@@ -204,7 +205,7 @@ export async function postAll(
   return { refused: null, uncertain: false, uncertainKey: null };
 }
 
-/** The card's Send, while a token is kept, its decisions are a drive's on github.com and the page came over a safe path. */
+/** The card's Send with a kept token, a station-readable github.com target and a safe page transport. */
 export function useSend(need: NeedView, picking: Picking): Sending | null {
   const { kept } = useKeptToken();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -254,12 +255,14 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
             .map((c) => c.body)
             .join("\n\n");
     const settle = (refused: string | null, uncertainKey: string | null) => {
-      if (urls.length > 0)
+      if (urls.length > 0) {
+        watchAnswer(need.repo, need.target, urls);
         keepSent(need.repo, need.target, {
           text: sentText(urls.length),
           urls,
           at: Date.now(),
         });
+      }
       // Earlier uncertainty stays until a comment posted for the same
       // decision supersedes it; a decision this send refused or never
       // attempted keeps what it had, and the one that may have posted adds
@@ -298,7 +301,7 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       ({ refused, uncertainKey }) => settle(refused, uncertainKey),
       () =>
         settle(
-          "The page lost the connection to GitHub mid-send. Open the pull request and check before sending again.",
+          "The page lost the connection to GitHub mid-send. Open the linked target and check before sending again.",
           comments[urls.length]?.key ??
             comments[comments.length - 1]?.key ??
             null,
@@ -425,7 +428,7 @@ export function SendSaid({
       {sending.uncertain ? (
         <div className="copyRow">
           <button type="button" className="fbtn" onClick={sending.checked}>
-            I checked the pull request; allow Send again
+            I checked the linked target; allow Send again
           </button>
         </div>
       ) : null}
@@ -445,13 +448,35 @@ export function SendSaid({
   );
 }
 
-/** Why a card has no Send, shown once a token is kept so its absence is never a puzzle. */
+/** A card explains its missing Send and points to the token settings before a person picks. */
 export function NoSend({ need }: { need: NeedView }) {
   const { kept } = useKeptToken();
-  if (kept === null) return null;
-  const absent =
-    "absent" in need.send ? need.send.absent : pageTransportFault();
-  return absent === null ? null : <p className="sm mut noSend">{absent}</p>;
+  return (
+    <NoSendReason
+      need={need}
+      hasToken={kept !== null}
+      fault={pageTransportFault()}
+    />
+  );
+}
+
+export function NoSendReason({
+  need,
+  hasToken,
+  fault,
+}: {
+  need: NeedView;
+  hasToken: boolean;
+  fault: string | null;
+}) {
+  const absent = "absent" in need.send ? need.send.absent : fault;
+  if (absent !== null) return <p className="sm mut noSend">{absent}</p>;
+  return hasToken || need.rows.length === 0 ? null : (
+    <p className="sm mut noSend">
+      Paste a GitHub token to send from this browser: open “Send from here”
+      above, then Test and keep.
+    </p>
+  );
 }
 
 type Test =

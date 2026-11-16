@@ -181,11 +181,13 @@ export function stationChoice(
   const { key, form } = request;
   if (form.kind === "free") return refused(wordsFault(key));
   const digest = decision.digest ?? "";
+  const item = stationItem(decision);
   const resolved = resolveChoice(
-    stationItem(decision),
+    item,
     form,
     request.note,
     sender.login,
+    decision.answer?.framedBy === "dispatcher",
   );
   if (!resolved.ok) return resolved;
   const { option, recommended, text, parts } = resolved.value;

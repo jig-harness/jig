@@ -697,49 +697,51 @@ attached to a run and took one over without Orca.
 
 ### 34. Jig in the Orca ecosystem
 
-Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
-on their own (the workspace tool behind the launcher, `do-item`'s board
-updates and workspace names, the dispatcher's session runtime, and a
-plugin Orca loads that wakes the dispatcher when an agent's status
-changes), and the rest of the execution line meets it only in part:
-collection through Orca still races an agent started between its last
-registry read and the removal, and the dispatcher cannot read an account's
-usage from Orca's command line. [design/orca-integration.md](orca-integration.md)
-has how it works, in classes built in order. Still open, on Orca 1.4.248's
-plugin hooks: the launch guard, in which `jig gc` takes its admission in a
-launch guard record before its last registry read and the plugin's
-`agent.launch.before` hook, reading that record without an awaited call,
-refuses a launch into a worktree gc holds; a spike on binding a launch to
-its account through the same hook; the plugin's status bar item; and the
-Jig panel, which stays the person's inbox, with an answer box and, on a
-merge-now entry, a button that runs the pinned merge command as the
-person. The board and each piece of work open in the dashboard (item 42), which
-the plugin's "Open the dashboard" command opens in Orca's own browser. Orca
-stays optional: every view of the dashboard works in any browser,
-and each thing the plugin adds has a Herdr or plain-text equivalent. Also
-open: what Jig asks of Orca (usage per account
-from the command line; a phone push only when an agent needs input; a hook
-before a workspace's removal; filed by a person, each with its pull request
-offered). One pull request per step, in the design's order.
+Jig's tooling reaches [Orca](https://www.onorca.dev) in the workspace tool
+behind the launcher, `do-item`'s board updates and workspace names, the
+dispatcher's session runtime, and a plugin Orca loads: it wakes the
+dispatcher when an agent's status changes, refuses a launch into a worktree
+`jig gc` is removing, shows the dispatch line in Orca's status bar, and
+opens a panel on the person's inbox, where a park is answered.
+[design/orca-integration.md](orca-integration.md) has how it works, in
+classes built in order. Still open, one pull request per step, in
+parallel where nothing orders them: the launch guard admission names only
+a worktree path today, and the step makes it record the repository that
+owns the worktree and the worktree's incarnation
+([#1201](https://github.com/jig-harness/jig/issues/1201)); a spike on
+binding a launch to the dispatcher's chosen account through the
+`agent.launch.before` hook, for Claude Code and for Codex
+([#1306](https://github.com/jig-harness/jig/issues/1306)); the
+dispatcher's account cap reading each account's usage from
+`orca account usage --json`, once Orca offers it
+([#1307](https://github.com/jig-harness/jig/issues/1307)); and, in the
+panel, picking a parked decision's answer as the dashboard does
+([jig-harness/orca-plugin#21](https://github.com/jig-harness/orca-plugin/issues/21))
+and a merge button on a merge-now entry that runs the pinned merge command
+as the person
+([#1308](https://github.com/jig-harness/jig/issues/1308)). The board and
+each piece of work open in the dashboard (item 42), which item 42's
+"Open the dashboard" command for the plugin will open in Orca's own
+browser. Orca stays
+optional: every view of the dashboard works in any browser, and each thing
+the plugin adds has a Herdr or plain-text equivalent. Also open: what Jig
+asks of Orca, filed by a person, each with its pull request offered: usage
+per account from the command line, a phone
+push only when an agent needs input, and a hook before a workspace's
+removal.
 
-Done when a launch Orca makes into a worktree `jig gc` is collecting is
-refused by the plugin's guard whenever the hook runs and reads the record
-(a hook that throws, runs past its deadline or whose worker is down lets the
-launch through, and a fresh heartbeat does not promise otherwise; tests cover
-each of those cases and an admission abandoned after gc submitted its
-removal), a launch the guard let through just before gc's admission
-keeps that worktree, and with a stale heartbeat gc collects as before and
-its receipt says the collection was unguarded; the plugin's status bar
-flags a tick older than twice the interval; the panel's inbox lists the
-needs, with their decisions, that the dashboard's Now view lists for the
-same tick; the dispatcher's account cap reads `orca
-account usage --json` where Orca has it; and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
-under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
-the first event after a minute of quiet starts it at once, an event during
-a running tick or the minute after a start waits for one trailing tick
-that starts once the running tick has finished and a minute has passed
-since the last start, and either stays pending while a tick's lock refuses it and survives an event that arrives while that tick
-processes the repository.
+Done when a launch guard admission is honoured only for the repository
+that owns it and the worktree incarnation it was taken on, so another
+repository's list cannot release it and a worktree recreated at the same
+path inherits no launch block; the spike's answer is recorded and, where a
+launch binds to its account, the dispatcher starts pickups through Orca on
+the account it chose, or, where it does not, the design records why; the dispatcher's account cap reads `orca account
+usage --json` where Orca has it, an `unavailable` row holding its account;
+the panel shows a parked decision's options and choice as `jig ask` and
+the dashboard do, and a Send settles it; and a merge-now entry in the
+panel runs its pinned merge command on a person's click and on nothing
+else, a command that fails the strict forms runs nothing and says why, and
+an entry in another lane shows no button.
 
 ## Next
 
@@ -747,8 +749,7 @@ Next starts with delegated merge, once item 40 holds. Then come what lets a
 second team adopt Jig, the hub for a team on several hosts, the Protocol
 that readers outside the skills can trust, the line in a team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
-measurement. Last come the developer machine and its runtimes, and the runs
-a person owes.
+measurement. Last come the developer machine and the runs a person owes.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -873,8 +874,8 @@ built so far: the generator, its gate, the chapter on the drive's end
 states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
 repository supplies, on the follow-up claim and its result, on rule
-matchers in configuration, and the provisional chapter on addresses and the
-verbs of `jig send`
+matchers in configuration, and the provisional chapters on addresses and the
+verbs of `jig send` and on tracker facets
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
 Open, in order: the stable chapters' restatements as links
@@ -1173,94 +1174,6 @@ Done when a task-typed issue reaches its pull request with the depth its
 row gives, a feature keeps every gate it has today, and the three former
 conditions have no reader outside the table.
 
-### 29. The spec a work item links
-
-A work item carries or links its requirements, and the link is prose:
-`do-item` hands the agent the body, the reviewer is told to check "the
-acceptance criteria" wherever they are, and the pull request never says
-which were met. [design/spec-link.md](spec-link.md) has how it works, on
-the [spec ecosystems research note](spec-ecosystems-research.md): a
-read-only resolver with one adapter per layout (the item's own body first,
-then the common repository layouts by convention, then the tracker's
-attachments) that returns requirements,
-acceptance criteria and tasks with their ids; the result handed to the
-implementing agent and the reviewer; a pull-request section accounting for
-every criterion as met with an evidence record (item 28), deferred to a
-filed item, or not applicable. The delivery loop writes no spec and
-dictates no format.
-What it will build, one pull request per step:
-
-- **The repository adapters**, two or three layouts per pull request, each
-  with its fixture folder; M6's audit criterion with the last of them.
-- **`do-item` reads and requires**: the `spec` pre-scout by work type
-  (item 27), the delegation prompt and the reviewer's list, the policy
-  refusal for an unaccounted criterion, the recommended-skills page naming
-  the spec-writing tools with the adapter that reads each.
-- **The required check** that refuses an unlinked pull request or an
-  unaccounted criterion, honouring an exception only when a member of
-  `specs.exception_approvers` other than the author and the implementing
-  agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
-  still on, reading its script and policy from the base branch rather than
-  the head, with a workflow template and the setup that makes it required.
-- **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
-- **The tracker source**: the documents and attachments the tracker
-  interface lists on the item.
-- **A verification section**: the commands a work item lists under
-  `Verification`, fenced blocks included, handed to the implementer and
-  recorded as evidence records the pull request's acceptance section cites.
-
-Done when a feature whose body links a spec in any supported layout
-reaches its pull request with every acceptance criterion accounted for,
-one with none stops, saying so, before any code is written, and the stance (a work
-item links its requirements; the delivery loop writes no spec) is a decision record.
-
-### 31. Routing work to an agent, a model and an effort
-
-`do-item` chooses which agent implements an issue, from the change-area
-catalog, the issue's labels and its title (`determine_agent.ts`), but
-nothing chooses the model or the effort that agent runs on, and nothing
-records why: a bug fix in one file and an epic's architecture spike are
-implemented on whatever model the session runs, the one the launcher's
-settings or a person picked. [design/agent-routing.md](agent-routing.md)
-has how it works, decided in
-[ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md): a
-route (agent, complexity tier, effort) for the implementer, derived from
-the work type (item 27), the size and flag labels and the catalog's flags and
-mandatory reviews, by rules as data with defaults a repository overrides;
-complexity tiers, simple, standard and complex, from the type, the
-size and the flags a repository marks complex at any size
-(`routing.complex_flags`), each mapped to a model per vendor with Claude's
-and OpenAI's defaults (simple and standard on `sonnet` or `terra`, complex
-on `opus` or `sol`); raises that move the effort up, and only a configured
-complex flag that sets the tier; the strictest value on every
-conflict; a pinned agent keeping its pin; the reason, the source and
-whether it was applied on the pull request, where the drive's loop-cost
-report joins them to the outcome; a person's choice always winning; opt-in
-until a repository declares its rules; no model asked to route, and no
-model or tier written on an issue. The design
-is written and decided, and its first two steps are built:
-`determine_route.ts` derives the route from the `routing` section and its
-defaults, on the complexity tiers with Claude's and OpenAI's families
-known (`plugin/shared/model-families.ts`, which the loader checks every
-`routing.models` row against), and `do-item` prints it and forwards
-nothing. What stays open is the rest of the build, its own epic, one pull
-request per step:
-
-- **The record**: the `## Route` section written and parsed from
-  `plugin/shared/`, and the loop-cost report reading it.
-- **M0's declaration point**: the policy's invariant and table, and the
-  criterion's statement.
-- **`do-item` forwards**, behind a declared `routing` section: the model
-  and effort to the subagent tool, the launcher's `route:` prompt line
-  honoured, the pinned agent kept.
-- **`work-batch` and the audit criterion** at M0 Standard.
-
-The build epic is done when an S bug routes standard and the same bug
-labelled `has-migration` routes complex, a flagged bug is delegated on a higher effort
-than an unflagged one with the `## Route` section saying why, a `route: yours` prompt
-delegates with nothing forwarded, and a loop-cost report shows the route
-beside the rounds.
-
 ### 23. Seed review lenses
 
 `review` runs [review lenses](../GLOSSARY.md) from one file each, and
@@ -1279,23 +1192,6 @@ Done when `review` runs every seed lens a diff triggers and says why it
 skipped the others, each seed lens's eval fixtures have passed live, and the
 tallying script turns a fixture set of threads into one parity row per lens
 version.
-
-### 30. Scanner findings block convergence
-
-`resolve-review-comments` lists the findings a static-analysis app reports as
-check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
-to work them, but the drive's verdict reads threads and summary comments
-only, so a drive with annotations as its only findings can end `CONVERGED`
-without starting a round. What it will
-build: the annotation listing as a third source of open work beside threads
-and summary findings, read by `drive-status`, `round-plan` and `converge`,
-so the verdict withholds `CONVERGED` while a scanner check is running on the
-head or lists a finding no round has answered; a way to record a finding
-that stands (rejected, won't fix, deferred) against the head so it stops
-counting; and the dismissal in the tool for the apps that expose one
-(SonarQube Cloud's issue transitions), as an adapter beside the listing.
-Done when a pull request whose scanner check holds a warning does not
-converge until a round fixes it or records why it stands.
 
 ### 25. Dependency-review feedback
 
@@ -1507,22 +1403,6 @@ Done when a working repository's weekly sweep is the installed `jig gc`
 job, its own reapers and installers are gone, and the report names each
 resource's proof before anything is collected.
 
-### 19. Herdr as the primary workspace runtime
-
-[Herdr](https://herdr.dev) is the workspace runtime Jig's tooling targets
-first ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-The [Herdr workspace tool](../tools/herdr/README.md), the launcher's `herdr`
-provider and M12's worktree lifecycle in Herdr are in place. What is left
-waits on a consumer repository that runs its agents in Herdr; the hosts
-that run Jig's own line run Orca. Done when:
-
-- each consumer repository's own Herdr launch and worktree commands call the
-  workspace tool, and their copies of what it does are deleted, keeping only
-  the repository's own setup as its `.config/worktree-hooks/create`;
-- `drive-pr`, `do-item` and `review`'s reading of a delegated agent's output
-  are run in a Herdr workspace on macOS and on Linux, and what differs is
-  fixed or written down.
-
 ### 7. The Notion store, run against Notion
 
 The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
@@ -1636,7 +1516,7 @@ conditions for considering a tap without adopting one ahead of that evidence.
     M12's mappings how a repository's `orca.yaml` setup script and Orca's
     branch-prefix setting approximate them, once validated in a consumer;
   - the drive, pickup and review skills checked inside Orca worktrees on a
-    server, as item 19 does for Herdr;
+    server, as [#1310](https://github.com/jig-harness/jig/issues/1310) does for Herdr;
   - the tool and the launcher's Orca provider on Windows: the tool drives
     its host with `sh`, `test` and `mkdir` and, on this machine, supervises
     its hooks through `/proc` or `ps`

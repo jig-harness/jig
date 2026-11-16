@@ -1,3 +1,4 @@
+import { ok as assert } from "node:assert/strict";
 /**
  * A person's answer to a need's decision: counted only from a trusted
  * author other than the dispatcher, naming the decision's current digest,
@@ -16,6 +17,7 @@ import { stationContextOf, stationDecision } from "../lib/line-station.ts";
 import { closeStateDb } from "../lib/state.ts";
 import {
   claimAnswer,
+  finishAnswer,
   type CarriedAnswer,
   takeCarried,
 } from "../lib/station-answer-store.ts";
@@ -532,4 +534,88 @@ describe("settleStationAnswers on an item of another tracker", () => {
       unread: why,
     });
   });
+});
+
+/** A snapshot's exact framing from before the hold display was clarified. */
+function legacyFraming(action: Action): ParkedDecision {
+  const framing = stationDecision(
+    action as Action & { cause: "followup-failed" },
+    CONTEXT,
+  )?.decision;
+  assert(framing);
+  return {
+    ...framing,
+    call: {
+      ...framing.call,
+      options: framing.call.options.map((o) =>
+        o.id === "hold"
+          ? {
+              ...o,
+              name: "Leave it to me",
+              summary:
+                "The dispatcher takes no step on it for these facts and stops listing it under Needs you; it lists it again when they change.",
+            }
+          : o,
+      ),
+    },
+  };
+}
+
+it("counts an old snapshot's hold or rerun answer while its facts stand, and leaves changed facts stale", async () => {
+  for (const [answer, option, outcome] of [
+    ["choose Leave it to me", "I'll handle it — hide this card", "held"],
+    ["approve", "Run it again", "done"],
+  ] as const) {
+    const dir = root();
+    const action = failedFollowup();
+    const digest = decisionDigest(legacyFraming(action));
+    expect(digestOf(action)).toBe(digest);
+    const p = ports([said(`answer followup: ${answer} [${digest}]`)]);
+    await settle(reportOf({ actions: [action] }), p, dir);
+    expect(action.answered?.acted).toMatchObject({ option, outcome });
+    expect(p.steps).toEqual(outcome === "held" ? [] : ["rerun 12 41"]);
+    const changed = failedFollowup();
+    changed.evidence.marker = 42;
+    const stale = reportOf({ actions: [changed] });
+    await settle(stale, p, dir);
+    expect(changed.answered?.state).toBe("stale");
+    expect(changed.answered?.acted).toBeUndefined();
+    expect(p.steps).toEqual(outcome === "held" ? [] : ["rerun 12 41"]);
+  }
+});
+
+it("does not repeat a hold or rerun already acted under the old snapshot's digest", async () => {
+  for (const [answer, option, outcome] of [
+    ["choose Leave it to me", "Leave it to me", "held"],
+    ["approve", "Run it again", "done"],
+  ] as const) {
+    const dir = root();
+    const action = failedFollowup();
+    const digest = decisionDigest(legacyFraming(action));
+    const comment = said(`answer followup: ${answer} [${digest}]`);
+    const row = {
+      repo: SLUG,
+      target: "PR #12",
+      key: "followup",
+      digest,
+      answer: `${comment.url} ${comment.at}`,
+      author: comment.author,
+      option,
+    };
+    expect(claimAnswer(row, null, dir)).toBe(true);
+    finishAnswer(row, outcome, "recorded before the display change", null, dir);
+    const p = ports([comment]);
+    const report = reportOf({ actions: [action] });
+    await settle(report, p, dir);
+    await settle(reportOf({ actions: [failedFollowup()] }), p, dir);
+    expect(p.steps).toEqual([]);
+    expect(action.answered?.acted).toMatchObject({
+      option,
+      outcome,
+      detail: "recorded before the display change",
+    });
+    expect(report.quiet.some((q) => q.class === "answered-hold")).toBe(
+      outcome === "held",
+    );
+  }
 });

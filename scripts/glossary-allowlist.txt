@@ -120,6 +120,7 @@ GSD
 
 # exported tables a Protocol page's generated-section marker names as its
 # source (`source=tools/protocol/chapters.ts#CHAPTERS`,
-# `source=plugin/shared/address.ts#STATIONS`)
+# `source=plugin/shared/address.ts#STATIONS`, `…/facet-values.ts#PRIORITIES,NO_PRIORITY`)
 CHAPTERS
 STATIONS
+PRIORITIES
