@@ -273,19 +273,23 @@ function nameOf(v: unknown, where: string): string | null {
 /**
  * A search result or an issue read as the adapter's record; the values of
  * `fieldLabels` join its labels, and those of `facetFields` (the fields a
- * facet is kept in) are kept by field id.
+ * facet is kept in) are kept by field id. `requested` is the field list the
+ * read sent (`*all` names every field).
  */
 export function parseIssue(
   v: unknown,
   site: string,
   fieldLabels: ReadonlyArray<FieldLabel> = [],
   facetFields: ReadonlyArray<{ facet: Facet; id: string; kind?: string }> = [],
+  requested: ReadonlyArray<string> = [],
 ): JiraIssue {
   const raw = record(v, "issue");
   const key = str(raw.key, "issue.key");
   const at = (field: string) => `issue ${key}.${field}`;
   const f = record(raw.fields, at("fields"));
   const jiraLabels = labelsOf(f.labels, at("labels"));
+  const asked = (id: string) =>
+    requested.includes(id) || requested.includes("*all");
   return {
     id: String(raw.id ?? ""),
     key,
@@ -309,10 +313,12 @@ export function parseIssue(
     links: linksOf(f.issuelinks, at("issuelinks")),
     createdAt: iso(f.created, at("created")),
     updatedAt: iso(f.updated, at("updated")),
-    // A field the response omits stays absent, so a read without it fails.
+    // Jira leaves a named field out where the issue's type has no context
+    // for it, so the issue holds no value there. A field the read never
+    // named stays absent, so a read without it fails.
     facetValues: Object.fromEntries(
       facetFields
-        .filter((ff) => ff.id in f)
+        .filter((ff) => ff.id in f || asked(ff.id))
         .map((ff) => [ff.facet, fieldValues(f[ff.id], at(ff.id))]),
     ),
     numericFacets: facetFields
