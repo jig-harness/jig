@@ -23,7 +23,11 @@ import {
   settleStationAnswers,
   type StationPorts,
 } from "../lib/station-answers.ts";
-import type { Action, RepoReport } from "../lib/types.ts";
+import type { Action, DispatchSection, RepoReport } from "../lib/types.ts";
+import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import { DEFAULT_LABELS } from "../lib/labels.ts";
+import type { SharedContext } from "../lib/shared-launches.ts";
+import { stationPorts } from "../lib/station-ports.ts";
 import { report as reportOf } from "./line-fixtures.ts";
 
 const SLUG = "example-org/web";
@@ -94,6 +98,8 @@ function ports(
     self: "drive-bot",
     issueRepository: SLUG,
     comments: async () => ok(comments),
+    trackerComments: async () =>
+      failed("unreadable", "the tracker was read for a forge need"),
     rerunFollowup: step("rerun"),
     doneFollowup: step("done"),
     releasePickup: step("release"),
@@ -339,5 +345,191 @@ describe("settleStationAnswers", () => {
       true,
     );
     expect(takeCarried(SLUG, "PR #12", "r-1", dir)).toBeNull();
+  });
+});
+
+describe("settleStationAnswers on an item of another tracker", () => {
+  const LINEAR = stationContextOf(SLUG, {
+    tracker: { adapter: "linear" },
+    links: { itemsOf: () => null, prsOf: () => [] },
+  });
+  const stalled = (): Action => ({
+    stage: "notify",
+    target: "ENG-12",
+    record: "tracker",
+    reason: "stalled pickup",
+    cause: "stalled",
+    evidence: { state: "In Progress" },
+  });
+  const digest =
+    stationDecision(stalled() as Action & { cause: "stalled" }, LINEAR)
+      ?.digest ?? "";
+
+  let n = 0;
+  function onItem(
+    body: string,
+    author = "Dana Lee",
+    association = "MEMBER",
+    at = "2026-11-12T11:00:00Z",
+  ): CommentLike {
+    n += 1;
+    return {
+      author,
+      association,
+      at,
+      editedAt: null,
+      url: `https://linear.app/acme/issue/ENG-12/x#comment-${n}`,
+      body,
+    };
+  }
+
+  /** Ports whose tracker holds `comments` on the item, and whose forge is never read. */
+  function onTracker(
+    comments: Outcome<CommentLike[], "unreadable">,
+  ): StationPorts & { steps: string[]; read: string[] } {
+    const p = ports([]);
+    const read: string[] = [];
+    return {
+      ...p,
+      read,
+      comments: async () => failed("unreadable", "the forge was read"),
+      trackerComments: async (item) => {
+        read.push(item);
+        return comments;
+      },
+    };
+  }
+
+  const settleOn = (report: RepoReport, p: StationPorts, dir: string) =>
+    settleStationAnswers(SLUG, report, LINEAR, p, dir);
+
+  it("reads the item's comments on the tracker and acts on each person's latest answer", async () => {
+    const dir = root();
+    const p = onTracker(
+      ok([
+        onItem(`answer pickup: choose Leave it to me [${digest}]`),
+        onItem(
+          `answer pickup: approve [${digest}]`,
+          "Dana Lee",
+          "MEMBER",
+          "2026-11-12T12:00:00Z",
+        ),
+      ]),
+    );
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(p.read).toEqual(["ENG-12"]);
+    expect(p.steps).toEqual([expect.stringMatching(/^release ENG-12/)]);
+    expect(report.actions[0]?.answered).toMatchObject({
+      digest,
+      answers: [
+        { author: "Dana Lee", choice: { option: "Release the claim" } },
+      ],
+      acted: { option: "Release the claim", outcome: "done" },
+    });
+  });
+
+  it("acts on no answer from an author the tracker does not vouch for, a stale digest or two people who differ", async () => {
+    const dir = root();
+    const cases: Array<[CommentLike[], "stale" | "disputed" | undefined]> = [
+      [
+        [onItem(`answer pickup: approve [${digest}]`, "Guest", "NONE")],
+        undefined,
+      ],
+      [[onItem("answer pickup: approve [0123456789ab]")], "stale"],
+      [
+        [
+          onItem(`answer pickup: approve [${digest}]`),
+          onItem(
+            `answer pickup: choose Leave it to me [${digest}]`,
+            "Sam Ortiz",
+          ),
+        ],
+        "disputed",
+      ],
+    ];
+    for (const [comments, state] of cases) {
+      const p = onTracker(ok(comments));
+      const report = reportOf({ actions: [stalled()] });
+      await settleOn(report, p, dir);
+      expect(p.steps).toEqual([]);
+      expect(report.actions[0]?.answered?.state).toBe(state);
+    }
+  });
+
+  it("releases the claim on a person's answer the tracker holds, never counting its own user's", async () => {
+    const dir = root();
+    const moved: string[] = [];
+    const factory = { id: "u-factory", name: "Jig Factory" };
+    const dana = { id: "u-dana", name: "Dana Lee" };
+    const tracker = {
+      adapter: "linear",
+      commentAuthors: true,
+      viewer: async () => factory,
+      issueComments: async () => ({
+        uuid: "uuid-12",
+        comments: [
+          {
+            id: "c1",
+            body: `answer pickup: choose Leave it to me \\[${digest}\\]`,
+            createdAt: "2026-11-12T10:30:00.000Z",
+            trusted: true,
+            author: factory,
+          },
+          {
+            id: "c2",
+            body: `answer pickup: approve \\[${digest}\\]`,
+            createdAt: "2026-11-12T11:00:00.000Z",
+            trusted: true,
+            author: dana,
+            url: "https://linear.app/acme/issue/ENG-12/x#comment-c2",
+          },
+        ],
+      }),
+      getIssue: async () => ({
+        state: { name: "In Progress", type: "started" },
+      }),
+      transition: async (key: string, state: string) => {
+        moved.push(`${key} ${state}`);
+      },
+    } as unknown as Tracker;
+    const p = stationPorts({
+      repo: { path: "/srv/work/web", slug: SLUG, defaultBranch: "main" },
+      enabled: new Set(["pickup"]),
+      section: {
+        states: ["todo"],
+        labels: { ...DEFAULT_LABELS, enabled: false },
+      } as unknown as DispatchSection,
+      shared: {} as SharedContext,
+      login: "drive-bot",
+      tracker,
+      issueRepository: null,
+      links: { itemsOf: () => null, prsOf: () => [] },
+      sessions: async () => ({ ok: true, source: "test", workspaces: [] }),
+      root: dir,
+    });
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(moved).toEqual(["ENG-12 todo"]);
+    expect(report.actions[0]?.answered).toMatchObject({
+      answers: [{ author: "Dana Lee" }],
+      acted: { author: "Dana Lee", outcome: "done" },
+    });
+    expect(report.actions[0]?.answered?.answers).toHaveLength(1);
+  });
+
+  it("shows why the answers on the item were not read, and takes no step", async () => {
+    const dir = root();
+    const why =
+      "the linear tracker does not name who wrote each comment, so answers on ENG-12 are not read";
+    const p = onTracker(failed("unreadable", why));
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(p.steps).toEqual([]);
+    expect(report.actions[0]?.answered).toEqual({
+      digest,
+      answers: [],
+      unread: why,
+    });
   });
 });

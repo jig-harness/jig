@@ -54,6 +54,7 @@ import { readLogin } from "../ask/lib/forge.ts";
 import { machineFile } from "../ask/lib/local.ts";
 import { reading } from "../ask/lib/reading.ts";
 import { planAnswerRequest } from "./lib/answer.ts";
+import { openTrackerHere, planTrackerAnswer } from "./lib/answer-tracker.ts";
 import { planAssign } from "./lib/assign.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
@@ -117,7 +118,7 @@ export const sendCommand = command(
     }),
     as: optional(
       option("--as", string({ metavar: "LOGIN" }), {
-        description: message`Refuse unless this machine writes as LOGIN: the forge login, or for assign the tracker's user.`,
+        description: message`Refuse unless this machine writes as LOGIN: the forge login, or for assign and an answer on another tracker's item the tracker's user.`,
       }),
     ),
   }),
@@ -164,6 +165,19 @@ async function planFor(
     return resolved.checkout === null
       ? refused("no checkout of the repository is known here")
       : planAssign(ctx, resolved.checkout, as);
+  }
+  if (request.verb === "answer" && !request.all) {
+    // An item of another tracker is answered as the tracker's user here.
+    const onTracker = await planTrackerAnswer(
+      contextFor(resolved, r, null),
+      request,
+      {
+        as,
+        dryRun,
+        open: () => openTrackerHere(resolved.tracker, resolved.checkout),
+      },
+    );
+    if (onTracker !== null) return onTracker;
   }
   const login = writerLogin(await readLogin(r), as, "the forge");
   if (!login.ok) return login;

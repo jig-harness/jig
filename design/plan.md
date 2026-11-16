@@ -513,8 +513,8 @@ tick frames for a cause it detects (a failed follow-up, a stalled pickup, a
 checkout an unlisted tree holds, a drive handed to a person, a stuck launch
 record) with options it carries out once on a person's answer, sent through
 `jig send` to the follow-up's, the pickup's or the drive's station; and the
-same forms for a loosened ratchet's evidence, a pickup only a person may
-start and answers on a tracker other than the forge. One pull request per
+same forms for a loosened ratchet's evidence and a pickup only a person
+may start. One pull request per
 step, in the design's order; the first moves the shared
 model.
 

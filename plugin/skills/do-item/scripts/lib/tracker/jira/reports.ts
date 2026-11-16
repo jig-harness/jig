@@ -28,6 +28,7 @@ import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
+import { commentAuthor, commentUrl } from "./comments.ts";
 import { dispatchSource } from "./dispatch-source.ts";
 import type { JiraFacetStores } from "./facets.ts";
 import { type JiraIssue, parseIssue, stateInputOf, record } from "./read.ts";
@@ -496,6 +497,9 @@ export function reportOperations(
           body: c.body,
           createdAt: c.createdAt,
           trusted: await client.trusted(c.author),
+          author: commentAuthor(c.author),
+          url: commentUrl(client.site, issue.key, c.id),
+          editedAt: c.editedAt,
         });
       return { uuid: issue.id, comments };
     },

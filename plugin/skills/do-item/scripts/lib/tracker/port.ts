@@ -15,6 +15,12 @@
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
+import type {
+  FoundComment,
+  IssueComment,
+  IssueComments,
+  TrackerUser,
+} from "./comment-port.ts";
 import type { DispatchSource } from "./dispatch-source.ts";
 export type { DispatchRawIssue, DispatchSource } from "./dispatch-source.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
@@ -229,10 +235,13 @@ export interface Issue extends FacetValues {
 
 export type { BlockedFields } from "./blocked-port.ts";
 
-export interface IssueComment {
-  body: string;
-  createdAt?: string;
-}
+export type {
+  CommentFact,
+  FoundComment,
+  IssueComment,
+  IssueComments,
+  TrackerUser,
+} from "./comment-port.ts";
 
 // ── Facts the fleet metrics read ───────────────────────────────────────────
 
@@ -260,30 +269,6 @@ export interface IssueFact {
     labels: string[];
     nativeType?: string | null;
   }>;
-}
-
-export interface CommentFact {
-  /** The tracker's own id for the comment, which `deleteComment` takes. */
-  id?: string;
-  body: string;
-  createdAt: string;
-  /**
-   * The author is a real, non-guest member of the tracker workspace. Only a
-   * trusted comment may carry a marker the metrics act on: anyone able to
-   * comment could otherwise post a marker-shaped line.
-   */
-  trusted: boolean;
-}
-
-/** A comment found by a text search, with the issue it sits on. */
-export interface FoundComment extends CommentFact {
-  issue: string;
-}
-
-/** Every comment on one issue, and the tracker id to post a reply to. */
-export interface IssueComments {
-  uuid: string;
-  comments: CommentFact[];
 }
 
 /**
@@ -391,11 +376,6 @@ export interface Assigner {
 }
 
 /** A user of the tracker: its own id, and the name it shows (a GitHub login, a Linear or Jira display name). */
-export interface TrackerUser {
-  id: string;
-  name: string;
-}
-
 /** Which open issues a pool holds, by label and by facet. */
 export interface PoolQuery {
   /** Each list must match: the issue carries at least one label of each. */
@@ -705,6 +685,12 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * the adapter has none.
    */
   readonly readinessKey?: string;
+  /**
+   * Whether `issueComments` names each comment's author
+   * (`CommentFact.author`), so a person's answer on an item can be told
+   * from another's and from this credential's own; absent when it cannot.
+   */
+  readonly commentAuthors?: boolean;
   /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
   stateName: StateNameOf;
   /** Every effective workflow map, including the repository default; absent for one workflow. */
@@ -758,8 +744,9 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
     createdIn: WindowSpec;
   }): Promise<FoundComment[]>;
   /**
-   * Every comment on one issue, with its trust, and the issue's tracker id,
-   * in the order the tracker created them: two readers of one issue list its
+   * Every comment on one issue, with its trust (and, where `commentAuthors`,
+   * its author, link and last edit), and the issue's tracker id, in the
+   * order the tracker created them: two readers of one issue list its
    * comments in the same order, which the claim marker's earliest-wins rule
    * rests on.
    */

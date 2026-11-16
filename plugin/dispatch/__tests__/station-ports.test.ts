@@ -5,7 +5,11 @@
  * holds it; and a release moves the item only when none of those stops it.
  */
 import { describe, expect, it } from "bun:test";
-import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import type {
+  CommentFact,
+  Tracker,
+  TrackerUser,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS } from "../lib/labels.ts";
 import type { SessionsReport } from "../lib/runtime/port.ts";
 import type { SharedContext } from "../lib/shared-launches.ts";
@@ -154,5 +158,136 @@ describe("the steps on a person's answer", () => {
     expect(reasonOf(await off.doneFollowup(12, 41))).toContain(
       "the followup stage is off",
     );
+  });
+});
+
+describe("the answers on an item of another tracker", () => {
+  const FACTORY = { id: "u-factory", name: "Jig Factory" };
+  const DANA = { id: "u-dana", name: "Dana Lee" };
+  const fact = (
+    body: string,
+    author: TrackerUser | null,
+    fields: Partial<CommentFact> = {},
+  ): CommentFact => ({
+    id: `c-${body.length}-${author?.id ?? "none"}`,
+    body,
+    createdAt: "2026-11-12T11:00:00.000Z",
+    trusted: author !== null,
+    author,
+    ...fields,
+  });
+
+  /** A Linear-like tracker holding `comments` on every item, counting its reads. */
+  function onTracker(
+    comments: CommentFact[] | Error,
+    fields: Partial<Tracker> = {},
+  ): { tracker: Tracker; reads: string[] } {
+    const reads: string[] = [];
+    const tracker = {
+      adapter: "linear",
+      commentAuthors: true,
+      viewer: async () => {
+        reads.push("viewer");
+        return FACTORY;
+      },
+      issueComments: async (key: string) => {
+        reads.push(key);
+        if (comments instanceof Error) throw comments;
+        return { uuid: "uuid-1", comments };
+      },
+      ...fields,
+    } as unknown as Tracker;
+    return { tracker, reads };
+  }
+
+  it("names each author, counts a member's comment trusted, and leaves out the tracker's own user", async () => {
+    const { tracker, reads } = onTracker([
+      fact("answer pickup: approve [d1]", FACTORY),
+      fact("answer pickup: approve \\[0123456789ab\\]", DANA, {
+        url: "https://linear.app/acme/issue/ENG-12/x#comment-7",
+        editedAt: "2026-11-12T12:00:00.000Z",
+      }),
+      fact(
+        "answer pickup: approve",
+        { id: "u-guest", name: "Guest" },
+        {
+          trusted: false,
+          id: "c-guest",
+        },
+      ),
+      fact("an integration wrote this", null, { id: "c-bot" }),
+    ]);
+    const ports = stationPorts(inputs({ tracker }));
+    const read = await ports.trackerComments("ENG-12");
+    expect(read).toEqual({
+      ok: true,
+      value: [
+        {
+          author: "Dana Lee",
+          association: "MEMBER",
+          at: "2026-11-12T11:00:00.000Z",
+          editedAt: "2026-11-12T12:00:00.000Z",
+          url: "https://linear.app/acme/issue/ENG-12/x#comment-7",
+          body: "answer pickup: approve [0123456789ab]",
+        },
+        {
+          author: "Guest",
+          association: "NONE",
+          at: "2026-11-12T11:00:00.000Z",
+          editedAt: null,
+          url: "ENG-12#comment-c-guest",
+          body: "answer pickup: approve",
+        },
+        {
+          author: "",
+          association: "NONE",
+          at: "2026-11-12T11:00:00.000Z",
+          editedAt: null,
+          url: "ENG-12#comment-c-bot",
+          body: "an integration wrote this",
+        },
+      ],
+    });
+    await ports.trackerComments("ENG-13");
+    // The tracker's own user is asked once a tick.
+    expect(reads).toEqual(["viewer", "ENG-12", "ENG-13"]);
+  });
+
+  it("tells two people of one name apart, so neither's answer replaces the other's", async () => {
+    const { tracker } = onTracker([
+      fact("answer pickup: approve", { id: "u-sam-1", name: "Sam" }),
+      fact("answer pickup: approve", { id: "u-sam-2", name: "Sam" }),
+    ]);
+    const read = await stationPorts(inputs({ tracker })).trackerComments(
+      "ENG-12",
+    );
+    expect(read.ok && read.value.map((c) => c.author)).toEqual([
+      "Sam (u-sam-1)",
+      "Sam (u-sam-2)",
+    ]);
+  });
+
+  it("does not read a tracker that cannot name who wrote a comment, one that did not open, or one that fails, and says why", async () => {
+    const cases: Array<[Tracker | null, string]> = [
+      [
+        onTracker([], { commentAuthors: false }).tracker,
+        "the linear tracker does not name who wrote each comment, so answers on ENG-12 cannot be told apart and are not read",
+      ],
+      [null, "the tracker did not open this tick"],
+      [onTracker(new Error("HTTP 503")).tracker, "HTTP 503"],
+      [
+        onTracker([], {
+          viewer: async () => Promise.reject(new Error("no viewer")),
+        }).tracker,
+        "the user the tracker's credential acts as did not read",
+      ],
+    ];
+    for (const [tracker, says] of cases) {
+      const read = await stationPorts(inputs({ tracker })).trackerComments(
+        "ENG-12",
+      );
+      expect(read.ok).toBe(false);
+      expect(reasonOf(read)).toContain(says);
+    }
   });
 });

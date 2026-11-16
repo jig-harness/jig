@@ -28,7 +28,11 @@ import {
 } from "./linear-shapes.ts";
 import { linearAttachments, type LinearFiles } from "./linear-attachments.ts";
 import { cancellableRequest } from "./cancellation.ts";
-import { commentFacts, trustedUser } from "./linear-comments.ts";
+import {
+  COMMENTS_QUERY,
+  commentFacts,
+  trustedUser,
+} from "./linear-comments.ts";
 import { batch } from "../../../../../shared/outbound/batch.ts";
 import { pager } from "./graphql.ts";
 import {
@@ -174,17 +178,6 @@ export function parseIssue(v: unknown): lf.WithEstimate<lf.CoreIssue> {
     project: name(n.project),
   };
 }
-
-const COMMENTS_QUERY = `
-query TrackerComments($id: String!, $after: String) {
-  issue(id: $id) {
-    id
-    comments(first: 100, after: $after) {
-      pageInfo { hasNextPage endCursor }
-      nodes { id body createdAt user { id guest } }
-    }
-  }
-}`;
 
 const CHILDREN_QUERY = `
 query TrackerChildren($id: String!, $after: String) {
@@ -785,6 +778,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
   const tracker: lf.CoreTracker = {
     adapter: "linear",
     team,
+    commentAuthors: true,
     stateName: stateNameIn(states),
 
     async reach(signal) {

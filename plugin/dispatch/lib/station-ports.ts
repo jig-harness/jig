@@ -16,6 +16,7 @@ import {
   CANONICAL_STATES,
   type CanonicalState,
   type Tracker,
+  type TrackerUser,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { treeDrivers } from "../../skills/drive-pr/scripts/lib/state/tree-drivers.ts";
 import { conversationOf } from "../../skills/drive-pr/scripts/lib/driver/park-answers.ts";
@@ -46,6 +47,7 @@ import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
 import type { StationPorts } from "./station-answers.ts";
 import { retryable } from "./stuck-launches.ts";
+import { readTrackerAnswers } from "./tracker-answers.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
 import type { WorkLinks } from "./work-links.ts";
@@ -396,6 +398,9 @@ async function clearRecord(
 
 /** The ports of one repository's tick. */
 export function stationPorts(inputs: StationInputs): StationPorts {
+  // The tracker's own user, asked once for the tick's every tracker need.
+  let me: Promise<TrackerUser> | undefined;
+  const self = (tracker: Tracker) => (me ??= tracker.viewer());
   return {
     self: inputs.login,
     issueRepository: inputs.issueRepository,
@@ -403,6 +408,7 @@ export function stationPorts(inputs: StationInputs): StationPorts {
       const listed = await listComments({ repo, number }, { timeoutSec: 60 });
       return listed.ok ? ok(conversationOf(listed.value)) : listed;
     },
+    trackerComments: (item) => readTrackerAnswers(inputs.tracker, item, self),
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
     releasePickup: (item, record = null) => releasePickup(inputs, item, record),

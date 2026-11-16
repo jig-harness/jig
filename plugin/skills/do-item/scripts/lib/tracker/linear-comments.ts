@@ -1,18 +1,43 @@
 /**
  * An issue's comments as the Linear adapter reads them: each node checked,
- * its author's trust read, and the list put in creation order, the id
- * breaking a tie, so that every reader of one issue lists its comments
- * alike (the claim marker's earliest-wins rule rests on it).
+ * its author named and its trust read, and the list put in creation order,
+ * the id breaking a tie, so that every reader of one issue lists its
+ * comments alike (the claim marker's earliest-wins rule rests on it).
  */
 
 import { isRecord } from "../../../../../shared/guards.ts";
 import { ShapeError } from "./linear-shapes.ts";
-import type { CommentFact } from "./port.ts";
+import type { CommentFact, TrackerUser } from "./port.ts";
 import { parseMs } from "../../../../../shared/time.ts";
+
+/**
+ * Every comment of an issue, a hundred to a page. The author's name, the
+ * comment's link and its last edit ride in the same request, so a reader
+ * of a person's answer needs no second one.
+ */
+export const COMMENTS_QUERY = `
+query TrackerComments($id: String!, $after: String) {
+  issue(id: $id) {
+    id
+    comments(first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id url body createdAt editedAt user { id name guest } }
+    }
+  }
+}`;
 
 /** A comment's author counts when it is a real, non-guest member of the workspace. */
 export function trustedUser(u: unknown): boolean {
   return isRecord(u) && typeof u.id === "string" && u.guest === false;
+}
+
+/** The user a comment names, or `null` for one an integration wrote or whose account is gone. */
+function authorOf(u: unknown): TrackerUser | null {
+  if (!isRecord(u) || typeof u.id !== "string" || u.id === "") return null;
+  return {
+    id: u.id,
+    name: typeof u.name === "string" && u.name !== "" ? u.name : u.id,
+  };
 }
 
 /** The comment nodes of issue `key`, checked and in creation order. */
@@ -31,6 +56,12 @@ export function commentFacts(nodes: unknown[], key: string): CommentFact[] {
       body: c.body,
       createdAt: c.createdAt,
       trusted: trustedUser(c.user),
+      author: authorOf(c.user),
+      ...(typeof c.url === "string" && c.url !== "" ? { url: c.url } : {}),
+      editedAt:
+        typeof c.editedAt === "string" && Number.isFinite(parseMs(c.editedAt))
+          ? c.editedAt
+          : null,
     };
   });
   return comments.sort(

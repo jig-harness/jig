@@ -8,18 +8,18 @@
  * a person could type by hand: `answer <key>: approve [<digest>]` or
  * `answer <key>: choose <option> [<digest>]`, with a `note <key>:` line
  * when `--note` gives one, on the need's pull request, or on its item where
- * the items are the forge's issues. The tick on the host that owns the
- * repository reads it (`dispatch/lib/station-answers.ts`) and carries out
- * the option once.
+ * the items are the forge's issues; an item of another tracker takes it
+ * through the tracker (`answer-tracker.ts`). The tick on the host that owns
+ * the repository reads it (`dispatch/lib/station-answers.ts`) and carries
+ * out the option once.
  *
  * Checked before the write: the line holds a need of this address whose
  * decision has this key; the answer is a structured form (the tick carries
  * out an option, not words); the option is one the decision offers; and the
  * send names the digest the person read (`--decision`, which `--dry-run`
- * prints), which must still be the decision's. An item on a tracker other
- * than the forge is refused: its answers are not read there yet.
+ * prints), which must still be the decision's.
  */
-import { ok } from "../../shared/outcome.ts";
+import { ok, type Outcome } from "../../shared/outcome.ts";
 import { stationSendCommand } from "../../shared/decisions/station.ts";
 import { localWriter } from "../../shared/records/writer.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
@@ -31,6 +31,7 @@ import {
   answerComment,
   answerLine,
   postAnswerComment,
+  type StructuredParts,
 } from "../../skills/drive-pr/scripts/lib/answer-comment.ts";
 import { stationItem } from "../../dispatch/lib/station-answers.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
@@ -64,7 +65,7 @@ function postTarget(
 }
 
 /** The needs of `ctx`'s address in this machine's newest line, or why there is no line to read. */
-function lineNeeds(ctx: AskContext): LineNeed[] | string {
+export function lineNeeds(ctx: AskContext): LineNeed[] | string {
   const root = ctx.dispatcher;
   if (root === null)
     return "this machine never dispatched, so it has no line to read the need's decision from; answer on the host that dispatches the repository";
@@ -91,14 +92,8 @@ export function planStationAnswer(
   const drive = ctx.address.station === "drive";
   const needs = lineNeeds(ctx);
   if (typeof needs === "string") return drive ? null : refused(needs);
-  const keyed = needs.flatMap((n) =>
-    n.decisions
-      .filter((d) => d.answer !== undefined)
-      .map((d) => ({ need: n, decision: d })),
-  );
-  const found = keyed.find(
-    (k) => k.decision.key.toLowerCase() === request.key.toLowerCase(),
-  );
+  const keyed = answerable(needs);
+  const found = keyedDecision(needs, request.key);
   if (found !== undefined)
     return planFound(ctx, request, sender, found.need, found.decision);
   if (drive) return null;
@@ -111,16 +106,34 @@ export function planStationAnswer(
   );
 }
 
+/** Each decision of `needs` a person answers, with its need. */
+function answerable(
+  needs: readonly LineNeed[],
+): Array<{ need: LineNeed; decision: LineDecision }> {
+  return needs.flatMap((n) =>
+    n.decisions
+      .filter((d) => d.answer !== undefined)
+      .map((d) => ({ need: n, decision: d })),
+  );
+}
+
+/** The decision of `needs` keyed `key`, with its need. */
+export function keyedDecision(
+  needs: readonly LineNeed[],
+  key: string,
+): { need: LineNeed; decision: LineDecision } | undefined {
+  return answerable(needs).find(
+    (k) => k.decision.key.toLowerCase() === key.toLowerCase(),
+  );
+}
+
 /** Why the answer cannot be sent to `decision` as it stands; `null` when it can. */
 function answerFault(
   request: OneAnswer,
-  sender: Sender,
-  need: LineNeed,
+  sender: Pick<Sender, "dryRun">,
   decision: LineDecision,
 ): string | null {
   const { key } = request;
-  if (decision.answer?.on === "tracker")
-    return `${need.target}'s item is on a tracker other than the forge, where answers are not read yet; settle it on the tracker by hand`;
   const digest = decision.digest;
   if (digest === undefined)
     return `${key}'s decision has no digest to bind an answer to`;
@@ -131,34 +144,51 @@ function answerFault(
   return null;
 }
 
-function planFound(
+/**
+ * Why `request` cannot answer `decision`, told before anything is read:
+ * the person's own words (the tick carries out an option), or a digest
+ * that does not bind it; `null` when it can.
+ */
+export function requestFault(
+  request: OneAnswer,
+  sender: Pick<Sender, "dryRun">,
+  decision: LineDecision,
+): string | null {
+  if (request.form.kind === "free") return wordsFault(request.key);
+  return answerFault(request, sender, decision);
+}
+
+const wordsFault = (key: string) =>
+  `the tick carries out an option of ${key}'s decision, not words: answer with --approve or --choose, after a --dry-run shows the options and the digest`;
+
+/** What a structured answer to a need's decision writes, wherever it goes. */
+export interface StationChoice {
+  /** The answer line, and the note line when there is a note. */
+  lines: string[];
+  text: string;
+  parts: StructuredParts;
+  /** The plan's detail rows: the decision, the option in full and, on a dry run, the command to send. */
+  detail: Array<[string, string]>;
+}
+
+/** The lines `request` writes to `decision`, as `sender`; why not, for words or an option the decision does not offer. */
+export function stationChoice(
   ctx: AskContext,
   request: OneAnswer,
   sender: Sender,
-  need: LineNeed,
   decision: LineDecision,
-): Planned {
+): Outcome<StationChoice, "refused"> {
   const { key, form } = request;
-  if (form.kind === "free")
-    return refused(
-      `the tick carries out an option of ${key}'s decision, not words: answer with --approve or --choose, after a --dry-run shows the options and the digest`,
-    );
-  const fault = answerFault(request, sender, need, decision);
-  if (fault !== null) return refused(fault);
+  if (form.kind === "free") return refused(wordsFault(key));
   const digest = decision.digest ?? "";
-  const item = stationItem(decision);
-  const resolved = resolveChoice(item, form, request.note, sender.login);
+  const resolved = resolveChoice(
+    stationItem(decision),
+    form,
+    request.note,
+    sender.login,
+  );
   if (!resolved.ok) return resolved;
   const { option, recommended, text, parts } = resolved.value;
-  const posted = postTarget(ctx, need);
-  if (posted === null)
-    return refused(
-      `${need.target} links to no pull request or forge issue to answer on`,
-    );
-  const lines = [
-    answerLine(key, text),
-    ...(parts.note === undefined ? [] : [`note ${key}: ${parts.note}`]),
-  ];
   const command = `${stationSendCommand(
     { address: ctx.name },
     key,
@@ -169,17 +199,12 @@ function planFound(
     request.note,
   )}${asFlag(sender)}`;
   return ok({
-    address: ctx.name,
-    repo: ctx.address.repo,
-    verb: "answer",
-    writesAs: sender.writesAs,
-    record: `a comment on ${posted.repo}#${posted.number}: ${lines.map((l) => `"${l}"`).join(" and ")}, with the record envelope naming ${sender.login} and this host (as a digest), the decision's digest and the option chosen in a hidden marker`,
-    where: need.url ?? `${posted.repo}#${posted.number}`,
-    reader: `the dispatcher's next tick on the host that owns ${ctx.address.repo}, which carries out the option once, after checking again that it still may`,
-    tick: TICK,
-    undo: "until the tick acts on it, delete the comment, or answer again: your latest answer is the one that counts; once the tick has acted, its step stands",
-    notice:
-      "the tick acts only on an answer that names the decision's digest, by a person the forge vouches for, and only when every person's latest answer chooses the same option",
+    lines: [
+      answerLine(key, text),
+      ...(parts.note === undefined ? [] : [`note ${key}: ${parts.note}`]),
+    ],
+    text,
+    parts,
     detail: [
       ["decision", digest],
       ["option", optionInFull(option, recommended)],
@@ -187,6 +212,40 @@ function planFound(
         ? ([["send", command]] as Array<[string, string]>)
         : []),
     ],
+  });
+}
+
+function planFound(
+  ctx: AskContext,
+  request: OneAnswer,
+  sender: Sender,
+  need: LineNeed,
+  decision: LineDecision,
+): Planned {
+  const fault = requestFault(request, sender, decision);
+  if (fault !== null) return refused(fault);
+  const chosen = stationChoice(ctx, request, sender, decision);
+  if (!chosen.ok) return chosen;
+  const { lines, text, parts, detail } = chosen.value;
+  const posted = postTarget(ctx, need);
+  if (posted === null)
+    return refused(
+      `${need.target} links to no pull request or forge issue to answer on`,
+    );
+  const { key } = request;
+  return ok({
+    address: ctx.name,
+    repo: ctx.address.repo,
+    verb: "answer",
+    writesAs: sender.writesAs,
+    record: `a comment on ${posted.repo}#${posted.number}: ${lines.map((l) => `"${l}"`).join(" and ")}, with the record envelope naming ${sender.login} and this host (as a digest), the decision's digest and the option chosen in a hidden marker`,
+    where: need.url ?? `${posted.repo}#${posted.number}`,
+    reader: STATION_READER(ctx),
+    tick: TICK,
+    undo: STATION_UNDO,
+    notice:
+      "the tick acts only on an answer that names the decision's digest, by a person the forge vouches for, and only when every person's latest answer chooses the same option",
+    detail,
     write: async () => {
       const body = answerComment(
         key,
@@ -201,3 +260,11 @@ function planFound(
     },
   });
 }
+
+/** The reader of an answer to a need's decision. */
+export const STATION_READER = (ctx: AskContext) =>
+  `the dispatcher's next tick on the host that owns ${ctx.address.repo}, which carries out the option once, after checking again that it still may`;
+
+/** How an answer to a need's decision is taken back. */
+export const STATION_UNDO =
+  "until the tick acts on it, delete the comment, or answer again: your latest answer is the one that counts; once the tick has acted, its step stands";
