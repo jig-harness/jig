@@ -134,7 +134,7 @@ function linearWorld(
   let assignee: string | null = options.assignee ?? null;
   const history: Array<Record<string, unknown>> = [];
   const writes: (string | null)[] = [];
-  let assigneeReads = 0;
+  const events: string[] = [];
   let tick = 0;
   const change = (to: string | null) => {
     tick++;
@@ -151,7 +151,7 @@ function linearWorld(
     const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
     switch (op) {
       case "TrackerAssignee":
-        assigneeReads++;
+        events.push("read");
         return {
           issue: {
             id: "uuid-4",
@@ -163,11 +163,13 @@ function linearWorld(
         const to = (variables.input as { assigneeId: string | null })
           .assigneeId;
         writes.push(to);
+        events.push("write");
         if (options.race && writes.length === 1) change(OTHER.id);
         change(to);
         return { issueUpdate: { success: true } };
       }
       case "TrackerAssigneeHistory":
+        events.push("history");
         return {
           issue: {
             history: { pageInfo: { hasNextPage: false }, nodes: history },
@@ -182,7 +184,7 @@ function linearWorld(
     states: parseTrackerConfig({}).states,
     transport,
   });
-  return { t, writes, now: () => assignee, assigneeReads: () => assigneeReads };
+  return { t, writes, now: () => assignee, events };
 }
 
 describe("Linear: assigning an unassigned issue", () => {
@@ -223,12 +225,10 @@ describe("Linear: assigning an unassigned issue", () => {
     expect(w.writes).toEqual([ME.id, null]);
   });
 
-  it("uses the cleanup guard's read for its cleanup mutation", async () => {
+  it("clears with the ownership read that guards it, with no read between", async () => {
     const w = linearWorld({ noHistory: true });
     await w.t.assignUnassigned?.("ENG-4", ME);
-    // Initial check, assignment, polling, then the cleanup guard: no
-    // adapter helper may read once more after that ownership check.
-    expect(w.assigneeReads()).toBe(16);
+    expect(w.events.slice(-3)).toEqual(["history", "read", "write"]);
   });
 });
 
@@ -244,7 +244,7 @@ function jiraWorld(
   let assignee: string | null = options.assignee ?? null;
   const changelog: Array<Record<string, unknown>> = [];
   const writes: (string | null)[] = [];
-  let issueReads = 0;
+  const events: string[] = [];
   const account = (id: string | null) =>
     id === null
       ? null
@@ -268,27 +268,30 @@ function jiraWorld(
   const { t } = jira((c: Call) => {
     if (c.path === "myself") return FACTORY;
     if (c.route === "GET issue/ENG-1") {
-      issueReads++;
+      events.push("read");
       return issue({ key: "ENG-1", assignee: account(assignee) });
     }
     if (c.route === "PUT issue/ENG-1/assignee") {
       const value = c.body.accountId;
       const to = value === null ? null : String(value);
       writes.push(to);
+      events.push("write");
       if (options.race && writes.length === 1) change(MEMBER.accountId);
       change(to);
       return null;
     }
-    if (c.route === "GET issue/ENG-1/changelog")
+    if (c.route === "GET issue/ENG-1/changelog") {
+      events.push("history");
       return {
         values: changelog,
         startAt: 0,
         maxResults: 100,
         total: changelog.length,
       };
+    }
     return new Error(`unexpected request ${c.route}`);
   });
-  return { t, writes, now: () => assignee, issueReads: () => issueReads };
+  return { t, writes, now: () => assignee, events };
 }
 
 describe("Jira: assigning an unassigned issue", () => {
@@ -338,11 +341,9 @@ describe("Jira: assigning an unassigned issue", () => {
     expect(w.now()).toBeNull();
   });
 
-  it("uses the cleanup guard's read for its cleanup mutation", async () => {
+  it("clears with the ownership read that guards it, with no read between", async () => {
     const w = jiraWorld({ noHistory: true });
     await w.t.assignUnassigned?.("ENG-1", me);
-    // Initial check, assignment, polling, then the cleanup guard: no
-    // adapter helper may read once more after that ownership check.
-    expect(w.issueReads()).toBe(16);
+    expect(w.events.slice(-3)).toEqual(["history", "read", "write"]);
   });
 });
