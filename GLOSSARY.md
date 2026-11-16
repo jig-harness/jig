@@ -1650,6 +1650,13 @@ make, use the entry's term instead.
   done) or *not owed* (with the evidence that settled it). "Nothing found" is
   not evidence
   ([M7](modules/M7-pr-lifecycle-review/README.md#core-pieces)).
+- **Follow-up arm** — one class of obligation the *post-merge stage* checks,
+  such as the tracker item, deferred findings or live verification, ending
+  with one verdict: owed (done or filed), not owed (with a checkable fact),
+  pending (it settles by itself, such as a rollout in progress) or unread.
+  The plugin's [followup](plugin/skills/followup/README.md) skill runs a
+  fixed list of core arms and will not end a run while one has no verdict;
+  before the merge it runs them as a preview that carries out nothing.
 - **Ops-pending** — the tracker state a merged item waits in while a step a
   person performs outside the code (a setting, a host change, a live check)
   is still owed. The *post-merge stage* moves a merged item there instead
@@ -2421,6 +2428,15 @@ make, use the entry's term instead.
   drive stops, the driver's own closing report ends with the `concluded`
   of the last round report of its launch. Designed in
   [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report).
+- **Transcript copy** — the end of a dispatched run's transcript, the
+  agent vendor's own record of the session, that Jig copies to the host's
+  state directory, with credentials redacted, when the run ended without a
+  *closing report* and its wrapper could not say why. The *steward* reads an
+  excerpt of it to record the run's cause, and a person can read the rest;
+  it is removed seven days after that cause is recorded, and at the latest
+  after the host's receipts retention. Jig keeps none for a run that
+  reported, and never deletes the vendor's own files
+  ([plugin/README.md](plugin/README.md#the-closing-report)).
 - **Process runtime** — a *session runtime* that runs a *headless pass* as
   a plain managed process in a git worktree Jig opens itself, with no
   terminal and no desktop app; a host chooses it in its machine dispatch
@@ -2821,7 +2837,8 @@ make, use the entry's term instead.
   what is stopped and waiting on the line and propose what to do about it:
   re-arm a drive once when its logs show a passing cause, frame a need that
   arrived with no framing with its *act*, fill in a missing priority, size
-  or type, and order the queue.
+  or type, order the queue, and record why a run that left no *closing
+  report* fell short, from its *transcript copy*.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
@@ -2831,12 +2848,13 @@ make, use the entry's term instead.
   *tick* settles and no *steward* pass has judged yet: a stalled pickup or
   failed follow-up with no running session, a stopped drive a re-arm could
   resolve, an ended pass that recommends a resume, a queued item missing a
-  facet, a need with no framing. The steward starts only when it holds a
+  facet, a need with no framing, a run that ended without a *closing
+  report*. The steward starts only when it holds a
   member no earlier pass saw
   ([the steward's trigger](design/dark-factory-dispatch.md#the-stewards-trigger)).
 - **Steward remit** — the record kinds a *steward* may submit for a
-  repository on a host: today, a re-arm, a resume, a need, a facet and an
-  order. The planned widening lets a host add record kinds that settle a
+  repository on a host: today, a re-arm, a resume, a need, a facet, an
+  order and a run's cause. The planned widening lets a host add record kinds that settle a
   stalled pickup, re-drive once more after a flaky check or re-run a run's
   failed jobs. Each would apply only when the *tick*'s own reads confirm it
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`

@@ -104,6 +104,9 @@ import {
   parseChangelogSection,
 } from "../../changelog/scripts/config.ts";
 import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
+import { ARM_IDS } from "../../followup/scripts/lib/arms.ts";
+import { ACT_IDS, LEVELS } from "../../followup/scripts/lib/authority.ts";
+import { parseFollowupSettings } from "../../followup/scripts/lib/settings.ts";
 import { DEFAULT_TAXONOMY } from "../../file-issue/scripts/lib/config.ts";
 import { SAFE_KEY_COMPONENT_PATTERN } from "../../resolve-review-comments/scripts/lib/batch-description.ts";
 import {
@@ -290,6 +293,10 @@ test("its complete example's work_batch section passes the skill", () => {
   expect(() => parseWorkBatchSection(example, batchSizes)).not.toThrow();
 });
 
+test("its complete example's followup section passes the skill", () => {
+  expect(parseFollowupSettings(completeExample()).ok).toBe(true);
+});
+
 test("its complete example's file_issue section passes the skill", () => {
   expect(sweepSettings(completeExample()).move).toBe(false);
 });
@@ -322,6 +329,15 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+    expect(field("followup.off")?.items).toEqual({
+      type: "enum",
+      values: [...ARM_IDS],
+    });
+    expect(field("followup.authority")?.keys).toEqual([...ACT_IDS]);
+    expect(field("followup.authority")?.values_type).toEqual({
+      type: "enum",
+      values: [...LEVELS],
+    });
   });
 
   test("map the board stages the Orca card moves through", () => {

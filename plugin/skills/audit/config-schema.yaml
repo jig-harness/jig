@@ -75,6 +75,7 @@ strict:
   - review.lenses
   - reflection
   - code_stats
+  - followup
   - docs
   - dispatch
   - specs
@@ -1401,3 +1402,18 @@ fields:
     read_by: [code-stats]
     repository_only: true
     since: 0.50.0
+  followup.off:
+    type: list
+    items: { type: enum, values: [tracker, deferred-findings, out-of-tree, release, scaffolding, live-verification, next-step, workspace-board] }
+    distinct: true
+    nullable: true
+    read_by: [followup]
+    repository_only: true
+    since: 0.259.0
+  followup.authority:
+    type: map
+    keys: [tracker-status, file-items, read-only-checks, board-card, release-workflow, deploy-rerun, post-deploy-action, stop-driver, other-repository, origin-boundary, merge]
+    values_type: { type: enum, values: [own, ask, person, never] }
+    nullable: true
+    read_by: [followup]
+    since: 0.259.0

@@ -118,6 +118,33 @@ export function recordReport(
   });
 }
 
+/**
+ * Keep `report` on record `id` only while it holds none, as the wrapper
+ * records what it observed and the steward a cause: neither replaces a
+ * report the run's own writer recorded. `missing` when there is no such
+ * record, `reported` when it already holds one.
+ */
+export function recordReportIfNone(
+  id: string,
+  report: ClosingReport,
+  by: ReportWriter,
+  root = stateRoot(),
+): "recorded" | "reported" | "missing" {
+  const db = stateDb(root);
+  const kept: KeptReport = { report, by, at: currentIso() };
+  return inTransaction(db, () => {
+    const done = db
+      .query("UPDATE launches SET report = ? WHERE id = ? AND report IS NULL")
+      .run(JSON.stringify(kept), id);
+    if (done.changes === 1) {
+      refreshEnded(db, id, kept);
+      return "recorded" as const;
+    }
+    const row = db.query("SELECT 1 FROM launches WHERE id = ?").get(id);
+    return row === null ? ("missing" as const) : ("reported" as const);
+  });
+}
+
 /** Record `id`'s ended row as the log keeps it, to be rewritten; `null` before it is written. */
 export function storedEndedRow(
   db: ReturnType<typeof stateDb>,

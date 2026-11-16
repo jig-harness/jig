@@ -668,10 +668,6 @@ order, after `jig gc`'s fixes (#990, #991):
   from `drive.ts` at its stop, built on its passes' round reports. It is
   kept on the launch record and the outcome log, and shown on the dashboard
   and by `jig ask`.
-- **The steward's `cause` record** for a run that left no report, read from
-  an excerpt of its transcript, whose copy is kept only for such runs and
-  until seven days after the cause is applied, and at the latest until the
-  receipts retention ends.
 - **Tabs close on every exit**, a park and a failure included, once the
   report and the cause record hold what a tab showed; the tick ends what a
   run whose wrapper died left (`endRun`).
@@ -1251,7 +1247,8 @@ Practices a working repository validated, for modules that exist today:
   - a ledger of out-of-tree work that blocks promotion.
 - **M7**:
   - a skill that runs the post-merge stage M7 states, for any repository (the
-    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
+    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md);
+    its [design](followup.md));
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
