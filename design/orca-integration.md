@@ -130,7 +130,7 @@ its inode and birth time, since Orca can reuse a worktree's id at a path
 made again), and gc marks it submitted just before it calls
 `orca worktree rm`. Orca documents no query that says whether a removal
 finished, and the registry and the worktree list show only what exists, so
-gc relies on no settlement evidence it cannot observe. Only three things
+gc relies on no settlement evidence it cannot observe. Only these things
 release a submitted admission: the removal call's own reply, success or an
 explicit refusal; the worktree's absence from the list of Orca's worktrees
 of the repository the admission names, and from the disk; and a worktree
@@ -429,14 +429,14 @@ nothing orders them: the account binding spike (step 7), the dispatcher's usage 
 2. **The board from Jig's side** (built), after `drive-pr` links the card
    to its pull request: `orca-board.ts` into `plugin/shared/` with `--unread` and
    `--comment`, the moves in `drive-pr` and `followup`, `orca.board`.
-3. **Collection through the runtime** (built; step 6 closes its identity gap): the worktrees kind's runtime column,
+3. **Collection through the runtime** (built): the worktrees kind's runtime column,
    the `orca.command` machine entry, the remove steps moved into the
    plugin, the registry in the proof, tests against a fake `orca` command;
    collection is enabled, and the plugin's launch guard already refuses a
-   launch it can see; what remains is identity: an admission honoured only
-   for the repository that owns it, so another repository's list cannot
-   release it, and for the worktree incarnation it was taken on, so a
-   worktree recreated at the same path inherits no launch block.
+   launch it can see. An admission is honoured only for the repository that
+   owns it, so another repository's list cannot release it, and for the
+   worktree incarnation it was taken on, so a worktree recreated at the same
+   path inherits no launch block.
 4. **The asks**, filed by a person, each with its pull request to Orca
    when a maintainer does not take it.
 5. **The plugin's wake-up** (built, in

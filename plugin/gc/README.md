@@ -623,7 +623,8 @@ it, judging its holder dead by identity, never by age: the next collection
 of that worktree takes it over (dropping its `submitted` when it was written
 for another incarnation, whose removal is then settled), or a run of the
 repository it names finds the worktree gone from Orca's list and from the
-disk, or made again at its path, and deletes it. Until then the hook refuses launches
+disk and deletes it, or a run of any repository whose roots cover the path
+finds a worktree made again there, born later, and deletes it. Until then the hook refuses launches
 into that worktree.
 
 Reports and collections use the same receipt schema and human formatter.

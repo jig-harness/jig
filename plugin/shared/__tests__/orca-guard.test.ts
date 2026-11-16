@@ -585,9 +585,16 @@ describe("the incarnation an admission names", () => {
   /** The worktree removed and made again at the same path. */
   function remake(tree: string): void {
     const before = incarnationOf(tree);
-    rmSync(tree, { recursive: true });
-    mkdirSync(tree);
-    expect(incarnationOf(tree)).not.toBe(before);
+    // A filesystem may stamp the new directory with the same birth time (or
+    // none): remake until one is born strictly later, within a deadline.
+    const deadline = performance.now() + 5000;
+    do {
+      rmSync(tree, { recursive: true });
+      mkdirSync(tree);
+      if (supersedes(incarnationOf(tree), before)) return;
+      Bun.sleepSync(5);
+    } while (performance.now() < deadline);
+    throw new Error(`no later incarnation was born at ${tree}: ${before}`);
   }
 
   it("is superseded only by one born strictly later, whatever the inode says", () => {
@@ -661,6 +668,25 @@ describe("the incarnation an admission names", () => {
       incarnation: incarnationOf(tree),
     });
     expect(read(next.value.file).submitted).toBeUndefined();
+    next.value.release();
+  });
+});
+
+describe("a taken-over admission's carried mark", () => {
+  it("keeps the incarnation it was written for, even when the new one cannot be read", () => {
+    const dir = scratch();
+    const tree = join(dir, "topic");
+    const root = join(dir, "guard");
+    mkdirSync(tree);
+    const crashed = admit(tree, REPO, root, undefined, deadHolder());
+    if (!crashed.ok) throw new Error(crashed.failure.reason);
+    crashed.value.submit();
+    const was = incarnationOf(tree);
+    rmSync(tree, { recursive: true });
+    const next = admit(tree, REPO, root);
+    if (!next.ok) throw new Error(next.failure.reason);
+    expect(next.value.submitted).not.toBeNull();
+    expect(read(next.value.file).incarnation).toBe(was);
     next.value.release();
   });
 });

@@ -188,7 +188,11 @@ async function orcaInventory(
   if (selected.length === 0 && stale.length === 0)
     return ok([...selected, ...unlisted]);
   const managed = await orcaWorktrees(command, repository);
-  if (!managed.ok) return managed;
+  if (!managed.ok) {
+    // Claims settled or reported without Orca's list are still evaluated; no
+    // worktree is offered for collection while its runtime is unknown.
+    return unlisted.length === 0 ? managed : ok(unlisted);
+  }
   const listed = listedIn(managed.value);
   // A checkout gone from the disk can still be registered with Git: the claim
   // is then the resource, not the registration.

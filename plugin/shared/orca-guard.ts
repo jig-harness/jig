@@ -406,7 +406,10 @@ export function admit(
   const at = isoFromMs(now);
   const owner = repositoryOwner(repository);
   const incarnation = incarnationOf(path);
-  const body = (submitted: string | null): string =>
+  const body = (
+    submitted: string | null,
+    named: string | null = incarnation,
+  ): string =>
     `${encode(
       {
         kind: ADMISSION_KIND,
@@ -418,7 +421,7 @@ export function admit(
       {
         path,
         repository: owner,
-        ...(incarnation === null ? {} : { incarnation }),
+        ...(named === null ? {} : { incarnation: named }),
         holder: JSON.parse(encodeIdentity(holder)),
         ...(submitted === null ? {} : { submitted }),
       },
@@ -429,7 +432,8 @@ export function admit(
     const placed = publish(staged.value, file, (from) => {
       if (from.submitted === null || supersedes(incarnation, from.incarnation))
         return null;
-      writeFileSync(staged.value, body(from.submitted));
+      // The mark stays with the incarnation it was written for.
+      writeFileSync(staged.value, body(from.submitted, from.incarnation));
       return from.submitted;
     });
     if (!placed.ok) return placed;
