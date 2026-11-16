@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attempt } from "../../../../shared/outcome.ts";
 import type { RunResult } from "../../../../shared/proc.ts";
+import { isNoteFile } from "../../../changelog/scripts/notes-dir.ts";
 import type { DiffRange, GitRunner } from "./facts.ts";
 
 /** One note of the merge. */
@@ -33,14 +34,9 @@ export interface StatusRead {
   stderr: string;
 }
 
-/** Whether `path` is a note: a Markdown file directly in `dir`, other than a README in any letter case. */
+/** Whether `path` is a note, by the changelog skill's own definition, which the release step reads. */
 export function isNote(path: string, dir: string): boolean {
-  const prefix = dir.replace(/\/+$/, "");
-  if (!path.startsWith(`${prefix}/`)) return false;
-  const name = path.slice(prefix.length + 1);
-  return (
-    !name.includes("/") && /\.md$/i.test(name) && !/^readme\.md$/i.test(name)
-  );
+  return isNoteFile(dir, path);
 }
 
 /** The commit that last added `path` on the first-parent line of `ref`; null when none did. */
@@ -48,7 +44,7 @@ async function lastAdded(
   git: GitRunner,
   ref: string,
   path: string,
-): Promise<string | null> {
+): Promise<{ sha: string | null; error: string | null }> {
   const r = await git([
     "log",
     "--first-parent",
@@ -59,8 +55,13 @@ async function lastAdded(
     "--",
     path,
   ]);
+  if (r.code !== 0)
+    return {
+      sha: null,
+      error: `git log of ${path} on ${ref} exited ${r.code}`,
+    };
   const sha = r.stdout.trim();
-  return r.code === 0 && sha !== "" ? sha : null;
+  return { sha: sha !== "" ? sha : null, error: null };
 }
 
 /** The merge's notes, each with whether it still waits on `integrationRef`. */
@@ -87,11 +88,30 @@ export async function mergeNotes(
     .filter((f) => f !== "" && isNote(f, notesDir));
   const notes: MergeNote[] = [];
   for (const file of files) {
-    const onBranch = await git(["cat-file", "-e", `${integrationRef}:${file}`]);
+    // ls-tree exits 0 with no output for a file the branch lacks; a nonzero exit is an unread state.
+    const onBranch = await git([
+      "ls-tree",
+      "--name-only",
+      integrationRef,
+      "--",
+      file,
+    ]);
+    if (onBranch.code !== 0)
+      return {
+        notes: [],
+        error: `git ls-tree of ${file} on ${integrationRef} exited ${onBranch.code}`,
+      };
     const there =
-      onBranch.code === 0 ? await lastAdded(git, integrationRef, file) : null;
+      onBranch.stdout.trim() !== ""
+        ? await lastAdded(git, integrationRef, file)
+        : { sha: null, error: null };
     const atMerge = await lastAdded(git, range.head, file);
-    notes.push({ file, waiting: there !== null && there === atMerge });
+    const failed = there.error ?? atMerge.error;
+    if (failed !== null) return { notes: [], error: failed };
+    notes.push({
+      file,
+      waiting: there.sha !== null && there.sha === atMerge.sha,
+    });
   }
   return { notes, error: null };
 }

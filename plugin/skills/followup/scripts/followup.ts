@@ -11,7 +11,7 @@
  *   bun followup.ts instructions <arm> [--pr <n>]
  *   bun followup.ts guard <PR> --comment <marker> [--repo owner/name]
  *   bun followup.ts settle [--pr <n>] [--json]
- *   bun followup.ts authority [--json]
+ *   bun followup.ts authority [--pr <n>] [--json]
  *   bun followup.ts release [--pr <n>]
  *
  * - `facts` reads the merge facts (JSON) and starts the run's ledger under
@@ -83,7 +83,6 @@ import {
   type Facts,
   type FactsFailure,
   gatherFacts,
-  integrationBranchOf,
   PR_VIEW_FIELDS,
   prViewOf,
   type PrView,
@@ -117,7 +116,7 @@ const USAGE = [
   "       followup.ts instructions <arm> [--pr <n>]",
   "       followup.ts guard <PR> --comment <marker> [--repo owner/name]",
   "       followup.ts settle [--pr <n>] [--json]",
-  "       followup.ts authority [--json]",
+  "       followup.ts authority [--pr <n>] [--json]",
   "       followup.ts release [--pr <n>]",
 ].join("\n");
 
@@ -223,6 +222,8 @@ async function changeAreasOf(
 /** The follow-up's settings as a run reads them: from the integration branch where the clone has it. */
 interface RunSettings {
   settings: FollowupSettings;
+  /** Configuration read from the integration branch, never the preview tree. */
+  values: Record<string, unknown>;
   origin: Facts["configOrigin"];
   /** The integration branch's ref the settings were read from, where `origin` says so. */
   ref: string;
@@ -247,6 +248,7 @@ async function settingsFor(
   const file = valueAt(config.values, "changelog.file");
   return {
     settings,
+    values: config.values,
     origin: config.origin,
     ref,
     changelog: typeof file === "string" && file !== "",
@@ -299,25 +301,25 @@ async function factsCommand(args: string[]): Promise<number> {
   const facts = "facts takes one PR number";
   const pr = numberArg(exactly(args, 1, facts)[0], facts);
   const dir = root();
-  const values = workingConfig();
   const remote = must(
     attempt("config-invalid", "repository.remote", () => remoteName(dir)),
     2,
   );
   const local = gitIn(dir);
-  const integration =
-    (await integrationBranchOf(values, remote, local)) ??
-    stop(
-      2,
-      `cannot tell the integration branch: set repository.base_branch, or give the clone a ${remote}/HEAD`,
-    );
+  // GitHub's base ref is not controlled by the preview branch.  Reading this
+  // from the working configuration would let a preview choose the snapshot
+  // that decides its authority.
+  const viewed = await viewPr(pr);
+  if (!viewed.ok) stop(FACTS_EXIT[viewed.failure.code], viewed.failure.reason);
+  const integration = viewed.value.baseRefName;
+  if (integration === "") stop(1, `PR #${pr} names no base branch`);
   const read = await settingsFor(dir, remote, integration);
   const gathered = await gatherFacts(pr, integration, {
     view: viewPr,
     git: local,
     fetch: gitIn(dir, FETCH_TIMEOUT_SEC),
     areas: (files) => changeAreasOf(dir, files),
-    values,
+    values: read.values,
     remote,
     configOrigin: read.origin,
   });
@@ -499,11 +501,16 @@ async function settleCommand(args: string[]): Promise<number> {
 async function authorityCommand(args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
-    options: { json: { type: "boolean" } },
+    options: { json: { type: "boolean" }, pr: { type: "string" } },
     strict: true,
   });
-  const settings = must(parseFollowupSettings(workingConfig()), 2);
-  const table = authorityTable(settings.authority);
+  const { dir, run: loaded } = loadRun(values.pr);
+  const read = await settingsFor(
+    dir,
+    loaded.facts.remote,
+    loaded.facts.integrationBranch,
+  );
+  const table = authorityTable(read.settings.authority);
   console.log(
     values.json ? JSON.stringify(table, null, 2) : renderAuthority(table),
   );
@@ -528,7 +535,7 @@ async function releaseCommand(args: string[]): Promise<number> {
   const { facts } = loaded;
   const notesDir = notesDirOf(workingConfig());
   const integrationRef = `${facts.remote}/${facts.integrationBranch}`;
-  await gitIn(
+  const fetched = await gitIn(
     dir,
     FETCH_TIMEOUT_SEC,
   )([
@@ -539,9 +546,14 @@ async function releaseCommand(args: string[]): Promise<number> {
   ]);
   const local = gitIn(dir);
   const notes =
-    facts.range === null
-      ? { notes: [], error: "the facts hold no diff range" }
-      : await mergeNotes(local, facts.range, notesDir, integrationRef);
+    fetched.code !== 0
+      ? {
+          notes: [],
+          error: `the fetch of ${integrationRef} exited ${fetched.code}, so its state is stale`,
+        }
+      : facts.range === null
+        ? { notes: [], error: "the facts hold no diff range" }
+        : await mergeNotes(local, facts.range, notesDir, integrationRef);
   const statusScript = resolve(
     siblingSkill("changelog", resolve(import.meta.dir)),
     "scripts",

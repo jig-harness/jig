@@ -83,3 +83,27 @@ describe("the status report", () => {
     expect(gitRun(root, "worktree", "list")).not.toContain(seen);
   });
 });
+
+describe("an unreadable branch state", () => {
+  test("is an error, never a note that does not wait", async () => {
+    const { root, base, merge } = merged();
+    const real = runnerIn(root);
+    const failing: GitRunner = async (args) =>
+      args[0] === "log" && args.includes("main")
+        ? { ...(await real(["--version"])), code: 128 }
+        : real(args);
+    const read = await mergeNotes(
+      failing,
+      { kind: "squash", base, head: merge },
+      "changes",
+      "main",
+    );
+    expect(read.notes).toEqual([]);
+    expect(read.error).toContain("exited 128");
+  });
+
+  test("recognises a note the way the release step does", () => {
+    expect(isNote("changes/a.md", "./changes")).toBe(true);
+    expect(isNote("changes/a.MD", "changes")).toBe(false);
+  });
+});

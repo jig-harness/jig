@@ -117,7 +117,13 @@ const VERDICT_WORDS: Record<ReportRow["verdict"], string> = {
 
 /** A table cell's text: one line, its pipes escaped. */
 function cell(text: string): string {
-  return text.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+  // Escape a backslash first: otherwise an input ending in `\\` can escape
+  // the escape we add for a following table delimiter.
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .trim();
 }
 
 /** The report as Markdown: the table, then how to end the run. */

@@ -23,7 +23,7 @@ layers ship as the plugin's
 
 ## How it works
 
-The skill is three layers, each changed by a different owner, so that what
+The skill is layered, each layer changed by a different owner, so that what
 every repository must do the same way cannot be changed by what one
 repository adds.
 
