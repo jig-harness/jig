@@ -77,7 +77,10 @@ function lastRunLine(last: Last, station: string): string {
     return last.from === "launch claim"
       ? `${head}: its closing report stays on the host that ran it`
       : `${head}: no closing report was kept`;
-  if (report.by === "none") return `${head}: ended without a report`;
+  if (report.by === "none")
+    return report.transcript === undefined
+      ? `${head}: ended without a report`
+      : `${head}: ended without a report; its transcript's copy is ${report.transcript}`;
   const next = report.suggested_next;
   const owner =
     next === undefined
