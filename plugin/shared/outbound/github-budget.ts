@@ -10,8 +10,10 @@
  * shared record for a credential whose owner is not established): while
  * GitHub refuses the credential (a primary or a secondary limit), or while
  * the dispatcher's share of the limit the run spends is used, the run is not
- * started and fails at once as `rate-limited`, naming when it clears. After
- * a run, the wrapper records what its answer said:
+ * started and fails at once as `rate-limited`, naming when it clears and
+ * whose allowance is spent (the GitHub account, the installation, or the
+ * host's shared record). After a run, the wrapper records what its answer
+ * said:
  *
  * - a `gh api` call is sent with `--include`, so its answer carries the
  *   rate-limit headers (`x-ratelimit-resource`, `-limit`, `-remaining`,
@@ -27,6 +29,10 @@
  *   reset; a secondary limit, or a refusal that shows no headers, holds the
  *   credential for every process on the machine: until its `retry-after`,
  *   else for a minute, doubled for each refusal in a row, up to fifteen;
+ * - a refusal whose text names the user whose allowance is spent ("rate
+ *   limit exceeded for user ID N") is recorded in that user's record when
+ *   the run was admitted against another, the run's reservation given back,
+ *   and the owner's resolver is told so the mapping is asked again;
  * - the `rate_limit` endpoint's answer replaces the balances the record
  *   holds, and a request that was not sent or that GitHub does not charge
  *   (a conditional request) keeps no reservation.
@@ -67,12 +73,16 @@ import {
   githubHost,
   legacyGithubCredential,
   unverifiedOwner,
+  userOwner,
 } from "./github-credential.ts";
 import {
   type GithubOwnerResolver,
   githubOwnerResolver,
   sqliteOwnerStore,
+  unverifiedAccount,
 } from "./github-owner.ts";
+import { ghRunScope } from "./github-scope.ts";
+import { apiRoute } from "./gh-route.ts";
 import { swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import {
@@ -85,6 +95,7 @@ import { defaultLedgerPath, recordCall, UNATTRIBUTED } from "./ledger.ts";
 import { currentMs, parseMs } from "../time.ts";
 
 export { githubCredential } from "./github-credential.ts";
+export { apiRoute, apiRouteAt } from "./gh-route.ts";
 
 /** One of GitHub's primary limits, as `x-ratelimit-resource` names it. */
 export type GitHubLimit = "core" | "graphql" | "search";
@@ -175,27 +186,6 @@ export function limitsOf(args: readonly string[]): GitHubLimit[] | null {
   return ["core"];
 }
 
-/** `gh api`'s flags that take a value, which is never the route. */
-const VALUED = new Set([
-  "-X",
-  "--method",
-  "-H",
-  "--header",
-  "-f",
-  "--raw-field",
-  "-F",
-  "--field",
-  "--input",
-  "-q",
-  "--jq",
-  "-t",
-  "--template",
-  "--hostname",
-  "--cache",
-  "-p",
-  "--preview",
-]);
-
 /** `env` as the call sees it: with the host its `gh api --hostname` names, as `GH_HOST`. */
 export function ghHostIn(
   args: readonly string[],
@@ -214,35 +204,6 @@ export function ghHostIn(
       return { ...env, GH_HOST: host.trim() };
   }
   return env;
-}
-
-/** Where a `gh api` command line names its route: its first argument that is neither a flag nor a flag's value; `-1` when it names none. */
-export function apiRouteAt(args: readonly string[]): number {
-  for (let i = 1; i < args.length; i += 1) {
-    const arg = args[i] ?? "";
-    if (VALUED.has(arg)) {
-      i += 1;
-      continue;
-    }
-    if (!arg.startsWith("-")) return i;
-  }
-  return -1;
-}
-
-/**
- * The route a `gh api` command line asks, without a leading slash or a
- * query; a full URL (the next page a paged read asks for) is read without
- * its scheme, host and an enterprise server's `api/v3/` prefix.
- */
-export function apiRoute(args: readonly string[]): string {
-  const at = apiRouteAt(args);
-  if (at < 0) return "";
-  return (
-    (args[at] ?? "")
-      .replace(/^https?:\/\/[^/]+\/(api\/v3\/)?/i, "")
-      .replace(/^\/+/, "")
-      .split("?")[0] ?? ""
-  );
 }
 
 /** A request GitHub answers 304 without charging it, when nothing changed; a 200 to it is charged like any other. */
@@ -594,24 +555,48 @@ function asksOwnIdentity(args: readonly string[]): boolean {
   return at < 0 || (args[at + 1] ?? "").toUpperCase() === "GET";
 }
 
+/** The record a run is admitted against, whose allowance it is, and how to say GitHub named another user's. */
+export interface ForgeOwner {
+  /** The key of the record. */
+  owner: string;
+  /** Whose allowance the record keeps, for a person (`OwnerResolution.account`); absent when no owner was resolved. */
+  account?: string;
+  /** Tell the owner's resolver that GitHub refused the run for user `userId`'s allowance. */
+  misattributed?: (userId: number) => void;
+}
+
 /**
- * The key of the record a run of `gh` with `args` is admitted against: its
- * credential's quota owner, found once and remembered (`github-owner.ts`);
- * `undefined` for a run that is not governed. A plain `gh api user` asks no
- * owner first: it uses the owner already known, else the host's unverified
- * record.
+ * The record a run of `gh` with `args`, from the working directory `cwd`,
+ * is admitted against: its credential's quota owner, found once and
+ * remembered (`github-owner.ts`), for the client's stored login per
+ * repository the run addresses (`github-scope.ts`); `undefined` for a run
+ * that is not governed. A plain `gh api user` asks no owner first: it uses
+ * the owner already known, else the host's unverified record.
  */
 export async function forgeOwner(
   args: readonly string[],
   env: Record<string, string | undefined> = process.env,
   deadlineMs?: number,
-): Promise<string | undefined> {
+  cwd?: string,
+): Promise<ForgeOwner | undefined> {
   if (limitsOf(args) === null || !forgeBudgetOn(env)) return undefined;
   const owners = override === null ? machine().owners : overrideOwners;
-  if (owners === null) return githubCredential(env);
-  if (asksOwnIdentity(args))
-    return owners.known(env)?.owner ?? unverifiedOwner(githubHost(env));
-  return (await owners.resolve(env, deadlineMs)).owner;
+  if (owners === null) return { owner: githubCredential(env) };
+  const scope = ghRunScope(args, env, cwd);
+  const misattributed = (userId: number) =>
+    owners.misattributed(env, scope, userId);
+  const found = asksOwnIdentity(args)
+    ? owners.known(env, scope)
+    : await owners.resolve(env, deadlineMs, scope, cwd);
+  if (found === null) {
+    const host = githubHost(env);
+    return {
+      owner: unverifiedOwner(host),
+      account: unverifiedAccount(host),
+      misattributed,
+    };
+  }
+  return { owner: found.owner, account: found.account, misattributed };
 }
 
 /** Tell the ledger row which resource answered, and read the HTTP status off a captured answer. */
@@ -696,15 +681,80 @@ function recordUnexplained(
   }
 }
 
+/** The user a refusal's text names as the one whose allowance is spent: GitHub's "rate limit exceeded for user ID N". */
+export function refusedUser(text: string): number | null {
+  const match = /rate limit (?:already )?exceeded for user ID (\d+)/i.exec(
+    text,
+  );
+  const id = Number(match?.[1] ?? "");
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/** Whose allowance a governed request's record keeps, and where a refusal naming another user goes. */
+interface Whose {
+  /** Said in a refusal: whose allowance the record keeps. */
+  allowance?: string;
+  /** The host a user named by a refusal is on. */
+  host: string;
+  /** Told the user a refusal named, when the record was another's; the answer was recorded under `owner`. Without it, a refusal is recorded where the run was admitted. */
+  misattributed?(userId: number, owner: string): void;
+}
+
+/** The user a rate-limit refusal says it spent the allowance of, when that is not `key`'s record and `whose` can be told. */
+function otherUser(
+  whose: Whose | undefined,
+  key: string,
+  failure: OutboundFailure | null,
+  text: string,
+): { userId: number; owner: string } | null {
+  if (failure?.code !== "rate-limited" || whose?.misattributed === undefined)
+    return null;
+  const userId = refusedUser(text);
+  if (userId === null) return null;
+  const owner = userOwner(whose.host, userId);
+  return owner === key ? null : { userId, owner };
+}
+
+/**
+ * How a run's refusal names whose allowance it is kept to, and where a
+ * refusal GitHub says spent another user's allowance goes: `owner`'s
+ * resolver is told, and the ledger row names that user's record.
+ */
+function whoseOf(
+  owner: ForgeOwner | undefined,
+  host: string,
+  attribution: GhAttribution | undefined,
+): Whose | undefined {
+  const account = owner?.account;
+  const told = owner?.misattributed;
+  if (account === undefined && told === undefined) return undefined;
+  const whose: Whose = { host };
+  if (account !== undefined)
+    whose.allowance =
+      account === unverifiedAccount(host)
+        ? account
+        : `the allowance of ${account}`;
+  if (told !== undefined)
+    whose.misattributed = (userId, other) => {
+      if (attribution !== undefined) attribution.owner = other;
+      told(userId);
+    };
+  return whose;
+}
+
 /**
  * A request for the credential `key`, admitted with `admitted`. A read gh
  * pages itself sends an unknown number of requests: it reserves `reservations`
  * of them, each admitted above the floor, and keeps them once it ran.
+ * With `whose`, a refusal says whose allowance is spent, and a refusal GitHub
+ * says was for another user's allowance is recorded in that user's record,
+ * the reservation given back to `key`'s.
  */
 function governed(
   key: string,
   admitted: AdmitOptions,
   reservations = 1,
+  whose?: Whose,
 ): Governed {
   const gov = governor();
   // The window the admission actually reserved in: none when the record or
@@ -715,6 +765,7 @@ function governed(
     for (const at of taken.splice(0))
       if (reservedIn !== null) gov.release?.(key, reservedIn, at);
   };
+  const said = whose?.allowance === undefined ? "" : ` (${whose.allowance})`;
   return {
     admit() {
       try {
@@ -735,7 +786,7 @@ function governed(
         return {
           refused: outboundFailure(
             "rate-limited",
-            `${error.message}; nothing was sent`,
+            `${error.message}${said}; nothing was sent`,
             { until: error.resetAt },
           ),
         };
@@ -758,6 +809,16 @@ function governed(
         now,
         refusedText,
       );
+      const other = otherUser(whose, key, failure, `${refusedText}\n${body}`);
+      if (other !== null) {
+        // The answer spent the named user's allowance: it holds that
+        // user's record, and the reservation goes back to the record the
+        // run was admitted against.
+        giveBack();
+        gov.observe(other.owner, answer, sentAt, null);
+        whose?.misattributed?.(other.userId, other.owner);
+        return gov.heldUntil?.(other.owner) ?? namedWait(headers, now);
+      }
       const extra = measuredBeyondReservation(
         body,
         answer,
@@ -782,26 +843,33 @@ function governed(
  * nothing to GitHub, or while the budget is off. `captured` says the run's
  * output is captured whole, so headers added to it can be taken off. `owner`
  * is the record the run is admitted against (`forgeOwner`), the credential's
- * own key when left out; `attribution` is told what the ledger row needs.
+ * own key when left out; with its `account`, a refusal names whose allowance
+ * is spent, and with its `misattributed`, a refusal GitHub says was for
+ * another user's allowance holds that user's record and is told to the
+ * owner's resolver. `attribution` is told what the ledger row needs.
  */
 export function ghGovernance(
   args: readonly string[],
   opts: {
     env?: Record<string, string | undefined>;
     captured: boolean;
-    owner?: string;
+    owner?: string | ForgeOwner;
     attribution?: GhAttribution;
   },
 ): GhGovernance | null {
+  const env = opts.env ?? process.env;
   const limits = limitsOf(args);
-  if (limits === null || !forgeBudgetOn(opts.env ?? process.env)) return null;
-  const key = opts.owner ?? githubCredential(opts.env ?? process.env);
+  if (limits === null || !forgeBudgetOn(env)) return null;
+  const owner: ForgeOwner | undefined =
+    typeof opts.owner === "string" ? { owner: opts.owner } : opts.owner;
+  const key = owner?.owner ?? githubCredential(env);
   if (opts.attribution !== undefined) opts.attribution.owner = key;
   const { argv, strip } = withHeaders(args, opts.captured);
   const request = governed(
     key,
     admission(limits, args, strip || (opts.captured && askedHeaders(args))),
     args.includes("--paginate") ? PAGINATED_RESERVE : 1,
+    whoseOf(owner, githubHost(env), opts.attribution),
   );
   return {
     owner: key,
@@ -893,7 +961,12 @@ export function githubBalances(
   read: (key: string) => BudgetRecord | null = (key) =>
     machine().store.read(key),
   owner: (env: Record<string, string | undefined>) => string | null = (e) =>
-    machine().owners.known(e)?.owner ?? null,
+    (
+      machine().owners.known(
+        e,
+        ghRunScope(["api", "rate_limit"], e, process.cwd()),
+      ) ?? machine().owners.known(e)
+    )?.owner ?? null,
 ): { core: BudgetWindow; graphql: BudgetWindow; observedAt: number } | null {
   const known = owner(env);
   const record =

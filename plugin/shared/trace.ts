@@ -234,6 +234,7 @@ async function governedRun<T extends GhRun, O>(
   const o = opts as {
     env?: Record<string, string | undefined>;
     signal?: AbortSignal;
+    cwd?: string;
   };
   // The host a call names (`--hostname`) is the one it sends to, so its
   // credential and owner are those of that host.
@@ -249,10 +250,13 @@ async function governedRun<T extends GhRun, O>(
       ),
     );
   if (currentMs() >= deadlineAt) return spentFailure();
+  // The working directory is the run's: a client that picks its account
+  // per repository may pick it by the directory's remote.
   const owner = await forgeOwner(
     args,
     env,
     Math.max(0, deadlineAt - currentMs()),
+    o.cwd,
   );
   if (currentMs() >= deadlineAt) return spentFailure();
   const governance = ghGovernance(args, {
@@ -472,8 +476,13 @@ export function traceGhRunner<
   // the hold's probe: it must not wait on that hold, so it takes the form
   // that does not hold the forge.
   const unheld = through(false);
-  setDiscoveryRunner((args, env, timeoutSec) =>
-    unheld(args, { ...defaults, env, timeoutSec } as O),
+  setDiscoveryRunner((args, env, timeoutSec, cwd) =>
+    unheld(args, {
+      ...defaults,
+      env,
+      timeoutSec,
+      ...(cwd === undefined ? {} : { cwd }),
+    } as O),
   );
   return runner;
 }
