@@ -17,6 +17,7 @@ import type { Assigner, Tracker } from "../port.ts";
 import { AssignerUnknown } from "../assigner-unknown.ts";
 import type { Client } from "./client.ts";
 import type { JiraIssue } from "./read.ts";
+import { JiraApiError } from "./transport.ts";
 
 /** The account the assignment is asked about: the given one, else the current assignee. */
 async function wantedAccount(
@@ -46,11 +47,20 @@ async function latestAssigner(
   who: string,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown> | null> {
-  const latest = (await client.changelog(key, signal))
+  const log = await client.changelog(key, signal);
+  // An assignee change missing its `from` or `to` cannot be placed in the
+  // history, so no answer drawn from the rest of it is complete.
+  if (
+    log.some((e) =>
+      e.items.some((i) => i.fieldId === "assignee" && !i.explicit),
+    )
+  )
+    throw new JiraApiError(
+      `issue ${key}: its changelog holds an assignee change missing from or to`,
+    );
+  const latest = log
     .filter((e) =>
-      e.items.some(
-        (i) => i.fieldId === "assignee" && i.explicit && i.to === who,
-      ),
+      e.items.some((i) => i.fieldId === "assignee" && i.to === who),
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .at(-1);

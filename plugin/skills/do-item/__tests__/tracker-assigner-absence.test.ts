@@ -90,25 +90,40 @@ describe("assignment absence is an answer, not a failed read", () => {
   });
 
   it("keeps a malformed Jira assignee change as a failure", async () => {
-    const { t } = jira(
-      routes({
-        "GET issue/ENG-1": issue({ key: "ENG-1", assignee: FACTORY }),
-        "GET issue/ENG-1/changelog": {
-          values: [
-            {
-              id: "1",
-              created: "2026-10-01T00:00:00Z",
-              author: null,
-              items: [{ fieldId: "assignee" }],
-            },
-          ],
-          startAt: 0,
-          maxResults: 100,
-          total: 1,
-          isLast: true,
-        },
-      }),
-    );
-    await expect(t.assignedBy("ENG-1")).rejects.toBeInstanceOf(AssignerUnknown);
+    const entry = (id: string, created: string, items: unknown[]) => ({
+      id,
+      created,
+      author: null,
+      items,
+    });
+    const history = (values: unknown[]) =>
+      jira(
+        routes({
+          "GET issue/ENG-1": issue({ key: "ENG-1", assignee: FACTORY }),
+          "GET issue/ENG-1/changelog": {
+            values,
+            startAt: 0,
+            maxResults: 100,
+            total: values.length,
+            isLast: true,
+          },
+        }),
+      ).t;
+    const malformed = entry("2", "2026-10-02T00:00:00Z", [
+      { fieldId: "assignee", to: FACTORY.accountId },
+    ]);
+    await expect(
+      history([
+        entry("1", "2026-10-01T00:00:00Z", [{ fieldId: "assignee" }]),
+      ]).assignedBy("ENG-1"),
+    ).rejects.toBeInstanceOf(JiraApiError);
+    await expect(
+      history([
+        entry("1", "2026-10-01T00:00:00Z", [
+          { fieldId: "assignee", from: null, to: FACTORY.accountId },
+        ]),
+        malformed,
+      ]).assignedBy("ENG-1"),
+    ).rejects.toBeInstanceOf(JiraApiError);
   });
 });
