@@ -396,6 +396,13 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.253.1] - 2026-11-16
+
+### Fixed
+
+- The dispatcher attributes test-lock waits to the launch running validation and reports how long it has waited. Drift, ended-pickup and stalled-pickup reasons retain the last observed wait, so a queued suite is visible when a pass reaches its deadline.
+  Attribution currently works on POSIX; Windows announcements are neither attributed nor counted as waiters until process creation time can be verified there.
+
 ## [0.253.0] - 2026-11-16
 
 ### Added
@@ -8948,7 +8955,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.253.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.253.1...HEAD
+[0.253.1]: https://github.com/jig-harness/jig/compare/v0.253.0...v0.253.1
 [0.253.0]: https://github.com/jig-harness/jig/compare/v0.252.0...v0.253.0
 [0.252.0]: https://github.com/jig-harness/jig/compare/v0.251.0...v0.252.0
 [0.251.0]: https://github.com/jig-harness/jig/compare/v0.250.1...v0.251.0
