@@ -382,3 +382,83 @@ it("keeps the reading age on transient, inaccessible and budget failures and req
     "no longer open",
   );
 });
+
+it("refreshes former-parent membership after a child moves without rereading unrelated assignment history", async () => {
+  const f = fixture();
+  f.setRows([
+    {
+      ...node(1),
+      labels: conn([{ name: "Todo" }, { name: "epic" }]),
+      subIssues: conn([{ state: "OPEN" }]),
+    },
+  ]);
+  let histories = 0;
+  const tracker = {
+    ...f.tracker,
+    listRelations: async () => [],
+    assignedBy: async () => {
+      histories++;
+      return { id: "writer", name: "writer", trusted: true };
+    },
+  };
+  const first = await f.open(0);
+  const parent = first.open()[0]?.issue;
+  assert(parent);
+  expect(
+    (
+      await metadata(tracker, parent, "dana", f.cache, null, first)
+    ).children.map((child) => child.identifier),
+  ).toEqual(["#2"]);
+  await first.pool("#2");
+  first.save();
+  f.setChildren([]);
+  f.setChanges(
+    conn([
+      {
+        number: 2,
+        updatedAt: isoFromMs(START + 60_000),
+        assignees: conn([]),
+        parent: null,
+      },
+    ]),
+  );
+  const moved = await f.open(1);
+  expect(moved.source).toBe("changed");
+  const current = moved.open()[0]?.issue;
+  assert(current);
+  expect(current.updatedAt).toBe(parent.updatedAt);
+  expect(
+    (await metadata(tracker, current, "dana", f.cache, null, moved)).children,
+  ).toEqual([]);
+  expect(histories).toBe(1);
+  moved.save();
+  const mark = f.calls.length;
+  const quiet = await f.open(2);
+  await metadata(tracker, current, "dana", f.cache, null, quiet);
+  expect(f.calls.slice(mark).map((call) => call.op)).toEqual([
+    "TrackerDispatchChanges",
+  ]);
+});
+
+it("persists source watermarks through changed and unchanged native queue readings", async () => {
+  const f = fixture();
+  const watermarks = {
+    "acme/app": isoFromMs(START),
+    "acme/other": isoFromMs(START + 30_000),
+  };
+  const queries: unknown[] = [];
+  f.tracker.changedSince = async (query) => {
+    queries.push(query.watermarks);
+    return {
+      keys: queries.length === 1 ? ["#1"] : [],
+      complete: true,
+      latest: isoFromMs(START),
+      watermarks,
+    };
+  };
+  (await f.open(0)).save();
+  (await f.open(1)).save();
+  (await f.open(2)).save();
+  (await f.open(3)).save();
+  expect(queries).toEqual([undefined, watermarks, watermarks]);
+});

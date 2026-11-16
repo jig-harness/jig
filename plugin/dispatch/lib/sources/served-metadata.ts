@@ -90,6 +90,25 @@ async function issueRelations(
   );
 }
 
+/** Membership has a separate version: a moved child need not update its former parent. */
+async function membership(
+  tracker: Tracker,
+  issue: PoolIssue,
+  view: ServedView,
+  assigned: Pick<Metadata, "by" | "noAssigner">,
+): Promise<Pick<Metadata, "children" | "description">> {
+  const children = await childrenOf(tracker, issue, view, assigned);
+  const description =
+    children.length > 0
+      ? await view.once(
+          `description ${issue.identifier}`,
+          async () =>
+            (await tracker.getIssue(issue.identifier))?.description ?? null,
+        )
+      : "";
+  return { children, description };
+}
+
 /** Cache entries without a timestamp are never reused. */
 export async function metadata(
   tracker: Tracker,
@@ -106,14 +125,14 @@ export async function metadata(
     trackerStateMaps(tracker),
   ]);
   const key = `${trackerScope(tracker)}:${credential}:${interpretation}:item:${issue.identifier}:${identity}:${issue.isEpic ? "epic" : ""}`;
+  const nativeGitHub =
+    tracker.adapter === "github" && tracker.dispatchSource !== undefined;
   const kept = await cacheByVersion<Metadata>(
     cache,
     `versioned:${key}`,
     // GitHub does not timestamp every relation or membership edit. Changed
     // keys and scheduled full readings also invalidate these facts.
-    issue.updatedAt &&
-      tracker.adapter === "github" &&
-      tracker.dispatchSource !== undefined
+    issue.updatedAt && nativeGitHub
       ? `${issue.updatedAt}:${view.metadataEpoch?.(issue.identifier) ?? view.readAt}`
       : issue.updatedAt,
     async () => {
@@ -125,25 +144,33 @@ export async function metadata(
           : assigned.noAssigner === undefined
             ? await issueRelations(tracker, issue, view)
             : [];
-      const children = await childrenOf(tracker, issue, view, assigned);
-      const description =
-        children.length > 0
-          ? await view.once(
-              `description ${issue.identifier}`,
-              async () =>
-                (await tracker.getIssue(issue.identifier))?.description ?? null,
-            )
-          : "";
       const value = {
         updatedAt: issue.updatedAt ?? "",
         ...assigned,
         relations,
-        children,
-        description,
+        ...(nativeGitHub
+          ? { children: [], description: "" }
+          : await membership(tracker, issue, view, assigned)),
       };
       return value;
     },
     (value) => value.description !== null,
   );
-  return carried === null ? kept : { ...kept, relations: relationsOf(carried) };
+  const value = nativeGitHub
+    ? {
+        ...kept,
+        ...(await cacheByVersion(
+          cache,
+          `membership:${key}`,
+          issue.updatedAt
+            ? `${issue.updatedAt}:${view.membershipEpoch?.() ?? view.readAt}`
+            : undefined,
+          () => membership(tracker, issue, view, kept),
+          (value) => value.description !== null,
+        )),
+      }
+    : kept;
+  return carried === null
+    ? value
+    : { ...value, relations: relationsOf(carried) };
 }

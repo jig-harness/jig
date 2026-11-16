@@ -72,6 +72,8 @@ export interface HeldIssue {
 
 interface Snapshot {
   version: 1;
+  watermarks?: Readonly<Record<string, string>> | undefined;
+  membershipAt?: number;
   /** Metadata invalidations that happened since the last full reading. */
   revisions?: Record<string, number>;
   shape?: string;
@@ -104,6 +106,8 @@ export interface ServedView {
   readonly readAt: number;
   /** A changed key or a full refresh invalidates facts even without a native timestamp change. */
   metadataEpoch?(key: string): number;
+  /** Membership can change without updating its former parent. */
+  membershipEpoch?(): number;
   /** The assigned issues in the open states and the `blocked` state (the dispatch's queue). */
   open(): HeldIssue[];
   /** Every projected native row, before the served queue narrows its states. */
@@ -359,6 +363,7 @@ interface Plan {
   /** Keys whose kept reading no longer holds. */
   stale: ReadonlySet<string> | "all";
   since: string;
+  watermarks?: Readonly<Record<string, string>> | undefined;
   limited: TrackerRateLimited | null;
   unavailable?: string;
   unavailableCause?: unknown;
@@ -391,6 +396,7 @@ async function plan(
   if (tracker.changedSince === undefined) return full;
   const answer = await tracker.changedSince({
     since: kept.since,
+    ...(kept.watermarks === undefined ? {} : { watermarks: kept.watermarks }),
     identity,
     keys: watched(kept),
   });
@@ -399,6 +405,7 @@ async function plan(
     return {
       ...full,
       source: "unchanged",
+      watermarks: answer.watermarks ?? kept.watermarks,
       snapshot: kept,
       stale: new Set(),
       since: kept.since,
@@ -406,6 +413,7 @@ async function plan(
   return {
     ...full,
     source: "changed",
+    watermarks: answer.watermarks ?? kept.watermarks,
     snapshot: kept,
     stale: new Set(answer.keys),
     since:
@@ -487,6 +495,10 @@ function metadataVersions(p: Plan, nowMs: number) {
     for (const key of p.stale) versions.set(keyOf(key), nowMs);
   return {
     fullAt,
+    membershipAt:
+      p.source === "changed" && p.stale !== "all" && p.stale.size > 0
+        ? nowMs
+        : (p.snapshot?.membershipAt ?? fullAt),
     epoch: (key: string) => versions.get(keyOf(key)) ?? fullAt,
     saved: () => Object.fromEntries(versions),
   };
@@ -541,6 +553,7 @@ function assemble(
     limited: p.limited,
     readAt,
     metadataEpoch: versions.epoch,
+    membershipEpoch: () => versions.membershipAt,
     open: () => open,
     progress: () => progress,
     async pool(key) {
@@ -558,6 +571,8 @@ function assemble(
         readAt,
         fullAt: versions.fullAt,
         revisions: versions.saved(),
+        membershipAt: versions.membershipAt,
+        watermarks: p.watermarks ?? kept?.watermarks,
         since: p.since,
         open,
         progress,
@@ -599,12 +614,20 @@ function savedProbe(
   tracker: Tracker,
   identity: string,
   cache: PickupReads,
-): { since: string; keys: string[] } | null {
+): {
+  since: string;
+  keys: string[];
+  watermarks?: Readonly<Record<string, string>> | undefined;
+} | null {
   const key = `${tracker.adapter}:${tracker.team}:queue:${identity}:${configIdentity(tracker)}`;
   const snapshot = snapshotOf(cache.get<unknown>(key));
   return snapshot === null
     ? null
-    : { since: snapshot.since, keys: watched(snapshot) };
+    : {
+        since: snapshot.since,
+        keys: watched(snapshot),
+        watermarks: snapshot.watermarks,
+      };
 }
 
 /** The view of one tracker, team and person for this tick. */

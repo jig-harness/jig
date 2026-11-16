@@ -198,3 +198,48 @@ it("never reports incomplete probe pages or unreadable assignments as unchanged 
     ).toBe(false);
   }
 });
+
+it("keeps repository watermarks independent across interleaved updates without using the host clock", async () => {
+  let phase = 0;
+  const early = "2026-01-02T00:00:00Z";
+  const missed = "2026-01-02T00:01:00Z";
+  const later = "2026-01-02T00:02:00Z";
+  const { t, calls } = gitHub((call) => ({
+    repository: {
+      issues: conn(
+        call.variables.name === "app"
+          ? [
+              {
+                ...change(phase === 0 ? 1 : 2),
+                updatedAt: phase === 0 ? early : missed,
+              },
+            ]
+          : [{ ...change(9), updatedAt: later }],
+      ),
+    },
+  }));
+  assert(t.changedSince);
+  const query = { since, identity: "dana", keys: ["#1", "#2", "acme/other#9"] };
+  const first = await t.changedSince(query);
+  assert(first.watermarks);
+  expect(first.watermarks).toEqual({ "acme/app": early, "acme/other": later });
+  phase = 1;
+  const next = await t.changedSince({
+    ...query,
+    since: first.latest ?? since,
+    watermarks: first.watermarks,
+  });
+  expect(next.keys).toEqual(["#2"]);
+  assert(next.watermarks);
+  expect(calls.slice(2).map((call) => call.variables.since)).toEqual([
+    early,
+    later,
+  ]);
+  const quiet = await t.changedSince({
+    ...query,
+    since: next.latest ?? since,
+    watermarks: next.watermarks,
+  });
+  expect(quiet.keys).toEqual([]);
+  expect(quiet.complete).toBe(true);
+});

@@ -631,6 +631,8 @@ export interface QueueIssue extends PoolIssue {
 export interface ChangeQuery {
   /** An ISO 8601 time: issues updated after it count. */
   since: string;
+  /** Source-defined partitions may advance independently; missing entries use `since`. */
+  watermarks?: Readonly<Record<string, string>>;
   identity: string;
   /** All people sharing this scope probe, when dispatch groups its queues. */
   identities?: ReadonlyArray<string>;
@@ -642,6 +644,8 @@ export interface ChangeAnswer {
   keys: string[];
   complete: boolean;
   latest: string | null;
+  /** Safe boundaries for the source's partitions, retained only with a complete answer. */
+  watermarks?: Readonly<Record<string, string>>;
 }
 
 /** A label an issue can carry, with the group it belongs to; `null` = none. */

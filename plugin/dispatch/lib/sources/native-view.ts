@@ -99,7 +99,11 @@ export async function nativeSharedView(
       tracker: Tracker,
       identity: string,
       cache: PickupReads,
-    ) => { since: string; keys: string[] } | null;
+    ) => {
+      since: string;
+      keys: string[];
+      watermarks?: Readonly<Record<string, string>> | undefined;
+    } | null;
     credential: (tracker: Tracker, credential: string) => void;
   },
 ): Promise<ServedView> {
@@ -146,10 +150,30 @@ export async function nativeSharedView(
                 ]),
               ];
               const probeKey = `dispatch scope probe ${options.nowMs}`;
+              const readings = [query, ...saved];
+              const partitions = new Set(
+                readings.flatMap((value) =>
+                  Object.keys(value.watermarks ?? {}),
+                ),
+              );
+              const watermarks = Object.fromEntries(
+                [...partitions].map((name) => [
+                  name,
+                  readings
+                    .map((value) => value.watermarks?.[name] ?? value.since)
+                    .sort()[0] ?? since,
+                ]),
+              );
               return coalesce(reads, probeKey, () =>
                 facts.guarded(() =>
                   changedSince(
-                    { ...query, since, keys, identities },
+                    {
+                      ...query,
+                      since,
+                      keys,
+                      identities,
+                      ...(partitions.size === 0 ? {} : { watermarks }),
+                    },
                     options.bound?.signal,
                   ),
                 ),
