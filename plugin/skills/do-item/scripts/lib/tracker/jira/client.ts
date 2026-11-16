@@ -613,14 +613,14 @@ export function jiraClient(opts: ClientOptions): Client {
         : until(authenticated, signal));
       // Resolved before the issue's own 404 handler: a failed field read is
       // not a missing issue.
-      const read = (await fieldsToRead(signal)).join(",");
+      const read = await fieldsToRead(signal);
       let raw: unknown;
       try {
         raw = await transport(
           {
             method: "GET",
             path: `issue/${encodeURIComponent(key)}`,
-            query: { fields: read },
+            query: { fields: read.join(",") },
           },
           signal,
         );
@@ -633,6 +633,7 @@ export function jiraClient(opts: ClientOptions): Client {
         site,
         await client.fieldLabels(signal),
         await client.facetFields(signal),
+        read,
       );
     },
 
@@ -656,7 +657,7 @@ export function jiraClient(opts: ClientOptions): Client {
       const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
-        parseIssue(i, site, extra, facet),
+        parseIssue(i, site, extra, facet, read),
       );
     },
 

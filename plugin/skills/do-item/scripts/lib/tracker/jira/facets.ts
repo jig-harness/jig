@@ -338,7 +338,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     if (raws === undefined)
       throw new TrackerRequestError(
         "invalid",
-        `issue ${issue.key} was read without the field ${s.facet} is kept in`,
+        `issue ${issue.key} was read without the field '${s.field}' that ${s.facet} is kept in`,
       );
     const numeric = issue.numericFacets?.includes(s.facet) === true;
     const named = raws.map((r) => fromValue(s, r, numeric));
