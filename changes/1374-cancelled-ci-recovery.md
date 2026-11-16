@@ -7,7 +7,7 @@ release: patch
 - drive-pr: answering the `cancelled-ci` park with "Re-run safely" (or
   approving it) now does what the option says. Once the head's automatic
   re-run is spent, the re-arm that consumes the answer grants that head one
-  more re-run: the drive repeats the head, CI-hold and event checks, requests
+  more re-run: the drive repeats the head and CI-hold checks, requests
   the re-run and waits for its replacement, instead of parking the same
   question again within a minute. The grant is for the head the park names,
   waits for a claim still inside the replacement window, is also made when

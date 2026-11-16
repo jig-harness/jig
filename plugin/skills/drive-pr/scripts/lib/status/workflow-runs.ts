@@ -241,15 +241,13 @@ function answeredBySkip(
         : named.filter((other) => other.name?.startsWith(prefix) === true);
     if (reports.length === 0) continue;
     reported = true;
-    const names = new Set(reports.map((other) => other.name));
-    const complete = [...names].every((name) =>
-      reports.some(
-        (other) =>
-          other.name === name &&
-          other.status === "completed" &&
-          other.conclusion !== null &&
-          RESULT_CONCLUSIONS.has(other.conclusion),
-      ),
+    // Reports sharing a name are separate legs (a matrix axis the name omits),
+    // so every one of them needs a result, not any one.
+    const complete = reports.every(
+      (other) =>
+        other.status === "completed" &&
+        other.conclusion !== null &&
+        RESULT_CONCLUSIONS.has(other.conclusion),
     );
     if (complete) return false;
   }
@@ -262,10 +260,27 @@ function answeredBySkip(
  * last parenthesised suffix, the one still holding a `${{ … }}` expression.
  */
 function matrixTemplate(name: string): string {
-  const leg = name.lastIndexOf(" (");
+  const leg = lastLegStart(name);
   return leg !== -1 && name.slice(leg).includes("${{")
     ? name.slice(0, leg)
     : name;
+}
+
+/** The last ` (` outside every `${{ … }}` expression, or -1. */
+function lastLegStart(name: string): number {
+  let last = -1;
+  let i = 0;
+  while (i < name.length) {
+    if (name.startsWith("${{", i)) {
+      const end = name.indexOf("}}", i + 3);
+      if (end === -1) break;
+      i = end + 2;
+      continue;
+    }
+    if (name.startsWith(" (", i)) last = i;
+    i++;
+  }
+  return last;
 }
 
 /**

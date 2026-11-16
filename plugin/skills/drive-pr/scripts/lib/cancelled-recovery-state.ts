@@ -79,7 +79,7 @@ export async function claimCancellation(
  * A person's answer to the `cancelled-ci` park authorises one more re-run on
  * the head the park was framed for: a spent claim is released and the grant
  * counted, so the next recovery repeats every check the first one made (the
- * exact head, the CI hold, the run's event) before it requests the re-run.
+ * exact head and the CI hold) before it requests the re-run.
  * A claim younger than the 60-second replacement window may still be waiting
  * for its own re-run, so it is kept and the grant is recorded as pending; the
  * recovery releases it once the window passes with no replacement. `answer`

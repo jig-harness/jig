@@ -340,6 +340,32 @@ describe("a cancelled check never reads as passing", () => {
     ).toBe(`cancelled: ${template}`);
   });
 
+  it("needs a result from every leg that shares a name", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    for (const name of ["tests", "tests (linux)"]) {
+      const cancelled = job(name, "cancelled", 40);
+      const kept = (conclusion: string) =>
+        withoutSuperseded(
+          [cancelled, job(name, "success", 41), job(name, conclusion, 41)],
+          runs,
+        ).includes(cancelled);
+      expect(kept("skipped")).toBe(true);
+      expect(kept("failure")).toBe(false);
+    }
+  });
+
+  it("finds a template's matrix suffix outside its expressions", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    const template = "suite (linux, ${{ format(' ({0})', matrix.shard) }}/3)";
+    const legs = (conclusion: string) => [
+      job(template, "cancelled", 40),
+      job("suite (linux, 1/3)", conclusion, 41),
+      job("lint", "success", 41),
+    ];
+    expect(verdict(legs("skipped"), runs)).toBe(`cancelled: ${template}`);
+    expect(verdict(legs("success"), runs)).toBe("green");
+  });
+
   it("stays unknown when the workflow runs cannot be read, or there is none", () => {
     const runs = [job("gates", "cancelled", 40), job("gates", "success", 41)];
     // Unreadable: nothing is dropped, and the check runs read on their own.

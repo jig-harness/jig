@@ -111,9 +111,9 @@ export function cancelledCiDecision(reason: string): ParkedDecision {
           id: RERUN_OPTION,
           name: "Re-run safely",
           summary:
-            "On re-arm, the drive grants this head one more re-run, checks the head, the CI hold and the run's event again, requests the re-run and waits for its replacement.",
+            "On re-arm, the drive grants this head one more re-run, checks the head and the CI hold again, requests the re-run and waits for its replacement.",
           pay: [
-            "Another CI run; a run the CI hold or its event still refuses parks again with that reason.",
+            "Another CI run; a run created under the CI hold still parks again with that reason.",
           ],
         },
         {
@@ -125,7 +125,7 @@ export function cancelledCiDecision(reason: string): ParkedDecision {
         },
       ],
       recommended: RERUN_OPTION,
-      why: "The drive repeats the automatic recovery's checks before it re-runs; repair the workflow first if its event still carries the hold or its concurrency keeps cancelling the run.",
+      why: "The drive repeats the automatic recovery's checks before it re-runs; repair the workflow first if its runs are still created under the CI hold or its concurrency keeps cancelling the run.",
     },
     steps: [reason, "Answer in a pull-request comment and re-arm the drive."],
     alreadyDone:
