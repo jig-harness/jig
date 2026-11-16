@@ -8,7 +8,10 @@ import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { answerGrantsRerun } from "../scripts/lib/cancelled-recovery.ts";
+import {
+  answerGrantsRerun,
+  answeredHead,
+} from "../scripts/lib/cancelled-recovery.ts";
 import { cancelledCiDecision } from "../scripts/lib/cancelled-recovery-live.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import type { PendingVerdict } from "../scripts/lib/state/pass-handoff.ts";
@@ -34,13 +37,17 @@ const LIB = join(SCRIPTS, "lib");
  * its grant leaves it.
  */
 const PROBE = `
-import { observeCancellation, claimCancellation, readCancellation } from ${JSON.stringify(join(LIB, "cancelled-recovery-state.ts"))};
+import { observeCancellation, claimCancellation, readCancellation, grantCancellation, releasePendingGrant } from ${JSON.stringify(join(LIB, "cancelled-recovery-state.ts"))};
 import { recoverCancelled } from ${JSON.stringify(join(LIB, "cancelled-recovery.ts"))};
 import { driveDb } from ${JSON.stringify(join(LIB, "state", "db.ts"))};
 import { resolveStateDir } from ${JSON.stringify(join(LIB, "state", "store.ts"))};
 import { currentMs } from ${JSON.stringify(join(SCRIPTS, "..", "..", "..", "shared", "time.ts"))};
 const head = ${JSON.stringify(HEAD)};
 const mode = process.argv[3] ?? "";
+if (mode.startsWith("grant:")) {
+  console.log(await grantCancellation("12", mode.slice(6), "answer-1"));
+  process.exit(0);
+}
 if (mode === "age" || mode === "ungrant") {
   const { db } = driveDb(await resolveStateDir());
   db.run(mode === "age"
@@ -62,6 +69,7 @@ const answer = await recoverCancelled("12", head, [job], [run], {
   rerunnable: async (_pr, runs) => (mode === "held" ? [] : runs.map((r) => r.id)),
   rerun: async (id) => { calls.push(id); return { code: 0, stderr: "" }; },
   park: async (_pr, reason) => { parks.push(reason); },
+  releaseGrant: releasePendingGrant,
 });
 console.log(JSON.stringify({ answer, calls, parks, record: await readCancellation("12", head) }));
 `;
@@ -214,7 +222,83 @@ describe("answering the cancelled-ci park", () => {
   });
 });
 
+describe("a grant is bound to its head and waits for a young claim", () => {
+  test("an answer for another head grants nothing", async () => {
+    const forge = fakeForge();
+    expect(await recover(forge, 31_000)).toMatchObject({ calls: [1] });
+    await age(forge);
+    expect((await probe(forge, 0, `grant:${"b".repeat(40)}`)).trim()).toBe("0");
+    expect((await recover(forge, 0)).record?.grants).toBe(0);
+  });
+
+  test("a claim younger than the window keeps the grant pending until it ages out", async () => {
+    const forge = fakeForge();
+    expect(await recover(forge, 31_000)).toMatchObject({ calls: [1] });
+    expect((await probe(forge, 0, `grant:${HEAD}`)).trim()).toBe("1");
+    // Still inside the replacement window: the claim stands, the grant waits.
+    expect(await recover(forge, 40_000)).toMatchObject({
+      answer: "wait",
+      calls: [],
+    });
+    // The window passed with no replacement: the grant releases the claim.
+    const after = await recover(forge, 120_000);
+    expect(after).toMatchObject({ answer: "wait", calls: [1] });
+    expect(after.record?.grants).toBe(1);
+  });
+});
+
 describe("answerGrantsRerun", () => {
+  test("a note conditioning the answer grants nothing", () => {
+    const d = cancelledCiDecision("Cancelled CI on head x: run 1.");
+    const base = {
+      author: "lead",
+      at: "2026-11-16T10:00:00Z",
+      url: "https://example.invalid/a",
+      body: "x",
+      choice: {
+        option: "Re-run safely",
+        recommended: true,
+        form: "choose" as const,
+        note: "only after the concurrency config is repaired",
+      },
+    };
+    const v: PendingVerdict = {
+      kind: "finding",
+      key: "cancelled-ci",
+      reason: d.call.question,
+      answers: [base],
+      decision: d,
+    };
+    expect(answerGrantsRerun(v)).toBe(false);
+    expect(
+      answerGrantsRerun({
+        ...v,
+        answers: [{ ...base, choice: { ...base.choice, note: "" } }],
+      }),
+    ).toBe(true);
+  });
+
+  test("the head comes from the park's framing", () => {
+    const d = cancelledCiDecision(`Cancelled CI on head ${HEAD}: run 1: x.`);
+    expect(
+      answeredHead({
+        kind: "finding",
+        key: "cancelled-ci",
+        reason: "",
+        answers: [],
+        decision: d,
+      }),
+    ).toBe(HEAD);
+    expect(
+      answeredHead({
+        kind: "finding",
+        key: "cancelled-ci",
+        reason: "",
+        answers: [],
+      }),
+    ).toBeNull();
+  });
+
   const decision = cancelledCiDecision("Cancelled CI on head x: run 1.");
   const answer = (option: string) => ({
     author: "lead",

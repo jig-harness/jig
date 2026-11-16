@@ -291,6 +291,26 @@ describe("a cancelled check never reads as passing", () => {
     ).toBe("green");
   });
 
+  it("judges each replacing run's reports on their own", () => {
+    // One successor skipped the exact name; another ran every expanded leg.
+    expect(
+      verdict(
+        [
+          job("tests", "cancelled", 40),
+          job("tests", "skipped", 41),
+          job("lint", "success", 41),
+          job("tests (1/2)", "success", 42),
+          job("tests (2/2)", "success", 42),
+        ],
+        [
+          workflowRun(40, "cancelled"),
+          workflowRun(41, "success", T3),
+          workflowRun(42, "success", T4),
+        ],
+      ),
+    ).toBe("green");
+  });
+
   it("reads matrix legs by the cancelled job's own name, or its unexpanded template", () => {
     const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
     // Another job whose name only shares the text before its parenthesis is

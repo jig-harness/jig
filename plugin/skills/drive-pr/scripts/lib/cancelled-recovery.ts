@@ -14,6 +14,8 @@ export interface RecoveryRecord {
   workflowIds?: readonly number[];
   /** Further re-runs a person's answer granted on this head. */
   grants?: number;
+  /** A grant waiting for a claim younger than the replacement window to age out. */
+  grantPending?: boolean;
 }
 export interface RecoveryDeps {
   now(): number;
@@ -27,6 +29,8 @@ export interface RecoveryDeps {
   rerunnable(pr: string, runs: readonly WorkflowRun[]): Promise<number[]>;
   rerun(run: number): Promise<{ code: number; stderr: string }>;
   park(pr: string, reason: string): Promise<void>;
+  /** Release a claim a pending grant waited on; false when none was pending. */
+  releaseGrant?(pr: string, head: string): Promise<boolean>;
 }
 /** The `cancelled-ci` park's option whose answer grants one more re-run. */
 export const RERUN_OPTION = "rerun";
@@ -41,11 +45,25 @@ export function answerGrantsRerun(verdict: PendingVerdict): boolean {
   const option = verdict.decision?.call.options.find(
     (o) => o.id === RERUN_OPTION,
   );
+  // A note may narrow the option with a condition no recovery can establish:
+  // such an answer goes to the pass, which honors or parks it.
   return (
     option !== undefined &&
     verdict.answers.length > 0 &&
-    verdict.answers.every((a) => a.choice?.option === option.name)
+    verdict.answers.every(
+      (a) =>
+        a.choice?.option === option.name && (a.choice.note ?? "").trim() === "",
+    )
   );
+}
+
+/** The head the `cancelled-ci` park was framed for, or null when it names none. */
+export function answeredHead(verdict: PendingVerdict): string | null {
+  const text = [
+    ...(verdict.decision?.steps ?? []),
+    verdict.decision?.alreadyDone ?? "",
+  ].join("\n");
+  return /Cancelled CI on head ([0-9a-f]{7,64})\b/.exec(text)?.[1] ?? null;
 }
 
 /** The answers a grant is for, so that reading them again grants nothing more. */
@@ -88,8 +106,15 @@ export async function recoverCancelled(
       ),
   );
   if (orphaned.length === 0) return "wait";
-  const record = await deps.observe(pr, head);
+  let record = await deps.observe(pr, head);
   const now = deps.now();
+  if (
+    record.requestedAt !== null &&
+    record.grantPending === true &&
+    now - record.requestedAt >= 60_000 &&
+    (await deps.releaseGrant?.(pr, head)) === true
+  )
+    record = await deps.observe(pr, head);
   const granted = (record.grants ?? 0) > 0;
   if (record.requestedAt !== null) {
     if (now - record.requestedAt < 60_000) return "wait";

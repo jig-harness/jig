@@ -226,30 +226,34 @@ function answeredBySkip(
   if (job.name === undefined) return false;
   if (job.conclusion !== null && PASSING_CONCLUSIONS.has(job.conclusion))
     return false;
-  const named = jobs.filter(
-    (other) =>
-      other.name !== undefined &&
-      other.suiteId !== undefined &&
-      other.suiteId !== null &&
-      successors.includes(other.suiteId),
-  );
-  const exact = named.filter((other) => other.name === job.name);
   const prefix = `${matrixTemplate(job.name)} (`;
-  const reports =
-    exact.length > 0
-      ? exact
-      : named.filter((other) => other.name?.startsWith(prefix) === true);
-  const names = new Set(reports.map((other) => other.name));
-  return [...names].some(
-    (name) =>
-      !reports.some(
+  // Judged within each successor: one successor's skipped report must not hide
+  // the completed legs another successor ran.
+  let reported = false;
+  for (const suite of successors) {
+    const named = jobs.filter(
+      (other) => other.name !== undefined && other.suiteId === suite,
+    );
+    const exact = named.filter((other) => other.name === job.name);
+    const reports =
+      exact.length > 0
+        ? exact
+        : named.filter((other) => other.name?.startsWith(prefix) === true);
+    if (reports.length === 0) continue;
+    reported = true;
+    const names = new Set(reports.map((other) => other.name));
+    const complete = [...names].every((name) =>
+      reports.some(
         (other) =>
           other.name === name &&
           other.status === "completed" &&
           other.conclusion !== null &&
           RESULT_CONCLUSIONS.has(other.conclusion),
       ),
-  );
+    );
+    if (complete) return false;
+  }
+  return reported;
 }
 
 /**

@@ -201,6 +201,10 @@ const MIGRATIONS: readonly Migration[] = [
   ALTER TABLE cancelled_ci ADD COLUMN granted_for TEXT;
   `,
   },
+  {
+    additive: true,
+    sql: "ALTER TABLE cancelled_ci ADD COLUMN grant_pending INTEGER NOT NULL DEFAULT 0;",
+  },
 ];
 
 /** The schema version this plugin writes. */

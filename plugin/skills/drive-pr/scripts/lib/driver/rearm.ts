@@ -51,7 +51,11 @@ import {
 
 import { resolveStateDir } from "./../state/store.ts";
 import type { ConsumedVerdict } from "./../state/resolution-receipt.ts";
-import { answerGrantsRerun, grantKey } from "./../cancelled-recovery.ts";
+import {
+  answerGrantsRerun,
+  answeredHead,
+  grantKey,
+} from "./../cancelled-recovery.ts";
 import { grantCancellation } from "./../cancelled-recovery-state.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
@@ -370,7 +374,9 @@ async function grantAnsweredRerun(
   verdicts: readonly PendingVerdict[],
 ): Promise<void> {
   for (const verdict of verdicts.filter(answerGrantsRerun)) {
-    const heads = await grantCancellation(pr, grantKey(verdict));
+    const head = answeredHead(verdict);
+    if (head === null) continue;
+    const heads = await grantCancellation(pr, head, grantKey(verdict));
     if (heads > 0)
       console.error(
         `re-arm: a person's answer granted one more cancelled-run re-run on ${heads} recorded head(s) of PR #${pr}; the drive repeats the recovery's checks before it requests it.`,
@@ -410,7 +416,10 @@ async function recoverFailedUnpark(
       ? `re-arm: drive-state.ts unpark exited ${code}, but the answered items are unparked; handing their answers on.`
       : `re-arm: could not unpark the answered items (drive-state.ts exited ${code}); every one stays parked, and the next arm reads their answers again.`,
   );
-  if (gone.length > 0) await announceUnparked(pr, gone, file);
+  if (gone.length > 0) {
+    await grantAnsweredRerun(pr, gone);
+    await announceUnparked(pr, gone, file);
+  }
   return rearmNotice([...carried, ...gone], file);
 }
 
