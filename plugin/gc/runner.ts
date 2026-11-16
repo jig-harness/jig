@@ -69,11 +69,13 @@ async function collectResource(
   resource: Resource,
   line: ReceiptLine,
   persist: () => void,
-): Promise<{ thrown: boolean }> {
+): Promise<{ thrown: boolean; failing: boolean }> {
   let thrown = false;
+  let failing = false;
   await kind.exclusive(async () => {
     const final = await prove(kind, resource);
     thrown = final.thrown === true;
+    failing = final.failing === true;
     line.reason = final.reason;
     line.outcome = outcome(final);
     const details = mergedDetails(resource.details, final.details);
@@ -89,7 +91,7 @@ async function collectResource(
     const merged = mergedDetails(before, collected.details);
     if (merged !== undefined) line.details = merged;
   });
-  return { thrown };
+  return { thrown, failing };
 }
 async function evaluate(
   kind: CollectionKind,
@@ -119,7 +121,7 @@ async function evaluate(
     return;
   try {
     const collected = await collectResource(kind, resource, line, persist);
-    if (collected.thrown) receipt.exitStatus = 1;
+    if (collected.thrown || collected.failing) receipt.exitStatus = 1;
   } catch (error) {
     line.outcome = "failed";
     line.reason = caught(error);

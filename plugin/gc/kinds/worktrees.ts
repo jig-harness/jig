@@ -994,7 +994,8 @@ export function worktreesKind(
         reason: "uncoordinated worktrees are report-only",
       };
     },
-    describe: (resource) => resource.id,
+    describe: (resource) =>
+      proveInventoryFailure(resource) ? "inventory" : resource.id,
     exclusive: (body) => body(),
   };
 }

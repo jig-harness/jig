@@ -302,6 +302,7 @@ describe.skipIf(
       receipt.resources.find((entry) => entry.resource === "*"),
     ).toMatchObject({
       outcome: "unverified",
+      description: "inventory",
     });
     expect(receipt.exitStatus).toBe(1);
   }, 60_000);
