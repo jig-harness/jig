@@ -1641,9 +1641,10 @@ the same way, through the environment or account selection of its agent's
 launch, with the same isolation and the same check before it starts, and a
 person switching the host's active account does not move it.
 Switching Orca's active account before a launch is not used: it is
-host-wide and would move every other session's next pass too. Whether an
-Orca agent launch can bind its agent to an account is not verified (Orca's
-command line selects accounts only for some agents), so a pickup does not
+host-wide and would move every other session's next pass too. An Orca agent
+launch cannot bind its agent to an account either: that selection
+overrides a variable the launch hook adds
+([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)), so a pickup does not
 start as an interactive session: it runs as a headless pass, as a
 follow-up does
 ([headless pickups](../plugin/README.md#the-dispatcher)).

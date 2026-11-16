@@ -14,8 +14,7 @@ Of the rest of the execution line, the board, collection through Orca and
 a plugin that wakes the dispatcher are built, as are the plugin's launch
 guard, status bar item and inbox. What remains is the launch guard's
 admission, which names only a worktree path, the dispatcher's reading of an
-account's usage from Orca's command line, a trial of binding a launch to an
-account, and the panel's picking of a parked decision's structured option
+account's usage from Orca's command line, and the panel's picking of a parked decision's structured option
 (its free-text answer is built) and its merge button.
 With this built, Orca is
 the runtime and Jig is the process: Orca owns workspaces, sessions,
@@ -50,13 +49,13 @@ loads. Each class pays off before the next starts.
 | Orca surface | Jig today | What this design adds | Class |
 | --- | --- | --- | --- |
 | Worktree creation and agent launch, on this machine or a paired server | The launcher's `orca` provider and the workspace tool: the branch named as the repository names it, the M12 create hook run once, the agent started once per key | Nothing for a person; the dispatcher's launches reuse it (item 33) | use |
-| The session registry, the account roster and the headless server | The dispatcher reads sessions, caps per account, notifies by comment and unread flag | Usage per account from the command line, which Orca shows in its desktop app and on the phone | contribute |
+| The session registry, the account roster and the headless server | The dispatcher reads sessions, caps per account, notifies by comment and unread flag | Usage per account from the command line, which Orca shows in its desktop app and on the phone; an account named for each agent launch | contribute |
 | The workspace board and comment | `do-item` names the card and moves it; `drive-pr` links the card to its pull request | Built: every stage moves the card: Ready, park, stop and merge | use |
 | Setup and archive hooks | The workspace tool runs `.config/worktree-hooks/create` itself | Nothing yet: the plugin only logs a workspace created in the app; running the create hook once there waits on the dispatcher's open rules moving into the plugin ([dispatcher build step 3](dark-factory-dispatch.md#build-order)) | later |
 | Worktree removal | `jig gc`'s worktrees kind collects an Orca-managed checkout through Orca, after the remove hook and the reflection park, and reports any other | The plugin's launch guard refuses a launch Orca makes into a worktree gc is collecting; a removal made in Orca's app runs the remove hook and the reflection park once Orca offers a hook before the removal | plugin, contribute |
 | Scheduled automations | Nothing | Nothing: the dispatcher is a stateless tick on the machine's timer, with a report and a ledger, which an automation that runs an agent prompt is not | — |
 | Orchestration runs: a coordinator, supervised workers, decision gates | `do-item` delegates to subagents in one session | A later design: the implementer as a supervised worker, on its derived route ([agent-routing.md](agent-routing.md)) | later |
-| Plugins: worker events, hooks, panels, status bar items, commands | A worker that wakes the dispatcher when an agent waits, blocks or finishes | The launch guard, an account binding through the same hook (a spike), a status bar item, the Jig panel's inbox, an "Open the dashboard" command, and a wake-up when a workspace is removed | plugin |
+| Plugins: worker events, hooks, panels, status bar items, commands | A worker that wakes the dispatcher when an agent waits, blocks or finishes | The launch guard, a status bar item, the Jig panel's inbox, an "Open the dashboard" command, and a wake-up when a workspace is removed | plugin |
 | The browser, on this machine or in a workspace on a paired host | Nothing | The [dashboard](dispatch-dashboard.md), opened by the plugin's command: this machine's, or a paired host's on that host's loopback, which Orca's browser reaches through the host | plugin |
 | Notifications and the phone | The dispatcher notifies a park once, as an unread card; the plugin shows each tick's receipt as an in-app notification | In the desktop app, the status bar's counts and overdue flag and the panel's inbox, each notice linking to its item in the dashboard's Inbox; on the phone, a push only when an agent needs input, which Orca sends for every finished turn today | plugin, contribute |
 
@@ -209,6 +208,20 @@ through the drive's quota adapters (`detectQuotaBlock`), which read the
 vendor's session records under the account's configuration directory and
 record the account's wall.
 
+**An account for each agent launch.** The dispatcher admits each session
+on the subscription account it chose, within a cap per account, and
+re-arms a drive stopped by one account's usage limit on another. Orca's
+account selection is host-wide (`orca account select`), applies to every
+next launch, and overrides the variables the launch hook adds, so a launch
+Jig makes through Orca cannot name its account. The ask: an `--account
+<id>` option on `orca agent launch` and `orca worktree create --agent`,
+taking a managed account's identifier as `orca account list --json`
+prints it, which that launch runs on instead of the selected account
+without changing the selection, and which refuses the launch when the
+account is missing, signed out or belongs to another agent; and the same
+choice as an `account` field the launch hook's `next` may set. With it,
+the dispatcher starts pickups through Orca on the account it chose.
+
 **A push only when an agent needs input.** The dispatcher notifies a park
 once, as an unread card with the question as its comment, and Orca's phone
 app pushes for every finished turn, so a park is one push among many. Orca
@@ -314,19 +327,23 @@ plugin's heartbeat into it while the worker runs. Its `contributes.hooks`
 entry leaves `onError` at `pass`: a failed or absent guard lets a launch
 through, and gc, seeing a stale heartbeat, collects unguarded and says so.
 
-**An account for each launch, as a spike.** The dispatcher starts no
+**No account for each launch through the hook.** The dispatcher starts no
 interactive pickup through Orca, since an Orca agent launch cannot pick
 the subscription account it runs on
 ([dark-factory-dispatch.md](dark-factory-dispatch.md#admission-by-account)).
-The launch hook can add environment variables to a launch. So the
-dispatcher announces an interactive launch in the launch guard record with its
-account, and the hook adds that account's configuration directory to the
-launch's environment (`CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME`
-for Codex) and consumes the announcement. That the added variable wins
-over Orca's own account selection is unproven, and the hook can add
-variables but not remove an inherited credential that would bill another
-account. A spike settles both for Claude Code and for Codex; until it
-does, the binding stays off and pickups run as headless passes instead.
+The launch hook cannot pick it either. It may add environment variables
+to a launch, and on Orca 1.4.259 they reach the agent's process, but Orca
+prepares the selected managed account after the hook and writes that
+account's configuration directory over the hook's value:
+`CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for Codex. A launch
+whose hook names another account's directory therefore runs on the account
+Orca has selected, for both agents. Rewriting the launch's command to set
+the variable inline would get past Orca and is not used: Orca's own
+variables for the session (`ORCA_CLAUDE_CONFIG_DIR`, `ORCA_CODEX_HOME`)
+would still name the selected account, so what Orca knows of the session
+and the account it bills would disagree. Pickups run as headless passes
+until Orca lets a launch name its account
+([the asks](#what-jig-asks-of-orca)).
 
 **The status bar.** A status bar item shows the newest tick's counts of
 pull requests ready to merge and of needs waiting on a person, and flags
@@ -413,9 +430,9 @@ the page, a phone reaches the dashboard through a front only.
 ## Build order
 
 One pull request each; each is usable on its own. Steps 1 to 6 and the
-first parts of 8 and 9 are built. The steps still open run in parallel where
+first parts of 8 and 9 are built, and step 7 is answered. The steps still open run in parallel where
 nothing orders them: the admission's repository and worktree incarnation
-(step 6), the account binding spike (step 7), the dispatcher's usage reading
+(step 6), the dispatcher's usage reading
 (step 4's ask, once Orca offers it) and the panel's option picking and merge button
 (step 9).
 
@@ -443,10 +460,12 @@ nothing orders them: the admission's repository and worktree incarnation
    plugin, the `agent.launch.before` hook that reads the record and refuses
    or notes the launch, the heartbeat, the wake-up on `workspace.removed`,
    and `engines.orca` raised to 1.4.248.
-7. **The account binding spike**, after step 6: whether a variable the hook adds
-   binds a launch to the dispatcher's chosen account for Claude Code and
-   for Codex. Only if it does, the dispatcher announces each interactive
-   launch in the launch guard record and starts pickups through Orca.
+7. **The account binding spike**, answered: a variable the hook adds does
+   not bind a launch to the dispatcher's chosen account, for Claude Code
+   or for Codex, since Orca applies its selected account after the hook
+   ([the plugin](#the-jig-plugin-for-orca)). Starting pickups through Orca
+   waits on Orca's account for each launch
+   ([the asks](#what-jig-asks-of-orca)).
 8. **The status bar item**, after `jig` prints the newest tick's line as
    JSON.
 9. **The Jig panel.** First the spike on fixtures that picks the drawing
