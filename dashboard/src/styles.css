@@ -516,3 +516,5 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   .viewFilter input { min-height: 32px; font-size: 14px; }
   .paletteOpt { min-height: 30px; }
 }
+
+.sendPreview { white-space: pre-wrap; overflow-wrap: anywhere; }

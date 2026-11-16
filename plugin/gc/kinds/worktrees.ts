@@ -69,6 +69,11 @@ import {
   type WorktreeIdentity,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
+import {
+  headHoldRefusal,
+  holdHead,
+  type HeadHold,
+} from "./worktree-head-hold.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
@@ -509,17 +514,18 @@ async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
  * The last admission before a worktree goes, after its hook and park: what
  * removal relies on (`checks`), the one-time archive of its ignored content,
  * then `checks` again, since the archive may have run for minutes and an
- * agent or process can have started meanwhile. `archived` is told of an
+ * agent or process can have started meanwhile; that second run is told it is
+ * the `final` one, the last before removal. `archived` is told of an
  * archive as soon as it is written, so every failure after it names it.
  */
 async function admitAfterHook(
   worktree: string,
   legacy: LegacyPolicy | undefined,
-  checks: () => Promise<Outcome<undefined, string>>,
+  checks: (final: boolean) => Promise<Outcome<undefined, string>>,
   archived: (written: Archived | null) => void,
   regenerablePaths: readonly string[],
 ): Promise<Outcome<undefined, string>> {
-  const before = await checks();
+  const before = await checks(false);
   if (!before.ok) return before;
   // Last, so the archive holds the content as the removal finds it.
   const preserved = await preserveLegacyContent(
@@ -530,7 +536,7 @@ async function admitAfterHook(
   );
   if (!preserved.ok) return preserved;
   archived(preserved.value);
-  const after = await checks();
+  const after = await checks(true);
   if (!after.ok) return after;
   return ok(undefined);
 }
@@ -552,8 +558,17 @@ async function collectAgentWorktree(
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
-  const withArchive = (collected: Collected): Collected =>
-    withArchiveOf(collected, archived);
+  // The head held from the final comparison through the removal.
+  const holds: HeadHold[] = [];
+  // Every answer once the hold may be taken releases it, and says so when
+  // the release failed, since the lock then keeps git from moving the head.
+  const withArchive = (collected: Collected): Collected => {
+    const unreleased = releaseHolds(holds, log);
+    const answer = withArchiveOf(collected, archived);
+    return unreleased === null
+      ? answer
+      : { ...answer, reason: `${answer.reason}; ${unreleased}` };
+  };
   let snapshot: { hook: string; dir: string } | null = null;
   try {
     // The commit and branch the runner's final proof saw: every check before
@@ -563,6 +578,11 @@ async function collectAgentWorktree(
         outcome: "failed",
         reason: "kept: no final proof recorded the tree's commit and branch",
       };
+    const refusal = await headHoldRefusal(resource.id);
+    if (!refusal.ok)
+      return { outcome: "failed", reason: refusal.failure.reason };
+    if (refusal.value !== null)
+      return { outcome: "refused", reason: refusal.value };
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
     if (!taken.ok) return { outcome: "failed", reason: taken.failure.reason };
     snapshot = taken.value;
@@ -581,9 +601,23 @@ async function collectAgentWorktree(
             legacy,
             // The holder read can take half a minute, so the identity
             // comparison goes last: nothing slow stands between it and removal.
-            async () => {
+            // Before the final one the head is held, so no commit, switch or
+            // reset moves it between the comparison and `git worktree remove`.
+            async (final) => {
               const held = await unheld(worktree);
-              return held.ok ? unchangedSinceProof(worktree, identity) : held;
+              if (!held.ok) return held;
+              return unchangedSinceProof(
+                worktree,
+                identity,
+                final
+                  ? async () => {
+                      const taken = await holdHead(worktree, identity);
+                      if (!taken.ok) return taken;
+                      holds.push(taken.value);
+                      return ok(undefined);
+                    }
+                  : undefined,
+              );
             },
             (written) => {
               archived = written;
@@ -615,9 +649,24 @@ async function collectAgentWorktree(
       reason: error instanceof Error ? error.message : String(error),
     });
   } finally {
+    releaseHolds(holds, log);
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
+}
+/** Release every hold taken, emptying `holds`; why one could not be, or null. */
+function releaseHolds(
+  holds: HeadHold[],
+  log: (line: string) => void,
+): string | null {
+  const reasons: string[] = [];
+  for (const hold of holds.splice(0)) {
+    const released = hold.release();
+    if (released.ok) continue;
+    reasons.push(released.failure.reason);
+    log(String(released.failure.cause ?? released.failure.reason));
+  }
+  return reasons.length === 0 ? null : reasons.join("; ");
 }
 /** `collected` naming the archive written before removal, when there is one. */
 function withArchiveOf(

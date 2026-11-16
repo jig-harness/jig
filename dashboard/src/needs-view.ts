@@ -46,6 +46,13 @@ export interface NeedView {
   /** The steps for a person, as a checklist in the fold. */
   steps: string[];
   /** What the answers that keep a decision waiting say, one line per decision that has any, with the state they leave it in. */
+  acted: Array<{
+    key: string;
+    option: string;
+    author: string;
+    outcome: "done" | "refused" | "held" | null;
+    detail: string | null;
+  }>;
   answerNotes: Array<{ state: EveryoneAnswerState; text: string }>;
   /** Who it waits on, as the parks name them; empty when no record names anyone. */
   people: string[];
@@ -199,6 +206,26 @@ function recommendationLine(
     : `Recommended: ${recommendation}`;
 }
 
+/** The destination the station's reader names, checked against its link. */
+function sendFor(n: LineNeed, rows: DecisionRow[]): NeedView["send"] {
+  const answer = n.decisions[0]?.answer;
+  return sendTargetOf({
+    repo: n.repo,
+    pr: n.pr,
+    url: n.url,
+    target: n.target,
+    parked: n.cause === "parked" && rows.length > 0,
+    ...(answer === undefined
+      ? {}
+      : {
+          answerOn: answer.on,
+          ...(answer.repository === undefined
+            ? {}
+            : { answerRepository: answer.repository }),
+        }),
+  });
+}
+
 /** One need as its row shows it. */
 export function needView(n: LineNeed, clockNow: Clock): NeedView {
   const first = n.decisions[0];
@@ -216,6 +243,9 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     otherOptions: options.filter((o) => o !== recommended),
     steps: [...new Set(n.decisions.flatMap((d) => d.steps ?? []))],
     answerNotes: answerNotes(n.decisions),
+    acted: n.decisions.flatMap((d) =>
+      d.acted == null ? [] : [{ key: d.key, ...d.acted }],
+    ),
     people: needPeople(n),
     target: n.target,
     title: n.title,
@@ -235,12 +265,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     noLink: noLinkOf(n),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
     rows,
-    send: sendTargetOf({
-      repo: n.repo,
-      pr: n.pr,
-      url: n.url,
-      parked: n.cause === "parked" && rows.length > 0,
-    }),
+    send: sendFor(n, rows),
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
     evidence: needEvidence(n, question !== null, clockNow.timeZone),
@@ -324,7 +349,9 @@ export function needCount(line: LineSnapshot | null, nowMs: number): number {
 export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (
     line !== null &&
-    (line.needs.length > 0 || notMoving(line, nowMs).length > 0)
+    (line.needs.length > 0 ||
+      (line.answeredHolds?.length ?? 0) > 0 ||
+      notMoving(line, nowMs).length > 0)
   );
 }
 

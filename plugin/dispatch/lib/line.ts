@@ -891,6 +891,17 @@ export function buildLine(input: LineInput): LineSnapshot {
         input.finishedAt,
       ),
     ],
+    answeredHolds: input.reports.flatMap((r) =>
+      r.slug === null
+        ? []
+        : r.quiet
+            .filter((q) => q.class === "answered-hold")
+            .map((q) => ({
+              repo: r.slug as string,
+              target: q.target,
+              why: q.why,
+            })),
+    ),
     queue: views.flatMap(queueOf),
     ready: readyOf(input.reports).map((r) => ({
       ...r,

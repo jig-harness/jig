@@ -217,9 +217,23 @@ parks its reflection findings, as for an Orca checkout. Right before removal
 it checks again that the tree's commit and branch are the ones the final
 proof saw, that it gained no changes, hidden index flags or operation, and
 that no process holds it: the hook may run for minutes, and a commit on a
-detached head would be on no ref once the tree is gone. Then it removes the
-tree with `git worktree remove` without `--force`, which deletes ignored
-content such as dependency directories, under a deadline of its own; a
+detached head would be on no ref once the tree is gone. Git has no
+check-and-remove in one step, so gc takes the tree's `HEAD.lock` in its git
+directory after the last scans and before that comparison, and holds it
+until the removal. From then on a commit, checkout, switch or reset in the
+tree fails with git's own "cannot lock ref" error instead of moving the
+head, so no commit can land on a detached head between the comparison and
+the removal, and none is lost. A `HEAD.lock` another git process already
+holds keeps the tree. When the removal does not happen, gc deletes its lock,
+and the receipt says when it could not; a run stopped by a signal before
+then can leave the lock behind, and the file names `jig gc` and its process,
+so a person can tell it from git's own and delete it. A repository that keeps
+its refs in [reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), git's newer reference storage, has no
+`HEAD.lock` to hold: there gc keeps the tree, on a branch or detached, before
+running its hook, since a tree on a branch can be detached and committed on
+after the last comparison. Then it removes the tree with `git worktree remove`
+without `--force`, which deletes ignored content such as dependency
+directories, under a deadline of its own; a
 removal cut short leaves the tree partly deleted, and the receipt says so.
 
 A tree the kind keeps (an open pull request, unpushed commits, changes, a

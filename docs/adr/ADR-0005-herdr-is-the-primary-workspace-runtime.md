@@ -82,7 +82,8 @@ presented as Jig's default.
 
 - The Herdr provider for the launcher, and checks of the skills inside
   Herdr, are now ahead of other workspace work
-  ([ROADMAP.md](../../ROADMAP.md) item 19).
+  ([#1309](https://github.com/jig-harness/jig/issues/1309) and
+  [#1310](https://github.com/jig-harness/jig/issues/1310)).
 - Herdr's command line and event names become an interface Jig depends on,
   so a Herdr release that changes them is work for Jig.
 
