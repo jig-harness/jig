@@ -396,6 +396,46 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.252.0] - 2026-11-16
+
+### Added
+
+- The dispatch dashboard shows each run's closing report. On the History view, every run's line says what it concluded, the next step it suggests and why it fell short, or that it ended without a report; the log filters on the report's cause and on who wrote it; and a row opens to all runs of its piece of work, newest first, each with its report and, where the report's suggested next step names another owner than the tick's own next owner, both side by side. *Needs you* shows a report's question and framed decision where it showed a pass's `Question:` line, with what the run concluded beside them. See [plugin/README.md](plugin/README.md#the-closing-report).
+- `jig ask`'s answer gains a `last.run` line: the last run's stage, when it ended, what it concluded and the next step it suggests, or that it ended without a report. `--json` carries them as `last.stage` and `last.report`, and the operator skill's status card relays them.
+- Where the `notify` stage runs, each of its ticks writes one `notices_read` event to the outcome log with the notices workspace's read state, the observation the stage's retirement measure reads. The dashboard's log leaves these rows out unless its class filter names `event: notices_read`, and the steward's digest leaves them out of the history it judges from; `jig dispatch log` lists them.
+- `jig gc` has a machine kind, `orca-terminals`, that closes the Orca run tabs a killed run left behind and parked run tabs nobody returned to. It is planned when the user file's `gc` section names `orca.command`; a tab is closed only once its shell runs no command and it has been idle past `gc.orca.terminal_idle_hours` (24 by default). It closes the recorded terminal, never its whole tab, so a pane a person added beside it stays; `jig gc --kind orca-terminals` reports each tab with its proof and closes nothing.
+
+### Changed
+
+- Deferred review findings enter the backlog in one open issue per pull
+  request and issue type on every supported tracker. Later findings append
+  to the same issue, with the highest priority and union of categories;
+  native related links preserve the originating issue and epic without
+  adding children to their scope. **Consumer action:** advised at
+  instructions. Replace runbook rules that parent deferred findings to an
+  epic with backlog batches and related links. Existing follow-ups are not
+  backfilled. **Detect:** `text:Parent the follow-up`,
+  `text:Findings deferred while the epic is live still go to the epic`.
+- M9 and the audit now distinguish delivered epic scope from person-only
+  tails, place those checks on one standing person-checks list at closure,
+  and allow a native Epic issue type without a separate kind. Closure wiring
+  for that list remains planned.
+
+### Fixed
+
+- A dispatcher tick no longer fails when a read it makes for one item meets
+  a rate limit or gets no answer from the forge or the tracker. Those reads
+  are a pull request's comments (its drive ledger, launch claims and
+  follow-up markers), a parked drive's thread answers, a conflicting
+  drive's base branch head, and a claimed item's claim markers. The item's
+  row now carries the failed call's
+  [failure class](GLOSSARY.md), and the tick handles it as it already
+  handles a repository's read: it exits 0 below `failures.notify_after`, and
+  tells a person at once of a refused credential. A ledger or marker that
+  does not parse still fails the tick. See
+  [When an outside system refuses or does not answer](plugin/CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer).
+  **Consumer action:** none.
+
 ## [0.251.0] - 2026-11-16
 
 ### Added
@@ -8869,7 +8909,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.251.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.252.0...HEAD
+[0.252.0]: https://github.com/jig-harness/jig/compare/v0.251.0...v0.252.0
 [0.251.0]: https://github.com/jig-harness/jig/compare/v0.250.1...v0.251.0
 [0.250.1]: https://github.com/jig-harness/jig/compare/v0.250.0...v0.250.1
 [0.250.0]: https://github.com/jig-harness/jig/compare/v0.249.0...v0.250.0
