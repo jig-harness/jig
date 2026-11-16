@@ -481,7 +481,18 @@ console.log(JSON.stringify({ ok: true, result }));
       expect(readFileSync(log, "utf8")).not.toContain("close");
       expect(existsSync(join(tabs, "term_old.json"))).toBe(true);
     } finally {
+      // Killing the shell leaves its `sleep` child running, so end the child first.
+      for (const row of (await processTable()) ?? []) {
+        if (row.ppid === busy.pid) {
+          try {
+            process.kill(row.pid);
+          } catch {
+            // already gone
+          }
+        }
+      }
       busy.kill();
+      await busy.exited;
     }
   });
 
