@@ -157,6 +157,20 @@ describe("a park", () => {
     expect("absent" in needView({ ...NEED, url }, CLOCK).send).toBe(true);
   });
 
+  it("says why a decision's answers were not read, so it does not look unanswered", () => {
+    const unread = {
+      ...park,
+      decisions: [{ ...FRAMED, unread: "the tracker did not open this tick" }],
+    };
+    expect(needView(unread, CLOCK).answerNotes).toEqual([
+      {
+        state: "waiting",
+        text: "Answers not read, so it still waits: the tracker did not open this tick",
+      },
+    ]);
+    expect(needView(park, CLOCK).answerNotes).toEqual([]);
+  });
+
   it("names each decision key a person answers, once", () => {
     expect(needView(park, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
     const twice = { ...park, decisions: [FRAMED, FRAMED] };

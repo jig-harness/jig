@@ -515,6 +515,7 @@ function removeGone(
 function settled(
   program: string,
   updated: readonly ScopedInstall[],
+  current: string | null,
 ): ScopedResult[] {
   if (updated.length === 0) return [];
   let listed: ScopedInstall[];
@@ -542,6 +543,13 @@ function settled(
         install,
         "left",
         "claude plugin update finished, but claude plugin list no longer lists it",
+      );
+    if (current !== null && version !== current)
+      return scopedResult(
+        install,
+        "left",
+        `claude plugin update finished, but the scoped record remains at ${version}; expected ${current}. Inspect it with claude plugin list --json before repairing the scoped install`,
+        version,
       );
     return version === install.version
       ? scopedResult(install, "unchanged", `already at ${version}`)
@@ -591,7 +599,7 @@ export function refreshScoped(
   const results = [
     ...left,
     ...removeGone(gone, record, say),
-    ...settled(program, updated),
+    ...settled(program, updated, current),
   ];
   for (const result of results)
     if (result.outcome !== "unchanged")
@@ -959,7 +967,11 @@ export function checkHarnesses(
 export function harnessesExit(results: readonly HarnessResult[]): number {
   if (results.every((result) => result.outcome === "skipped")) return 1;
   return results.some(
-    (result) => result.outcome === "failed" || result.outcome === "missing",
+    (result) =>
+      result.outcome === "failed" ||
+      result.outcome === "missing" ||
+      result.scopedError !== undefined ||
+      result.scoped?.some((install) => install.outcome === "left"),
   )
     ? 1
     : 0;

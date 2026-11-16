@@ -244,6 +244,8 @@ export interface DrivenPr {
   labels?: string[];
   /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
   readFailed?: true;
+  /** For a `readFailed` ledger a failed call caused: that call's failure class, which decides whether the read is waited out. */
+  failure?: ReadFailure;
   /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
   heads?: RearmHeads;
 }
@@ -300,7 +302,8 @@ export interface FollowupMarker {
 
 /** A merged pull request with its follow-up markers, or why they could not be read. */
 export type MarkedPr = MergedPr & {
-  markers: FollowupMarker[] | { unreadable: string };
+  /** Where they did not read: why, and the failed call's class where a call failed. */
+  markers: FollowupMarker[] | { unreadable: string; failure?: ReadFailure };
 };
 
 /** A record the tick could not read, or a part of one it cannot place. */
@@ -738,7 +741,7 @@ export interface RepoReport {
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;
-    /** `answered-hold`: a need a person answered Leave it to me, kept off Needs you for its facts (`station-answers.ts`). */
+    /** `answered-hold`: a need a person answered with the hold option, kept off Needs you for its facts (`station-answers.ts`). */
     class: LedgerClass | PickupClass | FollowupClass | "answered-hold";
     why: string;
   }>;

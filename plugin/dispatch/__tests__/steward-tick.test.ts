@@ -178,8 +178,8 @@ describe("steward tick integration", () => {
           },
         ],
         root,
-      ).ok,
-    ).toBe(true);
+      ),
+    ).toEqual({ ok: true, value: "submitted" });
     expect(stewardRecords("example-org/example-repo", root)[0]?.applied).toBe(
       false,
     );
@@ -235,8 +235,8 @@ describe("steward tick integration", () => {
           },
         ],
         root,
-      ).ok,
-    ).toBe(true);
+      ),
+    ).toEqual({ ok: true, value: "submitted" });
     const waiting = await tick(w);
     expect(
       waiting.repos[0]?.launches.some(

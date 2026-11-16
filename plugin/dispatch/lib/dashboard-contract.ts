@@ -31,6 +31,8 @@ export interface LineLinks {
 
 /** One option of a framed decision, as the drive recorded it. */
 export interface LineOption {
+  /** Its stable typed identity; absent from a line recorded before option IDs were kept. */
+  id?: string;
   details?: import("../../shared/decisions/model.ts").OptionDetail[];
   name: string;
   /** Its `Changes:`; `null` when the record gives none. */
@@ -73,8 +75,12 @@ export interface LineDecision {
   answers?: import("../../shared/decision-card.ts").ShownAnswer[];
   /** Why those answers do not settle it; absent when it has none. */
   answerState?: import("../../shared/decision-card.ts").AnswerState;
+  /** For a need's decision: why its answers could not be read this tick; absent when they were. */
+  unread?: string;
   /** For a need's decision: the answer the tick acted on, once, and how its step went (`null` while it has not written it); absent when no answer counted. */
   acted?: {
+    /** The counted comment URL and time, to match a posted answer to its outcome. */
+    answer?: string;
     option: string;
     author: string;
     outcome: "done" | "refused" | "held" | null;
@@ -141,8 +147,10 @@ export interface LineNeed {
   since: string;
   /** The tick's reason, verbatim. */
   reason: string;
-  /** The question a stage stopped on for a person, such as a follow-up's `Question:` line; `null` when it stated none. A park's questions are its decisions'. */
+  /** The question a stage stopped on for a person: its run's closing report's `question`, else its `Question:` line, as a follow-up's or a pickup's; `null` when it stated none. A park's questions are its decisions'. */
   question?: string | null;
+  /** What the run the need is about concluded, from its closing report, shown beside the question as context; absent when the run left no report. */
+  concluded?: string | null;
   /** For a park: the decisions still unanswered, oldest first. */
   decisions: LineDecision[];
   notified: LineNotified | null;
@@ -287,7 +295,7 @@ export interface LineRepo {
   /** The stages the machine file enables for it. */
   stages: string[];
   /** Its configured tracker (`issue_tracker.adapter`: `github`, `linear`, `jira`, …; GitHub when the configuration names none); `null` when its tracker configuration does not read; absent from a line written before it was kept, and when the tick could not open the repository. */
-  tracker?: { adapter: string } | null;
+  tracker?: { adapter: string; repository?: string } | null;
   /** Why nothing could be dispatched for it; `null` when it was read. */
   refused: string | null;
   /** The records that did not read at the newest tick. */
@@ -460,6 +468,8 @@ export interface LineSnapshot {
   lastAccount: string | null;
   sessions: LineSession[];
   needs: LineNeed[];
+  /** Decisions answered with hold, still visible until their facts change; absent in older snapshots. */
+  answeredHolds?: Array<{ repo: string; target: string; why: string }>;
   queue: LineQueued[];
   /** The converged pull requests the board read placed, Ready to merge first in its order; absent from a line written before the board read. */
   ready?: LineReady[];
@@ -517,6 +527,10 @@ export interface RowsAnswer {
     stage: string[];
     account: string[];
     class: string[];
+    /** The closing-report causes the window's ended rows name. */
+    cause: string[];
+    /** Who wrote the window's ended rows' closing reports (`none` for a run that left none). */
+    by: string[];
   };
   /** Bad classes that recur per repository and stage, over the seven host days to now, whatever the window. */
   recurring: RecurringClass[];

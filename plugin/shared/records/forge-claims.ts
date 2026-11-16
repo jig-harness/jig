@@ -55,13 +55,15 @@
 import { type Clock, systemClock } from "../clock.ts";
 import { Defect } from "../errors.ts";
 import { isRecord } from "../guards.ts";
+import { failedBy, outboundOf } from "../outbound/failure.ts";
+import { ghRunFailure } from "../outbound/github.ts";
 import { failed, ok, type Outcome } from "../outcome.ts";
 import { ghCall } from "../proc.ts";
 import { isTrustedAuthor } from "../trusted-authors.ts";
 import { encodeMarker, markerText, readEnvelope } from "./envelope.ts";
 import { recordKind } from "./registry.ts";
 import type { Writer } from "./writer.ts";
-import { currentIso, parseMs } from "../time.ts";
+import { currentIso, currentMs, parseMs } from "../time.ts";
 
 /** The pull request or issue a claim is made on. */
 export interface ClaimTarget {
@@ -371,12 +373,13 @@ function claimsOn(
     );
 }
 
-/** One `gh` call's output, or why it failed. */
+/** One `gh` call's output, or why it failed, carrying the call's failure class. */
 async function gh(
   args: string[],
   stdin?: string,
   deadline: Deadline = {},
 ): Promise<Outcome<string, "forge">> {
+  const began = currentMs();
   const r = await ghCall(args, {
     stderr: "pipe",
     ...(stdin === undefined ? {} : { stdin }),
@@ -386,10 +389,11 @@ async function gh(
   });
   if (r.code === 0) return ok(r.stdout);
   const last = r.stderr.trim().split("\n").at(-1) ?? "";
-  return failed(
-    "forge",
-    [`gh exited ${r.code}`, last].filter(Boolean).join(": "),
-  );
+  const reason = [`gh exited ${r.code}`, last].filter(Boolean).join(": ");
+  const outbound = ghRunFailure(r, currentMs() - began);
+  return outbound === null
+    ? failed("forge", reason)
+    : failedBy("forge", outbound, reason);
 }
 
 const textOf = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -467,11 +471,13 @@ export async function listComments(
     undefined,
     deadline,
   );
-  if (!r.ok)
-    return failed(
-      "unreadable",
-      `the comments could not be read (${r.failure.reason})`,
-    );
+  if (!r.ok) {
+    const reason = `the comments could not be read (${r.failure.reason})`;
+    const outbound = outboundOf(r.failure);
+    return outbound === null
+      ? failed("unreadable", reason)
+      : failedBy("unreadable", outbound, reason);
+  }
   return pagesOf(r.value);
 }
 

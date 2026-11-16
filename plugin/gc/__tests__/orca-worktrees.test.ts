@@ -19,7 +19,6 @@ import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { dump } from "../../shared/yaml.ts";
 import type { Receipt } from "../types.ts";
@@ -30,6 +29,8 @@ import {
   idle,
   line,
   type OrcaState,
+  commitAndPush,
+  detachWithMergedPull,
   setup,
 } from "./orca-fixture.ts";
 
@@ -82,51 +83,6 @@ function pendingText(f: ReturnType<typeof setup>): string {
   };
   walk(base);
   return text.join("\n");
-}
-
-function commitAndPush(
-  f: ReturnType<typeof setup>,
-  message: string,
-  files: Record<string, string>,
-): void {
-  for (const [name, text] of Object.entries(files))
-    writeFileSync(join(f.tree, name), text);
-  f.command(["git", "-C", f.tree, "add", "-A"]);
-  f.command(["git", "-C", f.tree, "commit", "-m", message]);
-  f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
-  f.command(["git", "-C", f.tree, "fetch", "origin"]);
-  f.refreshGh();
-}
-
-/**
- * Detach the checkout at its head and make `gh` answer the forge's pull
- * requests for a commit with the merged pull request #12 at `head`, that it
- * has no other commit (as the forge refuses one), and no pull request for any
- * branch.
- */
-function detachWithMergedPull(f: ReturnType<typeof setup>, head: string): void {
-  f.command(["git", "-C", f.tree, "switch", "--quiet", "--detach"]);
-  const pulls = [
-    {
-      number: 12,
-      state: "closed",
-      merged_at: "2026-11-01T00:00:00Z",
-      head: { sha: head, repo: { full_name: "acme/app" } },
-    },
-  ];
-  writeFakeProgram(
-    join(f.root, "bin", "gh"),
-    `#!/usr/bin/env bun
-import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
-const args = process.argv.slice(2);
-if (args[0] === "api" && !args.at(-1).includes(${JSON.stringify(head)})) {
-  console.error("gh: No commit found for SHA: " + args.at(-1) + " (HTTP 422)");
-  process.exit(1);
-}
-console.log(JSON.stringify(args[0] === "api" ? ${JSON.stringify(pulls)} : []));
-`,
-  );
 }
 
 describe.skipIf(

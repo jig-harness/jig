@@ -4,7 +4,10 @@
  * the governance every run of the `gh` command-line client goes through at
  * the forge client's wrapper (`shared/trace.ts`).
  *
- * Before a run, the wrapper admits it against the credential's record: while
+ * Before a run, the wrapper admits it against the record of the credential's
+ * quota owner (`github-owner.ts`: the user every personal token of that
+ * user spends, the installation every token of it spends, or the host's
+ * shared record for a credential whose owner is not established): while
  * GitHub refuses the credential (a primary or a secondary limit), or while
  * the dispatcher's share of the limit the run spends is used, the run is not
  * started and fails at once as `rate-limited`, naming when it clears. After
@@ -14,6 +17,9 @@
  *   rate-limit headers (`x-ratelimit-resource`, `-limit`, `-remaining`,
  *   `-reset`, and `retry-after` on a refusal); the headers are taken off
  *   the output before the caller reads it;
+ * - a captured `gh api --paginate` read is sent a page at a time, each page
+ *   a run of its own (`gh-paginate.ts`); one gh pages itself reserves
+ *   `PAGINATED_RESERVE` requests before it starts and keeps them;
  * - a GraphQL answer that selects `rateLimit` says the GraphQL balance;
  * - the `rate_limit` endpoint, which costs nothing against the primary
  *   limits, says every limit's balance;
@@ -30,6 +36,14 @@
  * the share still moves toward its floor, and the balance they spend is read
  * from the `rate_limit` endpoint, which the tick asks at most once, and from
  * their refusals' text. A refusal's caller is told the wait the record holds.
+ * What the `rate_limit` endpoint shows was spent beyond what the record had
+ * counted goes to the cost ledger's unattributed row (`UNATTRIBUTED`), never
+ * to an operation.
+ *
+ * A GraphQL request sent over HTTPS (`httpsGovernance`: the tracker adapter
+ * and the reflection store with `JIG_GITHUB_GRAPHQL_URL` set) is admitted
+ * against the record of the token it sends and recorded in it as a
+ * `gh api graphql` run is, so a refusal either meets holds the other.
  *
  * `JIG_FORGE_BUDGET=off` leaves every run ungoverned: nothing is admitted,
  * observed or added to the command line. The test suites set it, so a
@@ -40,12 +54,25 @@ import {
   type BudgetAnswer,
   type BudgetGovernor,
   type BudgetRecord,
+  type BudgetStore,
   type BudgetWindow,
+  type Unexplained,
   budgetGovernor,
   credentialKey,
   isRateLimited,
   sqliteBudgetStore,
 } from "./budget.ts";
+import {
+  githubCredential,
+  githubHost,
+  legacyGithubCredential,
+  unverifiedOwner,
+} from "./github-credential.ts";
+import {
+  type GithubOwnerResolver,
+  githubOwnerResolver,
+  sqliteOwnerStore,
+} from "./github-owner.ts";
 import { swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import {
@@ -54,8 +81,10 @@ import {
   retryAfterMs,
 } from "./failure.ts";
 import { type GhRun, ghResponseStatus, ghRunFailure } from "./github.ts";
-import { defaultLedgerPath } from "./ledger.ts";
+import { defaultLedgerPath, recordCall, UNATTRIBUTED } from "./ledger.ts";
 import { currentMs, parseMs } from "../time.ts";
+
+export { githubCredential } from "./github-credential.ts";
 
 /** One of GitHub's primary limits, as `x-ratelimit-resource` names it. */
 export type GitHubLimit = "core" | "graphql" | "search";
@@ -74,12 +103,12 @@ interface LimitProfile {
 
 /**
  * GitHub's profile: its primary limits, each kept in a window of the
- * credential's record, and what its refusals look like. The quota owner is
- * the credential.
+ * quota owner's record, and what its refusals look like. The quota owner is
+ * the user or the installation the credential belongs to.
  */
 const GITHUB_PROFILE = {
   system: "github",
-  owner: "credential",
+  owner: "user or installation",
   limits: {
     core: {
       unit: "requests",
@@ -119,39 +148,6 @@ export const GITHUB_WINDOW_NAMES: Readonly<Record<string, GitHubLimit>> = {
   complexity: "graphql",
   search: "search",
 };
-
-/**
- * The key the credential's record and its ledger rows are kept under: a
- * hash of the token the client sends, or for the client's own stored login,
- * of the host and configuration it reads it from. A stored login is opaque:
- * the same token supplied through the environment keys a separate record, and
- * a host named only on a command line is not an input here.
- */
-export function githubCredential(
-  env: Record<string, string | undefined> = process.env,
-): string {
-  const host = env.GH_HOST?.trim() ?? "";
-  // The client reads the Enterprise variables for an Enterprise Server host,
-  // and the others for github.com and its cloud and local tenancies.
-  const name = host.toLowerCase();
-  const enterprise =
-    host !== "" &&
-    name !== "github.com" &&
-    !name.endsWith(".ghe.com") &&
-    !name.endsWith(".github.localhost") &&
-    name !== "github.localhost";
-  const token = enterprise
-    ? env.GH_ENTERPRISE_TOKEN?.trim() || env.GITHUB_ENTERPRISE_TOKEN?.trim()
-    : env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim();
-  if (token) return credentialKey("github", token);
-  const config = env.GH_CONFIG_DIR?.trim() ?? "";
-  return credentialKey(
-    "github",
-    host === "" && config === ""
-      ? "opaque-cli-credential"
-      : `opaque-cli-credential:${host}:${config}`,
-  );
-}
 
 /** Which limits a run of `gh` with `args` spends: `[]` for one that spends none, `null` for one that sends nothing. */
 export function limitsOf(args: readonly string[]): GitHubLimit[] | null {
@@ -200,18 +196,53 @@ const VALUED = new Set([
   "--preview",
 ]);
 
-/** The route a `gh api` command line asks: its first argument that is neither a flag nor a flag's value, without a leading slash or a query. */
-export function apiRoute(args: readonly string[]): string {
+/** `env` as the call sees it: with the host its `gh api --hostname` names, as `GH_HOST`. */
+export function ghHostIn(
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  if (args[0] !== "api") return env;
+  for (let i = 1; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    const host =
+      arg === "--hostname"
+        ? args[i + 1]
+        : arg.startsWith("--hostname=")
+          ? arg.slice(11)
+          : undefined;
+    if (host !== undefined && host.trim() !== "")
+      return { ...env, GH_HOST: host.trim() };
+  }
+  return env;
+}
+
+/** Where a `gh api` command line names its route: its first argument that is neither a flag nor a flag's value; `-1` when it names none. */
+export function apiRouteAt(args: readonly string[]): number {
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i] ?? "";
     if (VALUED.has(arg)) {
       i += 1;
       continue;
     }
-    if (arg.startsWith("-")) continue;
-    return arg.replace(/^\/+/, "").split("?")[0] ?? "";
+    if (!arg.startsWith("-")) return i;
   }
-  return "";
+  return -1;
+}
+
+/**
+ * The route a `gh api` command line asks, without a leading slash or a
+ * query; a full URL (the next page a paged read asks for) is read without
+ * its scheme, host and an enterprise server's `api/v3/` prefix.
+ */
+export function apiRoute(args: readonly string[]): string {
+  const at = apiRouteAt(args);
+  if (at < 0) return "";
+  return (
+    (args[at] ?? "")
+      .replace(/^https?:\/\/[^/]+\/(api\/v3\/)?/i, "")
+      .replace(/^\/+/, "")
+      .split("?")[0] ?? ""
+  );
 }
 
 /** A request GitHub answers 304 without charging it, when nothing changed; a 200 to it is charged like any other. */
@@ -248,7 +279,7 @@ function admission(
   const only = limits.length === 1 ? limits[0] : undefined;
   const spent: GitHubLimit | null =
     only !== undefined && GITHUB_PROFILE.limits[only].unit === "requests"
-      ? conditional(args) && readable
+      ? conditional(args) && readable && !args.includes("--paginate")
         ? null
         : only
       : limits.includes("graphql")
@@ -258,6 +289,14 @@ function admission(
   const profile = GITHUB_PROFILE.limits[spent];
   return { windows, reserve: profile.window, rollMs: profile.periodMs };
 }
+
+/**
+ * The requests (or points) a paged read gh pages itself reserves before it
+ * starts: a read whose output is not captured whole, or whose form the
+ * forge client cannot page itself (`gh-paginate.ts`). How many pages it
+ * sent is not known, so it is charged this many, estimated.
+ */
+export const PAGINATED_RESERVE = 10;
 
 const INCLUDE = new Set(["-i", "--include"]);
 /** Flags whose output the headers cannot be taken off: several answers, none, or a trace. */
@@ -468,6 +507,12 @@ export function forgeAnswerOf(
   return answer;
 }
 
+/** What a governed run learnt for its ledger row: the record it was kept under, and the limit its answer's headers named. */
+export interface GhAttribution {
+  owner?: string;
+  resource?: string;
+}
+
 /** How one governed run goes: what it is admitted against, the command line it runs, and how its answer is read. */
 export interface GhGovernance {
   /** Existing quota identity, also used for cross-process send pacing. */
@@ -484,27 +529,57 @@ export interface GhGovernance {
   ): T;
 }
 
-let governors = new Map<string, BudgetGovernor>();
-let override: BudgetGovernor | null = null;
-
-/** Govern the forge's runs with `governor` instead of the machine's record; `null` restores the machine's. For tests. */
-export function setForgeGovernor(governor: BudgetGovernor | null): void {
-  override = governor;
+interface Machine {
+  governor: BudgetGovernor;
+  store: BudgetStore;
+  owners: GithubOwnerResolver;
 }
 
-function governor(): BudgetGovernor {
-  if (override !== null) return override;
+let machines = new Map<string, Machine>();
+let override: BudgetGovernor | null = null;
+let overrideOwners: GithubOwnerResolver | null = null;
+
+/**
+ * Govern the forge's runs with `governor` instead of the machine's record;
+ * `null` restores the machine's. `owners` finds each credential's quota
+ * owner; left out, a credential's runs are kept under its own key, as a
+ * test of one credential reads them. For tests.
+ */
+export function setForgeGovernor(
+  governor: BudgetGovernor | null,
+  owners: GithubOwnerResolver | null = null,
+): void {
+  override = governor;
+  overrideOwners = governor === null ? null : owners;
+}
+
+/** The machine's governor, store and owners over the budget database this process writes. */
+function machine(): Machine {
   const path = defaultLedgerPath();
-  let found = governors.get(path);
+  let found = machines.get(path);
   if (found === undefined) {
-    found = budgetGovernor(sqliteBudgetStore(path));
-    governors = new Map([[path, found]]);
+    const store = sqliteBudgetStore(path);
+    const governor = budgetGovernor(store);
+    found = {
+      governor,
+      store,
+      owners: githubOwnerResolver({
+        owners: sqliteOwnerStore(path),
+        budget: store,
+        governor,
+      }),
+    };
+    machines = new Map([[path, found]]);
   }
   return found;
 }
 
+function governor(): BudgetGovernor {
+  return override ?? machine().governor;
+}
+
 /** Whether the forge's runs are governed in this environment. */
-function forgeBudgetOn(
+export function forgeBudgetOn(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
   return (
@@ -512,45 +587,151 @@ function forgeBudgetOn(
   );
 }
 
+/** A plain `gh api user`: the discovery's own request, which finds no owner first. */
+function asksOwnIdentity(args: readonly string[]): boolean {
+  if (args[0] !== "api" || apiRoute(args) !== "user") return false;
+  const at = args.findIndex((a) => a === "-X" || a === "--method");
+  return at < 0 || (args[at + 1] ?? "").toUpperCase() === "GET";
+}
+
 /**
- * The governance of one run of `gh` with `args`; `null` for a run that sends
- * nothing to GitHub, or while the budget is off. `captured` says the run's
- * output is captured whole, so headers added to it can be taken off.
+ * The key of the record a run of `gh` with `args` is admitted against: its
+ * credential's quota owner, found once and remembered (`github-owner.ts`);
+ * `undefined` for a run that is not governed. A plain `gh api user` asks no
+ * owner first: it uses the owner already known, else the host's unverified
+ * record.
  */
-export function ghGovernance(
+export async function forgeOwner(
   args: readonly string[],
-  opts: { env?: Record<string, string | undefined>; captured: boolean },
-): GhGovernance | null {
-  const limits = limitsOf(args);
-  if (limits === null || !forgeBudgetOn(opts.env ?? process.env)) return null;
-  const key = githubCredential(opts.env ?? process.env);
+  env: Record<string, string | undefined> = process.env,
+  deadlineMs?: number,
+): Promise<string | undefined> {
+  if (limitsOf(args) === null || !forgeBudgetOn(env)) return undefined;
+  const owners = override === null ? machine().owners : overrideOwners;
+  if (owners === null) return githubCredential(env);
+  if (asksOwnIdentity(args))
+    return owners.known(env)?.owner ?? unverifiedOwner(githubHost(env));
+  return (await owners.resolve(env, deadlineMs)).owner;
+}
+
+/** Tell the ledger row which resource answered, and read the HTTP status off a captured answer. */
+function withObservedStatus<T extends GhRun>(
+  result: T,
+  headers: Headers | null,
+  attribution: GhAttribution | undefined,
+  readStatus: boolean,
+): T {
+  const resource = headers?.get("x-ratelimit-resource")?.trim();
+  if (attribution !== undefined && resource)
+    attribution.resource = resource.toLowerCase();
+  const status = readStatus ? ghResponseStatus(result) : null;
+  return status === null ? result : ({ ...result, httpStatus: status } as T);
+}
+
+/** One request admitted against the credential's record and observed into it, whatever carries it. */
+interface Governed {
+  admit(): { refused: OutboundFailure } | { sentAt: number };
+  /** Give back what the admission reserved: nothing was sent. */
+  release(sentAt: number): void;
+  /** Record what the answer said; for a refusal, when the caller may send again, else `null`. */
+  observe(
+    args: readonly string[],
+    headers: Headers | null,
+    body: string,
+    failure: OutboundFailure | null,
+    sentAt: number,
+    refusedText?: string,
+  ): number | null;
+}
+
+/** The unit of the cost ledger each record window counts in. */
+const LEDGER_UNITS = { requests: "requests", complexity: "points" } as const;
+
+/** The points a GraphQL answer's `rateLimit.cost` reports, `null` when it reports none. */
+function measuredCost(body: string): number | null {
+  const value = parsed(body);
+  const data = isRecord(value) && isRecord(value.data) ? value.data : null;
+  const rate =
+    data !== null && isRecord(data.rateLimit) ? data.rateLimit : null;
+  return rate !== null && typeof rate.cost === "number" && rate.cost >= 0
+    ? rate.cost
+    : null;
+}
+
+/** The points an answer measured beyond its reservation, when it reported a cost but no balance. */
+function measuredBeyondReservation(
+  body: string,
+  answer: BudgetAnswer,
+  reserved: number,
+): number {
+  if (answer.complexity !== undefined) return 0;
+  const cost = measuredCost(body);
+  return cost === null || cost <= reserved ? 0 : cost - reserved;
+}
+
+/** Put what a snapshot showed was spent beyond the record's count on the cost ledger's unattributed row. */
+function recordUnexplained(
+  key: string,
+  unexplained: Unexplained | undefined,
+  snapshot: boolean,
+): void {
+  if (unexplained === undefined || !snapshot) return;
+  for (const [name, unit] of Object.entries(LEDGER_UNITS)) {
+    const shown = unexplained[name as keyof Unexplained];
+    const cost = shown;
+    if (cost === undefined || cost <= 0) continue;
+    recordCall({
+      system: "github",
+      credential: key,
+      owner: key,
+      window: name,
+      operation: UNATTRIBUTED,
+      caller: UNATTRIBUTED,
+      requests: 0,
+      cost,
+      unit,
+      estimated: false,
+      durationMs: 0,
+    });
+  }
+}
+
+/**
+ * A request for the credential `key`, admitted with `admitted`. A read gh
+ * pages itself sends an unknown number of requests: it reserves `reservations`
+ * of them, each admitted above the floor, and keeps them once it ran.
+ */
+function governed(
+  key: string,
+  admitted: AdmitOptions,
+  reservations = 1,
+): Governed {
   const gov = governor();
-  const { argv, strip } = withHeaders(args, opts.captured);
-  const admitted = admission(
-    limits,
-    args,
-    strip || (opts.captured && askedHeaders(args)),
-  );
   // The window the admission actually reserved in: none when the record or
   // the balance was not known, whatever the admission asked for.
   let reservedIn: string | null = admitted.reserve ?? null;
+  const taken: number[] = [];
+  const giveBack = () => {
+    for (const at of taken.splice(0))
+      if (reservedIn !== null) gov.release?.(key, reservedIn, at);
+  };
   return {
-    owner: key,
-    argv,
     admit() {
       try {
-        return {
-          sentAt: gov.admit("GitHub", key, {
-            ...admitted,
-            // `trace.ts` retries contention within the call's deadline.
-            nonblocking: true,
-            onReserved: (name) => {
-              reservedIn = name;
-            },
-          }),
-        };
+        const at = gov.admit("GitHub", key, {
+          ...admitted,
+          count: reservations,
+          // The caller retries contention within the call's deadline.
+          nonblocking: true,
+          onReserved: (name) => {
+            reservedIn = name;
+          },
+        });
+        taken.push(...Array.from({ length: reservations }, () => at));
+        return { sentAt: at };
       } catch (error) {
         if (!isRateLimited(error)) throw error;
+        giveBack();
         return {
           refused: outboundFailure(
             "rate-limited",
@@ -560,48 +741,165 @@ export function ghGovernance(
         };
       }
     },
+    release(sentAt) {
+      // Nothing was sent: the requests it reserved go back.
+      if (taken.length === 0) taken.push(sentAt);
+      giveBack();
+    },
+    observe(args, headers, body, failure, sentAt, refusedText = "") {
+      const now = currentMs();
+      // A store that cannot take the answer governs nothing (`budget.ts`);
+      // anything else that throws here is a defect, and stops the call.
+      const answer = forgeAnswerOf(
+        args,
+        headers,
+        body,
+        failure,
+        now,
+        refusedText,
+      );
+      const extra = measuredBeyondReservation(
+        body,
+        answer,
+        reservedIn === "complexity" ? reservations : 0,
+      );
+      if (extra > 0) answer.extraComplexity = extra;
+      recordUnexplained(
+        key,
+        gov.observe(key, answer, sentAt, reservedIn),
+        answer.snapshot === true,
+      );
+      if (failure?.code !== "rate-limited") return null;
+      // The caller waits as long as the record now holds the credential, or
+      // for the reset of the window the refusal spent; not the generic wait.
+      return gov.heldUntil?.(key) ?? namedWait(headers, now);
+    },
+  };
+}
+
+/**
+ * The governance of one run of `gh` with `args`; `null` for a run that sends
+ * nothing to GitHub, or while the budget is off. `captured` says the run's
+ * output is captured whole, so headers added to it can be taken off. `owner`
+ * is the record the run is admitted against (`forgeOwner`), the credential's
+ * own key when left out; `attribution` is told what the ledger row needs.
+ */
+export function ghGovernance(
+  args: readonly string[],
+  opts: {
+    env?: Record<string, string | undefined>;
+    captured: boolean;
+    owner?: string;
+    attribution?: GhAttribution;
+  },
+): GhGovernance | null {
+  const limits = limitsOf(args);
+  if (limits === null || !forgeBudgetOn(opts.env ?? process.env)) return null;
+  const key = opts.owner ?? githubCredential(opts.env ?? process.env);
+  if (opts.attribution !== undefined) opts.attribution.owner = key;
+  const { argv, strip } = withHeaders(args, opts.captured);
+  const request = governed(
+    key,
+    admission(limits, args, strip || (opts.captured && askedHeaders(args))),
+    args.includes("--paginate") ? PAGINATED_RESERVE : 1,
+  );
+  return {
+    owner: key,
+    argv,
+    admit: () => request.admit(),
     observe(result, sentAt, tookMs) {
       if (result.held !== undefined || result.spawnFailed === true) {
-        // Nothing was sent: the request it reserved goes back.
-        if (reservedIn !== null) gov.release?.(key, reservedIn, sentAt);
+        request.release(sentAt);
         return result;
       }
       const stdout = typeof result.stdout === "string" ? result.stdout : "";
       const { headers, body } = splitHeaders(stdout);
-      const status =
-        opts.captured && (strip || askedHeaders(args))
-          ? ghResponseStatus(result)
-          : null;
-      const observed =
-        status === null ? result : { ...result, httpStatus: status };
-      // A store that cannot take the answer governs nothing (`budget.ts`);
-      // anything else that throws here is a defect, and stops the call.
+      const observed = withObservedStatus(
+        result,
+        headers,
+        opts.attribution,
+        opts.captured && (strip || askedHeaders(args)),
+      );
       const failure = ghRunFailure(observed, tookMs);
-      const now = currentMs();
-      gov.observe(
-        key,
-        forgeAnswerOf(args, headers, body, failure, now, result.stderr ?? ""),
+      const until = request.observe(
+        args,
+        headers,
+        body,
+        failure,
         sentAt,
-        reservedIn,
+        result.stderr ?? "",
       );
       const answered =
         strip && headers !== null ? { ...observed, stdout: body } : observed;
-      if (failure?.code !== "rate-limited") return answered;
-      // The caller waits as long as the record now holds the credential, or
-      // for the reset of the window the refusal spent; not the generic wait.
-      const until = gov.heldUntil?.(key) ?? namedWait(headers, now);
       return until === null ? answered : { ...answered, limitedUntil: until };
     },
   };
 }
 
-/** GitHub's balances in the credential's record: core and GraphQL as their windows hold them now, with when the record was last read. */
+/** How one GraphQL request sent over HTTPS goes: what it is admitted against, and how its answer is recorded. */
+export interface HttpsGovernance {
+  /** Existing quota identity, also used for cross-process send pacing. */
+  owner: string;
+  /** The failure to answer at once instead of sending, or the time it was admitted. */
+  admit(): { refused: OutboundFailure } | { sentAt: number };
+  /** Give back the reservation of a request that was not sent. */
+  release(sentAt: number): void;
+  /**
+   * Record what the answer said: its headers, its body and the failure it
+   * met. For a rate-limited answer, when the caller may send again as the
+   * record now holds it; else `null`.
+   */
+  observe(
+    headers: Headers | null,
+    body: string,
+    failure: OutboundFailure | null,
+    sentAt: number,
+  ): number | null;
+}
+
+/** The command line a GraphQL request over HTTPS stands for, as the profile reads it. */
+const HTTPS_GRAPHQL = ["api", "graphql"] as const;
+
+/**
+ * The governance of one GraphQL request sent over HTTPS with `token`, under
+ * the record a `gh` run signed in with the same token keeps; `null` while
+ * the budget is off. It reserves a point of the GraphQL balance, as a run
+ * whose answer may not report its cost does.
+ */
+export function httpsGovernance(
+  token: string,
+  env: Record<string, string | undefined> = process.env,
+): HttpsGovernance | null {
+  if (!forgeBudgetOn(env)) return null;
+  const key = credentialKey("github", token);
+  const request = governed(key, admission(["graphql"], HTTPS_GRAPHQL, true));
+  return {
+    owner: key,
+    admit: () => request.admit(),
+    release: (sentAt) => request.release(sentAt),
+    observe: (headers, body, failure, sentAt) =>
+      request.observe(HTTPS_GRAPHQL, headers, body, failure, sentAt),
+  };
+}
+
+/**
+ * GitHub's balances in the record of the credential's quota owner, as the
+ * machine knows it without asking (the credential's own record or its
+ * earlier one when no owner is known yet): core and GraphQL as their
+ * windows hold them now, with when the record was last read.
+ */
 export function githubBalances(
   env: Record<string, string | undefined> = process.env,
   read: (key: string) => BudgetRecord | null = (key) =>
-    sqliteBudgetStore(defaultLedgerPath()).read(key),
+    machine().store.read(key),
+  owner: (env: Record<string, string | undefined>) => string | null = (e) =>
+    machine().owners.known(e)?.owner ?? null,
 ): { core: BudgetWindow; graphql: BudgetWindow; observedAt: number } | null {
-  const record = read(githubCredential(env));
+  const known = owner(env);
+  const record =
+    (known === null ? null : read(known)) ??
+    read(githubCredential(env)) ??
+    read(legacyGithubCredential(env));
   if (record === null) return null;
   return {
     core: record.requests,

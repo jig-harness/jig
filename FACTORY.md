@@ -309,10 +309,9 @@ repository without them gives the skills little to work from.
   labels. The skills read it when they run, and the audit checks it against
   the repository. Where a skill needs a named tool, an interface stands
   between them. The [tracker interface](GLOSSARY.md) has adapters for GitHub
-  Issues, Linear and Jira; a few operations, such as the review skill's
-  deferral step, still call Linear directly
-  ([the exceptions](plugin/EXTENDING.md#issue-tracker)), and the pull-request
-  skills have no forge interface yet. The [workspace launcher](tools/launcher/README.md)
+  Issues, Linear and Jira
+  ([how to add another](plugin/EXTENDING.md#issue-tracker)), and the
+  pull-request skills have no forge interface yet. The [workspace launcher](tools/launcher/README.md)
   opens workspaces in Herdr, which Jig's tooling targets first, in Orca and
   in Conductor. The skills run in Claude Code and Codex, and the pull-request
   skills work with GitHub. An organization's own skills, gates and review

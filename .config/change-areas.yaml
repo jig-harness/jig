@@ -384,8 +384,9 @@ areas:
     # tables, the pull-request label projection, the table of commands a
     # repository supplies, the records registry, the record envelope's codec,
     # the follow-up marker's tables, the rule matcher's tables, the stations an
-    # address names and the verbs of `jig send`, and its base comparison reads
-    # change notes through the changelog skill's scripts.
+    # address names, the verbs of `jig send` and the issue facets' closed
+    # lists, and its base comparison reads change notes through the changelog
+    # skill's scripts.
     category: tooling
     paths: ["plugin/protocol/**", "tools/protocol/**"]
     workspace: []
@@ -428,6 +429,8 @@ areas:
           - "plugin/protocol/schemas/rule.json"
           - "plugin/protocol/addresses.md"
           - "plugin/protocol/data/addresses.json"
+          - "plugin/protocol/tracker-facets.md"
+          - "plugin/protocol/data/tracker-facets.json"
         source:
           - "tools/protocol/**"
           - "biome.json"
@@ -497,6 +500,7 @@ areas:
           - "plugin/shared/rule-matcher-values.ts"
           - "plugin/shared/shapes.ts"
           - "plugin/shared/time.ts"
+          - "plugin/skills/do-item/scripts/lib/tracker/facets/facet-values.ts"
           - "plugin/skills/drive-pr/scripts/lib/state/ledger-shapes.ts"
           - "plugin/skills/drive-pr/scripts/lib/state/ledger-values.ts"
           - "plugin/skills/drive-pr/scripts/lib/state/mailbox-shapes.ts"

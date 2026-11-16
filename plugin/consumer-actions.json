@@ -117,6 +117,29 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.252.0",
+      "actions": [
+        {
+          "id": "0.252.0#e6541866",
+          "strength": "advised",
+          "levels": ["instructions"],
+          "description": "Deferred review findings enter the backlog in one open issue per pull request and issue type on every supported tracker. Later findings append to the same issue, with the highest priority and union of categories; native related links preserve the originating issue and epic without adding children to their scope.",
+          "instruction": "Replace runbook rules that parent deferred findings to an epic with backlog batches and related links. Existing follow-ups are not backfilled.",
+          "hints": [
+            {
+              "kind": "text",
+              "value": "Findings deferred while the epic is live still go to the epic"
+            },
+            {
+              "kind": "text",
+              "value": "Parent the follow-up"
+            }
+          ]
+        }
+      ],
+      "retracts": []
     }
   ]
 }

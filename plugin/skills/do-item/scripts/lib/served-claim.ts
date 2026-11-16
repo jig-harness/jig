@@ -7,12 +7,24 @@ import {
 import { blocksWithin } from "./blocker-chain.ts";
 import { servedParentHold } from "../../../../dispatch/lib/sources/served-parents.ts";
 import type {
+  AssignmentResult,
   CanonicalState,
   Issue,
   PoolIssue,
   Tracker,
   TrackerUser,
 } from "./tracker/port.ts";
+
+const assignmentFailureReasons: Record<
+  Extract<AssignmentResult, { assigned: false }>["reason"],
+  string
+> = {
+  race: "assignment raced the claim; queue must refresh",
+  unverified:
+    "assignment could not be verified within the deadline; queue must refresh",
+  "race-unverified":
+    "assignment race seen but the replaced owner could not be verified within the deadline; refresh the queue and reconcile the assignment",
+};
 
 export interface ServedClaim {
   person: string;
@@ -499,11 +511,12 @@ async function assignInherited(
   if (!inherits || !assignUnassigned) return null;
   const outsideNow = await stateBeforeAssignment(tracker, key, options);
   if (outsideNow) return outsideNow;
-  if (await assignUnassigned(key, user)) return null;
+  const assignment = await assignUnassigned(key, user);
+  if (assignment.assigned) return null;
   return {
     outcome: "stood_down",
     issue: key,
-    reason: `${key}: assignment raced the claim; queue must refresh`,
+    reason: `${key}: ${assignmentFailureReasons[assignment.reason]}`,
   };
 }
 

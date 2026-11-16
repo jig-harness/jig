@@ -130,7 +130,8 @@ import type {
   RepoTarget,
   WantedItem,
 } from "./types.ts";
-import { isoFromMs } from "../../shared/time.ts";
+import { currentIso, isoFromMs } from "../../shared/time.ts";
+import { observeTestLockWaits } from "./test-lock-waits.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -631,6 +632,14 @@ async function observeRunning(
   bound?: TickBound,
 ): Promise<void> {
   const { records } = launches;
+  observeTestLockWaits(
+    records,
+    repo.slug,
+    undefined,
+    undefined,
+    undefined,
+    bound,
+  );
   if (launches.sample) await sampleThreads(records, repo.slug, drives, threads);
   observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil((launches.timeoutMs ?? 60_000) / 1000);
@@ -777,7 +786,8 @@ export async function readSessions(
   try {
     const sessions = await heldTo((signal) => read(repo, join, signal), bound);
     // A listing the bound's signal cut short is the bound's failure, whatever words the runtime used.
-    return sessions.ok || sessions.failure !== undefined || !ended(bound)
+    if (sessions.ok) return { ...sessions, observedAt: currentIso() };
+    return sessions.failure !== undefined || !ended(bound)
       ? sessions
       : { ...sessions, failure: CUT_AT_BOUND };
   } catch (error) {

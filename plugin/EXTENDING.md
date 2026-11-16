@@ -60,7 +60,7 @@ hook or the interface instead.
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Local checks, generators, lints            | Any command                                                                                                                                                                                                                                                                                           | [A command](#commands-a-repository-supplies)                                                                        | —                                                                                                                       |
 | Review skills, implementing agents, scouts | The repository's own                                                                                                                                                                                                                                                                                  | [Configuration](#the-repositorys-own-skills-and-agents)                                                             | —                                                                                                                       |
-| Issue tracker                              | GitHub Issues (the default); Linear; Jira Cloud                                                                                                                                                                                                                                                       | [A tracker adapter](#issue-tracker) in Jig                                                                          | The deferral step still calls Linear directly: roadmap items 10 and 12                                                  |
+| Issue tracker                              | GitHub Issues (the default); Linear; Jira Cloud                                                                                                                                                                                                                                                       | [A tracker adapter](#issue-tracker) in Jig                                                                          | A plan file kept in the repository: roadmap item 12                                                                     |
 | Reflection store                           | A folder of files, a Notion database, a GitHub repository's issues, or any command                                                                                                                                                                                                                    | [A store command](#reflection-stores), no change to Jig                                                             | Jira: roadmap, later                                                                                                    |
 | AI reviewer                                | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included                                            | [Configuration](#ai-reviewers)                                                                                      | —                                                                                                                       |
 | Forge (where pull requests live)           | GitHub, through the `gh` command                                                                                                                                                                                                                                                                      | —                                                                                                                   | [No forge interface yet](#forge-github): roadmap, later                                                                 |
@@ -299,9 +299,12 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 `linear.ts` (the facets an adapter keeps in the tracker's own fields are its
 own to read and write; it passes its tracker through `withFacets` in
 [`facets/tracker.ts`](skills/do-item/scripts/lib/tracker/facets/tracker.ts),
-which keeps every other facet in labels, and adds the stores it can hold to
-`ADAPTER_STORES` in
-[`facets/config.ts`](skills/do-item/scripts/lib/tracker/facets/config.ts)),
+which keeps every other facet in labels, and adds a row for each facet to
+`ADAPTER_FACET_STORES` in
+[`facets/facet-values.ts`](skills/do-item/scripts/lib/tracker/facets/facet-values.ts),
+saying for each store what it is on that tracker or why it is refused, from
+which the Protocol's [tracker facets chapter](protocol/tracker-facets.md)
+is generated),
 register it in `ADAPTERS` in
 [`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), give its key
 shape an entry in [`keys.ts`](skills/do-item/scripts/lib/tracker/keys.ts),
@@ -315,9 +318,10 @@ adapter maps its tracker onto the interface's vocabulary:
 - an issue key has the shape the adapter's `keys.ts` entry defines; every
   caller that finds a key in text, reads one from a branch name or names a
   file after one goes through that entry;
-- priority is a number from 0 (none) to 4 (low); a type is a type of the
-  repository's label taxonomy and a size a label of its size group, each
-  `null` for none, whatever the tracker shows;
+- priority is a number from 0 (none) to 4 (low)
+  ([the priorities](protocol/tracker-facets.md#priorities)); a type is a
+  type of the repository's label taxonomy and a size a label of its size
+  group, each `null` for none, whatever the tracker shows;
 - relations are directed and read from each issue's side: `relate A blocks
 B` makes B wait for A, and B reads it as `blocked_by` A; `relate A
 duplicate B` records A as the duplicate of B (the tracker may close A),
@@ -336,10 +340,6 @@ duplicate B` records A as the duplicate of B (the tracker may close A),
 **What still assumes Linear.** These bypass the interface today, so a
 second adapter does not yet reach them:
 
-- **Deferring review findings.** `resolve-review-comments` files deferred
-  findings through its own Linear client (`defer-batch.ts`), with fixed type
-  and repository label groups; with GitHub Issues as the tracker, the
-  default, deferred findings cannot be filed yet.
 - **Native forms.** A skill run where the scripts cannot reach the tracker
   (no credential in that environment) may use a harness's own integration,
   and the skills give Linear's MCP tools as its example; every step they
@@ -351,11 +351,9 @@ second adapter does not yet reach them:
 
 A repository gate (`scripts/check-tracker-boundary.ts` in Jig's own
 repository) keeps the rest of the plugin's code, and the planning skills'
-procedures, from reaching Linear except through the interface; the deferral
-step is the one file it still allows.
+procedures, from reaching Linear except through the interface.
 
-Fixing it means moving the deferral step onto the interface. Roadmap item 10
-holds the deferral step; item 12 holds the next adapter, a plan file kept in the
+Roadmap item 12 holds the next adapter, a plan file kept in the
 repository, behind open decisions: the plan file's format, and whether an
 adapter may leave out the reporting operations.
 

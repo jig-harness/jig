@@ -1,30 +1,16 @@
 /**
- * Assigning an unassigned issue on a tracker whose issues hold one assignee
- * and which offers no conditional write (Linear, Jira): the adapter cannot
- * ask the tracker to assign only if nobody is assigned, so it reads, writes
- * and then verifies the write against the issue's history.
- *
- * The history is read before the write, and only a change that appeared after
- * that read can verify it: an older assignment of the same account proves
- * nothing about this write. The newest such change that set the assignee to
- * the user must have set it from nobody, and the changes that appeared must
- * form one unbroken sequence ending at the user: a broken sequence means the
- * listing shows events from outside this write, and it fails closed. A change
- * from someone else means another writer assigned the issue between the read
- * and the write, and this write replaced them: the adapter puts them back, if
- * the issue still shows this write, and the claim stands down, whether or not
- * the sequence around that change is complete, but only while the newest
- * change the listing shows is the one that set the user: a listing that ends
- * elsewhere contradicts it, and nobody is restored. A history that holds no such change cannot verify the write, and
- * stands the claim down too. A writer that changes the assignee after this
- * write leaves the issue assigned to someone else, and the claim stands down
- * without restoring anyone: that writer's assignment stands. The trackers
- * supply no event ids, so this is best effort: a lone delayed older change to
- * the user that is consistent with the sequence cannot be told from the write's.
+ * Linear and Jira assign without a conditional write. Only a new history
+ * sequence from nobody to the claimant verifies that write. Poll for delayed
+ * evidence up to the visibility deadline; restore a replaced owner on a
+ * visible race, or clear our lone assignment on an unverifiable timeout.
+ * Tracker event ids are unavailable, so an indistinguishable delayed older
+ * assignment remains a best-effort limit.
  */
 
 /** One change of an issue's assignee: account ids, `null` for nobody. */
 import { parseMs } from "../../../../../shared/time.ts";
+import { type Clock, systemClock } from "../../../../../shared/clock.ts";
+import type { AssignmentResult } from "./port.ts";
 
 export interface AssigneeChange {
   from: string | null;
@@ -36,7 +22,13 @@ export interface AssigneeChange {
 /** What an adapter supplies: the current assignee, the write and the history. */
 export interface VerifiedAssignOps {
   assignee(): Promise<string | null>;
-  assign(id: string): Promise<void>;
+  assign(id: string | null): Promise<void>;
+  /**
+   * Change the assignee only when an adapter-local read still finds `expected`.
+   * The tracker offers no conditional write, so this narrows, but cannot close,
+   * the race between that read and its write.
+   */
+  assignIfCurrent(expected: string | null, id: string | null): Promise<boolean>;
   history(): Promise<AssigneeChange[]>;
 }
 
@@ -76,6 +68,29 @@ function unseen(
     owed.set(identity(c), left - 1);
     return false;
   });
+}
+
+/** Retain each event's greatest observed multiplicity when listings lag. */
+function retain(
+  observed: readonly AssigneeChange[],
+  listing: readonly AssigneeChange[],
+): AssigneeChange[] {
+  // A complete listing is authoritative for tied timestamps: the tracker order
+  // is the only ordering information it supplies. Retain observations only
+  // while the latest listing is still missing one of them.
+  const remaining = new Map<string, number>();
+  for (const c of listing)
+    remaining.set(identity(c), (remaining.get(identity(c)) ?? 0) + 1);
+  if (
+    observed.every((c) => {
+      const left = remaining.get(identity(c)) ?? 0;
+      if (left === 0) return false;
+      remaining.set(identity(c), left - 1);
+      return true;
+    })
+  )
+    return ordered(listing);
+  return ordered([...observed, ...unseen(listing, observed)]);
 }
 
 /**
@@ -122,22 +137,73 @@ export function checkAssignment(
     : { ok: false, replaced: null };
 }
 
-/** Assign `user` to an unassigned issue, verified; false means refresh the queue. */
+/** Whether a fresh history event involves an account other than the claimant. */
+function hasConflict(
+  changes: readonly AssigneeChange[],
+  user: string,
+): boolean {
+  return changes.some(
+    (c) =>
+      (c.from !== null && c.from !== user) || (c.to !== null && c.to !== user),
+  );
+}
+
+/** A complete check permits restoration or success, otherwise keep polling. */
+async function resolveCheck(
+  ops: VerifiedAssignOps,
+  user: string,
+  check: AssignmentCheck,
+): Promise<AssignmentResult | null> {
+  if (!check.ok && check.replaced !== null) {
+    await ops.assignIfCurrent(user, check.replaced);
+    return { assigned: false, reason: "race" };
+  }
+  return check.ok ? { assigned: true } : null;
+}
+
+/** Unknown ownership after a race requires reconciliation, never a guess. */
+async function finishUnverified(
+  ops: VerifiedAssignOps,
+  user: string,
+  raced: boolean,
+): Promise<AssignmentResult> {
+  if (raced) return { assigned: false, reason: "race-unverified" };
+  // The adapter re-reads immediately before clearing: never remove an owner
+  // that appeared between this verifier's read and the cleanup mutation.
+  await ops.assignIfCurrent(user, null);
+  return { assigned: false, reason: "unverified" };
+}
+
+/** Assign once, polling for visibility and the evidence needed for restoration. */
 export async function assignVerified(
   ops: VerifiedAssignOps,
   user: string,
-): Promise<boolean> {
-  if ((await ops.assignee()) !== null) return false;
+  options: { clock?: Clock; timeoutMs?: number; pollMs?: number } = {},
+): Promise<AssignmentResult> {
+  if ((await ops.assignee()) !== null)
+    return { assigned: false, reason: "race" };
   const known = await ops.history();
   await ops.assign(user);
-  const check = checkAssignment(
-    await ops.assignee(),
-    await ops.history(),
-    user,
-    known,
-  );
-  if (check.ok) return true;
-  if (check.replaced !== null && (await ops.assignee()) === user)
-    await ops.assign(check.replaced);
-  return false;
+  const clock = options.clock ?? systemClock;
+  const deadline = clock.now() + (options.timeoutMs ?? 3_000);
+  let observed: AssigneeChange[] = [];
+  let raced = false;
+  for (;;) {
+    const current = await ops.assignee();
+    observed = retain(observed, await ops.history());
+    const fresh = unseen(observed, known);
+    const check = checkAssignment(current, observed, user, known);
+    // A visible different owner is evidence of a race; an empty read may
+    // still be the unassigned state from before our write.
+    if (current !== null && current !== user)
+      return { assigned: false, reason: "race" };
+    raced ||= hasConflict(fresh, user);
+    const resolved = await resolveCheck(ops, user, check);
+    if (resolved) return resolved;
+    const left = deadline - clock.now();
+    if (left <= 0) {
+      return finishUnverified(ops, user, raced);
+    }
+    await clock.sleep(Math.min(options.pollMs ?? 250, left));
+  }
 }

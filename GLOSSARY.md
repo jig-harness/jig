@@ -142,6 +142,10 @@ make, use the entry's term instead.
 - **Context window** — the amount of text a language model can take in at
   once, counted in *tokens*: the instructions, the conversation and every
   file it has read share it.
+- **Compaction** — what an agent runtime does when a session's *context
+  window* fills: it replaces the earlier conversation with a shorter summary
+  so the session can go on. Details the summary leaves out, such as a
+  decision or an owed act, are lost to that session.
 - **Token** — the unit a language model reads and is billed in, a word or
   part of one; English prose runs at about 4 characters a token.
 - **Load path** — the way a file reaches a runtime's context: read natively,
@@ -915,9 +919,18 @@ make, use the entry's term instead.
   without an *acceptance verdict*. It stands in for a review nobody ran and
   never overrides a rejecting one.
 - **Tail** — an open child of an *epic* that the epic was never scoped to
-  finish, such as a legal sign-off, an operator step or review debt. At
+  finish, such as a legal sign-off, an operator step, review debt or a
+  person-only check (plain `hitl` or `ops-pending`). At
   closure a tail is linked back and given a comment naming the epic, then
-  unparented and moved to the standing destination for its kind.
+  unparented and moved to the standing destination for its kind. New review
+  deferrals go straight to the backlog with related links; they never become
+  children merely because their origin belongs to the epic.
+- **Person-checks list** — one standing open issue that holds the checks only
+  a person can perform after an epic's designed scope is delivered. At
+  closure, person-only tails move there; an epic's own owed operator step is
+  filed there too, so the epic can close without declaring the check done.
+  The destination is named by `issue_tracker.person_checks`; its closure
+  wiring is planned ([M9](modules/M9-tasks-memory/README.md)).
 - **Execution plan** — the order of an *epic*'s children, kept on the epic
   as a section with a machine-readable block (`execution-plan-v1`): each
   child's precedence band (its depth in the order), its lane (a group of
@@ -966,6 +979,10 @@ make, use the entry's term instead.
   branch. A missing linked working directory does not prove its commits
   disappeared from the clone's shared Git storage; inspect the surviving
   branch references and reflogs before reconstructing work.
+- **Reftable** — Git's newer format for storing references (branches, tags and
+  `HEAD`) in compact binary tables instead of one file per reference. A
+  repository chooses it at creation with `--ref-format=reftable`; tools that
+  rely on a reference's lock file, such as `HEAD.lock`, find none there.
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
@@ -2227,12 +2244,11 @@ make, use the entry's term instead.
   metrics need, and the open-issue reads a batch proposal ranks), and one
   implementation of that set for a particular tracker. The skills call the
   interface, so supporting a new tracker means writing an adapter, not
-  editing the skills, except where a skill still calls Linear directly: the
-  review skill's deferral step (roadmap item 10). Attaching a file is an
+  editing the skills. Attaching a file is an
   operation of the interface each adapter holds in the form its tracker
   offers: an upload, the file in a comment, or a link to a hosted copy.
-  [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
-  them under "What still assumes Linear". Adapters for Linear, GitHub
+  [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists what
+  still assumes Linear. Adapters for Linear, GitHub
   Issues and Jira are built; an adapter for a plan file kept in the
   repository is planned ([ROADMAP.md](ROADMAP.md) item 12).
 - **Governed transport** — the one module through which Jig's code calls
@@ -2277,6 +2293,13 @@ make, use the entry's term instead.
   them, what a refusal looks like and who owns the quota. It holds no
   number the system reports; those are read from each answer. Planned
   ([ROADMAP.md](ROADMAP.md) item 55).
+- **Quota owner** — whose allowance a call to an outside system spends,
+  which is not always the credential that sends it: GitHub counts its
+  limits per user across all of a user's personal tokens, and per
+  installation across all of an installation's tokens. The machine's
+  budget record is kept per quota owner, so several tokens of one user
+  share one balance and one hold, while ledger rows and cached answers stay
+  per credential.
 - **Cost ceiling** — the most a query may cost in total, declared beside
   the query with its unit: objects (the sum over its paths of the nested
   page sizes' product) or, where the system's formula can be computed from
@@ -2526,6 +2549,9 @@ make, use the entry's term instead.
 - **Incarnation** — the id a *dispatcher*'s state database got when it was
   created. A *hub* uses it to tell a host's records from those of an earlier
   database of the same host.
+- **Worktree incarnation** — which creation of a worktree at a path a record
+  was taken on, so a worktree removed and recreated at the same path is a
+  new one. Not the *incarnation* of a dispatcher's database.
 - **Capabilities** — named flags a call to the *hub* carries, and the hub
   answers with its own, so either side adds a feature without changing the
   other.
@@ -2601,7 +2627,9 @@ make, use the entry's term instead.
   closes itself when its run ends with nothing for a person (converged,
   merged, taken over, re-armable, stopped by a person); a run that parks or
   fails keeps its tab, and the next run for the same pull request or item
-  closes it. A tab a person opened is never closed.
+  closes it; `jig gc` closes one whose run was killed, or that nobody
+  returned to, once it has been idle past its guard. A tab a person opened
+  is never closed.
 - **Pull request state labels (dispatch labels)** (after their setting `dispatch.labels`) — the labels that show where a pull request stands,
   from any forge client, and through which a person steers its drive and
   the *dispatcher*: off unless a repository turns them on, all under one

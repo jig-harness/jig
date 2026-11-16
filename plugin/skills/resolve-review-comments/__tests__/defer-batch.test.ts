@@ -74,6 +74,7 @@ import {
   priorityReflectsSeverity,
   SEVERITY_TO_PRIORITY,
 } from "../scripts/lib/severity-priority.ts";
+import { authoritativeLines } from "../scripts/lib/deferred-identity.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import {
   CANONICAL_SEVERITIES,
@@ -308,6 +309,105 @@ describe("appendEntry", () => {
     const doc = ["```", "code", "```", "", `### ${url}`].join("\n");
     expect(entryHeadings(doc)).toEqual([url]);
     expect(hasEntry(doc, url)).toBe(true);
+  });
+
+  it("does NOT count a heading or identity inside an HTML comment", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = [
+      "<!-- Markdown example",
+      `### ${url}`,
+      identity,
+      "-->",
+      "real content",
+    ].join("\n");
+    expect(entryHeadings(doc)).toEqual([]);
+    expect(authoritativeLines(doc)).toEqual(["real content"]);
+  });
+
+  it("does not let a fence inside an HTML comment hide later entries", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["<!--", "```", "-->", `### ${url}`, identity].join("\n");
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual([`### ${url}`, identity]);
+  });
+
+  it("does not treat Markdown examples as HTML comments", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["`<!--`", "    <!--", `### ${url}`, identity].join("\n");
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual(["`<!--`", `### ${url}`, identity]);
+  });
+
+  it("requires complete equal-length backtick runs before seeing a comment", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: ``x```<!--`", identity, "-->", `### ${url}`].join(
+      "\n",
+    );
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual([
+      "Example: ``x```<!--`",
+      `### ${url}`,
+    ]);
+  });
+
+  it("carries an inline code span across lines in one paragraph", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: `<!--", "literal`", "", identity, `### ${url}`].join(
+      "\n",
+    );
+    expect(entryHeadings(doc)).toEqual([url]);
+    expect(authoritativeLines(doc)).toEqual([
+      "Example: `<!--",
+      identity,
+      `### ${url}`,
+    ]);
+  });
+
+  it("does not carry inline code across a heading boundary", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["### Note `", `### ${url}`, identity, "`"].join("\n");
+    expect(entryHeadings(doc)).toEqual(["Note `", url]);
+    expect(authoritativeLines(doc)).toEqual([
+      "### Note `",
+      `### ${url}`,
+      identity,
+      "`",
+    ]);
+  });
+
+  it("does not carry inline code from a heading or through a fenced block", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const heading = ["### Note `", identity, "`"].join("\n");
+    const fenced = ["Example: `", "~~~", "`", "~~~", "", identity].join("\n");
+
+    expect(authoritativeLines(heading)).toEqual(["### Note `", identity, "`"]);
+    expect(authoritativeLines(fenced)).toEqual(["Example: `", identity]);
+  });
+
+  it("does not carry inline code through a thematic break", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: `", "***", "<!--`", identity, "-->"].join("\n");
+
+    expect(entryHeadings(doc)).toEqual([]);
+    expect(authoritativeLines(doc)).toEqual(["Example: `", "***"]);
+  });
+
+  it("does not carry inline code through HTML or setext-heading boundaries", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const html = ["Example: `", "<!--`", identity, "-->"].join("\n");
+    const setext = ["Example: `", "===", "<!--`", identity, "-->"].join("\n");
+
+    expect(entryHeadings(html)).toEqual([]);
+    expect(authoritativeLines(html)).toEqual(["Example: `"]);
+    expect(entryHeadings(setext)).toEqual([]);
+    expect(authoritativeLines(setext)).toEqual(["Example: `", "==="]);
+  });
+
+  it("does not mistake an invalid backtick fence for an inline-code boundary", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const doc = ["Example: `<!--", "```not`a-fence", "", identity].join("\n");
+
+    expect(authoritativeLines(doc)).toEqual(["Example: `<!--", identity]);
   });
 
   it("is not fooled by a non-heading line or a deeper heading", () => {

@@ -2,7 +2,12 @@
 import type { Outcome as Result } from "../shared/outcome.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 
-export type KindName = "worktrees" | "tool-state" | "scratch" | "receipts";
+export type KindName =
+  | "worktrees"
+  | "tool-state"
+  | "scratch"
+  | "receipts"
+  | "orca-terminals";
 export type Outcome =
   | "collected"
   | "would-collect"

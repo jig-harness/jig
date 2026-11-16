@@ -24,7 +24,8 @@
  *   ending, the end carrying how long it waited: `serial-holds.ts`, and a
  *   park leaving its ledger, answered, decided provisionally or removed,
  *   an answered one timed when its receipt says it was resolved:
- *   `park-events.ts`).
+ *   `park-events.ts`, and, once per tick of the `notify` stage, the notices
+ *   workspace's read state: `notices-read.ts`).
  *
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
@@ -36,6 +37,7 @@
  * filters on.
  */
 import { derivedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -119,6 +121,8 @@ export interface EventRow {
   durationMs?: number;
   /** For a park that left its ledger (`park-events.ts`): what it was and how it was settled. */
   park?: ParkFacts;
+  /** For `notices_read` (`notices-read.ts`): whether the notices workspace was read; `null` when its state is not known. */
+  read?: boolean | null;
   /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
   title?: string;
   url?: string;
@@ -509,6 +513,8 @@ export function endedRow(
 ): EndedRow {
   const { record } = r;
   const placed = classifyEnded(r, endedAt, facts);
+  const wait = testLockNote(record, undefined, true);
+  if (wait !== null) placed.reason += `; ${wait}`;
   // A re-drive ends like any re-arm; its reason also names why it was launched.
   const redriven =
     record.redrive?.conflictStop === true

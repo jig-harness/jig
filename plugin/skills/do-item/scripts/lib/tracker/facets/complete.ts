@@ -19,12 +19,14 @@ import {
   type Taxonomy,
 } from "../../../../../file-issue/scripts/lib/taxonomy.ts";
 import {
+  groupRequired,
   missingGroups,
   SIZE_GROUP,
 } from "../../../../../file-issue/scripts/lib/validate.ts";
 import { type NewIssue, type Tracker, TrackerRequestError } from "../port.ts";
 import { isEpic } from "../../../../../../shared/tracker-labels.ts";
 import { type Facets, usable } from "./config.ts";
+import { canonical } from "./values.ts";
 
 /**
  * What a new issue lacks: `type`, `priority` and `size` for the facets the
@@ -45,19 +47,36 @@ export function incompleteness(
     filed ?? { labels: issue.labels, nativeType: nativeTypeOf(issue, facets) },
     facets,
   );
-  if (usable(facets.size) && !epic && (issue.size ?? "").trim() === "")
+  // An epic by its issue type stands for the epic label, and the type itself
+  // for its own id, as when `validate-labels` reads the same issue.
+  const typeId = typeIdOf(issue, facets);
+  const presentFrom = (labels: string[]) => {
+    const present = new Set(labels);
+    if (epic) present.add(facets.epic);
+    if (typeId !== "") present.add(typeId);
+    return present;
+  };
+  // The size is judged on the labels the adapter filed, the groups on those asked for.
+  const sizeGroup = taxonomy?.groups.find((g) => g.id === SIZE_GROUP);
+  const sizeSpared =
+    epic ||
+    (sizeGroup !== undefined &&
+      !groupRequired(sizeGroup, presentFrom(filed?.labels ?? issue.labels)));
+  if (usable(facets.size) && !sizeSpared && (issue.size ?? "").trim() === "")
     missing.push("size");
   if (taxonomy !== null)
     missing.push(
-      ...missingGroups(
-        // An epic by its issue type stands for the epic label, as it does
-        // when `validate-labels` reads the same issue.
-        epic ? [...issue.labels, facets.epic] : issue.labels,
-        taxonomy,
-        [SIZE_GROUP],
-      ),
+      ...missingGroups([...presentFrom(issue.labels)], taxonomy, [SIZE_GROUP]),
     );
   return missing;
+}
+
+/** The type's id as the facet spells it, ignoring the caller's case and spacing. */
+function typeIdOf(issue: NewIssue, facets: Facets): string {
+  const typed = (issue.type ?? "").trim();
+  return (
+    (usable(facets.type) ? canonical(facets.type.values, typed) : null) ?? typed
+  );
 }
 
 /** The issue type a new issue is filed as, where its type facet is the issue type. */
@@ -82,7 +101,7 @@ export function readTaxonomy(root: string, setting: string): Taxonomy | null {
 }
 
 /** "a, b and c". */
-function listed(items: string[]): string {
+export function listed(items: string[]): string {
   return items.length <= 1
     ? (items[0] ?? "")
     : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;

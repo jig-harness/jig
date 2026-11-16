@@ -39,6 +39,7 @@ import {
   writeRecord,
 } from "../launches.ts";
 import { holdsItem } from "../launch-pickups.ts";
+import { testLockNote } from "../test-lock-waits.ts";
 import { refusalOf } from "../pickup-refusal.ts";
 import { questionOf } from "../session.ts";
 import { isPersonHold } from "../queue-rank.ts";
@@ -94,7 +95,8 @@ export function settleAgents(
 
 function describe(r: ReadRecord): string {
   const s = r.state;
-  const what = `launch record ${r.record.id} (pickup on ${r.record.account})`;
+  const wait = testLockNote(r.record);
+  const what = `launch record ${r.record.id} (pickup on ${r.record.account})${wait === null ? "" : `; ${wait}`}`;
   if (s.kind === "unknown") return `${what} is unknown: ${s.reason}`;
   if (s.kind === "alive")
     return `${what} is running, pid ${s.process.pid}${r.record.agentId === null ? "" : `, agent ${r.record.agentId}`}`;
@@ -108,7 +110,8 @@ function describe(r: ReadRecord): string {
 /** How a record that no longer holds its stage ended, in words. */
 export function endedHow(r: ReadRecord): string {
   const s = r.state;
-  const answer = r.result ?? "failed (no result recorded)";
+  const wait = testLockNote(r.record, undefined, true);
+  const answer = `${r.result ?? "failed (no result recorded)"}${wait === null ? "" : `; ${wait}`}`;
   if (s.kind === "ended")
     return s.agent === undefined
       ? `its session exited, ${answer}`
@@ -199,14 +202,16 @@ function stoppedHold(
 
 /**
  * The question an ended pickup left for a person, or `null`: none after
- * `done` or a rate-limit wait, else the pass's trailing question, or for a
- * failed pass the question of its framed decision. Question planning and
+ * `done` or a rate-limit wait, else the pass's trailing question, else the
+ * question its closing report asks, or for a failed pass the question of its
+ * framed decision. Question planning and
  * the release of unclaimed members read this one policy.
  */
 export function endedQuestion(r: ReadRecord): string | null {
   if (r.result === "done" || r.result === "waits") return null;
   return (
     questionOf(r.state) ??
+    r.report?.report.question ??
     (r.result === "failed" ? (r.framed?.decision.call.question ?? null) : null)
   );
 }

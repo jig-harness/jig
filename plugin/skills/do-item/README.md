@@ -143,8 +143,15 @@ adds the person to an unassigned child without replacing a concurrent
 assignee. Linear and Jira hold one assignee and have no write that applies
 only to an unassigned item, so there the claim assigns the child, then reads
 the item's history: if the assignment replaced someone who was assigned in
-between, it puts them back. Either way a detected race stands down and
-refreshes the queue.
+between, it puts them back. It polls for visible evidence within a 3-second
+window; calls in flight keep their transport's own deadline. If verification
+times out without conflict evidence, it clears the assignment only while the
+claimant is still the sole assignee. A partial race keeps polling for the
+evidence needed to restore the replaced owner. If that evidence never arrives,
+it leaves the assignment untouched and asks for reconciliation rather than
+guessing an owner. The stand-down reason distinguishes a race, an unverifiable
+write, and a race whose replaced owner remains unverified; each stops the
+pickup so the queue can refresh.
 
 Command-line claims share a machine-local mutex across worktrees and
 re-read authority before writing. That does not serialize claims on

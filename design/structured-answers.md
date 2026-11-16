@@ -464,10 +464,11 @@ to read.
   answer](#picking-an-answer) describes. The tick's line carries each
   waiting park's digest and options, so neither parses the decision. The
   dashboard's page copies the card's comment, and with a token the person
-  pasted into that browser its Send posts, once an option is picked, each
-  decision's answer as the comment `jig send` writes, record included, to
-  the pull request from the browser, as the person, with no route through
-  the host
+  pasted into that browser its Send posts, once an option is picked and the
+  send confirmed, each decision's answer as the comment `jig send` writes,
+  record included, to the GitHub issue or pull request the station reads
+  answers on, from the browser, as the person, with no route through the
+  host
   ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes));
   the panel's Send runs the same `jig send` as the person
   ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
@@ -814,17 +815,20 @@ For the causes the tick finds itself it frames the decision from the facts
 that identify the occurrence: the launch record, the marker, the item, the
 branch and the path, the exit. Never a clock or a count: the digest stays
 the same from tick to tick while those facts do, and an answer to earlier
-facts is stale. Every set ends with **Leave it to me**: the tick takes no
-step, and the need leaves Needs you for these facts; it comes back when
-they change.
+facts is stale. Every set ends with **I'll handle it — hide this card**:
+the tick takes no step and the work stays where it is. The answered hold
+stays visible, saying the work remains undone, until its facts change. An
+answer naming the option's earlier name, **Leave it to me**, still counts,
+and keeps the decision's digest, so an answer to unchanged facts stays
+current.
 
 | Cause | Key | Options (the recommendation in bold) | The tick's step |
 | --- | --- | --- | --- |
-| a failed follow-up (`followup-failed`), a stale claim again (`followup-stale`) | `followup` | **Run it again** when the pass asked nothing or the claim went stale; Record it done; **Leave it to me** when the pass stopped on a question | deletes the marker the need names, so a later tick starts the follow-up again, the person's note in its prompt; or marks the existing marker done in place |
-| a stalled pickup (`stalled`), a pickup's question it did not frame (`pickup-question`), a pickup that ended without a question and that no rule starts again (`pickup-ended`) | `pickup` | **Release the claim** for a stall or an ended pickup no open pull request carries; **Leave it to me** otherwise | moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
-| a checkout the workspace runtime does not list holds the launch's branch and is in use (`needs-person`) | `checkout` | Detach the checkout; **Leave it to me** | detaches it at its commit when it is idle, as an open does an idle holder |
-| a drive the ledger handed to a person, or one stopped with no cause (`needs-person`, `stopped-unknown`) | `drive` | Re-arm the drive; **Leave it to me** | adds the rearm label, the person's command the tick then carries out |
-| a launch record stuck pending (`needs-person`) | `launch` | **Clear the record**; Leave it to me | removes it, as `jig dispatch clear` does |
+| a failed follow-up (`followup-failed`), a stale claim again (`followup-stale`) | `followup` | **Run it again** when the pass asked nothing or the claim went stale; Record it done; **I'll handle it — hide this card** when the pass stopped on a question | deletes the marker the need names, so a later tick starts the follow-up again, the person's note in its prompt; or marks the existing marker done in place |
+| a stalled pickup (`stalled`), a pickup's question it did not frame (`pickup-question`), a pickup that ended without a question and that no rule starts again (`pickup-ended`) | `pickup` | **Release the claim** for a stall or an ended pickup no open pull request carries; **I'll handle it — hide this card** otherwise | moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
+| a checkout the workspace runtime does not list holds the launch's branch and is in use (`needs-person`) | `checkout` | Detach the checkout; **I'll handle it — hide this card** | detaches it at its commit when it is idle, as an open does an idle holder |
+| a drive the ledger handed to a person, or one stopped with no cause (`needs-person`, `stopped-unknown`) | `drive` | Re-arm the drive; **I'll handle it — hide this card** | adds the rearm label, the person's command the tick then carries out |
+| a launch record stuck pending (`needs-person`) | `launch` | **Clear the record**; I'll handle it — hide this card | removes it, as `jig dispatch clear` does |
 
 The classes (`followup-recovery`, `pickup-recovery`, `checkout-recovery`,
 `drive-recovery`, `launch-recovery`) read Decide in the acts table, so the
@@ -837,8 +841,9 @@ framed.
 
 An answer is the comment a park takes, `answer <key>: approve [<digest>]`
 or `answer <key>: choose <option> [<digest>]`, with a `note <key>:` line
-beside it, on the need's pull request, or on its item where the items are
-the forge's issues. The line carries, with each such decision, the station
+beside it, on the need's pull request, or on its item: the forge issue
+where the items are the forge's issues, else the item on its tracker. The
+line carries, with each such decision, the station
 `jig send` answers it through, its address, where the comment goes and who
 framed it (`LineDecision.answer`), so the dashboard copies the comment it
 already copies for a park, and `stationSendCommand` in
@@ -847,18 +852,29 @@ module and `decision-card.ts` are the one answer format every surface
 imports. `jig send followup@…|pickup@…|drive@… answer <key>
 --approve|--choose <option> [--note] --decision <digest>` reads the need
 from this machine's newest line and writes that comment, with the
-`drive-answer` record as an answer to a park has it. It refuses words (the
-tick carries out an option), an option the decision does not offer, a
-missing or stale digest, and an item on another tracker, whose comments the
-tick does not read yet.
+`drive-answer` record as an answer to a park has it. On another tracker's
+item it writes the answer and note lines alone, through the tracker
+interface, as the user the tracker's credential acts as there: a tracker
+keeps a comment in its own document format, which need not keep a hidden
+record as written. It refuses words (the tick carries out an option), an
+option the decision does not offer, a missing or stale digest, and, on
+another tracker's item, a tracker whose comments do not name their author
+and a credential that acts as the factory identity, whose comments the tick
+never counts.
 
 #### The tick acts
 
 Each tick of the host that owns the repository reads, for each framed
-need, the comments of its pull request or forge issue through the reader
-every station shares (`answer-forms.ts`), under the same rule for who may
-answer (`shared/trusted-authors.ts`). A comment by the dispatcher's own
-login never answers: a dispatcher does not answer on a person's behalf. An
+need, the comments of its pull request or forge issue, or of its item on
+another tracker, through the reader every station shares
+(`answer-forms.ts`), under the same rule for who may answer
+(`shared/trusted-authors.ts`). On another tracker the tracker interface's
+comment facts name each comment's author, and an author the tracker
+vouches for (a member of its workspace who is not a guest) counts as the
+forge's members do; a tracker whose adapter cannot name an author is not
+read, and the need says why. A comment by the dispatcher's own forge
+login, or by the user its tracker credential acts as, never answers: a
+dispatcher does not answer on a person's behalf. An
 answer counts only when it names the decision's current digest; each
 person's latest answer is theirs, two that differ leave the need disputed,
 and a free answer is shown and never acted on. The line shows the answers,
@@ -895,10 +911,6 @@ The forms fit any framed question; each of these becomes a step of its own:
   "needs a person to start" (item 44). That becomes an Authorize decision
   on the item, answered in a tracker comment, which the pickup reads before
   it claims.
-- **Answers on another tracker.** A pickup's decision on an item that is
-  not a forge issue is framed and shown, but its answers are read only once
-  the tracker's comments name their author, which the tracker interface's
-  comment facts do not carry yet.
 
 ## Build order
 
@@ -977,8 +989,8 @@ and its pull request saying what changed in the audit.
    digest holds while its facts do, a sent answer's step runs once and
    refuses with why when it no longer may, and a session started on an
    answer is handed it.
-11. **Beyond the drive**: the loosened ratchet, the pickup only a person
-   may start, and answers on another tracker, one pull request each.
+11. **Beyond the drive**: the loosened ratchet and the pickup only a person
+   may start, one pull request each.
 
 ## Left out
 

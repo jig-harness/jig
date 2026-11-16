@@ -502,6 +502,47 @@ describe("a group not required on an epic", () => {
     ).toEqual([]);
   });
 
+  test("an epic kept as a type lifts the requirement as a flag does", () => {
+    const typed = lintTaxonomyText(
+      [
+        "version: 1",
+        "types: [{ id: feature }, { id: epic }]",
+        "statuses: [{ id: todo }]",
+        "groups:",
+        "  - { id: size, required: true, not_required_on: [epic], labels: [{ id: small }] }",
+      ].join("\n"),
+    );
+    expect(typed.problems).toEqual([]);
+    const by = { epic: "epic", epicTypes: ["Epic"] };
+    const result = validateLabels(
+      [],
+      typed.taxonomy as Taxonomy,
+      { type: "epic", priority: 3 },
+      { nativeType: "Epic", epics: by },
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.missing).toEqual([]);
+  });
+
+  test("the type facet lifts the requirement with no tracker type given", () => {
+    const typed = lintTaxonomyText(
+      [
+        "version: 1",
+        "types: [{ id: feature }, { id: epic }, { id: chore }]",
+        "statuses: [{ id: todo }]",
+        "groups:",
+        "  - { id: size, required: true, not_required_on: [epic, chore], labels: [{ id: small }] }",
+      ].join("\n"),
+    ).taxonomy as Taxonomy;
+    for (const type of ["epic", "chore"]) {
+      const result = validateLabels([], typed, { type, priority: 3 });
+      expect(result.errors).toEqual([]);
+      expect(result.missing).toEqual([]);
+    }
+    const feature = validateLabels([], typed, { type: "feature", priority: 3 });
+    expect(feature.missing).toEqual(["size"]);
+  });
+
   test("names a flag the file lacks, or a group with no requirement to lift", () => {
     expect(
       lintTaxonomyText(
@@ -510,7 +551,7 @@ describe("a group not required on an epic", () => {
         ),
       ).problems,
     ).toEqual([
-      "group 'size' is not required on 'nope', which is not a flag of this taxonomy",
+      "group 'size' is not required on 'nope', which is neither a flag nor a type of this taxonomy",
     ]);
     expect(
       lintTaxonomyText(

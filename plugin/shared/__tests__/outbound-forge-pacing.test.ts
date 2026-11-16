@@ -139,3 +139,19 @@ it("does not claim after cancellation or the caller deadline", async () => {
   );
   expect(sleeps).toEqual([50]);
 });
+
+it("sends when the pacing storage is unavailable, as the budget's does", async () => {
+  const deps = {
+    now: () => 1000,
+    sleep: async () => undefined,
+    claim: () => ({
+      ok: false as const,
+      failure: {
+        code: "unreachable" as const,
+        reason: "Cannot coordinate GitHub request starts",
+        cause: { code: "SQLITE_CANTOPEN" },
+      },
+    }),
+  };
+  expect(await paceForge("a", 2000, undefined, deps)).toBeNull();
+});

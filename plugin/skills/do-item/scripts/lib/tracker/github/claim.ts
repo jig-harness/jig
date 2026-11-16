@@ -82,9 +82,9 @@ export function claimOperations(
   }
 
   return {
-    async viewer() {
+    async viewer(signal) {
       const data = record(
-        await client.transport(VIEWER, {}, undefined, true),
+        await client.transport(VIEWER, {}, signal, true),
         "data",
       );
       return userOf(data.viewer, "viewer");
@@ -98,7 +98,7 @@ export function claimOperations(
     },
     async assignUnassigned(key, user) {
       const before = await read(key);
-      if (before.users.length !== 0) return false;
+      if (before.users.length !== 0) return { assigned: false, reason: "race" };
       await client.mutate(
         `mutation TrackerAddAssignee($input: AddAssigneesToAssignableInput!) {
         addAssigneesToAssignable(input: $input) { assignable { __typename } }
@@ -106,12 +106,14 @@ export function claimOperations(
         { input: { assignableId: before.id, assigneeIds: [user.id] } },
       );
       const after = await read(key);
-      return after.users.length === 1 && after.users[0]?.id === user.id;
+      return after.users.length === 1 && after.users[0]?.id === user.id
+        ? { assigned: true }
+        : { assigned: false, reason: "race" };
     },
-    async user(identity) {
+    async user(identity, signal) {
       const login = identity.trim();
       const data = record(
-        await client.transport(USER, { login }, undefined, true),
+        await client.transport(USER, { login }, signal, true),
         "data",
       );
       if (data.user === null || data.user === undefined)

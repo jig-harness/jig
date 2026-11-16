@@ -76,6 +76,7 @@ export function decisionOf(park: {
       decisionClass: decision.class,
       options: optionNumbers(
         call.options.map((o) => ({
+          id: o.id,
           name: o.name,
           changes: o.summary,
           costs: o.pay.join("\n"),

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,10 +19,14 @@ import {
 import { httpTransport as githubTransport } from "../../skills/do-item/scripts/lib/tracker/github/transport.ts";
 import { httpTransport as jiraTransport } from "../../skills/do-item/scripts/lib/tracker/jira/transport.ts";
 import { ok } from "../outcome.ts";
+import { setForgeGovernor } from "../outbound/github-budget.ts";
 import { traceGhRunner } from "../trace.ts";
 
 const directories: string[] = [];
+// The machine's owner discovery would ask GitHub for the credential's user.
+beforeEach(() => setForgeGovernor(budgetGovernor(memoryBudgetStore())));
 afterEach(() => {
+  setForgeGovernor(null);
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });

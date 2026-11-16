@@ -104,8 +104,21 @@ export function claimOperations(
     };
   }
 
-  async function assignId(key: string, assigneeId: string, name: string) {
+  async function assignId(
+    key: string,
+    assigneeId: string | null,
+    name: string,
+  ) {
     const { id } = await read(key);
+    await assignIssue(id, assigneeId, key, name);
+  }
+
+  async function assignIssue(
+    id: string,
+    assigneeId: string | null,
+    key: string,
+    name: string,
+  ) {
     const data = record(
       await transport(ASSIGN, { id, input: { assigneeId } }),
       "data",
@@ -143,9 +156,9 @@ export function claimOperations(
   }
 
   return {
-    async viewer() {
+    async viewer(signal) {
       return userOf(
-        record(await transport(VIEWER, {}), "data").viewer,
+        record(await transport(VIEWER, {}, signal), "data").viewer,
         "viewer",
       );
     },
@@ -160,7 +173,13 @@ export function claimOperations(
       return assignVerified(
         {
           assignee: async () => (await read(key)).assignee?.id ?? null,
-          assign: (id) => assignId(key, id, id),
+          assign: (id) => assignId(key, id, id ?? "nobody"),
+          async assignIfCurrent(expected, id) {
+            const issue = await read(key);
+            if ((issue.assignee?.id ?? null) !== expected) return false;
+            await assignIssue(issue.id, id, key, id ?? "nobody");
+            return true;
+          },
           history: () => history(key),
         },
         user.id,
@@ -171,9 +190,9 @@ export function claimOperations(
       if (record(data.commentDelete, "commentDelete").success !== true)
         throw new LinearClaimError(`Linear did not delete a comment on ${key}`);
     },
-    async user(identity) {
+    async user(identity, signal) {
       const who = identity.trim();
-      const data = record(await transport(USERS, { who }), "data");
+      const data = record(await transport(USERS, { who }, signal), "data");
       const nodes = record(data.users, "users").nodes;
       if (!Array.isArray(nodes))
         throw new LinearClaimError("users.nodes: expected a list");

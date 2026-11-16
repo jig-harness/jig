@@ -473,11 +473,14 @@ async function identityUnchanged(
  * moved, it gained changes or index flags that hide them, or an operation
  * began. `git worktree remove` refuses tracked and untracked changes itself,
  * but not a new commit on a detached head, which removal would leave on no
- * ref.
+ * ref. `hold`, when given, runs between the scans and the identity
+ * comparison: a caller about to remove the tree holds its head there, so no
+ * commit lands between the comparison and the removal.
  */
 export async function unchangedSinceProof(
   path: string,
   identity: WorktreeIdentity,
+  hold?: () => Promise<Outcome<undefined, string>>,
 ): Promise<Outcome<undefined, string>> {
   const tracked = await trackedState(path, identity.admin);
   if (!tracked.ok) return tracked;
@@ -487,6 +490,10 @@ export async function unchangedSinceProof(
   });
   if (veto !== null)
     return failed("changed", `kept after the proof: ${veto.reason}`);
+  if (hold !== undefined) {
+    const held = await hold();
+    if (!held.ok) return held;
+  }
   // Last, so a commit made while the slow scans above ran is seen.
   const same = await identityUnchanged(path, identity);
   if (!same.ok) return failed("changed", `kept: ${same.failure.reason}`);

@@ -3,7 +3,8 @@
  * tracker keeps (design/tracker-facets.md in the Jig repository).
  *
  * A priority is a number, 1 (urgent) to 4 (low), named `urgent`, `high`,
- * `medium` and `low` in the configuration. A type is a type name of the
+ * `medium` and `low` in the configuration (`PRIORITIES` in
+ * `facet-values.ts`). A type is a type name of the
  * repository's label taxonomy, or, with no taxonomy, a work type; a size is a
  * label of the taxonomy's size group, and with none there is no size facet.
  *
@@ -15,10 +16,13 @@
 
 import { TrackerConfigError } from "../config-error.ts";
 import { firstRepeat } from "../settings-fields.ts";
+import {
+  PRIORITIES,
+  PRIORITY_NAMES,
+  type PriorityName,
+} from "./facet-values.ts";
 
-/** The priorities, 1 (urgent) to 4 (low), by the names the configuration uses. */
-export const PRIORITY_NAMES = ["urgent", "high", "medium", "low"] as const;
-export type PriorityName = (typeof PRIORITY_NAMES)[number];
+export { PRIORITY_NAMES, type PriorityName };
 
 /** The work types every repository has unless `issue_tracker.types` says otherwise. */
 export const DEFAULT_TYPES = [
@@ -34,12 +38,12 @@ export const fold = (s: string): string => s.trim().toLowerCase();
 
 /** The name of priority 1 to 4, or `null` for 0 (none). */
 export function priorityName(priority: number): PriorityName | null {
-  return priority === 0 ? null : (PRIORITY_NAMES[priority - 1] ?? null);
+  return PRIORITY_NAMES.find((p) => PRIORITIES[p].number === priority) ?? null;
 }
 
 /** The number of a priority name. */
 export function priorityNumber(name: PriorityName): number {
-  return PRIORITY_NAMES.indexOf(name) + 1;
+  return PRIORITIES[name].number;
 }
 
 /**

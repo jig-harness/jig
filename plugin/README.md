@@ -647,6 +647,18 @@ conflict repair pass, whose transcripts `launches.sessions` does not list. The e
 onto the shared claim carries the report's `cause` and who wrote it
 (`by`), never its text.
 
+The dispatch dashboard and `jig ask` show the report. On the History view,
+each run's line carries what it concluded, the next step it suggests and
+its cause, or says it ended without a report; the log filters on the
+report's cause and on who wrote it; and a row opens to all runs of its
+piece of work, newest first, each with its report, the next step the
+report suggests beside the tick's own next owner where the two name
+different owners, with nothing decided between them. *Needs you* shows a
+report's `question` and framed `decision` where it shows a pass's
+`Question:` line, with what the run concluded beside them. `jig ask`'s
+answer prints the last run's stage, when it ended, what it concluded and
+the next step it suggests as `last.run`.
+
 #### Every need is a decision
 
 A pass that stops for a person frames what it asks, as a drive frames a
@@ -658,8 +670,10 @@ and keeps it with the result; a record the check refuses records nothing,
 so the pass fixes it and sends it again. The need it raises (a failed
 follow-up, a pickup's question) carries that decision. For what the tick
 finds itself it frames the decision from the facts that identify it, with
-options it can carry out, each set ending with **Leave it to me** (no step,
-and the need leaves Needs you until its facts change):
+options it can carry out, each set ending with **I'll handle it — hide this card**.
+Nothing is done; the work stays where it is. The answered hold stays visible
+until its facts change. Answers naming **Leave it to me** still count, including
+answers sent from an older dashboard snapshot while the facts remain the same:
 
 | Need | Key | The other options, and what the tick does |
 | --- | --- | --- |
@@ -671,21 +685,25 @@ and the need leaves Needs you until its facts change):
 
 A double claim, an unanswered nudge and an item assigned by someone who
 cannot write keep their free text. Answer a need's decision as a park is
-answered, in a comment on its pull request or forge issue (`answer
-followup: approve [<digest>]`), copied from the dashboard or sent with
-`jig send followup@owner/name#456 answer followup --approve --decision
-<digest>`. The tick of the host that owns the repository reads the
-comments each tick, counts an answer only from an author the forge
-vouches for, never its own login, and only when it names the decision's
-current digest and every person who answered chose the same option, then
+answered, in a comment on its pull request or forge issue, or on the item
+on its tracker where the items are not the forge's (`answer followup:
+approve [<digest>]`), copied from the dashboard or sent with `jig send
+followup@owner/name#456 answer followup --approve --decision <digest>`.
+The tick of the host that owns the repository reads the comments each
+tick, counts an answer only from an author the forge vouches for (on
+another tracker, a member of its workspace who is not a guest), never its
+own login or the user its tracker credential acts as, and only when it
+names the decision's current digest and every person who answered chose
+the same option, then
 carries out the option once: it checks again that the step still may run
 (the stage is on, no hold label, the marker unchanged, no session holds the
 work, no open pull request carries the item, the checkout idle) and
 otherwise refuses with the reason, which the need shows; answering again
 tries again. A decision a pass framed starts that stage again (the
 follow-up's marker deleted, or the item released), and the session started
-next is handed the option you chose, narrowed by your note. Answers on an
-item of a tracker other than the forge are not read yet.
+next is handed the option you chose, narrowed by your note. On a tracker
+whose adapter cannot name who wrote a comment, the answers are not read,
+and the need says so.
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
 machine file) inspects what the rules leave stopped, under the owner host's
@@ -1093,6 +1111,17 @@ park is counted twice. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
 those rows is what a new class is made from.
 
+Where the `notify` stage runs, each of its ticks also writes one
+`notices_read` event (no class) with the read state of the repository's
+notices workspace as the tick's session listing found it, before the
+tick's own notice marks it unread (`read`: `true`, `false`, or `null`
+when no workspace is open, the runtime reports no mark or the listing did
+not read). It is the observation the stage's retirement measure reads,
+so the dashboard's log leaves these rows out unless its class filter
+names `event: notices_read`, and the steward's digest leaves them out of
+the history it judges from. `jig dispatch log` and its text copy list
+them, one a tick.
+
 **The log as text.** The log prints as text, one line a row, or with
 `--jsonl` as JSON lines:
 
@@ -1261,8 +1290,9 @@ writes nothing to the host:
   the last 48 ticks, a tick for
   one repository included.
 - **The outcome log**, on the History view, filtered by time (today, yesterday,
-  seven or thirty days, or a range), repository, stage, account, class and
-  reason, counting each class over the window and naming each recurring
+  seven or thirty days, or a range), repository, stage, account, class,
+  reason, the closing report's cause and who wrote it, and the piece of
+  work, whose page lists its runs with their reports, counting each class over the window and naming each recurring
   class: a bad class (any but converged, merged and parked for a person) of
   one stage on one repository on at least three of the last seven host days,
   counting the ended rows and the event rows that carry a class, such as a
@@ -1305,16 +1335,21 @@ on the second step, which first shows what it changes and costs. When the
 server stops answering, it keeps what it last read and says when that was.
 
 **Send, from the browser.** With a GitHub token pasted under **Send from
-here** on Needs you, a parked drive's card whose pull request is on
-github.com also has **Send**. Once an option is picked on the card, it
-posts each decision's answer to the pull request through GitHub's API, from
+here** on Needs you, cards whose station reads answer comments on a GitHub
+issue or pull request also have **Send**. Without a token, the card says
+how to paste one. Once an option is picked on the card, it
+posts each decision's answer to that target through GitHub's API, from
 the browser, as the person: one comment per decision, the `drive-answer`
 record `jig send` writes, with Copy's line for that decision, any note line
 and the hidden record naming the person's login and `dashboard (browser)`
-as its writer. The card then links the comments and says they were sent
-here. With nothing picked, Send stays held back; Copy still takes the
+as its writer. The card then links the posted comments. It reads the line
+every 3 seconds for up to 90 seconds, stopping sooner when the tick records
+the outcome, and shows whether the step was carried out, refused with its
+reason, or held. With nothing picked, Send stays held back; Copy still takes the
 approval of a lone Decide decision's recommendation to paste. A guarded
-pick sends on the second step, as it copies. The page tests the token by asking GitHub
+pick takes a second step to copy. Every Send first confirms the target,
+login and exact answer; changing the answer, target or token requires a new
+confirmation. The page tests the token by asking GitHub
 which login it signs in as, names that login, keeps the token in that
 browser's local storage alone and forgets it on request; the dashboard's
 server never receives it and has no route that writes. Make a fine-grained
@@ -1515,7 +1550,7 @@ whose configuration names the tracker.
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
 | `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
-| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
+| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
 **What it reads.** A `drive` or a `followup` reads the pull request and its
@@ -1607,7 +1642,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
-| `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item where the items are the forge's issues | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
+| `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
 | the [mailbox directives](protocol/mailbox.md#the-inbox), with the target argument for `resume` | `drive` | a directive in the mailbox of the working tree that holds the drive on this machine | the driver, at the checkpoints the [mailbox chapter](protocol/mailbox.md) names |
 
 **It checks before it writes.** It reads the address first, through `jig
@@ -1627,7 +1662,8 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   recommendation, and one whose digest is no longer the park's (below);
   to a need's decision, an answer whose key no need of the address carries
   in this machine's newest line, your own words (the tick carries out an
-  option), and an item on a tracker other than the forge;
+  option), and, on another tracker's item, a tracker that cannot name who
+  wrote a comment or a credential that acts as the factory identity;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so

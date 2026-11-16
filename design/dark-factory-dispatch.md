@@ -460,9 +460,12 @@ guards keep one stage from starting twice:
   instead of a question: the marker it left stays until that time, so no
   host starts the follow-up early, its wrapper does not answer it, and the
   tick releases it after the reset; a later tick starts the follow-up again
-  as a first run, with no recovery tag and outside the recovery budget. The
+  as a first run, with no recovery tag and outside the recovery budget. A
+  pass that stopped on a question naming a rate limit, with no routine
+  tag, waits the same way, until an hour after it ended. The
   third wait in a row is a person's, notified with the rate limit named
-  (`followup-waits.ts`). A run again of either kind never earns another: whichever
+  (`followup-waits.ts`); a person's restart (deleting the marker after that,
+  or a "Run it again" answer) starts the count again. A run again of either kind never earns another: whichever
   path ran it, its failure or death is a person's, so a follow-up is run
   again at most once by the two together, and both draw on the pull
   request's recovery budget. An older death, a failed outcome on an untagged
@@ -2336,6 +2339,25 @@ notified again for drift while that notification stands. Stage drift is
 never acted on: the stage keeps running and keeps its slot, and whether to
 stop it is a person's call. Stages the dispatcher did not launch carry no
 expectation.
+
+**Validation waiting for the host.** The dispatcher diagnoses test-lock
+waits without changing admission or pass deadlines. Resource-lock wait
+announcements carry the process identity, working directory and wait start
+on every platform. Attribution currently works on POSIX; Windows
+announcements are neither attributed nor counted as waiters until its
+synchronous identity check can verify process creation time. A tick attributes a live announcement only when one
+running launch's workspace holds the waiter's working directory and the
+launch precedes the wait, and retains
+the last observed wait on that launch record. Running and drift reasons
+name the wait and its duration; ended and stalled pickup reasons and the
+outcome log name the last observation as historical evidence. Admission or
+exit clears the current-wait mark on the next observation. An unreadable,
+unverifiable or older identity-only announcement is not attributed; the
+existing aggregate lock gauge remains available. A tick can miss a wait
+that starts and ends between observations. This diagnostic approach does
+not prevent a deadline from stopping a queued pass. The day-long live-host
+check after release remains a separate acceptance observation, including
+whether any queued validation reaches its deadline.
 
 **The dashboard.** `jig dispatch dashboard` serves one page that answers, in
 order, what needs a person, what is running on which account, what is coming

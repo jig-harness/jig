@@ -2022,8 +2022,8 @@ accepted in the same commit as the round's other fixes, and report the rest in
 scanner clean once a listing exits `0` and every finding it printed is fixed
 or named with its outcome in a round report. The listing runs only in a round
 the gate (§ 1) lets start: the gate does not count annotations, so a drive
-whose only open findings are annotations converges without one (roadmap
-item 30).
+whose only open findings are annotations converges without one
+([#1316](https://github.com/jig-harness/jig/issues/1316)).
 
 ### 3. Triage and act
 

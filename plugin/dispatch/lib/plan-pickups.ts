@@ -33,6 +33,11 @@
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
  */
+import {
+  reportEvidence,
+  reportFramed,
+  reportQuestion,
+} from "./report-needs.ts";
 import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
@@ -52,6 +57,7 @@ import {
 } from "./launches.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import {
   type LaunchPrReading,
@@ -119,12 +125,17 @@ function sessionsFor(
   const outside = holdingRecords(item, launches).filter(
     (r) => r.record.workspace === null || !paths.has(r.record.workspace.path),
   );
+  const waits = holdingRecords(item, launches).flatMap((r) => {
+    const note = testLockNote(r.record);
+    return note === null ? [] : [`launch record ${r.record.id} ${note}`];
+  });
   const parts = [
     ...(live.length > 0 ? [liveAgents(live)] : []),
     ...outside.map(
       (r) =>
         `launch record ${r.record.id} (${r.state.kind}) in ${r.record.workspace?.path ?? "no workspace yet"}`,
     ),
+    ...waits,
   ];
   const who = [
     ...live.map((w) => `workspace ${w.id}`),
@@ -287,6 +298,7 @@ function endedNeed(
       state: item.state,
       account: record.account,
       ended: endedHow(latest),
+      ...reportEvidence(latest.report),
     },
     cause: "pickup-ended",
     notice: pickupNotice(
@@ -438,7 +450,17 @@ function stalledPickup(
 ): Action {
   const idle = input.nowMs - since;
   const note = stallNote(pr);
-  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}`;
+  const latest = input.launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item.key ||
+          r.record.batchItems?.some((i) => i.key === item.key)),
+    )
+    .sort((a, b) => b.record.createdAt.localeCompare(a.record.createdAt))[0];
+  const wait =
+    latest?.record.testLockWait === undefined ? "" : `; ${endedHow(latest)}`;
+  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}${wait}`;
   return {
     stage: "notify",
     target: item.key,
@@ -498,10 +520,14 @@ function questionAsked(
   // What a pass whose result the host could not write asked is the host's fault, never a person's question.
   const unwritten = unwrittenResult(latest);
   if (unwritten && (input.rerunsHeld ?? null) !== null) return null;
-  const question = unwritten
+  const asked = unwritten
     ? `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
     : endedQuestion(latest);
-  if (question === null) return null;
+  if (asked === null) return null;
+  // A pass whose result the host could not write wrote no report a person reads.
+  const report = unwritten ? null : latest.report;
+  const question = reportQuestion(report, asked);
+  const framed = unwritten ? undefined : reportFramed(latest.framed, report);
   const { record } = latest;
   const reason = unwritten
     ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again: ${question}`
@@ -518,11 +544,10 @@ function questionAsked(
       state: item.state,
       account: record.account,
       question,
+      ...reportEvidence(report),
     },
     cause: "pickup-question",
-    ...(latest.framed === undefined || unwritten
-      ? {}
-      : { framed: latest.framed }),
+    ...(framed === undefined ? {} : { framed }),
     notice: pickupNotice(
       slug,
       `${item.key} question, record ${record.id}`,

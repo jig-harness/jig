@@ -8,6 +8,8 @@
  */
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { answerId, currentAnswers, useAnswers } from "./answers.ts";
+import { confirmationSignature, needsConfirmation } from "./confirmation.ts";
+import { tokenGeneration, useKeptToken } from "./forge-token.ts";
 import { announce, copyText } from "./copy.tsx";
 import { CARD_COMMIT, CARD_KEY, type CardKey, PALETTE_DONE } from "./keys.ts";
 import type { NeedView } from "./needs-view.ts";
@@ -62,16 +64,6 @@ function placeOf(need: NeedView, index: number): string {
   return total > 1 ? `decision ${index + 1} of ${total}` : need.target;
 }
 
-/** What makes Copy's first step stand: the decisions' framings and which answer of each counts. */
-function signatureOf(need: NeedView, answers: RowAnswer[]): string {
-  return need.rows
-    .map((row, i) => {
-      const a = answers[i];
-      return `${row.key} ${row.framing.digest} ${row.framing.parkedAt} ${a?.active} ${a?.pick?.name ?? ""}`;
-    })
-    .join("\n");
-}
-
 /** A commit's first step: for which answers it showed the guarded picks, and which commit it was. */
 interface Armed {
   sign: string;
@@ -82,6 +74,7 @@ export function usePicking(
   need: NeedView,
   card: RefObject<HTMLElement | null>,
 ): Picking {
+  useKeptToken();
   const ids = need.rows.map((row) => answerId(need.repo, need.target, row.key));
   const [kept, change, saved] = useAnswers(ids);
   const answers = need.rows.map((row, i) => rowAnswer(row, kept[i] ?? null));
@@ -103,9 +96,11 @@ export function usePicking(
     setArmedState(to);
   };
   const current = currentIndex(need.rows, answers, held);
-  const signature = signatureOf(need, answers);
+  const signature = confirmationSignature(need, answers, tokenGeneration());
   const confirming =
-    armed !== null && armed.sign === signature && commit.guarded.length > 0
+    armed !== null &&
+    armed.sign === signature &&
+    (armed.commit === "send" || commit.guarded.length > 0)
       ? armed.commit
       : null;
 
@@ -163,8 +158,10 @@ export function usePicking(
 
   const setText = (index: number, field: Field, text: string) => {
     const row = need.rows[index];
-    if (row !== undefined)
+    if (row !== undefined) {
       update(index, withText(row, keptNow(index), field, text, Date.now()));
+      setArmed(null);
+    }
   };
 
   /** What to commit now, or `null` when a row holds it back, nothing is picked to send, or its first step is still to show. */
@@ -186,10 +183,10 @@ export function usePicking(
       );
       return null;
     }
-    const sign = signatureOf(need, fresh);
+    const sign = confirmationSignature(need, fresh, tokenGeneration());
     const held = armedNow.current;
     if (
-      now.guarded.length > 0 &&
+      needsConfirmation(how, now.guarded.length) &&
       (held === null || held.sign !== sign || held.commit !== how)
     ) {
       setArmed({ sign, commit: how });

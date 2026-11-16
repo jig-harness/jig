@@ -349,6 +349,9 @@ export function validateLabels(
   const warnings: string[] = [];
   const parsed = parse(labels, taxonomy, errors);
   const present = presentLabels(labels, typed);
+  // The type facet stands for the type's own id, so a group not required on
+  // that type is lifted whether or not the tracker marks the issue as an epic.
+  if (facets?.type) present.add(facets.type);
   const missing: string[] = [];
   if (facets === undefined) {
     errors.push(...typeErrors(parsed, taxonomy));
