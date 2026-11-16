@@ -112,8 +112,10 @@ names, closed non-empty types and statuses, every flag firing something
 with a scope and a rule for when it applies, every group with labels,
 every category with a prefix that no other prefix begins and with labels
 or an open pattern that compiles, no type, flag or group label inside a
-category's prefix, every `requires` naming a label of the file, and no
-unknown key (at the top level or in any entry) or repeated key.
+category's prefix, every `requires` naming a label of the file, every
+`color` six hex digits written as text (`cfd3d7`, no `#`: the colour the
+label shows in the tracker, recorded so it does not drift), and no unknown
+key (at the top level or in any entry) or repeated key.
 
 ```bash
 bun <plugin>/skills/file-issue/scripts/check-label-taxonomy.ts [label-taxonomy.yaml]
@@ -132,6 +134,7 @@ taxonomy, before the issue is written:
 ```bash
 bun <plugin>/skills/file-issue/scripts/validate-labels.ts [--taxonomy <path>] [--json] [--check-tracker] <label>...
 bun <plugin>/skills/file-issue/scripts/validate-labels.ts bug small app
+bun <plugin>/skills/file-issue/scripts/validate-labels.ts --native-type Epic <label>...
 ```
 
 It rejects (exit `3`) an empty label or one with whitespace around its
@@ -139,12 +142,17 @@ name, a label the taxonomy does not define, an open
 category's label whose slug does not match, no type or two, two labels of
 one group or none of a required group, a label whose `requires` is unmet
 (a facet without its umbrella), and a flag without a label of a category
-it requires. It warns, without failing, above a category's `max` and when
+it requires. Given the issue's own tracker type (`--native-type`, or the
+`nativeType` of the issue JSON it reads), an issue of a type
+`issue_tracker.labels.epic_types` lists is checked as if it carried the epic
+label, so a `requires` naming that label is met by it. It warns, without
+failing, above a category's `max` and when
 a recommended category is absent. `--check-tracker` also rejects a label
 the tracker does not have and a name the tracker has more than one label
 of, matching names exactly, case included, as the tracker scripts do when
 they write. Exit `1` means the taxonomy is missing or fails
-the lint, or the tracker could not be read; `2` is a usage error. `--json`
+the lint, the tracker could not be read, or, given a type, the label roles
+in `issue_tracker.labels` could not be read; `2` is a usage error. `--json`
 prints `{ valid, labels, errors, warnings, parsed }`.
 
 ## Labels from the change
@@ -280,7 +288,11 @@ A move refuses overlapping source and destination stores, including native
 GitHub priority and the named Priority field, and in-place value-map changes.
 An unmapped nonempty destination must be mapped before copying; it is never
 overwritten as though it were empty. Jira's required native priority cannot
-be retired, so a move from that store is refused before copying.
+be retired, so a move from that store is refused before copying. A move of
+type out of Jira's issue types is refused, and a move into them is refused
+when the source keeps type in labels that overlap the fallback labels the
+issue types keep: move type from a field into the issue types, or keep type
+in labels or a field.
 
 
 ## A durable issue body

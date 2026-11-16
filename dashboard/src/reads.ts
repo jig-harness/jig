@@ -5,7 +5,7 @@
  * a connection that dropped is tried once more before the page says so.
  */
 import { focusManager, QueryClient, useQuery } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import type {
   RowsAnswer,
   StateAnswer,
@@ -17,6 +17,11 @@ import {
   readRows,
   readState,
 } from "./api.ts";
+import {
+  answerReadInterval,
+  answerWatchRevision,
+  subscribeAnswerWatch,
+} from "./send-watch.ts";
 import { type LogFilter, rowsQuery } from "./search.ts";
 
 /** How often the page reads, which the footer and the banner say. */
@@ -68,8 +73,15 @@ export interface StateRead {
 
 /** The newest tick's line and the server's facts. */
 export function useStateRead(token: string): Read<StateRead> {
-  const query = useQuery({
+  useSyncExternalStore(
+    subscribeAnswerWatch,
+    answerWatchRevision,
+    answerWatchRevision,
+  );
+  const query = useQuery<StateRead>({
     queryKey: ["state"],
+    refetchInterval: (q) =>
+      answerReadInterval(q.state.data?.answer.line ?? null),
     queryFn: async ({ signal }): Promise<StateRead> => ({
       answer: answerOf(await readState(token, signal)),
       readAtMono: performance.now(),

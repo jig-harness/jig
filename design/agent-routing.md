@@ -19,12 +19,14 @@ and whether it was applied written on the pull request, where the review
 loop's report joins it to how the work went; and a person's choice always
 wins.
 
-This is the design of [plan.md](plan.md) item 31, a change to `do-item` and
+This is the design of the routing work whose open steps are the backlog
+issues [#1319](https://github.com/jig-harness/jig/issues/1319), [#1320](https://github.com/jig-harness/jig/issues/1320) and [#1321](https://github.com/jig-harness/jig/issues/1321), a change to `do-item` and
 `work-batch`, with one line added to the
 [workspace launcher](../tools/launcher/README.md)'s first prompt. The
 derivation and the complexity tiers ([build order](#build-order) steps 1
-and 2) are built, and of step 4 the known-families list, `routing.family_tiers`
-and the loader's checks; the rest is not.
+and 2) are built, of step 4 the known-families list, `routing.family_tiers`
+and the loader's checks, and of step 5 the forwarding in dispatched passes behind a declared
+`routing` section; the rest is not.
 It builds on the agent selection that exists
 (`plugin/skills/do-item/scripts/determine_agent.ts`) and on the
 [work type](../GLOSSARY.md) derivation of item 27
@@ -222,7 +224,7 @@ implementer ran ([the record](#where-it-is-read)):
 Nothing lowers below the type's row: a type lowers depth only where nothing
 else raises it, the same rule as [work types](work-types.md#the-rule). The
 `reasons` list names which rule gave each part (`tier: standard (type
-feature, size M)`, `tier: complex (flag has-migration)`, `effort: high (flag has-migration raised medium)`), so a person
+feature, size M)`, `tier: complex (routing.complex_flags, for the item's label has-migration)`, `effort: high (raised from medium: routing.raise.flags, for the item's label has-migration)`), so a person
 reading a route record can see what to change.
 
 The default effort rows, from M0's ladder (the *what* of a bug, an

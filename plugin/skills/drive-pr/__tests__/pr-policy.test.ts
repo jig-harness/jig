@@ -48,8 +48,8 @@ describe("parsePrPolicy", () => {
       issueLink: "closes",
       sizeBudget: null,
       labels: [],
-      labelsFromIssue: new Map(),
-      reviewersFromIssue: new Map(),
+      labelsFromIssue: [],
+      reviewersFromIssue: [],
       titleFormat: null,
       titlePattern: null,
       baseRules: [],
@@ -81,10 +81,12 @@ describe("parsePrPolicy", () => {
       issueLink: "refs",
       sizeBudget: 400,
       labels: ["agent-authored"],
-      labelsFromIssue: new Map([["kind:db-migration", "needs-dba-review"]]),
-      reviewersFromIssue: new Map([
-        ["kind:db-migration", ["acme/dba", "alice"]],
-      ]),
+      labelsFromIssue: [
+        { key: "Kind:DB-Migration", result: "needs-dba-review" },
+      ],
+      reviewersFromIssue: [
+        { key: "kind:db-migration", result: ["acme/dba", "alice"] },
+      ],
       titleFormat: "free",
       titlePattern: null,
       baseRules: [],

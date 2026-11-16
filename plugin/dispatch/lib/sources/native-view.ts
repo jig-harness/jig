@@ -1,4 +1,6 @@
 /** Shared native tracker rows, interpreted anew by each repository. */
+import { coalesce } from "../../../shared/outbound/coalesce.ts";
+import { parseMs } from "../../../shared/time.ts";
 import type {
   DispatchRawIssue,
   PoolIssue,
@@ -14,6 +16,7 @@ import type { PickupReads } from "../pickup-reads.ts";
 import type { ServedView, ServedViews, HeldIssue } from "./served-reads.ts";
 
 import { isRateLimited } from "../../../shared/outbound/budget.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { failureText } from "../text.ts";
 import { nativeFacts } from "./native-facts.ts";
 import { ended, within } from "./bounded.ts";
@@ -97,12 +100,21 @@ export async function nativeSharedView(
       tracker: Tracker,
       identity: string,
       cache: PickupReads,
-    ) => { since: string; keys: string[] } | null;
+    ) => {
+      since: string;
+      keys: string[];
+      watermarks?: Readonly<Record<string, string>> | undefined;
+      boundaryRows?:
+        | Readonly<Record<string, ReadonlyArray<string>>>
+        | undefined;
+    } | null;
     credential: (tracker: Tracker, credential: string) => void;
   },
 ): Promise<ServedView> {
   if (ended(options.bound))
-    return Promise.reject(new Error("stopped at the tick’s deadline"));
+    return Promise.reject(
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
   const source = tracker.dispatchSource;
   if (source === undefined)
     return Promise.reject(
@@ -133,7 +145,7 @@ export async function nativeSharedView(
                 .filter((value) => value !== null);
               const since =
                 [query.since, ...saved.map((value) => value.since)].sort(
-                  (a, b) => a.localeCompare(b),
+                  (a, b) => parseMs(a) - parseMs(b),
                 )[0] ?? query.since;
               const keys = [
                 ...new Set([
@@ -142,17 +154,57 @@ export async function nativeSharedView(
                 ]),
               ];
               const probeKey = `dispatch scope probe ${options.nowMs}`;
-              let probe = reads.get(probeKey);
-              if (probe === undefined) {
-                probe = facts.guarded(() =>
+              const readings = [query, ...saved];
+              const partitions = new Set(
+                readings.flatMap((value) =>
+                  Object.keys(value.watermarks ?? {}),
+                ),
+              );
+              const watermarks = Object.fromEntries(
+                [...partitions].map((name) => [
+                  name,
+                  readings
+                    .map((value) => value.watermarks?.[name] ?? value.since)
+                    .sort((a, b) => parseMs(a) - parseMs(b))[0] ?? since,
+                ]),
+              );
+              const boundaryRows = Object.fromEntries(
+                [...partitions].map((name) => {
+                  // A newer reading covers the older boundary already. At
+                  // the selected boundary, every reading must cover a row
+                  // before the shared probe may suppress it.
+                  const atBoundary = readings.filter(
+                    (value) =>
+                      parseMs(value.watermarks?.[name] ?? value.since) ===
+                      parseMs(watermarks[name] ?? since),
+                  );
+                  const seen = atBoundary[0]?.boundaryRows?.[name] ?? [];
+                  return [
+                    name,
+                    seen.filter((row) =>
+                      atBoundary.every(
+                        (value) =>
+                          value.boundaryRows?.[name]?.includes(row) === true,
+                      ),
+                    ),
+                  ];
+                }),
+              );
+              return coalesce(reads, probeKey, () =>
+                facts.guarded(() =>
                   changedSince(
-                    { ...query, since, keys, identities },
+                    {
+                      ...query,
+                      since,
+                      keys,
+                      identities,
+                      ...(partitions.size === 0 ? {} : { watermarks }),
+                      ...(partitions.size === 0 ? {} : { boundaryRows }),
+                    },
                     options.bound?.signal,
                   ),
-                );
-                reads.set(probeKey, probe);
-              }
-              return (await probe) as import("../../../skills/do-item/scripts/lib/tracker/port.ts").ChangeAnswer;
+                ),
+              );
             },
           }),
       configKey: `native-v1:${credential}`,
@@ -202,7 +254,9 @@ export async function nativeSharedView(
     if (previous !== undefined) return previous;
     const raw = (value as NativePool).nativeRow;
     if (ended(options.bound))
-      return Promise.reject(new Error("stopped at the tick’s deadline"));
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
     const read = source.project(raw, options.bound);
     const issue = await (options.bound === undefined
       ? read

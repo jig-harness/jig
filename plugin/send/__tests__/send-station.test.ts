@@ -157,7 +157,7 @@ describe("jig send … answer to a need's decision", () => {
     const [first] = posted(w);
     expect(first?.path).toContain(`repos/${REPO}/issues/12/comments`);
     expect(first?.body.split("\n")[0]).toBe(
-      `answer followup: choose Leave it to me [${DIGEST}]`,
+      `answer followup: choose I'll handle it — hide this card [${DIGEST}]`,
     );
     const read = decodeMarker(
       first?.body ?? "",
@@ -166,7 +166,7 @@ describe("jig send … answer to a need's decision", () => {
     );
     expect(read.ok && read.value.payload).toMatchObject({
       decision: DIGEST,
-      choice: { option: "Leave it to me", form: "choose" },
+      choice: { option: "I'll handle it — hide this card", form: "choose" },
     });
   });
 

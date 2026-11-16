@@ -4,6 +4,8 @@
  * record of this host or a claim marker took; under `assigned`, every one.
  */
 import { describe, expect, it } from "bun:test";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
+import { OutboundError } from "../../shared/outbound/failure.ts";
 import { claimMarkerBody } from "../../skills/do-item/scripts/lib/claim-marker.ts";
 import type {
   CommentFact,
@@ -15,10 +17,14 @@ import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
 import { dispatchSection } from "../lib/section.ts";
 import { markClaims } from "../lib/sources/claim-markers.ts";
+import { toldAtOnce, waitsOut } from "../lib/read-failures.ts";
+import { emptyReport } from "../lib/tick-context.ts";
 import type {
   ClaimedItem,
   DispatchSection,
+  RepoReport,
   StalledScope,
+  Unplaced,
 } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
 
@@ -94,6 +100,20 @@ const stalled = (plan: ReturnType<typeof planPickups>) =>
   plan.actions.filter((a) => a.cause === "stalled").map((a) => a.target);
 
 describe("the stall watch's scope", () => {
+  it("names a stalled pickup's last observed validation wait", () => {
+    const launch = endedPickup("#7", true);
+    launch.record.testLockWait = {
+      pid: 12,
+      workspace: "/work/w",
+      since: "2026-11-11T06:00:00.000Z",
+      observedAt: "2026-11-11T06:29:00.000Z",
+      waiting: false,
+    };
+    const plan = planPickups(input("claimed", [item()], [launch]));
+    expect(plan.actions.find((a) => a.cause === "stalled")?.reason).toContain(
+      "last seen waiting for the test lock for 29m",
+    );
+  });
   it("leaves an identity's item no launch record or claim marker took quiet under claimed, and reports it under assigned", () => {
     const quiet = planPickups(input("claimed", [item()]));
     expect(quiet.actions).toEqual([]);
@@ -143,8 +163,8 @@ describe("the stall watch's scope", () => {
   });
 });
 
-/** A tracker whose items carry `comments`, counting the reads. */
-function tracker(comments: Record<string, CommentFact[]>) {
+/** A tracker whose items carry `comments`, counting the reads; an item's error is what its read throws. */
+function tracker(comments: Record<string, CommentFact[] | Error>) {
   const reads: string[] = [];
   const t = {
     adapter: "github",
@@ -153,6 +173,7 @@ function tracker(comments: Record<string, CommentFact[]>) {
       reads.push(key);
       const list = comments[key];
       if (list === undefined) throw new Error("HTTP 502");
+      if (list instanceof Error) throw list;
       return { uuid: key, comments: list };
     },
   } as unknown as Tracker;
@@ -232,6 +253,72 @@ describe("markClaims", () => {
         reason: expect.stringContaining("waits for a read"),
         readFailed: true,
       }),
+    ]);
+  });
+
+  it("keeps the class of a failed read on its row, so a read that clears by waiting is waited out", async () => {
+    const until = Date.parse("2026-11-11T09:00:00Z");
+    const { t } = tracker({
+      "#1": new OutboundError("rate-limited", "limited", { until }),
+      "#2": new OutboundError("unreachable", "no answer"),
+      "#3": new OutboundError("unauthorized", "the token was refused"),
+    });
+    const read = await markClaims(
+      t,
+      "factory-bot",
+      ["#1", "#2", "#3"].map((key) => item({ key })),
+      memoryCache(),
+    );
+    expect(
+      read.unplaced.map((u) => [u.target, u.readFailed, u.failure]),
+    ).toEqual([
+      [
+        "#1",
+        true,
+        { class: "rate-limited", until: "2026-11-11T09:00:00.000Z" },
+      ],
+      ["#2", true, { class: "unreachable" }],
+      ["#3", true, { class: "unauthorized" }],
+    ]);
+    const report = (unplaced: Unplaced[]): RepoReport => ({
+      ...emptyReport("/checkouts/repo", ""),
+      refused: null,
+      unplaced,
+    });
+    const [limited, down, refused] = read.unplaced.map((u) => report([u]));
+    const settings = { notifyAfter: 3 };
+    for (const r of [limited, down])
+      expect(r && waitsOut(r, 0, settings, NOW)).toBe(true);
+    expect(refused && waitsOut(refused, 0, settings, NOW)).toBe(false);
+    expect(refused && toldAtOnce(refused)).toBe(true);
+  });
+});
+
+describe("markClaims under the tracker's own rate limit", () => {
+  it("defers the item and every later one, the first carrying its class and reset", async () => {
+    const resetAt = Date.parse("2026-11-11T09:00:00Z");
+    const { t } = tracker({
+      "#1": new TrackerRateLimited("linear", resetAt, "spent"),
+    });
+    const read = await markClaims(
+      t,
+      "factory-bot",
+      ["#1", "#2"].map((key) => item({ key })),
+      memoryCache(),
+    );
+    expect(read.claimed.map((c) => c.claimMarker)).toEqual([
+      "unread",
+      "unread",
+    ]);
+    expect(
+      read.unplaced.map((u) => [u.target, u.readFailed, u.failure]),
+    ).toEqual([
+      [
+        "#1",
+        undefined,
+        { class: "rate-limited", until: "2026-11-11T09:00:00.000Z" },
+      ],
+      ["#2", undefined, undefined],
     ]);
   });
 });

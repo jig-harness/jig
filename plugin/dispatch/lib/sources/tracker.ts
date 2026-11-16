@@ -13,18 +13,32 @@
  * Beside them, the items the identity claimed (in its in-progress state),
  * which the plan watches for stalls and double claims; and the fresh read a
  * pickup's launch makes just before it starts.
+ *
+ * In a tick its launcher bounds, the reads after the facet read keep to the
+ * tick's own bound (`bounded.ts`): who assigned each item, the claimed
+ * items and their claim markers. An item whose assigner the bound ended
+ * before is unplaced with why, and claimed items it ended before are not
+ * known, as when their read fails; each is a failed read, so the tick
+ * reports it.
  */
 import { cacheForTracker } from "./tracker-cache.ts";
 import { sharedView, type ServedView } from "./served-reads.ts";
 import { nativeQueueRequirements } from "../../../skills/do-item/scripts/lib/tracker/dispatch-source.ts";
+import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
-import { within } from "./bounded.ts";
+import {
+  CUT_AT_BOUND,
+  ended,
+  heldTo,
+  passedBefore,
+  within,
+} from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
+import { limitedRow } from "./served-failures.ts";
 import {
-  limitedRow,
   readServedPickups,
   type ServedPolicy,
   type ServedOptions,
@@ -47,8 +61,13 @@ import {
   ok,
   type Outcome,
 } from "../../../shared/outcome.ts";
-import { combinedFailure, readFailureOf } from "../read-failures.ts";
+import {
+  combinedFailure,
+  readFailureOf,
+  readFailureOfError,
+} from "../read-failures.ts";
 import { failureText } from "../text.ts";
+import { failedBy, outboundFailure } from "../../../shared/outbound/failure.ts";
 import {
   type FacetBound,
   facetGaps,
@@ -86,11 +105,27 @@ export interface TrackerReading {
 async function readClaimed(
   tracker: Tracker,
   identity: string,
+  tick?: FacetBound,
 ): Promise<ClaimedItem[] | Unplaced> {
+  const unread = (why: string, cut?: ReadFailure): Unplaced => ({
+    target: `items in ${workingNames(tracker)}`,
+    record: "tracker",
+    reason: `the items ${identity} claimed could not be read, so stalls and double claims are not checked: ${why}`,
+    readFailed: true,
+    ...(cut === undefined ? {} : { failure: cut }),
+  });
+  if (ended(tick)) return unread(passedBefore("they were read"), CUT_AT_BOUND);
   try {
-    const issues = await tracker.assignedIssues(
-      identity,
-      workingStates(tracker),
+    const issues = await heldTo(
+      (signal) =>
+        tracker.assignedIssues(
+          identity,
+          workingStates(tracker),
+          tick === undefined || signal === undefined
+            ? undefined
+            : { signal, deadline: tick.deadline },
+        ),
+      tick,
     );
     return issues
       .filter(
@@ -106,11 +141,10 @@ async function readClaimed(
       }));
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    return {
-      target: `items in ${workingNames(tracker)}`,
-      record: "tracker",
-      reason: `the items ${identity} claimed could not be read, so stalls and double claims are not checked: ${failureText(error)}`,
-    };
+    return unread(
+      failureText(error),
+      readFailureOfError(error) ?? (ended(tick) ? CUT_AT_BOUND : undefined),
+    );
   }
 }
 
@@ -137,13 +171,15 @@ function withGaps(
 
 /**
  * The assigned items a person with write access assigned, wanted; the
- * others, and those whose assigner cannot be read, unplaced with why.
+ * others, and those whose assigner cannot be read or `tick` ended before
+ * it was, unplaced with why.
  */
 async function byTrustedAssigner(
   tracker: Tracker,
   issues: ReadonlyArray<PoolIssue>,
   identity: string,
   view?: ServedView,
+  tick?: FacetBound,
 ): Promise<{
   wanted: WantedItem[];
   unplaced: Unplaced[];
@@ -152,7 +188,19 @@ async function byTrustedAssigner(
   const wanted: WantedItem[] = [];
   const unplaced: Unplaced[] = [];
   for (const issue of issues) {
-    const read = await readAssigner(tracker, issue, identity, view);
+    if (view === undefined && ended(tick)) {
+      unplaced.push({
+        target: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+        record: "tracker",
+        reason: `assigned to ${identity} in ${issue.state.name}, but ${passedBefore("who assigned it was read")}`,
+        readFailed: true,
+        failure: CUT_AT_BOUND,
+      });
+      continue;
+    }
+    const read = await readAssigner(tracker, issue, identity, view, tick);
     if ("limited" in read)
       return { wanted: [], unplaced, limited: read.limited };
     if ("unplaced" in read) {
@@ -164,26 +212,30 @@ async function byTrustedAssigner(
   return { wanted, unplaced };
 }
 
-/** One assigned item's assigner read, as a wanted item, an unplaced one or the rate limit. */
-async function readAssigner(
+type AssignedBy = Awaited<ReturnType<Tracker["assignedBy"]>>;
+
+/** Who assigned one item, held to `tick` where there is one; the rate limit or an unplaced item when the read failed. */
+async function readAssignedBy(
   tracker: Tracker,
   issue: PoolIssue,
   identity: string,
   view?: ServedView,
+  tick?: FacetBound,
 ): Promise<
-  | { wanted: WantedItem }
-  | { unplaced: Unplaced }
-  | { limited: TrackerRateLimited }
+  { by: AssignedBy } | { unplaced: Unplaced } | { limited: TrackerRateLimited }
 > {
-  let by: Awaited<ReturnType<Tracker["assignedBy"]>>;
   try {
-    by =
+    const by =
       view === undefined
-        ? await tracker.assignedBy(issue.identifier, identity)
+        ? await heldTo(
+            (signal) => tracker.assignedBy(issue.identifier, identity, signal),
+            tick,
+          )
         : await view.once(
             `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
-            () => tracker.assignedBy(issue.identifier, identity),
+            () => tracker.assignedBy(issue.identifier, identity, tick?.signal),
           );
+    return { by };
   } catch (error) {
     if (isRateLimited(error)) return { limited: error };
     return {
@@ -193,9 +245,36 @@ async function readAssigner(
         url: issue.url,
         record: "tracker",
         reason: `who assigned it cannot be read: ${failureText(error)}`,
+        // A complete negative assignment answer is informational; every
+        // other throw fails the read, even when no call class explains it.
+        ...(error instanceof AssignerUnknown
+          ? {}
+          : {
+              readFailed: true as const,
+              ...(readFailureOfError(error) === undefined && !ended(tick)
+                ? {}
+                : { failure: readFailureOfError(error) ?? CUT_AT_BOUND }),
+            }),
       },
     };
   }
+}
+
+/** One assigned item's assigner read, held to `tick` where there is one, as a wanted item, an unplaced one or the rate limit. */
+async function readAssigner(
+  tracker: Tracker,
+  issue: PoolIssue,
+  identity: string,
+  view?: ServedView,
+  tick?: FacetBound,
+): Promise<
+  | { wanted: WantedItem }
+  | { unplaced: Unplaced }
+  | { limited: TrackerRateLimited }
+> {
+  const read = await readAssignedBy(tracker, issue, identity, view, tick);
+  if (!("by" in read)) return read;
+  const { by } = read;
   if (!by.trusted) {
     return {
       unplaced: {
@@ -231,8 +310,9 @@ async function trustedAndClaimed(
   identity: string,
   issues: ReadonlyArray<PoolIssue>,
   view?: ServedView,
+  tick?: FacetBound,
 ): Promise<
-  | { limited: TrackerRateLimited }
+  | { limited: TrackerRateLimited; unplaced: Unplaced[] }
   | {
       wanted: WantedItem[];
       unplaced: Unplaced[];
@@ -244,15 +324,16 @@ async function trustedAndClaimed(
     issues,
     identity,
     view,
+    tick,
   );
-  if (limited !== undefined) return { limited };
+  if (limited !== undefined) return { limited, unplaced };
   try {
     return {
       wanted,
       unplaced,
       claimed:
         view === undefined
-          ? await readClaimed(tracker, identity)
+          ? await readClaimed(tracker, identity, tick)
           : view.progress().map((i) => ({
               key: i.identifier,
               title: i.title,
@@ -265,7 +346,7 @@ async function trustedAndClaimed(
             })),
     };
   } catch (error) {
-    if (isRateLimited(error)) return { limited: error };
+    if (isRateLimited(error)) return { limited: error, unplaced };
     throw error;
   }
 }
@@ -287,9 +368,10 @@ async function readAssigned(
     bound !== undefined &&
     (bound.signal.aborted || currentMs() >= bound.deadline)
   )
-    return failed(
+    return failedBy(
       "stopped",
-      "the tick's deadline passed before the read could start",
+      outboundFailure("unreachable", passedBefore("the read could start")),
+      passedBefore("the read could start"),
     );
   try {
     return ok(
@@ -431,12 +513,13 @@ function unavailableFactory(
  * none to read. With `facets`, the record also says where the tracker
  * keeps each issue facet, read first and within `facets.bound` so a
  * detection the reads depend on is bounded too, and which assigned items
- * lack one (an epic needs no size).
+ * lack one (an epic needs no size); the reads after it keep to
+ * `facets.tick`, the tick's own bound, where the tick has one.
  */
 async function readFactoryPickups(
   open: () => Tracker,
   section: DispatchSection,
-  facets?: { bound: () => FacetBound },
+  facets?: PickupBounds,
   cache: PickupReads = pickupReads,
   served?: ServedOptions,
 ): Promise<TrackerReading> {
@@ -448,6 +531,7 @@ async function readFactoryPickups(
   // One bound for the whole facet read: the stores and the assigned items
   // share its allowance and its cancellation.
   const bound = facets?.bound();
+  const tick = tickOf(facets);
   // The diagnostic report gets its own share of the allowance, so a slow
   // report leaves the assigned-item read its time.
   const stores =
@@ -487,11 +571,23 @@ async function readFactoryPickups(
       assigned.failure,
     );
   const issues = assigned.value;
-  const read = await trustedAndClaimed(tracker, identity, issues, view);
-  if ("limited" in read)
-    return limitedFactory(tracker, identity, read.limited, stores, view);
-  if (view?.unavailable !== undefined)
-    return unavailableFactory(tracker, identity, view, stores);
+  const read = await trustedAndClaimed(tracker, identity, issues, view, tick);
+  if ("limited" in read) {
+    const limited = limitedFactory(
+      tracker,
+      identity,
+      read.limited,
+      stores,
+      view,
+    );
+    limited.unplaced.unshift(...read.unplaced);
+    return limited;
+  }
+  if (view?.unavailable !== undefined) {
+    const unavailable = unavailableFactory(tracker, identity, view, stores);
+    unavailable.unplaced.unshift(...read.unplaced);
+    return unavailable;
+  }
   const { wanted, unplaced } = read;
   const claimed = await scopedClaims(
     tracker,
@@ -499,6 +595,7 @@ async function readFactoryPickups(
     section,
     read.claimed,
     cache,
+    tick,
   );
   unplaced.push(...claimed.unplaced);
   const record =
@@ -531,11 +628,12 @@ async function scopedClaims(
   section: DispatchSection,
   claimed: ClaimedItem[] | Unplaced,
   cache: PickupReads,
+  tick?: FacetBound,
 ): Promise<{ items: ClaimedItem[] | null; unplaced: Unplaced[] }> {
   if (!Array.isArray(claimed)) return { items: null, unplaced: [claimed] };
   if (section.stalledScope !== "claimed")
     return { items: claimed, unplaced: [] };
-  const marks = await markClaims(tracker, identity, claimed, cache);
+  const marks = await markClaims(tracker, identity, claimed, cache, tick);
   return { items: marks.claimed, unplaced: marks.unplaced };
 }
 
@@ -595,11 +693,26 @@ function servedReadOptions<T extends { people: readonly ServedPerson[] }>(
   return options;
 }
 
+/**
+ * How the pickups' tracker reads are bounded: `bound` makes the facet
+ * read's own bound as it starts, and `tick`, where the tick has one, is the
+ * tick's bound that the reads after it keep to.
+ */
+export interface PickupBounds {
+  bound: () => FacetBound;
+  tick?: FacetBound | undefined;
+}
+
+/** The tick's own bound in `facets`, where the tick has one. */
+function tickOf(facets: PickupBounds | undefined): FacetBound | undefined {
+  return facets?.tick;
+}
+
 /** Factory and host-served work share the same plan and capacity checks. */
 export async function readPickups(
   open: () => Tracker,
   section: DispatchSection,
-  facets?: { bound: () => FacetBound },
+  facets?: PickupBounds,
   servedInput?: {
     cache?: import("../pickup-reads.ts").PickupReads;
     people: readonly ServedPerson[];
@@ -639,11 +752,10 @@ export async function readPickups(
     once,
   );
   if (served === undefined || served.people.length === 0) return factory;
-  const extra = await readServedPickups(
-    once(),
-    served.people,
-    servedReadOptions(served),
-  );
+  const extra = await readServedPickups(once(), served.people, {
+    ...servedReadOptions(served),
+    epicWidth: section.epicWidth,
+  });
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
     read: servedRead(factory.read, extra),
@@ -669,19 +781,21 @@ export async function readPickups(
 }
 
 /**
- * The aggregate record with the served lane's reading in it: a served queue
- * that failed to read makes the record not ok, with the failure's class, so
- * settlement treats it as it does the identity's own failed read. The record
- * keeps one failure for the identity's read and every failed served read
- * (`combinedFailure`), so it waits only when every one of them clears by
- * waiting.
+ * The aggregate record with the served lane's reading in it: a served queue,
+ * or an item in it, whose read threw makes the record not ok, with the
+ * failure's class, so settlement treats it as it does the identity's own
+ * failed read. An item no read threw for (an answer that names no assigner, a
+ * read the tracker cut short) is its own unplaced row and leaves the record
+ * ok. The record keeps one failure for the identity's read and
+ * every failed served read (`combinedFailure`), so it waits only when every
+ * one of them clears by waiting.
  */
 function servedRead(
   read: TrackerReading["read"],
   extra: Awaited<ReturnType<typeof readServedPickups>>,
 ): TrackerReading["read"] {
   const detail = `${read.detail}; ${extra.wanted.length} served pickup(s)`;
-  if (extra.incomplete !== true) return { ...read, detail };
+  if ((extra.failures ?? []).length === 0) return { ...read, detail };
   const failure = combinedFailure([
     ...(read.ok ? [] : [read.failure]),
     ...(extra.failures ?? []).map((cause) =>

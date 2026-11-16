@@ -1,20 +1,30 @@
 /**
  * gc's side of the launch guard record (`shared/orca-guard.ts`) for one
  * worktree Orca manages: write the admission, keep the worktree for a launch
- * marker that settles or came after it, let the removal through Orca run,
- * and delete the admission whatever happened. Whether Jig's plugin for Orca
- * guards launches (its heartbeat is fresh) is recorded on the receipt line;
- * an unguarded collection runs as it would without the plugin.
+ * marker that settles or came after it, mark the admission submitted just
+ * before `orca worktree rm`, and delete it unless that call was made and
+ * gave no answer. A claim kept that way is settled by a later collection:
+ * one that takes it over and gets the call's answer, or one that finds the
+ * worktree gone from Orca's list and from the disk. Whether Jig's plugin for
+ * Orca guards launches (its heartbeat is fresh) is recorded on the receipt
+ * line; an unguarded collection runs as it would without the plugin.
  */
+import { lstatSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
+import { errnoCode } from "../../shared/errors.ts";
 import {
   admit,
   guardRoot,
   guardState,
   launchVeto,
+  releaseAbsent,
+  staleAdmissions,
   sweepLaunches,
+  unreadableAdmissions,
 } from "../../shared/orca-guard.ts";
-import type { CollectionKind, Resource } from "../types.ts";
+import { ok, type Outcome } from "../../shared/outcome.ts";
+import type { CollectionKind, Proof, Resource } from "../types.ts";
+import { removalAnswered, type StepOutcome } from "../worktree-removal.ts";
 import { currentMs } from "../../shared/time.ts";
 
 export type Collected = Awaited<ReturnType<CollectionKind["collect"]>>;
@@ -48,16 +58,43 @@ function sweepOncePerRun(root: string): void {
   sweepLaunches(root);
 }
 
+/** What a guarded collection's removal is given. */
+export interface GuardedRemoval {
+  /**
+   * Why a launch marker now keeps the worktree, or `null`; read after the
+   * last read of Orca's registry.
+   */
+  launched(): string | null;
+  /**
+   * Mark the admission submitted, immediately before `orca worktree rm`;
+   * the call is not made when it fails.
+   */
+  submit(): StepOutcome;
+  /**
+   * Hand over the removal's outcome: only the answer of `orca worktree rm`,
+   * success or Orca's explicit refusal, releases a submitted admission.
+   */
+  settle(removed: Outcome<unknown>): void;
+  /**
+   * Whether the admission is submitted, by this collection or by the dead
+   * one it took over, and no answer of `orca worktree rm` settled it: Orca
+   * may be deleting the worktree still. Read after `settle`.
+   */
+  unsettled(): boolean;
+}
+
 /**
  * Collect one worktree Orca reports at `path` under gc's admission. `body`
- * removes it; the `launched` it is given says, when read, why a launch
- * marker now keeps the worktree, and the body reads it after its last read
- * of Orca's registry.
+ * removes it with the `GuardedRemoval` it is given. The admission is deleted
+ * on every exit unless it was submitted, by this collection or by the dead
+ * one it took over, and the removal call gave no answer: then it stays, so
+ * the plugin's hook keeps refusing launches into the worktree until a later
+ * collection settles it, and the receipt says so.
  */
 export async function guardedCollection(
   resource: Resource,
   path: string | null,
-  body: (launched: () => string | null) => Promise<Collected>,
+  body: (guard: GuardedRemoval) => Promise<Collected>,
   root = guardRoot(),
 ): Promise<Collected> {
   const guard = guardLabel(root);
@@ -72,27 +109,180 @@ export async function guardedCollection(
   });
   if (path === null) return kept("Orca's path of the worktree is unknown");
   sweepOncePerRun(root);
-  const admission = admit(path, root);
-  if (!admission.ok) return kept(admission.failure.reason);
+  const admitted = admit(path, root);
+  if (!admitted.ok) return kept(admitted.failure.reason);
+  const admission = admitted.value;
+  let answered = false;
+  /** Why the admission outlives this collection, or `null` when it is released. */
+  const claimKept = (): string | null =>
+    admission.submitted === null || answered
+      ? null
+      : `the launch guard claim stays: orca worktree rm was called under it at ${admission.submitted} and its answer left the removal unsettled, so the next collection asks again`;
+  const noting = (reason: string): string => {
+    const why = claimKept();
+    return why === null ? reason : `${reason}; ${why}`;
+  };
   // The heartbeat is read again at each launch check, the last one being the
   // checkpoint before removal, and the receipt records that observation.
   let observed = guard;
   try {
-    const early = launchVeto(admission.value, root);
-    if (early !== null) return kept(early);
-    const done = await body(() => {
-      observed = guardLabel(root);
-      return launchVeto(admission.value, root);
+    const early = launchVeto(admission, root);
+    if (early !== null) {
+      const refused = kept(noting(early));
+      return claimKept() === null
+        ? refused
+        : {
+            ...refused,
+            details: { ...details, claim: "kept", claimNote: undefined },
+          };
+    }
+    const done = await body({
+      launched: () => {
+        observed = guardLabel(root);
+        return launchVeto(admission, root);
+      },
+      submit: () => {
+        const marked = admission.submit();
+        return marked.ok ? ok(undefined) : marked;
+      },
+      settle: (removed) => {
+        answered = removalAnswered(removed);
+      },
+      unsettled: () => claimKept() !== null,
     });
     return {
       ...done,
-      reason: `${done.reason}; ${observed.reason}`,
+      reason: `${noting(done.reason)}; ${observed.reason}`,
       details: {
         ...(isMapping(done.details) ? done.details : details),
         guard: observed.label,
+        // The inventory's standing-claim note no longer holds once the claim
+        // is settled; the merge over the listed details keeps an absent key.
+        claim: claimKept() === null ? undefined : "kept",
+        claimNote: undefined,
       },
     };
   } finally {
-    admission.value.release();
+    if (claimKept() === null) admission.release();
   }
+}
+
+/** Whether anything stands at `path`; an error other than its absence counts as present. */
+export function onDisk(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    return errnoCode(error) !== "ENOENT";
+  }
+}
+
+/** The receipt detail that marks a resource as a dead collector's claim on a worktree that is gone. */
+const GONE = "gone";
+
+/** Whether `resource` is a claim `goneClaims` listed. */
+export function isGoneClaim(resource: Resource): boolean {
+  return isMapping(resource.details) && resource.details.claim === GONE;
+}
+
+/**
+ * A resource for each admission a collector that ended left on a worktree
+ * `mine` accepts and that is gone from the disk; the caller keeps only those
+ * Orca's list does not hold either. Collecting one deletes the admission,
+ * which nothing else would, since a gone worktree is never collected again.
+ */
+export function goneClaims(
+  mine: (path: string) => boolean,
+  root = guardRoot(),
+): Resource[] {
+  return staleAdmissions(root)
+    .filter(({ path }) => mine(path) && !onDisk(path))
+    .map(({ path, submitted }) => ({
+      id: path,
+      details: {
+        runtime: "orca",
+        orcaPath: path,
+        claim: GONE,
+        ...(submitted === null ? {} : { submitted }),
+      },
+    }));
+}
+
+/** The receipt detail that marks a resource as an admission gc cannot read. */
+const UNREADABLE = "unreadable";
+
+/** Whether `resource` is an admission `unreadableClaims` listed. */
+export function isUnreadableClaim(resource: Resource): boolean {
+  return isMapping(resource.details) && resource.details.claim === UNREADABLE;
+}
+
+/**
+ * A resource for each admission gc cannot read. It still blocks launches, and
+ * nothing else would say so: it is reported unverified, never collected.
+ */
+export function unreadableClaims(root = guardRoot()): Resource[] {
+  return unreadableAdmissions(root).map(({ file, reason }) => ({
+    id: file,
+    details: {
+      runtime: "orca",
+      claim: UNREADABLE,
+      reason: `an admission gc cannot read stands at ${file} (${reason}); it blocks launches until it is removed after inspection`,
+    },
+  }));
+}
+
+/** The proof of an unreadable admission: never collectable, its reason is the receipt's. */
+export function proveUnreadable(resource: Resource): Proof {
+  const reason =
+    isMapping(resource.details) && typeof resource.details.reason === "string"
+      ? resource.details.reason
+      : "an admission gc cannot read blocks launches";
+  return { state: "unverified", reason };
+}
+
+/**
+ * The dead collectors' claims standing on worktrees that are still on the
+ * disk, by path: a worktree that is active, dirty or locked is never
+ * collected, so its claim would otherwise go unreported.
+ */
+export function standingClaims(root = guardRoot()): Map<string, string | null> {
+  return new Map(
+    staleAdmissions(root)
+      .filter(({ submitted }) => submitted !== null)
+      .map(({ path, submitted }) => [path, submitted]),
+  );
+}
+
+/**
+ * The proof that a gone claim's worktree is still gone: Orca's list, read
+ * again by `listed`, does not hold it, and nothing stands at its path. A
+ * list that cannot be read keeps the claim.
+ */
+export async function proveGone(
+  resource: Resource,
+  listed: () => Promise<Outcome<(path: string) => boolean>>,
+): Promise<Proof> {
+  const read = await listed();
+  if (!read.ok) return { state: "unverified", reason: read.failure.reason };
+  if (read.value(resource.id))
+    return { state: "live", reason: "Orca lists the worktree again" };
+  if (onDisk(resource.id))
+    return { state: "live", reason: "the worktree is on the disk again" };
+  return {
+    state: "dead",
+    reason:
+      "the worktree is gone from Orca's list and from the disk, and the collection that holds its launch guard claim has ended",
+  };
+}
+
+/** Delete the gone claim's admission, reading the disk once more under its lock. */
+export function releaseGone(resource: Resource, root = guardRoot()): Collected {
+  const released = releaseAbsent(resource.id, () => !onDisk(resource.id), root);
+  return released.ok
+    ? {
+        outcome: "collected",
+        reason:
+          "released the launch guard claim of a worktree gone from Orca's list and from the disk",
+      }
+    : { outcome: "refused", reason: `kept: ${released.failure.reason}` };
 }

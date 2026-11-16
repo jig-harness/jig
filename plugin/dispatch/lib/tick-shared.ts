@@ -362,6 +362,8 @@ export async function endOwnClaims(
     nowMs: number;
     /** The failure ledger: an end that keeps failing backs off. */
     book?: ActionBook | null;
+    /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`): their markers stay. */
+    rerunsHeld?: string | null;
   },
 ): Promise<void> {
   const scope = inputs.forge.scoped
@@ -382,6 +384,7 @@ export async function endOwnClaims(
       isoFromMs(inputs.nowMs),
       scope,
       inputs.forge.ok ? (inputs.book ?? undefined) : undefined,
+      inputs.rerunsHeld ?? null,
     )),
     ...(await releaseRoutineMarkers(
       ctx,

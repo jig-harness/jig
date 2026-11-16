@@ -14,6 +14,7 @@ import {
 import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
 import { orcaCommand } from "../shared/orca.ts";
 import { baseDeclaration } from "./git.ts";
+import { orcaTerminalsKind } from "./kinds/orca-terminals.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
 import { stateRoot } from "./receipts.ts";
 import { scratchKind } from "./kinds/scratch.ts";
@@ -47,6 +48,7 @@ function repositoryKinds(
   declaration: Declaration,
   source: string,
   machine: MachineConfig,
+  collecting: boolean,
   policy?: { remote: string; base: string },
 ): CollectionKind[] {
   return declaration.kinds
@@ -59,6 +61,10 @@ function repositoryKinds(
           declaration.scratch_prefixes,
           source,
           days,
+          undefined,
+          // A report run reads the page the next collecting run will start
+          // from, and leaves the cursor where it is.
+          { advance: collecting },
         );
       if (name === "tool-state") return toolStateKind(repository, source, days);
       return worktreesKind(
@@ -69,6 +75,7 @@ function repositoryKinds(
         policy,
         machineOrca(machine),
         { root: stateRoot(), maxBytes: machine.archive_max_bytes },
+        declaration.regenerable_paths,
       );
     });
 }
@@ -116,10 +123,17 @@ async function confirmedPlan(
       ),
     );
   kinds.push(
-    ...repositoryKinds(entry.path, declaration, current.value.source, machine, {
-      remote: entry.remote,
-      base: entry.base_branch,
-    }),
+    ...repositoryKinds(
+      entry.path,
+      declaration,
+      current.value.source,
+      machine,
+      true,
+      {
+        remote: entry.remote,
+        base: entry.base_branch,
+      },
+    ),
   );
   return ok(kinds);
 }
@@ -135,6 +149,7 @@ function checkoutPlan(
       current.value.declaration,
       `${entry.path}/.config/jig.yaml (checkout; report only)`,
       machine,
+      false,
     ),
   );
 }
@@ -249,6 +264,20 @@ async function entriesPlan(
   }
   return ok(kinds);
 }
+/** The machine-wide kinds, which no single repository selects. */
+function machineKinds(machine: MachineConfig): CollectionKind[] {
+  const kinds: CollectionKind[] = [];
+  if (machine.receipts && !machine.disabled.includes("receipts"))
+    kinds.push(receiptsKind(machine.receipts_days));
+  const orca = machineOrca(machine);
+  if (
+    orca !== undefined &&
+    machine.orca !== undefined &&
+    !machine.disabled.includes("orca-terminals")
+  )
+    kinds.push(orcaTerminalsKind(orca, machine.orca.terminal_idle_hours));
+  return kinds;
+}
 /**
  * The kinds a run evaluates, or why it plans none: the machine's
  * configuration cannot be read, or a repository's declaration is refused.
@@ -262,9 +291,9 @@ export async function collectionPlan(options: {
   if (!configuration.ok) return configuration;
   const { machine } = configuration.value;
   const selected = options.repository ? resolve(options.repository) : undefined;
-  // Receipts are machine-local: planning them must not fetch any base.
+  // Machine kinds are machine-local: planning them must not fetch any base.
   const chosen =
-    options.kind === "receipts"
+    options.kind === "receipts" || options.kind === "orca-terminals"
       ? []
       : selected
         ? await selection(selected, options.collect, machine)
@@ -285,8 +314,7 @@ export async function collectionPlan(options: {
     if (!planned.ok) return planned;
     kinds.push(...planned.value);
   }
-  if (!selected && machine.receipts && !machine.disabled.includes("receipts"))
-    kinds.push(receiptsKind(machine.receipts_days));
+  if (!selected) kinds.push(...machineKinds(machine));
   return ok(
     kinds.filter((kind) => !options.kind || kind.name === options.kind),
   );

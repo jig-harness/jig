@@ -3,10 +3,11 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -34,6 +35,8 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
 
 import { readState, writeState } from "./state-rows.ts";
+
+import { CONTEXT_PATTERN } from "../scripts/lib/context-ignore.ts";
 
 useDrivePrSuite();
 describe("finish-round.ts", () => {
@@ -186,6 +189,87 @@ describe("finish-round.ts", () => {
     // that ordering that the script cannot self-report.
     expect(r.pushed).toBe("");
     expect(r.stderr).toContain("uncommitted.txt");
+  });
+
+  // A repository that does not ignore `.context/`, once the drive has
+  // excluded it: the round's own handoff and mailbox live in the tree.
+  const ctxHomes: string[] = [];
+  afterEach(() => {
+    for (const dir of ctxHomes.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  const ownContext = async () => {
+    const repo = scratchWithOrigin();
+    // No user-level rule (`$XDG_CONFIG_HOME/git/ignore`, `core.excludesFile`)
+    // may stand in for the clone-local exclusion the drive writes.
+    const home = mkdtempSync(join(tmpdir(), "ctx-home-"));
+    ctxHomes.push(home);
+    const config = join(home, "gitconfig");
+    writeFileSync(config, "");
+    const isolated = {
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CONFIG_HOME: join(home, ".config"),
+      GIT_CONFIG_GLOBAL: config,
+      GIT_CONFIG_NOSYSTEM: "1",
+    };
+    const setup = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `const m = await import(${JSON.stringify(
+          join(import.meta.dir, "..", "scripts", "lib", "context-ignore.ts"),
+        )}); console.log(JSON.stringify(await m.ensureContextIgnored(process.argv[1])));`,
+        repo.dir,
+      ],
+      {
+        env: { ...gitCleanEnv(), ...isolated },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(
+      {
+        exitCode: setup.exitCode,
+        stdout: setup.stdout.toString(),
+        stderr: setup.stderr.toString(),
+      },
+      0,
+      "ensureContextIgnored",
+    );
+    expect(JSON.parse(setup.stdout.toString()).kind).toBe("excluded");
+    expect(
+      readFileSync(join(repo.dir, ".git", "info", "exclude"), "utf8"),
+    ).toContain(CONTEXT_PATTERN);
+    const context = join(repo.dir, ".context");
+    mkdirSync(context, { recursive: true });
+    writeFileSync(join(context, "pr-drive-999.md"), "handoff\n");
+    return {
+      repo,
+      env: {
+        ...isolated,
+        DRIVE_PR_HANDOFF_DIR: context,
+        DRIVE_PR_MAILBOX_DIR: join(context, "drive-mailbox"),
+      },
+    };
+  };
+
+  it("pushes over the drive's own .context/ files once the drive excluded them", async () => {
+    const { repo, env } = await ownContext();
+    const r = await finishRound({ repo, env });
+    expect(r.report.state).not.toBe("REFUSED_UNCLEAN");
+    expect(r.pushed).not.toBe("");
+  });
+
+  it("still refuses an untracked file outside .context/", async () => {
+    const { repo, env } = await ownContext();
+    writeFileSync(join(repo.dir, "stray.txt"), "left over\n");
+    const r = await finishRound({ repo, env });
+    expect(r.report.state).toBe("REFUSED_UNCLEAN");
+    expect(r.pushed).toBe("");
+    expect(r.stderr).toContain("stray.txt");
+    expect(r.stderr).not.toContain("?? .context/");
   });
 
   it("refuses an unconcluded merge whose worktree reads CLEAN, and pushes nothing", async () => {

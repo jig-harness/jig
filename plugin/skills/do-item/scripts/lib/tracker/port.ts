@@ -15,6 +15,12 @@
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
+import type {
+  FoundComment,
+  IssueComment,
+  IssueComments,
+  TrackerUser,
+} from "./comment-port.ts";
 import type { DispatchSource } from "./dispatch-source.ts";
 export type { DispatchRawIssue, DispatchSource } from "./dispatch-source.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
@@ -229,10 +235,13 @@ export interface Issue extends FacetValues {
 
 export type { BlockedFields } from "./blocked-port.ts";
 
-export interface IssueComment {
-  body: string;
-  createdAt?: string;
-}
+export type {
+  CommentFact,
+  FoundComment,
+  IssueComment,
+  IssueComments,
+  TrackerUser,
+} from "./comment-port.ts";
 
 // ── Facts the fleet metrics read ───────────────────────────────────────────
 
@@ -260,30 +269,6 @@ export interface IssueFact {
     labels: string[];
     nativeType?: string | null;
   }>;
-}
-
-export interface CommentFact {
-  /** The tracker's own id for the comment, which `deleteComment` takes. */
-  id?: string;
-  body: string;
-  createdAt: string;
-  /**
-   * The author is a real, non-guest member of the tracker workspace. Only a
-   * trusted comment may carry a marker the metrics act on: anyone able to
-   * comment could otherwise post a marker-shaped line.
-   */
-  trusted: boolean;
-}
-
-/** A comment found by a text search, with the issue it sits on. */
-export interface FoundComment extends CommentFact {
-  issue: string;
-}
-
-/** Every comment on one issue, and the tracker id to post a reply to. */
-export interface IssueComments {
-  uuid: string;
-  comments: CommentFact[];
 }
 
 /**
@@ -342,10 +327,7 @@ export const CLOSED_STATE_TYPES = [
  * states of one category), and a claim re-check compares ids.
  */
 export interface PoolIssue {
-  /**
-   * The tracker's own issue type, where the read took it: an adapter with
-   * type-specific workflows, or one that reads `isEpic` from it.
-   */
+  /** The tracker's own issue type, where the read took it (type-specific workflows, `isEpic`). */
   nativeType?: string | null;
   /** Complete labels hidden by ordinary pool display, for migration validation. */
   hiddenLabels?: string[];
@@ -388,12 +370,6 @@ export interface Assigner {
   id: string;
   name: string;
   trusted: boolean;
-}
-
-/** A user of the tracker: its own id, and the name it shows (a GitHub login, a Linear or Jira display name). */
-export interface TrackerUser {
-  id: string;
-  name: string;
 }
 
 /** Which open issues a pool holds, by label and by facet. */
@@ -652,17 +628,25 @@ export interface QueueIssue extends PoolIssue {
 export interface ChangeQuery {
   /** An ISO 8601 time: issues updated after it count. */
   since: string;
+  /** Source-defined partitions may advance independently; missing entries use `since`. */
+  watermarks?: Readonly<Record<string, string>>;
+  /** Source tokens for facts already observed at each inclusive timestamp boundary. */
+  boundaryRows?: Readonly<Record<string, ReadonlyArray<string>>>;
   identity: string;
   /** All people sharing this scope probe, when dispatch groups its queues. */
   identities?: ReadonlyArray<string>;
   keys: ReadonlyArray<string>;
 }
 
-/** What `changedSince` found: the issues that changed, whether that list is all of them, and the latest update among them. */
+/** What `changedSince` found: the issues that changed, whether that list is all of them, and a safe next-probe watermark. */
 export interface ChangeAnswer {
   keys: string[];
   complete: boolean;
   latest: string | null;
+  /** Safe boundaries for the source's partitions, retained only with a complete answer. */
+  watermarks?: Readonly<Record<string, string>>;
+  /** Source tokens for facts observed at each inclusive timestamp boundary. */
+  boundaryRows?: Readonly<Record<string, string[]>>;
 }
 
 /** A label an issue can carry, with the group it belongs to; `null` = none. */
@@ -677,6 +661,11 @@ export interface TrackerLabel {
  * attachment operations are in `attachment.ts`, its blocked fields' in
  * `blocked-port.ts`.
  */
+/** Verified assignment, or why the queue must refresh after it failed. */
+export type AssignmentResult =
+  | { assigned: true }
+  | { assigned: false; reason: "race" | "unverified" | "race-unverified" };
+
 export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
   readonly dispatchSource?: DispatchSource;
@@ -705,6 +694,12 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * the adapter has none.
    */
   readonly readinessKey?: string;
+  /**
+   * Whether `issueComments` names each comment's author
+   * (`CommentFact.author`), so a person's answer on an item can be told
+   * from another's and from this credential's own; absent when it cannot.
+   */
+  readonly commentAuthors?: boolean;
   /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
   stateName: StateNameOf;
   /** Every effective workflow map, including the repository default; absent for one workflow. */
@@ -758,12 +753,13 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
     createdIn: WindowSpec;
   }): Promise<FoundComment[]>;
   /**
-   * Every comment on one issue, with its trust, and the issue's tracker id,
-   * in the order the tracker created them: two readers of one issue list its
+   * Every comment on one issue, with its trust (and, where `commentAuthors`,
+   * its author, link and last edit), and the issue's tracker id, in the
+   * order the tracker created them: two readers of one issue list its
    * comments in the same order, which the claim marker's earliest-wins rule
    * rests on.
    */
-  issueComments(key: string): Promise<IssueComments>;
+  issueComments(key: string, signal?: AbortSignal): Promise<IssueComments>;
   /** Delete a comment of the issue by its id (`CommentFact.id`). */
   deleteComment(key: string, id: string): Promise<void>;
 
@@ -835,17 +831,21 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   ): Promise<PoolIssue[]>;
   /**
    * Who made the assignment of `assignee` (default: the issue's current
-   * assignee) to the issue, from the tracker's history. Throws with the
-   * reason when the history cannot be read in full or holds no such
-   * assignment, so an unknown assigner is never read as a trusted one.
-   * An adapter that can tell the history's definite answer that no user
-   * made the assignment (it holds no assignment of `assignee`, or one made
-   * by an integration or an automation) throws `AssignerUnknown` for it,
-   * which a caller may keep until the issue changes; any other throw is a
-   * read to try again. Linear classifies this way; the GitHub and Jira
-   * adapters throw their API errors for it.
+   * assignee) to the issue, from the tracker's history. Throws with the reason
+   * when the history cannot be read in full or holds no such assignment, so an
+   * unknown assigner is never read as a trusted one. An adapter that can tell
+   * the history's definite answer that no user made the assignment (it holds no
+   * assignment of `assignee`, or one made by an integration or an automation)
+   * throws `AssignerUnknown` for it, which a caller may keep until the issue
+   * changes; any other throw is a read to try again. An issue that is no
+   * longer assigned to that account is a definite absent answer too. An
+   * aborted `signal` ends the read.
    */
-  assignedBy(key: string, assignee?: string): Promise<Assigner>;
+  assignedBy(
+    key: string,
+    assignee?: string,
+    signal?: AbortSignal,
+  ): Promise<Assigner>;
   /**
    * This team's open issues assigned to nobody in one of `states`, inside
    * the tracker's pool scope (`issue_tracker.jira.pool_issue_types` on
@@ -858,22 +858,21 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   ): Promise<PoolIssue[]>;
   /**
    * Who made the issue's latest move into the state it is in now, from the
-   * tracker's history; the issue's creator when the history holds no move
-   * into it, since the issue was then created there. Throws with the reason
-   * when the history cannot be read in full, or the state is one whose
-   * moves the tracker does not record, so an unknown mover is never read as
-   * a trusted one. Optional, beside `unassignedIssues`.
+   * tracker's history; the issue's creator when the history holds no move into
+   * it, since the issue was then created there. Throws with the reason when the
+   * history cannot be read in full, or the state is one whose moves the tracker
+   * does not record, so an unknown mover is never read as a trusted one.
+   * Optional, beside `unassignedIssues`. An aborted `signal` ends the read.
    */
-  stateChangedBy?(key: string): Promise<Assigner>;
+  stateChangedBy?(key: string, signal?: AbortSignal): Promise<Assigner>;
   /**
-   * One page of this team's open issues not in triage and not yet started
-   * that lack a value for a facet of `missing` (no size asked of an epic) or
-   * carry a `retired` label, oldest first, with the cursor of the next page
-   * and the counts over every open issue outside triage. The one read that
-   * returns part of a population on purpose: a started issue is never
-   * listed, unless `started` asks for the started ones alone. Throws on an
-   * unknown facet, a facet the repository has no store for, or a `limit`
-   * outside 1 to 100.
+   * One page of this team's open issues not in triage and not yet started that
+   * lack a value for a facet of `missing` (no size asked of an epic) or carry a
+   * `retired` label, oldest first, with the cursor of the next page and the
+   * counts over every open issue outside triage. The one read that returns part
+   * of a population on purpose: a started issue is never listed, unless
+   * `started` asks for the started ones alone. Throws on an unknown facet, a
+   * facet the repository has no store for, or a `limit` outside 1 to 100.
    */
   incompleteIssues(
     query: IncompleteQuery,
@@ -898,8 +897,8 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   facetStores(options?: FacetReadOptions): Promise<FacetStores>;
 
   // ── Claiming ──
-  /** The user this tracker's credential acts as: who "yourself" is. */
-  viewer(): Promise<TrackerUser>;
+  /** The user this tracker's credential acts as: who "yourself" is. An aborted `signal` ends the request in flight. */
+  viewer(signal?: AbortSignal): Promise<TrackerUser>;
   /** Every user the issue is assigned to; empty when nobody. */
   assignees(key: string): Promise<TrackerUser[]>;
   /** Assign the issue to `user` alone, replacing any other assignee. */
@@ -909,16 +908,16 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * GitHub adds the assignee; Linear and Jira, whose issues hold one
    * assignee and which offer no conditional write, assign and then verify
    * through the issue's history that the assignment replaced nobody, putting
-   * back anyone it did replace. False means refresh the queue.
+   * back anyone it did replace. A failed result means refresh the queue.
    */
-  assignUnassigned?(key: string, user: TrackerUser): Promise<boolean>;
+  assignUnassigned?(key: string, user: TrackerUser): Promise<AssignmentResult>;
   /**
    * The user an identity names, in the form `dispatch.identity` takes (a
    * GitHub login; a Linear user's email or display name; a Jira account
    * id, or an email or display name that matches one user). Throws a
    * `TrackerRequestError` (`unresolved`) when it names no user or several.
    */
-  user(identity: string): Promise<TrackerUser>;
+  user(identity: string, signal?: AbortSignal): Promise<TrackerUser>;
 
   // ── Filing and planning ──
   /**

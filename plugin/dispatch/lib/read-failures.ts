@@ -12,6 +12,11 @@
  *   not counted in the failure ledger; any other is counted in a row, and
  *   at `failures.notify_after` failures in a row it fails the tick and a
  *   person is told (`waitsOut`).
+ * - The reads a turn makes for one item (its comments, its drive ledger and
+ *   park answers, its base branch's head, its follow-up or claim markers)
+ *   carry their call's class on the item's `unplaced` row, and follow the
+ *   same policy; a read that answered but does not parse carries none and
+ *   fails the turn.
  * - A refused credential is told at once: its row
  *   counts as `failures.notify_after` failures (`toldAtOnce`).
  * - The forge's reading of a repository is kept with its time
@@ -39,6 +44,12 @@ function readFailure(outbound: OutboundFailure): ReadFailure {
       ? {}
       : { until: isoFromMs(outbound.until) }),
   };
+}
+
+/** The failure class a thrown error stands for; `undefined` when it names none (a defect). */
+export function readFailureOfError(error: unknown): ReadFailure | undefined {
+  const thrown = failureOf(error);
+  return thrown.code === "invalid" ? undefined : readFailure(thrown);
 }
 
 /**
@@ -86,15 +97,18 @@ export function combinedFailure(
  */
 export function waitingFailures(report: RepoReport): ReadFailure[] | null {
   if ((report.stageDefects?.length ?? 0) > 0) return null;
+  // A row a failed call of a known class cut waits with the rest; any other failed row, and the outcome log, do not.
   if (
     report.unplaced.some(
-      (u) => u.readFailed === true || u.target === "the outcome log",
+      (u) =>
+        (u.readFailed === true && u.failure === undefined) ||
+        u.target === "the outcome log",
     )
   )
     return null;
-  const failed: (ReadFailure | undefined)[] = [
+  const failed = [
     ...(report.refused === null ? [] : [report.refusedBy]),
-    ...report.records.filter((r) => !r.ok).map((r) => r.failure),
+    ...failedReads(report),
   ];
   if (failed.length === 0) return null;
   const waiting = failed.filter(
@@ -103,12 +117,21 @@ export function waitingFailures(report: RepoReport): ReadFailure[] | null {
   return waiting.length === failed.length ? waiting : null;
 }
 
-/** Whether a failed read of the turn is of a class a person is told of at once: a refused credential. */
-export function toldAtOnce(report: RepoReport): boolean {
+/** The class of each failed read of the turn, a repository's record's or one item's; `undefined` for one no call's class explains. */
+function failedReads(report: RepoReport): (ReadFailure | undefined)[] {
   return [
-    report.refusedBy,
     ...report.records.filter((r) => !r.ok).map((r) => r.failure),
-  ].some((f) => f !== undefined && POLICIES[f.class].told === "at-once");
+    ...report.unplaced
+      .filter((u) => u.readFailed === true)
+      .map((u) => u.failure),
+  ];
+}
+
+/** Whether a failed read of the turn, a repository's or one item's, is of a class a person is told of at once: a refused credential. */
+export function toldAtOnce(report: RepoReport): boolean {
+  return [report.refusedBy, ...failedReads(report)].some(
+    (f) => f !== undefined && POLICIES[f.class].told === "at-once",
+  );
 }
 
 /** Whether every waiting failure is a rate limit before its reset: nothing to count. */

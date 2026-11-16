@@ -28,7 +28,7 @@ them, and the plugin ships the skills.
 
 | # | Station | What happens | Run by |
 |---|---------|--------------|--------|
-| 1 | Pick up | A tracker item becomes a branch, a workspace and a plan, and goes to the right agent. The agent works an epic one sub-issue at a time. | [`do-item`](plugin/skills/do-item/SKILL.md); the tracker's "open in coding agent" button through the [launcher](tools/launcher/README.md) |
+| 1 | Pick up | A tracker item becomes a branch, a workspace and a plan, and goes to the right agent. Each session takes one sub-issue of an epic, and the dispatcher starts its ready sub-issues in parallel. | [`do-item`](plugin/skills/do-item/SKILL.md); the tracker's "open in coding agent" button through the [launcher](tools/launcher/README.md) |
 | 2 | Build | The agent makes the change and its validation plan. A review before the first push checks it in tiers. A small change skips the tiers and keeps the reviews its areas require. | `do-item`, [`review`](plugin/skills/review/SKILL.md) |
 | 3 | Open | A pull request shaped by the repository's declared policy: draft or ready, its base, its size. Several small items from one area can share one. | `do-item`; [`work-batch`](plugin/skills/work-batch/README.md) for a batch |
 | 4 | Drive | Review rounds run unattended. Each round waits for the reviewers and gives every finding one recorded outcome. Then it fixes, verifies, pushes and resolves. An arbiter rules on contested findings. | [`drive-pr`](plugin/skills/drive-pr/README.md), [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md), the [`review-arbiter`](plugin/agents/review-arbiter.md) agent |
@@ -208,8 +208,8 @@ On the roadmap:
 ## Deciding what to build
 
 Before an item reaches the line, a team decides what to build and how. A
-feature or an [epic](GLOSSARY.md), a set of work items worked one at a time,
-passes through stages. A reviewer checks each stage before the next one uses
+feature or an [epic](GLOSSARY.md), a set of work items each delivered as
+its own pull request, passes through stages. A reviewer checks each stage before the next one uses
 it.
 
 1. **Research.** A dated research note per question: the options, the
@@ -309,10 +309,9 @@ repository without them gives the skills little to work from.
   labels. The skills read it when they run, and the audit checks it against
   the repository. Where a skill needs a named tool, an interface stands
   between them. The [tracker interface](GLOSSARY.md) has adapters for GitHub
-  Issues, Linear and Jira; a few operations, such as the review skill's
-  deferral step, still call Linear directly
-  ([the exceptions](plugin/EXTENDING.md#issue-tracker)), and the pull-request
-  skills have no forge interface yet. The [workspace launcher](tools/launcher/README.md)
+  Issues, Linear and Jira
+  ([how to add another](plugin/EXTENDING.md#issue-tracker)), and the
+  pull-request skills have no forge interface yet. The [workspace launcher](tools/launcher/README.md)
   opens workspaces in Herdr, which Jig's tooling targets first, in Orca and
   in Conductor. The skills run in Claude Code and Codex, and the pull-request
   skills work with GitHub. An organization's own skills, gates and review

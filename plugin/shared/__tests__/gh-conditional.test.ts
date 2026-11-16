@@ -43,6 +43,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import {
   cachedRepoView,
   checkSignalsUnchanged,
@@ -248,11 +249,34 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     expect(first).toMatchObject({ ok: true, changed: true });
     expect(conditionalCalls()).toHaveLength(0);
 
-    const second = await ghConditionalGet(PULL);
+    const events: CallRecord[] = [];
+    const second = await withLedgerWriter(
+      (event) => events.push(event),
+      () => ghConditionalGet(PULL),
+    );
     // The 304 arrives with exit 1 from the real CLI; it is a hit, not a failure.
     expect(second).toMatchObject({ ok: true, changed: false });
     expect(second.ok && second.body).toBe(first.ok ? first.body : "x");
     expect(conditionalCalls()).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      requests: 1,
+      cost: 0,
+      estimated: false,
+      failure: null,
+    });
+  });
+
+  it("never hands one credential's cached answer to another, even of the same user", async () => {
+    serve(PULL, pull("open", false, SHA));
+    const one = { ...process.env, GH_TOKEN: "first-token" };
+    const two = { ...process.env, GH_TOKEN: "second-token" };
+    await ghConditionalGet(PULL, { env: one });
+    const other = await ghConditionalGet(PULL, { env: two });
+    // The second credential read unconditionally: no ETag of the first's.
+    expect(other).toMatchObject({ ok: true, changed: true });
+    expect(conditionalCalls()).toHaveLength(0);
+    expect(entryFiles()).toHaveLength(2);
   });
 
   it("returns the new body and re-arms the ETag when the resource changed", async () => {
@@ -678,6 +702,18 @@ describe.skipIf(process.platform === "win32")("cachedRepoView", () => {
     await cachedRepoView(ARGS, {
       cwd: repoA,
       env: { ...process.env, GH_REPO: "other/thing" },
+    });
+    expect(viewCalls()).toHaveLength(2);
+  });
+
+  it("keys on the credential the gh call sends", async () => {
+    await cachedRepoView(ARGS, {
+      cwd: repoA,
+      env: { ...process.env, GH_TOKEN: "first-token" },
+    });
+    await cachedRepoView(ARGS, {
+      cwd: repoA,
+      env: { ...process.env, GH_TOKEN: "second-token" },
     });
     expect(viewCalls()).toHaveLength(2);
   });

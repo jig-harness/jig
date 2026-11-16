@@ -4,6 +4,7 @@ import type {
   BudgetWindow,
 } from "../../shared/outbound/budget.ts";
 import type { LedgerReport, LedgerRow } from "../../shared/outbound/ledger.ts";
+import { GITHUB_WINDOW_NAMES } from "../../shared/outbound/github-budget.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
 
@@ -25,6 +26,12 @@ export interface SystemSpending {
     cost: number;
     requests: number;
   }>;
+  /**
+   * What the rows that recorded the window of the quota owner's record they
+   * spent spent in each, estimates counted apart; `unknown` for spending no
+   * evidence placed.
+   */
+  windows: Array<{ window: string; cost: number; estimated: number }>;
   balances: Array<{
     key: string;
     requests: BudgetWindow;
@@ -56,6 +63,29 @@ function balance(
   return { ...window, remaining };
 }
 
+/**
+ * Adds a row to the window of the quota owner's record it spent. A GitHub row
+ * written without its window spent the one its unit and operation suggest,
+ * counted as an estimate.
+ */
+function addWindow(entry: SystemSpending, row: LedgerRow): void {
+  const spentIn =
+    row.window != null
+      ? { window: row.window, inferred: false }
+      : row.system === "github"
+        ? rowWindow(row)
+        : null;
+  if (spentIn === null) return;
+  let spent = entry.windows.find((w) => w.window === spentIn.window);
+  if (spent === undefined) {
+    spent = { window: spentIn.window, cost: 0, estimated: 0 };
+    entry.windows.push(spent);
+  }
+  spent.cost += row.cost + row.unknownCost;
+  spent.estimated +=
+    row.estimated + row.unknownCost + (spentIn.inferred ? row.cost : 0);
+}
+
 /** Each system's exact caller totals and the latest quota observations carried to now. */
 export function systemSpending(
   report: LedgerReport,
@@ -72,6 +102,7 @@ export function systemSpending(
         durationMs: 0,
         costs: [],
         operations: [],
+        windows: [],
         balances: [],
       };
       systems.set(name, found);
@@ -105,6 +136,7 @@ export function systemSpending(
     }
     operation.cost += row.cost;
     operation.requests += row.requests;
+    addWindow(entry, row);
   }
   for (const b of report.balances)
     system(b.system).balances.push({
@@ -128,6 +160,10 @@ export interface QuotaRisk {
   window: "requests" | "complexity";
   remaining: number;
   spent: number;
+  /** Part of `spent` is an estimate: a cost no answer reported, or a window inferred for a row that recorded none. */
+  estimated: boolean;
+  /** What the owner's rows spent in the last hour that no evidence placed in a window. */
+  unknownWindow: number;
   emptiesAt: number;
   resetAt: number;
   operations: string[];
@@ -146,10 +182,59 @@ function hourShare(row: LedgerRow, now: number): number {
     : Math.max(0, end - Math.max(row.hour, now - HOUR)) / duration;
 }
 
-/** Spending in a quota's own unit, never inferred from missing complexity headers. */
+/**
+ * The window of the quota owner's record a row spent: as it recorded, else
+ * for a GitHub row written without one, inferred from its unit and
+ * operation (GraphQL points, a REST search, else the core requests).
+ */
+function rowWindow(row: LedgerRow): { window: string; inferred: boolean } {
+  if (row.window != null) return { window: row.window, inferred: false };
+  const window =
+    row.unit === "points"
+      ? "complexity"
+      : /^[A-Z]+ \/search(\/|$)/.test(row.operation)
+        ? "search"
+        : "requests";
+  return { window, inferred: true };
+}
+
+/**
+ * Spending in a quota's own unit, never inferred from missing complexity
+ * headers. A GitHub row spends only the window it recorded, an unknown cost
+ * counted as the least a call costs; a row with no window recorded spends
+ * the one its unit and operation suggest.
+ */
 function quotaCost(row: LedgerRow, window: "requests" | "complexity"): number {
-  if (window === "requests") return row.requests;
-  return row.unit === "points" ? row.cost : 0;
+  if (row.system !== "github")
+    return window === "requests"
+      ? row.requests
+      : row.unit === "points"
+        ? row.cost
+        : 0;
+  const spent = rowWindow(row);
+  if (spent.window !== window) return 0;
+  return spent.inferred && window === "complexity"
+    ? row.cost
+    : row.cost + row.unknownCost;
+}
+
+/** Whether a row's part of a quota's spending is an estimate. */
+function estimatedCost(
+  row: LedgerRow,
+  window: "requests" | "complexity",
+): boolean {
+  if (quotaCost(row, window) <= 0) return false;
+  return (
+    row.estimated > 0 ||
+    row.unknownCost > 0 ||
+    (row.system === "github" && rowWindow(row).inferred)
+  );
+}
+
+/** What a system calls each window of its record. */
+function windowLabel(system: string, window: string): string {
+  if (system === "github") return GITHUB_WINDOW_NAMES[window] ?? window;
+  return window === "requests" ? "requests" : "points";
 }
 
 function quotaOperations(
@@ -188,6 +273,13 @@ function quotaRisk(
     (sum, r) => sum + quotaCost(r, name) * hourShare(r, now),
     0,
   );
+  const unknownWindow = rows.reduce(
+    (sum, r) =>
+      r.window === "unknown"
+        ? sum + (r.cost + r.unknownCost) * hourShare(r, now)
+        : sum,
+    0,
+  );
   const refill =
     window.refillMs != null && window.limit !== null
       ? window.limit / window.refillMs
@@ -202,18 +294,26 @@ function quotaRisk(
     window: name,
     remaining: window.remaining,
     spent,
+    estimated: rows.some(
+      (r) => hourShare(r, now) > 0 && estimatedCost(r, name),
+    ),
+    unknownWindow,
     emptiesAt,
     resetAt: window.resetAt,
     operations: quotaOperations(rows, name, now),
   };
 }
 
-/** The quotas whose last hour's net spend empties their balance before the refill horizon. */
+/**
+ * The quotas whose last hour's net spend empties their balance before the
+ * refill horizon. A row counts against the record of the quota owner it
+ * names, else (a row written before owners were kept) its credential's.
+ */
 export function quotaRisks(report: LedgerReport, now: number): QuotaRisk[] {
   return report.balances.flatMap((b) => {
     const rows = report.rows.filter(
       (r) =>
-        r.credential === b.key &&
+        (r.owner ?? r.credential) === b.key &&
         r.system === b.system &&
         hourShare(r, now) > 0,
     );
@@ -248,13 +348,18 @@ export function lowQuotaNeeds(
       title: "Quota projected to run out",
       workspace: null,
       since: known?.since ?? nowIso,
-      reason: `${risk.system}'s ${risk.window} quota is projected to empty at ${isoFromMs(risk.emptiesAt)}, before its refill horizon ${isoFromMs(risk.resetAt)}; ${Math.round(risk.remaining)} left, ${Math.round(risk.spent)} spent in the estimated last hour. Operations: ${risk.operations.join(", ")}. Inspect jig budget before changing the workload.`,
+      reason: `${risk.system}'s ${risk.window} quota is projected to empty at ${isoFromMs(risk.emptiesAt)}, before its refill horizon ${isoFromMs(risk.resetAt)}; ${Math.round(risk.remaining)} left, ${Math.round(risk.spent)} spent in the estimated last hour${risk.estimated ? " (includes estimated costs)" : ""}${risk.unknownWindow > 0 ? `, and ${Math.round(risk.unknownWindow)} more in a window the ledger could not name` : ""}. Operations: ${risk.operations.join(", ")}. Inspect jig budget before changing the workload.`,
       question: null,
       decisions: [],
       notified: known?.notified ?? null,
       workspaces: [],
     };
   });
+}
+
+/** A balance as a whole count; a refilling window's is fractional. */
+function shown(remaining: number | null): string {
+  return remaining === null ? "unknown" : String(Math.floor(remaining));
 }
 
 /** One terminal line per system, with units kept separate. */
@@ -264,7 +369,7 @@ export function spendingLines(systems: readonly SystemSpending[]): string[] {
       s.balances
         .map(
           (b) =>
-            `${b.key}: requests ${b.requests.remaining ?? "unknown"}/${b.requests.limit ?? "unknown"}, points ${b.complexity.remaining ?? "unknown"}/${b.complexity.limit ?? "unknown"}`,
+            `${b.key}: ${windowLabel(s.system, "requests")} ${shown(b.requests.remaining)}/${b.requests.limit ?? "unknown"}, ${windowLabel(s.system, "complexity")} ${shown(b.complexity.remaining)}/${b.complexity.limit ?? "unknown"}`,
         )
         .join("; ") || "balance unknown";
     const costs =
@@ -285,6 +390,12 @@ export function spendingLines(systems: readonly SystemSpending[]): string[] {
           return operations || `none (${unit})`;
         })
         .join("; ") || "none";
-    return `outbound ${s.system}: ${held}; tick spent ${s.requests} requests, ${costs}; costliest: ${top}`;
+    const windows = s.windows
+      .map(
+        (w) =>
+          `${windowLabel(s.system, w.window)} ${w.cost}${w.estimated ? " (includes estimates)" : ""}`,
+      )
+      .join(", ");
+    return `outbound ${s.system}: ${held}; tick spent ${s.requests} requests, ${costs}${windows === "" ? "" : `; by window: ${windows}`}; costliest: ${top}`;
   });
 }

@@ -21,6 +21,7 @@ import { ago, clock, plural } from "./format.ts";
 import type { EveryoneAnswerState } from "./icons.ts";
 import { type DecisionRow, decisionRows } from "./picking.ts";
 import { noLinkText } from "./links.ts";
+import { type SendTarget, sendTargetOf } from "./send-target.ts";
 import { ROLES, type Role } from "./status.ts";
 import {
   type Clock,
@@ -45,6 +46,13 @@ export interface NeedView {
   /** The steps for a person, as a checklist in the fold. */
   steps: string[];
   /** What the answers that keep a decision waiting say, one line per decision that has any, with the state they leave it in. */
+  acted: Array<{
+    key: string;
+    option: string;
+    author: string;
+    outcome: "done" | "refused" | "held" | null;
+    detail: string | null;
+  }>;
   answerNotes: Array<{ state: EveryoneAnswerState; text: string }>;
   /** Who it waits on, as the parks name them; empty when no record names anyone. */
   people: string[];
@@ -60,6 +68,8 @@ export interface NeedView {
   recorded: string;
   classNote: string;
   question: string | null;
+  /** What the run the need is about concluded, from its closing report, beside the question as context; `null` without one. */
+  concluded: string | null;
   recommendation: string | null;
   /** The whole decision as Markdown; `null` when the record holds none. */
   decision: string | null;
@@ -70,6 +80,8 @@ export interface NeedView {
   answerKeys: string[];
   /** One row per decision, oldest first, each picked on its own. */
   rows: DecisionRow[];
+  /** Where the card's Send posts its answers, or why it has none (`send-target.ts`). */
+  send: { to: SendTarget } | { absent: string };
   /** What Copy key takes when there is no link. */
   keyText: string | null;
   foldLabel: string;
@@ -119,14 +131,20 @@ function goLabelOf(n: LineNeed): string {
 /** Each decision's waiting answers in words, named by its key when the need has several. */
 function answerNotes(decisions: LineDecision[]): NeedView["answerNotes"] {
   return decisions.flatMap((d) => {
+    const prefix = decisions.length > 1 ? `${d.key}: ` : "";
+    const notes: NeedView["answerNotes"] = [];
     const said = answerStateWords(d.answerState, d.answers ?? []);
-    if (said === null) return [];
-    return [
-      {
+    if (said !== null)
+      notes.push({
         state: d.answerState ?? "waiting",
-        text: decisions.length > 1 ? `${d.key}: ${said}` : said,
-      },
-    ];
+        text: `${prefix}${said}`,
+      });
+    if (d.unread !== undefined)
+      notes.push({
+        state: "waiting",
+        text: `${prefix}Answers not read, so it still waits: ${d.unread}`,
+      });
+    return notes;
   });
 }
 
@@ -156,8 +174,10 @@ function needEvidence(
       k: "notified",
       v:
         n.notified.at === null
-          ? n.notified.outcome
-          : `${clock(Date.parse(n.notified.at), timeZone)}${to}`,
+          ? n.notified.detail === undefined
+            ? n.notified.outcome
+            : `${n.notified.outcome}: ${n.notified.detail}`
+          : `${clock(Date.parse(n.notified.at), timeZone)}${to}${n.notified.detail === undefined ? "" : `; now ${n.notified.outcome}: ${n.notified.detail}`}`,
     });
   }
   if (n.stuckRecord != null) {
@@ -174,17 +194,54 @@ function needEvidence(
   return rows;
 }
 
+/** The card's note on the decision it leads with: its class, when named, and its kind. */
+function classNoteOf(first: LineDecision | undefined): string {
+  if (first === undefined) return "";
+  const named = first.decisionClass ?? null;
+  return `${named === null ? "" : `, class ${named}`}, ${first.kind}`;
+}
+
+/** The recommendation in words; a record whose recommended option reads in full shows that option instead. */
+function recommendationLine(
+  first: LineDecision | undefined,
+  recommended: NeedView["recommended"],
+): string | null {
+  const recommendation = first?.recommendation ?? null;
+  return recommendation === null || recommended !== null
+    ? null
+    : `Recommended: ${recommendation}`;
+}
+
+/** The destination the station's reader names, checked against its link. */
+function sendFor(n: LineNeed, rows: DecisionRow[]): NeedView["send"] {
+  const answer = n.decisions[0]?.answer;
+  return sendTargetOf({
+    repo: n.repo,
+    pr: n.pr,
+    url: n.url,
+    target: n.target,
+    parked: n.cause === "parked" && rows.length > 0,
+    ...(answer === undefined
+      ? {}
+      : {
+          answerOn: answer.on,
+          ...(answer.repository === undefined
+            ? {}
+            : { answerRepository: answer.repository }),
+        }),
+  });
+}
+
 /** One need as its row shows it. */
 export function needView(n: LineNeed, clockNow: Clock): NeedView {
   const first = n.decisions[0];
   // A park's question is its first decision's; a follow-up's is the line it stopped on.
   const question = first?.question ?? n.question ?? null;
-  const recommendation = first?.recommendation ?? null;
   const decision = decisionText(n.decisions);
-  const named = first?.decisionClass ?? null;
   // The card leads with the oldest decision's options; the steps of every open decision go in its fold.
   const options = first?.options ?? [];
   const recommended = options.find((o) => o.recommended) ?? null;
+  const rows = decisionRows(n.decisions);
   return {
     rowKey: `${n.repo} ${n.target} ${n.cause}`,
     act: needAct(n),
@@ -192,6 +249,9 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     otherOptions: options.filter((o) => o !== recommended),
     steps: [...new Set(n.decisions.flatMap((d) => d.steps ?? []))],
     answerNotes: answerNotes(n.decisions),
+    acted: n.decisions.flatMap((d) =>
+      d.acted == null ? [] : [{ key: d.key, ...d.acted }],
+    ),
     people: needPeople(n),
     target: n.target,
     title: n.title,
@@ -201,22 +261,17 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     role: ROLES.needs,
     cause: n.cause,
     recorded: recordedWord(n),
-    classNote:
-      first === undefined
-        ? ""
-        : `${named === null ? "" : `, class ${named}`}, ${first.kind}`,
+    classNote: classNoteOf(first),
     question: question ?? n.reason,
-    // A record whose recommended option reads in full shows that option instead.
-    recommendation:
-      recommendation === null || recommended !== null
-        ? null
-        : `Recommended: ${recommendation}`,
+    concluded: n.concluded ?? null,
+    recommendation: recommendationLine(first, recommended),
     decision,
     url: n.url,
     goLabel: n.url === null ? null : goLabelOf(n),
     noLink: noLinkOf(n),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
-    rows: decisionRows(n.decisions),
+    rows,
+    send: sendFor(n, rows),
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
     evidence: needEvidence(n, question !== null, clockNow.timeZone),
@@ -300,7 +355,9 @@ export function needCount(line: LineSnapshot | null, nowMs: number): number {
 export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (
     line !== null &&
-    (line.needs.length > 0 || notMoving(line, nowMs).length > 0)
+    (line.needs.length > 0 ||
+      (line.answeredHolds?.length ?? 0) > 0 ||
+      notMoving(line, nowMs).length > 0)
   );
 }
 

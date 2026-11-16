@@ -15,6 +15,8 @@ import { planKeys, servedPlan } from "./served-plan.ts";
  * reads it again only when the queue did not carry it.
  */
 export interface ParentReads {
+  readonly readAt?: number;
+  metadataEpoch?(key: string): number;
   pool(key: string): Promise<PoolIssue | null>;
   /** One read per key in the tick, where the reads are shared. */
   once?<T>(key: string, read: () => Promise<T>): Promise<T>;
@@ -29,6 +31,7 @@ function directReads(tracker: Tracker): ParentReads {
 
 interface Body {
   updatedAt: string;
+  readAt?: number | undefined;
   description: string;
   parent: string | null;
 }
@@ -47,12 +50,29 @@ function carriedBody(
     : null;
 }
 
+/** GitHub ancestry edits may leave the issue timestamp unchanged. */
+function readingAt(
+  tracker: Tracker,
+  reads: ParentReads,
+  issue: PoolIssue,
+): number | undefined {
+  return tracker.adapter === "github" && tracker.dispatchSource !== undefined
+    ? (reads.metadataEpoch?.(issue.identifier) ?? reads.readAt)
+    : undefined;
+}
+
 /** A kept entry, when it is the issue's current one. */
-function current<T extends { updatedAt: string }>(
+function current<T extends { updatedAt: string; readAt?: number | undefined }>(
   kept: T | null,
   issue: PoolIssue,
+  readAt?: number,
 ): T | null {
-  return issue.updatedAt && kept?.updatedAt === issue.updatedAt ? kept : null;
+  return issue.updatedAt &&
+    kept?.updatedAt === issue.updatedAt &&
+    (readAt === undefined ||
+      (typeof kept.readAt === "number" && kept.readAt >= readAt))
+    ? kept
+    : null;
 }
 
 /** Keeps what a read carried, for a tick whose reads carry none (the kept reading is reused). */
@@ -74,9 +94,11 @@ async function body(
   reads: ParentReads,
 ): Promise<Body | null> {
   const key = `${trackerScope(tracker)}:parent-plan:${issue.identifier}`;
-  const kept = current(cache.get<Body>(key), issue);
+  const readAt = readingAt(tracker, reads, issue);
+  const kept = current(cache.get<Body>(key), issue, readAt);
   const carried = carriedBody(reads.parentBody?.(issue.identifier), issue);
-  if (carried !== null) return remember(cache, key, carried, kept, issue);
+  if (carried !== null)
+    return remember(cache, key, { ...carried, readAt }, kept, issue);
   if (kept !== null) return kept;
   const read = () => tracker.getIssue(issue.identifier);
   const full = await (reads.once === undefined
@@ -85,6 +107,7 @@ async function body(
   if (full === null || full.identifier !== issue.identifier) return null;
   const value = {
     updatedAt: issue.updatedAt ?? "",
+    readAt,
     description: full.description,
     parent: full.parent?.identifier ?? null,
   };
@@ -99,14 +122,21 @@ async function parentOf(
   reads: ParentReads,
 ): Promise<{ parent: string | null } | null> {
   const key = `${trackerScope(tracker)}:parent-of:${issue.identifier}`;
+  const readAt = readingAt(tracker, reads, issue);
   const kept = current(
-    cache.get<{ updatedAt: string; parent: string | null }>(key),
+    cache.get<{
+      updatedAt: string;
+      parent: string | null;
+      readAt?: number | undefined;
+    }>(key),
     issue,
+    readAt,
   );
   const held = reads.held?.(issue.identifier);
   if (held !== undefined && held.parent !== undefined) {
     const value = {
       updatedAt: issue.updatedAt ?? "",
+      readAt,
       parent: held.parent?.issue.identifier ?? null,
     };
     return { parent: remember(cache, key, value, kept, issue).parent };

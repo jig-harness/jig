@@ -29,6 +29,14 @@
  * While the forge's budget is low as the tick starts, the optional reads
  * are skipped: the running drives' thread samples, and serialization's
  * reads, which leaves every drive of a repository with a catalog unplaced.
+ *
+ * In a tick its launcher bounds, every read here keeps to the tick's bound
+ * (`sources/bounded.ts`): a read the bound ended before it started is not
+ * started, and goes on the report as the failed read it then is (a
+ * repository refused, a tracker, forge or runtime record not ok, the
+ * optional reads skipped, the board and the drive doctor not read), so the
+ * tick still plans on what it read, writes its receipt and lets its locks
+ * go in time; the next tick reads the rest.
  */
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import {
@@ -37,7 +45,12 @@ import {
 } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { heldPullRequests } from "./actions/labels.ts";
-import { type BoardRead, convergedDrives, observeBoard } from "./board.ts";
+import {
+  type BoardRead,
+  convergedDrives,
+  observeBoard,
+  unstartedBoard,
+} from "./board.ts";
 import type { Contention } from "./contention.ts";
 import {
   observeOpened,
@@ -74,6 +87,17 @@ import type { readDrives } from "./sources/ledgers.ts";
 import { batchSafePickups } from "./queue-batch-areas.ts";
 import { slotTable } from "./accounts.ts";
 import type { ServedPerson } from "./serve-config.ts";
+import {
+  CUT_AT_BOUND,
+  cutRead,
+  ended,
+  heldRead,
+  heldTo,
+  passedBefore,
+  passedRead,
+  type TickBound,
+  within,
+} from "./sources/bounded.ts";
 import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
@@ -93,7 +117,11 @@ import {
   type Outcome,
 } from "../../shared/outcome.ts";
 import { clearsByWaiting } from "../../shared/outbound/failure.ts";
-import { lastForgeReading, readFailureOf } from "./read-failures.ts";
+import {
+  lastForgeReading,
+  readFailureOf,
+  readFailureOfError,
+} from "./read-failures.ts";
 import type {
   ClaimedItem,
   DispatchSection,
@@ -102,7 +130,8 @@ import type {
   RepoTarget,
   WantedItem,
 } from "./types.ts";
-import { isoFromMs } from "../../shared/time.ts";
+import { currentIso, isoFromMs } from "../../shared/time.ts";
+import { observeTestLockWaits } from "./test-lock-waits.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -113,8 +142,8 @@ export interface ObserveContext {
   records: ReadRecord[];
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
-  /** When the tick must have ended, less its receipt's time (epoch milliseconds); absent for a tick no launcher bounds. */
-  deadline?: number;
+  /** The tick's bound: when it must have ended, less its receipt's time, and the signal that fires then; absent for a tick no launcher bounds. */
+  bound?: TickBound;
 }
 
 /** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
@@ -177,18 +206,34 @@ export interface RepoObservation {
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
 export async function openRepo(
   path: string,
-  context: Pick<ObserveContext, "options" | "nowMs" | "reads">,
+  context: Pick<ObserveContext, "options" | "nowMs" | "reads" | "bound">,
 ): Promise<OpenedRepo | RepoReport> {
   const { options, nowMs } = context;
   const { pool } = context.reads;
+  const passed = (): RepoReport => {
+    const cut = passedRead("this repository was opened");
+    return refusedBy(
+      path,
+      `${cut.failure.reason}, so nothing is planned for it this tick`,
+      cut.failure,
+      nowMs,
+    );
+  };
+  if (ended(context.bound)) return passed();
   const entry = machineRepository(options.machine ?? null, path);
   // The tick's query of the repository, else its view and its file read one by one.
   const queried = await context.reads.repository(path);
+  // The one-by-one reads are not started once the bound has ended.
+  if (!queried.ok && ended(context.bound)) return passed();
   let target: Awaited<ReturnType<typeof repoTarget>>;
   try {
     target = queried.ok
       ? ok(queried.value.target)
-      : await pool.run(() => repoTarget(path));
+      : await pool.run(() =>
+          heldRead(context.bound, "this repository was identified", () =>
+            repoTarget(path),
+          ),
+        );
   } catch (error) {
     target = failed("unreadable", failureText(error), error);
   }
@@ -214,7 +259,11 @@ export async function openRepo(
   try {
     config = queried.ok
       ? ok(queried.value.config)
-      : await pool.run(() => defaultBranchConfig(repo));
+      : await pool.run(() =>
+          heldRead(context.bound, "its dispatch section was read", () =>
+            defaultBranchConfig(repo),
+          ),
+        );
   } catch (error) {
     return unread(failureText(error));
   }
@@ -327,7 +376,7 @@ export async function observeRepo(
             section,
             trackerReport,
             where,
-            context.deadline,
+            context.bound,
             opened.stages.has("pickup")
               ? (context.options.machine?.serve ?? [])
               : [],
@@ -375,7 +424,7 @@ export async function observeRepo(
     ),
     timer.time("runtime", async () => {
       const read = await pool.run(() =>
-        readSessions(runtime, repo, join, reads.sessions),
+        readSessions(runtime, repo, join, reads.sessions, context.bound),
       );
       report.records.push(runtimeRead(runtime, repo, read));
       return read;
@@ -385,8 +434,11 @@ export async function observeRepo(
   const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
   const serialized = await timer.time("observe", () =>
     pool.run(async () => {
-      const skipped = await optionalSkipped(reads);
-      const threads = tickThreadReader(repo.slug);
+      const skipped = await optionalSkipped(reads, context.bound);
+      const threads = boundedThreads(
+        tickThreadReader(repo.slug),
+        context.bound,
+      );
       await observeRunning(
         {
           records,
@@ -399,7 +451,11 @@ export async function observeRepo(
         sessions,
         forge.created,
         threads,
+        context.bound,
       );
+      // The wall probes may have used what was left: the optional reads re-ask.
+      const stillSkipped =
+        skipped ?? (await optionalSkipped(reads, context.bound));
       return observeContention(
         repo,
         values,
@@ -412,22 +468,30 @@ export async function observeRepo(
         records,
         nowMs,
         threads,
-        skipped,
+        stillSkipped,
+        context.bound,
       );
     }),
   );
   // The board read, a query of its own whose failure touches nothing planned.
   const board = await timer.time("board", () =>
     pool.run(() =>
-      observeBoard({
-        slug: repo.slug,
-        values,
-        drives: forge.drives,
-        open: forge.open,
-        held,
-        serialized,
-        budget: reads.budget,
-      }),
+      ended(context.bound)
+        ? Promise.resolve(
+            unstartedBoard(forge.drives, passedBefore("the board was read")),
+          )
+        : boardHeldTo(context.bound, forge.drives, () =>
+            observeBoard({
+              slug: repo.slug,
+              values,
+              drives: forge.drives,
+              open: forge.open,
+              held,
+              serialized,
+              budget: reads.budget,
+              ended: () => ended(context.bound),
+            }),
+          ),
     ),
   );
   if (board.ok || convergedDrives(forge.drives).length > 0)
@@ -436,10 +500,12 @@ export async function observeRepo(
   const holders = forge.drives.some((d) => d.class === "silent")
     ? await timer.time("observe", () =>
         pool.run(() =>
-          readHolders(
-            repo.path,
-            Math.ceil(
-              (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
+          heldRead(context.bound, "the clone's drive doctor ran", () =>
+            readHolders(
+              repo.path,
+              Math.ceil(
+                (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
+              ),
             ),
           ),
         ),
@@ -463,8 +529,45 @@ export async function observeRepo(
   };
 }
 
-/** Why the optional reads are skipped this tick, from the forge's budget as it started; `null` while they run. */
-async function optionalSkipped(reads: TickReads): Promise<string | null> {
+/** `threads`, not started once the tick's bound has ended and given up on when it ends while one runs. */
+function boundedThreads(
+  threads: (pr: number) => Promise<Outcome<number>>,
+  bound: TickBound | undefined,
+): (pr: number) => Promise<Outcome<number>> {
+  if (bound === undefined) return threads;
+  return async (pr) => {
+    if (ended(bound)) return passedRead("the unresolved threads were counted");
+    try {
+      return await within(threads(pr), bound);
+    } catch (error) {
+      if (!bound.signal.aborted) throw error;
+      return cutRead("the unresolved threads were counted");
+    }
+  };
+}
+
+/** The board `read` makes, or the unread board when the tick's bound ends while it runs. */
+async function boardHeldTo(
+  bound: TickBound | undefined,
+  drives: Parameters<typeof unstartedBoard>[0],
+  read: () => Promise<BoardRead>,
+): Promise<BoardRead> {
+  if (bound === undefined) return read();
+  try {
+    return await within(read(), bound);
+  } catch (error) {
+    if (!bound.signal.aborted) throw error;
+    return unstartedBoard(drives, cutRead("the board was read").failure.reason);
+  }
+}
+
+/** Why the optional reads are skipped this tick, from the forge's budget as it started or the tick's bound; `null` while they run. */
+async function optionalSkipped(
+  reads: TickReads,
+  bound: TickBound | undefined,
+): Promise<string | null> {
+  if (ended(bound))
+    return `${passedBefore("serialization's reads")}, so this tick skips them`;
   const budget = await reads.budget();
   return lowBudget(budget)
     ? `the forge's budget is low (${budget.remaining} of ${budget.limit} left until ${budget.resetAt}), so this tick skips serialization's reads`
@@ -486,6 +589,9 @@ function runtimeRead(
         ? `${sessions.workspaces.length} workspace(s) of ${repo.slug}`
         : sessions.reason
     }`,
+    ...(!sessions.ok && sessions.failure !== undefined
+      ? { failure: sessions.failure }
+      : {}),
   };
 }
 
@@ -523,22 +629,49 @@ async function observeRunning(
   sessions: SessionsReport,
   created: ReadonlyMap<number, string>,
   threads: (pr: number) => Promise<Outcome<number>>,
+  bound?: TickBound,
 ): Promise<void> {
   const { records } = launches;
+  observeTestLockWaits(
+    records,
+    repo.slug,
+    undefined,
+    undefined,
+    undefined,
+    bound,
+  );
   if (launches.sample) await sampleThreads(records, repo.slug, drives, threads);
   observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil((launches.timeoutMs ?? 60_000) / 1000);
-  for (const reason of await observeWalls(
+  for (const { reason, failure } of await observeWalls(
     records,
     repo.slug,
     sessions,
     timeoutSec,
+    undefined,
+    bound,
   ))
     report.unplaced.push({
       target: "a waiting session",
       record: "runtime",
       reason,
+      ...(failure === undefined ? {} : { readFailed: true as const, failure }),
     });
+}
+
+/** The tracker's failed record, carrying the class of the call that failed it. */
+function trackerFailure(
+  where: string,
+  error: unknown,
+): RepoReport["records"][number] {
+  const failure = readFailureOfError(error);
+  return {
+    record: "tracker",
+    source: where,
+    ok: false,
+    detail: `the tracker cannot be opened: ${failureText(error)}`,
+    ...(failure === undefined ? {} : { failure }),
+  };
 }
 
 /** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
@@ -548,7 +681,7 @@ async function readTracker(
   section: DispatchSection,
   report: RepoReport,
   where: string,
-  deadline: number | undefined,
+  bound: TickBound | undefined,
   people: readonly ServedPerson[],
   serveDefaults: Readonly<Record<string, string>> | undefined,
   nowMs: number,
@@ -602,7 +735,7 @@ async function readTracker(
         return tracked.tracker;
       },
       section,
-      { bound: () => facetBound(deadline) },
+      { bound: () => facetBound(bound?.deadline), tick: bound },
       {
         people,
         nowMs,
@@ -621,33 +754,53 @@ async function readTracker(
       values,
       reading.wanted,
       !lowBudget(await reads.budget()),
+      bound,
     );
     if (reading.read.ok) tracked.claimed = reading.claimed;
   } catch (error) {
-    report.records.push({
-      record: "tracker",
-      source: where,
-      ok: false,
-      detail: `the tracker cannot be opened: ${failureText(error)}`,
-    });
+    report.records.push(trackerFailure(where, error));
   }
   return tracked;
 }
 
-/** The runtime's answer, through `read` where the observe phase passes the tick's reader; a rejected read is a failed report, never an escape. */
+/**
+ * The runtime's answer, through `read` where the observe phase passes the
+ * tick's reader, kept to `bound` where the tick has one; a read the bound
+ * ended is a failed report, not started when it ended first, and a
+ * rejected read is one too, never an escape.
+ */
 export async function readSessions(
   runtime: SessionRuntime,
   repo: RepoTarget,
   join: JoinTargets,
-  read: SessionsReader = (r, j) => runtime.sessions(r, j),
+  read: SessionsReader = (r, j, s) => runtime.sessions(r, j, s),
+  bound?: TickBound,
 ): Promise<SessionsReport> {
+  if (ended(bound))
+    return {
+      ok: false,
+      source: runtime.name,
+      reason: passedBefore("the runtime was read"),
+      failure: CUT_AT_BOUND,
+    };
   try {
-    return await read(repo, join);
+    const sessions = await heldTo((signal) => read(repo, join, signal), bound);
+    // A listing the bound's signal cut short is the bound's failure, whatever words the runtime used.
+    if (sessions.ok) return { ...sessions, observedAt: currentIso() };
+    return sessions.failure !== undefined || !ended(bound)
+      ? sessions
+      : { ...sessions, failure: CUT_AT_BOUND };
   } catch (error) {
+    const cause = readFailureOfError(error);
     return {
       ok: false,
       source: runtime.name,
       reason: `the runtime could not be read: ${failureText(error)}`,
+      ...(ended(bound)
+        ? { failure: cause ?? CUT_AT_BOUND }
+        : cause === undefined
+          ? {}
+          : { failure: cause }),
     };
   }
 }

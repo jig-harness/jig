@@ -45,6 +45,7 @@ import { localWriter } from "../../../shared/records/writer.ts";
 import { carried, returnCarried } from "../station-answer-store.ts";
 import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
+import { failureSettings } from "../machine-config.ts";
 import { sessionIdFor } from "../session.ts";
 import { readMarkers } from "../followup-marker.ts";
 import type { SharedContext } from "../shared-launches.ts";
@@ -73,7 +74,7 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import {
-  accountBlocked,
+  accountBlock,
   admitAccount,
   type ApplyState,
   dropRecord,
@@ -325,6 +326,8 @@ function newFollowupRecord(
     marker: null,
     sessionId: sessionIdFor(admittedVendor(slots.account)),
     routineTags: true,
+    // `failures.rerun_died` as it is now; only `0`, which turns the run again off, is kept.
+    ...(failureSettings(state.machine).rerunDied === 0 ? { rerunDied: 0 } : {}),
     ...(action.standing === undefined ? {} : { standing: action.standing }),
     ...carried(repo.slug, `PR #${pr.number}`, named.id),
   };
@@ -338,7 +341,7 @@ async function launchOne(
   ctx: FollowupContext,
 ): Promise<LaunchOutcome> {
   const late = outOfTime(state);
-  if (late !== null) return waits(action, late);
+  if (late !== null) return waits(action, late, null, "tick-deadline");
   const pr = ctx.merged.find((m) => `PR #${m.number}` === action.target);
   if (pr === undefined)
     return waits(action, "the merged pull request is not in this tick's read");
@@ -402,7 +405,7 @@ async function claimAndLaunch(
   const before = outOfTime(state);
   if (before !== null) {
     returnCarried(record.id, state.root);
-    return waits(action, before, name);
+    return waits(action, before, name, "tick-deadline");
   }
   holdRecord(state, record, slots);
   const lost = await claim(state, repo, ctx, record);
@@ -422,7 +425,7 @@ async function claimAndLaunch(
     after,
   );
   returnCarried(record.id, state.root);
-  return waits(action, gone, name);
+  return waits(action, gone, name, "tick-deadline");
 }
 
 /**
@@ -603,10 +606,12 @@ async function retryMarked(
       });
       continue;
     }
-    const blocked = safety?.wait ?? (await accountBlocked(state, record));
-    report.launches.push(
-      headless(await replay(state, record, action, blocked), record),
-    );
+    const blocked =
+      safety === null
+        ? await accountBlock(state, record)
+        : { detail: safety.wait, waitsOn: "admission" as const };
+    const outcome = await replay(state, record, action, blocked);
+    report.launches.push(headless(outcome, record));
   }
   return held;
 }

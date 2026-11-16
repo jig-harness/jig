@@ -1,4 +1,5 @@
 /** The walk's native facts are shared; interpreted child facets stay local to the repository. */
+import { cacheByVersion } from "../../../shared/outbound/cache.ts";
 import type {
   Assigner,
   IssueRelation,
@@ -89,6 +90,25 @@ async function issueRelations(
   );
 }
 
+/** Membership has a separate version: a moved child need not update its former parent. */
+async function membership(
+  tracker: Tracker,
+  issue: PoolIssue,
+  view: ServedView,
+  assigned: Pick<Metadata, "by" | "noAssigner">,
+): Promise<Pick<Metadata, "children" | "description">> {
+  const children = await childrenOf(tracker, issue, view, assigned);
+  const description =
+    children.length > 0
+      ? await view.once(
+          `description ${issue.identifier}`,
+          async () =>
+            (await tracker.getIssue(issue.identifier))?.description ?? null,
+        )
+      : "";
+  return { children, description };
+}
+
 /** Cache entries without a timestamp are never reused. */
 export async function metadata(
   tracker: Tracker,
@@ -105,38 +125,52 @@ export async function metadata(
     trackerStateMaps(tracker),
   ]);
   const key = `${trackerScope(tracker)}:${credential}:${interpretation}:item:${issue.identifier}:${identity}:${issue.isEpic ? "epic" : ""}`;
-  const kept = cache.get<Metadata>(key);
-  if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
-    return carried === null
-      ? kept
-      : {
-          ...kept,
-          relations: relationsOf(carried),
-        };
-  const assigned = await assigner(tracker, issue, identity, view);
-  // An item no user assigned is not placed, so its relations are not read.
-  const relations =
-    carried !== null
-      ? relationsOf(carried)
-      : assigned.noAssigner === undefined
-        ? await issueRelations(tracker, issue, view)
-        : [];
-  const children = await childrenOf(tracker, issue, view, assigned);
-  const description =
-    children.length > 0
-      ? await view.once(
-          `description ${issue.identifier}`,
-          async () =>
-            (await tracker.getIssue(issue.identifier))?.description ?? null,
-        )
-      : "";
-  const value = {
-    updatedAt: issue.updatedAt ?? "",
-    ...assigned,
-    relations,
-    children,
-    description,
-  };
-  if (issue.updatedAt && description !== null) cache.set(key, value);
-  return value;
+  const nativeGitHub =
+    tracker.adapter === "github" && tracker.dispatchSource !== undefined;
+  const kept = await cacheByVersion<Metadata>(
+    cache,
+    `versioned:${key}`,
+    // GitHub does not timestamp every relation or membership edit. Changed
+    // keys and scheduled full readings also invalidate these facts.
+    issue.updatedAt && nativeGitHub
+      ? `${issue.updatedAt}:${view.metadataEpoch?.(issue.identifier) ?? view.readAt}`
+      : issue.updatedAt,
+    async () => {
+      const assigned = await assigner(tracker, issue, identity, view);
+      // An item no user assigned is not placed, so its relations are not read.
+      const relations =
+        carried !== null
+          ? relationsOf(carried)
+          : assigned.noAssigner === undefined
+            ? await issueRelations(tracker, issue, view)
+            : [];
+      const value = {
+        updatedAt: issue.updatedAt ?? "",
+        ...assigned,
+        relations,
+        ...(nativeGitHub
+          ? { children: [], description: "" }
+          : await membership(tracker, issue, view, assigned)),
+      };
+      return value;
+    },
+    (value) => value.description !== null,
+  );
+  const value = nativeGitHub
+    ? {
+        ...kept,
+        ...(await cacheByVersion(
+          cache,
+          `membership:${key}`,
+          issue.updatedAt
+            ? `${issue.updatedAt}:${view.membershipEpoch?.() ?? view.readAt}`
+            : undefined,
+          () => membership(tracker, issue, view, kept),
+          (value) => value.description !== null,
+        )),
+      }
+    : kept;
+  return carried === null
+    ? value
+    : { ...value, relations: relationsOf(carried) };
 }

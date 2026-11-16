@@ -416,7 +416,11 @@ development and shipped as a version.
   pass, goes through `jig dispatch report <record> <token> <file>`
   (`dispatch/report-command.ts`), which redacts and checks it
   (`shared/closing-report.ts`) and keeps the last one that passes beside
-  the result, never touching it. Nothing
+  the result, never touching it. A drive's report is its driver's:
+  each pass writes a round report (`skills/drive-pr/scripts/round-report.ts`),
+  `drive.ts` composes the closing report at its stop
+  (`lib/driver/closing-report.ts`) into the file the wrapper names, and
+  the wrapper records it (`dispatch/lib/run-report.ts`). Nothing
   else reasoned writes these records. A completed pickup names its pull
   request with `--pr <number>`, or `--none "<reason>"` when none was needed;
   a pickup the tracker's rate limit stopped before it claimed the item
@@ -478,6 +482,10 @@ development and shipped as a version.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
+  follow-up of this host's whose pass died during its work, or whose result
+  or exit this host could not write, is run once more, after the host's
+  health check passes (`dispatch/lib/session-startup.ts`,
+  `dispatch/lib/rerun-gate.ts`), unless `failures.rerun_died` is `0`. A
   follow-up of this host's that stopped on a routine question (`local-leftover`,
   `person-owed` or `drafted-items`, the classes in
   `dispatch/lib/routine-questions.ts`) is run once more with the class's
@@ -707,10 +715,7 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/proc.ts`), and the dispatcher's reads either
   answer in full or throw, so a population read in part is never planned
   from (`dispatch/lib/forge.ts`). Refuses: `get_issue.ts` exits 2 when the
-  tracker cannot be reached; `list_comments.ts` never prints a partial list. One exception: the deferral step's batching
-  script (`skills/resolve-review-comments/scripts/defer-batch.ts`) files on
-  Linear directly, so choosing GitHub Issues or Jira does not redirect it
-  until deferral moves onto the interface.
+  tracker cannot be reached; `list_comments.ts` never prints a partial list.
 - **Reasoned.** `file-issue`, `do-item`, `work-batch`, the deferral step and
   `reflect` decide what to file, label or comment; the scripts write it.
   `file-issue` checks labels against the repository's taxonomy
@@ -927,12 +932,16 @@ stops a model. A team that runs passes unattended should know which:
   login or one of those wrote it; a merge-ready announcement, an answer to a
   thread or a parked question when an owner, member or collaborator wrote
   it, and an answer to a need's decision when one other than the
-  dispatcher's own login did
-  (`shared/trusted-authors.ts`, `dispatch/lib/station-answers.ts`, `shared/records/forge-claims.ts`,
+  dispatcher's own login did, or, on another tracker's item, a workspace
+  member who is not a guest other than the user the dispatcher's tracker
+  credential acts as
+  (`shared/trusted-authors.ts`, `dispatch/lib/station-answers.ts`,
+  `dispatch/lib/tracker-answers.ts`, `shared/records/forge-claims.ts`,
   `skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/driver/rearm.ts`). A pass signed in as the
-  same login as the person can therefore post a comment those scripts would
-  trust; only the instructions say it must not.
+  same login as the person, or holding the person's tracker credential, can
+  therefore post a comment those scripts would trust; only the instructions
+  say it must not.
 - **The machine's state folders.** Launch records, walls, receipts, the
   outcome log and the drive's state are files under `~/.local/state/jig/`,
   writable by every session the same user runs. Leases and tokens fence the

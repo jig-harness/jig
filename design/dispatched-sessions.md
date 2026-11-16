@@ -23,11 +23,17 @@ a worktree Jig opens itself, so a host needs no terminal kept open and no
 desktop app to dispatch; once it has run on a host that dispatches, it
 becomes the default, and Orca stays supported as an option.
 
-This is the design of [plan.md](plan.md) item 51. Step 1 of the
-[build order](#build-order) is built: the `closing-report/v1` check,
+This is the design of [plan.md](plan.md) item 51. Steps 1 to 3 of the
+[build order](#build-order) are built: the `closing-report/v1` check,
 `jig dispatch report`, the report on the launch record and the outcome
-log, and the prompts that ask for it; the rest is not. It
-builds on the dispatcher (item 33,
+log, and the prompts that ask for it; a drive's round reports, the report
+`drive.ts` writes at its stop, the per-round session ids on the launch
+record, the wrapper recording and printing the report, and the report's
+`cause` and `by` on the shared claim's end; and the report shown on the
+dashboard's run lines, each piece of work's page of runs (the History view
+filtered to that work) and *What needs you*, `jig ask`'s *Last run* line
+(`last.run`), and the `notify` stage's `notices_read` event. The rest is
+not. It builds on the dispatcher (item 33,
 [dark-factory-dispatch.md](dark-factory-dispatch.md)), whose
 [session runtime interface](dark-factory-dispatch.md#the-session-runtime-interface)
 the process runtime implements, and on the
@@ -173,9 +179,11 @@ terminal someone typed into stays open.
 | Stopped or taken over by a person | `by: person` | closes; a terminal the person typed into stays |
 
 Closing every tab on every exit is how a tab stops outliving its merged
-pull request (#481): no run leaves one. Tabs earlier releases left are
-collected with their worktrees by `jig gc`, which removes an Orca worktree
-with its terminals.
+pull request: no run leaves one. Tabs earlier releases left are collected
+with their worktrees by `jig gc`, which removes an Orca worktree with its
+terminals. A tab whose run was killed before anything closed it is closed by
+`jig gc`'s `orca-terminals` kind once it has been idle past its guard
+([plugin/gc/README.md § Run tabs](../plugin/gc/README.md#run-tabs)).
 
 The session runtime interface gains one method for this, `endRun(record)`:
 what the runtime does with what a run left once the tick finds the run
@@ -429,12 +437,12 @@ as a stage a host may enable, and the process runtime refuses it. It retires
 on Orca too once the outcome log shows it unused: when, over 30 days on a
 host that enables it, at least nine in ten of the needs a person answered
 were answered before the tick found the notices workspace read. The log
-has no such observation today, so the `notify` stage's own tick records one
+holds that observation: the `notify` stage's own tick records one
 `notices_read` event per tick with the workspace's read state, and a need
 counts as answered first when its answer lands before the first tick that
 recorded the workspace read after its notice was written; the one shared
 workspace's read state is thus compared with each notice's write time, not
-with a per-need mark. That event is added in step 3, with the dashboard.
+with a per-need mark.
 
 ### Proof before the default changes
 
@@ -481,7 +489,7 @@ fixes, have merged.
    copy and its retention.
 5. **Tabs close on every exit.** The wrapper closes its run tab on every
    exit; `endRun` in the interface, and the tick calling it for a record
-   that ended without its wrapper. Closes #481.
+   that ended without its wrapper.
 6. **A worktree opener that shares admission.** The workspace rules moved
    into a shared opener; plain git worktrees under the runs root with owner
    records under `jig gc`'s shared admission; the collector collecting
@@ -506,8 +514,8 @@ without making it the default; step 7 waits on step 6, and step 8 on step
 
 ## Left out
 
-- **Building any of it.** This design changes no behaviour; the build order
-  is filed after it merges.
+- **Building the rest of it.** Steps 1 to 3 of the build order are built;
+  the steps after them are filed as the build reaches them.
 - **`jig gc`'s own fixes** (#990, #991), which come first.
 - **The closing report as a protocol chapter.** The Jig Protocol (#1016) may
   make the report's shape one of its chapters; this design defines the

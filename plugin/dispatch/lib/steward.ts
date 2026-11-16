@@ -11,6 +11,7 @@ import type { FailureRow } from "./failures.ts";
 import type { LineLoad } from "./dashboard-contract.ts";
 import type { StewardTargetEvidence } from "./steward-evidence.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
+import { inTransaction } from "../../shared/records/db.ts";
 
 export const STEWARD_DEADLINE_SEC = 900;
 export const STEWARD_RESUME =
@@ -33,11 +34,43 @@ export type StewardRecord =
       reason: string;
     }
   | { kind: "order"; targets: string[]; reason: string };
+
+/** What kind of judgment a member of the judgment backlog waits on. */
+export type BacklogKind =
+  | "stalled"
+  | "followup-failed"
+  | "rearm"
+  | "resume"
+  | "facet"
+  | "need";
+
+/** One item of the judgment backlog: its kind, its target and the facts that make it this occurrence. */
+export interface BacklogMember {
+  kind: BacklogKind;
+  /** `PR #7`, an item key, or for a resume the ended launch's id. */
+  target: string;
+  facts: string;
+}
+
+/** A need that already arrives framed, and who framed it: context for the steward, never a target for its `need` record. */
+export interface FramedNeed {
+  target: string;
+  cause: string;
+  framedBy: "park" | "session" | "dispatcher";
+  /** The framed question, when its framing states one. */
+  question: string | null;
+}
+
 export interface StewardDigest {
   version: 1;
   repo: string;
+  /** The judgment backlog the pass was started on; absent from a digest kept before the trigger read it. */
+  backlog?: BacklogMember[];
   drives: DrivenPr[];
+  /** The needs with no framing: the only targets a `need` record may name. */
   needs: Action[];
+  /** The needs that arrive framed, with their framing: never reframed. */
+  framed?: FramedNeed[];
   queue: PoolIssue[];
   passes: Array<{
     record: string;
@@ -94,64 +127,29 @@ export function recordBelongsToDigest(
   }
 }
 
-/** The cadence or the rolling hourly cap rules a run out whatever the input: checked before the digest is read. */
-export function stewardWaits(
+/** The steward passes the host starts in a rolling hour, across its repositories. */
+const STEWARD_HOURLY_BUDGET = 3;
+
+/** Whether the host's passes in the rolling hour before `now` spent its budget. */
+export function stewardBudgetSpent(
   runs: readonly { at: number }[],
   now: number,
-  every: number,
 ): boolean {
-  const latest = [...runs].sort((a, b) => b.at - a.at)[0];
   return (
-    (latest !== undefined && (now - latest.at < every || latest.at > now)) ||
-    runs.filter((r) => r.at > now - 3_600_000).length >= 3
+    runs.filter((r) => r.at > now - 3_600_000).length >= STEWARD_HOURLY_BUDGET
   );
 }
 
-/** A changed input, the cadence and a rolling hourly cap must all permit a run. */
-export function stewardDue(
-  hash: string,
-  runs: readonly { hash: string; at: number }[],
-  now: number,
-  every: number,
-): boolean {
-  const latest = [...runs].sort((a, b) => b.at - a.at)[0];
-  return !stewardWaits(runs, now, every) && latest?.hash !== hash;
+export function memberKey(member: BacklogMember): string {
+  return JSON.stringify([member.kind, member.target, member.facts]);
 }
 
-/** Times in receipts and measured gauges do not turn unchanged work into a new digest. */
-export function digestHash(digest: StewardDigest): string {
-  const { load: _load, ...stable } = digest;
-  const ordered = {
-    ...stable,
-    drives: [...stable.drives]
-      .sort((a, b) => a.number - b.number)
-      .map(({ why: _why, ...p }) => p),
-    needs: stable.needs
-      .map((a) => ({
-        stage: a.stage,
-        target: a.target,
-        cause: a.cause,
-        evidence: a.evidence,
-      }))
-      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-    queue: [...stable.queue].sort((a, b) =>
-      a.identifier.localeCompare(b.identifier),
-    ),
-    passes: [...stable.passes].sort((a, b) => a.record.localeCompare(b.record)),
-    targets: stable.targets?.toSorted((a, b) =>
-      a.target.localeCompare(b.target),
-    ),
-    failures: [...stable.failures].sort((a, b) => a.key.localeCompare(b.key)),
-    history: [...(stable.history ?? [])].sort((a, b) =>
-      JSON.stringify(a).localeCompare(JSON.stringify(b)),
-    ),
-  };
+/** The trigger's hash: the judgment backlog's members alone, whatever else the line did. */
+export function backlogHash(members: readonly BacklogMember[]): string {
   return createHash("sha256")
     .update(
-      JSON.stringify(ordered, (key, value) =>
-        ["heartbeatAgeMinutes", "stewardAct", "stewardAsk"].includes(key)
-          ? undefined
-          : value,
+      JSON.stringify(
+        members.map(memberKey).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
       ),
     )
     .digest("hex");
@@ -278,7 +276,17 @@ export function keepStewardRun(
     .query(
       "INSERT INTO steward_runs (id, repo, hash, at_ms, digest) VALUES (?, ?, ?, ?, ?)",
     )
-    .run(id, digest.repo, digestHash(digest), at, JSON.stringify(digest));
+    .run(
+      id,
+      digest.repo,
+      backlogHash(digest.backlog ?? []),
+      at,
+      JSON.stringify(digest),
+    );
+}
+/** Take back a run whose pass never started, so its backlog members stay unjudged. */
+export function forgetStewardRun(id: string, root = stateRoot()): void {
+  stateDb(root).query("DELETE FROM steward_runs WHERE id = ?").run(id);
 }
 /**
  * Erase the output-bearing fields (each target's last-pass tail and each
@@ -418,7 +426,7 @@ export function submitStewardRecords(
   if (!checked.ok) return checked;
   return attempt("unreadable", "the steward records could not be kept", () => {
     const db = stateDb(root);
-    return db.transaction(() => {
+    return inTransaction(db, () => {
       const row = db
         .query("SELECT submitted FROM steward_runs WHERE id = ?")
         .get(run) as { submitted: number } | null;
@@ -433,7 +441,7 @@ export function submitStewardRecords(
         "UPDATE launches SET result = 'done', result_at = ? WHERE id = ? AND result IS NULL",
       ).run(currentIso(), run);
       return "submitted" as const;
-    })();
+    });
   });
 }
 export function stewardRecords(

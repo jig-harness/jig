@@ -2,7 +2,7 @@
  * What an ended pickup record still holds: a batch pass that claimed some of
  * its members holds only those, whatever its result, so the members it never
  * claimed are wanted again; an item an ended record holds with no rule to
- * release it is a framed need; and an epic's one-child slot is never given
+ * release it is a framed need; and a slot of an epic's width is never given
  * to a child an ended record keeps from starting.
  */
 import { afterEach, describe, expect, it } from "bun:test";
@@ -21,6 +21,20 @@ import { closeStateDb } from "../lib/state.ts";
 import type { DispatchSection, WantedItem } from "../lib/types.ts";
 
 const SLUG = "example-org/example-repo";
+it("names a validation wait when a pickup ended without moving its item", () => {
+  const launch = endedBatch(["#7"], "failed", []);
+  launch.record.testLockWait = {
+    pid: 12,
+    workspace: "/work/w",
+    since: "2026-11-12T17:00:00.000Z",
+    observedAt: "2026-11-12T17:21:00.000Z",
+    waiting: true,
+  };
+  const result = plan(["#7"], [launch]);
+  expect(
+    result.actions.find((a) => a.cause === "pickup-ended")?.reason,
+  ).toContain("last seen waiting for the test lock for 21m");
+});
 const NOW = Date.parse("2026-11-14T12:00:00Z");
 
 const roots: string[] = [];

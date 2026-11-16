@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
+import { swallow } from "../../shared/errors.ts";
 import {
   orcaEnvelope,
   orcaFailure,
@@ -19,18 +20,37 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run } from "../../shared/proc.ts";
 import { spawnSync } from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
-import { isAbsolute, join, normalize, relative, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  sep,
+} from "node:path";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import {
   localSteps,
+  removalUnsettled,
   removeThroughOrca,
   removeWithGit,
 } from "../worktree-removal.ts";
 import { processHolder } from "./worktree-git.ts";
 import {
   type Collected,
+  goneClaims,
+  isUnreadableClaim,
+  onDisk,
+  proveUnreadable,
+  standingClaims,
+  unreadableClaims,
   guardedCollection,
+  type GuardedRemoval,
+  isGoneClaim,
   LAUNCH_VETO,
+  proveGone,
+  releaseGone,
 } from "./worktree-guard.ts";
 import {
   markingSince,
@@ -50,7 +70,15 @@ import {
   type WorktreeIdentity,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
+import {
+  keepHolds,
+  releaseHolds,
+  unchangedAndHeld,
+  holdableIdentity,
+  type HeadHold,
+} from "./worktree-head-hold.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
+import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
@@ -126,6 +154,83 @@ async function orcaWorktrees(
     managed.set(canonicalWorktree(row.path), { id: row.id, path: row.path });
   }
   return ok(managed);
+}
+/** Whether Orca's list `managed` holds the worktree at `path`, as Orca spells it or as git does. */
+function listedIn(
+  managed: Map<string, OrcaWorktree>,
+): (path: string) => boolean {
+  const paths = new Set([...managed.values()].map((row) => row.path));
+  return (path) => paths.has(path) || managed.has(normalize(path));
+}
+/**
+ * The selected worktrees, each marked with the runtime that manages it, and
+ * a line for each claim a collector that ended left on a worktree under
+ * `roots` that is gone from Orca's list and from the disk: no worktree is
+ * listed to settle it with.
+ */
+async function orcaInventory(
+  command: string,
+  repository: string,
+  selected: { id: string; details: Record<string, unknown> }[],
+  roots: string[],
+): Promise<Outcome<Resource[]>> {
+  const stale = goneClaims((path) =>
+    roots.some(
+      (root) => within(normalize(path), root) || underRoot(path, root),
+    ),
+  );
+  const unreadable = unreadableClaims();
+  if (selected.length === 0 && stale.length === 0)
+    return ok([...selected, ...unreadable]);
+  const managed = await orcaWorktrees(command, repository);
+  if (!managed.ok) return managed;
+  const listed = listedIn(managed.value);
+  // A checkout gone from the disk can still be registered with Git: the claim
+  // is then the resource, not the registration.
+  const known = new Set(
+    selected
+      .filter((entry) => onDisk(entry.id))
+      .map((entry) => resolvedPath(entry.id)),
+  );
+  const gone = stale.filter(
+    (claim) => !listed(claim.id) && !known.has(resolvedPath(claim.id)),
+  );
+  const replaced = new Set(gone.map((claim) => resolvedPath(claim.id)));
+  const standing = standingClaims();
+  const kept = selected.filter(
+    (entry) => !replaced.has(resolvedPath(entry.id)),
+  );
+  markManaged(kept, managed.value);
+  for (const entry of kept) {
+    const row = managed.value.get(canonicalWorktree(entry.id));
+    const path = row?.path ?? entry.id;
+    if (standing.has(path)) {
+      const submitted = standing.get(path);
+      entry.details.claim = "standing";
+      entry.details.claimNote = `a dead collection's launch guard claim stands on this worktree${submitted ? ` (orca worktree rm was called under it at ${submitted})` : ""} and keeps launches out; it is settled by a collection that removes the worktree, or inspect and remove its admission by hand`;
+    }
+  }
+  return ok([...kept, ...gone, ...unreadable]);
+}
+/** The path with its nearest existing ancestor resolved, the spelling git and the disk agree on. */
+function resolvedPath(path: string): string {
+  let ancestor = normalize(path);
+  let suffix = "";
+  for (;;) {
+    try {
+      return join(realpathSync.native(ancestor), suffix);
+    } catch (error) {
+      swallow(error, "the ancestor is gone: the next one up is tried");
+    }
+    const parent = dirname(ancestor);
+    if (parent === ancestor) return normalize(path);
+    suffix = join(basename(ancestor), suffix);
+    ancestor = parent;
+  }
+}
+/** Whether the claim's `path` lies under `root` once its nearest existing ancestor is resolved. */
+function underRoot(path: string, root: string): boolean {
+  return within(resolvedPath(path), root);
 }
 function orcaId(resource: Resource): string | null {
   return isMapping(resource.details) &&
@@ -297,33 +402,49 @@ async function extractBaseHooks(
   }
   return ok(undefined);
 }
+/** The answer with what a hold left appended to its reason, when one did. */
+function withKept(collected: Collected, left: string | null): Collected {
+  return left === null
+    ? collected
+    : { ...collected, reason: `${collected.reason}; ${left}` };
+}
+
 /**
  * Collect a worktree Orca manages through Orca: the repository's remove hook
  * inside it, its reflection findings parked, then `orca worktree rm`, so its
  * card, terminals and agent records go with it. Never `git worktree remove`.
+ * Its head is held from the final comparison with `identity`, what the
+ * runner's final proof saw, through that call.
  */
 async function collectThroughOrca(
   command: string,
   resource: Resource,
-  orcaWorktree: { id: string; launched: () => string | null },
+  orcaWorktree: { id: string; guard: GuardedRemoval },
   repository: string,
   declaration: string,
   legacy: LegacyPolicy | undefined,
+  regenerablePaths: readonly string[],
+  identity: WorktreeIdentity | undefined,
 ): Promise<Collected> {
-  const { id, launched } = orcaWorktree;
+  const { id, guard } = orcaWorktree;
+  const { launched } = guard;
   let archived: Archived | null = null;
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
-  const failure = (outcome: { failure: { code: string; reason: string } }) => ({
-    outcome:
-      outcome.failure.code === LAUNCH_VETO
-        ? ("refused" as const)
-        : ("failed" as const),
-    reason: outcome.failure.reason,
-  });
+  const holds: HeadHold[] = [];
+  // Every answer releases the hold, and says so when the release failed.
+  const released = (collected: Collected): Collected =>
+    withKept(collected, releaseHolds(holds, log));
+  const failure = (outcome: { failure: { code: string; reason: string } }) =>
+    released({
+      outcome: outcome.failure.code === LAUNCH_VETO ? "refused" : "failed",
+      reason: outcome.failure.reason,
+    });
   let snapshot: { hook: string; dir: string } | null = null;
   try {
+    const holdable = await holdableIdentity(resource.id, identity);
+    if ("stop" in holdable) return holdable.stop;
     // The retiring branch supplies the hook, and this runs unattended, so the
     // hook that runs is the declared base-branch commit's, never the branch's.
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
@@ -348,7 +469,7 @@ async function collectThroughOrca(
           admitAfterHook(
             worktree,
             legacy,
-            async () => {
+            async (final) => {
               const live = await orcaLiveness(command, worktree);
               if (live !== null)
                 return failed("live", `kept after the hook: ${live.reason}`);
@@ -357,21 +478,38 @@ async function collectThroughOrca(
               const launch = launched();
               if (launch !== null)
                 return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
-              return unheld(worktree);
+              const held = await unheld(worktree);
+              if (!held.ok) return held;
+              // Last, as on an agent tool's tree: nothing slow follows it.
+              return unchangedAndHeld(
+                worktree,
+                holdable.identity,
+                final,
+                holds,
+              );
             },
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
+        // The last step before the call: an unanswered call keeps the claim.
+        submit: () => guard.submit(),
       },
     });
+    guard.settle(removed);
     // An archive written before a step that then failed stays, named in the
     // receipt, and expires with the receipts.
-    if (!removed.ok)
-      return archived === null
-        ? failure(removed)
-        : { ...failure(removed), details: { archive: archived } };
-    return {
+    if (!removed.ok) {
+      // Orca may be deleting the worktree still, by this call or by the dead
+      // run's whose admission was taken over: the hold stays, as the claim.
+      const left =
+        removalUnsettled(removed) || guard.unsettled()
+          ? keepHolds(holds)
+          : null;
+      return withArchiveOf(withKept(failure(removed), left), archived);
+    }
+    return released({
       outcome: "collected",
       reason: `removed through Orca: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings,${archiveNote(archived)} orca worktree rm`,
       details: {
@@ -380,15 +518,22 @@ async function collectThroughOrca(
         parked: true,
         ...(archived === null ? {} : { archive: archived }),
       },
-    };
+    });
   } catch (error) {
     // A step that throws (a platform error, or a defect) fails the removal.
-    return {
-      outcome: "failed",
-      reason: error instanceof Error ? error.message : String(error),
-      ...(archived === null ? {} : { details: { archive: archived } }),
-    };
+    const failed = withArchiveOf(
+      {
+        outcome: "failed",
+        reason: error instanceof Error ? error.message : String(error),
+      },
+      archived,
+    );
+    // A submitted admission, this run's or a dead run's taken over, may still
+    // be removing the worktree: the hold stays, as the claim does.
+    if (!guard.unsettled()) return released(failed);
+    return withKept(failed, keepHolds(holds));
   } finally {
+    releaseHolds(holds, log);
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
@@ -406,26 +551,29 @@ async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
  * The last admission before a worktree goes, after its hook and park: what
  * removal relies on (`checks`), the one-time archive of its ignored content,
  * then `checks` again, since the archive may have run for minutes and an
- * agent or process can have started meanwhile. `archived` is told of an
+ * agent or process can have started meanwhile; that second run is told it is
+ * the `final` one, the last before removal. `archived` is told of an
  * archive as soon as it is written, so every failure after it names it.
  */
 async function admitAfterHook(
   worktree: string,
   legacy: LegacyPolicy | undefined,
-  checks: () => Promise<Outcome<undefined, string>>,
+  checks: (final: boolean) => Promise<Outcome<undefined, string>>,
   archived: (written: Archived | null) => void,
+  regenerablePaths: readonly string[],
 ): Promise<Outcome<undefined, string>> {
-  const before = await checks();
+  const before = await checks(false);
   if (!before.ok) return before;
   // Last, so the archive holds the content as the removal finds it.
   const preserved = await preserveLegacyContent(
     worktree,
     legacy,
     currentMs() + ARCHIVE_LIMIT_MS,
+    regenerablePaths,
   );
   if (!preserved.ok) return preserved;
   archived(preserved.value);
-  const after = await checks();
+  const after = await checks(true);
   if (!after.ok) return after;
   return ok(undefined);
 }
@@ -441,22 +589,24 @@ async function collectAgentWorktree(
   declaration: string,
   legacy: LegacyPolicy | undefined,
   identity: WorktreeIdentity | undefined,
+  regenerablePaths: readonly string[],
 ): Promise<Collected> {
   let archived: Archived | null = null;
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
+  // The head held from the final comparison through the removal.
+  const holds: HeadHold[] = [];
+  // Every answer once the hold may be taken releases it, and says so when
+  // the release failed, since the lock then keeps git from moving the head.
   const withArchive = (collected: Collected): Collected =>
-    withArchiveOf(collected, archived);
+    withKept(withArchiveOf(collected, archived), releaseHolds(holds, log));
   let snapshot: { hook: string; dir: string } | null = null;
   try {
     // The commit and branch the runner's final proof saw: every check before
     // removal holds the tree to them.
-    if (identity === undefined)
-      return {
-        outcome: "failed",
-        reason: "kept: no final proof recorded the tree's commit and branch",
-      };
+    const holdable = await holdableIdentity(resource.id, identity);
+    if ("stop" in holdable) return holdable.stop;
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
     if (!taken.ok) return { outcome: "failed", reason: taken.failure.reason };
     snapshot = taken.value;
@@ -475,13 +625,20 @@ async function collectAgentWorktree(
             legacy,
             // The holder read can take half a minute, so the identity
             // comparison goes last: nothing slow stands between it and removal.
-            async () => {
+            async (final) => {
               const held = await unheld(worktree);
-              return held.ok ? unchangedSinceProof(worktree, identity) : held;
+              if (!held.ok) return held;
+              return unchangedAndHeld(
+                worktree,
+                holdable.identity,
+                final,
+                holds,
+              );
             },
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
       },
       remove: (worktree) => gitRemove(repository, worktree),
@@ -508,6 +665,7 @@ async function collectAgentWorktree(
       reason: error instanceof Error ? error.message : String(error),
     });
   } finally {
+    releaseHolds(holds, log);
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
@@ -654,6 +812,35 @@ function markManaged(
     entry.details.orcaPath = row.path;
   }
 }
+/** The proof of a claim resource (an admission with no worktree to prove), or null for a worktree. */
+function proveClaim(
+  orca: string,
+  resource: Resource,
+  repository: string,
+): Proof | Promise<Proof> | null {
+  if (isUnreadableClaim(resource)) return proveUnreadable(resource);
+  if (!isGoneClaim(resource)) return null;
+  return proveGone(resource, async () => {
+    const managed = await orcaWorktrees(orca, repository);
+    return managed.ok ? ok(listedIn(managed.value)) : managed;
+  });
+}
+/** The proof that needs no policy: a claim resource, or a locked worktree; null otherwise. */
+function proveEarly(
+  orca: string | undefined,
+  resource: Resource,
+  repository: string,
+): Proof | Promise<Proof> | null {
+  const claim =
+    orca === undefined ? null : proveClaim(orca, resource, repository);
+  if (claim !== null) return claim;
+  if (!isMapping(resource.details) || resource.details.locked !== true)
+    return null;
+  return withHeldBranch(resource, {
+    state: "live",
+    reason: "worktree is locked",
+  });
+}
 export function worktreesKind(
   repository: string,
   roots: string[],
@@ -662,9 +849,10 @@ export function worktreesKind(
   policy?: WorktreePolicy,
   orca?: string,
   archive?: ArchivePolicy,
+  regenerablePaths: readonly string[] = DEFAULT_REGENERABLE_PATHS,
 ): CollectionKind {
   const legacy = legacyPolicy(archive);
-  // What each agent tool tree's latest proof saw, for its collection.
+  // What each agent tool or Orca tree's latest proof saw, for its collection.
   const proved = new Map<string, WorktreeIdentity>();
   return {
     name: "worktrees",
@@ -701,31 +889,30 @@ export function worktreesKind(
           "Git worktree inventory was empty or malformed",
         );
       const selected = selectWorktrees(entries, roots, repository);
-      if (orca === undefined || selected.length === 0) return ok(selected);
-      const managed = await orcaWorktrees(orca, repository);
-      if (!managed.ok) return managed;
-      markManaged(selected, managed.value);
-      return ok(selected);
+      if (orca === undefined) return ok(selected);
+      return orcaInventory(orca, repository, selected, [
+        ...roots.map(canonicalRoot),
+        canonicalRoot(join(entries[0]?.id ?? repository, ...AGENT_TOOL_DIR)),
+      ]);
     },
     prove: async (resource) => {
-      if (isMapping(resource.details) && resource.details.locked === true)
-        return withHeldBranch(resource, {
-          state: "live",
-          reason: "worktree is locked",
-        });
+      const early = proveEarly(orca, resource, repository);
+      if (early !== null) return early;
       const resolved =
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
         return { state: "unverified", reason: resolved.failure.reason };
-      const proving = { ...resolved.value, legacy: legacy() };
+      const proving = { ...resolved.value, regenerablePaths, legacy: legacy() };
       const agentTool = isAgentTool(resource);
+      const managed = orca !== undefined && orcaId(resource) !== null;
       proved.delete(resource.id);
       // Read before the proof, so the proof's own reads run inside it.
-      const seen = agentTool ? await worktreeIdentity(resource.id) : null;
+      const seen =
+        agentTool || managed ? await worktreeIdentity(resource.id) : null;
       if (seen !== null && !seen.ok)
         return { state: "unverified", reason: seen.failure.reason };
       const result =
-        orca !== undefined && orcaId(resource) !== null
+        orca !== undefined && managed
           ? await runtimeWorktreeProof(resource.id, proving, idleDays, {
               orca,
             })
@@ -747,27 +934,38 @@ export function worktreesKind(
       return withHeldBranch(resource, result.value);
     },
     collect: async (resource) => {
-      if (isAgentTool(resource)) {
-        const final = proved.get(resource.id);
-        proved.delete(resource.id);
+      if (orca !== undefined && isUnreadableClaim(resource))
+        return {
+          outcome: "refused",
+          reason:
+            "kept: an admission gc cannot read is for a person to inspect",
+        };
+      if (orca !== undefined && isGoneClaim(resource))
+        return releaseGone(resource);
+      // What the tree's latest proof saw, taken once.
+      const final = proved.get(resource.id);
+      proved.delete(resource.id);
+      if (isAgentTool(resource))
         return collectAgentWorktree(
           resource,
           repository,
           declaration,
           legacy(),
           final,
+          regenerablePaths,
         );
-      }
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
-        return guardedCollection(resource, orcaPath(resource), (launched) =>
+        return guardedCollection(resource, orcaPath(resource), (guard) =>
           collectThroughOrca(
             orca,
             resource,
-            { id, launched },
+            { id, guard },
             repository,
             declaration,
             legacy(),
+            regenerablePaths,
+            final,
           ),
         );
       return {

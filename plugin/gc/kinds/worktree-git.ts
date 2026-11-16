@@ -3,7 +3,7 @@ import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { run } from "../../shared/proc.ts";
+import { readTimeoutEnv, run } from "../../shared/proc.ts";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import type { WorktreeRequest } from "./worktree-evidence.ts";
 import { currentMs } from "../../shared/time.ts";
@@ -163,20 +163,53 @@ async function remoteRepository(
   const url = await git(root, ["remote", "get-url", remote]);
   return url.ok ? forgeRepository(url.value) : url;
 }
+/** GH_CALL_TIMEOUT as an outcome: a bad value is a failure, never a throw. */
+function lookupDeadline(): Outcome<number> {
+  const read = readTimeoutEnv("GH_CALL_TIMEOUT", 30);
+  return read.ok
+    ? ok(read.seconds)
+    : failed(
+        "configuration",
+        `GH_CALL_TIMEOUT must be a positive whole number of seconds no greater than 2147483 (got '${read.raw}')`,
+      );
+}
+
+/** The forge repository a lookup asks and its deadline, as one outcome. */
+async function lookupTarget(
+  root: string,
+  remote: string,
+): Promise<Outcome<{ repository: string; deadline: number }>> {
+  const repository = await remoteRepository(root, remote);
+  if (!repository.ok) return repository;
+  const deadline = lookupDeadline();
+  if (!deadline.ok) return deadline;
+  return ok({ repository: repository.value, deadline: deadline.value });
+}
+
+/** The deadline remains visible alongside any diagnostic the forge printed. */
+function lookupError(result: { timedOut?: boolean; stderr: string }): string {
+  const diagnostic = result.stderr.trim();
+  const reason = result.timedOut
+    ? `pull request lookup exceeded its deadline${diagnostic ? `: ${diagnostic}` : ""}`
+    : diagnostic;
+  return `Forge inventory unavailable: ${reason}`;
+}
+
 export async function requests(
   root: string,
   remote: string,
   branch: string,
 ): Promise<Outcome<WorktreeRequest[]>> {
-  const repository = await remoteRepository(root, remote);
-  if (!repository.ok) return repository;
+  const lookup = await lookupTarget(root, remote);
+  if (!lookup.ok) return lookup;
+  const { repository, deadline } = lookup.value;
   const result = await run(
     [
       "gh",
       "pr",
       "list",
       "--repo",
-      repository.value,
+      repository,
       "--head",
       branch,
       "--state",
@@ -186,18 +219,15 @@ export async function requests(
       "--json",
       "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   if (result.code !== 0)
-    return failed(
-      "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
-    );
+    return failed("forge-unavailable", lookupError(result));
   const values: unknown = JSON.parse(result.stdout);
   if (!Array.isArray(values) || values.length >= 200)
     return failed("incomplete", "Pull request inventory is incomplete");
   // --head matches branch names in forks too; only this remote is evidence.
-  const source = repository.value.slice(repository.value.indexOf("/") + 1);
+  const source = repository.slice(repository.indexOf("/") + 1);
   const matched: WorktreeRequest[] = [];
   for (const value of values) {
     const one = request(value, source);
@@ -216,8 +246,9 @@ export async function requestByNumber(
   remote: string,
   pr: number,
 ): Promise<Outcome<WorktreeRequest[]>> {
-  const repository = await remoteRepository(root, remote);
-  if (!repository.ok) return repository;
+  const lookup = await lookupTarget(root, remote);
+  if (!lookup.ok) return lookup;
+  const { repository, deadline } = lookup.value;
   const result = await run(
     [
       "gh",
@@ -225,20 +256,17 @@ export async function requestByNumber(
       "view",
       String(pr),
       "--repo",
-      repository.value,
+      repository,
       "--json",
       "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   if (result.code !== 0)
-    return failed(
-      "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
-    );
+    return failed("forge-unavailable", lookupError(result));
   const matched = request(
     JSON.parse(result.stdout),
-    repository.value.slice(repository.value.indexOf("/") + 1),
+    repository.slice(repository.indexOf("/") + 1),
   );
   if (!matched.ok) return matched;
   return ok(matched.value ? [matched.value] : []);
@@ -300,10 +328,11 @@ export async function requestsForCommit(
 ): Promise<Outcome<WorktreeRequest[]>> {
   if (!COMMIT.test(commit))
     return failed("malformed", "Malformed worktree commit");
-  const repository = await remoteRepository(root, remote);
-  if (!repository.ok) return repository;
-  const host = repository.value.slice(0, repository.value.indexOf("/"));
-  const source = repository.value.slice(host.length + 1);
+  const lookup = await lookupTarget(root, remote);
+  if (!lookup.ok) return lookup;
+  const { repository, deadline } = lookup.value;
+  const host = repository.slice(0, repository.indexOf("/"));
+  const source = repository.slice(host.length + 1);
   const result = await run(
     [
       "gh",
@@ -312,15 +341,17 @@ export async function requestsForCommit(
       host,
       `repos/${source}/commits/${commit}/pulls?per_page=${COMMIT_REQUESTS_PAGE}`,
     ],
-    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+    { cwd: root, timeoutSec: deadline, env: gitEnvironment() },
   );
   // A commit only this machine has is in no pull request.
-  if (result.code !== 0 && UNKNOWN_COMMIT.test(result.stderr)) return ok([]);
+  if (
+    result.code !== 0 &&
+    !result.timedOut &&
+    UNKNOWN_COMMIT.test(result.stderr)
+  )
+    return ok([]);
   if (result.code !== 0)
-    return failed(
-      "forge-unavailable",
-      `Forge inventory unavailable: ${result.stderr}`,
-    );
+    return failed("forge-unavailable", lookupError(result));
   let values: unknown;
   try {
     values = JSON.parse(result.stdout);

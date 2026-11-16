@@ -136,6 +136,12 @@ import {
   recordExit,
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
+import {
+  driverReportFile,
+  printKeptReport,
+  recordAndSay,
+} from "./lib/run-report.ts";
+import { DRIVER_REPORT_VARIABLE } from "../shared/driver-report.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
 import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
 import { defectLine } from "../shared/pr-labels/write.ts";
@@ -147,7 +153,9 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
-import { newerStateRefusal } from "./lib/state.ts";
+import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
+import { writeUnwritten } from "./lib/unwritten-result.ts";
+import { stateRoot } from "./receipts.ts";
 import { writeWall } from "./lib/walls.ts";
 import { failedStartup } from "./lib/session-startup.ts";
 import {
@@ -443,6 +451,9 @@ async function executeStage(
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
       JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
+      ...(isDrive(record)
+        ? { [DRIVER_REPORT_VARIABLE]: driverReportFile(id) }
+        : {}),
     },
     { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );
@@ -537,27 +548,44 @@ async function finishRun(
     console.error(
       "jig dispatch run: the pass's process tree could not be shown to have ended; no exit is recorded",
     );
+    // The driver's report is kept all the same: it never touches the exit.
+    if (isDrive(record)) {
+      recordAndSay(id, true, undefined);
+      printKeptReport(id);
+    }
     return code ?? 1;
   }
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
-  const startup = startupOf(record, ran);
-  const startupWallUnrecorded =
-    startup !== undefined && !recordStartupWall(record, startup);
-  recordExit(id, {
-    at: currentIso(),
-    code,
-    signal,
-    ...(wallUnrecorded || startupWallUnrecorded
-      ? { wallUnrecorded: true as const }
-      : {}),
-    ...(startup === undefined ? {} : { startup }),
-    ...saidOf(record, ran),
-    ...usageOf(record, ran),
-  });
+  try {
+    // Every read of the state database sits inside the boundary that keeps the
+    // exit evidence, so a database that refuses reads still leaves it.
+    const startup = startupOf(record, ran);
+    const startupWallUnrecorded =
+      startup !== undefined && !recordStartupWall(record, startup);
+    // The report before the exit: a tick that reads the exit reads its report too.
+    recordAndSay(id, isDrive(record), startup);
+    recordExit(id, {
+      at: currentIso(),
+      code,
+      signal,
+      ...(wallUnrecorded || startupWallUnrecorded
+        ? { wallUnrecorded: true as const }
+        : {}),
+      ...(startup === undefined ? {} : { startup }),
+      ...saidOf(record, ran),
+      ...usageOf(record, ran),
+    });
+  } catch (error) {
+    const why = stateDbFailure(error);
+    if (!isDrive(record) && why !== null)
+      writeUnwritten(stateRoot(), id, record.token, "exit", why);
+    throw error;
+  }
   await endSharedClaim(id);
   await labelFollowup(id);
+  printKeptReport(id);
   if (isInteractive(record)) await closeTabIfDone(record, code);
   return code ?? 1;
 }

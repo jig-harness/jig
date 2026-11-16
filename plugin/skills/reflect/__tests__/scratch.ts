@@ -60,6 +60,11 @@ export class Machine {
     }
     this.env = {
       ...env,
+      // The suite's forge budget switch stays: a child's GitHub calls keep
+      // out of the operator's budget record (lib/test-env-preload.ts).
+      ...(process.env.JIG_FORGE_BUDGET === undefined
+        ? {}
+        : { JIG_FORGE_BUDGET: process.env.JIG_FORGE_BUDGET }),
       JIG_HOME: this.home,
       GIT_CONFIG_GLOBAL: gitconfig,
       GIT_CONFIG_NOSYSTEM: "1",

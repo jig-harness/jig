@@ -43,7 +43,8 @@ conversation.
 
 An address names one station on one piece of work: `station@owner/name#key`.
 Write the key as a second argument, never after a `#`, since some shells
-read `#` as the start of a comment.
+read `#` as the start of a comment. The stations and the verbs of `jig send`
+are listed in the Jig Protocol's [Addresses chapter](../../protocol/addresses.md).
 
 | The person names | The station | The key |
 | --- | --- | --- |
@@ -162,7 +163,9 @@ earlier answer:
 
 - **`holder`** (Where it stands): who holds the station now. `none` means
   nobody does, which is normal between launches; when `last` is null, say no previous ended launch is available in this answer;
-  otherwise say how it ended, and when. With a holder, say the stage, the host and whether its
+  otherwise say how it ended, and when, and what `last.run` says it
+  concluded and suggests next, as the record's words; where it says the run
+  ended without a report, say so. With a holder, say the stage, the host and whether its
   process is alive, dead or unknown, and the account and session where the
   answer names them.
 - **`state`** (Where it stands): the station's state in its own words,
@@ -258,6 +261,13 @@ admitted account in its existing worktree. It refuses a running drive, a
 person's recorded stop and a missing local tree. An exit `12` recovery gets
 one automatic attempt per head; its repeated stop names `rearm` for the
 person's next attempt after inspecting the handoff.
+
+Tree discovery first reads the drive listing and drive launches. When neither
+names an existing tree, it reads successful pickups that handed off to this
+pull request and Git's worktrees on its head branch across the known local
+clones. That fallback requires exactly one existing tree; several candidates
+are named and refused, as are incomplete reads. The tick checks the selected
+tree's ownership again before launching; the command never creates one.
 
 ### The rules for sending
 

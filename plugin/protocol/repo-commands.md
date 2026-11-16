@@ -92,3 +92,14 @@ command runs as long as the step that runs it lets it.
 | `reflection.command` | 3 | The store is unavailable (unreachable, or not signed in): reflect keeps the findings in its journal rather than failing. A run past its deadline, or one that cannot start, is read the same way. |
 
 <!-- /protocol:generated -->
+
+## JSON Schemas
+
+Schemas describe the output a caller reads: a
+[validation plan](schemas/validation-plan.json), one
+[classification line](schemas/classify-output.json), and the reflection
+store responses for [check](schemas/reflection-check.json),
+[append](schemas/reflection-append.json),
+[diagnose](schemas/reflection-diagnose.json) and each
+[list event](schemas/reflection-event.json). A stream carries one matching
+JSON document per line where its command contract specifies JSON lines.

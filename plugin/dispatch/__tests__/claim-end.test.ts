@@ -188,6 +188,7 @@ describe("the wrapper ends its launch's shared claim", () => {
     ) as Array<{ body: string }>;
     expect(comments[0]?.body).toContain(`"host":"${host}"`);
     expect(comments[0]?.body).toContain("outcome: failed");
+    expect(comments[0]?.body).toContain('"by":"none"');
   });
 
   it("leaves a hostless follow-up marker for another launch untouched", async () => {
@@ -225,6 +226,57 @@ describe("the wrapper ends its launch's shared claim", () => {
       `jig dispatch launch · rearm · record: ${ID} · host: ${host} · ended exit ${EXIT}`,
     );
     expect(ticked(w)).toBe(false);
+  });
+
+  it("writes the driver's report's writer and cause onto the end, never its text", async () => {
+    const w = world();
+    current = w;
+    const host = launched(w);
+    const concluded =
+      "PR #7's drive used its round budget without converging (exit 6)";
+    writeFileSync(
+      join(w.dir, "drive-report"),
+      JSON.stringify({
+        schema: "driver-closing-report/v1",
+        launch: ID,
+        report: {
+          schema: "closing-report/v1",
+          concluded,
+          suggested_next: {
+            step: "Read the handoff file, then re-arm the drive.",
+            owner: "person",
+            act: "Investigate",
+          },
+          cause: "deadline",
+        },
+      }),
+    );
+
+    const r = await runWrapper(w, ID, TOKEN);
+    expectSpawnExit(r, EXIT, "the wrapper");
+    expect(claimLine(w)).toBe(
+      `jig dispatch launch · rearm · record: ${ID} · host: ${host} · ended exit ${EXIT} · cause: deadline`,
+    );
+    const body = JSON.parse(
+      readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+    )[0].body as string;
+    expect(body).toContain('"by":"driver"');
+    expect(body).toContain('"cause":"deadline"');
+    expect(body).not.toContain(concluded);
+    expect(body).not.toContain("handoff file");
+  });
+
+  it("names no writer but none on the end of a run that left no report", async () => {
+    const w = world();
+    current = w;
+    launched(w);
+    const r = await runWrapper(w, ID, TOKEN);
+    expectSpawnExit(r, EXIT, "the wrapper");
+    const body = JSON.parse(
+      readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+    )[0].body as string;
+    expect(body).toContain('"by":"none"');
+    expect(body).not.toContain('"cause"');
   });
 
   it("leaves the claim open when the forge refuses the end, says so in one line, and the next tick writes it", async () => {

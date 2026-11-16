@@ -1,0 +1,3225 @@
+{
+  "chapter": "comment-markers",
+  "title": "Hidden comment markers on the forge and the tracker",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "active for a value in force; tombstone for a value withdrawn, which the chapter keeps listed so its identity is never reused. It is not part of a value's identity, so withdrawing a value changes only this field."
+    },
+    "name": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The record kind's name in the records registry, which an enveloped record's kind field carries; null for a marker that is not a record."
+    },
+    "part": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "marker for a hidden marker of a record kind, not-record for a marker that is not a record, envelope-field for a field of the record envelope."
+    },
+    "marker": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "One hidden marker, as its comment opens after `<!-- `; what follows it is its kind's own. A kind with several markers has one value for each. For an envelope field, the field's name."
+    },
+    "fieldType": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an envelope field, the JSON type of its value; null for every other value."
+    },
+    "fieldRequired": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an envelope field, whether every record carries it; null for every other value."
+    },
+    "medium": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "forge or tracker; null for a marker that is not a record."
+    },
+    "version": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The schema version Jig's writers write now, which its envelope's v carries; 0 for a kind whose records carry no version; null for a marker that is not a record."
+    },
+    "key": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a kind whose records carry the envelope, the whole shape of its key as a regular expression; null otherwise."
+    },
+    "writtenBy": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "Jig, or for a kind Jig only reads, the tool or the person that writes it; null for a marker that is not a record."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What the record is for to a reader that meets it, and what that reader does with it; for a marker that is not a record, why it is not one."
+    }
+  },
+  "values": [
+    {
+      "kind": "active",
+      "name": "drive-ledger",
+      "part": "marker",
+      "marker": "drive-pr-ledger",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 2,
+      "key": "^[1-9]\\d*$",
+      "writtenBy": "Jig",
+      "meaning": "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger."
+    },
+    {
+      "kind": "active",
+      "name": "drive-ledger",
+      "part": "marker",
+      "marker": "drive-pr-ledger-data",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 2,
+      "key": "^[1-9]\\d*$",
+      "writtenBy": "Jig",
+      "meaning": "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger."
+    },
+    {
+      "kind": "active",
+      "name": "summary-answer",
+      "part": "marker",
+      "marker": "drive-pr-addressed",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The drive's answer to a review finding the reviewer could not anchor to a line of the diff, one marker per finding with its fingerprint. A finding whose marker a trusted author wrote counts as answered, and is not answered again."
+    },
+    {
+      "kind": "active",
+      "name": "thread-reply",
+      "part": "marker",
+      "marker": "triage-thread:leave-open",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A reply on a review thread. Its last-line marker says the thread was answered and is deliberately left unresolved, the reply asks a question and carries no outcome, or its outcome is provisional and a person may reverse it. A marker counts only as the reply's last line, and does not prove who wrote it."
+    },
+    {
+      "kind": "active",
+      "name": "thread-reply",
+      "part": "marker",
+      "marker": "reply-to-thread:no-outcome",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A reply on a review thread. Its last-line marker says the thread was answered and is deliberately left unresolved, the reply asks a question and carries no outcome, or its outcome is provisional and a person may reverse it. A marker counts only as the reply's last line, and does not prove who wrote it."
+    },
+    {
+      "kind": "active",
+      "name": "thread-reply",
+      "part": "marker",
+      "marker": "reply-to-thread:provisional",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A reply on a review thread. Its last-line marker says the thread was answered and is deliberately left unresolved, the reply asks a question and carries no outcome, or its outcome is provisional and a person may reverse it. A marker counts only as the reply's last line, and does not prove who wrote it."
+    },
+    {
+      "kind": "active",
+      "name": "deferred-section",
+      "part": "marker",
+      "marker": "jig-deferred",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The findings a pull request deferred, one entry each in its body, which are filed as tracker issues once it merges or closes. A person's text outside the markers is never touched."
+    },
+    {
+      "kind": "active",
+      "name": "deferred-section",
+      "part": "marker",
+      "marker": "deferred-entry",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The findings a pull request deferred, one entry each in its body, which are filed as tracker issues once it merges or closes. A person's text outside the markers is never touched."
+    },
+    {
+      "kind": "active",
+      "name": "drive-answer",
+      "part": "marker",
+      "marker": "jig-send-answer",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 1,
+      "key": "^answer:\\S+$",
+      "writtenBy": "Jig",
+      "meaning": "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. Each person's latest answer counts."
+    },
+    {
+      "kind": "active",
+      "name": "ai-review-summary",
+      "part": "marker",
+      "marker": "ai-code-review",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the repository's AI reviewer",
+      "meaning": "The AI reviewer's summary comment, with the commit it reviewed and any notice that it skipped one, from which the drive learns whether the head was reviewed and what the review left open. The markers are the repository's configuration; the one listed is the default."
+    },
+    {
+      "kind": "active",
+      "name": "ai-review-round",
+      "part": "marker",
+      "marker": "ai-review-round",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the repository's AI reviewer",
+      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads, which the drive counts as summary findings to answer."
+    },
+    {
+      "kind": "active",
+      "name": "ai-review-round",
+      "part": "marker",
+      "marker": "ai-review-backlog",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the repository's AI reviewer",
+      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads, which the drive counts as summary findings to answer."
+    },
+    {
+      "kind": "active",
+      "name": "coderabbit-comment",
+      "part": "marker",
+      "marker": "coderabbit-ai-generated:v1",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "CodeRabbit",
+      "meaning": "A review bot's follow-up on an answered thread that carries no new finding (a confirmation after a push, or an acknowledgement of a reply), which the drive lets pass without an answer."
+    },
+    {
+      "kind": "active",
+      "name": "coderabbit-comment",
+      "part": "marker",
+      "marker": "coderabbit-skip-review-comment-follow-up",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "CodeRabbit",
+      "meaning": "A review bot's follow-up on an answered thread that carries no new finding (a confirmation after a push, or an acknowledgement of a reply), which the drive lets pass without an answer."
+    },
+    {
+      "kind": "active",
+      "name": "coderabbit-review-body",
+      "part": "marker",
+      "marker": "cr-comment:v",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "CodeRabbit",
+      "meaning": "A finding the reviewer put only in the body of its review, never in a thread, marked with its id, which the drive reads as a summary finding to answer."
+    },
+    {
+      "kind": "active",
+      "name": "do-item-pr-association",
+      "part": "marker",
+      "marker": "do-item-pr",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the session following the do-item skill",
+      "meaning": "Binds a tracker item to the exact pull request opened for it, where no issue-link line is required, so the item's parent roll-up can tell whether that pull request merged. A link in any other comment is no evidence."
+    },
+    {
+      "kind": "active",
+      "name": "deferred-batch",
+      "part": "marker",
+      "marker": "defer-batch-key",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The issue that collects one pull request's deferred findings of one type, found by its key so that each finding is appended to it rather than filed alone; of two with one key the oldest wins."
+    },
+    {
+      "kind": "active",
+      "name": "tracker-claim-marker",
+      "part": "marker",
+      "marker": "jig-claim",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 1,
+      "key": "^claim$",
+      "writtenBy": "Jig",
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
+    },
+    {
+      "kind": "active",
+      "name": "tracker-claim-marker",
+      "part": "marker",
+      "marker": "jig-claim-data",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 1,
+      "key": "^claim$",
+      "writtenBy": "Jig",
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
+    },
+    {
+      "kind": "active",
+      "name": "tracker-claim-marker",
+      "part": "marker",
+      "marker": "jig-claim-outcome",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 1,
+      "key": "^claim$",
+      "writtenBy": "Jig",
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
+    },
+    {
+      "kind": "active",
+      "name": "tracker-related",
+      "part": "marker",
+      "marker": "jig:related",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A link from one GitHub issue to another, written as a comment before GitHub had related links: read as a link until the migration converts it to GitHub's own and marks it superseded."
+    },
+    {
+      "kind": "active",
+      "name": "tracker-related",
+      "part": "marker",
+      "marker": "jig:related-superseded",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A link from one GitHub issue to another, written as a comment before GitHub had related links: read as a link until the migration converts it to GitHub's own and marks it superseded."
+    },
+    {
+      "kind": "active",
+      "name": "tracker-attachment",
+      "part": "marker",
+      "marker": "jig:attachment",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A file attached to a GitHub issue, its text carried in the comment or a link to a hosted copy. A carried file whose text no longer has the size its marker records reads as changed, never as the file."
+    },
+    {
+      "kind": "active",
+      "name": "tracker-blocked",
+      "part": "marker",
+      "marker": "jig:blocked",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "That an item was moved to blocked because its pull request's drive stopped, naming the pull request, the stop and the state the item left, so one stop blocks the item once and the item returns only to that state."
+    },
+    {
+      "kind": "active",
+      "name": "issue-fields-sweep",
+      "part": "marker",
+      "marker": "jig:issue-fields",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "That the weekly sweep found an issue incomplete, naming the facets it lacks and the retired labels it carries: it moved the issue back to triage, or, where the repository keeps the sweep from moving issues, left it where it is. A run that stopped before the move finds the comment and moves the issue without posting again; where the sweep does not move issues, a later run passes over an issue that carries it."
+    },
+    {
+      "kind": "active",
+      "name": "reflection-github-store",
+      "part": "marker",
+      "marker": "jig-reflection-change",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 1,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The GitHub reflection store: an issue per change, and comments holding the change's events, read only from authors who can write to the repository."
+    },
+    {
+      "kind": "active",
+      "name": "reflection-github-store",
+      "part": "marker",
+      "marker": "jig-reflection-events",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 1,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The GitHub reflection store: an issue per change, and comments holding the change's events, read only from authors who can write to the repository."
+    },
+    {
+      "kind": "active",
+      "name": "fleet-health-suspicion",
+      "part": "marker",
+      "marker": "fleet-health",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A suspicion the fleet-health sensor raised on an epic, of work that shows ceremony without progress: never a diagnosis, which only a person's comment on the epic makes."
+    },
+    {
+      "kind": "active",
+      "name": "epic-acceptance-verdict",
+      "part": "marker",
+      "marker": "epic-acceptance-verdict",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "a person accepting an epic",
+      "meaning": "A person's verdict on an epic, `ACCEPT`, `ACCEPT-WITH-FOLLOWUPS` or `REJECT`, on the comment's last line. The fleet-health sensor counts an epic accepted when its newest verdict from a trusted author accepts it."
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "not-record",
+      "marker": "deferral-ok",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "a waiver a person writes in a document, which the docs skill's deferral check reads"
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "not-record",
+      "marker": "Generated from",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "the banner the change-areas skill writes at the top of a file it generates"
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "not-record",
+      "marker": "AUTO-GENERATED by generate-index.ts",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "the banner the docs skill writes at the top of an index it generates"
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "envelope-field",
+      "marker": "kind",
+      "fieldType": "string",
+      "fieldRequired": true,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "The record's kind, as the records registry names it. A kind the reader's registry does not hold does not read."
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "envelope-field",
+      "marker": "v",
+      "fieldType": "integer",
+      "fieldRequired": true,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "The version of its kind's schema the record was written in, from 1. A version newer than the one the reader's release writes does not read."
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "envelope-field",
+      "marker": "key",
+      "fieldType": "string",
+      "fieldRequired": true,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "What the record is about, unique within its kind (on the forge and the tracker, within its repository), in the shape its kind declares."
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "envelope-field",
+      "marker": "writer",
+      "fieldType": "object",
+      "fieldRequired": true,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "Who wrote it: the forge login where the writer knows it, the host, and the boot, process id and start time of the writing process. On the forge and the tracker the host and the boot are digests, so a public comment names no machine."
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "envelope-field",
+      "marker": "at",
+      "fieldType": "string",
+      "fieldRequired": true,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "When it was written, as an ISO 8601 time."
+    },
+    {
+      "kind": "active",
+      "name": null,
+      "part": "envelope-field",
+      "marker": "generation",
+      "fieldType": "integer",
+      "fieldRequired": false,
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "For a record rewritten in place, or a claim on one round of something, a count: one past the highest the writer had read, or the round it claims."
+    }
+  ],
+  "schemas": {
+    "record-envelope": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "v": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "key": {
+          "type": "string"
+        },
+        "writer": {
+          "type": "object",
+          "properties": {
+            "login": {
+              "type": "string",
+              "minLength": 1
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bootId": {
+              "type": "string"
+            },
+            "pid": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "start": {
+              "type": "string"
+            }
+          },
+          "required": ["host"],
+          "additionalProperties": true
+        },
+        "at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["kind", "v", "key", "writer", "at"],
+      "additionalProperties": true
+    },
+    "drive-ledger": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "drive-ledger"
+                },
+                "v": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2
+                },
+                "key": {
+                  "type": "string",
+                  "pattern": "^[1-9]\\d*$"
+                },
+                "writer": {
+                  "type": "object",
+                  "properties": {
+                    "login": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "host": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "bootId": {
+                      "type": "string"
+                    },
+                    "pid": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "start": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["host"],
+                  "additionalProperties": true
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["kind", "v", "key", "writer", "at"],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ledgerVersion": {
+                  "enum": [1, 2]
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1.7976931348623157e308
+                },
+                "pr": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "round": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "attempts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "attemptsHead": {
+                  "type": "string"
+                },
+                "deadlineRetries": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "lastCountedHead": {
+                  "type": "string"
+                },
+                "verifiedSha": {
+                  "type": "string"
+                },
+                "readyMarkedRound": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "parked": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "kind": {
+                        "enum": ["thread", "finding"]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "person": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "class": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]*$"
+                      },
+                      "record": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "decision": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": true
+                      },
+                      "digest": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{12}$"
+                      }
+                    },
+                    "required": ["key", "kind", "reason", "round"],
+                    "additionalProperties": true
+                  }
+                },
+                "held": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "kind": {
+                        "enum": ["thread", "finding"]
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": -1,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "actor": {
+                        "type": "string"
+                      },
+                      "outcome": {
+                        "enum": ["accepted", "moot"]
+                      },
+                      "commentUrl": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "verifiedSha": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["key", "kind", "round", "actor"],
+                    "additionalProperties": true
+                  }
+                },
+                "quotaPark": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {},
+                      "required": [],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "takeovers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "fromActor": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^wt-[0-9a-f]{16}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "toActor": {
+                        "type": "string",
+                        "pattern": "^wt-[0-9a-f]{16}$"
+                      },
+                      "verdict": {
+                        "enum": ["WEDGED", "DEAD", "STALE"]
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "reopened": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[^\\r\\n]+$"
+                        }
+                      },
+                      "reopenFailed": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[^\\r\\n]+$"
+                        }
+                      },
+                      "reconciled": {
+                        "type": "boolean"
+                      },
+                      "vanishedTree": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "fromActor",
+                      "toActor",
+                      "verdict",
+                      "round",
+                      "reopened"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "claims": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "clone": {
+                        "type": "string"
+                      },
+                      "generation": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      }
+                    },
+                    "required": ["id", "clone", "generation"],
+                    "additionalProperties": true
+                  }
+                },
+                "decisions": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1.7976931348623157e308
+                          },
+                          "level": {
+                            "enum": ["attended", "unattended", "wide"]
+                          },
+                          "what": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "record": {
+                            "type": "string"
+                          },
+                          "reverse": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "class": {
+                            "enum": [
+                              "file-issue",
+                              "defer-without-tracker",
+                              "decide-reversible",
+                              "decide-underdetermined"
+                            ]
+                          },
+                          "key": false,
+                          "outcome": false,
+                          "reversed": false
+                        },
+                        "required": [
+                          "at",
+                          "round",
+                          "level",
+                          "what",
+                          "record",
+                          "reverse",
+                          "class"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1.7976931348623157e308
+                          },
+                          "level": {
+                            "enum": ["attended", "unattended", "wide"]
+                          },
+                          "what": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "record": {
+                            "type": "string"
+                          },
+                          "reverse": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "class": {
+                            "const": "decide-provisional"
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^\\S+$"
+                          },
+                          "outcome": false,
+                          "reversed": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "by": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["at", "by", "url"],
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "round",
+                          "level",
+                          "what",
+                          "record",
+                          "reverse",
+                          "class",
+                          "key"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1.7976931348623157e308
+                          },
+                          "level": {
+                            "enum": ["attended", "unattended", "wide"]
+                          },
+                          "what": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "record": {
+                            "type": "string"
+                          },
+                          "reverse": {
+                            "type": "string",
+                            "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                          },
+                          "class": {
+                            "const": "provisional-reply"
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^\\S+$"
+                          },
+                          "outcome": {
+                            "enum": ["rejected", "wont-fix", "deferred"]
+                          },
+                          "reversed": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "by": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["at", "by", "url"],
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "round",
+                          "level",
+                          "what",
+                          "record",
+                          "reverse",
+                          "class",
+                          "key",
+                          "outcome"
+                        ],
+                        "additionalProperties": true
+                      }
+                    ]
+                  }
+                },
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "kind": {
+                            "const": "restart"
+                          },
+                          "cause": {
+                            "enum": ["pass-deadline", "stall"]
+                          },
+                          "leftWork": false,
+                          "tree": false
+                        },
+                        "required": ["at", "round", "kind", "cause"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "kind": {
+                            "const": "rearm"
+                          },
+                          "cause": {
+                            "enum": [
+                              "quota-account",
+                              "quota-reset",
+                              "window-reopened",
+                              "answered",
+                              "provisional"
+                            ]
+                          },
+                          "leftWork": false,
+                          "tree": false
+                        },
+                        "required": ["at", "round", "kind", "cause"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "kind": {
+                            "const": "stop"
+                          },
+                          "cause": {
+                            "type": "string",
+                            "pattern": "^(\\d+|unknown)$"
+                          },
+                          "leftWork": {
+                            "type": "boolean"
+                          },
+                          "tree": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": ["at", "round", "kind", "cause"],
+                        "additionalProperties": true
+                      }
+                    ]
+                  }
+                },
+                "ciActions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "action": {
+                        "enum": ["rerun", "repair"]
+                      },
+                      "detail": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      }
+                    },
+                    "required": ["at", "round", "action", "detail"],
+                    "additionalProperties": true
+                  },
+                  "maxItems": 10
+                },
+                "rulings": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$"
+                          },
+                          "contextAt": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "number"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "verdict": {
+                            "enum": ["fix-now", "rejected", "wont-fix", "defer"]
+                          },
+                          "class": false,
+                          "humanDecision": {
+                            "const": false
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "round",
+                          "at",
+                          "verdict",
+                          "humanDecision"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$"
+                          },
+                          "contextAt": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "number"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "verdict": {
+                            "const": "escalate"
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "humanDecision": {
+                            "const": false
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "round",
+                          "at",
+                          "verdict",
+                          "class",
+                          "humanDecision"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$"
+                          },
+                          "contextAt": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "number"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "verdict": {
+                            "const": "escalate"
+                          },
+                          "class": {
+                            "const": "human-decision"
+                          },
+                          "humanDecision": {
+                            "const": true
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "round",
+                          "at",
+                          "verdict",
+                          "class",
+                          "humanDecision"
+                        ],
+                        "additionalProperties": true
+                      }
+                    ]
+                  }
+                },
+                "resolvedParks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "kind": {
+                        "enum": ["thread", "finding"]
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "class": {
+                        "type": "string"
+                      },
+                      "digest": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{12}$"
+                      },
+                      "parkedAt": {
+                        "type": "string"
+                      },
+                      "outcome": {
+                        "enum": ["answered", "provisional"]
+                      },
+                      "answers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "author": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "type": "string"
+                            },
+                            "bodyHash": {
+                              "type": "string"
+                            },
+                            "digest": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{12}$"
+                            },
+                            "stale": {
+                              "const": true
+                            },
+                            "choice": {
+                              "type": "object",
+                              "properties": {
+                                "option": {
+                                  "type": "string"
+                                },
+                                "recommended": {
+                                  "type": "boolean"
+                                },
+                                "form": {
+                                  "enum": ["approve", "choose"]
+                                },
+                                "digest": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{12}$"
+                                },
+                                "note": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["option", "recommended", "form"],
+                              "additionalProperties": true
+                            }
+                          },
+                          "required": ["author", "at", "url"],
+                          "additionalProperties": true
+                        }
+                      },
+                      "answeredAt": {
+                        "type": "string"
+                      },
+                      "resolvedAt": {
+                        "type": "string"
+                      },
+                      "repairStartedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "kind",
+                      "reason",
+                      "parkedAt",
+                      "outcome",
+                      "answers",
+                      "resolvedAt"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "driver": {
+                  "type": "object",
+                  "properties": {
+                    "actor": {
+                      "type": "string"
+                    },
+                    "clone": {
+                      "type": "string"
+                    },
+                    "heartbeat": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": ["running", "stopped"]
+                    },
+                    "exit": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1.7976931348623157e308
+                    },
+                    "personStop": {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["at", "reason"],
+                      "additionalProperties": true
+                    },
+                    "recoveryVersion": {
+                      "const": 1
+                    },
+                    "started": {
+                      "type": "string"
+                    },
+                    "position": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1.7976931348623157e308
+                    }
+                  },
+                  "required": ["actor", "clone", "heartbeat", "state"],
+                  "additionalProperties": true
+                },
+                "narrative": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cut": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "generation",
+                "pr",
+                "round",
+                "attempts",
+                "attemptsHead",
+                "deadlineRetries",
+                "phase",
+                "lastCountedHead",
+                "verifiedSha",
+                "readyMarkedRound",
+                "parked",
+                "held",
+                "quotaPark",
+                "takeovers",
+                "claims",
+                "decisions",
+                "driver",
+                "narrative",
+                "cut"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ledgerVersion": {
+              "enum": [1, 2]
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1.7976931348623157e308
+            },
+            "pr": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "round": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "attempts": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "attemptsHead": {
+              "type": "string"
+            },
+            "deadlineRetries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "phase": {
+              "type": "string"
+            },
+            "lastCountedHead": {
+              "type": "string"
+            },
+            "verifiedSha": {
+              "type": "string"
+            },
+            "readyMarkedRound": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1.7976931348623157e308
+            },
+            "parked": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\r\\n]+$"
+                  },
+                  "kind": {
+                    "enum": ["thread", "finding"]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "person": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "class": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "record": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "decision": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": true
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{12}$"
+                  }
+                },
+                "required": ["key", "kind", "reason", "round"],
+                "additionalProperties": true
+              }
+            },
+            "held": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "enum": ["thread", "finding"]
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": -1,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "actor": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": ["accepted", "moot"]
+                  },
+                  "commentUrl": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "verifiedSha": {
+                    "type": "string"
+                  }
+                },
+                "required": ["key", "kind", "round", "actor"],
+                "additionalProperties": true
+              }
+            },
+            "quotaPark": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "takeovers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "fromActor": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^wt-[0-9a-f]{16}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "toActor": {
+                    "type": "string",
+                    "pattern": "^wt-[0-9a-f]{16}$"
+                  },
+                  "verdict": {
+                    "enum": ["WEDGED", "DEAD", "STALE"]
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "reopened": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\r\\n]+$"
+                    }
+                  },
+                  "reopenFailed": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\r\\n]+$"
+                    }
+                  },
+                  "reconciled": {
+                    "type": "boolean"
+                  },
+                  "vanishedTree": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "at",
+                  "fromActor",
+                  "toActor",
+                  "verdict",
+                  "round",
+                  "reopened"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  },
+                  "clone": {
+                    "type": "string"
+                  },
+                  "generation": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1.7976931348623157e308
+                  }
+                },
+                "required": ["id", "clone", "generation"],
+                "additionalProperties": true
+              }
+            },
+            "decisions": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "level": {
+                        "enum": ["attended", "unattended", "wide"]
+                      },
+                      "what": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "record": {
+                        "type": "string"
+                      },
+                      "reverse": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "class": {
+                        "enum": [
+                          "file-issue",
+                          "defer-without-tracker",
+                          "decide-reversible",
+                          "decide-underdetermined"
+                        ]
+                      },
+                      "key": false,
+                      "outcome": false,
+                      "reversed": false
+                    },
+                    "required": [
+                      "at",
+                      "round",
+                      "level",
+                      "what",
+                      "record",
+                      "reverse",
+                      "class"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "level": {
+                        "enum": ["attended", "unattended", "wide"]
+                      },
+                      "what": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "record": {
+                        "type": "string"
+                      },
+                      "reverse": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "class": {
+                        "const": "decide-provisional"
+                      },
+                      "key": {
+                        "type": "string",
+                        "pattern": "^\\S+$"
+                      },
+                      "outcome": false,
+                      "reversed": {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "by": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["at", "by", "url"],
+                        "additionalProperties": true
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "round",
+                      "level",
+                      "what",
+                      "record",
+                      "reverse",
+                      "class",
+                      "key"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1.7976931348623157e308
+                      },
+                      "level": {
+                        "enum": ["attended", "unattended", "wide"]
+                      },
+                      "what": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "record": {
+                        "type": "string"
+                      },
+                      "reverse": {
+                        "type": "string",
+                        "pattern": "^(?=[^\\r\\n]*\\S)[^\\r\\n]+$"
+                      },
+                      "class": {
+                        "const": "provisional-reply"
+                      },
+                      "key": {
+                        "type": "string",
+                        "pattern": "^\\S+$"
+                      },
+                      "outcome": {
+                        "enum": ["rejected", "wont-fix", "deferred"]
+                      },
+                      "reversed": {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string"
+                          },
+                          "by": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["at", "by", "url"],
+                        "additionalProperties": true
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "round",
+                      "level",
+                      "what",
+                      "record",
+                      "reverse",
+                      "class",
+                      "key",
+                      "outcome"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "const": "restart"
+                      },
+                      "cause": {
+                        "enum": ["pass-deadline", "stall"]
+                      },
+                      "leftWork": false,
+                      "tree": false
+                    },
+                    "required": ["at", "round", "kind", "cause"],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "const": "rearm"
+                      },
+                      "cause": {
+                        "enum": [
+                          "quota-account",
+                          "quota-reset",
+                          "window-reopened",
+                          "answered",
+                          "provisional"
+                        ]
+                      },
+                      "leftWork": false,
+                      "tree": false
+                    },
+                    "required": ["at", "round", "kind", "cause"],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "const": "stop"
+                      },
+                      "cause": {
+                        "type": "string",
+                        "pattern": "^(\\d+|unknown)$"
+                      },
+                      "leftWork": {
+                        "type": "boolean"
+                      },
+                      "tree": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["at", "round", "kind", "cause"],
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            },
+            "ciActions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "round": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "action": {
+                    "enum": ["rerun", "repair"]
+                  },
+                  "detail": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "required": ["at", "round", "action", "detail"],
+                "additionalProperties": true
+              },
+              "maxItems": 10
+            },
+            "rulings": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "contextAt": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "number"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "enum": ["fix-now", "rejected", "wont-fix", "defer"]
+                      },
+                      "class": false,
+                      "humanDecision": {
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "round",
+                      "at",
+                      "verdict",
+                      "humanDecision"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "contextAt": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "number"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "const": "escalate"
+                      },
+                      "class": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "humanDecision": {
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "round",
+                      "at",
+                      "verdict",
+                      "class",
+                      "humanDecision"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\r\\n]+$"
+                      },
+                      "contextAt": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "number"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "const": "escalate"
+                      },
+                      "class": {
+                        "const": "human-decision"
+                      },
+                      "humanDecision": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "round",
+                      "at",
+                      "verdict",
+                      "class",
+                      "humanDecision"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            },
+            "resolvedParks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "enum": ["thread", "finding"]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "class": {
+                    "type": "string"
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{12}$"
+                  },
+                  "parkedAt": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": ["answered", "provisional"]
+                  },
+                  "answers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "author": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "bodyHash": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{12}$"
+                        },
+                        "stale": {
+                          "const": true
+                        },
+                        "choice": {
+                          "type": "object",
+                          "properties": {
+                            "option": {
+                              "type": "string"
+                            },
+                            "recommended": {
+                              "type": "boolean"
+                            },
+                            "form": {
+                              "enum": ["approve", "choose"]
+                            },
+                            "digest": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{12}$"
+                            },
+                            "note": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["option", "recommended", "form"],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": ["author", "at", "url"],
+                      "additionalProperties": true
+                    }
+                  },
+                  "answeredAt": {
+                    "type": "string"
+                  },
+                  "resolvedAt": {
+                    "type": "string"
+                  },
+                  "repairStartedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "reason",
+                  "parkedAt",
+                  "outcome",
+                  "answers",
+                  "resolvedAt"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "driver": {
+              "type": "object",
+              "properties": {
+                "actor": {
+                  "type": "string"
+                },
+                "clone": {
+                  "type": "string"
+                },
+                "heartbeat": {
+                  "type": "string"
+                },
+                "state": {
+                  "enum": ["running", "stopped"]
+                },
+                "exit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                },
+                "personStop": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["at", "reason"],
+                  "additionalProperties": true
+                },
+                "recoveryVersion": {
+                  "const": 1
+                },
+                "started": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.7976931348623157e308
+                }
+              },
+              "required": ["actor", "clone", "heartbeat", "state"],
+              "additionalProperties": true
+            },
+            "narrative": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cut": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": false
+          },
+          "required": [
+            "ledgerVersion",
+            "generation",
+            "pr",
+            "round",
+            "attempts",
+            "attemptsHead",
+            "deadlineRetries",
+            "phase",
+            "lastCountedHead",
+            "verifiedSha",
+            "readyMarkedRound",
+            "parked",
+            "held",
+            "quotaPark",
+            "takeovers",
+            "claims",
+            "decisions",
+            "driver",
+            "narrative",
+            "cut"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "drive-answer": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "drive-answer"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^answer:\\S+$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pr": true,
+            "decision": true,
+            "choice": true
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tracker-claim-marker": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tracker-claim-marker"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^claim$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "attempt": true,
+            "session": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "claimant": {
+              "type": "string"
+            }
+          },
+          "required": ["session", "branch", "claimant"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tracker-claim-outcome": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tracker-claim-marker"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^claim$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "attempt": {
+              "type": "string"
+            },
+            "outcome": {
+              "enum": ["claimed", "released", "unresolved"]
+            }
+          },
+          "required": ["attempt", "outcome"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tracker-attachment": {
+      "type": "object",
+      "properties": {
+        "form": {
+          "enum": ["comment", "link"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "subtitle": true,
+        "contentType": true,
+        "size": true,
+        "sha256": true,
+        "url": true
+      },
+      "required": ["form", "title", "filename"],
+      "additionalProperties": true
+    },
+    "reflection-record": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "const": 1
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "session": {
+              "type": "object",
+              "properties": {
+                "jig_version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "skills": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                },
+                "harness": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "entrypoint": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "wrapper": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["name", "version", "entrypoint", "wrapper"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stated": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "jig_version",
+                "skills",
+                "harness",
+                "model",
+                "mode",
+                "stated"
+              ],
+              "additionalProperties": true
+            },
+            "type": {
+              "const": "finding"
+            },
+            "change": {
+              "type": "object",
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "branch": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "issue": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["repository", "branch", "pull_request", "issue"],
+              "additionalProperties": true
+            },
+            "kind": {
+              "enum": ["error", "opportunity", "unhelpful-content"]
+            },
+            "severity": {
+              "enum": ["high", "medium", "low"]
+            },
+            "class": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "repository"
+                    },
+                    "name": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": ["scope", "name"],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "tool"
+                    },
+                    "tool": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    },
+                    "name": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": ["scope", "tool", "name"],
+                  "additionalProperties": true
+                }
+              ]
+            },
+            "title": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "suggested_fix": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "time_cost_minutes": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "v",
+            "id",
+            "at",
+            "session",
+            "type",
+            "change",
+            "kind",
+            "severity",
+            "class",
+            "target",
+            "title",
+            "description",
+            "suggested_fix"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "const": 1
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                },
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "jig_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    },
+                    "harness": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "entrypoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "wrapper": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version",
+                            "entrypoint",
+                            "wrapper"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "jig_version",
+                    "skills",
+                    "harness",
+                    "model",
+                    "mode",
+                    "stated"
+                  ],
+                  "additionalProperties": true
+                },
+                "type": {
+                  "const": "decision"
+                },
+                "finding": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "reason": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decision": {
+                  "enum": ["approved", "implemented", "deferred", "dismissed"]
+                },
+                "issue": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "v",
+                "id",
+                "at",
+                "session",
+                "type",
+                "finding",
+                "reason",
+                "decision"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "const": 1
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                },
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "jig_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    },
+                    "harness": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "entrypoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "wrapper": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version",
+                            "entrypoint",
+                            "wrapper"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "jig_version",
+                    "skills",
+                    "harness",
+                    "model",
+                    "mode",
+                    "stated"
+                  ],
+                  "additionalProperties": true
+                },
+                "type": {
+                  "const": "decision"
+                },
+                "finding": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "reason": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decision": {
+                  "const": "escalated"
+                },
+                "issue": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "v",
+                "id",
+                "at",
+                "session",
+                "type",
+                "finding",
+                "reason",
+                "decision",
+                "issue"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

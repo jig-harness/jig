@@ -888,14 +888,14 @@ console.log(JSON.stringify({ areas: areasOf("src/rpc/x.ts", c), flags: c.get("ap
     flags: ["security"],
   });
 
-  // Every skill matches paths through that module: no second glob compiler.
+  // Every skill matches paths through one glob compiler, in shared code.
   const definitions = spawnSync(
     "git",
     ["grep", "-l", "-F", "function globToRegExp(", "--", "plugin/"],
     { cwd: root, env, encoding: "utf8" },
   );
   expect(definitions.stdout.trim().split("\n")).toEqual([
-    "plugin/skills/drive-pr/scripts/lib/change-areas-catalog.ts",
+    "plugin/shared/glob.ts",
   ]);
 });
 

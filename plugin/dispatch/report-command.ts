@@ -11,7 +11,8 @@
  * check stands. A report the check refuses records nothing and names every
  * problem, so the pass can fix it and run the command again; no report ever
  * touches a recorded result. A drive's record is refused: its driver writes
- * its report.
+ * its report when it stops, and the wrapper records it
+ * (`lib/run-report.ts`).
  *
  * Exit codes: 0 recorded; 2 usage, no such record, a token that is not the
  * record's, a drive's record, or a report the check refuses.

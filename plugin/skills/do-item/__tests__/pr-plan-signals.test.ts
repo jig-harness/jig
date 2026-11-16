@@ -123,8 +123,8 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("issueSignals", () => {
   const policy = {
-    labelsFromIssue: new Map([["kind:db-migration", "needs-dba-review"]]),
-    reviewersFromIssue: new Map([["kind:db-migration", ["acme/dba"]]]),
+    labelsFromIssue: [{ key: "kind:db-migration", result: "needs-dba-review" }],
+    reviewersFromIssue: [{ key: "kind:db-migration", result: ["acme/dba"] }],
   };
 
   it("maps nothing when no issue label is mapped", () => {

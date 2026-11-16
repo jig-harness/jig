@@ -86,6 +86,11 @@
  * A guard that fails is reported and does not block the plan.
  */
 
+import {
+  VALIDATION_PLAN_SHAPE,
+  type ValidationPlan,
+} from "../../../shared/repo-command-shapes.ts";
+import { matches } from "../../../shared/shapes.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, runMain, short } from "./lib/cli.ts";
@@ -129,13 +134,12 @@ export async function runLoadGuard(root: string): Promise<string | null> {
   return `⚠ LOAD: the load guard (${command}) exited ${r.code}; this round's heavy checks may be refused.`;
 }
 
-interface ResolvedPlan {
+type ResolvedPlan = ValidationPlan & {
   seedAreas?: unknown;
   validation: {
     localChecks?: string[];
     verificationChecks?: string[];
     testbox: {
-      required: unknown;
       command?: string | null;
       warmupCommand?: string | null;
       reason?: string | null;
@@ -146,7 +150,7 @@ interface ResolvedPlan {
   reviewSkills?: string[];
   linear?: unknown;
   [extra: string]: unknown;
-}
+};
 
 /**
  * The plan for a repository that declares no plan command: its complete
@@ -178,7 +182,15 @@ async function resolveFiles(
   files: string[],
 ): Promise<
   | { ok: true; plan: ResolvedPlan }
-  | { ok: false; why: "failed" | "malformed" | "no-shell" | "unconfigured" }
+  | {
+      ok: false;
+      why:
+        | "failed"
+        | "malformed"
+        | "invalid-plan"
+        | "no-shell"
+        | "unconfigured";
+    }
 > {
   const command = validationPlanCommand();
   if (command === undefined) {
@@ -197,10 +209,12 @@ async function resolveFiles(
   if (r.spawnFailed) return { ok: false, why: "no-shell" };
   if (r.code !== 0) return { ok: false, why: "failed" };
   try {
-    const plan = JSON.parse(r.stdout) as ResolvedPlan;
+    const plan: unknown = JSON.parse(r.stdout);
     if (typeof plan !== "object" || plan === null)
       return { ok: false, why: "malformed" };
-    return { ok: true, plan };
+    if (!matches(VALIDATION_PLAN_SHAPE, plan))
+      return { ok: false, why: "invalid-plan" };
+    return { ok: true, plan: plan as ResolvedPlan };
   } catch {
     return { ok: false, why: "malformed" };
   }
@@ -290,8 +304,44 @@ async function resolvedMerge(root: string): Promise<boolean> {
 }
 
 function testboxRequiredOf(plan: ResolvedPlan): boolean | null {
+  if (!matches(VALIDATION_PLAN_SHAPE, plan)) return null;
   const v = plan.validation?.testbox?.required;
   return typeof v === "boolean" ? v : null;
+}
+
+/** A cumulative resolver failure stops before any plan is printed. */
+function requireResolvedPlan(
+  result: Awaited<ReturnType<typeof resolveFiles>>,
+): ResolvedPlan {
+  if (!result.ok) {
+    if (result.why === "unconfigured")
+      fail(
+        1,
+        "round-plan: this repository declares neither drive.validation_plan_command nor",
+        "gates.command in .config/jig.yaml, so there is no plan to emit.",
+      );
+    if (result.why === "no-shell")
+      fail(
+        1,
+        "round-plan: the shell could not be started, so drive.validation_plan_command never ran.",
+      );
+    if (result.why === "failed")
+      fail(1, "round-plan: drive.validation_plan_command failed");
+    if (result.why === "invalid-plan")
+      fail(
+        1,
+        "round-plan: drive.validation_plan_command did not emit a boolean validation.testbox.required — refusing to guess",
+      );
+    // `malformed` means the resolver exited 0 and its stdout was not a JSON
+    // object. Naming validation.testbox.required here sent the operator to
+    // inspect a field that was never reached;
+    // that message belongs to the later check, which still carries it.
+    fail(
+      1,
+      "round-plan: drive.validation_plan_command exited 0 but did not emit a JSON object — refusing to guess",
+    );
+  }
+  return result.plan;
 }
 
 async function main(): Promise<number> {
@@ -463,30 +513,7 @@ async function main(): Promise<number> {
   }
 
   const resolvedRes = await resolveFiles(root, files);
-  if (!resolvedRes.ok) {
-    if (resolvedRes.why === "unconfigured")
-      fail(
-        1,
-        "round-plan: this repository declares neither drive.validation_plan_command nor",
-        "gates.command in .config/jig.yaml, so there is no plan to emit.",
-      );
-    if (resolvedRes.why === "no-shell")
-      fail(
-        1,
-        "round-plan: the shell could not be started, so drive.validation_plan_command never ran.",
-      );
-    if (resolvedRes.why === "failed")
-      fail(1, "round-plan: drive.validation_plan_command failed");
-    // `malformed` means the resolver exited 0 and its stdout was not a JSON
-    // object. Naming validation.testbox.required here sent the operator to
-    // inspect a field that was never reached;
-    // that message belongs to the later check, which still carries it.
-    fail(
-      1,
-      "round-plan: drive.validation_plan_command exited 0 but did not emit a JSON object — refusing to guess",
-    );
-  }
-  const resolved = resolvedRes.plan;
+  const resolved = requireResolvedPlan(resolvedRes);
 
   // ── Testbox decay ───────────────────────────────────────────────
   // See the header. `planTestbox` is what THIS plan's scope answered;

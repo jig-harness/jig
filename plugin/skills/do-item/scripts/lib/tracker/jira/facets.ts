@@ -181,6 +181,8 @@ export interface FacetWrite {
   fields: Record<string, unknown>;
   add: string[];
   remove: string[];
+  /** The type value set through the issue type, and the issue type it moves to. */
+  typeMove?: { value: string; to: string };
 }
 
 /** What the Jira adapter reads and writes of the facets it keeps itself. */
@@ -336,7 +338,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     if (raws === undefined)
       throw new TrackerRequestError(
         "invalid",
-        `issue ${issue.key} was read without the field ${s.facet} is kept in`,
+        `issue ${issue.key} was read without the field '${s.field}' that ${s.facet} is kept in`,
       );
     const numeric = issue.numericFacets?.includes(s.facet) === true;
     const named = raws.map((r) => fromValue(s, r, numeric));
@@ -500,10 +502,43 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return out;
   }
 
+  /**
+   * Refuses, before anything is written, an issue type the issue's edit
+   * screen lists the choices of and does not offer: Jira changes an issue
+   * type by an edit only between issue types of one workflow and field
+   * configuration, and answers any other change with a bare 400 on
+   * `issuetype`. A screen without an `issuetype` entry, or with no field at all,
+   * proves nothing, since editmeta is also filtered by screen configuration
+   * and the caller's permissions: that write goes ahead, and Jira's rejection
+   * is explained afterward.
+   */
+  async function refuseUneditableType(
+    issue: JiraIssue,
+    target: IssueTypeMeta,
+    kept: string,
+    editScreen: () => Promise<FieldMeta>,
+  ) {
+    const screen = await editScreen();
+    const offered = screen.get("issuetype");
+    if (
+      offered === undefined ||
+      offered === null ||
+      offered.some((n) => same(n, target.name))
+    )
+      return;
+    const from = issue.issueType?.name ?? "its issue type";
+    const others = offered.filter((n) => !same(n, issue.issueType?.name ?? ""));
+    throw new TrackerRequestError(
+      "unresolved",
+      `${kept}, but the edit screen of ${issue.key} lets its issue type change from ${from} to ${others.length === 0 ? "no other type" : `${others.join(", ")} only`}: Jira changes an issue type by an edit only between issue types of one workflow and field configuration; move ${issue.key} to ${target.name} in Jira, or keep type in labels or a field (store: label or store: field)`,
+    );
+  }
+
   /** What setting the type (or none) on an issue writes, through its issue type or its label. */
   async function typeChange(
     issue: JiraIssue,
     value: string | null,
+    editScreen: () => Promise<FieldMeta>,
     signal?: AbortSignal,
   ): Promise<FacetWrite> {
     const slot = type as ResolvedFacet;
@@ -522,21 +557,35 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     if (t?.subtask === true)
       return { fields: {}, ...codec.change(carried, value) };
     const typed = await issueTypeOf(value, signal);
-    if (typed !== null)
+    if (typed !== null) {
+      if (t !== null && same(t.name, typed.name))
+        return { fields: {}, add: [], remove: carried };
+      await refuseUneditableType(
+        issue,
+        typed,
+        `type ${value} is kept in Jira's issue types as '${typed.name}'`,
+        editScreen,
+      );
       return {
-        fields:
-          t !== null && same(t.name, typed.name)
-            ? {}
-            : { issuetype: { id: typed.id } },
+        fields: { issuetype: { id: typed.id } },
         add: [],
         remove: carried,
+        typeMove: { value, to: typed.name },
       };
+    }
     const change = codec.change(carried, value);
+    if (isFallback(t)) return { fields: {}, ...change };
+    const base = await fallbackType(signal);
+    await refuseUneditableType(
+      issue,
+      base,
+      `type ${value} is kept in the label '${codec.labelOf(value)}' on the issue type ${base.name}`,
+      editScreen,
+    );
     return {
-      fields: isFallback(t)
-        ? {}
-        : { issuetype: { id: (await fallbackType(signal)).id } },
+      fields: { issuetype: { id: base.id } },
       ...change,
+      typeMove: { value, to: base.name },
     };
   }
 
@@ -797,8 +846,13 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
 
     async update(issue, patch, signal) {
       const out: FacetWrite = { fields: {}, add: [], remove: [] };
+      let edit: Promise<FieldMeta> | undefined;
+      const editScreen = () => {
+        edit ??= client.editMeta(issue.key, signal);
+        return edit;
+      };
       if (type !== null && patch.type !== undefined) {
-        const change = await typeChange(issue, patch.type, signal);
+        const change = await typeChange(issue, patch.type, editScreen, signal);
         const kept = [...issue.labels, ...change.add].filter(
           (l) => !change.remove.some((r) => same(r, l)),
         );
@@ -813,13 +867,14 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         Object.assign(out.fields, change.fields);
         out.add.push(...change.add);
         out.remove.push(...change.remove);
+        if (change.typeMove !== undefined) out.typeMove = change.typeMove;
       }
       Object.assign(
         out.fields,
         await fieldWrites(
           patch,
           async () => ({
-            screen: await client.editMeta(issue.key, signal),
+            screen: await editScreen(),
             what: `the edit screen of ${issue.key}${issue.issueType === null ? "" : ` (${issue.issueType.name})`}`,
           }),
           signal,

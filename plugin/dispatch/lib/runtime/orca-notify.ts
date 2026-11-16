@@ -11,7 +11,9 @@
  * and the read-back hold the card's comment lock, shared with the skills'
  * board helper; a lock not taken in time sends nothing, and the receipt says
  * so (not lost: nothing was written). The dispatched marks the comment holds
- * stay in the one written (`keepMarks`).
+ * stay in the one written (`keepMarks`). An unread comment still exactly the
+ * dispatcher-only one the sender read gives up the entries the sender names
+ * settled, so a standing cause has the room they took.
  */
 import { isRecord } from "../../../shared/guards.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
@@ -155,6 +157,15 @@ export async function orcaNotify(
   );
 }
 
+/** The settled entries the comment gives up: only the exact comment the sender found them in does. */
+function settledIn(target: NotifyTarget, comment: string | null): Set<string> {
+  return new Set(
+    target.settled !== undefined && comment === target.settled.comment
+      ? target.settled.keys
+      : [],
+  );
+}
+
 /** Persist only a projection whose fresh source the sender can vouch for. */
 function prepareProjection(
   target: NotifyTarget,
@@ -166,20 +177,29 @@ function prepareProjection(
   );
 }
 
+// Once the write is admitted, only the runtime's own deadline ends the
+// read-back: a sender that gave up stops new writes, not a started one.
+function spentReceipt(
+  target: NotifyTarget,
+  remaining: () => number,
+  started: boolean,
+): RuntimeReceipt | null {
+  if (remaining() > 0 && (started || target.signal?.aborted !== true))
+    return null;
+  return {
+    ok: false,
+    lost: false,
+    detail: `${target.path}: the runtime's deadline passed or the sender gave up before the comment was written; nothing written`,
+  };
+}
+
 async function notifyUnlocked(
   target: NotifyTarget,
   message: string,
   remaining: () => number,
 ): Promise<RuntimeReceipt> {
   const selector = `path:${target.path}`;
-  const spent = (): RuntimeReceipt | null =>
-    remaining() > 0
-      ? null
-      : {
-          ok: false,
-          lost: false,
-          detail: `${target.path}: the runtime's deadline passed before the comment was written; nothing written`,
-        };
+  const spent = (started = false) => spentReceipt(target, remaining, started);
   let late = spent();
   if (late !== null) return late;
   const before = await call(
@@ -194,6 +214,7 @@ async function notifyUnlocked(
     message,
     target.dispatcherOnly === true &&
       card.comment !== target.replaceReadComment,
+    settledIn(target, card.comment),
   );
   let ownedComment = false;
   if (merge !== null) {
@@ -223,7 +244,7 @@ async function notifyUnlocked(
     );
     if (!set.ok) return { ok: false, lost: set.lost, detail: set.why };
   }
-  late = spent();
+  late = spent(merge !== null);
   if (late !== null)
     return {
       ...late,
@@ -240,7 +261,7 @@ async function notifyUnlocked(
       lost: true,
       detail: `the comment was written, and could not be read back: ${shown.why}`,
     };
-  late = spent();
+  late = spent(true);
   if (late !== null)
     return {
       ...late,

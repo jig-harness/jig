@@ -3,7 +3,7 @@ import { DEFAULT_PARK_CLASSES } from "../../shared/autonomy.ts";
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
 import { admittedVendor } from "./accounts.ts";
 import {
-  accountBlocked,
+  accountBlock,
   admitAccount,
   dropRecord,
   holdRecord,
@@ -89,6 +89,26 @@ function sourceOf(
       r.record.id === decision.record &&
       r.record.repo === observation.opened.repo.slug,
   );
+  return resumeSource(old, parkClassesOf(observation.opened.values));
+}
+
+/** The repository's registry classes, which a resume never answers. */
+export function parkClassesOf(
+  values: Record<string, unknown>,
+): readonly string[] {
+  const policy = values.autonomy as { park_classes?: string[] } | undefined;
+  return policy?.park_classes ?? DEFAULT_PARK_CLASSES;
+}
+
+/**
+ * The ended pickup or follow-up a resume could continue: a pass that ended
+ * on a question outside the registry classes and recommended one option,
+ * and that was neither a resume itself nor recorded done; otherwise why not.
+ */
+export function resumeSource(
+  old: ReadRecord | undefined,
+  parkClasses: readonly string[],
+): Source | Refusal {
   if (old?.state.kind !== "ended")
     return {
       refused: "the resume names no ended pass of this repository",
@@ -118,9 +138,6 @@ function sourceOf(
     };
   const question = questionOf(old.state);
   const output = old.state.exit.context ?? old.state.exit.said ?? "";
-  const policy = observation.opened.values.autonomy as
-    | { park_classes?: string[] }
-    | undefined;
   if (
     question === null ||
     routineRecommendation(question, output, ["escalated"]) === null
@@ -130,13 +147,7 @@ function sourceOf(
         "the pass's output holds no question with a single recommended option",
       settled: true,
     };
-  if (
-    routineRecommendation(
-      question,
-      output,
-      policy?.park_classes ?? DEFAULT_PARK_CLASSES,
-    ) === null
-  )
+  if (routineRecommendation(question, output, parkClasses) === null)
     return {
       refused:
         "the pass's question falls in a human-decision class of the autonomy policy",
@@ -442,7 +453,7 @@ async function replayResume(
     pending.stewardContext !== `${source.output}\nQuestion: ${source.question}`
   )
     return;
-  const blocked = await accountBlocked(state, pending);
+  const blocked = await accountBlock(state, pending);
   if (blocked !== null) {
     observation.opened.report.launches.push(
       await replay(state, pending, action, blocked),

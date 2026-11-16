@@ -44,7 +44,8 @@ add none. Labels must already exist in the repository. An unreadable history
 or configured catalog stops planning.
 
 A repository can also carry the issue's own signals onto the pull request:
-`pull_requests.labels_from_issue` maps an issue label (in any case) to a
+`pull_requests.labels_from_issue` maps an issue label (matched as the
+[rule matchers' chapter](../../protocol/rule-matchers.md) says) to a
 pull-request label, and `pull_requests.reviewers_from_issue` to the
 reviewers to request, logins or `org/team`, with or without `@`. A change
 area's `pr: { labels, reviewers }` does the same for every pull request that
@@ -142,8 +143,15 @@ adds the person to an unassigned child without replacing a concurrent
 assignee. Linear and Jira hold one assignee and have no write that applies
 only to an unassigned item, so there the claim assigns the child, then reads
 the item's history: if the assignment replaced someone who was assigned in
-between, it puts them back. Either way a detected race stands down and
-refreshes the queue.
+between, it puts them back. It polls for visible evidence within a 3-second
+window; calls in flight keep their transport's own deadline. If verification
+times out without conflict evidence, it clears the assignment only while the
+claimant is still the sole assignee. A partial race keeps polling for the
+evidence needed to restore the replaced owner. If that evidence never arrives,
+it leaves the assignment untouched and asks for reconciliation rather than
+guessing an owner. The stand-down reason distinguishes a race, an unverifiable
+write, and a race whose replaced owner remains unverified; each stops the
+pickup so the queue can refresh.
 
 Command-line claims share a machine-local mutex across worktrees and
 re-read authority before writing. That does not serialize claims on
@@ -168,14 +176,12 @@ repository, its driver is an agent, every blocker is finished) states them as
 one command, `do_item.preflight_command`. Every claim runs it first, before
 the claim lock and before anything is written, so `do-item`, `work-batch` and
 a dispatched pickup all honour it without any of them remembering to call it.
-It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
-3 refuses it: the claim exits 3, nothing is written, and the first line the
-command printed is the reason. Any other exit, or a run past 60 seconds,
-refuses too. The command text is read from the default branch, so a branch cannot
-change the command its own claim runs; the command runs in the current
-checkout, so a program it names inside the repository (`bun
-scripts/start-rules.ts`) is the branch's own copy, and the rules are only as
-trusted as that program: a branch can bypass a rule by editing a script the command runs, so name an executable that is trusted independently of the branch, such as one installed on the machine. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
+The [repository commands chapter](../../protocol/repo-commands.md) gives
+its input, exits, deadline and command-store rules. The command text comes
+from the default branch, but a repository-relative program it names is the
+branch's copy: name an executable trusted independently of the branch when
+the start rule must hold against a branch editing its own scripts.
+Telling the agent to proceed does not clear a refusal: the
 item or the command changes. A dispatched pickup the command refused shows
 in the dispatcher's queue as held, with the reason, until the item changes.
 
@@ -378,3 +384,12 @@ moves the parent through its own status names. An explicit `null` marks a
 state absent from that workflow; the move is skipped and reported.
 The tracker’s states command prints the repository map and each configured type’s
 effective map. See the [configuration reference](../../CONFIGURATION.md#issue_tracker).
+
+Where type is kept in Jira's issue types (`issue_tracker.facets.type`
+`store: native`), an edit changes an issue's type only between issue types of
+one workflow and field configuration. When the issue's edit screen
+lists the issue type choices and the new issue type is not among them, the change is
+refused before anything is written: move the issue in Jira, or keep type in
+labels or a field. When the screen omits the issue type choice list, Jira decides, and its
+rejection is explained afterward in the same words; a screen that offers an
+empty list refuses every target.

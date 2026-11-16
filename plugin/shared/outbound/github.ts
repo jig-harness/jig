@@ -34,6 +34,22 @@ export interface GhRun {
   bufferExceeded?: boolean;
   /** The failure a held run answers: read as it was met, never from its text. */
   held?: OutboundFailure;
+  /** When a rate limit this run met clears, as the budget record holds it; epoch milliseconds. */
+  limitedUntil?: number;
+  /** The captured response's status, retained when governance strips its headers. */
+  httpStatus?: number;
+}
+
+/** A complete captured HTTP status line, never an inference from CLI error text. */
+export function ghResponseStatus(
+  r: GhRun & { stdout?: unknown },
+): number | null {
+  if (r.held !== undefined || r.spawnFailed || r.timedOut || r.bufferExceeded)
+    return null;
+  if (r.httpStatus !== undefined) return r.httpStatus;
+  if (typeof r.stdout !== "string" || !/\r?\n\r?\n/.test(r.stdout)) return null;
+  const status = /^HTTP\/\S+\s+([1-5]\d{2})(?:[^\r\n]*)\r?\n/.exec(r.stdout);
+  return status === null ? null : Number(status[1]);
 }
 
 /** GitHub refused the credential for a rate limit, primary or secondary. */
@@ -97,10 +113,13 @@ export function ghRunFailure(
       "invalid",
       "gh printed more output than can be held; stopped it",
     );
+  // A conditional response is a successful exchange; its cache consumer
+  // separately checks whether it holds the representation it validated.
+  if (r.code === 1 && ghResponseStatus(r) === 304) return null;
   const code = classOfText(r.stderr, tookMs);
   return outboundFailure(code, reason, {
     ...(code === "rate-limited"
-      ? { until: now() + FORGE_FALLBACK_LIMIT_MS }
+      ? { until: r.limitedUntil ?? now() + FORGE_FALLBACK_LIMIT_MS }
       : {}),
     ...(code === "unreachable" && !NOT_SENT.test(r.stderr)
       ? { sent: true }

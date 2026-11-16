@@ -318,6 +318,55 @@ describe("GitHub adapter: reading an issue", () => {
     expect(facts.uuid).toBe("I_1");
     expect(facts.comments.map((c) => c.trusted)).toEqual([false, true]);
   });
+
+  it("names each comment's author, its link and its last edit, in the one comments request", async () => {
+    let query = "";
+    const { t } = gitHub((call) => {
+      query = call.query;
+      return {
+        repository: {
+          issue: {
+            id: "I_1",
+            comments: conn([
+              {
+                id: "C1",
+                url: "https://github.com/acme/web/issues/1#issuecomment-1",
+                body: "answer pickup: approve",
+                createdAt: "2026-02-01T00:00:00Z",
+                lastEditedAt: "2026-02-01T01:00:00Z",
+                authorAssociation: "MEMBER",
+                author: { login: "dana", id: "U_dana" },
+              },
+              {
+                id: "C2",
+                body: "from a deleted account",
+                createdAt: "2026-02-02T00:00:00Z",
+                authorAssociation: "NONE",
+                author: null,
+              },
+            ]),
+          },
+        },
+      };
+    });
+    expect(t.commentAuthors).toBe(true);
+    const facts = await t.issueComments("#1");
+    expect(query).toContain("author { login");
+    expect(
+      facts.comments.map((c) => ({
+        author: c.author,
+        ...(c.url === undefined ? {} : { url: c.url }),
+        editedAt: c.editedAt,
+      })),
+    ).toEqual([
+      {
+        author: { id: "U_dana", name: "dana" },
+        url: "https://github.com/acme/web/issues/1#issuecomment-1",
+        editedAt: "2026-02-01T01:00:00Z",
+      },
+      { author: null, editedAt: null },
+    ]);
+  });
 });
 
 describe("GitHub adapter: moving an issue between states", () => {

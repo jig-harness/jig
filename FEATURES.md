@@ -90,9 +90,7 @@ restarts the drive.
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a converged drive arming the merge it certified
-  (roadmap item 9); the route applied to the implementer and recorded on the
-  pull request (roadmap item 31); the drive's CI-repair round running
-  `fix-ci` (Later)
+  (roadmap item 9); the drive's CI-repair round running `fix-ci` (Later)
 
 ## A line that runs with nobody at the keyboard
 
@@ -120,9 +118,10 @@ with its question framed, a failed follow-up, an item claimed and then left
 alone. The dispatcher never merges and never answers a parked question. It
 never restarts a drive a person stopped.
 
-An agent inspects work the rules leave waiting, every 20 minutes when its
-input changes. This [steward](GLOSSARY.md) proposes routine recoveries and
-values for missing issue fields. It frames what needs a person. The
+An agent inspects work the rules leave waiting, as soon as work no earlier
+pass has judged appears. This [steward](GLOSSARY.md) proposes routine
+recoveries and values for missing issue fields. It frames what needs a
+person and does not already carry a decision. The
 dispatcher checks each proposal before acting.
 
 Every session it started leaves a row in the [outcome log](GLOSSARY.md)
@@ -164,7 +163,10 @@ machine stays where it is. A machine whose jobs an older release installed
 runs `jig upgrade` once to turn this on.
 The dispatcher starts sessions through a [session runtime](GLOSSARY.md).
 Orca is the first, and another runtime joins by implementing the same
-interface.
+interface. In Orca, a [plugin](https://github.com/jig-harness/orca-plugin)
+shows the line in the status bar and opens a panel on the person's inbox,
+where they answer a park. It also refuses a launch into a worktree `jig gc`
+is removing.
 
 - **Skills:** [`do-item`](plugin/skills/do-item/SKILL.md),
   [`steward`](plugin/skills/steward/README.md),
@@ -174,8 +176,9 @@ interface.
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),
   [M3](modules/M3-change-area-catalog/)
-- **On the roadmap:** a launch guard and an Orca panel for what waits on a
-  person (item 34)
+- **On the roadmap:** a launch guard that tells repositories and recreated
+  worktrees apart, and answer picks and a merge button in the Orca panel
+  (item 34)
 
 ## Review in tiers, with an arbiter for contested findings
 
@@ -369,15 +372,17 @@ the declaration from the recorded remote base branch and stay within the
 confirmed bounds. A worktree Orca manages is collected through Orca, so its
 card and terminals go with it. It also finds the worktrees Claude Code's
 agent tool makes for its subagents, with no configuration, and removes an
-idle one with git. Other worktrees, scratch directories and tool state are
+idle one with git. On a machine that names Orca's command, it also closes
+the terminal tabs Jig opened for runs ([run tabs](GLOSSARY.md)). It closes a tab
+whose run was killed once the tab's shell runs nothing and has been idle for
+at least a day. Other worktrees, scratch directories and tool state are
 reported only, because collecting them needs the tools that create and use
 them to take part. Old receipts can be collected, keeping the latest
 report for each repository and kind.
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), a
-  runnable workspace lifecycle for other runtimes (Later); collecting what is
-  only reported, and more kinds (roadmap item 24)
+- **On the roadmap:** a runnable workspace lifecycle for other runtimes
+  (Later); collecting what is only reported, and more kinds (roadmap item 24)
 
 ## One configuration file, read in layers
 

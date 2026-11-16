@@ -121,7 +121,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
-| `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, read from the default branch, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
+| `do_item.preflight_command` | The repository's own start rules, run by every claim; [the commands chapter](../../protocol/repo-commands.md) gives its input, exits, deadline and command-store rules | No check beyond the claim's own |
 | `do_item.claim_from` | The canonical states a claim may start from, read from the default branch; any other state, or a status that maps to no canonical state, is refused | None: the claim's own restrictions apply (never an `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted one) |
 | `do_item.claim_marker` | A claim posts a marker comment naming the session, host and branch before it writes, and the earliest marker on the item wins, so two hosts rarely both claim it (best effort: a lagging listing can let both win); read from the default branch | No marker; claims serialize on one host only |
 | `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
@@ -152,7 +152,7 @@ The skill acts on a few labels as process signals, by role:
 
 | Role (`issue_tracker.labels.<role>`) | Default | What it signals |
 |---------------------------------------|---------|-----------------|
-| `epic` | `epic` | An issue whose sub-issues are worked one at a time; on Jira and GitHub, an issue whose own issue type `issue_tracker.labels.epic_types` lists is one too, without the label |
+| `epic` | `epic` | An issue whose sub-issues are each delivered as their own pull request, one per `do-item` session; on Jira and GitHub, an issue whose own issue type `issue_tracker.labels.epic_types` lists is one too, without the label |
 | `hitl` | `hitl` | A deliverable that is a human's judgment (human-in-the-loop, [HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)); its facets are `<hitl>:<stakeholder>` (`hitl:legal`, `hitl:product`, …) |
 | `manual_ops` | `manual-ops` | A step a person performs outside the code |
 | `followup` | `pr-followup` | An issue filed from a review finding |
@@ -692,6 +692,14 @@ implementation. Skip this check for issues about the repository's own code.
      them, and the areas, on paths instead. `missing_skills` names each
      guidance skill nothing installed answers: name each in the status
      message (`Guidance skill not installed: <name>`), and delegate anyway.
+   - `do_item.gates` — `[{labels, paths, skill}]`: review gates. Its `gates`
+     output holds `applied`, each gate the issue's labels or the planned
+     paths meet, with its `skill` and `why`, and `by_path`, each gate only
+     paths it could not know yet would meet.
+
+   How each of these fields matches an issue (labels ignoring case, title
+   keywords, path globs, first or every match) is the
+   [rule matchers' chapter](../../protocol/rule-matchers.md)'s to say.
 
    For example, a repository might route `agent:backend` to a "Backend Agent"
    whose scouts are a schema scout and a constraint validator. Unless Step 2
@@ -710,10 +718,12 @@ implementation. Skip this check for issues about the repository's own code.
    `routing.types` raised one step each by a flag label, an area's mandatory
    review, a size too large to batch and the `hitl` label, capped at `max`,
    and the tier's family alias for the runtime; `reasons` names the rule
-   behind each part ([configuration reference](../../CONFIGURATION.md#routing)).
+   behind each part, a configuration rule in the wording of
+   [the rule matchers' chapter](../../protocol/rule-matchers.md)
+   ([configuration reference](../../CONFIGURATION.md#routing)).
    Put the tier, the effort, the model and the effort's reasons (its base
    row and every raise in `reasons`) in the status message, e.g.
-   `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
+   `Route: standard, high, sonnet (type bug: medium; raised from medium: routing.raise.flags, for the item's label has-migration)`.
    The route is forwarded only in a [dispatched pass](#dispatched-passes),
    whose first prompt carries the line `route: rules`, and only when
    `declared` is `true`: item 4's delegation then passes `runtime_model` as
@@ -804,6 +814,14 @@ implementation. Skip this check for issues about the repository's own code.
    `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
    then read it again and stop, as on exit `4`, when it shows another
    assignee, or when the issue is gone or no longer in the mapped state.)
+
+   Linear and Jira inherited assignments poll for visible history within a
+   3-second window; calls in flight keep their transport's own deadline.
+   Without conflict evidence, a visibility timeout clears the claimant's lone
+   assignment. A detected replacement restores the replaced assignee while
+   the claimant still holds the item. A partial race keeps polling for that
+   evidence; on timeout it leaves the assignment untouched and asks for
+   reconciliation. The reason distinguishes each case.
 
    Then show the start on Orca's workspace board. In a worktree of
    [Orca](https://www.onorca.dev) this moves the worktree's card to In
@@ -898,10 +916,10 @@ implementation. Skip this check for issues about the repository's own code.
    Leave out a part that is empty, and the heading when all are. Guidance
    adds to the review gates below and never replaces one.
 
-   **Review gates — MANDATORY when declared.** Each entry of the overlay's
-   `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
-   applies when the issue carries one of its `labels`, or the change will
-   plausibly touch one of its `paths`. For every applicable gate, end the
+   **Review gates — MANDATORY when declared.** `determine_agent.ts` printed
+   the overlay's `do_item.gates` that apply under `gates`: every gate in
+   `applied`, and each gate in `by_path` whose `paths` the change will
+   plausibly touch. For every applicable gate, end the
    delegation prompt with this directive, verbatim except for the
    substitutions:
 
@@ -1499,6 +1517,10 @@ implementation. Skip this check for issues about the repository's own code.
 human's choice when several candidates are eligible; the selector and
 snapshot mapping are **exact**.
 
+A session takes one sub-issue. That is the scope of one session, not a limit
+on the epic: the dispatcher may start several of an epic's children at once,
+each in a session of its own (`dispatch.epic_width`).
+
 1. **exact** — **Check whether everything is complete**:
    - `sub_issue_analysis.all_complete` → Step 5a.
    - Otherwise, if every remaining incomplete sub-issue carries a label in
@@ -1985,7 +2007,7 @@ report. In such a pass:
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
 | `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
-| `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
+| `determine_agent.ts` | Route an issue to an agent and its scouts, and list its guidance and review gates | Issue JSON (path or `-`) | JSON with agent, scouts, guidance and gates |
 | `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |

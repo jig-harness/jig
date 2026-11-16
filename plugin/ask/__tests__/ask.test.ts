@@ -297,8 +297,10 @@ describe("jig ask", () => {
     expect(launches?.detail).toContain("no dispatcher state");
     expect(answer.sources.forgeCalls).toBe(3);
     expect(answer.sources.trackerCalls).toBe(0);
-    // Every forge call is a read.
-    for (const call of w.calls()) expect(call).toMatch(/^api -i /);
+    // Every forge call is a read: the budget's one lookup of the quota
+    // owner (`api user`) and the reads with their headers.
+    for (const call of w.calls())
+      expect(call).toMatch(/^api (-i |user( --include)?$)/);
   });
 
   it("answers an address nobody holds with its last outcome", async () => {
@@ -344,6 +346,7 @@ describe("jig ask", () => {
       reason: "exit 0 (converged)",
       from: "outcome log",
       next: { person: "repository maintainer", act: "merge the pull request" },
+      stage: "rearm",
     });
     expect(answer.waitsOn).toMatchObject({ person: "merge" });
     // The predicate's lane and the merge command pinned to the verified head.

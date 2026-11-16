@@ -9,8 +9,8 @@
  * | Kind | One row per | Its key | Backs off |
  * | --- | --- | --- | --- |
  * | `label` | pull request whose dispatch labels the projection writes | `label PR #<n>`, `label markers PR #<n>` for its markers | yes |
- * | `notice` | notification cause | `notice <its key>` | yes |
- * | `failure-notice` | notification of a failure below | `notice <its key>` | yes, and never notified itself |
+ * | `notice` | notification cause and channel | `notice <its key>` on `orca-card`, `notice <channel> <its key>` on another channel (`notice-records.ts`) | yes |
+ * | `failure-notice` | notification of a failure below, and channel | as `notice` | yes, and never notified itself |
  * | `nudge` | session and waiting episode | `nudge <record> <episode>` | yes |
  * | `claim-end` | this host's launch claim whose end is owed | `claim-end PR #<n> comment <id>` | yes |
  * | `marker-answer` | follow-up marker whose answer is owed | `marker-answer PR #<n> comment <id>` | yes |
@@ -93,6 +93,8 @@ export interface FailureSettings {
   backoffMaxMs: number;
   /** `failures.notify_after`: the failures in a row at which a person is told. */
   notifyAfter: number;
+  /** `failures.rerun_died`: the runs again a follow-up whose pass died or could not record its result is owed, `0` or `1`. */
+  rerunDied: number;
   /** `failures.group`: this host's own failing rows told one notice per cause (`cause`, also when absent) or one per scope (`scope`). */
   group?: FailureGrouping;
 }
@@ -114,6 +116,7 @@ export const FAILURE_DEFAULTS: FailureSettings = {
   backoffMs: 2 * 60_000,
   backoffMaxMs: 60 * 60_000,
   notifyAfter: 3,
+  rerunDied: 1,
   group: "cause",
 };
 

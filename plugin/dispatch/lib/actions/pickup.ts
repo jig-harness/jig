@@ -56,7 +56,7 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import {
-  accountBlocked,
+  accountBlock,
   admitAccount,
   type ApplyState,
   type Opened,
@@ -378,7 +378,7 @@ async function retryPending(
       (typeof fresh === "string"
         ? fresh
         : ((await competing(state, repo, ctx, record)) ??
-          (await accountBlocked(state, record))));
+          (await accountBlock(state, record))));
     const action = { target: item, stage: "pickup" } as Action;
     report.launches.push(
       headless(await replay(state, record, action, blocked), record),

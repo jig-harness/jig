@@ -11,6 +11,10 @@ export interface Attempt {
   cost: number | null;
   unit: string;
   estimated: boolean;
+  /** The quota owner's record key, where the system keeps one apart from the credential. */
+  owner?: string | null;
+  /** The window of that record the attempt spent; `unknown` when no evidence names it. */
+  window?: string | null;
 }
 
 interface AttemptEvent extends Attempt {

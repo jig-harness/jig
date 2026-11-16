@@ -185,6 +185,8 @@ changes are marked **Breaking** and say what a consumer changes.
 - M12 records Rex as a workspace runtime to watch, with conditions for
   reconsidering a provider. The glossary defines the program status a
   program reports to its terminal through OSC 7501.
+- Defined the planned priorities record, progress review and overview terms,
+  with a design for reproducible ranking and confirmed browser actions.
 
 ### Changed
 
@@ -393,6 +395,751 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.256.7] - 2026-11-16
+
+### Fixed
+
+- Jira: with a facet such as size kept in a custom field, an issue whose type
+  has no context for that field (an Epic, a Bug or a Sub-task, where the field
+  belongs to one work issue type) could not be read at all: `get_issue.ts`
+  answered `read-failed`, so do-item could not read an item's parent epic and
+  did not delegate the item. Jira leaves such a field out of the issue, and
+  the issue now reads as having no value in it. The error that remains, for
+  an issue read without asking for the field, names the field.
+
+## [0.256.6] - 2026-11-16
+
+### Fixed
+
+- Keep tracker failures visible when the dispatcher reads claimed items, assignment authors and ready-pool evidence: temporary failures wait below the notification threshold, refused credentials are reported immediately, and a definite missing assignment remains an ordinary answer. **Consumer action:** none.
+
+## [0.256.5] - 2026-11-16
+
+### Changed
+
+- `jig gc`'s tests now cover the worktree `HEAD.lock` it keeps while Orca's
+  removal is unsettled. Two cases are new: a collection that takes over an
+  ended run's lock and gets Orca's still-deleting answer again, and a step
+  that throws after such a takeover. In both, the lock and the launch guard
+  claim stay. The collector's behaviour does not change.
+- The plugin's guides and skills link to the stable Jig Protocol chapters
+  for shared contracts. Contract values needed within a skill's step remain
+  beside the action and are checked against the code by the Protocol gate.
+
+## [0.256.4] - 2026-11-16
+
+### Fixed
+
+- GitHub dispatch reads missing issues in bounded batches and reuses unchanged assigned queues between scheduled full refreshes, reducing repeated requests. An incomplete change probe refreshes the queue; failed reads retain their age and still require fresh checks before a pickup starts.
+- `jig gc` now holds a worktree Orca manages to the commit and branch its final proof saw, and holds the worktree's `HEAD.lock` from the last comparison through `orca worktree rm`. A commit made on a detached head after the proof keeps the worktree, and one tried while Orca removes it fails with git's "cannot lock ref" error; before, either was lost with the worktree. While Orca's answer leaves the removal unsettled the lock stays in place, and the next collection takes it over; a `HEAD.lock` no ended gc run left keeps the worktree before its remove hook runs. A repository that keeps its refs in reftable now keeps its Orca worktrees, as it already kept an agent tool's. [plugin/gc/README.md](plugin/gc/README.md#worktrees-orca-manages) says what the collector guarantees.
+- `jig gc` no longer reads Orca's answer that it is still deleting a worktree as a removal or a refusal: the launch guard claim stays until a later collection settles it.
+
+## [0.256.3] - 2026-11-16
+
+### Fixed
+
+- Steward submissions reserve their database write before reading, so a
+  concurrent dispatcher or session write cannot invalidate the submission's
+  snapshot and reject its records.
+
+## [0.256.2] - 2026-11-16
+
+### Fixed
+
+- `jig upgrade` reports a scoped Claude Code install as left behind when the
+  update command succeeds but its record still differs from the user version.
+  An incomplete scoped refresh now exits nonzero while preserving the report
+  of the user install and installed jobs that succeeded.
+
+## [0.256.1] - 2026-11-16
+
+### Changed
+
+- A label taxonomy may list a type in a group's `not_required_on`, so a
+  repository that keeps its epics as an issue type (`issue_tracker.labels.epic_types`)
+  lifts the size requirement on the type itself, with no `epic` flag beside it.
+  The lint's message for an unknown id now says "neither a flag nor a type".
+
+### Fixed
+
+- Served pickups on Linear and Jira wait for delayed assignment history before standing down. A stand-down distinguishes a race from an unverifiable assignment, removes the pickup's lone assignment on timeout without conflict evidence, and asks for reconciliation when partial race history cannot establish whom to restore. **Consumer action:** none.
+- Assignment verification now preserves a complete tracker history's ordering for tied timestamps and rechecks ownership inside cleanup operations, preserving a different owner that check observes. The tracker cannot prevent a change between that read and its mutation. **Consumer action:** none.
+
+## [0.256.0] - 2026-11-16
+
+### Added
+
+- `orchestrate` now hands a long coordination over to a fresh session before
+  its context fills. At a natural pause it suggests the handover to the
+  person; once they agree it brings the durable record up to date (state,
+  dated decisions, what waits on the person, owed acts, cautions and a first
+  act for the successor). It then starts the successor in the surface the
+  person works in with a short directive pointing at the record, or gives
+  the person the exact command where the host cannot start one, confirms
+  the successor is running and then stops acting
+  ([procedure](plugin/skills/orchestrate/SKILL.md)).
+
+## [0.255.1] - 2026-11-16
+
+### Fixed
+
+- Keep driver round-control regression checks reliable during parallel CI execution by sharing fixture pacing and allowing complete multi-round probes to finish. Only internal tests change. **Consumer action:** none.
+
+## [0.255.0] - 2026-11-16
+
+### Added
+
+- `JIG_GITHUB_INSTALLATION_ID` declares the GitHub App installation an
+  installation token (`ghs_`) belongs to. Whatever issues the token sets
+  it, since the token cannot name its own installation: every token of one
+  installation, a replacement after expiry included, then shares one
+  budget record and its hold.
+- The cost ledger names, for each GitHub row, the quota owner whose record
+  it spent and the window it spent: core, GraphQL, search, none or unknown,
+  from the answer's rate-limit header, the `gh api` route, or a table of
+  the subcommands Jig runs (`gh pr view` spends GraphQL points). The tick
+  report and `jig budget` show spending per window, and a low-quota need
+  says when its spending includes estimates or spending in a window the
+  ledger could not name.
+
+### Fixed
+
+- The machine's GitHub budget is kept per quota owner, not per token.
+  Several processes with different personal tokens of one user, or the
+  `gh` stored login and a token of the same user, reserve against one
+  balance, and a limit one of them meets holds the others. Each credential
+  is asked who it is once (`gh api user`), and the answer is kept for every
+  process: a week for a token, a day for a stored login, 15 minutes before
+  a failed question is asked again. A credential whose owner cannot be
+  established shares one record per host with every other such credential,
+  which can only make them spend less. Records an earlier release kept per
+  credential stay readable, and seed the owner's record with any active
+  hold kept.
+- A `gh api --paginate` read was charged one request however many pages
+  it sent, so a long read could pass the dispatcher's floor. When its
+  output is captured, the forge client now sends it a page at a time, each
+  page admitted and charged as a request of its own; the read stops as
+  `rate-limited` at the floor, keeps one deadline for all its pages and
+  fails as `too-costly` past 100 pages. A paged read the client cannot
+  page itself (streamed output, GraphQL with `--jq`) reserves 10 requests
+  before it starts and is charged them as an estimate.
+- `gh pr view` and the other GraphQL subcommands were counted against the
+  core requests in the low-quota forecast; they now count against the
+  GraphQL window, as estimates.
+- The stored login's key names the account `hosts.yml` makes active, so
+  switching accounts with `gh auth switch` no longer inherits the previous
+  account's budget, and cached GitHub answers are kept per credential, so
+  two tokens of one user never read each other's.
+
+## [0.254.0] - 2026-11-16
+
+### Added
+
+- A pickup's decision on a Linear or Jira item is answered on the item
+  itself: the dispatcher's tick reads the item's comments under the same
+  rules as a pull request's (an answer counts only from a member of the
+  tracker's workspace who is not a guest, never from the user the
+  dispatcher's tracker credential acts as, and only when it names the
+  decision's current digest and every person's latest answer chooses the
+  same option), and `jig send pickup@owner/name#KEY answer pickup --approve
+  --decision <digest>` writes that answer on the item as the user the
+  tracker's credential acts as on your machine, refusing when that user is
+  the repository's factory identity. The tracker interface's comment facts
+  now name each comment's author, its link and its last edit on the Linear,
+  Jira and GitHub adapters, read in the request that already reads the
+  comments; a tracker whose adapter cannot name an author is not read, and
+  the need says why.
+
+## [0.253.1] - 2026-11-16
+
+### Fixed
+
+- The dispatcher attributes test-lock waits to the launch running validation and reports how long it has waited. Drift, ended-pickup and stalled-pickup reasons retain the last observed wait, so a queued suite is visible when a pass reaches its deadline.
+  Attribution currently works on POSIX; Windows announcements are neither attributed nor counted as waiters until process creation time can be verified there.
+
+## [0.253.0] - 2026-11-16
+
+### Added
+
+- `jig budget` and the low-quota need show GitHub spending that no counted
+  call explains. When the `rate_limit` endpoint reports a balance below what
+  the machine's budget record had counted for the same window, the
+  difference is recorded on an `(unattributed)` row of the cost ledger, in
+  requests for the core limit and points for GraphQL, never on an operation.
+  `jig budget` prints it as unattributed, and its `--json` groups carry
+  `unattributed: true`.
+
+### Fixed
+
+- A GitHub GraphQL request sent over HTTPS (with `JIG_GITHUB_GRAPHQL_URL`
+  set: the GitHub tracker adapter and the GitHub reflection store) now keeps
+  to the machine's budget record as a `gh` run with the same token does. It
+  is paced and admitted before it is sent, reserving a GraphQL point. It
+  records the balance its answer reports. A refusal it meets holds the token
+  for every process, and a refusal a `gh` run met holds it.
+  `JIG_FORGE_BUDGET=off` leaves these requests out as well.
+- A dispatched follow-up whose pass stopped on a question naming a rate
+  limit no longer waits for a person. This covers a pass from before
+  passes recorded `waits`, and one that asked instead of recording it. The
+  dispatcher now treats it as a wait until an hour after the pass ended, then
+  starts the follow-up again. A question that also carries a
+  [routine question](GLOSSARY.md) tag keeps that class's handling.
+  **Consumer action:** none.
+- A person who restarts a follow-up that went to them after three
+  rate-limit waits in a row now gets a fresh count. Deleting its marker, or
+  choosing "Run it again", starts that count again. Before, the follow-up
+  could come straight back to the person on its next wait.
+  **Consumer action:** none.
+- The extension guide, the mechanisms page, the glossary and the factory
+  page no longer say the review skill's deferral step calls Linear directly:
+  deferred findings file through the tracker interface on GitHub Issues,
+  Linear and Jira.
+- The audit now flags comment-only scheduled issue sweeps that omit `--position <file>`, explaining that issues past the read cap are never reached; a sweep that passes the flag certifies as before.
+
+## [0.252.0] - 2026-11-16
+
+### Added
+
+- The dispatch dashboard shows each run's closing report. On the History view, every run's line says what it concluded, the next step it suggests and why it fell short, or that it ended without a report; the log filters on the report's cause and on who wrote it; and a row opens to all runs of its piece of work, newest first, each with its report and, where the report's suggested next step names another owner than the tick's own next owner, both side by side. *Needs you* shows a report's question and framed decision where it showed a pass's `Question:` line, with what the run concluded beside them. See [plugin/README.md](plugin/README.md#the-closing-report).
+- `jig ask`'s answer gains a `last.run` line: the last run's stage, when it ended, what it concluded and the next step it suggests, or that it ended without a report. `--json` carries them as `last.stage` and `last.report`, and the operator skill's status card relays them.
+- Where the `notify` stage runs, each of its ticks writes one `notices_read` event to the outcome log with the notices workspace's read state, the observation the stage's retirement measure reads. The dashboard's log leaves these rows out unless its class filter names `event: notices_read`, and the steward's digest leaves them out of the history it judges from; `jig dispatch log` lists them.
+- `jig gc` has a machine kind, `orca-terminals`, that closes the Orca run tabs a killed run left behind and parked run tabs nobody returned to. It is planned when the user file's `gc` section names `orca.command`; a tab is closed only once its shell runs no command and it has been idle past `gc.orca.terminal_idle_hours` (24 by default). It closes the recorded terminal, never its whole tab, so a pane a person added beside it stays; `jig gc --kind orca-terminals` reports each tab with its proof and closes nothing.
+
+### Changed
+
+- Deferred review findings enter the backlog in one open issue per pull
+  request and issue type on every supported tracker. Later findings append
+  to the same issue, with the highest priority and union of categories;
+  native related links preserve the originating issue and epic without
+  adding children to their scope. **Consumer action:** advised at
+  instructions. Replace runbook rules that parent deferred findings to an
+  epic with backlog batches and related links. Existing follow-ups are not
+  backfilled. **Detect:** `text:Parent the follow-up`,
+  `text:Findings deferred while the epic is live still go to the epic`.
+- M9 and the audit now distinguish delivered epic scope from person-only
+  tails, place those checks on one standing person-checks list at closure,
+  and allow a native Epic issue type without a separate kind. Closure wiring
+  for that list remains planned.
+
+### Fixed
+
+- A dispatcher tick no longer fails when a read it makes for one item meets
+  a rate limit or gets no answer from the forge or the tracker. Those reads
+  are a pull request's comments (its drive ledger, launch claims and
+  follow-up markers), a parked drive's thread answers, a conflicting
+  drive's base branch head, and a claimed item's claim markers. The item's
+  row now carries the failed call's
+  [failure class](GLOSSARY.md), and the tick handles it as it already
+  handles a repository's read: it exits 0 below `failures.notify_after`, and
+  tells a person at once of a refused credential. A ledger or marker that
+  does not parse still fails the tick. See
+  [When an outside system refuses or does not answer](plugin/CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer).
+  **Consumer action:** none.
+
+## [0.251.0] - 2026-11-16
+
+### Added
+
+- The Jig Protocol has a provisional chapter on tracker facets
+  ([plugin/protocol/tracker-facets.md](plugin/protocol/tracker-facets.md)):
+  the facts every issue carries beside its labels (type, priority and
+  size), the number of each priority, the stores a facet may be kept in,
+  which stores each tracker adapter holds for each facet and why it refuses
+  the others, and the reasons `tracker.ts facet-stores` gives for the store
+  in force. Its values are generated from the tables the tracker reads its
+  configuration with, and its data file,
+  `plugin/protocol/data/tracker-facets.json`, carries them for a program
+  that reads an issue's facets or a repository's stores.
+
+### Changed
+
+- The verification record in `plugin/phone-access.md` now holds the results
+  of the Tailscale Serve front's checks: the front and its version, tokenless
+  HTTPS access, the `Host` allowlist, the QR code scanned on a phone and, in
+  part, installing the page as an app on a phone. The phone browser's product
+  and version, the installed app's behaviour, copy, clipboard-refusal, refusal,
+  forged-header, Serve route and reverse-proxy rows are still not run.
+- The `drive-pr` and `resolve-review-comments` skills say that the work to
+  count scanner annotations as open work is now tracked as
+  [#1316](https://github.com/jig-harness/jig/issues/1316). Before, they
+  pointed to roadmap item 30, which has left the roadmap. What either skill
+  does is unchanged. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` no longer loses a commit made on a detached agent tool worktree in
+  the moment between its last check of the tree and `git worktree remove`.
+  It now holds the tree's `HEAD.lock` from just before that check until the
+  removal, so a commit, checkout, switch or reset in the tree then fails
+  with git's own "cannot lock ref" error instead of moving the head. A lock
+  a stopped run leaves behind names `jig gc`. In a repository that keeps its
+  refs in reftable, where that lock holds nothing, every tree is kept
+  before its remove hook runs
+  ([plugin/gc/README.md](plugin/gc/README.md#worktrees-an-agent-tool-makes)).
+- The drive-pr README now says plainly how forge send pacing works:
+  processes that send with the same GitHub credential key are admitted to send
+  at least 200 milliseconds apart (a delayed send can still start closer to
+  another), and processes with different keys do not wait on one another.
+
+## [0.250.1] - 2026-11-16
+
+### Fixed
+
+- The dispatch dashboard can send answers to pickup, follow-up and drive recovery decisions on GitHub, prompts for a token, confirms every send, and shows the tick's outcome. Answered holds stay visible and say the work remains undone; the earlier hold label still works in answers. Posted answers trigger bounded faster refreshes.
+
+## [0.250.0] - 2026-11-16
+
+### Changed
+
+- Final-CI waiting backs off unchanged observations up to a sixty-second
+  scheduling delay while keeping control checks responsive and witness
+  expiry based on elapsed time. Forge callers sharing a credential space
+  request starts through the shared budget record, with cancellation and
+  deadline bounds and recovery after a caller crashes.
+
+## [0.249.0] - 2026-11-15
+
+Every configuration field that chooses something by an item's or a
+change's facts is now decided by one rule matcher, specified in a new
+Protocol chapter.
+
+### Added
+
+- One rule matcher decides every configuration field that selects by an
+  item's or a change's facts (`pull_requests.base_rules`,
+  `pull_requests.labels_from_issue`, `pull_requests.reviewers_from_issue`,
+  `do_item.gates`, `do_item.guidance`, `do_item.agents.labels`,
+  `do_item.agents.codearea_areas`, `do_item.agents.title_keywords`,
+  `routing.complex_flags`, `routing.raise.flags`, `routing.raise.sizes` and
+  `work_batch.solo_flags`). The new Protocol chapter *Rule matchers in
+  configuration* (`plugin/protocol/rule-matchers.md`) says which facts a rule may test, how each is compared, how a rule
+  combines its values and how each field's rules resolve, with a data file
+  and a JSON Schema for a rule. Today's forms of every field keep working
+  as written. **Consumer action:** none.
+- `determine_agent.ts` reads `do_item.gates` and prints, under `gates`, the
+  review gates an item meets and those only its planned paths could, with
+  why each applies; do-item applies what it printed.
+  **Consumer action:** none.
+
+### Changed
+
+- **Breaking:** The shared configuration reader refuses a rule that names
+  an unknown fact or gives a value of the wrong kind in any of these
+  fields, naming the field and the file that set it, before any skill acts
+  on it, and the audit reports it. A malformed rule a skill never read
+  (such as a `do_item.gates` entry) used to be ignored; now every skill,
+  `jig gc` and `jig dispatch` stop on it. A `do_item.gates` entry do-item
+  refuses (no labels or paths, no skill, an unknown field, a glob that does
+  not compile) now also stops `determine_agent.ts`, `determine_route.ts`,
+  work-batch and the dispatcher's batch planning, where before nothing read
+  the field. An empty key in `do_item.agents.labels`, `codearea_areas` or
+  `title_keywords` is refused too (an empty title keyword used to match
+  every title). **Consumer action:** required at configuration. Run the
+  audit's configuration fit and fix each rule it refuses: `rejected:every
+  skill (rule matcher)` and `rejected:do-item (review gates)`.
+- **Breaking:** `work_batch.solo_flags`, and the solo-only flags work-batch
+  derives, match an item's labels ignoring case, as every other label rule
+  does: an issue labelled `Privacy-Review` is now held out of a batch by
+  `solo_flags: [privacy-review]`, where before it was batched. The
+  dispatcher's batch grouping reads the same rule.
+  **Consumer action:** advised at configuration. Check that no label you
+  batch differs from a solo-only flag only in case; rename it if it should
+  stay batchable. **Detect:** `config:work_batch.solo_flags`.
+- A route's reasons name the configuration rule that matched in the
+  matcher's wording: `tier: complex (routing.complex_flags, for the item's
+  label has-migration)` and `effort: high (raised from medium:
+  routing.raise.flags, for the item's label has-migration)`, where they read
+  `flag has-migration` before. **Consumer action:** advised at instructions.
+  Update a runbook or script that reads the old reason text.
+  **Detect:** `text:raised medium`.
+- Path globs are compiled by one shared module, so a glob in a configuration
+  field and in the change-area catalog means the same.
+  **Consumer action:** none.
+
+## [0.248.2] - 2026-11-15
+
+### Fixed
+
+- Worktree collection keeps the forge diagnostic when a pull request lookup
+  exceeds its deadline, alongside the deadline reason. The configuration guide
+  links to one definition of the lookup timeout, and lookup tests remove their
+  scratch directories. **Consumer action:** none.
+
+## [0.248.1] - 2026-11-15
+
+### Changed
+
+- Tracker and forge reads share the outbound library’s caching, duplicate-read
+  grouping and bounded batches. Quiet ticks reuse unchanged assignment answers,
+  while failed reads are retried on the next tick. The change probe compares
+  check-state totals instead of downloading each check. **Consumer action:** none.
+
+### Fixed
+
+- Review-finding deferrals use the tracker adapter’s governed transport, and
+  issue children are read in bounded pages. Forge cost reports identify REST
+  routes even when command flags precede the route. **Consumer action:** none.
+
+## [0.248.0] - 2026-11-15
+
+### Added
+
+- A label taxonomy entry may carry `color`, the colour its label shows in the
+  tracker, as six hex digits (`cfd3d7`, no `#`), so a colour that sets one
+  label apart is recorded and does not drift. `check-label-taxonomy.ts` fails
+  on a colour that is not six hex digits written as text; M9's template
+  documents the field.
+- `validate-labels.ts` reads an issue's own tracker type, from
+  `--native-type` or the `nativeType` of the issue it is given. An issue
+  whose type `issue_tracker.labels.epic_types` lists, such as Epic, is
+  checked as if it carried the epic label: a `requires:` naming that label
+  is met by it, and a group not required on the epic is not required on it.
+  A `roadmap` issue typed Epic needs no `epic` label beside it.
+
+## [0.247.2] - 2026-11-15
+
+### Fixed
+
+- Count conditional GitHub request headers in their joined flag forms and forecast unknown primary-quota spending conservatively. **Consumer action:** none.
+- GitHub conditional reads answered unchanged now record request traffic with
+  zero primary quota cost, including when the CLI exits nonzero or response
+  headers are stripped. Budget reports retain that traffic separately, and
+  low-quota forecasts use the charged cost rather than unchanged traffic.
+- Finished worktrees are no longer kept just for the `.fallow` tool cache. Repositories can declare other rebuildable ignored paths with `gc.regenerable_paths`; undeclared content remains protected. Existing installations refresh the collector after upgrading, even without configuration changes, to confirm new default bounds. **Consumer action:** required at machine. After upgrading, review the preview and run `jig install gc --repo <repository> --yes` for every existing installation.
+
+## [0.247.1] - 2026-11-15
+
+### Fixed
+
+- The dispatch dashboard page is built again from its current source, so its
+  list of the files Jig keeps on a machine now includes the cursor where
+  `jig gc` stopped reading the test-fixture registry.
+
+## [0.247.0] - 2026-11-15
+
+### Added
+
+- The dispatch dashboard's Needs you cards can send a parked decision's answer: with a fine-grained GitHub token pasted under **Send from here**, a parked drive's card on github.com has **Send** beside Copy. Once an option is picked, it posts each decision's answer to the pull request from the browser, as the person: one comment per decision, the `drive-answer` record `jig send` writes, naming `dashboard (browser)` as its writer's host. The card then links the comments and says they were sent here. With nothing picked Send stays held back while Copy keeps its approval; a guarded pick sends on the second step; GitHub's refusals are explained; and a card no drive reads an answer comment for, or a page served over plain HTTP outside loopback, says why it has no Send. The token is tested against GitHub, kept in that browser alone and never reaches the host, whose server still has no route that writes ([ADR-0019](docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md), [plugin README](plugin/README.md#the-dispatcher)).
+
+### Security
+
+- The dashboard page's content security policy lets the page connect to its own server and `https://api.github.com` alone; a page that runs no script connects to its server alone.
+
+## [0.246.0] - 2026-11-15
+
+### Fixed
+
+- `jig gc`'s `scratch` kind no longer gives up on a test-fixture registry
+  larger than one bounded read ("Fixture inventory is malformed or exceeded
+  its bounded scan"). It reads the registry in bounded pages, resuming the
+  next run where the last stopped, and reports a malformed registration as
+  its own receipt line instead of failing the whole inventory.
+- A test-fixture registration whose roots are all gone is now retired by a
+  collecting run once every registered process has exited, under the same
+  exclusive scratch admission, and the receipt names each registration it
+  retired. Before, such a registration stayed for good, and the registry grew
+  without bound.
+
+## [0.245.0] - 2026-11-15
+
+### Added
+
+- A drive the dispatcher runs now leaves a closing report too, written by its driver. Every drive pass ends its round with a round report, the same fields as a closing report, through the new `round-report.ts`; it is kept in the drive's state directory, stamped with the pass's launch and round, and never in the handoff narrative. When `drive.ts` stops, it composes the closing report: the stop's own line followed by what the last round report of its launch concluded, within 600 characters, and the cause and next step the terminal-state table now gives each exit (printed in the protocol's chapter on the drive's exits). At a park it carries the first parked decision's question and framed options. The wrapper records the report under the launch record before the exit, and prints whatever report a run keeps as its last lines; a follow-up pass that could not start gets the wrapper's own report, with cause `startup` or `usage-limit`. See [plugin/README.md](plugin/README.md#the-closing-report).
+- The launch record of a dispatched drive keeps each round's pass session id, so a run is found in its vendor's transcripts (dispatch database schema 35).
+- The end the wrapper writes onto a shared claim, a drive's launch claim or a follow-up marker, now names who wrote the run's closing report (`by`) and its `cause`, never the report's text.
+- The Jig Protocol has a provisional chapter on addresses and the verbs of
+  `jig send` ([plugin/protocol/addresses.md](plugin/protocol/addresses.md)):
+  the form of an address, the stations it names with what each one's key is,
+  and every verb with the stations that take it, whether it is a person's
+  command, its arguments and what it asks for. Its values are generated from
+  the tables `jig ask` and `jig send` parse with, and its data file,
+  `plugin/protocol/data/addresses.json`, carries them for a program that
+  forms addresses or sends verbs.
+
+## [0.244.2] - 2026-11-15
+
+### Fixed
+
+- A drive no longer stops on its own working files in a repository that
+  does not ignore `.context/`. The handoff, mailbox and other files the
+  drive writes there used to show up as untracked changes, and the attach,
+  the push and the convergence check refused the tree until a person added
+  an exclude by hand. The attach (`attach-pr.ts`, alone or under
+  `drive.ts`) and `drive.ts` now add `.context/` to the clone's local
+  exclude file (`info/exclude`, never committed) when the repository's
+  ignore rules do not cover it, once, keeping the lines already there. A
+  repository that already ignores `.context/` is left as it is, and every
+  file outside `.context/` is judged as before.
+- `drive-pr`: after review converges, the drive's final status re-read now judges the same view as its round gate (the drive's `--bots-only`, `--no-head-sync` and inherited head), so a person's open thread under `--bots-only` no longer makes the drive re-gate every half minute for as long as it lives. A re-read that still disagrees with the gate on one commit re-gates at most `DRIVE_PR_FINAL_REGATE_LIMIT` times in a row (default 3), then stops with exit `1`, naming what the re-read saw and the command that shows it.
+- `drive-pr`: a CI-hold release that fails without printing an error now leaves its cause in the driver log: which step failed, whether it was stopped at its deadline or from outside, and the command that shows its own error.
+
+## [0.244.1] - 2026-11-15
+
+### Fixed
+
+- `jig send … rearm` finds an existing pull request worktree from the
+  dispatched pickup's result or its checked-out head branch when no drive
+  record names one. It refuses ambiguous or incomplete searches and explains
+  where it looked when no tree is found.
+
+## [0.244.0] - 2026-11-15
+
+### Added
+
+- The stable Jig Protocol chapters ship draft 2020-12 JSON Schemas for
+  mailbox lines, JSON comment records, follow-up claims and results, and
+  repository command outputs. The schemas are generated from the shape
+  descriptions the readers use, with writer round-trip checks and a gate
+  against breaking a stable chapter's published shapes.
+
+### Changed
+
+- **Breaking:** the dispatcher starts an assigned epic's ready children in parallel when the epic has no execution plan, up to a per-epic width, instead of one child at a time. The width is the new `dispatch.epic_width` key of the repository's `dispatch` section, read from the default branch, and defaults to 4. A started child counts toward it while it still needs an agent, and so does a child that cannot be read; a child in `ops_pending` or waiting on a person does not. A child that waits on the width names the epic and the width. A repository that wants the old behaviour sets `dispatch.epic_width: 1`. An epic with an execution plan is unchanged, and an interactive `do-item` session still takes one child. The audit's configuration schema gains the key. Why: [ADR-0024](docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md). **Consumer action:** advised at configuration, instructions. A repository whose epics must run one child at a time sets `dispatch.epic_width: 1`; runbooks that say the dispatcher works an epic one child at a time say what is true now. **Detect:** `text:one child at a time`.
+
+## [0.243.0] - 2026-11-15
+
+### Added
+
+- GitHub's limits join the machine's shared budget record. Every `gh` call
+  Jig makes is admitted against the forge credential's record and tells it
+  what its answer said: a `gh api` call reads the rate-limit headers of its
+  answer (the headers are taken off the output its caller reads), a
+  GraphQL answer that selects `rateLimit` gives the GraphQL balance, and
+  the `rate_limit` endpoint gives every limit. A primary or secondary
+  refusal seen by one process stops every process on the machine: a spent
+  primary limit until its reset, a secondary limit until its
+  `retry-after`, else for a minute, doubled for each refusal in a row up
+  to fifteen; nothing is sent before that. The dispatcher's tick keeps to its
+  share of GitHub's core, GraphQL and search windows as it does of a
+  tracker's. The tick reads the forge's budget, and `load.forge_floor`'s
+  gauge, from the record, asking `rate_limit` only when no answer reported
+  the core window in the last minute, and its `outbound github` report line
+  names the core and GraphQL balances
+  ([configuration reference](plugin/CONFIGURATION.md)).
+- `JIG_FORGE_BUDGET=off` leaves the forge's calls out of the budget record.
+
+### Changed
+
+- The machine file's `tracker_share` is now `outbound_share`, one setting
+  for every system's windows. `tracker_share` still reads as its older
+  name; a file that names both is refused. Keep `tracker_share` until
+  every Jig copy on the host reads the new name: an older release refuses a
+  machine file that names `outbound_share`.
+
+## [0.242.0] - 2026-11-15
+
+### Added
+
+- Two more chapters of the [Jig Protocol](GLOSSARY.md), for a program
+  that reads Jig's records on the forge and the tracker without reading its
+  code, each with its values as JSON beside it in `protocol/data/`.
+  [Hidden comment markers on the forge and the tracker](plugin/protocol/comment-markers.md)
+  lists every hidden marker Jig writes or reads in comments and bodies, with
+  the record it marks, its version, its key's shape, who writes it and what
+  it means, and the fields of the record envelope.
+  [The follow-up claim and its result](plugin/protocol/followup-claim.md)
+  gives the follow-up marker's runs, each run's outcomes and the fields of
+  its record. Both are generated from the records registry and the code that
+  writes and reads the markers, and Jig's build fails when a chapter and the
+  code disagree. Every kind in the records registry now says what it means
+  to a reader, in a required `meaning`. **Consumer action:** none.
+
+### Fixed
+
+- The plugin's README and the features page said the steward runs every 20
+  minutes when its digest changed. They now say it starts as soon as a
+  repository's judgment backlog holds work no earlier pass judged.
+
+## [0.241.0] - 2026-11-15
+
+### Added
+
+- drive-pr: `drive.ci_repair_rounds` (a whole number, `0` or more, default
+  `2`) sets how many CI-repair passes a drive spends per head and failing
+  check, so a repository states its own CI cost rather than taking the
+  host's environment. `DRIVE_PR_CI_REPAIR_ROUNDS` still sets it for one run
+  and wins over the file.
+
+### Changed
+
+- The steward now starts when a repository's judgment backlog holds work no
+  earlier pass judged: a stalled pickup or failed follow-up with no running
+  session, a stopped drive a re-arm could resolve, an ended pass that
+  recommends a resume, a queued item missing a facet, or a need nothing has
+  framed. It starts at once, within the host's three passes an hour, and an
+  empty or already judged backlog starts no pass; the receipt and the
+  dashboard say which. `steward.every` is still read and no longer changes
+  anything. The digest lists framed needs apart from the needs the steward
+  may frame, and a `need` record for a framed one is refused.
+
+### Fixed
+
+- drive-pr: an always-run aggregator check that failed only because a job it
+  needs was cancelled, in a run nothing replaced, no longer spends a CI-repair
+  pass and stops for `/jig:fix-ci`. When every failing check is a job of a
+  workflow run that concluded `cancelled`, no commit status fails and a
+  cancelled job is unreplaced, the drive recovers that run as it
+  recovers a cancelled check: a grace period, then one re-run per head, and
+  the `cancelled-ci` park when that does not recover it. A real failure comes
+  back from the re-run and is repaired then.
+- drive-pr: a failed read of the pull request or its label timeline while
+  the drive releases the CI hold at convergence (a forge timing out) now ends
+  the drive with `4`, wait and re-arm, instead of `1`, and the driver log
+  keeps what the release printed, the forge's own error included.
+- A repository's notices comment that reached its 16,000-character limit no
+  longer holds back every later notice: the entries whose causes are settled
+  (the pull request closed, the need answered) leave a comment only the
+  dispatcher wrote to make room, and an entry whose cause still stands is
+  never dropped. A notice that still finds no room counts as a failed
+  delivery, so past `failures.notify_after` ticks a person is told through
+  whatever destination still delivers. `jig ask` and the dashboard say which
+  notices were held and why, and a notices workspace is counted as written
+  only on a tick that wrote it, so one whose causes are all gone is retired.
+- `jig dispatch` now proves a workspace it did not open itself before a
+  drive runs in it: the workspace joined to the pull request, a stopped
+  drive's tree it recovers, and the recorded workspace of a launch it
+  replays must each be a checkout of the repository's clone, with its origin
+  the pull request's head repository and its commit on the head's line of
+  history. A stale checkout of an earlier branch of the same name, or one
+  whose origin changed, is refused with its reason and nothing runs in it;
+  the proof changes no work in the workspace.
+
+## [0.240.0] - 2026-11-15
+
+### Added
+
+- The dispatcher runs a follow-up again once when its pass could not record
+  its result on the host, as it already did for a pass that died: whatever
+  the pass said and however long ago, and never with the question the pass
+  asked about the dispatcher's database. `jig dispatch result` now exits `4`
+  when the state database refuses the write, keeps the evidence of the
+  attempt outside the database, and tells the pass to stop without asking a
+  person; the wrapper keeps the same evidence when it cannot record the
+  stage's exit. Both runs again, a death's and an unwritten result's, wait
+  for the host's health check to pass (`jig doctor dispatch`'s last run):
+  while it fails, every such follow-up that is not itself a run again is
+  held, whatever its age, with nothing released or notified, and the host's
+  own `host-failing` notice is what a person sees by default (`ticks-failing`
+  or `repository-failing` when `failures.group` is `scope`).
+  Once it passes, a death's 6-hour window applies again, and a plain death
+  older than it goes to a person.
+  It stays one run again per follow-up, counted against the pull request's
+  recovery budget
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+- `failures.rerun_died` in the machine's dispatch file (`1` by default, `0`
+  or `1`): `0` hands a follow-up whose pass died or could not record its
+  result to a person instead of running it again.
+
+### Changed
+
+- A pickup whose result the host could not write never raises the question
+  its pass stopped on: its end is logged as a stage that ended without a
+  result, the host's health check reports the cause while it fails, and once
+  it passes a person is asked once to settle or release the item.
+
+## [0.239.0] - 2026-11-15
+
+### Added
+
+- A dispatcher tick its launcher bounds now keeps every read of its observe
+  phase to one bound: the launcher's deadline less the time its receipt
+  needs. The tracker's assigner, mover, claimed-item and claim-marker reads
+  and the session runtime's listings are given the bound's signal where
+  their transport takes one, and held to it either way. A forge listing or
+  query the bound ended before is not started, a paged forge query asks no
+  page after the bound ends, and a comment listing gets no more time than
+  the bound has left. A read the bound cut short is a failed read of class
+  `unreachable`: a repository refused, a tracker, forge or runtime record
+  not ok, or an item unplaced with "the tick's deadline passed before …".
+  The tick still writes its receipt and lets its locks go, and the failure
+  ledger tells a person when it keeps happening. A tick no launcher bounds,
+  such as one run by hand without a machine file, reads as before. The
+  tracker port's `assignedBy` and `stateChangedBy` and the session
+  runtime's `sessions` take an optional `AbortSignal` on the GitHub, Jira
+  and Linear adapters and on Orca. **Consumer action:** none.
+
+### Changed
+
+- The dispatcher's notices now go out through a notification channel, so a
+  later release can add a team chat beside the Orca workspace comment. The
+  Orca comment and unread mark are the `orca-card` channel, and what a
+  person sees there does not change. Each channel keeps its own record of
+  what it sent and backs off on its own, so a notice that one channel loses
+  is tried again on that channel alone. The state database's `notices`
+  table gains a `channel` column and an index for channel-qualified host
+  notices. Existing rows read as `orca-card`; the migration requires the
+  release that introduces channels before a dispatcher uses that state.
+- A notice about a drive (parked, stopped, ready to merge) now also carries
+  structured fields beside its text: the drive's address, the pull
+  request's link, the commands its text names, and, for a park, each
+  decision with its question, recommendation and options, with what each
+  changes and costs. These fields appear in the tick's receipt; the text
+  is unchanged.
+
+### Fixed
+
+- A draft skipped by CodeRabbit through its comment alone now finishes its
+  own review round, marks Ready under the repository's policy and waits for
+  the review. A Ready pull request still waits when only the old skip comment
+  exists. **Consumer action:** none.
+- A successful standalone Ready transition releases its session leases so a drive can start immediately in the same working tree. Calls inside a running drive keep its leases. **Consumer action:** none.
+- `jig gc` no longer lets Orca launch an agent into a worktree whose removal
+  may still be under way. When `orca worktree rm` times out, exits with an
+  error, or prints something gc cannot read, gc now keeps its claim on the
+  worktree, so Jig's plugin for Orca keeps refusing launches there. The next
+  run checks again that the worktree is idle and calls `orca worktree rm`
+  once more; the claim is released when that call answers, or when the
+  worktree is gone from Orca's list and from the disk. The receipt says when
+  a claim is kept and why
+  ([the launch guard record](plugin/gc/README.md#the-launch-guard-record)).
+  **Consumer action:** none.
+
+## [0.238.7] - 2026-11-15
+
+### Fixed
+
+- `jig dispatch` no longer fails a repository's whole tracker record when one
+  served item cannot be placed though no read of it failed: an item whose
+  history holds no assignment of the served person, an item or child the
+  tracker read cut short, or an epic whose description is missing. The item
+  is reported as its own unplaced row with its reason, the record stays ok,
+  and the claims stay unknown, so no ended pickup is released on that
+  reading. A served queue whose listing failed, and an item whose read
+  failed, still fail the record with the failure's class.
+  **Consumer action:** none.
+
+## [0.238.6] - 2026-11-15
+
+### Fixed
+
+- The worktree collector now honors `GH_CALL_TIMEOUT` for pull request lookups (30 seconds by default) and reports when a lookup exceeds its deadline.
+
+## [0.238.5] - 2026-11-14
+
+### Added
+
+- Dispatcher regression coverage verifies that a live driver prevents a second pass from starting on the same ledger facts.
+
+### Fixed
+
+- On Jira, with type kept in the issue types (`issue_tracker.facets.type`
+  `store: native`), changing an issue's type to an issue type of another
+  workflow failed with Jira's bare `400 issuetype: The issue type selected is
+  invalid`. The adapter now reads the issue's edit screen first and, when it lists
+  the issue type choices without the new one, refuses the change before
+  anything is written, naming the facet, both issue types
+  and the remedies: move the issue in Jira, or keep type in labels or a
+  field.
+  When the edit screen omits the issue type choice list (or has no fields), the change still goes to
+  Jira, and its 400 on `issuetype` is reported with the same explanation; an
+  empty offered list refuses every target.
+
+## [0.238.4] - 2026-11-14
+
+### Fixed
+
+- A follow-up held back by the tick deadline or another admission check now names what it waits on in the dispatcher receipt and dashboard queue, alongside its specific reason. **Consumer action:** none.
 
 ## [0.238.3] - 2026-11-14
 
@@ -8363,7 +9110,45 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.7...HEAD
+[0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7
+[0.256.6]: https://github.com/jig-harness/jig/compare/v0.256.5...v0.256.6
+[0.256.5]: https://github.com/jig-harness/jig/compare/v0.256.4...v0.256.5
+[0.256.4]: https://github.com/jig-harness/jig/compare/v0.256.3...v0.256.4
+[0.256.3]: https://github.com/jig-harness/jig/compare/v0.256.2...v0.256.3
+[0.256.2]: https://github.com/jig-harness/jig/compare/v0.256.1...v0.256.2
+[0.256.1]: https://github.com/jig-harness/jig/compare/v0.256.0...v0.256.1
+[0.256.0]: https://github.com/jig-harness/jig/compare/v0.255.1...v0.256.0
+[0.255.1]: https://github.com/jig-harness/jig/compare/v0.255.0...v0.255.1
+[0.255.0]: https://github.com/jig-harness/jig/compare/v0.254.0...v0.255.0
+[0.254.0]: https://github.com/jig-harness/jig/compare/v0.253.1...v0.254.0
+[0.253.1]: https://github.com/jig-harness/jig/compare/v0.253.0...v0.253.1
+[0.253.0]: https://github.com/jig-harness/jig/compare/v0.252.0...v0.253.0
+[0.252.0]: https://github.com/jig-harness/jig/compare/v0.251.0...v0.252.0
+[0.251.0]: https://github.com/jig-harness/jig/compare/v0.250.1...v0.251.0
+[0.250.1]: https://github.com/jig-harness/jig/compare/v0.250.0...v0.250.1
+[0.250.0]: https://github.com/jig-harness/jig/compare/v0.249.0...v0.250.0
+[0.249.0]: https://github.com/jig-harness/jig/compare/v0.248.2...v0.249.0
+[0.248.2]: https://github.com/jig-harness/jig/compare/v0.248.1...v0.248.2
+[0.248.1]: https://github.com/jig-harness/jig/compare/v0.248.0...v0.248.1
+[0.248.0]: https://github.com/jig-harness/jig/compare/v0.247.2...v0.248.0
+[0.247.2]: https://github.com/jig-harness/jig/compare/v0.247.1...v0.247.2
+[0.247.1]: https://github.com/jig-harness/jig/compare/v0.247.0...v0.247.1
+[0.247.0]: https://github.com/jig-harness/jig/compare/v0.246.0...v0.247.0
+[0.246.0]: https://github.com/jig-harness/jig/compare/v0.245.0...v0.246.0
+[0.245.0]: https://github.com/jig-harness/jig/compare/v0.244.2...v0.245.0
+[0.244.2]: https://github.com/jig-harness/jig/compare/v0.244.1...v0.244.2
+[0.244.1]: https://github.com/jig-harness/jig/compare/v0.244.0...v0.244.1
+[0.244.0]: https://github.com/jig-harness/jig/compare/v0.243.0...v0.244.0
+[0.243.0]: https://github.com/jig-harness/jig/compare/v0.242.0...v0.243.0
+[0.242.0]: https://github.com/jig-harness/jig/compare/v0.241.0...v0.242.0
+[0.241.0]: https://github.com/jig-harness/jig/compare/v0.240.0...v0.241.0
+[0.240.0]: https://github.com/jig-harness/jig/compare/v0.239.0...v0.240.0
+[0.239.0]: https://github.com/jig-harness/jig/compare/v0.238.7...v0.239.0
+[0.238.7]: https://github.com/jig-harness/jig/compare/v0.238.6...v0.238.7
+[0.238.6]: https://github.com/jig-harness/jig/compare/v0.238.5...v0.238.6
+[0.238.5]: https://github.com/jig-harness/jig/compare/v0.238.4...v0.238.5
+[0.238.4]: https://github.com/jig-harness/jig/compare/v0.238.3...v0.238.4
 [0.238.3]: https://github.com/jig-harness/jig/compare/v0.238.2...v0.238.3
 [0.238.2]: https://github.com/jig-harness/jig/compare/v0.238.1...v0.238.2
 [0.238.1]: https://github.com/jig-harness/jig/compare/v0.238.0...v0.238.1

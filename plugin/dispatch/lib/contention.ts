@@ -33,14 +33,17 @@
  * area: what is serialized is the catalog's to say, through a person.
  */
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
-import {
-  loadCatalogText,
-  matchesGlob,
-} from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
+import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
+import { matchesGlob } from "../../shared/glob.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { holds, isDrive, type ReadRecord } from "./launches.ts";
 import { failureText } from "./text.ts";
-import type { DrivenPr, Stage } from "./types.ts";
+import {
+  combinedFailure,
+  readFailureOf,
+  readFailureOfError,
+} from "./read-failures.ts";
+import type { DrivenPr, ReadFailure, Stage } from "./types.ts";
 
 /** Why one pull request waits: the area it is held in, and the pull request leading it. */
 export interface Hold {
@@ -88,6 +91,13 @@ export interface Contention {
   decided: boolean;
   /** Why the catalog does not read, when it does not. */
   failure?: string;
+  /**
+   * Set when a read this tick failed (the catalog, a pull request's files or
+   * its threads): the one failure class they share, none when a failed read
+   * names none. The report counts it, and a class that clears by waiting is
+   * waited out.
+   */
+  readFailed?: { failure?: ReadFailure };
 }
 
 /** The reads serialization makes, each failing with its reason. */
@@ -195,6 +205,7 @@ function placeOf(m: Member): string {
 export function catalogFailed(
   input: Pick<ContentionInput, "drives">,
   failure: string,
+  cause?: ReadFailure,
 ): Contention {
   const why = `whether it touches a serialized area cannot be told this tick: ${failure}`;
   return {
@@ -204,6 +215,7 @@ export function catalogFailed(
     ),
     unplaced: new Map(input.drives.map((d) => [d.number, why])),
     failure,
+    readFailed: cause === undefined ? {} : { failure: cause },
   };
 }
 
@@ -246,9 +258,14 @@ async function placeDrives(
   drives: readonly DrivenPr[],
   areas: Map<string, string[]>,
   reads: ContentionReads,
-): Promise<{ groups: Map<string, DrivenPr[]>; failed: Map<number, string> }> {
+): Promise<{
+  groups: Map<string, DrivenPr[]>;
+  failed: Map<number, string>;
+  causes: (ReadFailure | undefined)[];
+}> {
   const groups = new Map<string, DrivenPr[]>();
   const unread = new Map<number, string>();
+  const causes: (ReadFailure | undefined)[] = [];
   for (const drive of drives) {
     let read: Outcome<string[]>;
     try {
@@ -257,6 +274,7 @@ async function placeDrives(
       read = failed("unreadable", failureText(error), error);
     }
     if (!read.ok) {
+      causes.push(readFailureOf(read.failure));
       unread.set(
         drive.number,
         `its changed files do not read, so whether it touches a serialized area cannot be told this tick: ${read.failure.reason}`,
@@ -268,7 +286,7 @@ async function placeDrives(
       if (files.some((f) => globs.some((g) => matchesGlob(f, g))))
         groups.set(area, [...(groups.get(area) ?? []), drive]);
   }
-  return { groups, failed: unread };
+  return { groups, failed: unread, causes };
 }
 
 /** One group ordered, or why its order cannot be told. */
@@ -309,11 +327,20 @@ export async function readContention(
     { ...input, catalogPath: path },
     reads,
   );
-  if (!serialized.ok) return catalogFailed(input, serialized.failure.reason);
+  if (!serialized.ok)
+    return catalogFailed(
+      input,
+      serialized.failure.reason,
+      readFailureOf(serialized.failure),
+    );
   const areas = serialized.value;
   if (areas.size === 0) return empty(true, considered);
 
-  const { groups, failed } = await placeDrives(input.drives, areas, reads);
+  const { groups, failed, causes } = await placeDrives(
+    input.drives,
+    areas,
+    reads,
+  );
   const unplaced = new Map(failed);
   const counts = new Map<number, number | string>();
   const threads = async (pr: number) => {
@@ -321,8 +348,15 @@ export async function readContention(
       counts.set(
         pr,
         await reads.threads(pr).then(
-          (read) => (read.ok ? read.value : read.failure.reason),
-          (error: unknown) => failureText(error),
+          (read) => {
+            if (read.ok) return read.value;
+            causes.push(readFailureOf(read.failure));
+            return read.failure.reason;
+          },
+          (error: unknown) => {
+            causes.push(readFailureOfError(error));
+            return failureText(error);
+          },
         ),
       );
     return counts.get(pr) as number | string;
@@ -369,7 +403,17 @@ export async function readContention(
     grouped: new Set([...groups.values()].flat().map((d) => d.number)),
     considered: new Set(considered),
     decided: true,
+    ...readFailedOf(causes),
   };
+}
+
+/** The `readFailed` mark for the failed reads' classes; nothing when none failed. */
+function readFailedOf(causes: readonly (ReadFailure | undefined)[]): {
+  readFailed?: { failure?: ReadFailure };
+} {
+  if (causes.length === 0) return {};
+  const failure = combinedFailure(causes);
+  return { readFailed: failure === undefined ? {} : { failure } };
 }
 
 /** Each member that does not lead every group it is in, with the first such group in catalog order. */

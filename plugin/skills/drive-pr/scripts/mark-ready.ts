@@ -89,6 +89,7 @@
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { standaloneReadyCleanup } from "./lib/standalone-ready-cleanup.ts";
 import { fail, isDigits, runMain, sleep, testDelaySeconds } from "./lib/cli.ts";
 import {
   type MarkReady,
@@ -221,7 +222,11 @@ async function readSnapshot(pr: string): Promise<Snapshot> {
  */
 async function takeLease(
   pr: string,
-): Promise<{ kind: "won"; token: string } | "taken" | "error"> {
+): Promise<
+  | { kind: "won"; token: string; releaseStandalone: () => Promise<void> }
+  | "taken"
+  | "error"
+> {
   const claim = await run(tsArgv(driveState, ["claim-ready-mark", pr]), {
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
@@ -236,15 +241,21 @@ async function takeLease(
     );
     return "error";
   }
-  return { kind: "won", token: m[1] ?? "" };
+  const releaseStandalone = await standaloneReadyCleanup(pr);
+  return { kind: "won", token: m[1] ?? "", releaseStandalone };
 }
 
 /** Record a CONFIRMED transition and give the lease back. */
-async function commitLease(pr: string, token: string): Promise<number> {
+async function commitLease(
+  pr: string,
+  token: string,
+  releaseStandalone: () => Promise<void>,
+): Promise<number> {
   const rc = await run(
     tsArgv(driveState, ["commit-ready-mark", pr, "--token", token]),
     { stdout: "ignore", stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
   );
+  if (rc.code === 0) await releaseStandalone();
   return rc.code;
 }
 
@@ -260,7 +271,9 @@ async function claimAndCommit(
   const lease = await takeLease(pr);
   if (lease === "error") return "failed";
   if (lease === "taken") return "claimed-by-other";
-  return (await commitLease(pr, lease.token)) === 0 ? "committed" : "failed";
+  return (await commitLease(pr, lease.token, lease.releaseStandalone)) === 0
+    ? "committed"
+    : "failed";
 }
 
 async function main(): Promise<number> {
@@ -357,6 +370,11 @@ async function main(): Promise<number> {
       process.stdout.write("not-open\n");
       return 5;
     }
+    // A prior call may have completed the durable transition just before it
+    // was interrupted, leaving only this standalone session's admission
+    // leases behind. Reconcile those leases on the durable-success path; the
+    // cleanup verifies their current holder before removing either row.
+    await (await standaloneReadyCleanup(pr))();
     console.error(
       `mark-ready.ts: PR #${pr} was already marked Ready by this drive (round ${markedRaw}) — not re-marking.`,
     );
@@ -624,7 +642,7 @@ async function main(): Promise<number> {
       return 5;
     }
     if (after.kind === "ok" && !after.draft) {
-      const rc = await commitLease(pr, lease.token);
+      const rc = await commitLease(pr, lease.token, lease.releaseStandalone);
       if (rc !== 0) {
         fail(
           1,
@@ -689,7 +707,7 @@ async function main(): Promise<number> {
   }
 
   // Confirmed. NOW the durable record, which is what makes this once-only.
-  const rc = await commitLease(pr, lease.token);
+  const rc = await commitLease(pr, lease.token, lease.releaseStandalone);
   if (rc !== 0) {
     fail(
       1,

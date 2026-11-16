@@ -1,4 +1,5 @@
 /** One tick's native item reads and failure wall, shared by every person in a scope. */
+import { coalesce } from "../../../shared/outbound/coalesce.ts";
 import type {
   DispatchRawIssue,
   DispatchSource,
@@ -12,20 +13,29 @@ import type { FacetBound } from "./tracker-facets.ts";
 
 interface ScopeState {
   queues: Promise<unknown>;
+  singles: ReturnType<typeof limiter>;
 }
 const states = new WeakMap<Map<string, Promise<unknown>>, ScopeState>();
 
-function scopeRead<T>(
-  reads: Map<string, Promise<unknown>>,
-  key: string,
-  read: () => Promise<T>,
-): Promise<T> {
-  const kept = reads.get(key) as Promise<T> | undefined;
-  if (kept !== undefined) return kept;
-  const value = read();
-  reads.set(key, value);
-  return value;
+/** Keep batch-recovery fallbacks from turning one failed batch into an unbounded fan-out. */
+function limiter(limit: number) {
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  return async <T>(read: () => Promise<T>): Promise<T> => {
+    if (running >= limit)
+      await new Promise<void>((resume) => waiting.push(resume));
+    else running += 1;
+    try {
+      return await read();
+    } finally {
+      const next = waiting.shift();
+      if (next === undefined) running -= 1;
+      else next();
+    }
+  };
 }
+
+const SINGLE_READS_IN_FLIGHT = 6;
 
 /** Reads only; each adapter still owns the request and its interpretation. */
 export function nativeFacts(
@@ -35,7 +45,10 @@ export function nativeFacts(
 ) {
   let state = states.get(reads);
   if (state === undefined) {
-    state = { queues: Promise.resolve() };
+    state = {
+      queues: Promise.resolve(),
+      singles: limiter(SINGLE_READS_IN_FLIGHT),
+    };
     states.set(reads, state);
   }
   const scope = state;
@@ -64,8 +77,8 @@ export function nativeFacts(
       );
   };
   const issue = (key: string) =>
-    scopeRead(reads, rowKey(key), () =>
-      guarded(() => source.issue(key, bound), true),
+    coalesce(reads, rowKey(key), () =>
+      scope.singles(() => guarded(() => source.issue(key, bound), true)),
     );
   return {
     failure: () => dispatchScopeFailure(reads),
@@ -83,7 +96,9 @@ export function nativeFacts(
     async issues(
       keys: ReadonlyArray<string>,
     ): Promise<Map<string, DispatchRawIssue>> {
-      const missing = keys.filter((key) => !reads.has(rowKey(key)));
+      const missing = [
+        ...new Set(keys.filter((key) => !reads.has(rowKey(key)))),
+      ];
       const batch = source.issues;
       if (batch !== undefined && missing.length > 0) {
         const reading = guarded(() => batch(missing, bound), true);
@@ -92,7 +107,20 @@ export function nativeFacts(
             rowKey(key),
             reading.then(
               (found) =>
-                found.get(key) ?? guarded(() => source.issue(key, bound), true),
+                found.get(key) ??
+                scope.singles(() =>
+                  guarded(() => source.issue(key, bound), true),
+                ),
+              () => {
+                // A malformed or inaccessible member makes the native batch
+                // atomic, but must not poison readable siblings' per-key
+                // fallback for the rest of this tick.
+                const fallback = scope.singles(() =>
+                  guarded(() => source.issue(key, bound), true),
+                );
+                reads.set(rowKey(key), fallback);
+                return fallback;
+              },
             ),
           );
       }
@@ -107,6 +135,6 @@ export function nativeFacts(
       );
     },
     once: <T>(key: string, read: () => Promise<T>) =>
-      scopeRead(reads, `dispatch fact ${key}`, () => guarded(read, true)),
+      coalesce(reads, `dispatch fact ${key}`, () => guarded(read, true)),
   };
 }

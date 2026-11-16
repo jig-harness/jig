@@ -25,6 +25,7 @@ import type { Outcome } from "../../shared/outcome.ts";
 import { unresolvedThreadCount } from "./forge.ts";
 import {
   isDrive,
+  type LaunchRecord,
   type ReadRecord,
   type ThreadSample,
   targetOf,
@@ -41,6 +42,7 @@ import type {
   Running,
 } from "./types.ts";
 import { currentIso, parseMs } from "../../shared/time.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 
 /** A drive record still running: its wrapper alive. */
 function runningDrive(r: ReadRecord): boolean {
@@ -201,6 +203,13 @@ function workspaceOf(r: ReadRecord, sessions: SessionsReport) {
   return sessions.workspaces.find((w) => w.path === path);
 }
 
+/** The reason with the record's test-lock wait: a current wait explains the overrun, a past one is added to it. */
+function withWait(why: string, record: LaunchRecord, nowMs: number): string {
+  const wait = testLockNote(record, nowMs);
+  if (wait === null) return why;
+  return record.testLockWait?.waiting ? wait : `${why}; ${wait}`;
+}
+
 /** Whether a pickup or a follow-up has run past its window without what it owes. */
 function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
   const { record } = r;
@@ -208,13 +217,16 @@ function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
   const since = { sinceLaunch: minutes(elapsed) };
   if (record.action === "followup") {
     const within = input.section.followupWithinMs;
-    return elapsed <= within
-      ? null
-      : {
-          expectation: "ends within followup_within",
-          why: `it has run ${minutes(elapsed)} without ending (dispatch.followup_within ${minutes(within)})`,
-          evidence: since,
-        };
+    if (elapsed <= within) return null;
+    return {
+      expectation: "ends within followup_within",
+      why: withWait(
+        `it has run ${minutes(elapsed)} without ending (dispatch.followup_within ${minutes(within)})`,
+        record,
+        input.nowMs,
+      ),
+      evidence: since,
+    };
   }
   const within = input.section.pickupWithinMs;
   if (elapsed <= within || record.openedAt !== undefined) return null;
@@ -227,7 +239,11 @@ function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
     return null;
   return {
     expectation: "opens a pull request within pickup_within",
-    why: `it has run ${minutes(elapsed)} and opened no pull request (dispatch.pickup_within ${minutes(within)})`,
+    why: withWait(
+      `it has run ${minutes(elapsed)} and opened no pull request (dispatch.pickup_within ${minutes(within)})`,
+      record,
+      input.nowMs,
+    ),
     evidence: {
       ...since,
       itemState: input.itemStates.get(record.item ?? "") ?? null,
@@ -239,7 +255,12 @@ function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
 /** The expectation a running record breaks, if any. */
 function broken(r: ReadRecord, input: DriftInput): Broken | null {
   if (r.state.kind !== "alive") return null;
-  if (isDrive(r.record)) return driveDrift(r, input.section.driveRoundsFlat);
+  if (isDrive(r.record)) {
+    const drift = driveDrift(r, input.section.driveRoundsFlat);
+    return drift === null
+      ? null
+      : { ...drift, why: withWait(drift.why, r.record, input.nowMs) };
+  }
   return sessionDrift(r, input);
 }
 

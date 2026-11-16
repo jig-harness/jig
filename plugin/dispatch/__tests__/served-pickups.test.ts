@@ -30,7 +30,7 @@ function fake() {
     adapter: "github",
     team: "example/repo",
     stateName: (s: string) => (s === "pr_open" ? null : s),
-    assignUnassigned: async () => true,
+    assignUnassigned: async () => ({ assigned: true }),
     assignedIssues: async (_: string, s: string[]) =>
       s.includes("in_progress") ? [] : roots,
     assignedBy: async (k: string) => {
@@ -130,6 +130,52 @@ describe("served pickups", () => {
     );
     expect(read.read.ok).toBe(false);
     expect(read.read.failure).toMatchObject({ class: "unreachable" });
+    expect(read.claimed).toBeNull();
+  });
+  const readWithChildRead = async (
+    child: (poolIssue: (k: string) => Promise<unknown>, k: string) => unknown,
+  ) => {
+    const f = fake();
+    const poolIssue = f.tracker.poolIssue.bind(f.tracker);
+    f.tracker.poolIssue = (async (k: string) =>
+      child(poolIssue, k)) as typeof f.tracker.poolIssue;
+    return readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      { people, cache: f.cache, nowMs: 1, headroom: true },
+    );
+  };
+  it("fails the record for a child read that threw an error of no class", async () => {
+    const read = await readWithChildRead(async (poolIssue, k) => {
+      if (k === "#2") throw new TypeError("a defect in the read");
+      return poolIssue(k);
+    });
+    expect(read.read.ok).toBe(false);
+    expect(read.claimed).toBeNull();
+  });
+  it("fails the record for a child read that threw an error with no value", async () => {
+    const read = await readWithChildRead(async (poolIssue, k) => {
+      if (k === "#2") return Promise.reject(undefined);
+      return poolIssue(k);
+    });
+    expect(read.read.ok).toBe(false);
+    expect(read.claimed).toBeNull();
+  });
+  it("keeps the record ok for an item no read threw for, and leaves the claims unknown", async () => {
+    const read = await readWithChildRead(async (poolIssue, k) =>
+      k === "#2"
+        ? { ...issue("#2", ["epic"], null), truncated: ["labels"] }
+        : poolIssue(k),
+    );
+    expect(read.read.ok).toBe(true);
+    expect(read.read.failure).toBeUndefined();
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "#2",
+        reason: "the child cannot be read completely",
+      }),
+    );
     expect(read.claimed).toBeNull();
   });
   it("carries a tracker namespace through the public reader", async () => {

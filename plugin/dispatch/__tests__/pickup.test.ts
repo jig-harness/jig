@@ -473,7 +473,10 @@ describe("jig dispatch --apply picks up assigned items", () => {
         stage: "pickup",
       });
       const options = needs[0]?.decisions[0]?.options?.map((o) => o.name);
-      expect(options).toEqual(["Release the claim", "Leave it to me"]);
+      expect(options).toEqual([
+        "Release the claim",
+        "I'll handle it — hide this card",
+      ]);
       return {
         digest: needs[0]?.decisions[0]?.digest,
         notice: ended[0]?.notice?.key,

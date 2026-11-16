@@ -10,10 +10,13 @@
 import {
   DRIVE_EXIT,
   type DriveExitName,
+  type DriveExitReport,
   TERMINAL_STATES,
   type TerminalStateCategory,
   type TerminalStateEntry,
 } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { checkHeldPhrases } from "../held.ts";
+import { checkDriveExitChapter } from "../drive-exit-gate.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { code, flag, table } from "../markdown.ts";
 
@@ -90,6 +93,7 @@ function rows(): Row[] {
 }
 
 const driveRows = () => rows().filter((r) => r.entry.category !== "helper");
+const reportRows = () => rows().filter((r) => r.entry.report !== undefined);
 const helperRows = () => rows().filter((r) => r.entry.category === "helper");
 
 function driveTable(): string {
@@ -125,6 +129,46 @@ function helperTable(): string {
       r.entry.meaning,
     ]),
   );
+}
+
+/** What the closing report `drive.ts` writes at its stop says for each of its exits. */
+function reportTable(): string {
+  return table(
+    [
+      "State",
+      "`drive.ts` exits",
+      "The stop's text",
+      "`cause`",
+      "Next: owner",
+      "Next: act",
+      "Next: step",
+    ],
+    reportRows().map((r) => {
+      const report = r.entry.report as DriveExitReport;
+      return [
+        `\`${r.name}\``,
+        code(r.driveExit),
+        report.stop,
+        report.cause === undefined ? "—" : `\`${report.cause}\``,
+        `\`${report.next.owner}\``,
+        report.next.act === undefined ? "—" : `\`${report.next.act}\``,
+        report.next.step,
+      ];
+    }),
+  );
+}
+
+/** A value's closing-report fields, for an entry `drive.ts` ends with. */
+function reportValues(entry: TerminalStateEntry): Record<string, string> {
+  const report = entry.report;
+  if (report === undefined) return {};
+  return {
+    stop: report.stop,
+    ...(report.cause === undefined ? {} : { cause: report.cause }),
+    nextOwner: report.next.owner,
+    ...(report.next.act === undefined ? {} : { nextAct: report.next.act }),
+    nextStep: report.next.step,
+  };
 }
 
 const FIELDS: Readonly<Record<string, FieldSpec>> = {
@@ -183,6 +227,46 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     description:
       "What it means to a reader that branches on it, and what that reader does next.",
   },
+  stop: {
+    type: "string",
+    nullable: false,
+    required: false,
+    identifies: false,
+    description:
+      "For a state drive.ts ends with: the stop in one phrase, as its closing report's concluded field opens with it after the pull request's name.",
+  },
+  cause: {
+    type: "string",
+    nullable: false,
+    required: false,
+    identifies: false,
+    description:
+      "For a state drive.ts ends with short of its goal: the closing report's cause, one of the closed list of causes.",
+  },
+  nextOwner: {
+    type: "string",
+    nullable: false,
+    required: false,
+    identifies: false,
+    description:
+      "For a state drive.ts ends with: who takes the next step its closing report suggests, line, person or none.",
+  },
+  nextAct: {
+    type: "string",
+    nullable: false,
+    required: false,
+    identifies: false,
+    description:
+      "When the next step is a person's: what the person does, one of Merge, Decide, Authorize, Reply, Do or Investigate.",
+  },
+  nextStep: {
+    type: "string",
+    nullable: false,
+    required: false,
+    identifies: false,
+    description:
+      "For a state drive.ts ends with: the next step its closing report suggests.",
+  },
 };
 
 export const DRIVE_EXITS: Chapter = {
@@ -200,6 +284,10 @@ export const DRIVE_EXITS: Chapter = {
       render: driveTable,
     },
     { source: `${SOURCE_FILE}#TERMINAL_STATES`, render: helperTable },
+    {
+      source: `${SOURCE_FILE}#TERMINAL_STATES.report`,
+      render: reportTable,
+    },
   ],
   fields: FIELDS,
   values: (): DataValue[] =>
@@ -211,7 +299,81 @@ export const DRIVE_EXITS: Chapter = {
       driveExit: r.driveExit,
       endsDrive: r.entry.terminal,
       meaning: r.entry.meaning,
+      ...reportValues(r.entry),
     })),
   takes: () => rows().map((r) => `${SOURCE_FILE}#TERMINAL_STATES.${r.name}`),
   excluded: EXCLUDED,
+  check: (root) => [
+    ...checkDriveExitChapter(root),
+    ...checkDriveExitPhrases(root),
+  ],
 };
+
+/** The operational copies outside the terminal-state table and its parser. */
+export function checkDriveExitPhrases(root: string) {
+  return checkHeldPhrases(root, "drive-exits", [
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **per-PR** lock`,
+      section: "### Step 4a: Standard start (no sub-issues)",
+    },
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` on the **worktree** lock`,
+      section: "### Step 4a: Standard start (no sub-issues)",
+    },
+    {
+      file: "plugin/skills/do-item/SKILL.md",
+      text: `Exit \`${DRIVE_EXIT.CONVERGED}\` → the drive already reached a terminal state`,
+      section: "### Step 4a: Standard start (no sub-issues)",
+    },
+    ...(
+      [
+        [
+          `exit \`${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}\` (single-instance lock)`,
+          "### Arm",
+        ],
+        [
+          `Proceed only on exit \`${TERMINAL_STATES.ROUND_READY?.exitCode}\`. Anything else is the answer for *this* gate's own`,
+          "### 1. Gate",
+        ],
+        [
+          `For a driver pass carrying a \`WORKTREE_UNCLEAN\` notice, exit \`${TERMINAL_STATES.CONVERGED?.exitCode}\``,
+          "### 1. Gate",
+        ],
+        [
+          `**exit \`${DRIVE_EXIT.QUOTA_PARKED}\`,\n  QUOTA_PARKED**`,
+          "## Session-budget honesty",
+        ],
+        [
+          `\`drive.ts\` refuses that re-arm itself (exit \`${DRIVE_EXIT.QUOTA_PARKED}\`)`,
+          "## Session-budget honesty",
+        ],
+        [
+          `exit \`${DRIVE_EXIT.CONVERGED}\` inside the window → the drive already reached a terminal state`,
+          "### Arm",
+        ],
+        [
+          `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live **session in your tree** holds the drive lease`,
+          "### 6. Commit, then finish the round with *one* command",
+        ],
+        [
+          `| \`${TERMINAL_STATES.DRIVE_HELD_BY_OTHER_WORKTREE?.exitCode}\` | Another live **working tree** is driving this PR`,
+          "### 6. Commit, then finish the round with *one* command",
+        ],
+        [
+          `| \`${TERMINAL_STATES.SESSION_LEASE_HELD?.exitCode}\` | Another live session holds this working tree's tree lease`,
+          "### 5. Sync the base, then validate the cumulative tree — every round",
+        ],
+        [
+          `also refuses (exit \`${TERMINAL_STATES.PUSH_HELD?.exitCode}\`) while a mailbox \`hold-push\` directive`,
+          "## Guardrails",
+        ],
+      ] as const
+    ).map(([text, section]) => ({
+      file: "plugin/skills/drive-pr/SKILL.md",
+      text,
+      section,
+    })),
+  ]);
+}

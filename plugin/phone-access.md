@@ -13,8 +13,9 @@ This guide sets up the better path: a **private HTTPS address** that opens in
 the phone's ordinary browser with no token in it, put in front of the
 dashboard by a [private-network front](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). It also describes the
 plain private-HTTP fallback and what it costs. Neither path writes
-anything: the page only reads, and nothing here sends a command or changes a
-pull request through Jig.
+through the host: nothing here sends a command or changes a pull request
+through Jig. The page's one write is Send, which posts from the phone's
+browser straight to GitHub (below).
 
 Who it is for: the person who owns the host that runs the dashboard. Every
 step runs on that host, except the checks on the phone.
@@ -23,8 +24,11 @@ step runs on that host, except the checks on the phone.
 
 The phone's scope is the one [the dashboard design](https://github.com/jig-harness/jig/blob/main/design/dispatch-dashboard.md#phone-scope-and-access)
 fixes: Merge, Needs you, Running, Queue and History; an opened decision;
-copying a command or an answer line; and links to the forge and the tracker.
-It excludes chat, steering and every write.
+copying a command or an answer line; Send, which posts a parked decision's
+answer from the phone's own browser to GitHub with a token kept in that
+browser ([the plugin README](README.md#the-dispatcher) says how); and links
+to the forge and the tracker. It excludes chat, steering and every other
+write, and nothing it does writes through the host.
 
 **Stage 1 has no per-repository viewer grants.** A front here authenticates
 one owner, and that owner sees the dashboard's complete state root: every
@@ -246,10 +250,16 @@ passes only when the result is the one in the table.
 | Tap a copy control on a merge command or an answer line | The page confirms the copy, and pasting elsewhere gives the complete line |
 | Refuse the browser's clipboard permission, then tap copy again | The page offers the complete text for selecting by hand |
 | Tap a pull request or issue link | The forge or tracker opens in its own page and its own sign-in |
+| Under Send from here on Needs you, paste a fine-grained token and tap Test and keep | The panel names the login GitHub gives for the token; on a parked drive's card, Send appears beside Copy |
+| Pick an option on a parked card and tap Send | The card links the comment it posted for each decision, whose answer line reads as the copy would on the pull request |
 | Open the menu in Chrome and choose Install app (tokenless path only) | The offer appears, the installed app opens in its own window with no browser bar, and no token is in any address it shows, and copying a command still works |
 
-Copying only puts text in the clipboard. Neither path sends a command or
-writes anything through Jig.
+Copying only puts text in the clipboard. Send posts from the phone's
+browser straight to GitHub. Neither path sends a command or writes anything
+through the host. The page offers Send only over HTTPS or loopback: over
+any plain-HTTP address else someone on the network
+path who can change the page could read the token, so the cards say why
+Send is missing there.
 
 ## Fallback: private HTTP
 
@@ -283,7 +293,7 @@ On the HTTPS path without a token, the page offers itself to the phone's
 browser as an app: it names a [web app manifest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and its icons, and Chrome on
 Android then lists **Install app** in its menu. The installed app opens in its
 own window with no browser bar, from the home screen, and shows the same
-read-only page.
+page.
 
 What makes it work, and what it does not:
 
@@ -353,15 +363,15 @@ claims it works until it has.
 
 | What was tested | Result |
 | --- | --- |
-| Front and version (`tailscale version`) | Not yet run |
-| Phone browser and version | Not yet run |
-| Ordinary-browser access to the HTTPS address, no token in it | Not yet run |
+| Front and version (`tailscale version`) | Passed, 2026-11-15: Tailscale Serve on Tailscale 1.104.7, `--https=8443`, tailnet only; the host's tailnet address no longer answers on the dashboard's own port |
+| Phone browser and version | Not complete: a phone was used for the install check below on 2026-11-15, but its browser product and version were not recorded. Fill them in before the install row is read as a tested configuration |
+| Ordinary-browser access to the HTTPS address, no token in it | Passed, 2026-11-15: `/` answers `200` through the front with no token in the address, and the phone opens it |
 | Refusal for a device or sign-in the front does not admit | Not yet run |
 | Forged identity header from a refused device | Not yet run |
-| `Host` allowlist: `200` for the front name, `403` for another | Not yet run |
+| `Host` allowlist: `200` for the front name, `403` for another | Passed, 2026-11-15: `200` through the front; a request with another `Host` on the loopback port answers `403` |
 | Existing Serve routes unchanged after setup and after undo | Not yet run |
-| QR code and text for the token-free address, scanned on the phone | Not yet run |
+| QR code and text for the token-free address, scanned on the phone | Passed, 2026-11-15: scanning the QR code `jig dispatch dashboard --access` printed opened the dashboard on the phone at the Tailscale Serve front's address |
 | Reading a decision, copying a command and an answer line, opening the forge link | Not yet run |
 | Copy after the clipboard permission is refused | Not yet run |
-| Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Not yet run |
+| Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Partly run, 2026-11-15: the page installs as an app on the phone from the HTTPS front; the manifest (`start_url` `/`, `display` `standalone`) and its 192, 512 and maskable 512 icons each answer `200` through the front. Not yet observed: the installed app opening without a browser bar, showing no token in its addresses, reading the page and copying a command |
 | Reverse-proxy path, with its product and version | Not yet run |

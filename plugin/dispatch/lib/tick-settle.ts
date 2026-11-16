@@ -34,6 +34,7 @@ import {
 import { failureSettings, type MachineConfig } from "./machine-config.ts";
 import { failureText } from "./text.ts";
 import { hostNoticeKeys } from "./failure-notices.ts";
+import { releaseOnEveryChannel } from "./notice-records.ts";
 import { stateDb } from "./state.ts";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
@@ -397,7 +398,7 @@ function quietWakeUps(
   // record of each the quiet ended goes with it, or a failure after it would
   // still be suppressed there. A cause another scope still fails keeps its.
   const after = hostNoticeKeys(readFailures(undefined, root));
-  const release = stateDb(root).query("DELETE FROM notices WHERE key = ?");
+  const release = releaseOnEveryChannel(stateDb(root));
   for (const notice of before) if (!after.has(notice)) release.run(notice);
 }
 
