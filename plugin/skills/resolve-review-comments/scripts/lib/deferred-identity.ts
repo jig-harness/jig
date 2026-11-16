@@ -107,11 +107,19 @@ function hasClosingRun(
 ): boolean {
   for (let index = afterLine + 1; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (line.trim() === "") return false;
-    if (/^ {0,3}#{1,6}(?:\s|$)/.test(line)) return false;
+    if (inlineBoundary(line)) return false;
     if (closingRun(line, 0, delimiter) !== null) return true;
   }
   return false;
+}
+
+/** A block boundary cannot share an inline-code span with adjacent prose. */
+function inlineBoundary(line: string): boolean {
+  return (
+    line.trim() === "" ||
+    /^ {0,3}#{1,6}(?:\s|$)/.test(line) ||
+    openingFence(line) !== null
+  );
 }
 
 /**
@@ -168,7 +176,7 @@ function inlineLine(
       const delimiter = line.slice(cursor, end);
       const close = closingRun(line, end, delimiter);
       if (close === null) {
-        if (!hasFutureClosing(delimiter)) {
+        if (inlineBoundary(line) || !hasFutureClosing(delimiter)) {
           visible = true;
           cursor = end;
           continue;
@@ -226,12 +234,18 @@ export function entryHeadings(description: string): string[] {
   let inline: InlineState = { inComment: false, codeDelimiter: null };
   const lines = description.split("\n");
   for (const [index, line] of lines.entries()) {
-    if (fence === null && (inline.inComment || inline.codeDelimiter !== null)) {
+    if (
+      fence === null &&
+      (inline.inComment ||
+        (inline.codeDelimiter !== null && !inlineBoundary(line)))
+    ) {
       inline = inlineLine(line, inline, (delimiter) =>
         hasClosingRun(lines, index, delimiter),
       ).state;
       continue;
     }
+    if (inline.codeDelimiter !== null)
+      inline = { ...inline, codeDelimiter: null };
     if (fence === null && indentedCodeLine(line)) continue;
     const state = fenceLine(line, fence);
     fence = state.fence;
@@ -270,12 +284,18 @@ export function authoritativeLines(description: string): string[] {
   let inline: InlineState = { inComment: false, codeDelimiter: null };
   const lines = description.split("\n");
   for (const [index, line] of lines.entries()) {
-    if (fence === null && (inline.inComment || inline.codeDelimiter !== null)) {
+    if (
+      fence === null &&
+      (inline.inComment ||
+        (inline.codeDelimiter !== null && !inlineBoundary(line)))
+    ) {
       inline = inlineLine(line, inline, (delimiter) =>
         hasClosingRun(lines, index, delimiter),
       ).state;
       continue;
     }
+    if (inline.codeDelimiter !== null)
+      inline = { ...inline, codeDelimiter: null };
     if (fence === null && indentedCodeLine(line)) continue;
     const state = fenceLine(line, fence);
     fence = state.fence;

@@ -375,6 +375,15 @@ describe("appendEntry", () => {
     ]);
   });
 
+  it("does not carry inline code from a heading or through a fenced block", () => {
+    const identity = "Deferred finding: https://example.test/source";
+    const heading = ["### Note `", identity, "`"].join("\n");
+    const fenced = ["Example: `", "~~~", "`", "~~~", "", identity].join("\n");
+
+    expect(authoritativeLines(heading)).toEqual(["### Note `", identity, "`"]);
+    expect(authoritativeLines(fenced)).toEqual(["Example: `", identity]);
+  });
+
   it("is not fooled by a non-heading line or a deeper heading", () => {
     expect(headingEntryKey(`> ### ${url}`)).toBe(null);
     expect(headingEntryKey(`text ${url}`)).toBe(null);
