@@ -289,6 +289,42 @@ describe("a GitHub request over HTTPS in the shared budget record", () => {
     expect(record?.limitedUntil ?? 0).toBeGreaterThan(currentMs() + 100_000);
   });
 
+  it("holds the credential on a refusal whose body stalls until the call is cancelled", async () => {
+    const path = databasePath();
+    setForgeGovernor(
+      budgetGovernor(sqliteBudgetStore(path), { share: () => null }),
+    );
+    const controller = new AbortController();
+    const stalled = (async () => {
+      const res = new Response("", {
+        status: 429,
+        headers: { "retry-after": "120" },
+      });
+      Object.defineProperty(res, "text", {
+        value: () =>
+          new Promise((_, reject) => {
+            controller.signal.addEventListener("abort", () =>
+              reject(controller.signal.reason),
+            );
+            queueMicrotask(() => controller.abort(new Error("stop")));
+          }),
+      });
+      return res;
+    }) as unknown as typeof fetch;
+    const refused = await httpTransport(
+      "https://github.example/graphql",
+      TOKEN,
+      stalled,
+    )(QUERY, {}, controller.signal, false).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(GitHubApiError);
+    expect((refused as GitHubApiError).sent).toBe(true);
+    const record = sqliteBudgetStore(path).read(githubCredential(ENV));
+    expect(record?.limitedUntil ?? 0).toBeGreaterThan(currentMs() + 100_000);
+  });
+
   it("keeps a cancellation after the request went out marked as sent, and one before it unsent", async () => {
     const path = databasePath();
     setForgeGovernor(

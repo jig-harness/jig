@@ -238,7 +238,12 @@ async function call(
   /** A cancellation as the call's answer or throw, keeping whether a request went out. */
   const cancelledAnswer = (err: unknown): Answer => {
     const sent = dispatched || (err instanceof GitHubApiError && err.sent);
-    if (cancelled(signal)) throw abortedError(signal, sent);
+    if (cancelled(signal)) {
+      // Thrown inside the hold, a cancellation would settle it as a failure;
+      // one that sent nothing is returned, marked unsent, and thrown after.
+      if (sent) throw abortedError(signal, true);
+      return unsent(abortedError(signal));
+    }
     if (cancelled(bound))
       return sent ? abortedError(bound, true) : unsent(abortedError(bound));
     throw err;
@@ -475,15 +480,21 @@ async function postOnce(
   try {
     text = await res.text();
   } catch (err) {
-    if (cancelled(bound)) return unreadBody(abortedError(bound, true), res);
     const reason = `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`;
-    // A refusal's status and headers stand without its body.
+    // A refusal's status and headers stand without its body, and through a cancellation.
     const refused = gitHubHttpFailure(
       res.status,
       res.headers,
       "",
       currentMs() - began,
     );
+    if (cancelled(bound))
+      return unreadBody(
+        refused === null
+          ? abortedError(bound, true)
+          : errorOf({ ...refused, sent: true }),
+        res,
+      );
     return unreadBody(
       refused === null
         ? new GitHubApiError(reason, { code: "unreachable", sent: true })
@@ -495,7 +506,22 @@ async function postOnce(
       res,
     );
   }
-  if (cancelled(bound)) return lost(abortedError(bound, true));
+  if (cancelled(bound)) {
+    const refused = gitHubHttpFailure(
+      res.status,
+      res.headers,
+      text,
+      currentMs() - began,
+    );
+    return {
+      answer:
+        refused === null
+          ? abortedError(bound, true)
+          : errorOf({ ...refused, sent: true }),
+      headers: res.headers,
+      text,
+    };
+  }
   const body = parsedOrNull(text);
   observation.cost = githubCost(body);
   const failure = gitHubHttpFailure(
