@@ -147,22 +147,25 @@ function scheduledWorkflow(
       !Array.isArray(job.steps)
     )
       return false;
-    // A cache step for the position file may precede the sweep; a saved
-    // position counts only with one for that very file, since a fresh runner
-    // otherwise starts at the oldest issue.
+    // Persistence cannot be proven from the file, so a positioned sweep
+    // counts only in the one shape known to keep it: a plain cache step, then
+    // the sweep as the job's last step, all in the workspace root.
     const cacheLead =
       isMapping(job.steps[0]) &&
       typeof job.steps[0].uses === "string" &&
       job.steps[0].uses.startsWith("actions/cache@");
     const step = job.steps[cacheLead ? 1 : 0];
-    const position = positionPath(
-      isMapping(step) ? String(step.run ?? "") : "",
-    );
+    if (
+      requirePosition &&
+      (!cacheLead || job.steps.length !== 2 || !inRoot(doc, job, step))
+    )
+      return false;
+    const position = requirePosition
+      ? positionPath(isMapping(step) ? step.run : undefined)
+      : null;
     return (
       (!requirePosition ||
-        (position !== null &&
-          cacheLead &&
-          cachesPath(job.steps[0], position))) &&
+        (position !== null && cachesPath(job.steps[0], position))) &&
       isMapping(step) &&
       scheduleSafe(step.if, branch) &&
       step["continue-on-error"] !== true &&
@@ -171,21 +174,59 @@ function scheduledWorkflow(
   });
 }
 
-/** The file a sweep command saves its read position to. */
-function positionPath(command: string): string | null {
-  const m = /--position ([a-zA-Z0-9_./][a-zA-Z0-9_./-]*)/u.exec(command);
+/** No workflow, job or step moves the commands out of the workspace root. */
+function inRoot(doc: Record<string, unknown>, job: unknown, step: unknown) {
+  const runDefaults = (o: unknown): unknown =>
+    isMapping(o) && isMapping(o.defaults) ? o.defaults.run : undefined;
+  return (
+    [runDefaults(doc), runDefaults(job)].every(
+      (d) =>
+        d === undefined ||
+        (isMapping(d) && d["working-directory"] === undefined),
+    ) &&
+    isMapping(step) &&
+    step["working-directory"] === undefined
+  );
+}
+
+/** The file the validated sweep invocation saves its read position to. */
+function positionPath(run: unknown): string | null {
+  if (typeof run !== "string") return null;
+  const line = run
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith("#") && l.includes("check-fields.ts"));
+  const m = /--position ([a-zA-Z0-9_./][a-zA-Z0-9_./-]*)/u.exec(line ?? "");
   return m?.[1] ?? null;
 }
 
-/** A step that restores and saves exactly this file between runs. */
+/**
+ * A plain cache step that restores the last position and saves the next: a
+ * key unique to the run (an exact hit is never saved over) with a restore
+ * prefix, and no condition, lookup-only or other input that could skip it.
+ */
 function cachesPath(step: unknown, path: string): boolean {
+  if (
+    !isMapping(step) ||
+    typeof step.uses !== "string" ||
+    !/^actions\/cache@/u.test(step.uses) ||
+    !isMapping(step.with) ||
+    !Object.keys(step).every((k) =>
+      ["uses", "with", "name", "id"].includes(k),
+    ) ||
+    !Object.keys(step.with).every((k) =>
+      ["path", "key", "restore-keys"].includes(k),
+    )
+  )
+    return false;
+  const { key } = step.with;
+  const restore = step.with["restore-keys"];
   return (
-    isMapping(step) &&
-    typeof step.uses === "string" &&
-    /^actions\/cache@/u.test(step.uses) &&
-    step["continue-on-error"] !== true &&
-    isMapping(step.with) &&
-    step.with.path === path
+    step.with.path === path &&
+    typeof key === "string" &&
+    /\$\{\{\s*github\.run_(?:id|number)\s*\}\}/u.test(key) &&
+    typeof restore === "string" &&
+    restore.trim() !== ""
   );
 }
 
@@ -281,7 +322,7 @@ export function sweepFindings(
         id: "suggestion:issue_tracker.sweep.position",
         severity: "suggestion",
         message:
-          "this repository sets `file_issue.sweep.move: false`, but no scheduled sweep passes `--position` with the file kept between runs (a workflow caches it with actions/cache ahead of the sweep): without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass `--position <file>` and keep that file between runs (file-issue's README, The weekly sweep)",
+          "this repository sets `file_issue.sweep.move: false`, but no scheduled sweep passes `--position` with the file kept between runs (a workflow caches it with a run-keyed actions/cache step ahead of the sweep, which is the job's last step): without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass `--position <file>` and keep that file between runs (file-issue's README, The weekly sweep)",
       },
     ];
   }
