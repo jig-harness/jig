@@ -17,13 +17,19 @@ values generated from the code, their meaning written beside them in the
 code, and a gate that fails the build when the chapter and the code
 disagree.
 
-This is the design of [plan.md](plan.md) item 53. Its stable chapters and their schemas are in place, in [plugin/protocol/](../plugin/protocol/README.md):
+This is the design of [plan.md](plan.md) item 53. Its stable chapters, their
+restatements and their schemas are in place, in
+[plugin/protocol/](../plugin/protocol/README.md):
 the generator, its gate and the chapter on the drive's end states and exit
 codes; the records chapters, on hidden comment markers and on the
 follow-up claim and its result; the chapters on the drive mailbox and on
 the pull-request labels; the chapter on the commands a repository
-supplies; and the chapter on rule matchers in configuration, with JSON Schemas generated from the readers' shape descriptions; the site renders the chapters at `/protocol/`. Of the provisional chapters, the ones on addresses and the verbs of `jig send` and on tracker facets are in place. The steps after
-them in § Build order are open. The decision that a chapter and the code must agree is
+supplies; and the chapter on rule matchers in configuration, with JSON Schemas generated from the readers' shape descriptions;
+the site renders the chapters at `/protocol/`. Of the provisional chapters, the ones on addresses and the verbs of `jig send`
+and on tracker facets are in place. The restatements link to the
+chapters, with the values a skill needs within a step held by the chapter's
+gate. The steps after them in § Build order are open. The decision that a
+chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works
