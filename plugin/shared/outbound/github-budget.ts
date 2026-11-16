@@ -647,18 +647,60 @@ interface Governed {
 /** The unit of the cost ledger each record window counts in. */
 const LEDGER_UNITS = { requests: "requests", complexity: "points" } as const;
 
+/**
+ * Points a GraphQL answer measured beyond what its reservation took from the
+ * record, because it reported a cost but no balance: the cost ledger holds
+ * them already, so a later snapshot that shows them spent explains them.
+ */
+const measuredBeyondBalance = new Map<string, number>();
+
+/** The points a GraphQL answer's `rateLimit.cost` reports, `null` when it reports none. */
+function measuredCost(body: string): number | null {
+  const value = parsed(body);
+  const data = isRecord(value) && isRecord(value.data) ? value.data : null;
+  const rate =
+    data !== null && isRecord(data.rateLimit) ? data.rateLimit : null;
+  return rate !== null && typeof rate.cost === "number" && rate.cost >= 0
+    ? rate.cost
+    : null;
+}
+
+/** Remember what an answer measured that the record's balance did not take. */
+function noteMeasured(
+  key: string,
+  body: string,
+  answer: BudgetAnswer,
+  reserved: number,
+): void {
+  if (answer.complexity !== undefined) return;
+  const cost = measuredCost(body);
+  if (cost === null || cost <= reserved) return;
+  measuredBeyondBalance.set(
+    key,
+    (measuredBeyondBalance.get(key) ?? 0) + cost - reserved,
+  );
+}
+
 /** Put what a snapshot showed was spent beyond the record's count on the cost ledger's unattributed row. */
 function recordUnexplained(
   key: string,
   unexplained: Unexplained | undefined,
+  snapshot: boolean,
 ): void {
-  if (unexplained === undefined) return;
+  if (unexplained === undefined || !snapshot) return;
+  // A snapshot replaces the balance: what it left unexplained settles every
+  // measured cost the record had not taken.
+  const measured = measuredBeyondBalance.get(key) ?? 0;
+  measuredBeyondBalance.delete(key);
   for (const [name, unit] of Object.entries(LEDGER_UNITS)) {
-    const cost = unexplained[name as keyof Unexplained];
+    const shown = unexplained[name as keyof Unexplained];
+    const cost = name === "complexity" ? (shown ?? 0) - measured : shown;
     if (cost === undefined || cost <= 0) continue;
     recordCall({
       system: "github",
       credential: key,
+      owner: key,
+      window: name,
       operation: UNATTRIBUTED,
       caller: UNATTRIBUTED,
       requests: 0,
@@ -724,14 +766,24 @@ function governed(
       const now = currentMs();
       // A store that cannot take the answer governs nothing (`budget.ts`);
       // anything else that throws here is a defect, and stops the call.
+      const answer = forgeAnswerOf(
+        args,
+        headers,
+        body,
+        failure,
+        now,
+        refusedText,
+      );
+      noteMeasured(
+        key,
+        body,
+        answer,
+        reservedIn === "complexity" ? reservations : 0,
+      );
       recordUnexplained(
         key,
-        gov.observe(
-          key,
-          forgeAnswerOf(args, headers, body, failure, now, refusedText),
-          sentAt,
-          reservedIn,
-        ),
+        gov.observe(key, answer, sentAt, reservedIn),
+        answer.snapshot === true,
       );
       if (failure?.code !== "rate-limited") return null;
       // The caller waits as long as the record now holds the credential, or

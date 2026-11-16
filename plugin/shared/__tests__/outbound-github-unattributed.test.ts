@@ -106,6 +106,8 @@ describe("the unattributed row of the cost ledger", () => {
       expect.objectContaining({
         system: "github",
         credential: KEY,
+        owner: KEY,
+        window: "requests",
         caller: UNATTRIBUTED,
         unit: "requests",
         requests: 0,
@@ -113,6 +115,8 @@ describe("the unattributed row of the cost ledger", () => {
         estimated: false,
       }),
       expect.objectContaining({
+        owner: KEY,
+        window: "complexity",
         caller: UNATTRIBUTED,
         unit: "points",
         requests: 0,
@@ -125,6 +129,33 @@ describe("the unattributed row of the cost ledger", () => {
         .filter((r) => r.operation !== UNATTRIBUTED)
         .every((r) => r.caller !== UNATTRIBUTED),
     ).toBe(true);
+  });
+
+  it("does not record again the cost a cost-only answer measured beyond its reservation", async () => {
+    setForgeGovernor(
+      budgetGovernor(memoryBudgetStore(), { share: () => null }),
+    );
+    const reset = Math.floor(currentMs() / 1000) + 1800;
+    let remaining = 4500;
+    const gh = client((argv) => {
+      if (argv.includes("rate_limit"))
+        return JSON.stringify({
+          resources: { graphql: { limit: 5000, remaining, reset } },
+        });
+      return JSON.stringify({ data: { rateLimit: { cost: 9 } } });
+    });
+    const rows: CallRecord[] = [];
+    await withLedgerWriter(
+      (row) => rows.push(row),
+      async () => {
+        await gh(["api", "rate_limit"]);
+        await gh(["api", "graphql", "-f", "query={ viewer { login } }"]);
+        // The nine points the query cost left the balance.
+        remaining = 4491;
+        await gh(["api", "rate_limit"]);
+      },
+    );
+    expect(rows.filter((r) => r.operation === UNATTRIBUTED)).toEqual([]);
   });
 
   it("records nothing when the counted requests explain the balance, or the balance is another window's", () => {
