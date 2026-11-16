@@ -396,6 +396,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.257.0] - 2026-11-16
+
+The dispatch dashboard shows how many pull requests are ready to merge outside its own window.
+
+### Added
+
+- The dashboard puts the count its Merge tab carries in the browser tab's title (`(3) Dispatch`) and on its icon, and, in an installed app, on the app's icon where the browser has an app badge for it (desktop Chrome may provide one; Android does not support this API). The count clears when nothing is ready. It updates only while the page is open: its last badge can remain after closing, but cannot update until the page opens again; a notice that reaches a closed app needs web push, which the dashboard does not ship.
+
 ## [0.256.7] - 2026-11-16
 
 ### Fixed
@@ -9110,7 +9118,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.7...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.257.0...HEAD
+[0.257.0]: https://github.com/jig-harness/jig/compare/v0.256.7...v0.257.0
 [0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7
 [0.256.6]: https://github.com/jig-harness/jig/compare/v0.256.5...v0.256.6
 [0.256.5]: https://github.com/jig-harness/jig/compare/v0.256.4...v0.256.5
