@@ -1175,7 +1175,7 @@ These are set per machine or per run, not committed:
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
 | `JIG_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
 | `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/jig/gh-cache` |
-| `JIG_GH_CACHE` | `off` disables that cache |
+| `JIG_GH_CACHE` | `off` disables that cache: a conditional read is then sent without `If-None-Match`, and a drive pass's paged reads are read whole every time |
 | <a id="gh-call-timeout"></a>`GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30. Must be a positive whole number no greater than 2147483 |
 | `JIG_MARKETPLACE` | The marketplace `jig upgrade` (and `tools/plugin/setup.ts`) installs the plugin from in an agent tool that lacks it, instead of Jig's repository; a tool registered from another source is then refused |
 | `JIG_SETUP_TIMEOUT_SECONDS` | Seconds one agent-tool command run by `jig upgrade` or `jig doctor` (and `tools/plugin/setup.ts`) may take before it is stopped; default 300 |
