@@ -1,5 +1,6 @@
 /** Shared native tracker rows, interpreted anew by each repository. */
 import { coalesce } from "../../../shared/outbound/coalesce.ts";
+import { parseMs } from "../../../shared/time.ts";
 import type {
   DispatchRawIssue,
   PoolIssue,
@@ -99,7 +100,14 @@ export async function nativeSharedView(
       tracker: Tracker,
       identity: string,
       cache: PickupReads,
-    ) => { since: string; keys: string[] } | null;
+    ) => {
+      since: string;
+      keys: string[];
+      watermarks?: Readonly<Record<string, string>> | undefined;
+      boundaryRows?:
+        | Readonly<Record<string, ReadonlyArray<string>>>
+        | undefined;
+    } | null;
     credential: (tracker: Tracker, credential: string) => void;
   },
 ): Promise<ServedView> {
@@ -137,7 +145,7 @@ export async function nativeSharedView(
                 .filter((value) => value !== null);
               const since =
                 [query.since, ...saved.map((value) => value.since)].sort(
-                  (a, b) => a.localeCompare(b),
+                  (a, b) => parseMs(a) - parseMs(b),
                 )[0] ?? query.since;
               const keys = [
                 ...new Set([
@@ -146,10 +154,53 @@ export async function nativeSharedView(
                 ]),
               ];
               const probeKey = `dispatch scope probe ${options.nowMs}`;
+              const readings = [query, ...saved];
+              const partitions = new Set(
+                readings.flatMap((value) =>
+                  Object.keys(value.watermarks ?? {}),
+                ),
+              );
+              const watermarks = Object.fromEntries(
+                [...partitions].map((name) => [
+                  name,
+                  readings
+                    .map((value) => value.watermarks?.[name] ?? value.since)
+                    .sort((a, b) => parseMs(a) - parseMs(b))[0] ?? since,
+                ]),
+              );
+              const boundaryRows = Object.fromEntries(
+                [...partitions].map((name) => {
+                  // A newer reading covers the older boundary already. At
+                  // the selected boundary, every reading must cover a row
+                  // before the shared probe may suppress it.
+                  const atBoundary = readings.filter(
+                    (value) =>
+                      parseMs(value.watermarks?.[name] ?? value.since) ===
+                      parseMs(watermarks[name] ?? since),
+                  );
+                  const seen = atBoundary[0]?.boundaryRows?.[name] ?? [];
+                  return [
+                    name,
+                    seen.filter((row) =>
+                      atBoundary.every(
+                        (value) =>
+                          value.boundaryRows?.[name]?.includes(row) === true,
+                      ),
+                    ),
+                  ];
+                }),
+              );
               return coalesce(reads, probeKey, () =>
                 facts.guarded(() =>
                   changedSince(
-                    { ...query, since, keys, identities },
+                    {
+                      ...query,
+                      since,
+                      keys,
+                      identities,
+                      ...(partitions.size === 0 ? {} : { watermarks }),
+                      ...(partitions.size === 0 ? {} : { boundaryRows }),
+                    },
                     options.bound?.signal,
                   ),
                 ),

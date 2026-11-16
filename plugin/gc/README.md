@@ -225,10 +225,11 @@ until the removal. From then on a commit, checkout, switch or reset in the
 tree fails with git's own "cannot lock ref" error instead of moving the
 head, so no commit can land on a detached head between the comparison and
 the removal, and none is lost. A `HEAD.lock` another git process already
-holds keeps the tree. When the removal does not happen, gc deletes its lock,
+holds keeps the tree, before its hook runs. When the removal does not happen, gc deletes its lock,
 and the receipt says when it could not; a run stopped by a signal before
-then can leave the lock behind, and the file names `jig gc` and its process,
-so a person can tell it from git's own and delete it. A repository that keeps
+then can leave the lock behind. The file names `jig gc` and its process, so
+a person can tell it from git's own, and the next collection takes over a
+lock whose run has ended. A repository that keeps
 its refs in [reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), git's newer reference storage, has no
 `HEAD.lock` to hold: there gc keeps the tree, on a branch or detached, before
 running its hook, since a tree on a branch can be detached and committed on
@@ -349,8 +350,41 @@ that lists the worktree twice refuses collection. The hook's supervisor starts w
 and `bunfig.toml`. Parking refuses while any of those overrides is set, since
 one may have moved the journal the findings were written to.
 
-Orca offers no reservation that stops a start between that last read and the
-removal. Jig's plugin for Orca closes that gap from inside Orca: its
+A process already in the checkout, in one of its terminals or left behind
+by the hook, can still commit after the proof, and a commit on a detached
+head is on no ref once the worktree goes. So collection holds an Orca
+checkout to the commit and branch its final proof saw, as it holds
+[a worktree an agent tool makes](#worktrees-an-agent-tool-makes): after the
+registry, the launch markers and the process holders are read, it checks
+that the checkout gained no changes, hidden index flags or operation, takes
+its `HEAD.lock` and compares its commit and branch with the proof's. It
+keeps the lock through `orca worktree rm`, which never moves the head
+itself: Orca reads the checkout's status, stops its terminals and removes
+it with `git worktree remove`, which deletes the lock with the worktree's
+git directory; a branch it deletes afterwards is a ref of the repository,
+not the worktree's head. For an Orca checkout, then, gc guarantees that a
+commit made after the final proof keeps the worktree, the commit with it,
+and that a commit, checkout, switch or reset tried between the last
+comparison and the removal fails with git's own "cannot lock ref" error, so
+none is lost. gc deletes its lock once Orca's answer settles the removal:
+the worktree removed, or Orca's refusal, after which the receipt says when
+the lock could not be deleted. While the answer leaves it unknown whether
+the worktree is going (the cases below in which the launch guard claim
+stays, among them Orca saying it is still deleting the checkout in the
+background), gc leaves the lock in place, since Orca may still be removing
+the worktree, and the receipt names it. The next collection of a worktree
+that survived takes that lock over, since its contents name a gc run that
+has ended, and holds it through its own call to Orca: the head stays held
+from the first run's comparison on. Until then no commit can be made in the
+worktree; when its proof finds it in use again, a person deletes the lock
+by hand while no git command and no `jig gc` runs. Any other `HEAD.lock` (a git process's,
+a running gc's, or one whose writer cannot be judged) keeps the worktree
+before its hook runs, and so does a repository on
+[reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as for
+an agent tool's worktree.
+
+Orca offers no reservation that stops a start between the registry's last
+read and the removal. Jig's plugin for Orca closes that gap from inside Orca: its
 `agent.launch.before` hook refuses a launch into a worktree gc holds, and
 leaves a marker for every launch it lets through. gc and the plugin share
 that through the [launch guard record](#the-launch-guard-record). For each
@@ -367,8 +401,10 @@ Orca checkout it collects, gc:
 
 Only the removal call's answer, success or Orca's explicit refusal, or the
 worktree's absence from Orca's list and from the disk releases a submitted
-admission. A call that timed out, exited nonzero without a refusal, or
-printed output gc cannot read may or may not have removed the worktree, so
+admission. A call that timed out, exited nonzero without a refusal, printed
+output gc cannot read, or answered that Orca is still deleting the checkout
+in the background (it stopped waiting, or answered on accepting the
+removal) may or may not have removed the worktree, so
 the admission stays and the plugin's hook keeps refusing launches into it; a
 gc that crashed after the mark leaves it the same way. The receipt line says
 so (`details.claim: kept`, and the reason says why). The next collection

@@ -37,6 +37,8 @@ export type ToolState = Release & {
   readFromFolder?: string;
   /** The message an update command fails with, exiting 1. */
   fail?: string;
+  /** Claude Code reports success without moving the scoped install's record. */
+  scopedUpdateNoop?: boolean;
 };
 
 /** What the channel offers next, and what each tool has installed and refreshed. */
@@ -63,7 +65,8 @@ else if (scopeUpdate) {
   const here = realpathSync(process.cwd());
   const entry = scoped.find((e) => e.scope === scopeUpdate[1] && existsSync(e.projectPath) && realpathSync(e.projectPath) === here);
   if (!entry) { console.error("no " + scopeUpdate[1] + "-scope install for " + here); process.exit(1); }
-  Object.assign(entry, { version: tool.snapshot.version, installPath: tool.snapshot.path });
+  if (!tool.scopedUpdateNoop)
+    Object.assign(entry, { version: tool.snapshot.version, installPath: tool.snapshot.path });
   writeFileSync(record, JSON.stringify(stored, null, 2));
 }
 else refuse();

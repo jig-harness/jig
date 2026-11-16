@@ -396,6 +396,31 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.256.4] - 2026-11-16
+
+### Fixed
+
+- GitHub dispatch reads missing issues in bounded batches and reuses unchanged assigned queues between scheduled full refreshes, reducing repeated requests. An incomplete change probe refreshes the queue; failed reads retain their age and still require fresh checks before a pickup starts.
+- `jig gc` now holds a worktree Orca manages to the commit and branch its final proof saw, and holds the worktree's `HEAD.lock` from the last comparison through `orca worktree rm`. A commit made on a detached head after the proof keeps the worktree, and one tried while Orca removes it fails with git's "cannot lock ref" error; before, either was lost with the worktree. While Orca's answer leaves the removal unsettled the lock stays in place, and the next collection takes it over; a `HEAD.lock` no ended gc run left keeps the worktree before its remove hook runs. A repository that keeps its refs in reftable now keeps its Orca worktrees, as it already kept an agent tool's. [plugin/gc/README.md](plugin/gc/README.md#worktrees-orca-manages) says what the collector guarantees.
+- `jig gc` no longer reads Orca's answer that it is still deleting a worktree as a removal or a refusal: the launch guard claim stays until a later collection settles it.
+
+## [0.256.3] - 2026-11-16
+
+### Fixed
+
+- Steward submissions reserve their database write before reading, so a
+  concurrent dispatcher or session write cannot invalidate the submission's
+  snapshot and reject its records.
+
+## [0.256.2] - 2026-11-16
+
+### Fixed
+
+- `jig upgrade` reports a scoped Claude Code install as left behind when the
+  update command succeeds but its record still differs from the user version.
+  An incomplete scoped refresh now exits nonzero while preserving the report
+  of the user install and installed jobs that succeeded.
+
 ## [0.256.1] - 2026-11-16
 
 ### Changed
@@ -9054,7 +9079,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.4...HEAD
+[0.256.4]: https://github.com/jig-harness/jig/compare/v0.256.3...v0.256.4
+[0.256.3]: https://github.com/jig-harness/jig/compare/v0.256.2...v0.256.3
+[0.256.2]: https://github.com/jig-harness/jig/compare/v0.256.1...v0.256.2
 [0.256.1]: https://github.com/jig-harness/jig/compare/v0.256.0...v0.256.1
 [0.256.0]: https://github.com/jig-harness/jig/compare/v0.255.1...v0.256.0
 [0.255.1]: https://github.com/jig-harness/jig/compare/v0.255.0...v0.255.1

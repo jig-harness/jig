@@ -631,17 +631,25 @@ export interface QueueIssue extends PoolIssue {
 export interface ChangeQuery {
   /** An ISO 8601 time: issues updated after it count. */
   since: string;
+  /** Source-defined partitions may advance independently; missing entries use `since`. */
+  watermarks?: Readonly<Record<string, string>>;
+  /** Source tokens for facts already observed at each inclusive timestamp boundary. */
+  boundaryRows?: Readonly<Record<string, ReadonlyArray<string>>>;
   identity: string;
   /** All people sharing this scope probe, when dispatch groups its queues. */
   identities?: ReadonlyArray<string>;
   keys: ReadonlyArray<string>;
 }
 
-/** What `changedSince` found: the issues that changed, whether that list is all of them, and the latest update among them. */
+/** What `changedSince` found: the issues that changed, whether that list is all of them, and a safe next-probe watermark. */
 export interface ChangeAnswer {
   keys: string[];
   complete: boolean;
   latest: string | null;
+  /** Safe boundaries for the source's partitions, retained only with a complete answer. */
+  watermarks?: Readonly<Record<string, string>>;
+  /** Source tokens for facts observed at each inclusive timestamp boundary. */
+  boundaryRows?: Readonly<Record<string, string[]>>;
 }
 
 /** A label an issue can carry, with the group it belongs to; `null` = none. */
