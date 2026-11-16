@@ -13,7 +13,7 @@
  *    request's recovery budget.
  * 3. The waits in a row are counted from this host's launch records of the
  *    pull request's follow-ups, oldest first, over those that recorded a
- *    result: at `WAITS_FOR_PERSON` the follow-up is a person's, notified as
+ *    result or stopped on a rate-limit question: at `WAITS_FOR_PERSON` the follow-up is a person's, notified as
  *    a failed follow-up that names the fault, its marker answered failed.
  *
  * A pass that stopped on a question instead, whose question names a rate
@@ -31,7 +31,7 @@
  * a record is kept `receipts_days`.
  */
 import { stateRoot } from "../receipts.ts";
-import { type ReadRecord, readEnded } from "./launches.ts";
+import { type ReadRecord, readEnded, readRecord } from "./launches.ts";
 import { routineClassOf } from "./routine-questions.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import { questionOf } from "./session.ts";
@@ -43,7 +43,7 @@ import { isoFromMs, parseMs } from "../../shared/time.ts";
 /** The waits in a row at which a follow-up is a person's. */
 export const WAITS_FOR_PERSON = 3;
 
-/** A follow-up's waits in a row, newest first. */
+/** A follow-up's waits in a row, up to the newest. */
 export interface WaitStreak {
   /** The launch record of the newest wait. */
   record: string;
@@ -152,21 +152,47 @@ export function waitStreak(
   );
 }
 
+/** A launch row as the count reads it when its exit is not written. */
+interface StoredRow {
+  id: string;
+  created_at: string;
+  result: string | null;
+  result_until: string | null;
+}
+
+/**
+ * An earlier attempt read from the state database: as the tick reads it once
+ * its exit is written, else by its result alone, which, with no output to
+ * hold a question, waits only when it recorded `waits`.
+ */
+function storedAttempt(row: StoredRow, root: string): Attempt {
+  const ended = readEnded(row.id, root);
+  if (ended !== null) return attemptOf(ended);
+  const until = row.result === "failed" ? row.result_until : null;
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    answered: row.result !== null,
+    until,
+    answeredByPerson: readRecord(row.id, root)?.answered !== undefined,
+  };
+}
+
 /** The waits in a row up to and including `r`, read from the state database when only the record is at hand. */
 function storedStreak(r: ReadRecord, root: string): WaitStreak | null {
   const rows = stateDb(root)
     .query(
-      "SELECT id FROM launches WHERE action = 'followup' AND repo = ? AND pr = ? AND created_at <= ? AND id != ?",
+      "SELECT id, created_at, result, result_until FROM launches WHERE action = 'followup' AND repo = ? AND pr = ? AND created_at <= ? AND id != ?",
     )
-    .all(r.record.repo, r.record.pr, r.record.createdAt, r.record.id) as {
-    id: string;
-  }[];
+    .all(
+      r.record.repo,
+      r.record.pr,
+      r.record.createdAt,
+      r.record.id,
+    ) as StoredRow[];
   // The record itself, as read, stands over its row.
   const attempts = [
-    ...rows.flatMap(({ id }) => {
-      const ended = readEnded(id, root);
-      return ended === null ? [] : [attemptOf(ended)];
-    }),
+    ...rows.map((row) => storedAttempt(row, root)),
     attemptOf(r),
   ];
   const streak = streakOf(attempts);

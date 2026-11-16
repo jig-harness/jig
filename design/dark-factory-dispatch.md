@@ -461,7 +461,7 @@ guards keep one stage from starting twice:
   host starts the follow-up early, its wrapper does not answer it, and the
   tick releases it after the reset; a later tick starts the follow-up again
   as a first run, with no recovery tag and outside the recovery budget. A
-  pass that stopped on a question naming only a rate limit, with no routine
+  pass that stopped on a question naming a rate limit, with no routine
   tag, waits the same way, until an hour after it ended. The
   third wait in a row is a person's, notified with the rate limit named
   (`followup-waits.ts`); a person's restart (deleting the marker after that,

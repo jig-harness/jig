@@ -4,8 +4,8 @@ release: patch
 
 ### Fixed
 
-- A dispatched follow-up whose pass stopped on a question naming only a
-  rate limit no longer waits for a person. This covers a pass from before
+- A dispatched follow-up whose pass stopped on a question naming a rate
+  limit no longer waits for a person. This covers a pass from before
   passes recorded `waits`, and one that asked instead of recording it. The
   dispatcher now treats it as a wait until an hour after the pass ended, then
   starts the follow-up again. A question that also carries a

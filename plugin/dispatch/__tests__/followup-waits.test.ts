@@ -19,10 +19,11 @@ import {
 } from "../../shared/records/launch-claims.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { MARKER } from "../lib/followup-marker.ts";
-import { waitStreak, waitUntil } from "../lib/followup-waits.ts";
+import { waitEnd, waitStreak, waitUntil } from "../lib/followup-waits.ts";
 import {
   claimRecord,
   type ReadRecord,
+  readEnded,
   readRecord,
   recordExit,
 } from "../lib/launches.ts";
@@ -370,6 +371,42 @@ it("reads a question as a wait only when it names a rate limit and carries no ro
       asked("Question: [person-owed] who lifts the tracker's rate limit?"),
     ),
   ).toBeNull();
+});
+
+it("counts, at a pass's exit, an earlier wait whose wrapper died before writing its exit", () => {
+  const w = world();
+  current = w;
+  const until = new Date(Date.now() + 3_600_000).toISOString();
+  const ids = [1, 2, 3].map((n) => {
+    const id = `20261031T1${n}0000Z-dddddddd`;
+    earlierRecord(w, {
+      id,
+      account: "a",
+      action: "followup",
+      pr: 9,
+      repo: SLUG,
+      createdAt: `2026-10-31T1${n}:00:00.000Z`,
+    });
+    expect(
+      resultMain(
+        [id, "earlier-token", "waits", "--until", until],
+        dispatchState(w),
+      ),
+    ).toBe(0);
+    // The first wrapper died after its pass recorded the wait: no exit.
+    if (n > 1)
+      recordExit(
+        id,
+        { at: `2026-10-31T1${n}:05:00.000Z`, code: 0, signal: null },
+        dispatchState(w),
+      );
+    return id;
+  });
+  const third = readEnded(String(ids[2]), dispatchState(w));
+  expect(third).not.toBeNull();
+  if (third === null) return;
+  // The third wait in a row is a person's: its marker is answered, not released.
+  expect(waitEnd(third, dispatchState(w))).toBe(false);
 });
 
 it("takes a waits result on a follow-up's record", () => {
