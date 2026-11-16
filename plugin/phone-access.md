@@ -316,6 +316,12 @@ What makes it work, and what it does not:
   its facts stale and offers Retry; starting the app while the host is off, or
   while the phone is off the private network, shows the browser's own
   connection error.
+- **It shows a count while it is open.** The number of pull requests ready to
+  merge, the one the Merge tab carries, is in the tab's title and on its icon,
+  and on the installed app's icon where the browser has an app badge (desktop
+  Chrome may provide one; Android does not support this API). The page sets it
+  on each read while it stays open. Its last badge can remain after the page
+  closes, but it cannot update until the page opens again.
 - **It does not turn on web push.** HTTPS gives the page a secure context and
   nothing more; notifications are a separate feature this setup does not ship.
 

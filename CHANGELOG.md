@@ -396,6 +396,45 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.257.0] - 2026-11-16
+
+The dispatch dashboard shows how many pull requests are ready to merge outside its own window.
+
+### Added
+
+- The dashboard puts the count its Merge tab carries in the browser tab's title (`(3) Dispatch`) and on its icon, and, in an installed app, on the app's icon where the browser has an app badge for it (desktop Chrome may provide one; Android does not support this API). The count clears when nothing is ready. It updates only while the page is open: its last badge can remain after closing, but cannot update until the page opens again; a notice that reaches a closed app needs web push, which the dashboard does not ship.
+
+## [0.256.7] - 2026-11-16
+
+### Fixed
+
+- Jira: with a facet such as size kept in a custom field, an issue whose type
+  has no context for that field (an Epic, a Bug or a Sub-task, where the field
+  belongs to one work issue type) could not be read at all: `get_issue.ts`
+  answered `read-failed`, so do-item could not read an item's parent epic and
+  did not delegate the item. Jira leaves such a field out of the issue, and
+  the issue now reads as having no value in it. The error that remains, for
+  an issue read without asking for the field, names the field.
+
+## [0.256.6] - 2026-11-16
+
+### Fixed
+
+- Keep tracker failures visible when the dispatcher reads claimed items, assignment authors and ready-pool evidence: temporary failures wait below the notification threshold, refused credentials are reported immediately, and a definite missing assignment remains an ordinary answer. **Consumer action:** none.
+
+## [0.256.5] - 2026-11-16
+
+### Changed
+
+- `jig gc`'s tests now cover the worktree `HEAD.lock` it keeps while Orca's
+  removal is unsettled. Two cases are new: a collection that takes over an
+  ended run's lock and gets Orca's still-deleting answer again, and a step
+  that throws after such a takeover. In both, the lock and the launch guard
+  claim stay. The collector's behaviour does not change.
+- The plugin's guides and skills link to the stable Jig Protocol chapters
+  for shared contracts. Contract values needed within a skill's step remain
+  beside the action and are checked against the code by the Protocol gate.
+
 ## [0.256.4] - 2026-11-16
 
 ### Fixed
@@ -9079,7 +9118,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.257.0...HEAD
+[0.257.0]: https://github.com/jig-harness/jig/compare/v0.256.7...v0.257.0
+[0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7
+[0.256.6]: https://github.com/jig-harness/jig/compare/v0.256.5...v0.256.6
+[0.256.5]: https://github.com/jig-harness/jig/compare/v0.256.4...v0.256.5
 [0.256.4]: https://github.com/jig-harness/jig/compare/v0.256.3...v0.256.4
 [0.256.3]: https://github.com/jig-harness/jig/compare/v0.256.2...v0.256.3
 [0.256.2]: https://github.com/jig-harness/jig/compare/v0.256.1...v0.256.2
