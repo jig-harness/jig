@@ -185,53 +185,43 @@ it("shares child transport after its first caller expires", async () => {
   }
 });
 
-it("starts no queued shared callbacks after the tick ends", async () => {
-  const f = fixture();
-  const view = await f.open(new AbortController().signal);
-  const entered = Promise.withResolvers<void>();
-  const complete = Promise.withResolvers<string>();
-  let started = 0;
-  const reads = Array.from({ length: 32 }, (_, index) =>
-    view.once(`queued fact ${index}`, async () => {
-      started += 1;
-      entered.resolve();
-      return complete.promise;
-    }),
-  );
-  await entered.promise;
-  const before = started;
-  expect(before).toBeLessThan(reads.length);
-  f.tick.abort();
-  complete.resolve("done");
-  const results = await Promise.allSettled(reads);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  expect(results.every((result) => result.status === "rejected")).toBe(true);
-  expect(started).toBe(before);
-});
-
-it("starts no queued shared callbacks after the scope fails", async () => {
-  const f = fixture();
-  const view = await f.open(new AbortController().signal);
-  const entered = Promise.withResolvers<void>();
-  const complete = Promise.withResolvers<string>();
-  let started = 0;
-  const reads = Array.from({ length: 32 }, (_, index) =>
-    view.once(`failed scope fact ${index}`, async () => {
-      started += 1;
-      entered.resolve();
-      return complete.promise;
-    }),
-  );
-  await entered.promise;
-  const before = started;
-  expect(before).toBeLessThan(reads.length);
-  complete.reject(new OutboundError("unreachable", "fixture read failed"));
-  await Promise.allSettled(reads);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  expect(started).toBe(before);
-  expect(view.unavailable).toBeDefined();
-  expect(f.tick.signal.aborted).toBe(false);
-});
+it.each(["tick ends", "scope fails"] as const)(
+  "starts no queued shared callbacks after the %s",
+  async (stop) => {
+    const f = fixture();
+    const view = await f.open(new AbortController().signal);
+    const entered = Promise.withResolvers<void>();
+    const complete = Promise.withResolvers<string>();
+    let started = 0;
+    const reads = Array.from({ length: 32 }, (_, index) =>
+      view.once(`queued fact ${index}`, async () => {
+        started += 1;
+        entered.resolve();
+        return complete.promise;
+      }),
+    );
+    await entered.promise;
+    const before = started;
+    expect(before).toBeLessThan(reads.length);
+    if (stop === "tick ends") {
+      f.tick.abort();
+      complete.resolve("done");
+    } else {
+      complete.reject(new OutboundError("unreachable", "fixture read failed"));
+    }
+    const results = await Promise.allSettled(reads);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(started).toBe(before);
+    if (stop === "tick ends") {
+      expect(results.every((result) => result.status === "rejected")).toBe(
+        true,
+      );
+    } else {
+      expect(view.unavailable).toBeDefined();
+      expect(f.tick.signal.aborted).toBe(false);
+    }
+  },
+);
 
 it.each(["pool", "raw", "once"] as const)(
   "starts no %s read for a caller whose own allowance ended",
