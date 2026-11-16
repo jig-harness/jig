@@ -209,7 +209,7 @@ export async function nativeSharedView(
                       ...(partitions.size === 0 ? {} : { watermarks }),
                       ...(partitions.size === 0 ? {} : { boundaryRows }),
                     },
-                    callerBound?.signal,
+                    sharedBound?.signal,
                   ),
                 ),
               );
@@ -219,7 +219,7 @@ export async function nativeSharedView(
       stateName: () => null,
       stateMaps: () => [],
       queueIssues: async () =>
-        (await facts.queue(identity, callerBound)).map(queued),
+        (await facts.queue(identity, sharedBound)).map(queued),
       poolIssue: async (key) => {
         const row = await facts.issue(key);
         return row === null ? null : carrier(row);
@@ -342,11 +342,10 @@ export async function nativeSharedView(
   const progress = rows.filter((i) => isWorkingIssue(tracker, i));
   return {
     ...native,
-    // The snapshot is shared; each caller's own bound governs its projections.
-    // Facts invoked through once() are shared transport reads.  They must
-    // receive the tick allowance, while forCaller() below still gives each
-    // caller its own shorter wait and projection allowance.
-    ...(sharedBound === undefined ? {} : { bound: sharedBound }),
+    // The snapshot's fact transport is shared, but the returned view belongs
+    // to this caller. Metadata projections use bound, so do not extend them
+    // to the lifetime of the shared tick.
+    ...(callerBound === undefined ? {} : { bound: callerBound }),
     scope,
     get limited() {
       const failure = facts.failure();

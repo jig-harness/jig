@@ -110,7 +110,7 @@ it("continues bounded lazy issue batches after the successful prefetch allowance
   expect(
     f.calls.filter((call) => call.op === "TrackerDispatchIssue"),
   ).toHaveLength(0);
-  expect(f.calls[0]?.signal?.aborted).toBe(true);
+  expect(f.calls[0]?.signal?.aborted).toBe(false);
   expect(f.calls.slice(1).every((call) => call.signal?.aborted === false)).toBe(
     true,
   );
@@ -161,12 +161,14 @@ it("refuses a later caller after the shared tick ends", async () => {
   expect(f.calls).toHaveLength(before);
 });
 
-it("gives shared native facts the tick bound", async () => {
+it("keeps a native view's public bound responsive to the caller allowance", async () => {
   const f = fixture();
   const caller = new AbortController();
   const view = await f.open(caller.signal);
 
-  expect(view.bound?.signal).toBe(f.tick.signal);
+  expect(view.bound?.signal.aborted).toBe(false);
+  caller.abort();
+  expect(view.bound?.signal.aborted).toBe(true);
 });
 
 it("keeps direct caller cancellation on an unshared transport read", async () => {
