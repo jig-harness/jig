@@ -10,15 +10,57 @@ import { cleanUp, put, tempDir } from "./fixture.ts";
 
 afterAll(cleanUp);
 
+const SECTION = "## Operational instruction\n\n";
+const EXIT_11 = "Exit `11` on the lock";
+const EXIT_13 = "Exit `13` on the lock";
+const STOP = "run --command stop";
+
+const exitPhrase = {
+  file: "skill.md",
+  text: EXIT_11,
+  section: "## Operational instruction",
+};
+const stopPhrase = {
+  file: "skill.md",
+  text: STOP,
+  section: "## Operational instruction",
+  includeCodeExamples: true,
+};
+
+type Case = [source: string, problems: number];
+
+/** Writes each source as the checked file and expects its problem count. */
+function expectHeld(
+  name: string,
+  cases: Case[],
+  phrase: {
+    file: string;
+    text: string;
+    section: string;
+    includeCodeExamples?: boolean;
+  } = exitPhrase,
+  chapter = "drive-exits",
+) {
+  const root = tempDir(name);
+  for (const [source, problems] of cases) {
+    put(root, "skill.md", source);
+    expect(checkHeldPhrases(root, chapter, [phrase])).toHaveLength(problems);
+  }
+}
+
 test("a held value must survive unchanged, including its operational context", () => {
   const root = tempDir("held");
-  const phrases = [{ file: "skill.md", text: "Exit `11` on the lock" }];
-  put(root, "skill.md", "Exit `11` on the lock\n");
-  expect(checkHeldPhrases(root, "drive-exits", phrases)).toEqual([]);
-  put(root, "skill.md", "Exit `13` on the lock\n");
-  expect(checkHeldPhrases(root, "drive-exits", phrases)).toHaveLength(1);
-  put(root, "skill.md", "Exit `11` on some other branch\n");
-  expect(checkHeldPhrases(root, "drive-exits", phrases)).toHaveLength(1);
+  const phrases = [{ file: "skill.md", text: EXIT_11 }];
+  for (const [source, problems] of [
+    [`${EXIT_11}\n`, 0],
+    [`${EXIT_13}\n`, 1],
+    ["Exit `11` on some other branch\n", 1],
+  ] as Case[]) {
+    put(root, "skill.md", source);
+    expect(checkHeldPhrases(root, "drive-exits", phrases)).toHaveLength(
+      problems,
+    );
+  }
   const unreadable = checkHeldPhrases(root, "drive-exits", [
     { file: "missing.md", text: "value" },
   ]);
@@ -29,279 +71,110 @@ test("a held value must survive unchanged, including its operational context", (
 });
 
 test("a held value is checked in its declared operational section", () => {
-  const root = tempDir("held-location");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `11` on the lock\n\n## Other\n\nExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `13` on the lock\n\n## Other\n\nExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  expectHeld("held-location", [
+    [`${SECTION}${EXIT_11}\n\n## Other\n\n${EXIT_11}\n`, 0],
+    [`${SECTION}${EXIT_13}\n\n## Other\n\n${EXIT_11}\n`, 1],
+  ]);
 });
 
 test("held phrases ignore hidden Markdown comments and tolerate section layout changes", () => {
-  const root = tempDir("held-rendered");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `13` on the lock <!-- Exit `11` on the lock -->\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "\n## Operational instruction\n\nNew context.\n\nExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  expectHeld("held-rendered", [
+    [`${SECTION}${EXIT_13} <!-- ${EXIT_11} -->\n`, 1],
+    [`\n${SECTION}New context.\n\n${EXIT_11}\n`, 0],
+  ]);
 });
 
 test("held phrases ignore fenced decoys and fenced headings", () => {
-  const root = tempDir("held-fences");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `13` on the lock\n\n```sh\nExit `11` on the lock\n```\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n```sh\n# Another section\n```\n\nExit `11` on the lock\n\n## Other\n\nExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  expectHeld("held-fences", [
+    [`${SECTION}${EXIT_13}\n\n\`\`\`sh\n${EXIT_11}\n\`\`\`\n`, 1],
+    [
+      `${SECTION}\`\`\`sh\n# Another section\n\`\`\`\n\n${EXIT_11}\n\n## Other\n\n${EXIT_11}\n`,
+      0,
+    ],
+  ]);
 });
 
 test("held phrases ignore indented code and preserve excluded-block boundaries", () => {
-  const root = tempDir("held-indented-code");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n    Exit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `11` on\n```text\nthe lock\n```\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `11` on\n\n~~~text\nexample\n~~~\n\nthe lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `11` on the lock\n\n    example\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  expectHeld("held-indented-code", [
+    [`${SECTION}    ${EXIT_11}\n`, 1],
+    [`${SECTION}Exit \`11\` on\n\`\`\`text\nthe lock\n\`\`\`\n`, 1],
+    [`${SECTION}Exit \`11\` on\n\n~~~text\nexample\n~~~\n\nthe lock\n`, 1],
+    [`${SECTION}${EXIT_11}\n\n    example\n`, 0],
+  ]);
 });
 
 test("held phrases retain list continuations and inline-code comment tokens", () => {
-  const root = tempDir("held-markdown-context");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `11` on the lock\n\n1. Handle the refusal:\n\n    Exit `13` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nThe opening token is `<!--`.\n\nExit `13` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n1. Handle the refusal:\n\n    Exit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  expectHeld("held-markdown-context", [
+    [`${SECTION}${EXIT_11}\n\n1. Handle the refusal:\n\n    ${EXIT_13}\n`, 1],
+    [`${SECTION}The opening token is \`<!--\`.\n\n${EXIT_13}\n`, 1],
+    [`${SECTION}1. Handle the refusal:\n\n    ${EXIT_11}\n`, 0],
+  ]);
 });
 
 test("held phrases ignore escaped delimiters, nested fences, and tab-indented code", () => {
-  const root = tempDir("held-markdown-edge-cases");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nAn escaped \\` marker.\n\n<!-- Exit `11` on the lock -->\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n1. Example:\n\n    ```text\n    Exit `11` on the lock\n    ```\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n\tExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  expectHeld("held-markdown-edge-cases", [
+    [`${SECTION}An escaped \\\` marker.\n\n<!-- ${EXIT_11} -->\n`, 1],
+    [
+      `${SECTION}1. Example:\n\n    \`\`\`text\n    ${EXIT_11}\n    \`\`\`\n`,
+      1,
+    ],
+    [`${SECTION}\t${EXIT_11}\n`, 1],
+  ]);
 });
 
 test("held phrases parse code-span closers and nested-list dedents as prose", () => {
-  const root = tempDir("held-nested-markdown");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nThe token is `\\\\`.\n\n<!-- Exit `11` on the lock -->\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n10. Parent\n    - Child\n\n    Exit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  expectHeld("held-nested-markdown", [
+    [`${SECTION}The token is \`\\\\\`.\n\n<!-- ${EXIT_11} -->\n`, 1],
+    [`${SECTION}10. Parent\n    - Child\n\n    ${EXIT_11}\n`, 0],
+  ]);
 });
 
 test("held phrases keep comments in separate Markdown blocks from code spans", () => {
-  const root = tempDir("held-block-context");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nAn unmatched ` delimiter.\n\n<!-- Exit `11` on the lock -->\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n~~~text\n<!--\n~~~\n\nExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nAn unmatched ` delimiter.\n \n<!-- Exit `11` on the lock -->\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nAn unmatched `` delimiter.\n<!-- Exit `11` on the lock -->\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  for (const boundary of [
+  const hidden = `<!-- ${EXIT_11} -->\n`;
+  const boundaries = [
     "### Details",
     "> quote",
     "- item",
     "~~~text\n~~~",
     "---",
-  ]) {
-    put(
-      root,
-      "skill.md",
-      `## Operational instruction\n\nAn unmatched \` delimiter.\n${boundary}\n<!-- Exit \`11\` on the lock -->\n`,
-    );
-    expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
-  }
+  ];
+  expectHeld("held-block-context", [
+    [`${SECTION}An unmatched \` delimiter.\n\n${hidden}`, 1],
+    [`${SECTION}~~~text\n<!--\n~~~\n\n${EXIT_11}\n`, 0],
+    [`${SECTION}An unmatched \` delimiter.\n \n${hidden}`, 1],
+    [`${SECTION}An unmatched \`\` delimiter.\n${hidden}`, 1],
+    ...boundaries.map(
+      (b): Case => [`${SECTION}An unmatched \` delimiter.\n${b}\n${hidden}`, 1],
+    ),
+  ]);
 });
 
 test("held phrases preserve comment syntax in opted-in fenced examples", () => {
-  const root = tempDir("held-fenced-comment-example");
-  const phrase = {
-    file: "skill.md",
-    text: "run --command stop",
-    section: "## Operational instruction",
-    includeCodeExamples: true,
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n~~~text\n<!--\n~~~\n\nrun --command stop\n",
+  expectHeld(
+    "held-fenced-comment-example",
+    [
+      [`${SECTION}~~~text\n<!--\n~~~\n\n${STOP}\n`, 0],
+      [
+        `${SECTION}1. Example:\n\n    ~~~text\n    <!--\n    ~~~\n\n${STOP}\n`,
+        0,
+      ],
+      [`${SECTION}<!--\n~~~text\n-->\n<!-- ${STOP} -->\n~~~\n`, 1],
+    ],
+    stopPhrase,
+    "mailbox",
   );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n1. Example:\n\n    ~~~text\n    <!--\n    ~~~\n\nrun --command stop\n",
-  );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n<!--\n~~~text\n-->\n<!-- run --command stop -->\n~~~\n",
-  );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
 });
 
 test("held phrases recognize headings without backtracking over closing hashes", () => {
-  const root = tempDir("held-heading-hashes");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction ###\n\nExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toEqual([]);
+  expectHeld("held-heading-hashes", [
+    [`## Operational instruction ###\n\n${EXIT_11}\n`, 0],
+  ]);
 });
 
 test("held phrases reject duplicate visible copies in an operational section", () => {
-  const root = tempDir("held-duplicate");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nExit `13` on the lock\n\nExample: Exit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "drive-exits", [phrase])).toHaveLength(1);
+  expectHeld("held-duplicate", [
+    [`${SECTION}${EXIT_13}\n\nExample: ${EXIT_11}\n`, 1],
+  ]);
 });
 
 test("held phrases accept either checkout line ending and still reject changed values", () => {
@@ -314,18 +187,19 @@ test("held phrases accept either checkout line ending and still reject changed v
           text: `an \`ack\` of each${phraseEnding}directive it acted on`,
         },
       ];
-      put(
-        root,
-        "skill.md",
-        `an \`ack\` of each${sourceEnding}directive it acted on${sourceEnding}`,
-      );
-      expect(checkHeldPhrases(root, "mailbox", phrases)).toEqual([]);
-      put(
-        root,
-        "skill.md",
-        `an \`done\` of each${sourceEnding}directive it acted on${sourceEnding}`,
-      );
-      expect(checkHeldPhrases(root, "mailbox", phrases)).toHaveLength(1);
+      for (const [word, problems] of [
+        ["ack", 0],
+        ["done", 1],
+      ] as const) {
+        put(
+          root,
+          "skill.md",
+          `an \`${word}\` of each${sourceEnding}directive it acted on${sourceEnding}`,
+        );
+        expect(checkHeldPhrases(root, "mailbox", phrases)).toHaveLength(
+          problems,
+        );
+      }
     }
   }
 });
@@ -418,72 +292,42 @@ test("the drive exit gate checks immediate arm, finish-round, tree lease and pus
 });
 
 test("held phrases classify comments and fences with one inline-code recognizer", () => {
-  const root = tempDir("held-one-recognizer");
-  const phrase = {
-    file: "skill.md",
-    text: "run --command stop",
-    section: "## Operational instruction",
-    includeCodeExamples: true,
-  };
-  // Backticks cannot shield a closer inside an open comment.
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n<!--\n`-->`\n\n~~~text\nrun --command stop\n~~~\n",
+  const fenced = `~~~text\n${STOP}\n~~~\n`;
+  expectHeld(
+    "held-one-recognizer",
+    [
+      // Backticks cannot shield a closer inside an open comment.
+      [`${SECTION}<!--\n\`-->\`\n\n${fenced}`, 0],
+      // A fence ends the paragraph, so an inline comment opener before it cannot
+      // reach past it and the fence stays a code example.
+      [`${SECTION}\\\`<!--\n${fenced}-->\n`, 0],
+      // A span running across lines shields a comment opener inside it.
+      [`${SECTION}Token \`first\nthen <!--\nlast\`.\n\n${fenced}`, 0],
+      // A comment opener at a line start is an HTML block that ends the paragraph,
+      // so it hides what follows until its closer.
+      [`${SECTION}Token \`first\n<!--\nlast\`.\n\n${fenced}`, 1],
+    ],
+    stopPhrase,
+    "mailbox",
   );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  // A fence ends the paragraph, so an inline comment opener before it cannot
-  // reach past it and the fence stays a code example.
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\n\\`<!--\n~~~text\nrun --command stop\n~~~\n-->\n",
-  );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  // A span running across lines shields a comment opener inside it.
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nToken `first\nthen <!--\nlast`.\n\n~~~text\nrun --command stop\n~~~\n",
-  );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  // A comment opener at a line start is an HTML block that ends the paragraph,
-  // so it hides what follows until its closer.
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nToken `first\n<!--\nlast`.\n\n~~~text\nrun --command stop\n~~~\n",
-  );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
 });
 
 test("held phrases follow CommonMark paragraph interruption for code spans and HTML blocks", () => {
-  const root = tempDir("held-commonmark-blocks");
-  const phrase = {
-    file: "skill.md",
-    text: "Exit `11` on the lock",
-    section: "## Operational instruction",
-  };
-  // A list that does not start at 1 cannot interrupt a paragraph, so the
-  // multiline span keeps its comment opener and the instruction stays visible.
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nToken `first\n2. <!--\nlast`.\n\nExit `11` on the lock\n",
+  expectHeld(
+    "held-commonmark-blocks",
+    [
+      // A list that does not start at 1 cannot interrupt a paragraph, so the
+      // multiline span keeps its comment opener and the instruction stays visible.
+      [`${SECTION}Token \`first\n2. <!--\nlast\`.\n\n${EXIT_11}\n`, 0],
+      // Mixed characters are no thematic break, so the span is not ended.
+      [`${SECTION}Token \`first\n-_* <!--\nlast\`.\n\n${EXIT_11}\n`, 0],
+      // An HTML block hides its comment from an unmatched delimiter before it.
+      [
+        `${SECTION}An unmatched \` delimiter.\n<div>\n<!-- ${EXIT_11} -->\n</div>\n`,
+        1,
+      ],
+    ],
+    exitPhrase,
+    "mailbox",
   );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  // Mixed characters are no thematic break, so the span is not ended.
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nToken `first\n-_* <!--\nlast`.\n\nExit `11` on the lock\n",
-  );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toEqual([]);
-  // An HTML block hides its comment from an unmatched delimiter before it.
-  put(
-    root,
-    "skill.md",
-    "## Operational instruction\n\nAn unmatched ` delimiter.\n<div>\n<!-- Exit `11` on the lock -->\n</div>\n",
-  );
-  expect(checkHeldPhrases(root, "mailbox", [phrase])).toHaveLength(1);
 });
