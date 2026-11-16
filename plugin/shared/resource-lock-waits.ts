@@ -3,7 +3,14 @@
  * the lock's signal handling so a reader can import them without taking on
  * the lock's process-wide handlers. Older lock readers still read the identity.
  */
-import { closeSync, fstatSync, openSync, readSync, readdirSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readSync,
+  readdirSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { decodeIdentity, isAliveSync, ownIdentity } from "./liveness.ts";
@@ -35,9 +42,13 @@ export function resourceLockPath(root: string, name: string): string {
 /** An announcement is a few hundred bytes; a larger file is not one and is never read whole. */
 const MAX_ANNOUNCEMENT_BYTES = 4096;
 
-/** The file's text when it is a regular file within the announcement bound; `null` otherwise. */
+/**
+ * The file's text when it is a regular file within the announcement bound;
+ * `null` otherwise. The open is nonblocking: a FIFO with no writer would
+ * otherwise stall the synchronous open with nothing able to interrupt it.
+ */
 function readAnnouncement(path: string): string | null {
-  const fd = openSync(path, "r");
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > MAX_ANNOUNCEMENT_BYTES) return null;

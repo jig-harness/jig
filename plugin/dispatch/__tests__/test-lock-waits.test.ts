@@ -276,3 +276,28 @@ it("reads no oversized announcement and none whose name carries no pid", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("reads no FIFO announcement and does not block on one", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-wait-fifo-"));
+  try {
+    const made = Bun.spawnSync(
+      ["mkfifo", `jig-lock.heavy.waiting.${process.pid}`],
+      {
+        cwd: dir,
+      },
+    );
+    if (made.exitCode !== 0) return;
+    const module = join(import.meta.dir, "../../shared/resource-lock-waits.ts");
+    const script = `const { readLockWaits } = await import(${JSON.stringify(module)}); console.log(JSON.stringify(readLockWaits(${JSON.stringify(dir)}, ${JSON.stringify(join(dir, "jig-lock.heavy"))})));`;
+    const child = Bun.spawnSync([process.execPath, "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 15000,
+      killSignal: "SIGKILL",
+    });
+    expectSpawnExit(child, 0, "a FIFO announcement");
+    expect(child.stdout.toString().trim()).toBe("[]");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
