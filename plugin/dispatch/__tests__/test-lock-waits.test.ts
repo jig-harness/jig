@@ -312,3 +312,30 @@ test.skipIf(skipsOnWindows("file-system", "a named pipe is a POSIX file type"))(
     }
   },
 );
+
+it("keeps a wait's last observation when the scan's bound ended before it read", () => {
+  const r = {
+    record: {
+      repo: "o/r",
+      createdAt: "2026-11-01T10:00:00.000Z",
+      workspace: { path: "/work/w" },
+      testLockWait: {
+        pid: 12,
+        workspace: "/work/w",
+        since: "2026-11-01T11:00:00.000Z",
+        observedAt: "2026-11-01T11:30:00.000Z",
+        waiting: true,
+      },
+    },
+    state: { kind: "alive" },
+  } as unknown as ReadRecord;
+  observeTestLockWaits(
+    [r],
+    "o/r",
+    undefined,
+    Temporal.Instant.from("2026-11-01T12:00:00.000Z").epochMilliseconds,
+    () => undefined,
+    { deadline: 0, signal: AbortSignal.abort() },
+  );
+  expect(r.record.testLockWait?.waiting).toBe(true);
+});

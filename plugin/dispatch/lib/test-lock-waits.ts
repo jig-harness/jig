@@ -10,6 +10,8 @@ import { type LaunchRecord, type ReadRecord, writeRecord } from "./launches.ts";
 import { sep } from "node:path";
 import { ended, type TickBound } from "./sources/bounded.ts";
 
+export { testLockNote } from "./test-lock-note.ts";
+
 export interface TestLockWait extends LockWait {
   observedAt: string;
   waiting: boolean;
@@ -47,6 +49,8 @@ export function observeTestLockWaits(
   bound?: TickBound,
 ): void {
   const seen = waits ?? testLockWaits(bound);
+  // A scan the bound cut short proves no absence: a wait it did not read keeps its last observation.
+  const complete = waits !== undefined || !ended(bound);
   const owners = (wait: LockWait) =>
     records.filter(
       ({ record, state }) =>
@@ -75,25 +79,9 @@ export function observeTestLockWaits(
         waiting: true,
       };
       save(record);
-    } else if (record.testLockWait?.waiting) {
+    } else if (complete && record.testLockWait?.waiting) {
       record.testLockWait.waiting = false;
       save(record);
     }
   }
-}
-
-/** A current wait, or the last observed wait, never evidence that a deadline was paused. */
-export function testLockNote(
-  record: LaunchRecord,
-  now = currentMs(),
-  historical = false,
-): string | null {
-  const wait = record.testLockWait;
-  if (wait === undefined) return null;
-  const current = wait.waiting && !historical;
-  const duration = Math.max(
-    0,
-    (current ? now : parseMs(wait.observedAt)) - parseMs(wait.since),
-  );
-  return `${current ? "is waiting" : "was last seen waiting"} for the test lock for ${Math.floor(duration / 60000)}m (pid ${wait.pid}, since ${wait.since}, observed ${wait.observedAt})`;
 }
