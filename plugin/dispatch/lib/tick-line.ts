@@ -110,7 +110,17 @@ export function lineInputOf(
     sessions,
     ...(adapter === undefined
       ? {}
-      : { tracker: adapter === null ? null : { adapter } }),
+      : {
+          tracker:
+            adapter === null
+              ? null
+              : {
+                  adapter,
+                  ...(tracked.issueRepository == null
+                    ? {}
+                    : { repository: tracked.issueRepository }),
+                },
+        }),
     links:
       repo === null || keys == null || forge.linkTexts === undefined
         ? null

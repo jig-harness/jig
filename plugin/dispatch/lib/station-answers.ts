@@ -18,8 +18,7 @@
  * refuses with why, and the outcome is kept. For a decision the tick framed
  * the step is the option's (`StationPorts`); for one a pass framed, it
  * starts that stage again, a follow-up run again or a pickup released,
- * whose next session is handed the chosen option. A need answered Leave it
- * to me leaves Needs you for these facts.
+ * whose next session is handed the chosen option. A need answered with the hold option leaves Needs you for these facts.
  */
 import {
   answerView,
@@ -102,7 +101,12 @@ function readStationAnswers(
   const parsed = comments
     .filter((c) => c.author.toLowerCase() !== mine)
     .flatMap((c) => {
-      const answer = parseAnswerComment(item, c, "conversation");
+      const answer = parseAnswerComment(
+        item,
+        c,
+        "conversation",
+        decision.answer?.framedBy === "dispatcher",
+      );
       if (answer === null) return [];
       // A structured answer acts only when it names the framing it answers.
       return answer.choice !== undefined && answer.digest !== decision.digest
@@ -431,7 +435,7 @@ async function actedOn(
     : actedAnswer(row, root);
 }
 
-/** Read one need's answers onto its action and act on the one that counts; whether it was answered Leave it to me. */
+/** Read one need's answers onto its action and act on the one that counts; whether it was answered I'll handle it — hide this card. */
 async function settleOne(
   framed: Framed,
   slug: string,
@@ -459,7 +463,7 @@ async function settleOne(
 
 /**
  * Read the answers to every framed need of `report` and act on the one
- * that counts, once; a need answered Leave it to me moves to the report's
+ * that counts, once; a need answered I'll handle it — hide this card moves to the report's
  * quiet entries, so it is neither notified nor shown for these facts.
  */
 export async function settleStationAnswers(
@@ -481,6 +485,6 @@ export async function settleStationAnswers(
     report.quiet.push({
       target: action.target,
       class: "answered-hold",
-      why: `${action.answered?.acted?.author ?? "a person"} chose Leave it to me for this ${action.cause ?? "need"}; it is not listed again until its facts change`,
+      why: `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`,
     });
 }

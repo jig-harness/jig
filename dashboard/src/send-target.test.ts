@@ -24,13 +24,16 @@ describe("where a card's Send posts", () => {
   });
 
   it("is nowhere for a card no drive reads an answer comment for", () => {
-    for (const need of [
-      { ...PARKED, parked: false },
-      { ...PARKED, pr: null },
-    ])
+    for (const need of [{ ...PARKED, parked: false }])
       expect(sendTargetOf(need)).toEqual({
-        absent: expect.stringContaining("only a drive's parked decisions"),
+        absent: expect.stringContaining(
+          "this station cannot read an answer comment",
+        ),
       });
+  });
+
+  it("refuses a parked drive with no pull-request number", () => {
+    expect("absent" in sendTargetOf({ ...PARKED, pr: null })).toBe(true);
   });
 
   it("is nowhere off github.com, or when the link names another pull request", () => {

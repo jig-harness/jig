@@ -150,6 +150,8 @@ export interface DecisionRow {
   options: RowOption[];
   /** Whether the readers resolve a `choose` or `approve` for it: a typed decision, or a record with one recommended option. Otherwise every answer to it reads as free. */
   structured: boolean;
+  /** The dispatcher, rather than a session, framed this decision's options. */
+  dispatcherFramed: boolean;
   /** How this decision and another affect each other, as the decisions say. */
   interplay: string[];
   /** The record's recommendation as Markdown, where no option reads as the recommended one; `null` otherwise. */
@@ -203,6 +205,7 @@ export function decisionRows(decisions: LineDecision[]): DecisionRow[] {
     structured:
       d.decision !== undefined ||
       (d.options ?? []).filter((o) => o.recommended).length === 1,
+    dispatcherFramed: d.answer?.framedBy === "dispatcher",
     question: d.question,
     decisionClass: d.decisionClass,
     act: actOfClass(d.decisionClass),
@@ -338,7 +341,12 @@ function freeFault(row: DecisionRow, text: string): string | null {
     return `your own words name the framing [${claimed}], which is not this decision's; take it out`;
   // The readers would count these words as a choice, which only a pick (and its second step) may make. A record they read as free text alone has no choice to count.
   if (!row.structured) return null;
-  const read = choiceInLine(text, row.options, (o) => o.recommended);
+  const read = choiceInLine(
+    text,
+    row.options,
+    (o) => o.recommended,
+    row.dispatcherFramed,
+  );
   return read === null
     ? null
     : `your own words read as ${read.form === "approve" ? "approving" : "choosing"} ${read.option.name}; pick that option on the row instead`;

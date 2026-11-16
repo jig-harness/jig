@@ -103,6 +103,44 @@ function AnswerNotes({ need }: { need: NeedView }) {
   );
 }
 
+/** The tick's outcome, distinguished from a browser's posted comment. */
+export function ActedAnswers({ need }: { need: Pick<NeedView, "acted"> }) {
+  return (
+    <>
+      {need.acted.map((a) => (
+        <p className="sm actedAnswer" key={a.key}>
+          {a.author} chose {a.option}:{" "}
+          {a.outcome === "done"
+            ? "carried out"
+            : a.outcome === "refused"
+              ? "refused"
+              : a.outcome === "held"
+                ? "held"
+                : "the tick is carrying it out"}
+          {a.detail === null ? "." : ` — ${a.detail}`}
+        </p>
+      ))}
+    </>
+  );
+}
+
+/** Answered holds remain visible while their facts stand. */
+export function AnsweredHolds({
+  line,
+}: {
+  line: Pick<LineSnapshot, "answeredHolds">;
+}) {
+  return (
+    <>
+      {(line.answeredHolds ?? []).map((h) => (
+        <p className="sm answeredHold" key={`${h.repo} ${h.target}`}>
+          {h.repo} {h.target}: {h.why}
+        </p>
+      ))}
+    </>
+  );
+}
+
 /** What a card with no decision to pick says first, after its act: the ask, the recommended option with what it changes and costs, and who it waits on. */
 function NeedAsk({ need }: { need: NeedView }) {
   return (
@@ -229,6 +267,7 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
         ) : null}
         <NeedFold need={need} />
       </div>
+      <ActedAnswers need={need} />
       <NoSend need={need} />
     </article>
   );
@@ -359,6 +398,7 @@ export function NeedsPanel({
         <MoreToggle count={count} all={all} setAll={setAll} where="head" />
       </div>
       {send.panel}
+      <AnsweredHolds line={line} />
       <div className={all ? "needList all" : "needList"}>
         {rows.map((row, i) => {
           const rest = !all && seen >= SHOWN_CLOSED;
