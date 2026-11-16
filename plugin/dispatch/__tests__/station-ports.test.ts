@@ -202,7 +202,8 @@ describe("the answers on an item of another tracker", () => {
 
   it("names each author, counts a member's comment trusted, and keeps the tracker's own user's apart", async () => {
     const { tracker, reads } = onTracker([
-      fact("answer pickup: approve [d1]", FACTORY),
+      // The tracker's own user is no member (a guest), yet its answer is still detected.
+      fact("answer pickup: approve [d1]", FACTORY, { trusted: false }),
       fact("answer pickup: approve \\[0123456789ab\\]", DANA, {
         url: "https://linear.app/acme/issue/ENG-12/x#comment-7",
         editedAt: "2026-11-12T12:00:00.000Z",

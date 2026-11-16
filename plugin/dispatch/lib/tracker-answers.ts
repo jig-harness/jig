@@ -100,9 +100,9 @@ function trackerConversation(
   self: TrackerUser,
 ): TrackerConversation {
   const names = namesOf(comments);
-  const read = (c: CommentFact): CommentLike => ({
+  const read = (c: CommentFact, trusted = c.trusted): CommentLike => ({
     author: c.author == null ? "" : (names.get(c.author.id) ?? ""),
-    association: c.trusted ? MEMBER : NONE,
+    association: trusted ? MEMBER : NONE,
     at: c.createdAt,
     editedAt: c.editedAt ?? null,
     url: c.url ?? `${item}#comment-${c.id ?? c.createdAt}`,
@@ -110,8 +110,13 @@ function trackerConversation(
   });
   const mine = (c: CommentFact) => c.author?.id === self.id;
   return {
-    comments: comments.filter((c) => !mine(c)).map(read),
-    own: { name: self.name, comments: comments.filter(mine).map(read) },
+    comments: comments.filter((c) => !mine(c)).map((c) => read(c)),
+    // Read as a member's whatever the user's standing: these are never acted
+    // on, only detected, so that a need whose only answer is one of them can say why.
+    own: {
+      name: self.name,
+      comments: comments.filter(mine).map((c) => read(c, true)),
+    },
   };
 }
 
