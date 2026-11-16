@@ -111,7 +111,7 @@ export async function guardedCollection(
   const claimKept = (): string | null =>
     admission.submitted === null || answered
       ? null
-      : `the launch guard claim stays: orca worktree rm was called under it at ${admission.submitted} and gave no answer, so the next collection asks again`;
+      : `the launch guard claim stays: orca worktree rm was called under it at ${admission.submitted} and its answer left the removal unsettled, so the next collection asks again`;
   const noting = (reason: string): string => {
     const why = claimKept();
     return why === null ? reason : `${reason}; ${why}`;

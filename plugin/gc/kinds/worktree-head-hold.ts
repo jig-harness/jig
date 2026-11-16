@@ -77,7 +77,7 @@ export async function holdableIdentity(
     : {
         stop: {
           outcome: "refused",
-          reason: `kept: ${lock} exists: a git process holds the worktree's HEAD, or one that stopped left the lock; the next run tries again, and a lock no process holds is deleted by hand`,
+          reason: `kept: ${lock} exists: a git process holds the worktree's HEAD, or one that stopped left the lock; the next run tries again; delete the lock by hand only while no git command and no jig gc runs`,
         },
       };
 }

@@ -375,7 +375,9 @@ background), gc leaves the lock in place, since Orca may still be removing
 the worktree, and the receipt names it. The next collection of a worktree
 that survived takes that lock over, since its contents name a gc run that
 has ended, and holds it through its own call to Orca: the head stays held
-from the first run's comparison on. Any other `HEAD.lock` (a git process's,
+from the first run's comparison on. Until then no commit can be made in the
+worktree; when its proof finds it in use again, a person deletes the lock
+by hand while no git command and no `jig gc` runs. Any other `HEAD.lock` (a git process's,
 a running gc's, or one whose writer cannot be judged) keeps the worktree
 before its hook runs, and so does a repository on
 [reftable](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as for
