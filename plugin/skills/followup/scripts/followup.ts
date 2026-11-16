@@ -65,6 +65,7 @@ import {
   type Facts,
   type FactsFailure,
   gatherFacts,
+  integrationBranchOf,
   PR_VIEW_FIELDS,
   prViewOf,
   type PrView,
@@ -269,6 +270,44 @@ const FACTS_EXIT: Record<FactsFailure, number> = {
   "rate-limited": 5,
 };
 
+/** The integration branch: the repository's own, never the pull request's base. */
+async function integrationOf(dir: string, remote: string): Promise<string> {
+  const name = await integrationBranchOf(workingConfig(), remote, gitIn(dir));
+  return (
+    name ??
+    stop(
+      2,
+      "the integration branch is unknown: set repository.base_branch or fetch the remote's HEAD",
+    )
+  );
+}
+
+/**
+ * The integration branch and the settings its freshly fetched snapshot holds.
+ * A stacked pull request must not choose the snapshot that decides its
+ * authority, so a failed fetch or an unreadable snapshot stops the run.
+ */
+async function trustedPolicy(
+  dir: string,
+  remote: string,
+): Promise<{ integration: string; read: RunSettings }> {
+  const integration = await integrationOf(dir, remote);
+  const policyRef = `${remote}/${integration}`;
+  const fetch = gitIn(dir, FETCH_TIMEOUT_SEC);
+  const refspec = `+refs/heads/${integration}:refs/remotes/${policyRef}`;
+  const fetched = await fetch(["fetch", "--no-tags", remote, refspec]);
+  if (fetched.code !== 0)
+    stop(
+      1,
+      `the fetch of ${policyRef} exited ${fetched.code}: its policy may be stale`,
+    );
+  const read = await settingsFor(dir, remote, integration);
+  const unread =
+    read.origin !== "integration branch" && !process.env.JIG_OVERLAY;
+  if (unread) stop(1, `the configuration at ${policyRef} cannot be read`);
+  return { integration, read };
+}
+
 async function factsCommand(args: string[]): Promise<number> {
   const facts = "facts takes one PR number";
   const pr = numberArg(exactly(args, 1, facts)[0], facts);
@@ -278,16 +317,11 @@ async function factsCommand(args: string[]): Promise<number> {
     2,
   );
   const local = gitIn(dir);
-  // GitHub's base ref is not controlled by the preview branch.  Reading this
-  // from the working configuration would let a preview choose the snapshot
-  // that decides its authority.
+  const { integration, read } = await trustedPolicy(dir, remote);
   const viewed = await viewPr(pr);
   if (!viewed.ok) stop(FACTS_EXIT[viewed.failure.code], viewed.failure.reason);
-  const integration = viewed.value.baseRefName;
-  if (integration === "") stop(1, `PR #${pr} names no base branch`);
-  const read = await settingsFor(dir, remote, integration);
   const gathered = await gatherFacts(pr, integration, {
-    view: viewPr,
+    view: async () => viewed,
     git: local,
     fetch: gitIn(dir, FETCH_TIMEOUT_SEC),
     areas: (files) => changeAreasOf(dir, files),
@@ -425,7 +459,6 @@ async function releaseCommand(args: string[]): Promise<number> {
   });
   const { dir, run: loaded } = loadRun(values.pr);
   const { facts } = loaded;
-  const notesDir = notesDirOf(workingConfig());
   const integrationRef = `${facts.remote}/${facts.integrationBranch}`;
   const fetched = await gitIn(
     dir,
@@ -437,6 +470,9 @@ async function releaseCommand(args: string[]): Promise<number> {
     `+refs/heads/${facts.integrationBranch}:refs/remotes/${integrationRef}`,
   ]);
   const local = gitIn(dir);
+  const notesDir = notesDirOf(
+    (await settingsFor(dir, facts.remote, facts.integrationBranch)).values,
+  );
   const notes =
     fetched.code !== 0
       ? {

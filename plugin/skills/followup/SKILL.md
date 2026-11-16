@@ -54,7 +54,7 @@ pull request starts over):
 | `mergeSha`, `range` | The merge commit, and the range it brought in, from its parents: `squash` (one parent) or `merge-commit` (two; `branchHead` is the branch's own head), `base..head`; a preview's `open` range is the branch since it left its base |
 | `changedFiles`, `changeAreas` | The files the range changes, and the change areas they touch with their `postDeploy` actions (from `drive.validation_plan_command`, else the change-area catalog); `known: false` says why they could not be read |
 | `item`, `epics` | The tracker item the merge closes (a `Closes <key>` in the description, else the key the branch name carries) and the epics a `Part of <key>` names; an epic is never the item |
-| `outOfTree` | The `## Out-of-tree follow-ups` section: whether it is `declared`, and each step with whether it is checked off |
+| `outOfTree` | The `## Out-of-tree follow-ups` section: whether it is `declared`, whether it `saysNone`, and each step with whether it is checked off |
 | `scaffolding` | Added lines that look like temporary scaffolding, as candidates |
 | `notes` | What a reader should know about how the facts were read |
 
@@ -164,8 +164,8 @@ out where your authority covers it, else file it as an item carrying the
 repository's manual-operations label (`issue_tracker.labels.manual_ops`)
 and record it `owed` with the item. The dispatcher keeps that label on the
 merged pull request until every step is checked off or this follow-up ends
-done. A declared section that says "None" (or "N/A") is evidence: `not-owed`. A
-heading with no step and no such statement is an unfilled template:
+done. A declared section with `saysNone` set and no step is evidence: `not-owed`. A
+heading with no step and `saysNone` unset is an unfilled template:
 report it and treat it as silence. **Silence is not none**: with no
 section or an unfilled one, `not-owed` needs the
 facts that the item carries no manual-operations label and the change areas

@@ -455,3 +455,25 @@ describe("a step's detail", () => {
     ]);
   });
 });
+
+describe("a declaration's completeness", () => {
+  it("tells an explicit none from an unfilled heading", () => {
+    const none = outOfTreeSteps("## Out-of-tree follow-ups\n\nNone\n");
+    const bulleted = outOfTreeSteps("## Out-of-tree follow-ups\n- N/A\n");
+    const empty = outOfTreeSteps("## Out-of-tree follow-ups\n\n");
+    expect([none.saysNone, bulleted.saysNone, empty.saysNone]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(empty.declared).toBe(true);
+  });
+
+  it("does not read a step beginning with the word as none", () => {
+    const section = outOfTreeSteps(
+      "## Out-of-tree follow-ups\n- None of the hosts restart themselves\n",
+    );
+    expect(section.saysNone).toBe(false);
+    expect(section.steps).toHaveLength(1);
+  });
+});

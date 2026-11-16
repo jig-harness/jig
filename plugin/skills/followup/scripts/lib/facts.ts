@@ -369,32 +369,55 @@ function rangeOrNote(
   return null;
 }
 
+/**
+ * A single-parent merge is a squash or a rebase of several commits; the
+ * pull request's own file list tells them apart.  The first-parent range of a
+ * squash changes exactly those files; the range back over as many commits as
+ * the pull request had does, for a rebase, and a squash's older history does
+ * not.
+ */
+export async function settleSquash(
+  view: PrView,
+  squash: DiffRange,
+  git: GitRunner,
+): Promise<DiffRange> {
+  const count = view.commits.length;
+  if (squash.kind !== "squash" || count < 2 || view.files.length === 0)
+    return squash;
+  const wanted = new Set(view.files);
+  const changesWanted = async (range: DiffRange): Promise<boolean> => {
+    const read = await changedFilesOf(git, range);
+    return (
+      read.ok &&
+      read.value.length === wanted.size &&
+      read.value.every((f) => wanted.has(f))
+    );
+  };
+  if (await changesWanted(squash)) return squash;
+  const parent = await git(["rev-parse", `${squash.head}~${count}`]);
+  const base = parent.stdout.trim();
+  if (parent.code !== 0 || !SHA.test(base)) return squash;
+  const rebase: DiffRange = {
+    kind: "rebase",
+    base,
+    head: squash.head,
+    branchHead: squash.head,
+  };
+  return (await changesWanted(rebase)) ? rebase : squash;
+}
+
 /** The range of a merged pull request, fetching its merge commit when the clone lacks it. */
 async function mergedRange(
   view: PrView,
   deps: FactsDeps,
 ): Promise<Outcome<DiffRange, "unreadable">> {
   const merge = view.mergeCommit?.oid ?? "";
-  const first = await mergeRange(deps.git, merge);
-  if (first.ok) {
-    // A rebase merge is represented by its final rebased commit, so its one
-    // parent only describes the last original commit.  GitHub's PR commit
-    // list gives the complete landed sequence; use the parent of its first
-    // commit as the range base instead.
-    if (first.value.kind !== "squash" || view.commits.length < 2) return first;
-    const initial = view.commits[0];
-    if (initial === undefined || !SHA.test(initial)) return first;
-    const parent = await deps.git(["rev-parse", `${initial}^`]);
-    const base = parent.stdout.trim();
-    if (parent.code !== 0 || !SHA.test(base))
-      return failed(
-        "unreadable",
-        `the first landed commit ${initial} has no readable parent; cannot establish the complete rebase range`,
-      );
-    return ok({ kind: "rebase", base, head: merge, branchHead: merge });
+  let read = await mergeRange(deps.git, merge);
+  if (!read.ok) {
+    await deps.fetch(["fetch", "--no-tags", deps.remote, merge]);
+    read = await mergeRange(deps.git, merge);
   }
-  await deps.fetch(["fetch", "--no-tags", deps.remote, merge]);
-  return mergeRange(deps.git, merge);
+  return read.ok ? ok(await settleSquash(view, read.value, deps.git)) : read;
 }
 
 /** The range of a merged or open pull request, after fetching its base (and a preview's head). */
