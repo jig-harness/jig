@@ -400,7 +400,16 @@ async function clearRecord(
 export function stationPorts(inputs: StationInputs): StationPorts {
   // The tracker's own user, asked once for the tick's every tracker need.
   let me: Promise<TrackerUser> | undefined;
-  const self = (tracker: Tracker) => (me ??= tracker.viewer());
+  // A read that failed or was cancelled is asked again by the next need.
+  const self = (tracker: Tracker, signal: AbortSignal) => {
+    if (me !== undefined) return me;
+    const asked = tracker.viewer(signal);
+    me = asked;
+    asked.catch(() => {
+      if (me === asked) me = undefined;
+    });
+    return asked;
+  };
   return {
     self: inputs.login,
     issueRepository: inputs.issueRepository,

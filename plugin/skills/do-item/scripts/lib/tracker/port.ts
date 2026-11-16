@@ -375,7 +375,6 @@ export interface Assigner {
   trusted: boolean;
 }
 
-/** A user of the tracker: its own id, and the name it shows (a GitHub login, a Linear or Jira display name). */
 /** Which open issues a pool holds, by label and by facet. */
 export interface PoolQuery {
   /** Each list must match: the issue carries at least one label of each. */
@@ -888,8 +887,8 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
   facetStores(options?: FacetReadOptions): Promise<FacetStores>;
 
   // ── Claiming ──
-  /** The user this tracker's credential acts as: who "yourself" is. */
-  viewer(): Promise<TrackerUser>;
+  /** The user this tracker's credential acts as: who "yourself" is. An aborted `signal` ends the request in flight. */
+  viewer(signal?: AbortSignal): Promise<TrackerUser>;
   /** Every user the issue is assigned to; empty when nobody. */
   assignees(key: string): Promise<TrackerUser[]>;
   /** Assign the issue to `user` alone, replacing any other assignee. */
@@ -908,7 +907,7 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * id, or an email or display name that matches one user). Throws a
    * `TrackerRequestError` (`unresolved`) when it names no user or several.
    */
-  user(identity: string): Promise<TrackerUser>;
+  user(identity: string, signal?: AbortSignal): Promise<TrackerUser>;
 
   // ── Filing and planning ──
   /**

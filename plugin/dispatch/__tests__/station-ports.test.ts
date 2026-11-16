@@ -253,6 +253,22 @@ describe("the answers on an item of another tracker", () => {
     expect(reads).toEqual(["viewer", "ENG-12", "ENG-13"]);
   });
 
+  it("hands the identity read a signal, and asks again after a read that failed", async () => {
+    const signals: Array<AbortSignal | undefined> = [];
+    const { tracker } = onTracker([], {
+      viewer: async (signal?: AbortSignal) => {
+        signals.push(signal);
+        if (signals.length === 1) throw new Error("cancelled");
+        return FACTORY;
+      },
+    });
+    const ports = stationPorts(inputs({ tracker }));
+    expect((await ports.trackerComments("ENG-12")).ok).toBe(false);
+    expect((await ports.trackerComments("ENG-13")).ok).toBe(true);
+    expect(signals).toHaveLength(2);
+    expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
+  });
+
   it("tells two people of one name apart, so neither's answer replaces the other's", async () => {
     const { tracker } = onTracker([
       fact("answer pickup: approve", { id: "u-sam-1", name: "Sam" }),

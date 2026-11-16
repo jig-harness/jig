@@ -147,7 +147,7 @@ async function bounded<T>(
 export async function readTrackerAnswers(
   tracker: Tracker | null,
   item: string,
-  self: (tracker: Tracker) => Promise<TrackerUser>,
+  self: (tracker: Tracker, signal: AbortSignal) => Promise<TrackerUser>,
 ): Promise<Outcome<CommentLike[], "unreadable">> {
   if (tracker === null)
     return failed(
@@ -160,7 +160,7 @@ export async function readTrackerAnswers(
       `the ${tracker.adapter} tracker does not name who wrote each comment, so answers on ${item} cannot be told apart and are not read; settle the decision on the tracker by hand`,
     );
   const me = await bounded(
-    () => self(tracker),
+    (signal) => self(tracker, signal),
     "the user the tracker's credential acts as",
   );
   if (!me.ok) return me;

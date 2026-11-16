@@ -69,7 +69,7 @@ export function openTrackerHere(
 async function readHere<T>(
   ctx: AskContext,
   what: string,
-  read: () => Promise<T>,
+  read: (signal: AbortSignal) => Promise<T>,
 ): Promise<Outcome<T, "refused">> {
   try {
     const got = await within(ctx.reading.sourceSec(), read);
@@ -89,8 +89,8 @@ async function factoryFault(
 ): Promise<string | null> {
   const { identity, tracker } = here;
   if (identity === null) return null;
-  const factory = await readHere(ctx, "the factory identity", () =>
-    tracker.user(identity),
+  const factory = await readHere(ctx, "the factory identity", (signal) =>
+    tracker.user(identity, signal),
   );
   if (!factory.ok)
     return `the factory identity ${identity} could not be looked up, so it cannot be told apart from the user the tracker's credential acts as: ${factory.failure.reason}`;
@@ -109,7 +109,7 @@ async function trackerSender(
   const viewer = await readHere(
     ctx,
     "the user the tracker's credential acts as",
-    () => tracker.viewer(),
+    (signal) => tracker.viewer(signal),
   );
   if (!viewer.ok) return viewer;
   const login = writerLogin(viewer.value.name, options.as, "the tracker");
