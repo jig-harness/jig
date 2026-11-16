@@ -437,13 +437,10 @@ post-merge stage in any repository, and a generator for the model roster
 ### 10. Values the skills still assume
 
 A few values are still fixed in the skills rather than read from
-[configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
-calls Linear directly with fixed label groups, so a repository on GitHub
-Issues, the default tracker, cannot yet defer a review finding, and some
-skills outside the delivery loop still assume a git remote named `origin`
-where the rest read [`repository.remote`](plugin/CONFIGURATION.md#repository). They move
-into configuration, and the follow-up step onto the tracker interface, so it
-files on every tracker Jig supports.
+[configuration](plugin/CONFIGURATION.md): some skills outside the delivery
+loop still assume a git remote named `origin` where the rest read
+[`repository.remote`](plugin/CONFIGURATION.md#repository). They move into
+configuration.
 
 ### 20. `code-stats`: a reference set and audit evidence
 

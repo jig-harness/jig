@@ -902,10 +902,6 @@ constraints:
 - **Facets beyond type, priority and size**, such as a due date, a team or
   an owning repository. They stay labels or Jira `field_labels`; one joins
   when a caller needs to read it.
-- **The deferral batch step's own Linear path** (`defer-batch.ts`), which
-  files outside the interface and already sets priority from severity,
-  through the shared mapping that files `unknown` as medium. It joins the
-  check when the deferral moves onto the interface (plan item 10).
 - **Records.** `reflect`'s issues are records, not work, carry no facets,
   and are never read by the sweep.
 - **A host timer for the sweep.** Jig's repository runs it as a workflow; a
