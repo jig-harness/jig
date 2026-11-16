@@ -23,9 +23,16 @@ export function claimOperations(
     accountId: string | null,
   ): Promise<void> {
     const issue = await client.mustIssue(key);
+    await assignIssue(issue.key, accountId);
+  }
+
+  async function assignIssue(
+    key: string,
+    accountId: string | null,
+  ): Promise<void> {
     await client.transport({
       method: "PUT",
-      path: `issue/${encodeURIComponent(issue.key)}/assignee`,
+      path: `issue/${encodeURIComponent(key)}/assignee`,
       body: { accountId },
     });
   }
@@ -66,10 +73,10 @@ export function claimOperations(
             (await client.mustIssue(key)).assignee?.accountId ?? null,
           assign: (id) => assignId(key, id),
           async assignIfCurrent(expected, id) {
-            const current =
-              (await client.mustIssue(key)).assignee?.accountId ?? null;
+            const issue = await client.mustIssue(key);
+            const current = issue.assignee?.accountId ?? null;
             if (current !== expected) return false;
-            await assignId(key, id);
+            await assignIssue(issue.key, id);
             return true;
           },
           history: async () =>

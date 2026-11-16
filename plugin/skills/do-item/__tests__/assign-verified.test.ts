@@ -134,6 +134,7 @@ function linearWorld(
   let assignee: string | null = options.assignee ?? null;
   const history: Array<Record<string, unknown>> = [];
   const writes: (string | null)[] = [];
+  let assigneeReads = 0;
   let tick = 0;
   const change = (to: string | null) => {
     tick++;
@@ -150,6 +151,7 @@ function linearWorld(
     const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
     switch (op) {
       case "TrackerAssignee":
+        assigneeReads++;
         return {
           issue: {
             id: "uuid-4",
@@ -180,7 +182,7 @@ function linearWorld(
     states: parseTrackerConfig({}).states,
     transport,
   });
-  return { t, writes, now: () => assignee };
+  return { t, writes, now: () => assignee, assigneeReads: () => assigneeReads };
 }
 
 describe("Linear: assigning an unassigned issue", () => {
@@ -220,6 +222,14 @@ describe("Linear: assigning an unassigned issue", () => {
     });
     expect(w.writes).toEqual([ME.id, null]);
   });
+
+  it("uses the cleanup guard's read for its cleanup mutation", async () => {
+    const w = linearWorld({ noHistory: true });
+    await w.t.assignUnassigned?.("ENG-4", ME);
+    // Initial check, assignment, polling, then the cleanup guard: no
+    // adapter helper may read once more after that ownership check.
+    expect(w.assigneeReads()).toBe(16);
+  });
 });
 
 /** Jira issue ENG-1 whose assignee and changelog the fake keeps; `race` assigns MEMBER just before the claim's write. */
@@ -234,6 +244,7 @@ function jiraWorld(
   let assignee: string | null = options.assignee ?? null;
   const changelog: Array<Record<string, unknown>> = [];
   const writes: (string | null)[] = [];
+  let issueReads = 0;
   const account = (id: string | null) =>
     id === null
       ? null
@@ -256,8 +267,10 @@ function jiraWorld(
   };
   const { t } = jira((c: Call) => {
     if (c.path === "myself") return FACTORY;
-    if (c.route === "GET issue/ENG-1")
+    if (c.route === "GET issue/ENG-1") {
+      issueReads++;
       return issue({ key: "ENG-1", assignee: account(assignee) });
+    }
     if (c.route === "PUT issue/ENG-1/assignee") {
       const value = c.body.accountId;
       const to = value === null ? null : String(value);
@@ -275,7 +288,7 @@ function jiraWorld(
       };
     return new Error(`unexpected request ${c.route}`);
   });
-  return { t, writes, now: () => assignee };
+  return { t, writes, now: () => assignee, issueReads: () => issueReads };
 }
 
 describe("Jira: assigning an unassigned issue", () => {
@@ -323,5 +336,13 @@ describe("Jira: assigning an unassigned issue", () => {
     });
     expect(w.writes).toEqual([me.id, null]);
     expect(w.now()).toBeNull();
+  });
+
+  it("uses the cleanup guard's read for its cleanup mutation", async () => {
+    const w = jiraWorld({ noHistory: true });
+    await w.t.assignUnassigned?.("ENG-1", me);
+    // Initial check, assignment, polling, then the cleanup guard: no
+    // adapter helper may read once more after that ownership check.
+    expect(w.issueReads()).toBe(16);
   });
 });

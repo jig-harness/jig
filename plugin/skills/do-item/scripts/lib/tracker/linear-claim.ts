@@ -110,6 +110,15 @@ export function claimOperations(
     name: string,
   ) {
     const { id } = await read(key);
+    await assignIssue(id, assigneeId, key, name);
+  }
+
+  async function assignIssue(
+    id: string,
+    assigneeId: string | null,
+    key: string,
+    name: string,
+  ) {
     const data = record(
       await transport(ASSIGN, { id, input: { assigneeId } }),
       "data",
@@ -166,8 +175,9 @@ export function claimOperations(
           assignee: async () => (await read(key)).assignee?.id ?? null,
           assign: (id) => assignId(key, id, id ?? "nobody"),
           async assignIfCurrent(expected, id) {
-            if ((await read(key)).assignee?.id !== expected) return false;
-            await assignId(key, id, id ?? "nobody");
+            const issue = await read(key);
+            if (issue.assignee?.id !== expected) return false;
+            await assignIssue(issue.id, id, key, id ?? "nobody");
             return true;
           },
           history: () => history(key),
