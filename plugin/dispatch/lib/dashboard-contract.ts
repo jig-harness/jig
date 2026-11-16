@@ -75,6 +75,8 @@ export interface LineDecision {
   answers?: import("../../shared/decision-card.ts").ShownAnswer[];
   /** Why those answers do not settle it; absent when it has none. */
   answerState?: import("../../shared/decision-card.ts").AnswerState;
+  /** For a need's decision: why its answers could not be read this tick; absent when they were. */
+  unread?: string;
   /** For a need's decision: the answer the tick acted on, once, and how its step went (`null` while it has not written it); absent when no answer counted. */
   acted?: {
     /** The counted comment URL and time, to match a posted answer to its outcome. */

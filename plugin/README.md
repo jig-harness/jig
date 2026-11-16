@@ -685,21 +685,25 @@ answers sent from an older dashboard snapshot while the facts remain the same:
 
 A double claim, an unanswered nudge and an item assigned by someone who
 cannot write keep their free text. Answer a need's decision as a park is
-answered, in a comment on its pull request or forge issue (`answer
-followup: approve [<digest>]`), copied from the dashboard or sent with
-`jig send followup@owner/name#456 answer followup --approve --decision
-<digest>`. The tick of the host that owns the repository reads the
-comments each tick, counts an answer only from an author the forge
-vouches for, never its own login, and only when it names the decision's
-current digest and every person who answered chose the same option, then
+answered, in a comment on its pull request or forge issue, or on the item
+on its tracker where the items are not the forge's (`answer followup:
+approve [<digest>]`), copied from the dashboard or sent with `jig send
+followup@owner/name#456 answer followup --approve --decision <digest>`.
+The tick of the host that owns the repository reads the comments each
+tick, counts an answer only from an author the forge vouches for (on
+another tracker, a member of its workspace who is not a guest), never its
+own login or the user its tracker credential acts as, and only when it
+names the decision's current digest and every person who answered chose
+the same option, then
 carries out the option once: it checks again that the step still may run
 (the stage is on, no hold label, the marker unchanged, no session holds the
 work, no open pull request carries the item, the checkout idle) and
 otherwise refuses with the reason, which the need shows; answering again
 tries again. A decision a pass framed starts that stage again (the
 follow-up's marker deleted, or the item released), and the session started
-next is handed the option you chose, narrowed by your note. Answers on an
-item of a tracker other than the forge are not read yet.
+next is handed the option you chose, narrowed by your note. On a tracker
+whose adapter cannot name who wrote a comment, the answers are not read,
+and the need says so.
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
 machine file) inspects what the rules leave stopped, under the owner host's
@@ -1656,7 +1660,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
-| `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item where the items are the forge's issues | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
+| `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
 | `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
 
 **It checks before it writes.** It reads the address first, through `jig
@@ -1676,7 +1680,8 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   recommendation, and one whose digest is no longer the park's (below);
   to a need's decision, an answer whose key no need of the address carries
   in this machine's newest line, your own words (the tick carries out an
-  option), and an item on a tracker other than the forge;
+  option), and, on another tracker's item, a tracker that cannot name who
+  wrote a comment or a credential that acts as the factory identity;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so

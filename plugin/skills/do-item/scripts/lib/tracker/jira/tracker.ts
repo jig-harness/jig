@@ -377,6 +377,7 @@ export function jiraTracker(client: Client): Tracker {
     team: project,
     instance: client.site,
     readinessKey: JSON.stringify(settings.linkTypes),
+    commentAuthors: true,
     stateName: model.stateName,
     stateMaps: model.stateMaps,
 

@@ -131,14 +131,20 @@ function goLabelOf(n: LineNeed): string {
 /** Each decision's waiting answers in words, named by its key when the need has several. */
 function answerNotes(decisions: LineDecision[]): NeedView["answerNotes"] {
   return decisions.flatMap((d) => {
+    const prefix = decisions.length > 1 ? `${d.key}: ` : "";
+    const notes: NeedView["answerNotes"] = [];
     const said = answerStateWords(d.answerState, d.answers ?? []);
-    if (said === null) return [];
-    return [
-      {
+    if (said !== null)
+      notes.push({
         state: d.answerState ?? "waiting",
-        text: decisions.length > 1 ? `${d.key}: ${said}` : said,
-      },
-    ];
+        text: `${prefix}${said}`,
+      });
+    if (d.unread !== undefined)
+      notes.push({
+        state: "waiting",
+        text: `${prefix}Answers not read, so it still waits: ${d.unread}`,
+      });
+    return notes;
   });
 }
 

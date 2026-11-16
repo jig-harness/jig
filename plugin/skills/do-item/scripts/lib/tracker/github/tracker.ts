@@ -26,7 +26,12 @@ import { labelCodec } from "../facets/label.ts";
 
 import type { CanonicalState, IssuePatch, Tracker } from "../port.ts";
 import { type CoreTracker, withFacets } from "../facets/tracker.ts";
-import type { IssueComment, IssueRelation, IssueSummary } from "../port.ts";
+import type {
+  IssueComment,
+  IssueRelation,
+  IssueSummary,
+  TrackerUser,
+} from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
 import { namedState } from "../config-error.ts";
 import {
@@ -85,7 +90,7 @@ query TrackerComments($owner: String!, $name: String!, $number: Int!, $after: St
       id
       comments(first: ${PAGE}, after: $after) {
         pageInfo { hasNextPage endCursor }
-        nodes { id body createdAt authorAssociation viewerDidAuthor }
+        nodes { id url body createdAt lastEditedAt authorAssociation viewerDidAuthor author { login ... on Node { id } } }
       }
     }
   }
@@ -178,6 +183,18 @@ export interface CommentNode {
   body: string;
   createdAt: string;
   trusted: boolean;
+  author: TrackerUser | null;
+  url?: string;
+  editedAt: string | null;
+}
+
+/** The user a comment names, or `null` for a deleted account (GitHub's ghost). */
+function authorOf(v: unknown): TrackerUser | null {
+  if (typeof v !== "object" || v === null) return null;
+  const { login, id } = v as Record<string, unknown>;
+  return typeof login === "string" && login !== "" && typeof id === "string"
+    ? { id, name: login }
+    : null;
 }
 
 export function gitHubTracker(client: Client): Tracker {
@@ -226,6 +243,11 @@ export function gitHubTracker(client: Client): Tracker {
           trusted:
             TRUSTED.has(String(n.authorAssociation)) ||
             n.viewerDidAuthor === true,
+          author: authorOf(n.author),
+          ...(typeof n.url === "string" && n.url !== "" ? { url: n.url } : {}),
+          // A supplied but malformed edit time is kept as written so the
+          // answer reader rejects the comment.
+          editedAt: typeof n.lastEditedAt === "string" ? n.lastEditedAt : null,
         };
       }),
     };
@@ -634,6 +656,7 @@ export function gitHubTracker(client: Client): Tracker {
       ctx.board?.statusField ?? null,
       model.stateLabels,
     ]),
+    commentAuthors: true,
     stateName: model.stateName,
 
     async reach(signal) {
