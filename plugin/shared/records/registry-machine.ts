@@ -435,7 +435,7 @@ export const MACHINE: RecordKind[] = [
     medium: "machine",
     owner: "shared/orca-guard.ts",
     at: `${ORCA_GUARD_DIR}admissions/<key>.json`,
-    version: 1,
+    version: 2,
     key: ORCA_GUARD_KEY,
     meaning:
       "Written by `jig gc` while it collects a worktree: Jig's plugin for Orca refuses an agent launch into a worktree that has one.",

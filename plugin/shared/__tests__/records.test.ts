@@ -33,6 +33,7 @@ import {
 } from "../records/envelope.ts";
 import {
   ADMISSION_KIND,
+  ADMISSION_VERSION,
   GUARD_VERSION,
   HEARTBEAT_KIND,
   LAUNCH_KIND,
@@ -288,7 +289,8 @@ describe("the registry", () => {
       LEDGER_VERSION,
     );
     expect(recordKind(FOLLOWUP_KIND)?.version).toBe(FOLLOWUP_VERSION);
-    for (const kind of [ADMISSION_KIND, LAUNCH_KIND, HEARTBEAT_KIND])
+    expect(recordKind(ADMISSION_KIND)?.version).toBe(ADMISSION_VERSION);
+    for (const kind of [LAUNCH_KIND, HEARTBEAT_KIND])
       expect(recordKind(kind)?.version).toBe(GUARD_VERSION);
     const tables = RECORD_KINDS.filter(
       (k) => k.table !== undefined && k.at.includes("/dispatch/"),

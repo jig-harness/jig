@@ -3,9 +3,11 @@
  * worktree Orca manages: write the admission, keep the worktree for a launch
  * marker that settles or came after it, mark the admission submitted just
  * before `orca worktree rm`, and delete it unless that call was made and
- * gave no answer. A claim kept that way is settled by a later collection:
- * one that takes it over and gets the call's answer, or one that finds the
- * worktree gone from Orca's list and from the disk. Whether Jig's plugin for
+ * gave no answer. A claim kept that way is settled by a later collection of
+ * the repository that wrote it: one that takes it over and gets the call's
+ * answer, one that finds the worktree gone from Orca's list and from the
+ * disk, or one that finds another incarnation of the worktree at its path.
+ * Whether Jig's plugin for
  * Orca guards launches (its heartbeat is fresh) is recorded on the receipt
  * line; an unguarded collection runs as it would without the plugin.
  */
@@ -16,8 +18,12 @@ import {
   admit,
   guardRoot,
   guardState,
+  incarnationOf,
   launchVeto,
   releaseAbsent,
+  releaseSuperseded,
+  repositoryOwner,
+  type StaleAdmission,
   staleAdmissions,
   sweepLaunches,
   unreadableAdmissions,
@@ -84,7 +90,8 @@ export interface GuardedRemoval {
 }
 
 /**
- * Collect one worktree Orca reports at `path` under gc's admission. `body`
+ * Collect one worktree Orca reports at `path` under gc's admission for
+ * `repository`'s collection. `body`
  * removes it with the `GuardedRemoval` it is given. The admission is deleted
  * on every exit unless it was submitted, by this collection or by the dead
  * one it took over, and the removal call gave no answer: then it stays, so
@@ -94,6 +101,7 @@ export interface GuardedRemoval {
 export async function guardedCollection(
   resource: Resource,
   path: string | null,
+  repository: string,
   body: (guard: GuardedRemoval) => Promise<Collected>,
   root = guardRoot(),
 ): Promise<Collected> {
@@ -109,7 +117,7 @@ export async function guardedCollection(
   });
   if (path === null) return kept("Orca's path of the worktree is unknown");
   sweepOncePerRun(root);
-  const admitted = admit(path, root);
+  const admitted = admit(path, repository, root);
   if (!admitted.ok) return kept(admitted.failure.reason);
   const admission = admitted.value;
   let answered = false;
@@ -186,26 +194,129 @@ export function isGoneClaim(resource: Resource): boolean {
 }
 
 /**
+ * The admissions collectors that ended left on worktrees `mine` accepts, and
+ * whether `repository` owns each: an admission names the repository whose
+ * collection wrote it, and only that repository's list of Orca's worktrees
+ * can hold the worktree. One written before admissions named a repository is
+ * owned by none.
+ */
+function claimsUnder(
+  mine: (path: string) => boolean,
+  repository: string,
+  root: string,
+): { admission: StaleAdmission; owned: boolean }[] {
+  const owner = repositoryOwner(repository);
+  return staleAdmissions(root)
+    .filter(({ path }) => mine(path))
+    .map((admission) => ({
+      admission,
+      owned: admission.repository === owner,
+    }));
+}
+
+/** The receipt detail on a gone claim no repository's list can settle: it names no repository. */
+const UNOWNED =
+  "it was written before launch guard admissions named their repository, so absence from this repository's list of Orca's worktrees does not show the worktree gone; it blocks launches at its path until it is removed after inspection";
+
+/**
  * A resource for each admission a collector that ended left on a worktree
- * `mine` accepts and that is gone from the disk; the caller keeps only those
+ * `mine` accepts and that is gone from the disk, written by `repository`'s
+ * collection or by one that named no repository; the caller keeps only those
  * Orca's list does not hold either. Collecting one deletes the admission,
  * which nothing else would, since a gone worktree is never collected again.
+ * One that names no repository is reported, never collected.
  */
 export function goneClaims(
   mine: (path: string) => boolean,
+  repository: string,
   root = guardRoot(),
 ): Resource[] {
-  return staleAdmissions(root)
-    .filter(({ path }) => mine(path) && !onDisk(path))
-    .map(({ path, submitted }) => ({
+  return claimsUnder(mine, repository, root)
+    .filter(
+      ({ admission, owned }) =>
+        (owned || admission.repository === null) && !onDisk(admission.path),
+    )
+    .map(({ admission: { path, submitted }, owned }) => ({
       id: path,
       details: {
         runtime: "orca",
         orcaPath: path,
         claim: GONE,
         ...(submitted === null ? {} : { submitted }),
+        ...(owned ? {} : { unowned: UNOWNED }),
       },
     }));
+}
+
+/** The receipt detail that marks a resource as a dead collector's claim on an earlier incarnation of a worktree. */
+const SUPERSEDED = "superseded";
+
+/** Whether `resource` is a claim `supersededClaims` listed. */
+export function isSupersededClaim(resource: Resource): boolean {
+  return isMapping(resource.details) && resource.details.claim === SUPERSEDED;
+}
+
+/**
+ * A resource for each admission `repository`'s collection left, when it
+ * ended, on a worktree `mine` accepts that has been made again: what stands
+ * at its path is another incarnation than the one it claimed. The removal it
+ * claimed is settled, and the new worktree would otherwise inherit its block
+ * on launches. Its id is the admission's file, since the worktree at the
+ * path is a resource of its own.
+ */
+export function supersededClaims(
+  mine: (path: string) => boolean,
+  repository: string,
+  root = guardRoot(),
+): Resource[] {
+  return claimsUnder(mine, repository, root)
+    .filter(({ admission, owned }) => owned && superseded(admission))
+    .map(({ admission: { file, path, submitted } }) => ({
+      id: file,
+      details: {
+        runtime: "orca",
+        orcaPath: path,
+        claim: SUPERSEDED,
+        ...(submitted === null ? {} : { submitted }),
+      },
+    }));
+}
+
+/** Whether another incarnation than the one `admission` claimed stands at its path. */
+function superseded(admission: StaleAdmission): boolean {
+  if (admission.incarnation === null) return false;
+  const now = incarnationOf(admission.path);
+  return now !== null && now !== admission.incarnation;
+}
+
+/** The proof of a superseded claim: decided again when it is collected, under its lock. */
+export function proveSuperseded(): Proof {
+  return {
+    state: "dead",
+    reason:
+      "the collection that holds the launch guard claim has ended, and the worktree it claimed is gone: another one was made at its path",
+  };
+}
+
+/** Delete the superseded claim's admission, reading the worktree's incarnation once more under its lock. */
+export function releaseSupersededClaim(
+  resource: Resource,
+  root = guardRoot(),
+): Collected {
+  const path =
+    isMapping(resource.details) && typeof resource.details.orcaPath === "string"
+      ? resource.details.orcaPath
+      : null;
+  if (path === null)
+    return { outcome: "refused", reason: "kept: the claim names no worktree" };
+  const released = releaseSuperseded(path, root);
+  return released.ok
+    ? {
+        outcome: "collected",
+        reason:
+          "released the launch guard claim of an earlier worktree at this path, so the one made there since can take launches",
+      }
+    : { outcome: "refused", reason: `kept: ${released.failure.reason}` };
 }
 
 /** The receipt detail that marks a resource as an admission gc cannot read. */
@@ -243,12 +354,15 @@ export function proveUnreadable(resource: Resource): Proof {
 /**
  * The dead collectors' claims standing on worktrees that are still on the
  * disk, by path: a worktree that is active, dirty or locked is never
- * collected, so its claim would otherwise go unreported.
+ * collected, so its claim would otherwise go unreported. A claim on an
+ * earlier incarnation of the worktree is not standing on it.
  */
 export function standingClaims(root = guardRoot()): Map<string, string | null> {
   return new Map(
     staleAdmissions(root)
-      .filter(({ submitted }) => submitted !== null)
+      .filter(
+        (admission) => admission.submitted !== null && !superseded(admission),
+      )
       .map(({ path, submitted }) => [path, submitted]),
   );
 }
@@ -262,6 +376,11 @@ export async function proveGone(
   resource: Resource,
   listed: () => Promise<Outcome<(path: string) => boolean>>,
 ): Promise<Proof> {
+  if (
+    isMapping(resource.details) &&
+    typeof resource.details.unowned === "string"
+  )
+    return { state: "unverified", reason: resource.details.unowned };
   const read = await listed();
   if (!read.ok) return { state: "unverified", reason: read.failure.reason };
   if (read.value(resource.id))
@@ -275,9 +394,18 @@ export async function proveGone(
   };
 }
 
-/** Delete the gone claim's admission, reading the disk once more under its lock. */
-export function releaseGone(resource: Resource, root = guardRoot()): Collected {
-  const released = releaseAbsent(resource.id, () => !onDisk(resource.id), root);
+/** Delete the gone claim of `repository`'s collection, reading the disk once more under its lock. */
+export function releaseGone(
+  resource: Resource,
+  repository: string,
+  root = guardRoot(),
+): Collected {
+  const released = releaseAbsent(
+    resource.id,
+    repository,
+    () => !onDisk(resource.id),
+    root,
+  );
   return released.ok
     ? {
         outcome: "collected",

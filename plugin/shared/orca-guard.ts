@@ -16,7 +16,10 @@
  * - `heartbeat.json`, rewritten by the plugin about every minute.
  *
  * `<key>` is the lowercase hexadecimal SHA-256 of the worktree's path exactly
- * as Orca reports it, unnormalised. Every file carries the record envelope
+ * as Orca reports it, unnormalised. An admission also names the repository
+ * whose collection wrote it and the incarnation of the worktree it claims
+ * (`incarnationOf`), so only that repository settles it from Orca's list,
+ * and a worktree made again at the same path does not inherit it. Every file carries the record envelope
  * (`records/envelope.ts`) and is published whole: written to a temporary
  * file in its directory and renamed (or, for an admission, linked) into
  * place, so a reader never sees a partial one. gc marks its admission
@@ -36,12 +39,13 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, normalize } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 import { tryFileLockSync } from "./file-lock.ts";
 import {
@@ -61,8 +65,13 @@ import { currentMs, isoFromMs, parseMs } from "./time.ts";
 export const ADMISSION_KIND = "orca-guard-admission";
 export const LAUNCH_KIND = "orca-guard-launch";
 export const HEARTBEAT_KIND = "orca-guard-heartbeat";
-/** The schema version of every launch guard record kind. */
+/** The schema version of the launch marker and the heartbeat, which the plugin writes. */
 export const GUARD_VERSION = 1;
+/**
+ * The schema version of the admission gc writes: 2 names the repository and
+ * the worktree's incarnation. gc still reads version 1, which names neither.
+ */
+export const ADMISSION_VERSION = 2;
 /** A heartbeat is fresh while its `at` is within this of now. */
 export const HEARTBEAT_FRESH_MS = 180_000;
 /** A launch marker keeps its worktree for this long after its `at`. */
@@ -81,6 +90,37 @@ export function guardKey(path: string): string {
 }
 
 const ENTRY = /^[0-9a-f]{64}\.json$/;
+
+/**
+ * The repository as an admission names it: its path with links resolved,
+ * where it exists, so two spellings of one repository agree.
+ */
+export function repositoryOwner(repository: string): string {
+  try {
+    return realpathSync.native(repository);
+  } catch (error) {
+    swallow(error, "the repository's path is compared as written");
+    return normalize(repository);
+  }
+}
+
+/**
+ * The incarnation of what stands at `path`: its inode and birth time, which a
+ * worktree made again at the same path does not share (Orca can reuse the
+ * worktree's id, so the id cannot tell them apart). `null` when nothing
+ * stands there or it cannot be read. A difference proves another
+ * incarnation; equal values prove nothing more than that the inode and birth
+ * time agree, so a reader only ever acts on a difference.
+ */
+export function incarnationOf(path: string): string | null {
+  try {
+    const stat = statSync(path, { bigint: true });
+    return `${stat.ino}:${stat.birthtimeNs}`;
+  } catch (error) {
+    swallow(error, "nothing readable stands at the path");
+    return null;
+  }
+}
 
 /** A file's text, `null` when it does not exist, or why it cannot be read. */
 function readText(file: string): Outcome<string | null, "unreadable"> {
@@ -204,12 +244,24 @@ function writerOf(identity: ProcessIdentity): Writer {
   };
 }
 
-/** What an admission's text says: the worktree's path, its holder, when it was written and submitted. */
+/**
+ * What an admission's text says: the worktree's path, its holder, when it was
+ * written and submitted, and the repository and the worktree's incarnation it
+ * names (`null` for each in a version 1 admission, and for an incarnation gc
+ * could not read when it admitted).
+ */
 interface Standing {
   path: string;
   holder: ProcessIdentity;
   at: string;
   submitted: string | null;
+  repository: string | null;
+  incarnation: string | null;
+}
+
+/** Whether `value` is a field an admission may leave out: absent, or a non-empty string. */
+function isOptionalText(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === "string" && value !== "");
 }
 
 /** Whether `value` is an admission's `submitted` as it may stand: absent, or a time. */
@@ -227,12 +279,13 @@ function admissionHolder(
 ): Outcome<Standing, "unreadable"> {
   const read = decode(text, ADMISSION_KIND);
   if (!read.ok) return failed("unreadable", read.failure.reason);
-  if (read.value.envelope.v !== GUARD_VERSION)
+  const version = read.value.envelope.v;
+  if (version !== 1 && version !== ADMISSION_VERSION)
     return failed(
       "unreadable",
-      `version ${read.value.envelope.v} is not one this version of Jig reads`,
+      `version ${version} is not one this version of Jig reads`,
     );
-  const { path, submitted } = read.value.payload;
+  const { path, submitted, repository, incarnation } = read.value.payload;
   if (
     typeof path !== "string" ||
     path === "" ||
@@ -242,6 +295,24 @@ function admissionHolder(
     return failed("unreadable", "it does not name the worktree of its key");
   if (!isMark(submitted))
     return failed("unreadable", "its submitted mark is not a time");
+  // Version 1 names neither its repository nor the worktree's incarnation.
+  const owner = {
+    repository: null as string | null,
+    incarnation: null as string | null,
+  };
+  if (version === ADMISSION_VERSION) {
+    if (
+      typeof repository !== "string" ||
+      repository === "" ||
+      !isOptionalText(incarnation)
+    )
+      return failed(
+        "unreadable",
+        "it does not name its repository, or its incarnation is not text",
+      );
+    owner.repository = repository;
+    owner.incarnation = incarnation ?? null;
+  }
   const holder = decodeIdentity(read.value.payload.holder);
   return holder === null
     ? failed("unreadable", "it names no holder")
@@ -250,6 +321,7 @@ function admissionHolder(
         holder,
         at: read.value.envelope.at,
         submitted: submitted ?? null,
+        ...owner,
       });
 }
 
@@ -290,15 +362,27 @@ function stage(
   }
 }
 
+/** Whether an admission written for the incarnation `recorded` is provably not for `current`. */
+function otherIncarnation(
+  recorded: string | null,
+  current: string | null,
+): boolean {
+  return recorded !== null && current !== null && recorded !== current;
+}
+
 /**
- * Write gc's admission for the worktree Orca reports at `path`: published
+ * Write gc's admission, for `repository`'s collection, of the worktree Orca
+ * reports at `path`, naming the incarnation that stands there now: published
  * whole by a link, which fails while another admission stands. One whose
- * holder is judged dead is taken over, keeping its submitted mark; one held
- * by a live or unjudgeable process, or that does not read, refuses this one
- * and stays for a person to inspect.
+ * holder is judged dead is taken over, keeping its submitted mark unless it
+ * was written for another incarnation of the worktree (that removal is
+ * settled: what it removed is gone); one held by a live or unjudgeable
+ * process, or that does not read, refuses this one and stays for a person to
+ * inspect.
  */
 export function admit(
   path: string,
+  repository: string,
   root = guardRoot(),
   now = currentMs(),
   holder: ProcessIdentity = ownIdentity(),
@@ -307,17 +391,21 @@ export function admit(
   const key = guardKey(path);
   const file = join(dir, `${key}.json`);
   const at = isoFromMs(now);
+  const owner = repositoryOwner(repository);
+  const incarnation = incarnationOf(path);
   const body = (submitted: string | null): string =>
     `${encode(
       {
         kind: ADMISSION_KIND,
-        v: GUARD_VERSION,
+        v: ADMISSION_VERSION,
         key,
         writer: writerOf(holder),
         at,
       },
       {
         path,
+        repository: owner,
+        ...(incarnation === null ? {} : { incarnation }),
         holder: JSON.parse(encodeIdentity(holder)),
         ...(submitted === null ? {} : { submitted }),
       },
@@ -325,9 +413,15 @@ export function admit(
   const staged = stage(dir, file, body(null));
   if (!staged.ok) return staged;
   try {
-    const placed = publish(staged.value, file, (submitted) =>
-      writeFileSync(staged.value, body(submitted)),
-    );
+    const placed = publish(staged.value, file, (from) => {
+      if (
+        from.submitted === null ||
+        otherIncarnation(from.incarnation, incarnation)
+      )
+        return null;
+      writeFileSync(staged.value, body(from.submitted));
+      return from.submitted;
+    });
     if (!placed.ok) return placed;
     const mine = { holder, at };
     if (!stillMine(file, key, mine))
@@ -371,8 +465,11 @@ export function admit(
   }
 }
 
-/** Rewrite the staged admission to carry the submitted mark it takes over. */
-type CarryMark = (submitted: string) => void;
+/**
+ * Rewrite the staged admission to carry the submitted mark of the admission
+ * it takes over, when that mark still holds; the mark carried, or `null`.
+ */
+type CarryMark = (from: Standing) => string | null;
 
 /**
  * Link `staged` into place at `file`, taking over an admission only when its
@@ -462,7 +559,8 @@ function underReclaimLock<T, Code extends string>(
  * again and replaces it, by a rename so the hook never finds the worktree
  * unclaimed, only while it is still the one judged; a contender that finds
  * the lock taken or the admission changed is refused. A submitted admission
- * stays submitted: its mark is carried into the one that replaces it.
+ * stays submitted, its mark carried into the one that replaces it, unless
+ * `carry` finds the mark settled.
  */
 function replaceDead(
   staged: string,
@@ -472,7 +570,6 @@ function replaceDead(
 ): Outcome<{ submitted: string | null }, AdmissionCode> {
   const standing = deadStanding(file, text);
   if (!standing.ok) return standing;
-  const { submitted } = standing.value;
   return underReclaimLock(
     file,
     (): Outcome<{ submitted: string | null }, AdmissionCode> => {
@@ -481,7 +578,7 @@ function replaceDead(
         if (!now.ok) return now;
         if (now.value !== null && now.value !== text)
           return failed("held", `another collection took ${file} first`);
-        if (submitted !== null) carry(submitted);
+        const submitted = carry(standing.value);
         if (now.value === null) linkSync(staged, file);
         else renameWithRetry(staged, file);
         return ok({ submitted });
@@ -498,10 +595,17 @@ function replaceDead(
   );
 }
 
-/** An admission whose holder is judged dead: the worktree it names and whether its removal was submitted. */
+/**
+ * An admission whose holder is judged dead: its file, the worktree it names,
+ * whether its removal was submitted, and the repository and incarnation it
+ * names (`null` when it does not name one).
+ */
 export interface StaleAdmission {
+  file: string;
   path: string;
   submitted: string | null;
+  repository: string | null;
+  incarnation: string | null;
 }
 
 /**
@@ -526,11 +630,10 @@ export function staleAdmissions(root = guardRoot()): StaleAdmission[] {
     const text = readText(file);
     if (!text.ok || text.value === null) continue;
     const standing = deadStanding(file, text.value);
-    if (standing.ok)
-      stale.push({
-        path: standing.value.path,
-        submitted: standing.value.submitted,
-      });
+    if (standing.ok) {
+      const { path, submitted, repository, incarnation } = standing.value;
+      stale.push({ file, path, submitted, repository, incarnation });
+    }
   }
   return stale;
 }
@@ -575,14 +678,61 @@ export function unreadableAdmissions(
 
 /**
  * Delete the admission for the worktree at `path` when its holder is judged
- * dead and `absent` (the worktree's absence from the disk, read last) holds:
- * under the reclaim lock, after reading the admission again. The caller has
- * already read the worktree's absence from Orca's list.
+ * dead, it names `repository` (whose list of Orca's worktrees the caller has
+ * already read the worktree's absence from), and `absent` (the worktree's
+ * absence from the disk, read last) holds: under the reclaim lock, after
+ * reading the admission again.
  */
 export function releaseAbsent(
   path: string,
+  repository: string,
   absent: () => boolean,
   root = guardRoot(),
+): Outcome<true, AdmissionCode | "present"> {
+  const owner = repositoryOwner(repository);
+  return releaseSettled(
+    path,
+    (standing) =>
+      standing.repository !== owner
+        ? `the claim on ${path} is not ${owner}'s to settle`
+        : absent()
+          ? null
+          : `the worktree at ${path} is on the disk again`,
+    root,
+  );
+}
+
+/**
+ * Delete the admission for the worktree at `path` when its holder is judged
+ * dead and it was written for an incarnation other than the one standing at
+ * `path` now (read last): what it claimed is gone, and the worktree made
+ * again there is not its to keep. An admission that names no incarnation, or
+ * a worktree whose incarnation cannot be read, is kept.
+ */
+export function releaseSuperseded(
+  path: string,
+  root = guardRoot(),
+): Outcome<true, AdmissionCode | "present"> {
+  return releaseSettled(
+    path,
+    (standing) =>
+      otherIncarnation(standing.incarnation, incarnationOf(path))
+        ? null
+        : `the worktree at ${path} is still the one the claim was written for, or its incarnation cannot be told`,
+    root,
+  );
+}
+
+/**
+ * Delete the admission for the worktree at `path` when its holder is judged
+ * dead and `unsettled`, given what it says, finds nothing that keeps it
+ * (`null`; otherwise why it stays): under the reclaim lock, after reading the
+ * admission again.
+ */
+function releaseSettled(
+  path: string,
+  unsettled: (standing: Standing) => string | null,
+  root: string,
 ): Outcome<true, AdmissionCode | "present"> {
   const file = join(root, "admissions", `${guardKey(path)}.json`);
   return underReclaimLock(
@@ -593,11 +743,8 @@ export function releaseAbsent(
       if (text.value === null) return ok(true);
       const standing = deadStanding(file, text.value);
       if (!standing.ok) return standing;
-      if (!absent())
-        return failed(
-          "present",
-          `the worktree at ${path} is on the disk again`,
-        );
+      const why = unsettled(standing.value);
+      if (why !== null) return failed("present", why);
       try {
         rmSync(file, { force: true });
         return ok(true);
