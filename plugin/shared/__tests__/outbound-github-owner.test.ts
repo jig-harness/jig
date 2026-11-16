@@ -644,6 +644,37 @@ describe("records an earlier release kept", () => {
     expect(store.read(found.owner)?.limitedUntil).toBe(until);
   });
 
+  it("give up on a carry the lock keeps refusing once the call's one deadline passes, discovery and settling together", async () => {
+    const path = databasePath();
+    const env = { GH_TOKEN: "token-a" };
+    const store = sqliteBudgetStore(path);
+    let now = currentMs();
+    const flaky: BudgetStore = {
+      ...store,
+      update: (key, change, nonblocking) => {
+        if (key !== legacyGithubCredential(env))
+          throw Object.assign(new Error("database is locked"), {
+            code: "SQLITE_BUSY",
+          });
+        return store.update(key, change, nonblocking);
+      },
+    };
+    const owners = githubOwnerResolver({
+      owners: sqliteOwnerStore(path, currentMs),
+      budget: flaky,
+      discover: discovery({ "token-a": 3 }).discover,
+      clock: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    });
+    store.update(legacyGithubCredential(env), () => held(now + 600_000));
+    const began = now;
+    const found = await owners.resolve(env, 1_000);
+    expect(found.owner).toBeDefined();
+    expect(now - began).toBeLessThanOrEqual(1_000 + 25);
+  });
+
   it("carry the stored login's opaque record into its owner's", async () => {
     const dir = scratch();
     writeFileSync(join(dir, "hosts.yml"), "github.com:\n  user: alice\n");

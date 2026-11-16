@@ -306,8 +306,12 @@ export function githubOwnerResolver(deps: {
   governor?: BudgetGovernor;
   discover?: DiscoverUser;
   clock?: () => number;
+  /** Waits `ms`; give it with a pinned `clock` so contention can be tested without real time. */
+  sleep?: (ms: number) => Promise<void>;
 }): GithubOwnerResolver {
   const clock = deps.clock ?? currentMs;
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const discover = deps.discover ?? ghUser;
   const memo = new Map<
     string,
@@ -388,26 +392,29 @@ export function githubOwnerResolver(deps: {
   /**
    * Complete the carries before the owner is used, so a call is admitted
    * against the owner's record and not an absent one: the lock is waited for
-   * within the call's deadline, and a carry still refused then is tried
-   * again at the next resolve.
+   * until the call's absolute deadline `until`, and a carry still refused
+   * then is tried again at the next resolve.
    */
   const settle = async (
     env: Env,
     owner: string,
-    deadlineMs: number,
+    until: number,
   ): Promise<void> => {
-    const until = clock() + Math.max(0, deadlineMs);
     while (!settleOnce(env, owner) && clock() < until)
-      await new Promise((r) => setTimeout(r, SETTLE_POLL_MS));
+      await sleep(SETTLE_POLL_MS);
   };
 
   const ask = async (
     env: Env,
     credential: string,
     entry: OwnerEntry | null,
-    deadlineMs: number,
+    until: number,
   ): Promise<OwnerResolution> => {
     const now = clock();
+    const deadlineMs = Math.min(
+      DISCOVERY_DEADLINE_MS,
+      Math.max(0, until - now),
+    );
     const fallback = unverified(env, credential);
     // The request is admitted, observed and recorded as any run of `gh` is,
     // against the unverified record, the owner not being known yet.
@@ -440,7 +447,7 @@ export function githubOwnerResolver(deps: {
       if (seen !== null && seen.observedAt >= began) {
         // Carried at the owner's next resolve when the lock is held.
         unsettled.set(owner, seen);
-        await settle(env, owner, deadlineMs - (currentMs() - began));
+        await settle(env, owner, until);
       }
     }
     // The default discovery is a run of `gh` the wrapper records itself; a
@@ -483,9 +490,12 @@ export function githubOwnerResolver(deps: {
     deadlineMs: number = DISCOVERY_DEADLINE_MS,
   ): Promise<OwnerResolution> => {
     const credential = githubCredential(env);
+    // One deadline for the whole resolution, however many settlements and
+    // discoveries it spends it on.
+    const until = clock() + Math.max(0, deadlineMs);
     if (installationToken(env)) {
       const found = installation(env, credential);
-      await settle(env, found.owner, deadlineMs);
+      await settle(env, found.owner, until);
       return found;
     }
     const now = clock();
@@ -493,7 +503,7 @@ export function githubOwnerResolver(deps: {
     const slot = `${credential}@${host}`;
     const held = memo.get(slot);
     if (held !== undefined && held.until > now) {
-      await settle(env, held.resolution.owner, deadlineMs);
+      await settle(env, held.resolution.owner, until);
       return held.resolution;
     }
     const pending = inflight.get(slot);
@@ -502,24 +512,19 @@ export function githubOwnerResolver(deps: {
     if (entry !== null && entry.retryAt > now) {
       const found = fromEntry(credential, entry);
       memo.set(slot, { resolution: found, until: entry.retryAt });
-      await settle(env, found.owner, deadlineMs);
+      await settle(env, found.owner, until);
       return found;
     }
-    const asked = ask(
-      env,
-      credential,
-      entry,
-      Math.min(DISCOVERY_DEADLINE_MS, deadlineMs),
-    )
+    const asked = ask(env, credential, entry, until)
       .then(async (found) => {
         // A refused admission stores nothing: the process waits out the
         // backoff before it asks again.
-        const until = deps.owners.read(credential, host)?.retryAt ?? 0;
+        const retryAt = deps.owners.read(credential, host)?.retryAt ?? 0;
         memo.set(slot, {
           resolution: found,
-          until: until > clock() ? until : clock() + DISCOVERY_BACKOFF_MS,
+          until: retryAt > clock() ? retryAt : clock() + DISCOVERY_BACKOFF_MS,
         });
-        await settle(env, found.owner, deadlineMs);
+        await settle(env, found.owner, until);
         return found;
       })
       .finally(() => inflight.delete(slot));
