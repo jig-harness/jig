@@ -21,12 +21,6 @@ export function olderWindow(prev: BudgetWindow, next: BudgetWindow): boolean {
   );
 }
 
-/**
- * The windows a snapshot answer reports, taken as they are: it charges
- * nothing and counts every caller's spending up to the time its request was
- * sent. Spending recorded since (`readAt` at or after `sentAt`) is not in
- * it, so within one window the lower count stands.
- */
 /** A snapshot delayed across a reset says nothing of the window since. */
 function delayedAcrossReset(
   prev: BudgetWindow,
@@ -70,6 +64,12 @@ function keepNewerOrdinary(
   return { ...read, remaining: counted, answeredOrdinarilyAt: ordinaryAt };
 }
 
+/**
+ * The windows a snapshot answer reports, taken as they are: it charges
+ * nothing and counts every caller's spending up to the time its request was
+ * sent. Spending recorded since (`readAt` at or after `sentAt`) is not in
+ * it, so within one window the lower count stands.
+ */
 export function snapshotOf(
   prev: BudgetWindow,
   next: BudgetWindow | undefined,

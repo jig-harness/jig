@@ -189,6 +189,15 @@ function parsedOrNull(text: string): unknown {
 /** One request's answer: the response body, or the failure it met. */
 type Answer = { body: unknown } | GitHubApiError;
 
+/** Answers made on this machine, which reached no GitHub: the run's hold neither settles on them nor takes them as a probe. */
+const unsentAnswers = new WeakSet<GitHubApiError>();
+
+/** `error`, marked as an answer no request reached GitHub for. */
+function unsent(error: GitHubApiError): GitHubApiError {
+  unsentAnswers.add(error);
+  return error;
+}
+
 const failureOfAnswer = (answer: Answer): OutboundFailure | null =>
   answer instanceof GitHubApiError ? answer.failure : null;
 
@@ -240,6 +249,7 @@ async function call(
           failureOfAnswer,
           (f) => errorOf(f),
           bound,
+          (a) => a instanceof GitHubApiError && unsentAnswers.has(a),
         ).catch((err: unknown): Answer => {
           // A cancellation that met no request keeps nothing sent; one a
           // dispatched request met, or that an attempt already marked, keeps that fact.
@@ -495,11 +505,11 @@ async function governedPost(
 ): Promise<Answer> {
   if (governance === null) return (await post()).answer;
   const admitted = await admitPaced(governance, deadlineAt, bound);
-  if ("failure" in admitted) return errorOf(admitted.failure);
-  if ("refused" in admitted) return errorOf(admitted.refused);
+  if ("failure" in admitted) return unsent(errorOf(admitted.failure));
+  if ("refused" in admitted) return unsent(errorOf(admitted.refused));
   if (cancelled(bound)) {
     governance.release(admitted.sentAt);
-    return abortedError(bound);
+    return unsent(abortedError(bound));
   }
   const { answer, headers, text } = await post();
   const failure = failureOfAnswer(answer);
@@ -509,11 +519,15 @@ async function governedPost(
     : errorOf({ ...answer.failure, until }, answer.data);
 }
 
-/** HTTPS transport to `url` with `token`; each call bounded by `GITHUB_TIMEOUT_MS`. */
+/**
+ * HTTPS transport to `url` with `token`; each call bounded by
+ * `GITHUB_TIMEOUT_MS`, and governed by the budget record as `env` says.
+ */
 export function httpTransport(
   url: string,
   token: string,
   fetchImpl: typeof fetch = fetch,
+  env: Record<string, string | undefined> = process.env,
 ): GitHubTransport {
   if (!url.startsWith("https://") && !LOOPBACK.test(url))
     throw new GitHubApiError(
@@ -522,7 +536,7 @@ export function httpTransport(
   return (query, variables, signal, idempotent = false) =>
     call(
       (bound, deadlineAt) => {
-        const governance = httpsGovernance(token);
+        const governance = httpsGovernance(token, env);
         const observation: Attempt = {
           system: GITHUB,
           credential: credentialKey(GITHUB, token),
@@ -571,7 +585,7 @@ export function defaultTransport(env = process.env): GitHubTransport {
       "JIG_GITHUB_GRAPHQL_URL is set, so GH_TOKEN or GITHUB_TOKEN must hold a token for it",
       { code: "unauthorized" },
     );
-  return httpTransport(url, token);
+  return httpTransport(url, token, fetch, env);
 }
 
 /**

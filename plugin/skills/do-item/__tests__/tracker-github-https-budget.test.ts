@@ -24,6 +24,7 @@ import {
   GitHubApiError,
   httpTransport,
 } from "../scripts/lib/tracker/github/transport.ts";
+import { GitHubClient } from "../../reflect/scripts/lib/github/api.ts";
 
 const TOKEN = "https-budget-token";
 const ENV = { GH_TOKEN: TOKEN };
@@ -222,5 +223,37 @@ describe("a GitHub request over HTTPS in the shared budget record", () => {
     expect(
       sqliteBudgetStore(path).read(githubCredential(ENV))?.complexity.remaining,
     ).toBe(4320);
+  });
+
+  it("tells a reflection-store write the record refused that nothing was sent", async () => {
+    const path = databasePath();
+    const server = stubServer(() => Response.json({ data: {} }));
+    setForgeGovernor(
+      budgetGovernor(sqliteBudgetStore(path), { share: () => null }),
+    );
+    sqliteBudgetStore(path).update(githubCredential(ENV), () => ({
+      requests: { limit: null, remaining: null, resetAt: null },
+      complexity: { limit: 5000, remaining: 0, resetAt: currentMs() + 600_000 },
+      limitedUntil: null,
+      why: null,
+      observedAt: currentMs(),
+    }));
+    const client = new GitHubClient({
+      transport: httpTransport(server.url, TOKEN),
+      intervalMs: 0,
+    });
+    const refused = await client
+      .write("mutation Add { addComment { clientMutationId } }", {})
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(refused).toBeInstanceOf(GitHubApiError);
+    expect((refused as GitHubApiError).code).toBe("rate-limited");
+    expect((refused as GitHubApiError).sent).toBe(false);
+    expect((refused as GitHubApiError).message).not.toContain(
+      "may have been applied",
+    );
+    expect(server.hits()).toBe(0);
   });
 });
