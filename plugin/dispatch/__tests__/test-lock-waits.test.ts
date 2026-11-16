@@ -1,4 +1,4 @@
-import { expect, it } from "bun:test";
+import { expect, it, test } from "bun:test";
 import { observeTestLockWaits, testLockNote } from "../lib/test-lock-waits.ts";
 import type { ReadRecord } from "../lib/launches.ts";
 import { planDrift } from "../lib/expectations.ts";
@@ -13,7 +13,10 @@ import {
 import { decodeIdentity } from "../../shared/liveness.ts";
 import { endedHow } from "../lib/actions/pickup-hold.ts";
 import { isMapping } from "../../shared/config-layers.ts";
-import { byPlatform } from "../../../lib/test-helpers/windows-skip.ts";
+import {
+  byPlatform,
+  skipsOnWindows,
+} from "../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 
 it("reads a live wait's portable workspace and timestamp, refusing a reused identity", () => {
@@ -277,27 +280,35 @@ it("reads no oversized announcement and none whose name carries no pid", () => {
   }
 });
 
-it("reads no FIFO announcement and does not block on one", () => {
-  const dir = mkdtempSync(join(tmpdir(), "jig-wait-fifo-"));
-  try {
-    const made = Bun.spawnSync(
-      ["mkfifo", `jig-lock.heavy.waiting.${process.pid}`],
-      {
-        cwd: dir,
-      },
-    );
-    if (made.exitCode !== 0) return;
-    const module = join(import.meta.dir, "../../shared/resource-lock-waits.ts");
-    const script = `const { readLockWaits } = await import(${JSON.stringify(module)}); console.log(JSON.stringify(readLockWaits(${JSON.stringify(dir)}, ${JSON.stringify(join(dir, "jig-lock.heavy"))})));`;
-    const child = Bun.spawnSync([process.execPath, "-e", script], {
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 15000,
-      killSignal: "SIGKILL",
-    });
-    expectSpawnExit(child, 0, "a FIFO announcement");
-    expect(child.stdout.toString().trim()).toBe("[]");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+test.skipIf(skipsOnWindows("file-system", "a named pipe is a POSIX file type"))(
+  "reads no FIFO announcement and does not block on one",
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-wait-fifo-"));
+    try {
+      const made = Bun.spawnSync(
+        ["mkfifo", `jig-lock.heavy.waiting.${process.pid}`],
+        {
+          cwd: dir,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      expectSpawnExit(made, 0, "mkfifo");
+      const module = join(
+        import.meta.dir,
+        "../../shared/resource-lock-waits.ts",
+      );
+      const script = `const { readLockWaits } = await import(${JSON.stringify(module)}); console.log(JSON.stringify(readLockWaits(${JSON.stringify(dir)}, ${JSON.stringify(join(dir, "jig-lock.heavy"))})));`;
+      const child = Bun.spawnSync([process.execPath, "-e", script], {
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 15000,
+        killSignal: "SIGKILL",
+      });
+      expectSpawnExit(child, 0, "a FIFO announcement");
+      expect(child.stdout.toString().trim()).toBe("[]");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
