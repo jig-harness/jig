@@ -56,9 +56,17 @@ export interface OrcaState {
    * `unreadable` prints output that is not Orca's, both removing nothing;
    * `lost-reply` removes the worktree, then exits nonzero with no output, as
    * a reply lost on its way back; `accepted` answers that Orca is still
-   * deleting the worktree, removing nothing yet; `refused` refuses it.
+   * deleting the worktree, removing nothing yet, and `in-progress` refuses
+   * the call for a removal already under way, removing nothing either;
+   * `refused` refuses it.
    */
-  rm?: "exit" | "unreadable" | "lost-reply" | "accepted" | "refused";
+  rm?:
+    | "exit"
+    | "unreadable"
+    | "lost-reply"
+    | "accepted"
+    | "in-progress"
+    | "refused";
   /** Where `rm` reads gc's admission for the worktree, copying it to `admission-at-rm.json`. */
   guard?: string;
   /**
@@ -120,6 +128,7 @@ if (sub === "rm") {
   if (state.rm === "exit") { console.error("orca: connection lost"); process.exit(1); }
   if (state.rm === "unreadable") { console.log("orca: something went sideways"); process.exit(0); }
   if (state.rm === "accepted") answer({ removing: true });
+  if (state.rm === "in-progress") refuse("worktree_removal_in_progress");
   if (state.rm === "refused") refuse("worktree_dirty");
   if (state.commitAt === "rm") {
     const tried = commit(row.path, "window");

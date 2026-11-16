@@ -103,15 +103,11 @@ side, is an error in every mode.
 ### Waiving a block
 
 Some blocks say the words without making the promise: this very page, a style
-guide on how to word a deferral. Put a comment in the block:
-
-```markdown
-Say "tracked to closure" only beside an item. <!-- deferral-ok: states the rule -->
-```
-
-The comment is exactly `<!-- deferral-ok: reason -->`; another token, such as
-`deferral-ok-ignore`, waives nothing. The reason is required; a `deferral-ok`
-comment with none is a finding. A waived block is set aside in both halves.
+guide on how to word a deferral. Put the waiver comment listed under
+[markers that are not records](../../../../protocol/comment-markers.md#markers-that-are-not-records)
+in the block, with `: <reason>` after its marker name. The exact marker
+name matters: a suffixed token waives nothing. The reason is required;
+a waiver with none is a finding. A waived block is set aside in both halves.
 Comments are blanked before a block is read, so an item or a phrase hidden in a
 comment counts for nothing.
 
