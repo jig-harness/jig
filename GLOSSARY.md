@@ -2617,7 +2617,9 @@ make, use the entry's term instead.
   closes itself when its run ends with nothing for a person (converged,
   merged, taken over, re-armable, stopped by a person); a run that parks or
   fails keeps its tab, and the next run for the same pull request or item
-  closes it. A tab a person opened is never closed.
+  closes it; `jig gc` closes one whose run was killed, or that nobody
+  returned to, once it has been idle past its guard. A tab a person opened
+  is never closed.
 - **Pull request state labels (dispatch labels)** (after their setting `dispatch.labels`) — the labels that show where a pull request stands,
   from any forge client, and through which a person steers its drive and
   the *dispatcher*: off unless a repository turns them on, all under one
