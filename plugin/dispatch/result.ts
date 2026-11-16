@@ -289,6 +289,15 @@ const WAITS_FLAGS = ["--until", "--reason", "--arm"];
  * `pending`; `null` when they do not read.
  */
 function waitsArgs(rest: readonly string[]): WaitsArgs | null {
+  const named = waitsFlags(rest);
+  if (named === null) return null;
+  const until = waitsUntil(named.get("--until"));
+  const wait = waitFor(named.get("--reason"), named.get("--arm"));
+  return until === null || wait === null ? null : { until, wait };
+}
+
+/** The `waits` options by flag, each named once; `null` for an unknown, repeated or valueless one. */
+function waitsFlags(rest: readonly string[]): Map<string, string> | null {
   const named = new Map<string, string>();
   for (let i = 0; i < rest.length; i += 2) {
     const [flag, value] = [rest[i], rest[i + 1]];
@@ -296,16 +305,16 @@ function waitsArgs(rest: readonly string[]): WaitsArgs | null {
     if (!WAITS_FLAGS.includes(flag) || named.has(flag)) return null;
     named.set(flag, value);
   }
-  const until = waitsUntil(named.get("--until"));
-  const reason = named.get("--reason") ?? "rate-limit";
-  if (until === null || !(WAIT_REASONS as readonly string[]).includes(reason))
-    return null;
-  const raw = named.get("--arm");
-  if (raw === undefined)
-    return { until, wait: { reason: reason as WaitReason } };
+  return named;
+}
+
+/** What `--reason` and `--arm` say a wait waits for; `null` when they do not read. */
+function waitFor(reason = "rate-limit", raw?: string): WaitFor | null {
+  if (!(WAIT_REASONS as readonly string[]).includes(reason)) return null;
+  if (raw === undefined) return { reason: reason as WaitReason };
   const arm = oneLine(raw);
   if (reason !== "pending" || arm === "" || arm.length > ARM_MAX) return null;
-  return { until, wait: { reason: "pending", arm } };
+  return { reason: "pending", arm };
 }
 
 /** A command line this command takes: `done|failed` with their options, or `waits` with its own. */

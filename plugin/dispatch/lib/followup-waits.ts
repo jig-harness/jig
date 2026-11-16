@@ -58,7 +58,7 @@ import {
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** The rate-limit waits in a row at which a follow-up is a person's. */
-export const WAITS_FOR_PERSON = 3;
+const WAITS_FOR_PERSON = 3;
 
 /** `dispatch.followup_within`'s default, for a record written before it kept the repository's. */
 const DEFAULT_WITHIN_MS = 3_600_000;
@@ -304,7 +304,7 @@ export function waitsSpent(
   records: readonly ReadRecord[],
 ): WaitStreak | null {
   const streak = endedOnWait(found, records);
-  return streak !== null && streak.spent ? streak : null;
+  return streak?.spent ? streak : null;
 }
 
 /** The waits in a row that end with `found`; `null` when `found` did not end on a wait. */

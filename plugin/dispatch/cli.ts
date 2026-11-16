@@ -617,15 +617,22 @@ function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
   ]);
 }
 
+/** A `waits` result forwarded, or `--arm` refused beside any other; `null` for any other result. */
+function waitsRoute(
+  args: Extract<Subcommand, { action: "result" }>,
+): number | null {
+  if (args.outcome === "waits") return waitsResult(args);
+  if (args.arm === undefined) return null;
+  console.error("jig dispatch result: --arm goes only with waits");
+  return 2;
+}
+
 /** Forward a session result and its mutually exclusive handoff arguments. */
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
 ): number | Promise<number> {
-  if (args.outcome === "waits") return waitsResult(args);
-  if (args.arm !== undefined) {
-    console.error("jig dispatch result: --arm goes only with waits");
-    return 2;
-  }
+  const waited = waitsRoute(args);
+  if (waited !== null) return waited;
   if (args.decision !== undefined)
     return decisionResult({ ...args, decision: args.decision });
   if (

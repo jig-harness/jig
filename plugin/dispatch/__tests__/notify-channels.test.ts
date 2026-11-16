@@ -283,6 +283,7 @@ describe("the `channel` column", () => {
     );
     const old = new Database(statePath(root));
     old.run("ALTER TABLE launches DROP COLUMN sessions");
+    old.run("ALTER TABLE launches DROP COLUMN result_wait");
     old.run("DROP INDEX steward_records_run_effect");
     old.run("DROP INDEX notices_channel_key");
     old.run("ALTER TABLE notices DROP COLUMN channel");
