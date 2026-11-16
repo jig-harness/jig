@@ -224,7 +224,7 @@ implementer ran ([the record](#where-it-is-read)):
 Nothing lowers below the type's row: a type lowers depth only where nothing
 else raises it, the same rule as [work types](work-types.md#the-rule). The
 `reasons` list names which rule gave each part (`tier: standard (type
-feature, size M)`, `tier: complex (flag has-migration)`, `effort: high (flag has-migration raised medium)`), so a person
+feature, size M)`, `tier: complex (routing.complex_flags, for the item's label has-migration)`, `effort: high (raised from medium: routing.raise.flags, for the item's label has-migration)`), so a person
 reading a route record can see what to change.
 
 The default effort rows, from M0's ladder (the *what* of a bug, an

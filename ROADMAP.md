@@ -84,8 +84,8 @@ a tracker charges each query a cost, and each ends a request that takes too
 long. Every agent and timer on a machine shares one login's allowance. Jig
 gets one way to make these calls. It reuses an answer it holds, asks a
 budget the whole machine shares, and keeps each request small enough to be
-answered. Next are reuse of unchanged answers and identical reads, and
-gates that enforce the transport boundary and query cost ceilings.
+answered. Next are gates that enforce the transport boundary and query cost
+ceilings, and checking the spending on a running dispatch host.
 
 ### 57. Starting work that will not collide first
 

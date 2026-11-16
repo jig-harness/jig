@@ -187,6 +187,7 @@ export async function releaseAndReadFinalCi(
   // `code === 0` witnesses nothing and must not restart the bound on it.
   if (finalCi.code === 0 && !finalVerdict.startsWith("cancelled:")) {
     context.witnessWaits = 0;
+    context.finalCiWait.resetWitness();
   }
 
   return { finalStatus, finalStatusRes, finalVerdict, finalCi, finalCiSignals };
@@ -580,9 +581,9 @@ function witnessBoundSpent(
   // bound is checked only when one was actually asked for. Without
   // this guard `0` would read as the TIGHTEST possible bound and stop
   // on the first poll, inverting the knob.
-  return (
-    context.witnessWaitLimit > 0 &&
-    context.witnessWaits > context.witnessWaitLimit
+  return context.finalCiWait.witnessSpent(
+    reviewedHead,
+    context.witnessWaitLimit,
   );
 }
 

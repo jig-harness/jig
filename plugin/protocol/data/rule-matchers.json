@@ -1,0 +1,622 @@
+{
+  "chapter": "rule-matchers",
+  "title": "Rule matchers in configuration",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "fact for a fact a rule may test, combination for how a rule's values combine, list for how a field's rules resolve, form for how a field is written, field for a configuration field that uses the matcher."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The fact, combination, list semantics or form as configuration and the code name it; for a field, its dotted path in .config/jig.yaml."
+    },
+    "holds": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a fact, what the item or change holds for it; else null."
+    },
+    "ruleValue": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a fact, what a rule lists for it; else null."
+    },
+    "compared": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a fact, how a rule's value is compared with the item's; else null."
+    },
+    "comparison": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a fact, the comparison's name, for a program that evaluates a rule: equal-ignoring-case (equal after trimming white space and folding case), contained-ignoring-case (the rule's value is a substring of the item's, case folded) or glob (the change-area catalog's glob claims the path); else null."
+    },
+    "facts": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the facts its rules may test, comma-separated; else null."
+    },
+    "list": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, its list semantics (a list value's name); else null."
+    },
+    "form": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the form it is written in (a form value's name); else null."
+    },
+    "words": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the words it accepts in place of a list and what each stands for, as word: meaning separated by semicolons; null where it accepts none, and for the other kinds."
+    },
+    "readBy": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the skills that read it, comma-separated; else null."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What the value means, or what the field selects."
+    }
+  },
+  "values": [
+    {
+      "kind": "fact",
+      "name": "labels",
+      "holds": "a list of label names",
+      "ruleValue": "a list of label names",
+      "compared": "Equal, ignoring case and white space around the name: `Bug` matches `bug`.",
+      "comparison": "equal-ignoring-case",
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "The labels the tracker item carries; for a flag an area of the change-area catalog declares, the flags of the areas the item's labels reach."
+    },
+    {
+      "kind": "fact",
+      "name": "title",
+      "holds": "one text",
+      "ruleValue": "a list of keywords",
+      "compared": "The keyword appears anywhere in the title, ignoring case: `migration` matches `Write the Migrations`.",
+      "comparison": "contained-ignoring-case",
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "The tracker item's title."
+    },
+    {
+      "kind": "fact",
+      "name": "size",
+      "holds": "a list of size names",
+      "ruleValue": "a list of size names",
+      "compared": "Equal, ignoring case and white space around the name, as a label is; a size is never compared by its step, so `large` does not match `L`.",
+      "comparison": "equal-ignoring-case",
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "The item's size: its size facet's value where the repository has a size facet, else its labels."
+    },
+    {
+      "kind": "fact",
+      "name": "paths",
+      "holds": "a list of repository-relative paths",
+      "ruleValue": "a list of path globs",
+      "compared": "The glob claims the path, by the glob matching the change-area catalog uses: `**` spans directories, `*` and `?` stay within one, `{a,b}` alternates and `[...]` is a character class.",
+      "comparison": "glob",
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "The paths the change touches. Before the change exists they are the paths the caller says it plans to touch; a rule that could match only by its paths is then listed apart, for whoever plans the change to apply."
+    },
+    {
+      "kind": "combination",
+      "name": "any",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "A rule matches when any one value it lists, for any one fact it tests, matches the item: one label of several is enough, and a label or a path is enough. A rule cannot yet say that every value, or none, must match."
+    },
+    {
+      "kind": "list",
+      "name": "first",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "The rules are tried in the order written and the first that matches decides; when none matches, the field's fallback applies."
+    },
+    {
+      "kind": "list",
+      "name": "every",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "Every rule that matches applies, in the order written."
+    },
+    {
+      "kind": "list",
+      "name": "lookup",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "A map from one fact's value to a result: every key that matches one of the item's values applies, in the order of the item's values, then the order written. Keys that differ only in case are one key, the last written."
+    },
+    {
+      "kind": "list",
+      "name": "one",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "The field is one rule: it applies or not, and names the value that matched."
+    },
+    {
+      "kind": "form",
+      "name": "when",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "A list of entries, each holding its rule under `when`: `{ when: { labels: [hotfix] }, base: release }`."
+    },
+    {
+      "kind": "form",
+      "name": "entry",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "A list of entries whose own fact keys are the rule: `{ labels: [db], paths: [\"db/**\"], skill: migration-review }`."
+    },
+    {
+      "kind": "form",
+      "name": "map",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "A map from a value of the field's fact to a result: `{ bug: kind/bug }` is the rule `{ labels: [bug] }` for the result `kind/bug`."
+    },
+    {
+      "kind": "form",
+      "name": "list",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": null,
+      "list": null,
+      "form": null,
+      "words": null,
+      "readBy": null,
+      "meaning": "A list of values of the field's fact: `[has-migration]` is the rule `{ labels: [has-migration] }`."
+    },
+    {
+      "kind": "field",
+      "name": "pull_requests.base_rules",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "first",
+      "form": "when",
+      "words": null,
+      "readBy": "do-item, audit",
+      "meaning": "The base branch a pull request targets: the first rule's `base`; the integration branch when none matches."
+    },
+    {
+      "kind": "field",
+      "name": "do_item.gates",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels, paths",
+      "list": "every",
+      "form": "entry",
+      "words": null,
+      "readBy": "do-item, audit",
+      "meaning": "The review skills that must approve a change before it is pushed."
+    },
+    {
+      "kind": "field",
+      "name": "do_item.guidance",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels, paths",
+      "list": "every",
+      "form": "entry",
+      "words": null,
+      "readBy": "do-item, audit",
+      "meaning": "The skills and notes the implementing agent is given."
+    },
+    {
+      "kind": "field",
+      "name": "do_item.agents.labels",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "lookup",
+      "form": "map",
+      "words": null,
+      "readBy": "do-item, work-batch",
+      "meaning": "The agent that implements an item carrying the label."
+    },
+    {
+      "kind": "field",
+      "name": "do_item.agents.codearea_areas",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "lookup",
+      "form": "map",
+      "words": null,
+      "readBy": "do-item, work-batch, dispatch",
+      "meaning": "The change area an item carrying the label reaches, for the area's agent and guidance."
+    },
+    {
+      "kind": "field",
+      "name": "do_item.agents.title_keywords",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "title",
+      "list": "lookup",
+      "form": "map",
+      "words": null,
+      "readBy": "do-item",
+      "meaning": "The agent that implements an item whose title holds the keyword, beside the agents its labels choose."
+    },
+    {
+      "kind": "field",
+      "name": "pull_requests.labels_from_issue",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "lookup",
+      "form": "map",
+      "words": null,
+      "readBy": "do-item, audit",
+      "meaning": "The label the pull request opens with for an item carrying the label."
+    },
+    {
+      "kind": "field",
+      "name": "pull_requests.reviewers_from_issue",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "lookup",
+      "form": "map",
+      "words": null,
+      "readBy": "do-item",
+      "meaning": "The reviewers asked on the pull request for an item carrying the label."
+    },
+    {
+      "kind": "field",
+      "name": "routing.complex_flags",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "one",
+      "form": "list",
+      "words": null,
+      "readBy": "do-item, audit",
+      "meaning": "Makes the item's complexity tier complex at any size, when the item or an area it reaches carries one of the flags."
+    },
+    {
+      "kind": "field",
+      "name": "routing.raise.flags",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "one",
+      "form": "list",
+      "words": "catalog: Every flag an area of the change-area catalog declares.",
+      "readBy": "do-item, audit",
+      "meaning": "Raises the implementer's effort one step."
+    },
+    {
+      "kind": "field",
+      "name": "routing.raise.sizes",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "size",
+      "list": "one",
+      "form": "list",
+      "words": null,
+      "readBy": "do-item, audit",
+      "meaning": "Raises the implementer's effort one step; unset, the sizes `issue_tracker.labels.batch_sizes` leaves out."
+    },
+    {
+      "kind": "field",
+      "name": "work_batch.solo_flags",
+      "holds": null,
+      "ruleValue": null,
+      "compared": null,
+      "comparison": null,
+      "facts": "labels",
+      "list": "one",
+      "form": "list",
+      "words": null,
+      "readBy": "work-batch, dispatch",
+      "meaning": "Holds an item out of a batch, joined to the flags work-batch derives (the human-in-the-loop label and its facets, `manual-ops`, and every flag the catalog declares)."
+    }
+  ],
+  "schemas": {
+    "rule": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
+          },
+          "required": ["labels"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
+          },
+          "required": ["title"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
+          },
+          "required": ["size"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "title": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "minItems": 1
+            }
+          },
+          "required": ["paths"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
