@@ -12,15 +12,17 @@
  * - otherwise it is `done`.
  */
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
-import { type ArmId, armTitle } from "./arms.ts";
+import { armTitle, repoArmOf } from "./arms.ts";
 import type { RunFile, Verdict } from "./run.ts";
 
 export type Ending = "done" | "wait" | "failed" | "preview";
 
 /** One row of the report. */
 export interface ReportRow {
-  arm: ArmId;
+  arm: string;
   title: string;
+  /** A core arm, or one the repository declares in `followup.arms`. */
+  source: "core" | "repository";
   verdict: Verdict | "skipped";
   items: string[];
   evidence: string;
@@ -32,8 +34,13 @@ export interface Settled {
   ending: Ending;
   rows: ReportRow[];
   /** The arms whose verdict decided a `wait` or `failed` ending. */
-  because: ArmId[];
+  because: string[];
   marker: number | null;
+}
+
+/** Whether `arm` is one of the run's repository arms. */
+function sourceOf(run: RunFile, arm: string): ReportRow["source"] {
+  return repoArmOf(run.arms, arm) === undefined ? "core" : "repository";
 }
 
 /** The run's report and ending; refused, naming the arms, while an arm has no verdict. */
@@ -42,7 +49,7 @@ export function settle(run: RunFile): Outcome<Settled, "unsettled"> {
   if (missing.length > 0)
     return failed(
       "unsettled",
-      `not settled: ${missing.map((a) => `${a} (${armTitle(a)})`).join(", ")} ${missing.length === 1 ? "has" : "have"} no verdict; record one for each before the run ends`,
+      `not settled: ${missing.map((a) => `${a} (${armTitle(a, run.arms)})`).join(", ")} ${missing.length === 1 ? "has" : "have"} no verdict; record one for each before the run ends`,
     );
   const rows = reportRows(run);
   const { ending, because } = endingOf(run.facts.mode, rows);
@@ -65,7 +72,8 @@ function reportRows(run: RunFile): ReportRow[] {
       : [
           {
             arm,
-            title: armTitle(arm),
+            title: armTitle(arm, run.arms),
+            source: sourceOf(run, arm),
             verdict: v.verdict,
             items: v.items,
             evidence: v.evidence,
@@ -74,7 +82,8 @@ function reportRows(run: RunFile): ReportRow[] {
   });
   const skipped = run.arms.skipped.map((s) => ({
     arm: s.id,
-    title: armTitle(s.id),
+    title: armTitle(s.id, run.arms),
+    source: sourceOf(run, s.id),
     verdict: "skipped" as const,
     items: [],
     evidence: s.reason,
@@ -86,7 +95,7 @@ function reportRows(run: RunFile): ReportRow[] {
 function endingOf(
   mode: RunFile["facts"]["mode"],
   rows: readonly ReportRow[],
-): { ending: Ending; because: ArmId[] } {
+): { ending: Ending; because: string[] } {
   const having = (verdict: Verdict) =>
     rows.filter((r) => r.verdict === verdict).map((r) => r.arm);
   if (mode === "preview") return { ending: "preview", because: [] };

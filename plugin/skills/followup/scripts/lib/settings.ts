@@ -1,6 +1,7 @@
 /**
  * The repository's `followup` section: `off`, the core arms it turns off,
- * and `authority`, the acts it moves to a stricter level. Read through the
+ * `authority`, the acts it moves to a stricter level, and `arms`, its own
+ * arms (`repo-arms.ts`). Read through the
  * shared configuration reader, from the integration branch's committed
  * file when the clone has it, so a pull request's own change to the section
  * does not decide how its preview is followed up; the working tree's
@@ -13,6 +14,7 @@ import {
 import { layeredConfig, sourceIn } from "../../../../shared/consumer.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { ARM_IDS, type ArmId, isArmId } from "./arms.ts";
+import { parseRepoArms, type RepoArm } from "./repo-arms.ts";
 import {
   ACT_IDS,
   ACTS,
@@ -26,11 +28,13 @@ import {
 } from "./authority.ts";
 
 /** The keys the section may hold. */
-const KEYS = ["off", "authority"];
+const KEYS = ["off", "authority", "arms"];
 
 export interface FollowupSettings {
   off: ArmId[];
   authority: Partial<Record<ActId, Level>>;
+  /** The repository's own arms (`followup.arms`), checked. */
+  arms: RepoArm[];
 }
 
 type Invalid = Outcome<never, "config-invalid">;
@@ -124,7 +128,7 @@ export function parseFollowupSettings(
 ): Outcome<FollowupSettings, "config-invalid"> {
   const section = values.followup;
   if (section === undefined || section === null)
-    return ok({ off: [], authority: {} });
+    return ok({ off: [], authority: {}, arms: [] });
   if (!isMapping(section))
     return invalid(values, "followup", "followup must be a mapping");
   for (const key of Object.keys(section))
@@ -138,7 +142,9 @@ export function parseFollowupSettings(
   if (!off.ok) return off;
   const authority = readAuthority(values, section.authority);
   if (!authority.ok) return authority;
-  return ok({ off: off.value, authority: authority.value });
+  const arms = parseRepoArms(values, section.arms);
+  if (!arms.ok) return arms;
+  return ok({ off: off.value, authority: authority.value, arms: arms.value });
 }
 
 /** How to read a file at a revision: its text, `null` when the revision has no such file, `undefined` when the revision cannot be read. */

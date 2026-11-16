@@ -7,6 +7,8 @@
  *   bun followup.ts facts <PR>
  *   bun followup.ts arms [--pr <n>] [--json]
  *   bun followup.ts record <arm> <owed|not-owed|pending|unread> --evidence <text> [--item <ref>]... [--pr <n>]
+ *   bun followup.ts check <arm> [--pr <n>]
+ *   bun followup.ts instructions <arm> [--pr <n>]
  *   bun followup.ts guard <PR> --comment <marker> [--repo owner/name]
  *   bun followup.ts settle [--pr <n>] [--json]
  *   bun followup.ts authority [--json]
@@ -15,10 +17,16 @@
  * - `facts` reads the merge facts (JSON) and starts the run's ledger under
  *   `.context/scratch/followup/`: a merged pull request is followed up, an
  *   open one previewed, any other refused.
- * - `arms` lists the core arms the run settles, minus `followup.off`, and
- *   the ones it skips with why.
+ * - `arms` lists the arms the run settles: the core arms minus
+ *   `followup.off`, with the repository's own (`followup.arms`) before the
+ *   next step, and the ones it skips with why.
  * - `record` writes one arm's verdict with its evidence; empty evidence is
  *   refused.
+ * - `check` runs a repository arm's check command, as the integration
+ *   branch's configuration names it, and records its verdict; a check that
+ *   does not answer is recorded `unread`.
+ * - `instructions` prints a repository arm's instructions file as the
+ *   integration branch holds it.
  * - `guard` checks the run still holds the follow-up's marker before an act
  *   outside the pull request; a preview is refused before anything is asked.
  * - `settle` prints one report row per arm and how the run ends, and
@@ -30,7 +38,8 @@
  *   changelog skill's `status.ts` report from a throwaway checkout of it.
  *
  * Exit codes: 0 done; 1 `facts`: the forge or the clone could not be read,
- * `settle`: an arm has no verdict; 2 usage, a refused verdict or an invalid
+ * `settle`: an arm has no verdict, `instructions`: the integration branch's
+ * file could not be read; 2 usage, a refused verdict or an invalid
  * configuration; 3 `facts`: the pull request is neither merged nor open, or
  * its base is not the integration branch; 4 `guard` in a preview; 5 `facts`:
  * the forge refused for its rate limit (`RATE-LIMITED until <time>`).
@@ -57,7 +66,16 @@ import {
   run,
   tsArgv,
 } from "../../../shared/proc.ts";
-import { type ArmPlan, inOrca, planArms } from "./lib/arms.ts";
+import { runRepoCommand } from "../../../shared/repo-command.ts";
+import { type ArmPlan, inOrca, planArms, repoArmOf } from "./lib/arms.ts";
+import {
+  checkInstructionFiles,
+  describeArm,
+  type RepoArm,
+  recordCheck,
+  runCheck,
+  withRepoArms,
+} from "./lib/repo-arms.ts";
 import { authorityTable, renderAuthority } from "./lib/authority.ts";
 import {
   areasFromPlan,
@@ -95,6 +113,8 @@ const USAGE = [
   "usage: followup.ts facts <PR>",
   "       followup.ts arms [--pr <n>] [--json]",
   "       followup.ts record <arm> <owed|not-owed|pending|unread> --evidence <text> [--item <ref>]... [--pr <n>]",
+  "       followup.ts check <arm> [--pr <n>]",
+  "       followup.ts instructions <arm> [--pr <n>]",
   "       followup.ts guard <PR> --comment <marker> [--repo owner/name]",
   "       followup.ts settle [--pr <n>] [--json]",
   "       followup.ts authority [--json]",
@@ -204,6 +224,8 @@ async function changeAreasOf(
 interface RunSettings {
   settings: FollowupSettings;
   origin: Facts["configOrigin"];
+  /** The integration branch's ref the settings were read from, where `origin` says so. */
+  ref: string;
   /** Whether the repository sets `changelog.file`. */
   changelog: boolean;
 }
@@ -213,27 +235,33 @@ async function settingsFor(
   remote: string,
   integration: string,
 ): Promise<RunSettings> {
-  const config = must(
-    await runConfig(dir, `${remote}/${integration}`, showFile(dir)),
-    2,
-  );
+  const ref = `${remote}/${integration}`;
+  const show = showFile(dir);
+  const config = must(await runConfig(dir, ref, show), 2);
   const settings = must(parseFollowupSettings(config.values), 2);
+  if (config.origin === "integration branch")
+    must(
+      await checkInstructionFiles(config.values, settings.arms, ref, show),
+      2,
+    );
   const file = valueAt(config.values, "changelog.file");
   return {
     settings,
     origin: config.origin,
+    ref,
     changelog: typeof file === "string" && file !== "",
   };
 }
 
-/** The arms a run of `mode` settles under `read`. */
-function planOf(read: RunSettings, mode: Facts["mode"]): ArmPlan {
-  return planArms({
-    mode,
+/** The arms a run over `facts` settles under `read`: the core arms, with the repository's own before the next step. */
+function planOf(read: RunSettings, facts: Facts): ArmPlan {
+  const core = planArms({
+    mode: facts.mode,
     changelog: read.changelog,
     orca: inOrca(process.env),
     off: read.settings.off,
   });
+  return withRepoArms(core, read.settings.arms, facts.mode, facts.changeAreas);
 }
 
 /** `args` when there are exactly `n` of them; the command stops with `message` otherwise. */
@@ -295,7 +323,7 @@ async function factsCommand(args: string[]): Promise<number> {
   });
   if (!gathered.ok)
     stop(FACTS_EXIT[gathered.failure.code], gathered.failure.reason);
-  startRun(dir, gathered.value, planOf(read, gathered.value.mode));
+  startRun(dir, gathered.value, planOf(read, gathered.value));
   console.log(JSON.stringify(gathered.value, null, 2));
   return 0;
 }
@@ -304,7 +332,10 @@ async function factsCommand(args: string[]): Promise<number> {
 function armLines(run: RunFile): string[] {
   return [
     `Arms of the follow-up of PR #${run.pr} (${run.facts.mode}):`,
-    ...run.arms.apply.map((id) => `- ${id}`),
+    ...run.arms.apply.map((id) => {
+      const repo = repoArmOf(run.arms, id);
+      return repo === undefined ? `- ${id}` : `- ${id}: ${describeArm(repo)}`;
+    }),
     ...run.arms.skipped.map((s) => `- ${s.id}: skipped, ${s.reason}`),
   ];
 }
@@ -318,7 +349,7 @@ async function armsCommand(args: string[]): Promise<number> {
   const { dir, run: loaded } = loadRun(values.pr);
   const { facts } = loaded;
   const read = await settingsFor(dir, facts.remote, facts.integrationBranch);
-  const updated = { ...loaded, arms: planOf(read, facts.mode) };
+  const updated = { ...loaded, arms: planOf(read, facts) };
   writeRun(dir, updated);
   console.log(
     values.json
@@ -351,6 +382,83 @@ async function recordCommand(args: string[]): Promise<number> {
   const recorded = recordVerdict(loaded, arm, verdict, evidence, values.item);
   writeRun(dir, must(recorded, 2));
   console.log(`recorded ${arm}: ${verdict}`);
+  return 0;
+}
+
+/**
+ * Repository arm `id` of the run, as the configuration declares it now (from
+ * the integration branch where the clone has it), with the settings it was
+ * read with; the command stops when the run does not settle it.
+ */
+async function declaredArm(
+  dir: string,
+  loaded: RunFile,
+  id: string,
+): Promise<{ arm: RepoArm; read: RunSettings }> {
+  const skipped = loaded.arms.skipped.find((s) => s.id === id);
+  if (skipped !== undefined)
+    usage(`${id} is not an arm of this run: ${skipped.reason}`);
+  if (!loaded.arms.apply.includes(id))
+    usage(
+      `${JSON.stringify(id)} is not an arm of this run (${loaded.arms.apply.join(", ")}); run arms again after a change to followup.arms`,
+    );
+  const { remote, integrationBranch } = loaded.facts;
+  const read = await settingsFor(dir, remote, integrationBranch);
+  const arm =
+    read.settings.arms.find((a) => a.id === id) ??
+    usage(`${id} is no repository arm (followup.arms) of the configuration`);
+  return { arm, read };
+}
+
+/** The positional arm of `check` or `instructions`, and `--pr`. */
+function armArgs(args: string[], name: string) {
+  const { values, positionals } = parseArgs({
+    args,
+    options: { pr: { type: "string" } },
+    allowPositionals: true,
+    strict: true,
+  });
+  const [id = ""] = exactly(positionals, 1, `${name} takes one arm`);
+  return { id, pr: values.pr };
+}
+
+async function checkCommand(args: string[]): Promise<number> {
+  const { id, pr } = armArgs(args, "check");
+  const { dir, run: loaded } = loadRun(pr);
+  const { arm, read } = await declaredArm(dir, loaded, id);
+  const command =
+    arm.checkCommand ?? usage(`${id} has no check_command to run`);
+  const answer =
+    read.origin === "integration branch"
+      ? await runCheck(
+          { ...arm, checkCommand: command },
+          loaded.facts,
+          dir,
+          runRepoCommand,
+        )
+      : {
+          verdict: "unread" as const,
+          evidence: `${read.ref} could not be read, so no check command was run: the working tree's configuration is not the reviewed one`,
+          items: [],
+        };
+  const recorded = must(recordCheck(loaded, id, answer), 2);
+  writeRun(dir, recorded);
+  console.log(JSON.stringify({ arm: id, ...recorded.verdicts[id] }, null, 2));
+  return 0;
+}
+
+async function instructionsCommand(args: string[]): Promise<number> {
+  const { id, pr } = armArgs(args, "instructions");
+  const { dir, run: loaded } = loadRun(pr);
+  const { arm, read } = await declaredArm(dir, loaded, id);
+  const path = arm.instructions ?? usage(`${id} has no instructions file`);
+  const unreadable = `${id}'s instructions (${path}) are read from ${read.ref} alone`;
+  if (read.origin !== "integration branch")
+    stop(1, `${unreadable}, which could not be read: record ${id} unread`);
+  const text = await showFile(dir)(read.ref, path);
+  if (typeof text !== "string")
+    stop(1, `${unreadable}, where it could not be read: record ${id} unread`);
+  process.stdout.write(text);
   return 0;
 }
 
@@ -454,6 +562,8 @@ const COMMANDS: Record<string, (args: string[]) => Promise<number>> = {
   facts: factsCommand,
   arms: armsCommand,
   record: recordCommand,
+  check: checkCommand,
+  instructions: instructionsCommand,
   guard: guardCommand,
   settle: settleCommand,
   authority: authorityCommand,

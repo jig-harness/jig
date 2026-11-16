@@ -91,6 +91,7 @@ judges it by its exit code: 0 is success. The contract column says what else the
 | `explain.figure_build_command`          | explain                                                              | Builds one explainer figure; the figure's stem is appended                                                                                                                                                                                                                                                                                                  |
 | `code_stats.classify_command`           | code-stats                                                           | Reads every tracked path, one per line, on standard input; prints one JSON object per line, `{"path", "area"?, "kind"?, "language"?, "module"?}`, whose values override the skill's own classification ([contract](skills/code-stats/README.md#the-classify-command)). Exit 0 within 300 seconds; any other exit, or a line it cannot use, fails the report |
 | `do_item.preflight_command`              | do-item, work-batch and the dispatcher's pickups, through `tracker.ts claim` | Read from the default branch, and run without the tracker and forge tokens. Reads the item's `get_issue.ts` JSON on standard input. Exit 0 lets the claim go on; exit 3 refuses it and the first line of standard output is the reason; any other exit, more than 64 KiB of output, or a run past 60 seconds, refuses too ([contract](CONFIGURATION.md#do_item)) |
+| `followup.arms[].check_command`          | followup, through `followup.ts check`                                | Read from the integration branch, and run without the tracker and forge tokens. Reads the merge facts (`followup.ts facts`' JSON) on standard input and prints one verdict, `{"verdict": "owed"\|"not-owed"\|"pending"\|"unread", "items": [...], "evidence": "..."}`, with evidence someone else can check. Any other exit than 0, output that is not a verdict, more than 64 KiB of output, or a run past 60 seconds (`JIG_FOLLOWUP_CHECK_TIMEOUT_SEC`) records the arm `unread`, never `not-owed` ([contract](CONFIGURATION.md#followup)) |
 
 `issue_tracker.file_command` is different: no skill runs it. It is an
 instruction that `do-item`, `decide` and others hand to the agent, saying how
@@ -119,6 +120,13 @@ named in configuration:
   repository keeps its standing policy.
 - **Decision rules.** `adr.rules_file` holds the machine-readable rules
   `review` checks a change against.
+- **Repository arms.** `followup.arms` adds the repository's own
+  obligations to the follow-up after a merge: an instructions file read from
+  the integration branch, a read-only check command (the row above), or a
+  skill the repository, the user's home or another plugin already holds,
+  named by its slash command. Each is settled like the follow-up's own arms
+  and acts only within its fixed authority table
+  ([CONFIGURATION.md](CONFIGURATION.md#followup)).
 
 ## Issue tracker
 

@@ -15,11 +15,13 @@ import {
   ok,
   type Outcome,
 } from "../../../../shared/outcome.ts";
+import { FOLLOWUP_VERDICTS } from "../../../../shared/repo-command-shapes.ts";
 import { currentIso } from "../../../../shared/time.ts";
-import type { ArmId, ArmPlan } from "./arms.ts";
+import { type ArmPlan, repoArmOf } from "./arms.ts";
 import type { Facts } from "./facts.ts";
 
-export const VERDICTS = ["owed", "not-owed", "pending", "unread"] as const;
+/** The verdicts, the same list a repository arm's check command prints from. */
+export const VERDICTS = FOLLOWUP_VERDICTS;
 export type Verdict = (typeof VERDICTS)[number];
 
 export function isVerdict(value: string): value is Verdict {
@@ -32,6 +34,10 @@ export interface ArmVerdict {
   evidence: string;
   items: string[];
   at: string;
+  /** Who recorded it: the arm's check command, or the agent. */
+  by?: "check" | "agent";
+  /** The verdict the arm's check command last printed, kept when the agent records after it. */
+  check?: Verdict;
 }
 
 export interface RunFile {
@@ -40,7 +46,7 @@ export interface RunFile {
   startedAt: string;
   facts: Facts;
   arms: ArmPlan;
-  verdicts: Partial<Record<ArmId, ArmVerdict>>;
+  verdicts: Partial<Record<string, ArmVerdict>>;
   /** The marker comment `guard` last checked; null until it has. */
   marker: number | null;
 }
@@ -142,7 +148,36 @@ export type RecordFailure =
   | "empty-evidence"
   | "unknown-arm"
   | "skipped-arm"
-  | "bad-verdict";
+  | "bad-verdict"
+  | "check-first"
+  | "check-overruled";
+
+/**
+ * Why the agent may not record `verdict` on a repository arm with a check
+ * command; null when it may. The check reads the verdict first; after it,
+ * the agent may add what it carried out or filed, but never turn what the
+ * check found owed, pending or unread into not owed: it runs the check
+ * again instead.
+ */
+function checkRule(
+  run: RunFile,
+  arm: string,
+  verdict: Verdict,
+): Outcome<never, RecordFailure> | null {
+  if (!repoArmOf(run.arms, arm)?.checkCommand) return null;
+  const checked = run.verdicts[arm]?.check;
+  if (checked === undefined)
+    return failed(
+      "check-first",
+      `${arm} has a check command, which reads its verdict: run check ${arm} first`,
+    );
+  if (verdict === "not-owed" && checked !== "not-owed")
+    return failed(
+      "check-overruled",
+      `${arm}: its check command found it ${checked}; run check ${arm} again rather than recording it not-owed`,
+    );
+  return null;
+}
 
 /** `run` with `arm`'s verdict recorded; refused when the evidence is empty or the arm is not one the run settles. */
 export function recordVerdict(
@@ -151,6 +186,7 @@ export function recordVerdict(
   verdict: string,
   evidence: string,
   items: readonly string[],
+  by: "check" | "agent" = "agent",
 ): Outcome<RunFile, RecordFailure> {
   if (!isVerdict(verdict))
     return failed(
@@ -169,6 +205,8 @@ export function recordVerdict(
       "unknown-arm",
       `${JSON.stringify(arm)} is not an arm of this run (${run.arms.apply.join(", ")})`,
     );
+  const refused = by === "agent" ? checkRule(run, id, verdict) : null;
+  if (refused !== null) return refused;
   const text = evidence.trim();
   if (text === "" || NO_EVIDENCE.test(text))
     return failed(
@@ -176,11 +214,19 @@ export function recordVerdict(
       `${arm}: a verdict needs its evidence, the checkable fact that settled it; "nothing found" is none`,
     );
   const named = items.map((i) => i.trim()).filter((i) => i !== "");
+  const check = by === "check" ? verdict : run.verdicts[id]?.check;
   return ok({
     ...run,
     verdicts: {
       ...run.verdicts,
-      [id]: { verdict, evidence: text, items: named, at: currentIso() },
+      [id]: {
+        verdict,
+        evidence: text,
+        items: named,
+        at: currentIso(),
+        by,
+        ...(check === undefined ? {} : { check }),
+      },
     },
   });
 }

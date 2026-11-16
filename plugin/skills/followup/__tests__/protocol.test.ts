@@ -232,6 +232,6 @@ describe("the authority table", () => {
     expect(
       parseFollowupSettings({ followup: { authority: { deploy: "ask" } } }).ok,
     ).toBe(false);
-    expect(parseFollowupSettings({ followup: { arms: [] } }).ok).toBe(false);
+    expect(parseFollowupSettings({ followup: { steps: [] } }).ok).toBe(false);
   });
 });

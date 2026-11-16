@@ -416,6 +416,7 @@ areas:
           - "plugin/protocol/schemas/reflection-check.json"
           - "plugin/protocol/schemas/reflection-append.json"
           - "plugin/protocol/schemas/reflection-diagnose.json"
+          - "plugin/protocol/schemas/followup-verdict.json"
           - "plugin/protocol/schemas/reflection-event.json"
           - "plugin/protocol/followup-claim.md"
           - "plugin/protocol/data/followup-claim.json"

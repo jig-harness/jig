@@ -11,7 +11,8 @@ Each of these is easy to miss because nothing fails when it is missed.
 This skill runs that pass, the post-merge stage of
 [M7](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#core-pieces),
 in any repository that uses the `jig` plugin. It works through a fixed list
-of **arms** (each one class of obligation a merge can leave), gives each a
+of **arms** (each one class of obligation a merge can leave), with any the
+repository adds of its own, gives each a
 verdict with the evidence that settled it, carries out what its authority
 table lets it, and reports the rest as owed, filed where no item tracks it.
 On an open pull request it runs as a **preview**: it records what the merge
@@ -49,6 +50,25 @@ checkable fact; "nothing found" is not one), **pending** (it settles by
 itself, such as a rollout in progress) or **unread** (what decides it could
 not be read). The run cannot end while an arm has no verdict.
 
+### The repository's own arms
+
+What one repository owes after a merge and no other does (a documentation
+site to rebuild, an operations ledger to append to, a verification its team
+already keeps in a skill) is a **repository arm**, declared in
+`.config/jig.yaml` under `followup.arms`. It runs before `next-step`,
+applies to the change areas its `when` names (every merge when it names
+none), and is settled under the same rules as the core arms. It runs one of:
+
+| Form | What runs | Read from |
+|---|---|---|
+| `instructions` | An instructions (prompt) file the agent carries out | The integration branch, never the pull request's tree, so a pull request cannot rewrite the arm that follows it up |
+| `check_command` | A read-only command: the merge facts as JSON on standard input, one verdict JSON on standard output; the script records it | The integration branch's configuration; it runs without the tracker and forge tokens, within a time and output limit, and anything but a verdict is recorded unread, never not owed |
+| `skill` | A skill's slash command, from the repository, the user's home or an installed plugin; a preview runs none | Wherever the skill is installed |
+
+An arm may pair an instructions file with a check command. No repository
+arm widens the authority table: what it carries out is an act of the table
+like any other.
+
 ## The script
 
 `scripts/followup.ts` holds the protocol, so every repository's follow-up
@@ -57,8 +77,10 @@ follows the same steps:
 | Command | What it does |
 |---|---|
 | `facts <PR>` | Reads the merge facts as JSON (the state, the merge commit and the range it brought in, the changed files and change areas, the tracker item and epic, the out-of-tree steps, scaffolding candidates) and starts the run's ledger under `.context/scratch/followup/` |
-| `arms` | The arms this run settles, and the ones it skips with why |
+| `arms` | The arms this run settles, the repository's own included, and the ones it skips with why |
 | `record <arm> <verdict> --evidence <text> [--item <ref>]` | Records one arm's verdict; refuses empty evidence |
+| `check <arm>` | Runs a repository arm's check command and records its verdict, `unread` when it does not answer |
+| `instructions <arm>` | Prints a repository arm's instructions file as the integration branch holds it |
 | `guard <PR> --comment <marker>` | Checks the run still holds the follow-up before an act outside the pull request; refuses every such act in a preview |
 | `settle` | The report, one row per arm, and how the run ends: done, a wait, failed, or a preview |
 | `authority` | What the follow-up may do, as the repository's configuration tightens it |
@@ -78,7 +100,7 @@ the pass. A rate limit is a wait, never a question.
 
 ## Configuration
 
-Two fields in `.config/jig.yaml`, both optional
+Three fields in `.config/jig.yaml`, all optional
 ([CONFIGURATION.md](../../CONFIGURATION.md#followup)):
 
 ```yaml
@@ -86,6 +108,12 @@ followup:
   off: [workspace-board]          # core arms this repository does not run
   authority:
     file-items: ask               # tighten an act; never loosen one
+  arms:                           # the repository's own arms
+    - id: docs-site
+      when: [docs]
+      instructions: .config/followup/docs-site.md
+    - id: ops-ledger
+      check_command: bun scripts/ledger-check.ts
 ```
 
 The follow-up reads them from the integration branch's committed file when

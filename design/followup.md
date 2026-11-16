@@ -17,8 +17,8 @@ write one runs no post-merge stage at all. With this built, any repository
 names `/jig:followup` and gets the whole stage; a repository with
 obligations of its own adds them as arms without restating the rest.
 
-This is the design of [plan.md](plan.md) item 17's M7 bullet. The first
-layer and the second ship as the plugin's
+This is the design of [plan.md](plan.md) item 17's M7 bullet. All three
+layers ship as the plugin's
 [followup](../plugin/skills/followup/README.md) skill.
 
 ## How it works
@@ -31,7 +31,7 @@ repository adds.
 |---|---|---|
 | **Protocol** (`followup.ts facts · arms · record · guard · settle`) | The merge facts and diff range; the marker check before every outside write; one verdict per arm, with evidence; the settle step that refuses to end a run with an arm unrecorded; the preview on an open pull request; how a run ends | Jig only |
 | **Core arms** | The tracker item and epic, deferred findings, out-of-tree steps, the release (where `changelog.file` is set), scaffolding and live drivers, live verification (with the change areas' post-deploy actions), the next step, the workspace board (in Orca only) | Jig; a repository turns one off with `followup.off` |
-| **Repository arms** | `followup.arms[]`: when an arm applies (by change area), and what settles it, in one of three forms: an instructions (prompt) file read from the default branch, a read-only check command whose verdict JSON the protocol records like any other, or a skill from any source named by its slash command and run by the same agent | The repository |
+| **Repository arms** | `followup.arms[]`: when an arm applies (by change area), and what settles it, in one of three forms: an instructions (prompt) file read from the integration branch, a read-only check command whose verdict JSON the protocol records like any other, or a skill from any source named by its slash command and run by the same agent | The repository |
 
 ### The protocol is a script
 
@@ -95,18 +95,36 @@ rate limit is a wait, never a question.
 
 What one repository owes after a merge and no other does (a promotion
 ledger, a website, a status page) is a repository arm, declared in
-`.config/jig.yaml` and settled under the same record-and-settle rules. An
-arm comes in one of three forms:
+`.config/jig.yaml` (`followup.arms`) and settled under the same
+record-and-settle rules: `arms` lists it, `record` and `settle` treat it as
+they treat a core arm, and `settle` refuses to end while it has no verdict.
+It runs before the next step, which weighs what it found owed, and applies
+to the change areas its `when` names; change areas that could not be read
+skip no arm on a guess. An arm comes in one of three forms:
 
-- **An instructions file**, a prompt the agent carries out, read from the
-  default branch so a pull request cannot rewrite the arm that follows it
-  up.
-- **A check command**, a script that prints a verdict JSON, runs without
-  tracker or forge tokens and is bounded in time and output, the shape
-  `do_item.preflight_command` already has.
+- **An instructions file**, a prompt the agent carries out, which
+  `followup.ts instructions` prints as the integration branch holds it, so
+  a pull request cannot rewrite the arm that follows it up. A path the
+  integration branch does not hold is refused with the configuration.
+- **A check command**, a read-only script that reads the merge facts on
+  standard input and prints a verdict JSON. `followup.ts check` runs it
+  under the rules every command a repository supplies keeps
+  (`shared/repo-command.ts`): from the repository root, without the tracker
+  and forge tokens, bounded in time and output, as the integration branch's
+  configuration names it; it runs none when that branch cannot be read. A
+  run past its limit, a nonzero exit or output that is not a verdict is
+  recorded `unread` with the reason, never `not-owed`, and the agent may
+  add what it filed after a check but never turn the check's finding into
+  `not-owed`.
 - **A skill**, from the repository, the user's home or an installed plugin,
   named by its slash command and run by the same agent, which records its
-  arm's verdict like any other.
+  arm's verdict like any other. A preview runs none, since running one
+  carries something out.
+
+An instructions file may pair with a check command (the check reads the
+verdict, the instructions say what to carry out); a skill stands alone. An
+unknown key, an id of a core arm or one used twice is refused. No arm
+widens the authority table: what an arm carries out is an act of the table.
 
 Jig's own
 follow-up becomes the plugin skill with Jig's website, status-page and

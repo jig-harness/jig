@@ -83,10 +83,13 @@ command is installed, `jig dispatch marker claim <PR>` is the same command.
 bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" arms
 ```
 
-It lists the core arms this run settles, in order, and the ones it skips
-with why: one the repository turned off (`followup.off`), the release arm
-where no `changelog.file` is set, the workspace board outside Orca or before
-the merge. Work each arm below, then record its verdict:
+It lists the arms this run settles, in order, and the ones it skips with
+why: one the repository turned off (`followup.off`), the release arm where
+no `changelog.file` is set, the workspace board outside Orca or before the
+merge. The repository's own arms (`followup.arms`) come before
+`next-step`, each named with what it runs; work them as
+[Repository arms](#repository-arms) says. Work each arm below, then record
+its verdict:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" record <arm> <owed|not-owed|pending|unread> --evidence "<the checkable fact>" --item <ref>
@@ -277,6 +280,51 @@ bun --cwd "<that worktree>" "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" com
 
 An Orca failure only warns (exit `0`): record `not-owed` with what it said,
 or the fact that no worktree holds the branch.
+
+### Repository arms
+
+An arm `arms` lists as a `repository arm` is one the repository declares in
+`.config/jig.yaml` (`followup.arms`), read from the integration branch. It
+settles like a core arm: one verdict with its evidence, and `settle` refuses
+to end while it has none. What it runs takes one of these forms:
+
+- **A check command** (`check command` in the list): run it, and the script
+  records its verdict:
+
+  ```bash
+  bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" check <arm>
+  ```
+
+  It hands the command the facts on standard input, without the tracker and
+  forge tokens, and records `unread` with the reason when the command runs
+  past its limit, exits nonzero or prints no verdict: report that as it
+  stands, never as not owed. After the check, `record` may add what you
+  carried out or filed for an `owed` verdict (`--item`), but refuses to turn
+  what the check found into `not-owed`: run `check` again instead.
+- **An instructions file** (`instructions` in the list): print it as the
+  integration branch holds it, carry it out, then record the verdict:
+
+  ```bash
+  bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" instructions <arm>
+  ```
+
+  Never read the file from the working tree: the pull request may have
+  changed it. When the command exits `1` (the integration branch could not
+  be read), record the arm `unread` with what it said. An arm with both a
+  check command and instructions runs the check first; the instructions say
+  what to carry out with its verdict.
+- **A skill** (`skill` in the list): run its slash command, then record the
+  arm's verdict from what the skill found. In a runtime without slash
+  commands, find that skill's `SKILL.md` where it is installed (the
+  repository's skills folder, the user's home, or an installed plugin) and
+  carry it out. A preview skips every skill arm: running one carries
+  something out.
+
+The instructions, the check and the skill are the repository's, not the
+protocol's: they never widen the authority table below. Each act they ask
+for is the act of the table it is (filing an item, a read-only check, a
+workflow run), checked with `guard` and asked first where the table says,
+and a step only a person can take is reported as owed and filed.
 
 ## Step 3: act within authority
 

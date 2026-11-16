@@ -1427,3 +1427,18 @@ fields:
     nullable: true
     read_by: [followup]
     since: next
+  followup.arms:
+    type: list
+    items:
+      fields:
+        id: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
+        title: string
+        when: { type: list, items: string }
+        instructions: path
+        check_command: command
+        skill: { type: string, pattern: "^\\/[A-Za-z0-9][A-Za-z0-9._:-]*(?:\\s+\\S.*)?$" }
+      optional: [title, when, instructions, check_command, skill]
+    nullable: true
+    read_by: [followup]
+    repository_only: true
+    since: next
