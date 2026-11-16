@@ -396,6 +396,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.256.2] - 2026-11-16
+
+### Fixed
+
+- `jig upgrade` reports a scoped Claude Code install as left behind when the
+  update command succeeds but its record still differs from the user version.
+  An incomplete scoped refresh now exits nonzero while preserving the report
+  of the user install and installed jobs that succeeded.
+
 ## [0.256.1] - 2026-11-16
 
 ### Changed
@@ -9054,7 +9063,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.256.2...HEAD
+[0.256.2]: https://github.com/jig-harness/jig/compare/v0.256.1...v0.256.2
 [0.256.1]: https://github.com/jig-harness/jig/compare/v0.256.0...v0.256.1
 [0.256.0]: https://github.com/jig-harness/jig/compare/v0.255.1...v0.256.0
 [0.255.1]: https://github.com/jig-harness/jig/compare/v0.255.0...v0.255.1
