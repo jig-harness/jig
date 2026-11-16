@@ -64,7 +64,13 @@ export interface JoinTargets {
 }
 
 export type SessionsReport =
-  | { ok: true; source: string; workspaces: Workspace[] }
+  | {
+      ok: true;
+      source: string;
+      workspaces: Workspace[];
+      /** When the tick's reader returned the listing (`readSessions` stamps it); the read state it holds is as of then. */
+      observedAt?: string;
+    }
   | { ok: false; source: string; reason: string; failure?: ReadFailure };
 
 /** The states in which an agent holds its stage. */

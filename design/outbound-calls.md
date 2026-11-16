@@ -261,7 +261,11 @@ was sent: the caller reads the item again before it writes again.
   when it is answered.
 - A tick exits 0 when every failed read is of a class that clears by
   waiting and under its threshold. The failure ledger counts in a row per
-  cause, and a `rate-limited` read does not count before its reset.
+  cause, and a `rate-limited` read does not count before its reset. A
+  read a turn makes for one item (a pull request's comments, a parked
+  drive's thread, a base branch's head, a claim marker) carries its call's
+  class on the item's row and counts the same way; one that answered but
+  does not parse carries none and fails the turn.
 - A pass that meets `rate-limited` before it changed anything records that
   it waits until the reset, and the dispatcher starts it again then.
 

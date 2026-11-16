@@ -13,6 +13,7 @@ import type {
 import { lengthOf, plural, stamp } from "./format.ts";
 import { derivedLink, type Forges, noLinkText } from "./links.ts";
 import type { LogFilter } from "./search.ts";
+import { type RunReportView, runReport } from "./run-report.ts";
 import { eventRole, ROLES, type Role, roleOf } from "./status.ts";
 import type { EvidenceRow } from "./view.ts";
 
@@ -36,6 +37,8 @@ export interface RowView {
   account: string;
   length: string;
   reason: string;
+  /** An ended row's closing report; `null` for an event, and for a row from before reports were kept. */
+  run: RunReportView | null;
   evidence: EvidenceRow[];
   url: string | null;
   /** What its link says: the pull request or the item. */
@@ -92,10 +95,12 @@ export function rowView(
   const pr = /^PR #(\d+)$/.exec(r.target)?.[1] ?? null;
   const url = r.url ?? derivedLink(r.repo, r.target, forges);
   const numbers = r.kind === "ended" ? endedNumbers(r) : eventNumbers(r);
+  const run = r.kind === "ended" ? runReport(r) : null;
   const title = r.title ?? forges.titles.get(`${r.repo} ${r.target}`) ?? null;
   const evidence = [
     ...(title === null ? [] : [{ k: "title", v: title }]),
     ...numbers.evidence,
+    ...(run?.evidence ?? []),
     ...(url === null ? [] : [{ k: "link", v: url, copy: url }]),
   ];
   return {
@@ -109,6 +114,7 @@ export function rowView(
     account: r.account ?? "",
     length: numbers.length.join(", "),
     reason: r.reason,
+    run,
     evidence,
     url,
     goLabel: pr === null ? `Open ${r.target}` : "Open the pull request",
@@ -217,6 +223,12 @@ export function activeFilters(
       label: `reason contains “${filter.reason}”`,
       clear: { reason: "" },
     });
+  if (filter.cause !== "")
+    active.push({ label: `cause ${filter.cause}`, clear: { cause: "" } });
+  if (filter.by !== "")
+    active.push({ label: `report by ${filter.by}`, clear: { by: "" } });
+  if (filter.target !== "")
+    active.push({ label: `work ${filter.target}`, clear: { target: "" } });
   return active;
 }
 

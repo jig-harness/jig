@@ -163,7 +163,9 @@ earlier answer:
 
 - **`holder`** (Where it stands): who holds the station now. `none` means
   nobody does, which is normal between launches; when `last` is null, say no previous ended launch is available in this answer;
-  otherwise say how it ended, and when. With a holder, say the stage, the host and whether its
+  otherwise say how it ended, and when, and what `last.run` says it
+  concluded and suggests next, as the record's words; where it says the run
+  ended without a report, say so. With a holder, say the stage, the host and whether its
   process is alive, dead or unknown, and the account and session where the
   answer names them.
 - **`state`** (Where it stands): the station's state in its own words,

@@ -56,9 +56,24 @@ export interface LogFilter {
   account: string;
   class: string;
   reason: string;
+  /** A closing-report cause the ended rows name. */
+  cause: string;
+  /** Who wrote the ended rows' closing reports; `none` for runs that left none. */
+  by: string;
+  /** One piece of work, as the rows name it (`PR #12`, `ENG-4`): its page of runs. */
+  target: string;
 }
 
-const TEXT_FIELDS = ["repo", "stage", "account", "class", "reason"] as const;
+const TEXT_FIELDS = [
+  "repo",
+  "stage",
+  "account",
+  "class",
+  "reason",
+  "cause",
+  "by",
+  "target",
+] as const;
 
 function presetOf(value: string | null): Preset {
   return PRESETS.find((p) => p.id === value)?.id ?? "today";
@@ -78,6 +93,9 @@ export function readFilter(search: string): LogFilter {
     account: params.get("account") ?? "",
     class: params.get("class") ?? "",
     reason: params.get("reason") ?? "",
+    cause: params.get("cause") ?? "",
+    by: params.get("by") ?? "",
+    target: params.get("target") ?? "",
   };
 }
 

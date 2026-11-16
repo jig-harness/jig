@@ -346,6 +346,7 @@ describe("jig ask", () => {
       reason: "exit 0 (converged)",
       from: "outcome log",
       next: { person: "repository maintainer", act: "merge the pull request" },
+      stage: "rearm",
     });
     expect(answer.waitsOn).toMatchObject({ person: "merge" });
     // The predicate's lane and the merge command pinned to the verified head.

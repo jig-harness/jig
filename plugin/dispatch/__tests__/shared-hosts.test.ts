@@ -353,11 +353,14 @@ describe("two hosts dispatching one repository", () => {
       owner: false,
       prs: PRS,
     });
-    const events = (h: Host) =>
+    // The cause's event rows; the notify stage's own notices_read rows are its owner's alone too.
+    const events = (h: Host, event = "needs-person") =>
       (
         existingStateDb(h.state)
-          ?.query("SELECT count(*) AS n FROM log WHERE kind = 'event'")
-          .get() as { n: number } | undefined
+          ?.query(
+            "SELECT count(*) AS n FROM log WHERE kind = 'event' AND json_extract(row, '$.event') = ?",
+          )
+          .get(event) as { n: number } | undefined
       )?.n ?? 0;
     const notified = (h: Host) =>
       readFileSync(join(h.orca, "orca-calls.log"), "utf8")
@@ -375,6 +378,7 @@ describe("two hosts dispatching one repository", () => {
     expect(repoOf(other)?.notifications).toEqual([]);
     expect(notified(b)).toBe(0);
     expect(events(b)).toBe(0);
+    expect(events(b, "notices_read")).toBe(0);
 
     const owner = await tick(a);
     expect(repoOf(owner)?.notifications).toEqual([
@@ -386,6 +390,7 @@ describe("two hosts dispatching one repository", () => {
     ]);
     expect(notified(a)).toBe(1);
     expect(events(a)).toBe(1);
+    expect(events(a, "notices_read")).toBe(1);
     expect(repoOf(owner)?.shared?.owner).toBe(true);
   }, 60_000);
 

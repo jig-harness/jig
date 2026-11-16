@@ -84,9 +84,10 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             sessions holding its slots. <b>Queue</b> is what the next ticks will
             start, hold or report. <b>History</b> shows how the recent ticks
             ran, one row per tick with its slowest phase, and the outcome log:
-            one row per ended launch, filtered by time, repository, stage,
-            account, class and reason. The filters are the page's address, so a
-            view is a link.
+            one row per ended launch with what its closing report concluded,
+            filtered by time, repository, stage, account, class, reason, the
+            report's cause and who wrote it. A row opens to all runs of its
+            work. The filters are the page's address, so a view is a link.
           </p>
           <p>
             Words with a dotted underline, chips and the <b>?</b> beside a

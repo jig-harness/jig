@@ -1,11 +1,15 @@
 /** Read a parked drive's answers into the dispatcher's report shape. */
-import { parkAnswers } from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
+import {
+  parkAnswers,
+  threadComments,
+} from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import type { Ledger } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
-import type { WaitingPark } from "../types.ts";
+import { combinedFailure, readFailureOf } from "../read-failures.ts";
+import type { ReadFailure, WaitingPark } from "../types.ts";
 
-/** What answers a park's items, when the ledger stopped `HITL_PARKED`. */
+/** What answers a park's items, when the ledger stopped `HITL_PARKED`; where they did not read, the failed calls' class. */
 export type ParkReading =
   | {
       answered: number;
@@ -13,7 +17,7 @@ export type ParkReading =
       parks?: WaitingPark[];
       disputed?: string[];
     }
-  | { unreadable: string };
+  | { unreadable: string; failure?: ReadFailure };
 
 export async function readPark(
   pr: number,
@@ -27,11 +31,29 @@ export async function readPark(
     ledger.driver.exit !== DRIVE_EXIT.HITL_PARKED
   )
     return undefined;
-  const found = await parkAnswers(pr, ledger.parked, slug, listing, loaders);
-  if (!("unreadable" in found) && found.unread.length > 0)
+  // A thread whose read failed is kept with the failed call's class, which decides whether the tick waits it out.
+  const failures = new Map<string, ReadFailure | undefined>();
+  const found = await parkAnswers(pr, ledger.parked, slug, listing, {
+    threadComments: (key) =>
+      threadComments(key, undefined, (f) =>
+        failures.set(key, readFailureOf(f)),
+      ),
+    ...loaders,
+  });
+  if (!("unreadable" in found) && found.unread.length > 0) {
+    // A park with no time is also an unclassified defect beside its thread's failed call, so a class that waiting does not clear still wins over it.
+    const failure = combinedFailure(
+      found.unread.flatMap((p) =>
+        p.at === undefined
+          ? [failures.get(p.key), undefined]
+          : [failures.get(p.key)],
+      ),
+    );
     return {
       unreadable: found.unread.map((p) => `${p.kind} ${p.key}`).join(", "),
+      ...(failure === undefined ? {} : { failure }),
     };
+  }
   return "unreadable" in found
     ? found
     : {

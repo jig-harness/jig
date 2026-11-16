@@ -62,6 +62,8 @@ const ANSWER: RowsAnswer = {
     stage: [],
     account: [],
     class: ["converged", "merged", "quota wall", "stalled"],
+    cause: [],
+    by: [],
   },
   recurring: [],
   logHasRows: true,
