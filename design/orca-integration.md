@@ -15,7 +15,8 @@ a plugin that wakes the dispatcher are built, as are the plugin's launch
 guard, status bar item and inbox. What remains is the launch guard's
 admission, which names only a worktree path, the dispatcher's reading of an
 account's usage from Orca's command line, a trial of binding a launch to an
-account, and the panel's answer to a parked decision and its merge button.
+account, and the panel's picking of a parked decision's structured option
+(its free-text answer is built) and its merge button.
 With this built, Orca is
 the runtime and Jig is the process: Orca owns workspaces, sessions,
 accounts, the phone and the board; Jig owns what to start, when it is done
@@ -415,7 +416,7 @@ One pull request each; each is usable on its own. Steps 1 to 6 and the
 first parts of 8 and 9 are built. The steps still open run in parallel where
 nothing orders them: the admission's repository and worktree incarnation
 (step 6), the account binding spike (step 7), the dispatcher's usage reading
-(step 4's ask, once Orca offers it) and the panel's answer and merge button
+(step 4's ask, once Orca offers it) and the panel's option picking and merge button
 (step 9).
 
 1. **This design** and its plan item.
@@ -425,8 +426,9 @@ nothing orders them: the admission's repository and worktree incarnation
 3. **Collection through the runtime** (built; step 6 closes its race): the worktrees kind's runtime column,
    the `orca.command` machine entry, the remove steps moved into the
    plugin, the registry in the proof, tests against a fake `orca` command;
-   collection is enabled, and an agent started after the registry read can
-   still race the removal until the launch guard is built.
+   collection is enabled, and the plugin's launch guard already refuses a
+   launch it can see; what remains is the race the guard cannot see until
+   the admission also names the repository and the worktree's incarnation.
 4. **The asks**, filed by a person, each with its pull request to Orca
    when a maintainer does not take it.
 5. **The plugin's wake-up** (built, in
