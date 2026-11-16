@@ -333,8 +333,6 @@ export interface PoolIssue {
   hiddenLabels?: string[];
   /** Nonempty native/field stores whose values have no canonical mapping. Never overwrite them through a canonical move. */
   unmappedFacets?: Facet[];
-  /** Facets whose field the issue's type has no context for: the issue cannot hold a value there, so a null is no gap to fill. */
-  inapplicableFacets?: Facet[];
   identifier: string;
   title: string;
   url: string | null;

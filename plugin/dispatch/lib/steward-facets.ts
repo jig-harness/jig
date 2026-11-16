@@ -79,7 +79,6 @@ function writable(
     issue.assignee?.id === observed.assignee.id &&
     ["triage", "backlog", "unstarted"].includes(issue.state.type) &&
     !issue.unmappedFacets?.includes(facet) &&
-    !issue.inapplicableFacets?.includes(facet) &&
     queueHold({ issue, blockers: [], unblocks: 0 }, policy) === null &&
     (facet === "priority" ? issue.priority === 0 : issue[facet] === null)
   );

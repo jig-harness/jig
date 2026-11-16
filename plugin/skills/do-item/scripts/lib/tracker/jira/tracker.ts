@@ -717,11 +717,7 @@ export function jiraTracker(client: Client): Tracker {
 
   /** The type and size the adapter keeps itself, read off an issue. */
   function facetValuesOf(issue: JiraIssue) {
-    const {
-      unmappedFacets: _,
-      inapplicableFacets: __,
-      ...values
-    } = stores.read(issue);
+    const { unmappedFacets: _, ...values } = stores.read(issue);
     return values;
   }
 }

@@ -194,7 +194,6 @@ export interface JiraFacetStores {
     type?: string | null;
     size?: string | null;
     unmappedFacets?: Facet[];
-    inapplicableFacets?: Facet[];
   };
   /** Refuse a label the type keeps itself among labels a write names. */
   refuseLabels(labels: ReadonlyArray<string>, where: string): void;
@@ -819,10 +818,6 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         if (r.unmapped) unmapped.push(s.facet);
       }
       if (unmapped.length > 0) out.unmappedFacets = unmapped;
-      const contextless = (issue.contextlessFacets ?? []).filter((f) =>
-        fields.some((s) => s.facet === f),
-      );
-      if (contextless.length > 0) out.inapplicableFacets = contextless;
       return out;
     },
 

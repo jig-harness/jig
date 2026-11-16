@@ -101,8 +101,6 @@ export interface JiraIssue {
   facetValues: Partial<Record<Facet, string[]>>;
   /** The facets whose field is a number field, which answers with the number rather than its configured spelling. */
   numericFacets?: Facet[];
-  /** The facets whose field the read named and the response left out: the issue's type has no context for it. */
-  contextlessFacets?: Facet[];
 }
 
 const STATUS_CATEGORIES = ["new", "indeterminate", "done"];
@@ -325,9 +323,6 @@ export function parseIssue(
     ),
     numericFacets: facetFields
       .filter((ff) => ff.kind === "number")
-      .map((ff) => ff.facet),
-    contextlessFacets: facetFields
-      .filter((ff) => !(ff.id in f) && asked(ff.id))
       .map((ff) => ff.facet),
   };
 }
