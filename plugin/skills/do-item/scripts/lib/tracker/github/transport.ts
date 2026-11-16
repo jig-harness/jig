@@ -10,6 +10,10 @@
  * fake (plain `http` is accepted for a loopback address only). Tests of the
  * adapter pass a fake transport.
  *
+ * Either way a request is admitted against the token's budget record and
+ * its answer recorded there (`shared/outbound/github-budget.ts`): `gh` at
+ * the forge client's wrapper, HTTPS here.
+ *
  * A failure is a `GitHubApiError` whose code is its failure class
  * (`shared/outbound/failure.ts`), read from the answer's status, headers
  * and GraphQL error types by the library (`shared/outbound/github.ts`). A
@@ -40,6 +44,11 @@ import {
 import { guarded } from "../../../../../../shared/outbound/hold.ts";
 import { retryRead } from "../../../../../../shared/outbound/retry.ts";
 import { credentialKey } from "../../../../../../shared/outbound/budget.ts";
+import { admitPaced } from "../../../../../../shared/outbound/forge-pacing.ts";
+import {
+  type HttpsGovernance,
+  httpsGovernance,
+} from "../../../../../../shared/outbound/github-budget.ts";
 import { operationName } from "../../../../../../shared/outbound/ledger.ts";
 import { githubCost } from "../../../../../../shared/outbound/gh-ledger.ts";
 import {
@@ -190,7 +199,7 @@ const failureOfAnswer = (answer: Answer): OutboundFailure | null =>
  * thrown.
  */
 async function call(
-  send: (bound: AbortSignal) => Promise<Answer>,
+  send: (bound: AbortSignal, deadlineAt: number) => Promise<Answer>,
   signal: AbortSignal | undefined,
   read: boolean,
   hold: string | null,
@@ -207,7 +216,7 @@ async function call(
     retryRead(
       () => {
         dispatched = true;
-        return send(bound);
+        return send(bound, deadlineAt);
       },
       {
         read,
@@ -405,6 +414,13 @@ export function resolveGitHubToken(env = process.env): string | null {
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//;
 
+/** One HTTPS request's answer, with the headers and the text it came with when it came. */
+interface Posted {
+  answer: Answer;
+  headers: Headers | null;
+  text: string;
+}
+
 /** One HTTPS request's answer. */
 async function postOnce(
   fetchImpl: typeof fetch,
@@ -413,9 +429,14 @@ async function postOnce(
   payload: { query: string; variables: Record<string, unknown> },
   bound: AbortSignal,
   observation: Attempt,
-): Promise<Answer> {
+): Promise<Posted> {
   observation.requests = 1;
   const began = currentMs();
+  const lost = (answer: Answer): Posted => ({
+    answer,
+    headers: null,
+    text: "",
+  });
   let res: Response;
   try {
     res = await postGraphQL(fetchImpl, url, `bearer ${token}`, payload, {
@@ -423,23 +444,27 @@ async function postOnce(
       signal: bound,
     });
   } catch (err) {
-    if (cancelled(bound)) return abortedError(bound, true);
-    return new GitHubApiError(
-      `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`,
-      { code: "unreachable", sent: true },
+    if (cancelled(bound)) return lost(abortedError(bound, true));
+    return lost(
+      new GitHubApiError(
+        `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`,
+        { code: "unreachable", sent: true },
+      ),
     );
   }
   let text: string;
   try {
     text = await res.text();
   } catch (err) {
-    if (cancelled(bound)) return abortedError(bound, true);
-    return new GitHubApiError(
-      `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`,
-      { code: "unreachable", sent: true },
+    if (cancelled(bound)) return lost(abortedError(bound, true));
+    return lost(
+      new GitHubApiError(
+        `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`,
+        { code: "unreachable", sent: true },
+      ),
     );
   }
-  if (cancelled(bound)) return abortedError(bound, true);
+  if (cancelled(bound)) return lost(abortedError(bound, true));
   const body = parsedOrNull(text);
   observation.cost = githubCost(body);
   const failure = gitHubHttpFailure(
@@ -448,8 +473,40 @@ async function postOnce(
     text,
     currentMs() - began,
   );
-  if (failure === null) return answerOf(body, res.headers);
-  return errorsFailure(body, failure) ?? errorOf(failure);
+  const answer =
+    failure === null
+      ? answerOf(body, res.headers)
+      : (errorsFailure(body, failure) ?? errorOf(failure));
+  return { answer, headers: res.headers, text };
+}
+
+/**
+ * One HTTPS request under the credential's budget record (`governance`):
+ * paced and admitted before it is sent, its answer recorded after. A request
+ * the record refuses is not sent and answers `rate-limited` with the time
+ * the record names; a refusal the request meets waits as long as the record
+ * then holds the credential.
+ */
+async function governedPost(
+  governance: HttpsGovernance | null,
+  post: () => Promise<Posted>,
+  bound: AbortSignal,
+  deadlineAt: number,
+): Promise<Answer> {
+  if (governance === null) return (await post()).answer;
+  const admitted = await admitPaced(governance, deadlineAt, bound);
+  if ("failure" in admitted) return errorOf(admitted.failure);
+  if ("refused" in admitted) return errorOf(admitted.refused);
+  if (cancelled(bound)) {
+    governance.release(admitted.sentAt);
+    return abortedError(bound);
+  }
+  const { answer, headers, text } = await post();
+  const failure = failureOfAnswer(answer);
+  const until = governance.observe(headers, text, failure, admitted.sentAt);
+  return until === null || !(answer instanceof GitHubApiError)
+    ? answer
+    : errorOf({ ...answer.failure, until }, answer.data);
 }
 
 /** HTTPS transport to `url` with `token`; each call bounded by `GITHUB_TIMEOUT_MS`. */
@@ -464,7 +521,8 @@ export function httpTransport(
     );
   return (query, variables, signal, idempotent = false) =>
     call(
-      (bound) => {
+      (bound, deadlineAt) => {
+        const governance = httpsGovernance(token);
         const observation: Attempt = {
           system: GITHUB,
           credential: credentialKey(GITHUB, token),
@@ -477,13 +535,19 @@ export function httpTransport(
         return recordAttempt(
           observation,
           () =>
-            postOnce(
-              fetchImpl,
-              url,
-              token,
-              { query, variables },
+            governedPost(
+              governance,
+              () =>
+                postOnce(
+                  fetchImpl,
+                  url,
+                  token,
+                  { query, variables },
+                  bound,
+                  observation,
+                ),
               bound,
-              observation,
+              deadlineAt,
             ),
           (answer) => failureOfAnswer(answer)?.code ?? null,
         );

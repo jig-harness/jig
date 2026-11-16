@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { recordCall } from "../outbound/ledger.ts";
+import { recordCall, UNATTRIBUTED } from "../outbound/ledger.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -90,4 +90,47 @@ test("jig budget keeps unchanged request traffic separate from primary quota cos
     unknownCost: 0,
     estimated: 0,
   });
+});
+
+test("jig budget shows spending no counted call explains as unattributed, never as an operation", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-budget-unattributed-"));
+  roots.push(root);
+  const path = join(root, "budget.sqlite");
+  recordCall({
+    path,
+    system: "github",
+    credential: "github:test",
+    operation: UNATTRIBUTED,
+    caller: UNATTRIBUTED,
+    unit: "points",
+    requests: 0,
+    cost: 19,
+    estimated: false,
+    durationMs: 0,
+  });
+  const run = (json: boolean) => {
+    const args = JSON.stringify(json ? ["budget", "--json"] : ["budget"]);
+    const script = `import {main} from ${JSON.stringify(jig)}; import {withLedgerPath} from ${JSON.stringify(ledger)}; process.exit(await withLedgerPath(${JSON.stringify(path)},()=>main(${args})));`;
+    const result = Bun.spawnSync([process.execPath, "--eval", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(result, 0);
+    return result.stdout.toString();
+  };
+  const answer = JSON.parse(run(true));
+  expect(answer.operations).toEqual([
+    expect.objectContaining({
+      operation: UNATTRIBUTED,
+      unattributed: true,
+      requests: 0,
+      cost: 19,
+    }),
+  ]);
+  expect(answer.callers[0]).toMatchObject({ unattributed: true });
+  const text = run(false);
+  expect(text).toContain(
+    "github github:test unattributed: 19 points the reported balance shows spent that no counted call explains",
+  );
+  expect(text).not.toContain(`${UNATTRIBUTED}:`);
 });

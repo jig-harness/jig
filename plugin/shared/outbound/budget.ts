@@ -343,6 +343,14 @@ function currentShare(): number | null {
   return dispatcherShare;
 }
 
+/**
+ * What a snapshot answer showed was spent beyond what the record had
+ * counted, in each window's own unit: the record's balance before it less
+ * the balance it left, within one window. Absent for a window that shows
+ * none, or for an answer that is not a snapshot.
+ */
+export type Unexplained = Partial<Record<"requests" | "complexity", number>>;
+
 /** Admits requests for a credential and records what the answers said. */
 export interface BudgetGovernor {
   /** Throws `TrackerRateLimited` when no request may leave now; returns the time the request was admitted. */
@@ -352,13 +360,15 @@ export interface BudgetGovernor {
    * it answers: what was recorded since is not in the answer. `reservedIn`
    * names the window that request reserved, `null` for one that reserved
    * nothing; left out, it is read as the window `admit` reserves by default.
+   * A snapshot's answer returns the spending it showed that the record had
+   * not counted.
    */
   observe(
     key: string,
     answer: BudgetAnswer,
     sentAt?: number,
     reservedIn?: string | null,
-  ): void;
+  ): Unexplained | void;
   /** Until when the credential is held after the answers recorded so far, epoch milliseconds; `null` when it is not. */
   heldUntil?(key: string): number | null;
   /**
@@ -885,6 +895,7 @@ export function budgetGovernor(
     },
     observe(key, answer, sentAt, reservedIn = "requests") {
       const now = clock();
+      let unexplained: Unexplained = {};
       store.update(key, (prev) => {
         const base: BudgetRecord = prev ?? {
           requests: EMPTY,
@@ -917,9 +928,19 @@ export function budgetGovernor(
           answer.snapshot === true
             ? snapshotOf(prev, next, now, sentAt)
             : merged(prev, next, now, sentAt, reservedIn === name);
+        const requests = take(base.requests, answer.requests, "requests");
+        const complexity = take(
+          base.complexity,
+          answer.complexity,
+          "complexity",
+        );
+        unexplained =
+          answer.snapshot === true
+            ? unexplainedSpending(base, { requests, complexity })
+            : {};
         return {
-          requests: take(base.requests, answer.requests, "requests"),
-          complexity: take(base.complexity, answer.complexity, "complexity"),
+          requests,
+          complexity,
           limitedUntil:
             hold.until !== null
               ? Math.max(
@@ -935,6 +956,7 @@ export function budgetGovernor(
           ...(hold.strikes === 0 ? {} : { strikes: hold.strikes }),
         };
       });
+      return unexplained;
     },
     heldUntil(key) {
       const record = store.read(key);
@@ -974,6 +996,35 @@ export function budgetGovernor(
       });
     },
   };
+}
+
+/**
+ * How far a snapshot lowered each of the request and complexity windows
+ * below the balance the record held for the same window: spending no
+ * answer or reservation the record counted explains. A window the snapshot
+ * left as it was, or that it reports for another reset, shows none.
+ */
+function unexplainedSpending(
+  before: BudgetRecord,
+  after: Pick<BudgetRecord, "requests" | "complexity">,
+): Unexplained {
+  const out: Unexplained = {};
+  for (const name of ["requests", "complexity"] as const) {
+    const prev = before[name];
+    const next = after[name];
+    if (
+      next === prev ||
+      prev.remaining === null ||
+      next.remaining === null ||
+      prev.resetAt === null ||
+      prev.estimated === true ||
+      next.resetAt !== prev.resetAt
+    )
+      continue;
+    const spent = prev.remaining - next.remaining;
+    if (spent > 0) out[name] = spent;
+  }
+  return out;
 }
 
 /** A snapshot's windows read at `now`, each one older than the stored window left out. */
