@@ -23,9 +23,17 @@ function repo(files: Record<string, string>): {
 
 const tracker = { issue_tracker: { adapter: "github" } };
 
-function schedulerFixtures(command: string): Record<string, string>[] {
+function schedulerFixtures(
+  command: string,
+  cached = true,
+): Record<string, string>[] {
+  const position = /--position (\S+)/u.exec(command)?.[1];
+  const cache =
+    cached && position
+      ? `      - uses: actions/cache@v4\n        with:\n          path: ${position}\n          key: sweep-position\n`
+      : "";
   const workflow = (run: string) => ({
-    ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
+    ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n${cache}      - run: ${JSON.stringify(run)}\n`,
   });
   return [
     workflow(command),
@@ -64,6 +72,20 @@ it("certifies a comment-only sweep that passes a read position", () => {
       const { root, tracked } = repo(files);
       expect(sweepFindings(config, root, tracked)).toEqual([]);
     }
+  }
+});
+
+it("flags a workflow that passes a position it never keeps between runs", () => {
+  const config = { ...tracker, file_issue: { sweep: { move: false } } };
+  const [workflow, wrapped] = schedulerFixtures(
+    "bun check-fields.ts check --yes --position state/sweep.json",
+    false,
+  );
+  for (const files of [workflow, wrapped]) {
+    const { root, tracked } = repo(files ?? {});
+    expect(sweepFindings(config, root, tracked).map((f) => f.id)).toEqual([
+      "suggestion:issue_tracker.sweep.position",
+    ]);
   }
 });
 

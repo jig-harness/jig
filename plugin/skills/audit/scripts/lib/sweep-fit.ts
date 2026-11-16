@@ -16,7 +16,6 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
-import { layeredConfig } from "../../../../shared/consumer.ts";
 import { load } from "../../../../shared/yaml.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import { probedFiles } from "./criteria.ts";
@@ -140,20 +139,53 @@ function scheduledWorkflow(
     return false;
   if (!doc.on.schedule.every((s) => isMapping(s) && weeklyCron(s.cron)))
     return false;
-  return Object.values(doc.jobs).some(
-    (job) =>
-      isMapping(job) &&
-      scheduleSafe(job.if, branch) &&
-      job.needs === undefined &&
-      Array.isArray(job.steps) &&
-      job.steps.some(
-        (step, index) =>
-          index === 0 &&
-          isMapping(step) &&
-          scheduleSafe(step.if, branch) &&
-          step["continue-on-error"] !== true &&
-          applying(step.run, requirePosition),
-      ),
+  return Object.values(doc.jobs).some((job) => {
+    if (
+      !isMapping(job) ||
+      !scheduleSafe(job.if, branch) ||
+      job.needs !== undefined ||
+      !Array.isArray(job.steps)
+    )
+      return false;
+    // A cache step for the position file may precede the sweep; a saved
+    // position counts only with one for that very file, since a fresh runner
+    // otherwise starts at the oldest issue.
+    const cacheLead =
+      isMapping(job.steps[0]) &&
+      typeof job.steps[0].uses === "string" &&
+      job.steps[0].uses.startsWith("actions/cache@");
+    const step = job.steps[cacheLead ? 1 : 0];
+    const position = positionPath(
+      isMapping(step) ? String(step.run ?? "") : "",
+    );
+    return (
+      (!requirePosition ||
+        (position !== null &&
+          cacheLead &&
+          cachesPath(job.steps[0], position))) &&
+      isMapping(step) &&
+      scheduleSafe(step.if, branch) &&
+      step["continue-on-error"] !== true &&
+      applying(step.run, requirePosition)
+    );
+  });
+}
+
+/** The file a sweep command saves its read position to. */
+function positionPath(command: string): string | null {
+  const m = /--position ([a-zA-Z0-9_./][a-zA-Z0-9_./-]*)/u.exec(command);
+  return m?.[1] ?? null;
+}
+
+/** A step that restores and saves exactly this file between runs. */
+function cachesPath(step: unknown, path: string): boolean {
+  return (
+    isMapping(step) &&
+    typeof step.uses === "string" &&
+    /^actions\/cache@/u.test(step.uses) &&
+    step["continue-on-error"] !== true &&
+    isMapping(step.with) &&
+    step.with.path === path
   );
 }
 
@@ -216,22 +248,6 @@ export function sweepRunners(
 }
 
 /**
- * The configuration the sweep runs under: the repository's file merged with
- * this machine's layers. The repository's own checks stay on its file; a layer
- * that fails to load is reported elsewhere, so the file stands in for it.
- */
-export function mergedConfig(
-  root: string,
-  fallback: Record<string, unknown>,
-): Record<string, unknown> {
-  try {
-    return layeredConfig(root).values;
-  } catch {
-    return fallback;
-  }
-}
-
-/**
  * Every finding config-fit reads from the repository's files about its
  * tracker: the configuration against its label taxonomy, and the sweep.
  */
@@ -242,7 +258,7 @@ export function trackerFileFindings(
 ): Finding[] {
   return [
     ...taxonomyFindings(config, root, tracked),
-    ...sweepFindings(mergedConfig(root, config), root, tracked),
+    ...sweepFindings(config, root, tracked),
   ];
 }
 
@@ -265,7 +281,7 @@ export function sweepFindings(
         id: "suggestion:issue_tracker.sweep.position",
         severity: "suggestion",
         message:
-          "this repository sets `file_issue.sweep.move: false`, but no scheduled sweep passes `--position`: without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass `--position <file>` and keep that file between runs (file-issue's README, The weekly sweep)",
+          "this repository sets `file_issue.sweep.move: false`, but no scheduled sweep passes `--position` with the file kept between runs (a workflow caches it with actions/cache ahead of the sweep): without a saved read position each run starts at the oldest issue, so issues past the read cap are never reached; pass `--position <file>` and keep that file between runs (file-issue's README, The weekly sweep)",
       },
     ];
   }
