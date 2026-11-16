@@ -423,12 +423,14 @@ nothing orders them: the admission's repository and worktree incarnation
 2. **The board from Jig's side** (built), after `drive-pr` links the card
    to its pull request: `orca-board.ts` into `plugin/shared/` with `--unread` and
    `--comment`, the moves in `drive-pr` and `followup`, `orca.board`.
-3. **Collection through the runtime** (built; step 6 closes its race): the worktrees kind's runtime column,
+3. **Collection through the runtime** (built; step 6 closes its identity gap): the worktrees kind's runtime column,
    the `orca.command` machine entry, the remove steps moved into the
    plugin, the registry in the proof, tests against a fake `orca` command;
    collection is enabled, and the plugin's launch guard already refuses a
-   launch it can see; what remains is the race the guard cannot see until
-   the admission also names the repository and the worktree's incarnation.
+   launch it can see; what remains is identity: an admission honoured only
+   for the repository that owns it, so another repository's list cannot
+   release it, and for the worktree incarnation it was taken on, so a
+   worktree recreated at the same path inherits no launch block.
 4. **The asks**, filed by a person, each with its pull request to Orca
    when a maintainer does not take it.
 5. **The plugin's wake-up** (built, in
