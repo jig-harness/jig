@@ -523,11 +523,18 @@ async function collectThroughOrca(
     });
   } catch (error) {
     // A step that throws (a platform error, or a defect) fails the removal.
-    return released({
+    const failed: Collected = {
       outcome: "failed",
       reason: error instanceof Error ? error.message : String(error),
       ...(archived === null ? {} : { details: { archive: archived } }),
-    });
+    };
+    // A submitted admission, this run's or a dead run's taken over, may still
+    // be removing the worktree: the hold stays, as the claim does.
+    if (!guard.unsettled()) return released(failed);
+    const left = keepHolds(holds);
+    return left === null
+      ? failed
+      : { ...failed, reason: `${failed.reason}; ${left}` };
   } finally {
     releaseHolds(holds, log);
     if (snapshot !== null)
