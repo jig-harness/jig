@@ -1,6 +1,8 @@
 /**
  * Recover cancelled workflows once per head, sharing one durable budget across
  * entry points; each person's answer to the `cancelled-ci` park grants one more.
+ * A run cancelled after the request, and not answered by its re-run, is
+ * re-run once more under the same claim.
  */
 import {
   RESULT_CONCLUSIONS,
@@ -34,7 +36,7 @@ export interface RecoveryRecord {
   requestedRuns?: readonly RequestedRun[];
   /** Further re-runs a person's answer granted on this head. */
   grants?: number;
-  /** A grant waiting for a claim younger than the replacement window to age out. */
+  /** A grant that waits for a young claim's re-run to be judged. */
   grantPending?: boolean;
 }
 export interface RecoveryDeps {
@@ -120,13 +122,32 @@ export async function recoverCancelled(
   if (record.requestedAt !== null)
     return await judgeRequest(pr, head, orphaned, runs, record, now, deps);
   if (now - record.firstSeen < 30_000) return "wait";
-  return await requestOpen(pr, head, orphaned, runs, record, deps);
+  return await requestOpen(pr, head, orphaned, runs, record, now, deps);
+}
+
+/**
+ * Whether a re-run that ended with a result answers an orphaned run: the run
+ * itself, or one of its workflow that existed when the re-run was requested.
+ * A run started after the request is a cancellation of its own.
+ */
+function answers(answered: readonly RequestedRun[], run: WorkflowRun): boolean {
+  return answered.some(
+    (request) =>
+      request.workflowId === run.workflowId &&
+      (request.id === run.id ||
+        parseMs(run.startedAt) < floorSecond(request.at)),
+  );
+}
+
+/** Run times have one-second precision. */
+function floorSecond(ms: number): number {
+  return Math.floor(ms / 1000) * 1000;
 }
 
 /**
  * Request the orphaned runs a released claim's re-run has not answered: a
- * grant re-runs what is still open, never a workflow its last re-run already
- * gave a result, and never while that re-run is still going.
+ * grant re-runs what is still open, never a run its last re-run already
+ * answered, and never while that re-run is going or inside its window.
  */
 async function requestOpen(
   pr: string,
@@ -134,17 +155,24 @@ async function requestOpen(
   orphaned: readonly WorkflowRun[],
   runs: readonly WorkflowRun[],
   record: RecoveryRecord,
+  now: number,
   deps: RecoveryDeps,
 ): Promise<Recovery> {
   const observed = (record.requestedRuns ?? []).map((run) =>
     observeRequested(run, runs),
   );
-  if (observed.some((o) => o.outcome === "pending")) return "wait";
+  if (
+    observed.some(
+      (o) =>
+        o.outcome === "pending" ||
+        (o.outcome === "missing" && now - o.run.at < REPLACEMENT_WINDOW_MS),
+    )
+  )
+    return "wait";
   const answered = observed
     .filter((o) => o.outcome === "result")
     .map((o) => o.run);
-  const workflows = new Set(answered.map((run) => run.workflowId));
-  const open = orphaned.filter((run) => !workflows.has(run.workflowId));
+  const open = orphaned.filter((run) => !answers(answered, run));
   if (open.length === 0) return "none";
   if (!(await deps.confirm(pr, head))) return "unknown";
   return await requestOnce(pr, head, open, record, deps, answered, "claim");
@@ -154,8 +182,8 @@ async function requestOpen(
  * Judge the runs the request re-ran, never the cancelled set computed again:
  * a run the drive's own label event started and its concurrency group
  * cancelled, or one the re-run itself cancelled, is not the re-run's failure.
- * Once every re-run run has a result, a cancelled run of the same workflow is
- * answered too; one of a workflow the request never covered is requested once.
+ * Once every re-run run has a result, a cancelled run of the same workflow
+ * that existed at the request is answered too; any other is requested once.
  */
 async function judgeRequest(
   pr: string,
@@ -182,11 +210,11 @@ async function judgeRequest(
     );
   }
   const observed = requested.map((run) => observeRequested(run, runs));
-  if (observed.some((o) => o.outcome === "pending")) return "wait";
-  const missing = observed.filter((o) => o.outcome === "missing");
+  // A run past its window parks whatever its siblings are doing.
+  const missing = observed.filter(
+    (o) => o.outcome === "missing" && now - o.run.at >= REPLACEMENT_WINDOW_MS,
+  );
   if (missing.length > 0) {
-    if (missing.some((o) => now - o.run.at < REPLACEMENT_WINDOW_MS))
-      return "wait";
     const seen = missing.map((o) => `run ${o.run.id} ${o.seen}`).join("; ");
     return await parkOrRegrant(
       pr,
@@ -198,8 +226,12 @@ async function judgeRequest(
       `${budget} was requested and, ${REPLACEMENT_WINDOW_MS / 60_000} minutes on, no attempt or result replaced it (${seen})`,
     );
   }
-  const answered = new Set(requested.map((run) => run.workflowId));
-  const uncovered = orphaned.filter((run) => !answered.has(run.workflowId));
+  if (observed.some((o) => o.outcome !== "result")) return "wait";
+  const uncovered = orphaned.filter(
+    (run) =>
+      !answers(requested, run) &&
+      !requested.some((request) => request.id === run.id),
+  );
   if (uncovered.length === 0) return "none";
   // A cancellation that only ended now gets the same grace a first one gets.
   if (
@@ -244,7 +276,7 @@ function observeRequested(
     (other) =>
       other.id !== run.id &&
       other.workflowId === run.workflowId &&
-      parseMs(other.startedAt) >= Math.floor(run.at / 1000) * 1000,
+      parseMs(other.startedAt) >= floorSecond(run.at),
   );
   const candidates = [...(attempt === undefined ? [] : [attempt]), ...since];
   if (
@@ -299,7 +331,15 @@ async function parkOrRegrant(
   ) {
     const released = await deps.observe(pr, head);
     if (released.requestedAt === null)
-      return await requestOpen(pr, head, orphaned, runs, released, deps);
+      return await requestOpen(
+        pr,
+        head,
+        orphaned,
+        runs,
+        released,
+        Number.POSITIVE_INFINITY,
+        deps,
+      );
   }
   return await parkCancelled(deps, pr, head, named, record, why);
 }

@@ -372,10 +372,11 @@ the CI hold. A refused or unconfirmed request parks `cancelled-ci`. After
 a request the drive judges the runs it re-ran, not the cancelled runs it finds
 again: it waits while a new attempt of one, or a run of its workflow, is
 going, and parks when one of them has no new attempt or result ten minutes
-after the request, naming those runs and what it saw of each. A run of the
-same workflow cancelled meanwhile, as a label event's run cancelled by the
-workflow's concurrency group, is answered by the re-run's result; a
-workflow the request did not cover is requested once on its own. The park
+after the request, naming those runs and what it saw of each. A cancelled
+run of the same workflow that existed when the re-run was requested, as a
+label event's run its concurrency group cancelled, is answered by the
+re-run's result; a run cancelled after the request, or of a workflow the
+request did not cover, is requested once on its own. The park
 carries a framed decision and stops with [`HITL_PARKED`](../../protocol/drive-exits.md). The doctor names the run and recovery.
 A person's answer choosing "Re-run safely" (or approving it), with no note
 conditioning it, grants the head its park names one more re-run when the

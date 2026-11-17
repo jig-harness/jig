@@ -1603,9 +1603,10 @@ false "green":
   the cancelled set read again: a new attempt of one, or a run of its
   workflow started since the request, that is still going is waited for; one
   that ended with a result answers it, and every cancelled run of its
-  workflow with it, so a label event's run that the concurrency group
-  cancelled is not the re-run's failure. A workflow the request did not
-  cover is added to the claim and requested once, after the same grace. A
+  workflow that existed at the request, so a label event's run that the
+  concurrency group cancelled is not the re-run's failure. A run cancelled
+  after the request, or of a workflow the request did not cover, is added to
+  the claim and requested once, after the same grace. A
   refused or unconfirmed request, an unsafe held event, or a re-run run with
   no new attempt or result ten minutes after it was requested parks
   `cancelled-ci` and reports [`HITL_PARKED`](../../../protocol/drive-exits.md); its decision

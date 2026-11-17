@@ -258,8 +258,7 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     suiteId,
     startedAt: at(start),
   });
-  // A and B are the cancelled runs the grant re-runs; C and D are runs of the
-  // same workflows that a label event started after the grant, cancelled.
+  // A and B are the cancelled runs the grant re-runs.
   const A = (
     start = 0,
     status = "completed",
@@ -272,11 +271,16 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     conclusion: string | null = "cancelled",
     attempt = 1,
   ) => wf(2, 11, start, status, conclusion, attempt);
-  const labelRuns = [wf(3, 10, 40_000), wf(4, 11, 40_000)];
-  const labelChecks = [check(3, 40_000), check(4, 40_000)];
   const firstChecks = [check(1, 0), check(2, 0)];
+  /** When the person's answer was granted, and when the drive then requested the re-run. */
+  const granted = 30_000 + REPLACEMENT_WINDOW_MS;
+  const requested = granted + 5_000;
+  // C and D: runs of the same workflows that the re-arm's label event started
+  // after the grant, and the workflows' concurrency group cancelled.
+  const labelRuns = [wf(3, 10, granted + 2_000), wf(4, 11, granted + 2_000)];
+  const labelChecks = [check(3, granted + 2_000), check(4, granted + 2_000)];
 
-  /** The automatic re-run spent and parked, then a person's answer granted, at T0 + 11 minutes. */
+  /** The automatic re-run spent and parked, then a person's answer granted and its re-run requested. */
   async function grantedRequest() {
     const f = fixture(T0);
     const runs = [A(), B()];
@@ -292,6 +296,7 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
       "parked",
     );
     f.grant();
+    f.advance(requested - granted);
     expect(await recoverCancelled("5", "head", firstChecks, runs, f.deps)).toBe(
       "wait",
     );
@@ -300,14 +305,24 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     f.parks.length = 0;
     return f;
   }
-  const granted = 30_000 + REPLACEMENT_WINDOW_MS;
+  const succeeded = (start: number) => ({
+    runs: [
+      A(start, "completed", "success", 2),
+      B(start, "completed", "success", 2),
+    ],
+    checks: [
+      ...firstChecks,
+      check(1, start, "success"),
+      check(2, start, "success"),
+    ],
+  });
 
   test("label-started cancellations wait while the re-run's attempts are queued or running", async () => {
     const f = await grantedRequest();
-    const after = granted + 60_000;
+    const start = requested + 60_000;
     const runs = [
-      A(after, "queued", null, 2),
-      B(after, "in_progress", null, 2),
+      A(start, "queued", null, 2),
+      B(start, "in_progress", null, 2),
       ...labelRuns,
     ];
     f.advance(2 * REPLACEMENT_WINDOW_MS);
@@ -326,24 +341,20 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
 
   test("the re-run's results clear the park; its runs, not the label-started ones, are named when they never ran", async () => {
     const f = await grantedRequest();
-    const late = granted + 120_000;
-    const ran = [
-      A(granted + 60_000, "completed", "success", 2),
-      B(granted + 60_000, "completed", "success", 2),
-      wf(3, 10, late),
-      wf(4, 11, late),
-    ];
-    const checks = [
-      ...firstChecks,
-      check(1, granted + 60_000, "success"),
-      check(2, granted + 60_000, "success"),
-      check(3, late),
-      check(4, late),
-    ];
+    // The status layer still holds C's and D's cancellation, which predates
+    // the attempts; A's and B's results answer it.
+    const done = succeeded(requested + 60_000);
     f.advance(120_000);
-    expect(await recoverCancelled("5", "head", checks, ran, f.deps)).toBe(
-      "none",
-    );
+    expect(
+      await recoverCancelled(
+        "5",
+        "head",
+        [...done.checks, ...labelChecks],
+        [...done.runs, ...labelRuns],
+        f.deps,
+      ),
+    ).toBe("none");
+    expect(f.calls).toEqual([1, 2, 1, 2]);
     expect(f.parks).toEqual([]);
 
     for (const outcome of ["cancelled", "never"] as const) {
@@ -352,8 +363,8 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
         outcome === "never"
           ? [A(), B(), ...labelRuns]
           : [
-              A(granted + 5_000, "completed", "cancelled", 2),
-              B(granted + 5_000, "completed", "cancelled", 2),
+              A(requested + 5_000, "completed", "cancelled", 2),
+              B(requested + 5_000, "completed", "cancelled", 2),
               ...labelRuns,
             ];
       const jobs = [...firstChecks, ...labelChecks];
@@ -379,6 +390,44 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     }
   });
 
+  test("a re-run whose results supersede every cancellation clears it", async () => {
+    const f = await grantedRequest();
+    const done = succeeded(requested + 60_000);
+    f.advance(120_000);
+    expect(
+      await recoverCancelled("5", "head", done.checks, done.runs, f.deps),
+    ).toBe("none");
+    expect(f.parks).toEqual([]);
+  });
+
+  test("only the re-run runs without a result are named, and a later grant re-runs only those", async () => {
+    const f = await grantedRequest();
+    const start = requested + 60_000;
+    const runs = [A(start, "completed", "success", 2), B()];
+    const jobs = [...firstChecks, check(1, start, "success")];
+    f.advance(REPLACEMENT_WINDOW_MS);
+    expect(await recoverCancelled("5", "head", jobs, runs, f.deps)).toBe(
+      "parked",
+    );
+    expect(f.parks[0]).toContain("Cancelled CI on head head: run 2:");
+    expect(f.parks[0]).toContain("run 2 got no new attempt");
+    f.grant();
+    expect(await recoverCancelled("5", "head", jobs, runs, f.deps)).toBe(
+      "wait",
+    );
+    expect(f.calls).toEqual([1, 2, 1, 2, 2]);
+  });
+
+  test("a run past its window parks while a sibling's attempt is still queued", async () => {
+    const f = await grantedRequest();
+    const runs = [A(requested + 60_000, "queued", null, 2), B()];
+    f.advance(REPLACEMENT_WINDOW_MS);
+    expect(await recoverCancelled("5", "head", firstChecks, runs, f.deps)).toBe(
+      "parked",
+    );
+    expect(f.parks[0]).toContain("Cancelled CI on head head: run 2:");
+  });
+
   test("the wait outlasts a re-run that takes minutes to start, and still parks when no attempt appears", async () => {
     const f = await grantedRequest();
     const idle = [A(), B()];
@@ -387,7 +436,7 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
       "wait",
     );
     f.advance(2 * 60_000);
-    const start = granted + 7 * 60_000;
+    const start = requested + 7 * 60_000;
     expect(
       await recoverCancelled(
         "5",
@@ -398,18 +447,10 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
       ),
     ).toBe("wait");
     f.advance(4 * 60_000);
-    const done = [
-      A(start, "completed", "success", 2),
-      B(start, "completed", "success", 2),
-    ];
-    const results = [
-      ...firstChecks,
-      check(1, start, "success"),
-      check(2, start, "success"),
-    ];
-    expect(await recoverCancelled("5", "head", results, done, f.deps)).toBe(
-      "none",
-    );
+    const done = succeeded(start);
+    expect(
+      await recoverCancelled("5", "head", done.checks, done.runs, f.deps),
+    ).toBe("none");
     expect(f.parks).toEqual([]);
 
     const g = await grantedRequest();
@@ -426,65 +467,52 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
 
   test("two Re-run safely answers on a head whose granted re-run succeeds park only once", async () => {
     const f = await grantedRequest();
-    const start = granted + 60_000;
-    const done = [
-      A(start, "completed", "success", 2),
-      B(start, "completed", "success", 2),
-      wf(3, 10, start + 30_000),
-      wf(4, 11, start + 30_000),
-    ];
-    const checks = [
-      ...firstChecks,
-      check(1, start, "success"),
-      check(2, start, "success"),
-      check(3, start + 30_000),
-      check(4, start + 30_000),
-    ];
+    const done = succeeded(requested + 60_000);
+    const checks = [...done.checks, ...labelChecks];
+    const runs = [...done.runs, ...labelRuns];
     f.advance(120_000);
-    expect(await recoverCancelled("5", "head", checks, done, f.deps)).toBe(
-      "none",
+    expect(await recoverCancelled("5", "head", checks, runs, f.deps)).not.toBe(
+      "parked",
     );
     // The second answer, read on a later re-arm.
     f.grant();
     for (let i = 0; i < 3; i++) {
       f.advance(REPLACEMENT_WINDOW_MS);
       expect(
-        await recoverCancelled("5", "head", checks, done, f.deps),
+        await recoverCancelled("5", "head", checks, runs, f.deps),
       ).not.toBe("parked");
     }
     expect(f.parks).toEqual([]);
+    expect(f.calls).toEqual([1, 2, 1, 2]);
   });
 
-  test("a workflow the request did not cover is requested once, then judged on its own", async () => {
+  test("a run cancelled after the request is requested once, then judged on its own", async () => {
     const f = await grantedRequest();
-    const start = granted + 60_000;
-    const done = [
-      A(start, "completed", "success", 2),
-      B(start, "completed", "success", 2),
+    const done = succeeded(requested + 60_000);
+    const later = wf(5, 10, requested + 120_000);
+    const other = wf(6, 12, requested + 120_000);
+    const jobs = [
+      ...done.checks,
+      check(5, requested + 120_000),
+      check(6, requested + 120_000),
     ];
-    const results = [
-      ...firstChecks,
-      check(1, start, "success"),
-      check(2, start, "success"),
-    ];
-    const other = wf(5, 12, granted);
-    const jobs = [...results, check(5, start)];
+    const runs = [...done.runs, later, other];
+    f.advance(180_000);
+    expect(await recoverCancelled("5", "head", jobs, runs, f.deps)).toBe(
+      "wait",
+    );
+    expect(f.calls).toEqual([1, 2, 1, 2, 5, 6]);
     f.advance(60_000);
-    expect(
-      await recoverCancelled("5", "head", jobs, [...done, other], f.deps),
-    ).toBe("wait");
-    expect(f.calls).toEqual([1, 2, 1, 2, 5]);
-    f.advance(60_000);
-    expect(
-      await recoverCancelled("5", "head", jobs, [...done, other], f.deps),
-    ).toBe("wait");
-    expect(f.calls).toEqual([1, 2, 1, 2, 5]);
+    expect(await recoverCancelled("5", "head", jobs, runs, f.deps)).toBe(
+      "wait",
+    );
+    expect(f.calls).toEqual([1, 2, 1, 2, 5, 6]);
     f.advance(REPLACEMENT_WINDOW_MS);
-    expect(
-      await recoverCancelled("5", "head", jobs, [...done, other], f.deps),
-    ).toBe("parked");
-    expect(f.parks[0]).toContain("Cancelled CI on head head: run 5:");
-    expect(f.calls).toEqual([1, 2, 1, 2, 5]);
+    expect(await recoverCancelled("5", "head", jobs, runs, f.deps)).toBe(
+      "parked",
+    );
+    expect(f.parks[0]).toContain("Cancelled CI on head head: run 5, 6:");
+    expect(f.calls).toEqual([1, 2, 1, 2, 5, 6]);
   });
 
   test("a grant that arrived while the re-run was in flight pays for the next request instead of a park", async () => {
@@ -496,5 +524,15 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     ).toBe("wait");
     expect(f.parks).toEqual([]);
     expect(f.calls).toEqual([1, 2, 1, 2, 1, 2]);
+  });
+
+  test("a grant read while the re-run is inside its window waits for it", async () => {
+    const f = await grantedRequest();
+    f.advance(60_000);
+    f.grant();
+    expect(
+      await recoverCancelled("5", "head", firstChecks, [A(), B()], f.deps),
+    ).toBe("wait");
+    expect(f.calls).toEqual([1, 2, 1, 2]);
   });
 });

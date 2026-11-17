@@ -64,6 +64,12 @@ if (mode === "age" || mode === "ungrant") {
   db.run(mode === "age"
     ? "UPDATE cancelled_ci SET first_seen = first_seen - ${AFTER}, requested_at = requested_at - ${AFTER}"
     : "UPDATE cancelled_ci SET requested_at = first_seen, grants = 0, granted_for = NULL");
+  if (mode === "age")
+    for (const row of db.query("SELECT rowid, requested_runs FROM cancelled_ci").all())
+      db.run("UPDATE cancelled_ci SET requested_runs = ? WHERE rowid = ?", [
+        JSON.stringify(JSON.parse(row.requested_runs).map((r) => ({ ...r, at: r.at - ${AFTER} }))),
+        row.rowid,
+      ]);
   process.exit(0);
 }
 const clock = currentMs() + Number(process.argv[2]);
