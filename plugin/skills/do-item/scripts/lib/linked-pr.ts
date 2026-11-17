@@ -59,16 +59,29 @@ export interface LinkedPrComment {
   trusted: boolean;
 }
 
+/** A caller's deadline, passed to each association read rather than reused across a whole lookup. */
+export interface LinkedPrReadOptions {
+  signal?: AbortSignal;
+  timeoutSec?: number;
+}
+
 /** The forge reads the lookup makes; each answers `null` when it cannot read. */
 export interface LinkedPrReads {
   /** The bodies of the item's comments. */
   comments(
     key: string,
+    options?: LinkedPrReadOptions,
   ): Promise<ReadonlyArray<LinkedPrComment | string> | null>;
   /** The pull requests whose body mentions `term`, each with its body. */
-  search(term: string): Promise<Array<PullFact & { body: string }> | null>;
+  search(
+    term: string,
+    options?: LinkedPrReadOptions,
+  ): Promise<Array<PullFact & { body: string }> | null>;
   /** One pull request by number, with its body. */
-  view(number: number): Promise<(PullFact & { body: string }) | null>;
+  view(
+    number: number,
+    options?: LinkedPrReadOptions,
+  ): Promise<(PullFact & { body: string }) | null>;
 }
 
 function escapeRe(s: string): string {

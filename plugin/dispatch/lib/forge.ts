@@ -47,6 +47,7 @@ import {
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
 import { currentMs, parseMs } from "../../shared/time.ts";
+import { ended, secondsLeft, type TickBound } from "./sources/bounded.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
 const PR_LIMIT = 1000;
@@ -208,15 +209,22 @@ const FILES_LIMIT = 3000;
 export async function pullRequestFiles(
   slug: string,
   pr: number,
+  bound?: TickBound,
 ): Promise<Outcome<string[], "unreadable">> {
   const files: string[] = [];
   for (let page = 1; ; page++) {
+    if (ended(bound))
+      return unreadable(
+        `PR #${pr}'s file listing stopped at the tick's deadline`,
+      );
     const read = await ghJson(
       [
         "api",
         `repos/${slug}/pulls/${pr}/files?per_page=${FILES_PAGE}&page=${page}`,
       ],
       `PR #${pr}'s file listing`,
+      undefined,
+      secondsLeft(bound),
     );
     if (!read.ok) return read;
     const out = read.value;

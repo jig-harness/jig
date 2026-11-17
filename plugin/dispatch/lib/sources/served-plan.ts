@@ -40,10 +40,7 @@ export function servedPlan(
   epic: string,
   live: Record<string, LiveIssue>,
   block?: string,
-  evidence: { merged: string[]; held: Record<string, string> } = {
-    merged: [],
-    held: {},
-  },
+  evidence?: { merged: string[]; held: Record<string, string> },
 ): ServedPlan {
   try {
     const plan = readExecutionPlan(description, block);
@@ -84,12 +81,12 @@ export function servedPlan(
             )
           : item.blockedBy,
       };
-    const order = eligibleIssues(plan, inPlan, evidence.merged);
+    const order = eligibleIssues(plan, inPlan, evidence?.merged ?? []);
     const holds: Record<string, string> = {};
     for (const step of plan.steps)
       if (!order.includes(step.issue))
         holds[step.issue] = "waiting on the epic execution plan";
-    mergeHolds(plan, evidence.held, holds);
+    mergeHolds(plan, evidence?.held ?? {}, holds);
     for (const gate of humanGates(plan)) holds[gate.issue] = PERSON_HOLD;
     return { present: true, order, holds };
   } catch (error) {

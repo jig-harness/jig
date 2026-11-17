@@ -94,9 +94,9 @@ export function forgeReads(
   repository: string,
 ): LinkedPrReads {
   return {
-    async comments(key) {
+    async comments(key, options) {
       try {
-        return (await tracker.issueComments(key)).comments;
+        return (await tracker.issueComments(key, options?.signal)).comments;
       } catch (err) {
         console.error(
           `linked-pr.ts: the comments of ${key} could not be read: ${err instanceof Error ? err.message : String(err)}`,
@@ -104,7 +104,7 @@ export function forgeReads(
         return null;
       }
     },
-    async search(term) {
+    async search(term, options) {
       const r = await ghCall(
         [
           "pr",
@@ -120,7 +120,12 @@ export function forgeReads(
           "--json",
           `${PULL_FIELDS},body`,
         ],
-        { cwd: root },
+        {
+          cwd: root,
+          ...(options?.timeoutSec === undefined
+            ? {}
+            : { timeoutSec: options.timeoutSec }),
+        },
       );
       const list = ghJson(r, `the search for pull requests naming ${term}`);
       if (!Array.isArray(list)) return null;
@@ -139,7 +144,7 @@ export function forgeReads(
       });
       return pulls.every((p) => p !== null) ? pulls : null;
     },
-    async view(number) {
+    async view(number, options) {
       const r = await ghCall(
         [
           "pr",
@@ -150,7 +155,12 @@ export function forgeReads(
           "--json",
           `${PULL_FIELDS},body`,
         ],
-        { cwd: root },
+        {
+          cwd: root,
+          ...(options?.timeoutSec === undefined
+            ? {}
+            : { timeoutSec: options.timeoutSec }),
+        },
       );
       const json = ghJson(r, `reading pull request #${number}`);
       const fact = pullFact(json, repository);

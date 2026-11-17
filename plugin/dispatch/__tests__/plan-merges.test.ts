@@ -115,12 +115,12 @@ test("a verified delivering merge releases an ancestor conflict edge", async () 
   expect(held).toBeNull();
 });
 
-test("direct merge proof predating follow-up activation releases, and one tick shares reads", async () => {
+test("direct merge proof predating follow-up activation releases while each launch check refreshes associations", async () => {
   const f = fixture();
   const read = f.reader();
   expect(await read(description)).toEqual({ merged: ["#2>#3"], held: {} });
   expect(await read(description)).toEqual({ merged: ["#2>#3"], held: {} });
-  expect(f.counts).toEqual({ search: 1, fact: 1, comments: 1 });
+  expect(f.counts).toEqual({ search: 2, fact: 1, comments: 2 });
 });
 
 test("a later open predecessor pull request holds the next tick despite its earlier merge", async () => {

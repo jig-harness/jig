@@ -3,6 +3,8 @@ import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { baseBranch } from "../../../skills/drive-pr/scripts/lib/overlay.ts";
 import { ghCall } from "../../../skills/drive-pr/scripts/lib/proc.ts";
+import { ghRunFailure } from "../../../shared/outbound/github.ts";
+import { OutboundError, outboundOf } from "../../../shared/outbound/failure.ts";
 import { forgeReads } from "../../../skills/do-item/scripts/linked-pr.ts";
 import {
   readLinkedPr,
@@ -22,6 +24,8 @@ import {
 } from "../../../skills/do-item/scripts/lib/tracker/github/refs.ts";
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { pullRequestFiles } from "../forge.ts";
+import { ended, secondsLeft, type TickBound } from "./bounded.ts";
+import type { Pool } from "../pool.ts";
 import {
   isMergeFact,
   readMergeFact,
@@ -44,10 +48,24 @@ export interface MergeContext {
   keySource: string;
   trackerRepository?: string | undefined;
   bodyLinkRequired: boolean;
+  /** The observe tick's deadline, when this reader runs as part of a tick. */
+  bound?: TickBound | undefined;
+  /** The tick-wide outbound-read pool; launch checks deliberately leave it absent. */
+  pool?: Pool;
+  /** A merge proof's transport failure, retained by a tick's tracker record. */
+  onFailure?(error: OutboundError): void;
 }
 export interface MergeReads {
   links: LinkedPrReads;
   fact(pr: number): Promise<MergeFact | null>;
+}
+
+function associationOptions(context: MergeContext) {
+  const timeoutSec = secondsLeft(context.bound);
+  return {
+    ...(context.bound === undefined ? {} : { signal: context.bound.signal }),
+    ...(timeoutSec === undefined ? {} : { timeoutSec }),
+  };
 }
 
 /** One direct merge view, followed by the governed, bounded complete file listing. */
@@ -57,6 +75,8 @@ async function directFact(
 ): Promise<MergeFact | null> {
   const kept = readMergeFact(context.repository, pr);
   if (kept !== null) return kept;
+  if (ended(context.bound)) return null;
+  const timeoutSec = secondsLeft(context.bound);
   const result = await ghCall(
     [
       "pr",
@@ -67,17 +87,26 @@ async function directFact(
       "--json",
       "mergedAt,baseRefName",
     ],
-    { cwd: context.root },
+    {
+      cwd: context.root,
+      ...(timeoutSec === undefined ? {} : { timeoutSec }),
+    },
   );
   if (result.code !== 0) {
+    const failure = ghRunFailure(result);
+    if (failure !== null)
+      context.onFailure?.(new OutboundError(failure.code, failure.reason));
     swallow(result, "a refused direct merge read keeps the conflict edge held");
     return null;
   }
   try {
     const value = JSON.parse(result.stdout);
     if (typeof value?.mergedAt !== "string") return null;
-    const files = await pullRequestFiles(context.repository, pr);
+    const files = await pullRequestFiles(context.repository, pr, context.bound);
     if (!files.ok) {
+      const failure = outboundOf(files.failure);
+      if (failure !== null)
+        context.onFailure?.(new OutboundError(failure.code, failure.reason));
       swallow(
         files.failure,
         "an incomplete file listing keeps the conflict edge held",
@@ -107,42 +136,49 @@ export function planMergeReader(
     fact: (pr) => directFact(context, pr),
   },
 ): PlanMergeReader {
-  const states = new Map<number, string>();
-  const note = <T extends { number: number; state: string }>(pulls: T[]) => {
-    for (const pull of pulls) states.set(pull.number, pull.state.toUpperCase());
-    return pulls;
-  };
-  const currentLinks: LinkedPrReads = {
-    comments: (key) => reads.links.comments(key),
-    search: async (term) => {
-      const found = await reads.links.search(term);
-      return found === null ? null : note(found);
-    },
-    view: async (pr) => {
-      const found = await reads.links.view(pr);
-      if (found !== null) note([found]);
-      return found;
-    },
-  };
-  const links = new Map<string, ReturnType<typeof readLinkedPr>>();
   const facts = new Map<number, Promise<MergeFact | null>>();
-  const linked = (key: string) => {
-    let value = links.get(key);
-    if (value === undefined) {
-      value = readLinkedPr(key, { ...context, reads: currentLinks });
-      links.set(key, value);
-    }
-    return value;
-  };
   const fact = (pr: number) => {
     let value = facts.get(pr);
     if (value === undefined) {
-      value = reads.fact(pr);
+      value =
+        context.pool === undefined
+          ? reads.fact(pr)
+          : context.pool.run(() => reads.fact(pr));
       facts.set(pr, value);
     }
     return value;
   };
   return async (description, block) => {
+    const states = new Map<number, string>();
+    const note = <T extends { number: number; state: string }>(pulls: T[]) => {
+      for (const pull of pulls)
+        states.set(pull.number, pull.state.toUpperCase());
+      return pulls;
+    };
+    const currentLinks: LinkedPrReads = {
+      comments: (key) => reads.links.comments(key, associationOptions(context)),
+      search: async (term) => {
+        const found = await reads.links.search(
+          term,
+          associationOptions(context),
+        );
+        return found === null ? null : note(found);
+      },
+      view: async (pr) => {
+        const found = await reads.links.view(pr, associationOptions(context));
+        if (found !== null) note([found]);
+        return found;
+      },
+    };
+    const links = new Map<string, ReturnType<typeof readLinkedPr>>();
+    const linked = (key: string) => {
+      let value = links.get(key);
+      if (value === undefined) {
+        value = readLinkedPr(key, { ...context, reads: currentLinks });
+        links.set(key, value);
+      }
+      return value;
+    };
     const evidence: PlanMerges = { merged: [], held: {} };
     const edges =
       readExecutionPlan(description, block)?.edges.filter(

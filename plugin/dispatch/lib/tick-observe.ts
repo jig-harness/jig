@@ -695,7 +695,7 @@ async function readTracker(
   serveDefaults: Readonly<Record<string, string>> | undefined,
   nowMs: number,
   headroom: boolean,
-  reads: Pick<TickReads, "budget" | "servedViews">,
+  reads: Pick<TickReads, "budget" | "servedViews" | "pool">,
   records: readonly ReadRecord[],
   preparedTracker?: Tracker,
 ): Promise<Tracked> {
@@ -718,6 +718,7 @@ async function readTracker(
       | undefined;
     const scope = scopeOf(values);
     preparedTracker ??= openTracker(config, repo.path);
+    let mergeFailure: unknown;
     const mergeReader = planMergeReader(preparedTracker, {
       root: repo.path,
       repository: repo.slug,
@@ -734,6 +735,9 @@ async function readTracker(
       bodyLinkRequired:
         (values.pull_requests as { issue_link?: unknown } | undefined)
           ?.issue_link !== "none",
+      bound,
+      pool: reads.pool,
+      onFailure: (error) => (mergeFailure ??= error),
     });
     tracked.servedPolicy = {
       mergeEvidence: mergeReader,
@@ -775,6 +779,15 @@ async function readTracker(
           : { views: reads.servedViews }),
       },
     );
+    if (mergeFailure !== undefined && reading.read.ok) {
+      const failure = readFailureOfError(mergeFailure);
+      reading.read = {
+        ...reading.read,
+        ok: false,
+        detail: `${reading.read.detail}; merge proof could not be read: ${failureText(mergeFailure)}`,
+        ...(failure === undefined ? {} : { failure }),
+      };
+    }
     report.records.push(reading.read);
     report.unplaced.push(...reading.unplaced);
     tracked.pickups = await batchSafePickups(
