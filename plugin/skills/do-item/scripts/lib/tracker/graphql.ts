@@ -11,6 +11,8 @@ import type {
 } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { registerCancellationGroup } from "../../../../../shared/proc.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { admitCommentPage } from "./comment-bounds.ts";
+import { footprintCommentQuery } from "./footprint-batch.ts";
 
 /** One page of a connection: the response's `data` for the cursor `after`. */
 export type PageReader = (after: string | null) => Promise<unknown>;
@@ -74,6 +76,7 @@ export async function readConnection(
   const ids = new Set<string>();
   let after: string | null = null;
   do {
+    admitCommentPage();
     const data = await read(after);
     if (!isRecord(data))
       throw rules.fail(`${rules.where}: response is not an object`);
@@ -113,7 +116,13 @@ export function pager(rules: Pick<PageRules, "idOf" | "fail">) {
     signal?: AbortSignal,
   ): Promise<unknown[]> =>
     readConnection(
-      (after) => transport(query, { ...variables, after }, signal, true),
+      (after) =>
+        footprintCommentQuery(
+          transport,
+          query,
+          { ...variables, after },
+          signal,
+        ),
       { ...rules, pick, where },
     );
 }

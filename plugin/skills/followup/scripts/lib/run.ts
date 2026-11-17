@@ -15,11 +15,13 @@ import {
   ok,
   type Outcome,
 } from "../../../../shared/outcome.ts";
+import { FOLLOWUP_VERDICTS } from "../../../../shared/repo-command-shapes.ts";
 import { currentIso } from "../../../../shared/time.ts";
-import type { ArmId, ArmPlan } from "./arms.ts";
+import { type ArmPlan, repoArmOf } from "./arms.ts";
 import type { Facts } from "./facts.ts";
 
-export const VERDICTS = ["owed", "not-owed", "pending", "unread"] as const;
+/** The verdicts, the same list a repository arm's check command prints from. */
+export const VERDICTS = FOLLOWUP_VERDICTS;
 export type Verdict = (typeof VERDICTS)[number];
 
 export function isVerdict(value: string): value is Verdict {
@@ -32,6 +34,10 @@ export interface ArmVerdict {
   evidence: string;
   items: string[];
   at: string;
+  /** Who recorded it: the arm's check command, or the agent. */
+  by?: "check" | "agent";
+  /** The verdict the arm's check command last printed, kept when the agent records after it. */
+  check?: Verdict;
 }
 
 export interface RunFile {
@@ -40,7 +46,7 @@ export interface RunFile {
   startedAt: string;
   facts: Facts;
   arms: ArmPlan;
-  verdicts: Partial<Record<ArmId, ArmVerdict>>;
+  verdicts: Partial<Record<string, ArmVerdict>>;
   /** The marker comment `guard` last checked; null until it has. */
   marker: number | null;
 }
@@ -142,7 +148,41 @@ export type RecordFailure =
   | "empty-evidence"
   | "unknown-arm"
   | "skipped-arm"
-  | "bad-verdict";
+  | "bad-verdict"
+  | "check-first"
+  | "check-overruled";
+
+/**
+ * Why the agent may not record `verdict` on a repository arm with a check
+ * command; null when it may. The check reads the verdict first; after it,
+ * the agent may add what it carried out or filed to an arm the check found
+ * owed, but never turn that into not owed, and never settle an arm the check
+ * left pending or unread: it runs the check again instead.
+ */
+function checkRule(
+  run: RunFile,
+  arm: string,
+  verdict: Verdict,
+): Outcome<never, RecordFailure> | null {
+  if (!repoArmOf(run.arms, arm)?.checkCommand) return null;
+  const checked = run.verdicts[arm]?.check;
+  if (checked === undefined)
+    return failed(
+      "check-first",
+      `${arm} has a check command, which reads its verdict: run check ${arm} first`,
+    );
+  if (checked === "unread" || checked === "pending")
+    return failed(
+      "check-overruled",
+      `${arm}: its check command left it ${checked}; run check ${arm} again, since only an answer it prints settles the arm`,
+    );
+  if (verdict === "not-owed" && checked !== "not-owed")
+    return failed(
+      "check-overruled",
+      `${arm}: its check command found it ${checked}; run check ${arm} again rather than recording it not-owed`,
+    );
+  return null;
+}
 
 /** `run` with `arm`'s verdict recorded; refused when the evidence is empty or the arm is not one the run settles. */
 export function recordVerdict(
@@ -151,6 +191,7 @@ export function recordVerdict(
   verdict: string,
   evidence: string,
   items: readonly string[],
+  by: "check" | "agent" = "agent",
 ): Outcome<RunFile, RecordFailure> {
   if (!isVerdict(verdict))
     return failed(
@@ -169,18 +210,35 @@ export function recordVerdict(
       "unknown-arm",
       `${JSON.stringify(arm)} is not an arm of this run (${run.arms.apply.join(", ")})`,
     );
+  const refused = by === "agent" ? checkRule(run, id, verdict) : null;
+  if (refused !== null) return refused;
   const text = evidence.trim();
   if (text === "" || NO_EVIDENCE.test(text))
     return failed(
       "empty-evidence",
       `${arm}: a verdict needs its evidence, the checkable fact that settled it; "nothing found" is none`,
     );
-  const named = items.map((i) => i.trim()).filter((i) => i !== "");
+  const previous = run.verdicts[id];
+  const check = by === "check" ? verdict : previous?.check;
+  // What the agent carried out or filed adds to the references the check
+  // returned; it never replaces them.
+  const kept =
+    by === "agent" && check !== undefined ? (previous?.items ?? []) : [];
+  const named = [...new Set([...kept, ...items].map((i) => i.trim()))].filter(
+    (i) => i !== "",
+  );
   return ok({
     ...run,
     verdicts: {
       ...run.verdicts,
-      [id]: { verdict, evidence: text, items: named, at: currentIso() },
+      [id]: {
+        verdict,
+        evidence: text,
+        items: named,
+        at: currentIso(),
+        by,
+        ...(check === undefined ? {} : { check }),
+      },
     },
   });
 }

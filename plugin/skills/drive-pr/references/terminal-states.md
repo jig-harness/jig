@@ -117,7 +117,7 @@ to a human or to a pass.
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
 | Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md), handing the red CI back for repair; [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
-| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci` |
+| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci` |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | [`CI_INFRA_PERSISTED`](../../../protocol/drive-exits.md) |
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | [`PR_CONFLICTING`](../../../protocol/drive-exits.md), with its `Fix:` command |
 
@@ -1601,14 +1601,22 @@ false "green":
   otherwise stop at `CI_HOLD_WAIT`. A refused or unconfirmed request, an
   unsafe held event, or a cancellation still unreplaced 60 seconds after the
   request with no active run parks `cancelled-ci` and reports [`HITL_PARKED`](../../../protocol/drive-exits.md); its decision
-  record and doctor recovery name the run. Observing recovery clears that
-  operational park. A live CI hold is left for convergence to release.
+  record and doctor recovery name the run. A person's "Re-run safely" answer
+  (or approval) with no conditioning note, consumed by the re-arm, grants the
+  head its park names one more re-run (`grants` in the same SQLite row, keyed
+  to the answers so a later arm that reads them again grants nothing more;
+  `grant_pending` while the claim is younger than the replacement window),
+  which the drive requests after the same checks; a park after it says the
+  granted re-run was spent. Observing recovery clears that operational park. A
+  live CI hold is left for convergence to release.
   Cancellation stops counting only when a run of
   the same workflow on the head, started no earlier, has completed with a
   result: by start time, because a concurrency group can cancel the higher run
   id in favour of a lower one started in the same second; with a job that
   ran, because a run that skipped everything has looked at nothing. A cancelled
-  job stays unknown when the replacing run reports its name as skipped. A
+  job stays unknown when the replacing run reports its name as skipped, or
+  reports it only under its matrix's expanded names and any of them has no
+  result. A
   failed job in a cancelled run still counts as failing, regardless of when it
   started; when every failing check is such a job, with no failing commit
   status beside them, and at least one cancelled job still lacks a replacement,

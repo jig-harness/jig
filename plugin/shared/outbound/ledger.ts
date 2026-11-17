@@ -65,6 +65,7 @@ export interface LedgerReport {
   unavailable?: boolean;
 }
 interface Context {
+  operation?: string;
   caller?: string;
   path?: string;
   writer?: (record: CallRecord) => void;
@@ -89,6 +90,10 @@ export function defaultLedgerPath(): string {
 /** Attribute concurrent calls to one run without changing process-wide state. */
 export function withCaller<T>(caller: string, fn: () => T): T {
   return context.run({ ...context.getStore(), caller }, fn);
+}
+/** Attribute a compound tracker operation while retaining every actual call's cost. */
+export function withOperation<T>(operation: string, fn: () => T): T {
+  return context.run({ ...context.getStore(), operation }, fn);
 }
 /** An isolated database for a caller's tests, inherited by asynchronous sends. */
 export function withLedgerPath<T>(path: string, fn: () => T): T {
@@ -155,6 +160,8 @@ function writeQuota(
 }
 /** Record one actual attempt (or a local refusal with zero requests), retaining no payload or secret. */
 export function recordCall(input: CallRecord): void {
+  const operation = context.getStore()?.operation;
+  if (operation !== undefined) input = { ...input, operation };
   try {
     const caller = input.caller ?? currentCaller();
     const writer = context.getStore()?.writer;

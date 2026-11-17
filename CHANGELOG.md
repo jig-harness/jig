@@ -371,6 +371,11 @@ changes are marked **Breaking** and say what a consumer changes.
   gives a repository, and the line that carries each change to merge. What
   goes wrong without it follows as its own section on the home page.
 - The planned hub and dispatch board treat phone access as a required read-only surface, with an explicit scope, private HTTPS setup, availability requirements and phone acceptance budgets.
+- Settled the planned priorities design: work competes in priority lanes
+  (Urgent, High-priority bugs, then weighted lanes for other bugs and core,
+  tactical and peripheral goals), set in a host-local weights file read on
+  every tick. Defined the priority lane, peripheral floor and weights file
+  terms.
 
 ### Fixed
 
@@ -395,6 +400,60 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.262.0] - 2026-11-17
+
+### Added
+
+- A tracker footprint record and interface for predicted repository paths
+  and change areas, with trusted comment selection on GitHub, Linear and
+  Jira. Bounded, governed reads reuse unchanged predictions, batch comment
+  requests where supported and retain an aged reading when a tracker does
+  not answer.
+
+## [0.261.1] - 2026-11-17
+
+### Fixed
+
+- drive-pr: answering the `cancelled-ci` park with "Re-run safely" (or
+  approving it) now does what the option says. Once the head's automatic
+  re-run is spent, the re-arm that consumes the answer grants that head one
+  more re-run: the drive repeats the head and CI-hold checks, requests
+  the re-run and waits for its replacement, instead of parking the same
+  question again within a minute. The grant is for the head the park names,
+  waits for a claim still inside the replacement window, is also made when
+  the unpark's own write landed before an error, and an answer carrying a
+  note is left to the pass. A park after a granted re-run says that
+  re-run was spent. **Consumer action:** none.
+- drive-pr: a cancelled check is no longer passed over when a later run of
+  the same workflow reported it only under its matrix's expanded names
+  (`tests (1/2)` for `tests`) and any of them has no result (skipped, say), judged within each
+  replacing run.
+  Such a run has not run the job, so the cancelled check stays unknown and the cancelled-run
+  recovery re-runs it or parks; a later run whose every leg ran to a result
+  still replaces it. **Consumer action:** none.
+
+## [0.261.0] - 2026-11-17
+
+### Added
+
+- A repository adds its own arms to the [followup](plugin/skills/followup/README.md) skill with `followup.arms` in `.config/jig.yaml`: for each, the change areas it applies to and what settles it, as an instructions file read from the integration branch (never the pull request's tree), a read-only check command that reads the merge facts and prints a verdict, or a skill from the repository, the user's home or another plugin. Repository arms are listed with the core arms, settled under the same rules (a run still cannot end while one has no verdict) and act only within the fixed authority table. A check command runs from a copy of the integration branch's files, only where `followup.authority.read-only-checks` leaves it to the follow-up, without the tracker and forge tokens, within 60 seconds (`JIG_FOLLOWUP_CHECK_TIMEOUT_SEC`) and 64 KiB of output, and one that runs past its limit, fails or prints no verdict is recorded unread, never not owed. The field is documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#followup), and the check command's contract in the [repository commands chapter](plugin/protocol/repo-commands.md).
+
+## [0.260.1] - 2026-11-17
+
+### Fixed
+
+- A machine whose `gh` picks the GitHub account per repository from the
+  stored logins (a wrapper that chooses the account by the repository a
+  command addresses) no longer refuses every repository's GitHub calls when
+  one account's rate limit is spent. The stored login's quota owner is now
+  asked and kept per repository a call addresses (`-R`, a
+  positional repository URL, `repos/<owner>/<repo>` route, `GH_REPO`, else
+  the working directory's `gh repo set-default` or `origin` remote), with `GH_REPO` set for the question: one `GET /user` a
+  day for each repository. A rate-limit refusal that names another user
+  than the cached owner holds that user's allowance and makes the owner be
+  asked again, and a call refused before sending names the account whose
+  allowance is spent, as in `(the allowance of GitHub account alice)`.
 
 ## [0.260.0] - 2026-11-17
 
@@ -9173,7 +9232,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.260.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.262.0...HEAD
+[0.262.0]: https://github.com/jig-harness/jig/compare/v0.261.1...v0.262.0
+[0.261.1]: https://github.com/jig-harness/jig/compare/v0.261.0...v0.261.1
+[0.261.0]: https://github.com/jig-harness/jig/compare/v0.260.1...v0.261.0
+[0.260.1]: https://github.com/jig-harness/jig/compare/v0.260.0...v0.260.1
 [0.260.0]: https://github.com/jig-harness/jig/compare/v0.259.0...v0.260.0
 [0.259.0]: https://github.com/jig-harness/jig/compare/v0.258.0...v0.259.0
 [0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0

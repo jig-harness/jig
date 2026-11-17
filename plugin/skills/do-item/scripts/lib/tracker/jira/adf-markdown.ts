@@ -128,16 +128,16 @@ function guardLine(raw: string): string {
   return line.replace(/^(\d{1,9})([.)])(\s|$)/, "$1\\$2$3");
 }
 
+function literalComment(node: AdfNode | undefined): boolean {
+  if (node?.type !== "text" || (node.marks ?? []).length !== 0) return false;
+  return /^<!--[\s\S]*-->$/.test(node.text ?? "");
+}
+
 function paragraphMarkdown(node: AdfNode): string {
   const content = node.content ?? [];
   const only = content[0];
   // A marker line Jig wrote reads back verbatim.
-  const marker =
-    content.length === 1 &&
-    only?.type === "text" &&
-    (only.marks ?? []).length === 0 &&
-    COMMENT_LINE.test(only.text ?? "");
-  if (marker) return only.text as string;
+  if (content.length === 1 && literalComment(only)) return only?.text ?? "";
   return inlineMarkdown(content).split("\n").map(guardLine).join("\n");
 }
 

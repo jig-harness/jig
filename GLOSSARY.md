@@ -1655,7 +1655,9 @@ make, use the entry's term instead.
   with one verdict: owed (done or filed), not owed (with a checkable fact),
   pending (it settles by itself, such as a rollout in progress) or unread.
   The plugin's [followup](plugin/skills/followup/README.md) skill runs a
-  fixed list of core arms and will not end a run while one has no verdict;
+  fixed list of core arms, plus the **repository arms** a repository
+  declares in its configuration (an instructions file, a read-only check
+  command or a skill), and will not end a run while one has no verdict;
   before the merge it runs them as a preview that carries out nothing.
 - **Ops-pending** — the tracker state a merged item waits in while a step a
   person performs outside the code (a setting, a host change, a live check)
@@ -2873,10 +2875,31 @@ make, use the entry's term instead.
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
 - **Priorities record** — the proposed versioned declaration of objectives,
-  purposes, end states, owners and capacity shares or limits at site,
-  repository or individual level. A mechanical ranker reads it with a tracker
-  snapshot to propose a reproducible shortlist; a person picks from it.
+  their purposes, end states, owners, classes and shares at site, repository
+  or individual level. A mechanical ranker reads it with a tracker snapshot
+  and the host's *lane* weights to propose a reproducible shortlist; a person
+  picks from it.
   See [the design](design/priorities-and-overview.md).
+- **Priority lane** (lane, in the priorities design) — one kind of work that
+  competes for starts: Urgent issues first, then High-priority bugs, then the
+  weighted lanes (other bugs and the core, tactical and peripheral objectives)
+  that share the remaining starts in proportion to their
+  weights. A weight of 0 takes a lane out of rotation. A weight divides
+  starts over time and never reserves a slot; how many sessions run at once
+  follows the host's load and its accounts' remaining quota. Not the *lane*
+  of an *execution plan*.
+  See [lanes and their weights](design/priorities-and-overview.md#lanes-and-their-weights).
+- **Peripheral floor** — the *priority lane* weight of peripheral objectives,
+  read as a minimum: a share the lane could not use while none of its work
+  was ready is owed to it later that week and carried into the next week,
+  then dropped.
+  See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
+- **Weights file** — a host's own file, `$JIG_HOME/weights.local.yaml`, never
+  committed, that sets each *priority lane*'s weight and each subscription
+  account's share of new launches. The *dispatcher* reads it on every *tick*,
+  so a change takes effect without a pull request or a restart; a missing
+  file or entry means the defaults.
+  See [lanes and their weights](design/priorities-and-overview.md#lanes-and-their-weights).
 - **File draft** — the proposed record of an issue a progress review
   suggests, prepared through the filing skill's checks (type, priority,
   duplicates, scope) and kept with their evidence and age. It is not an issue
@@ -2889,8 +2912,8 @@ make, use the entry's term instead.
   re-reads them before it applies anything, and a stale proposal is refused
   ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
 - **Allocation owner** — the first objective matching an item at a priorities
-  level. That objective alone counts the item's start for capacity and the
-  peripheral floor; other matching objectives show it for reporting only.
+  level. That objective alone counts the item's start toward its share and the
+  *peripheral floor*; other matching objectives show it for reporting only.
   See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
 - **Progress review** — the proposed scheduled or on-demand pass that reads
   declared objectives, tracker progress and the line's records, and proposes
