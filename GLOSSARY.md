@@ -2647,9 +2647,8 @@ make, use the entry's term instead.
   record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in
   the workspace's comment and on the launch record, and a workspace the
   dispatcher creates is named by its first part (`⚙ dispatched · rearm
-  #456`). A session may rename the workspace to what the work became; the
-  mark outlives the name, so the morning report still lists the workspace
-  as dispatched.
+  #456`). A person may rename the workspace; the mark outlives the name,
+  so the morning report still lists the workspace as dispatched.
 - **Run tab** — a terminal tab Jig opens in a workspace to run a drive or
   another stage of the line: one `drive-pr` arms a drive in, or one the
   *dispatcher* launches into. Jig records each one it opens, and the tab
@@ -3129,7 +3128,9 @@ make, use the entry's term instead.
   released on every exit and judged abandoned when its owner is no longer
   alive; one submitted to Orca stays until the removal is known to have
   settled, since the owner dying or the call failing does not say whether
-  Orca finished.
+  Orca finished. It names the repository whose collection took it, the only
+  one that settles it from Orca's list, and the *worktree incarnation* it was
+  taken on, so a worktree made again at the path does not inherit it.
 - **Temporal** — the platform's date and time API, which Jig's code uses
   instead of `Date`: an `Instant` is a moment, a `ZonedDateTime` a moment
   on a named calendar, a `PlainDate` a day, a `Duration` a length, all

@@ -48,9 +48,15 @@ import {
   guardedCollection,
   type GuardedRemoval,
   isGoneClaim,
+  inventoryFailureLine,
+  isSupersededClaim,
   LAUNCH_VETO,
+  proveInventoryFailure,
   proveGone,
+  proveSuperseded,
   releaseGone,
+  releaseSupersededClaim,
+  supersededClaims,
 } from "./worktree-guard.ts";
 import {
   markingSince,
@@ -164,9 +170,9 @@ function listedIn(
 }
 /**
  * The selected worktrees, each marked with the runtime that manages it, and
- * a line for each claim a collector that ended left on a worktree under
- * `roots` that is gone from Orca's list and from the disk: no worktree is
- * listed to settle it with.
+ * a line for each claim a collector of `repository` that ended left on a
+ * worktree under `roots` that is gone from Orca's list and from the disk, or
+ * was made again since: no worktree is listed to settle it with.
  */
 async function orcaInventory(
   command: string,
@@ -174,16 +180,21 @@ async function orcaInventory(
   selected: { id: string; details: Record<string, unknown> }[],
   roots: string[],
 ): Promise<Outcome<Resource[]>> {
-  const stale = goneClaims((path) =>
+  const mine = (path: string) =>
     roots.some(
       (root) => within(normalize(path), root) || underRoot(path, root),
-    ),
-  );
-  const unreadable = unreadableClaims();
+    );
+  const stale = goneClaims(mine, repository);
+  const unlisted = [...unreadableClaims(), ...supersededClaims(mine)];
   if (selected.length === 0 && stale.length === 0)
-    return ok([...selected, ...unreadable]);
+    return ok([...selected, ...unlisted]);
   const managed = await orcaWorktrees(command, repository);
-  if (!managed.ok) return managed;
+  if (!managed.ok) {
+    // Claims settled without Orca's list are still evaluated, no worktree is
+    // offered while its runtime is unknown, and the failure stays on the receipt.
+    if (unlisted.length === 0) return managed;
+    return ok([inventoryFailureLine(managed.failure.reason), ...unlisted]);
+  }
   const listed = listedIn(managed.value);
   // A checkout gone from the disk can still be registered with Git: the claim
   // is then the resource, not the registration.
@@ -210,7 +221,7 @@ async function orcaInventory(
       entry.details.claimNote = `a dead collection's launch guard claim stands on this worktree${submitted ? ` (orca worktree rm was called under it at ${submitted})` : ""} and keeps launches out; it is settled by a collection that removes the worktree, or inspect and remove its admission by hand`;
     }
   }
-  return ok([...kept, ...gone, ...unreadable]);
+  return ok([...kept, ...gone, ...unlisted]);
 }
 /** The path with its nearest existing ancestor resolved, the spelling git and the disk agree on. */
 function resolvedPath(path: string): string {
@@ -819,6 +830,7 @@ function proveClaim(
   repository: string,
 ): Proof | Promise<Proof> | null {
   if (isUnreadableClaim(resource)) return proveUnreadable(resource);
+  if (isSupersededClaim(resource)) return proveSuperseded();
   if (!isGoneClaim(resource)) return null;
   return proveGone(resource, async () => {
     const managed = await orcaWorktrees(orca, repository);
@@ -831,6 +843,8 @@ function proveEarly(
   resource: Resource,
   repository: string,
 ): Proof | Promise<Proof> | null {
+  const incomplete = proveInventoryFailure(resource);
+  if (incomplete !== null) return incomplete;
   const claim =
     orca === undefined ? null : proveClaim(orca, resource, repository);
   if (claim !== null) return claim;
@@ -941,7 +955,9 @@ export function worktreesKind(
             "kept: an admission gc cannot read is for a person to inspect",
         };
       if (orca !== undefined && isGoneClaim(resource))
-        return releaseGone(resource);
+        return releaseGone(resource, repository);
+      if (orca !== undefined && isSupersededClaim(resource))
+        return releaseSupersededClaim(resource);
       // What the tree's latest proof saw, taken once.
       const final = proved.get(resource.id);
       proved.delete(resource.id);
@@ -956,24 +972,29 @@ export function worktreesKind(
         );
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
-        return guardedCollection(resource, orcaPath(resource), (guard) =>
-          collectThroughOrca(
-            orca,
-            resource,
-            { id, guard },
-            repository,
-            declaration,
-            legacy(),
-            regenerablePaths,
-            final,
-          ),
+        return guardedCollection(
+          resource,
+          orcaPath(resource),
+          repository,
+          (guard) =>
+            collectThroughOrca(
+              orca,
+              resource,
+              { id, guard },
+              repository,
+              declaration,
+              legacy(),
+              regenerablePaths,
+              final,
+            ),
         );
       return {
         outcome: "refused",
         reason: "uncoordinated worktrees are report-only",
       };
     },
-    describe: (resource) => resource.id,
+    describe: (resource) =>
+      proveInventoryFailure(resource) ? "inventory" : resource.id,
     exclusive: (body) => body(),
   };
 }

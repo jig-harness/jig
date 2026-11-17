@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   claimPlanBlockFromDefaultBranch,
+  claimFactoryIdentityFromDefaultBranch,
   claimSettingsFromDefaultBranch,
   claimSettingsOf,
 } from "../scripts/lib/claim-settings.ts";
@@ -139,5 +140,25 @@ describe("claimPlanBlockFromDefaultBranch", () => {
   it("refuses when the default branch cannot be read, whatever the working tree sets", async () => {
     const dir = clone("do_item: [unclosed\n");
     expect((await claimPlanBlockFromDefaultBranch(dir)).ok).toBe(false);
+  });
+});
+
+describe("claimFactoryIdentityFromDefaultBranch", () => {
+  it("reads the committed factory identity rather than a working-tree replacement", async () => {
+    const dir = clone("dispatch:\n  identity: factory\n");
+    writeFileSync(
+      join(dir, ".config", "jig.yaml"),
+      "dispatch:\n  identity: stranger\n",
+    );
+    expect(await claimFactoryIdentityFromDefaultBranch(dir)).toEqual({
+      ok: true,
+      value: "factory",
+    });
+  });
+  it("refuses an absent or unreadable default-branch identity", async () => {
+    for (const source of ["dispatch: {}\n", "dispatch: [unclosed\n"])
+      expect(
+        (await claimFactoryIdentityFromDefaultBranch(clone(source))).ok,
+      ).toBe(false);
   });
 });

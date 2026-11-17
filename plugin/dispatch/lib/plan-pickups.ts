@@ -645,6 +645,9 @@ function pickupAction(
       ...(item.ancestorEpic === undefined
         ? {}
         : { ancestorEpic: item.ancestorEpic }),
+      ...(item.factoryAncestor === undefined
+        ? {}
+        : { factoryAncestor: item.factoryAncestor }),
       ...(item.blockingFor === undefined
         ? {}
         : { blockingFor: item.blockingFor }),

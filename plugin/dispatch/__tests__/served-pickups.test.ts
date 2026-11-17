@@ -11,6 +11,7 @@ import { rankQueue } from "../lib/queue-rank.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
 import { issue } from "./served-fixtures.ts";
 import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
+import { facetBound } from "../lib/sources/tracker-facets.ts";
 const people = [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }];
 function fake() {
   const store = new Map<string, unknown>();
@@ -110,6 +111,53 @@ describe("served pickups", () => {
     );
     expect(read.read.ok).toBe(false);
     expect(read.read.failure).toMatchObject({ class: "unreachable" });
+    expect(read.claimed).toBeNull();
+  });
+  it("does not start a served queue after the tick deadline", async () => {
+    const f = fake();
+    let calls = 0;
+    f.tracker.assignedIssues = async () => {
+      calls += 1;
+      return [];
+    };
+    const read = await readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      {
+        people,
+        cache: f.cache,
+        nowMs: 1,
+        headroom: true,
+        bound: facetBound(Date.now() - 1),
+      },
+    );
+    expect(calls).toBe(0);
+    expect(read.read.ok).toBe(false);
+    expect(read.claimed).toBeNull();
+  });
+  it("stops an in-flight served queue at the tick deadline", async () => {
+    const f = fake();
+    const calls: Array<{ signal?: AbortSignal; deadline?: number }> = [];
+    f.tracker.assignedIssues = async (_identity, _states, options) => {
+      calls.push(options ?? {});
+      return await new Promise<never>(() => undefined);
+    };
+    const bound = facetBound(Date.now() + 50);
+    const read = await readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      {
+        people,
+        cache: f.cache,
+        nowMs: 1,
+        headroom: true,
+        bound,
+      },
+    );
+    expect(calls).toEqual([{ signal: bound.signal, deadline: bound.deadline }]);
+    expect(read.read.ok).toBe(false);
     expect(read.claimed).toBeNull();
   });
   it("keeps the class of a child read that failed after the queue read", async () => {

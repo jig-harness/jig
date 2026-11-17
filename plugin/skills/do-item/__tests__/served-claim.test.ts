@@ -362,6 +362,11 @@ test("claim CLI refuses incomplete and duplicate served options before tracker a
   const { join } = await import("node:path");
   for (const args of [
     ["--for"],
+    ["--factory-ancestor"],
+    ["--factory-ancestor="],
+    ["--factory-ancestor=#3", "--factory-ancestor=#4"],
+    ["--factory-ancestor=#3", "--for=dana"],
+    ["--factory-ancestor=#3", "--ancestor=#4"],
     ["--ancestor", "#3"],
     ["--blocking", "#3"],
     ["--for=dana", "--blocking=#3", "--blocking=#4"],
