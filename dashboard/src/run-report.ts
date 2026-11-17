@@ -3,7 +3,9 @@
  * ended row (`EndedRow`, whose report fields `closing-report-store.ts`
  * writes): what the run concluded, the next step its writer suggests, why it
  * fell short and who wrote it. A run that ended `by: none` reads as "ended
- * without a report". Where the suggested next step's owner and the tick's
+ * without a report", with the path of its transcript's copy on the host
+ * while there is one; a report the steward recorded from that copy reads
+ * like any other, `report by: steward`. Where the suggested next step's owner and the tick's
  * own `next` differ, both are shown, and nothing decides between them.
  */
 import type { EndedRow } from "../../plugin/dispatch/lib/log.ts";
@@ -27,6 +29,8 @@ export interface RunReportView {
   cause: string | null;
   /** The tick's own next owner, where it differs from the suggested one; `null` where they agree or either is missing. */
   tickNext: string | null;
+  /** The path of the run's transcript's copy on the host; `null` when the row names none. */
+  transcript: string | null;
   /** The report on one line, as the run's line shows it. */
   line: string;
   /** The report's fields, for the opened row. */
@@ -68,8 +72,11 @@ function present(fields: Array<[string, string | null]>): EvidenceRow[] {
   return fields.flatMap(([k, v]) => (v === null ? [] : [{ k, v }]));
 }
 
-/** A run that ended without a report, with the cause another writer recorded, if any. */
-function missingReport(cause: string | null): RunReportView {
+/** A run that ended without a report, with the cause another writer recorded, if any, and its transcript's copy. */
+function missingReport(
+  cause: string | null,
+  transcript: string | null,
+): RunReportView {
   return {
     by: "none",
     missing: true,
@@ -77,10 +84,18 @@ function missingReport(cause: string | null): RunReportView {
     suggested: null,
     cause,
     tickNext: null,
-    line: cause === null ? NO_REPORT : `${NO_REPORT} · cause: ${cause}`,
+    transcript,
+    line: [
+      NO_REPORT,
+      cause === null ? null : `cause: ${cause}`,
+      transcript === null ? null : `transcript copy: ${transcript}`,
+    ]
+      .filter((p): p is string => p !== null)
+      .join(" · "),
     evidence: present([
       ["report", "none"],
       ["cause", cause],
+      ["transcript copy", transcript],
     ]),
   };
 }
@@ -90,7 +105,8 @@ export function runReport(row: EndedRow): RunReportView | null {
   const by = row.by;
   if (by === undefined) return null;
   const cause = row.cause ?? null;
-  if (by === "none") return missingReport(cause);
+  const transcript = row.transcript ?? null;
+  if (by === "none") return missingReport(cause, transcript);
   const concluded = row.concluded ?? null;
   const suggested =
     row.suggested_next === undefined ? null : suggestedText(row.suggested_next);
@@ -114,7 +130,12 @@ export function runReport(row: EndedRow): RunReportView | null {
     suggested,
     cause,
     tickNext,
+    transcript,
     line: shown.map((f) => `${said[f.k] ?? ""}${f.v}`).join(" · "),
-    evidence: [...shown, { k: "report by", v: by }],
+    evidence: [
+      ...shown,
+      { k: "report by", v: by },
+      ...present([["transcript copy", transcript]]),
+    ],
   };
 }
