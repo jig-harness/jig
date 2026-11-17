@@ -68,6 +68,42 @@ export interface CommentPagesDeps {
   plain: typeof listComments;
 }
 
+/** Whole seconds of the allowance left since `began`; `null` where there is none. */
+function allowanceLeft(deadline: Deadline, began: number): number | null {
+  return deadline.timeoutSec === undefined
+    ? null
+    : Math.ceil(deadline.timeoutSec - (currentMs() - began) / 1000);
+}
+
+function parsePage(
+  read: { body: string; changed: boolean },
+  page: number,
+): Outcome<unknown[], "unreadable"> {
+  let listed: unknown;
+  try {
+    listed = JSON.parse(read.body);
+  } catch (error) {
+    const copy = read.changed
+      ? "as GitHub sent it"
+      : "kept from an earlier read";
+    return failed(
+      "unreadable",
+      `page ${page} of the comment listing, ${copy}, is not JSON`,
+      error,
+    );
+  }
+  if (!Array.isArray(listed))
+    return failed("unreadable", "the comment listing is not a list");
+  return ok(listed);
+}
+
+function passed(): Outcome<unknown[], "unreadable"> {
+  return failed(
+    "unreadable",
+    "the comments could not be read (their deadline passed between pages)",
+  );
+}
+
 /** The comment listing over `deps`. */
 export function commentPages(
   deps: CommentPagesDeps = {
@@ -87,20 +123,13 @@ export function commentPages(
     const began = currentMs();
     const comments: unknown[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const left =
-        deadline.timeoutSec === undefined
-          ? undefined
-          : Math.ceil(deadline.timeoutSec - (currentMs() - began) / 1000);
-      if (left !== undefined && left <= 0)
-        return failed(
-          "unreadable",
-          "the comments could not be read (their deadline passed between pages)",
-        );
+      const left = allowanceLeft(deadline, began);
+      if (left !== null && left <= 0) return passed();
       const read = await deps.ghConditionalGet(
         `repos/${target.repo}/issues/${target.number}/comments?per_page=${PER_PAGE}&page=${page}`,
         {
           repository: target.repo,
-          ...(left === undefined ? {} : { timeoutSec: left }),
+          ...(left === null ? {} : { timeoutSec: left }),
         },
       );
       if (!read.ok) {
@@ -109,36 +138,16 @@ export function commentPages(
           ? failed("unreadable", reason)
           : failedBy("unreadable", read.failure, reason);
       }
-      let listed: unknown;
-      try {
-        listed = JSON.parse(read.body);
-      } catch (error) {
-        const copy = read.changed
-          ? "as GitHub sent it"
-          : "kept from an earlier read";
-        return failed(
-          "unreadable",
-          `page ${page} of the comment listing, ${copy}, is not JSON`,
-          error,
-        );
-      }
-      if (!Array.isArray(listed))
-        return failed("unreadable", "the comment listing is not a list");
-      comments.push(...listed);
-      if (listed.length < PER_PAGE) return ok(comments);
+      const listed = parsePage(read, page);
+      if (!listed.ok) return listed;
+      comments.push(...listed.value);
+      if (listed.value.length < PER_PAGE) return ok(comments);
     }
-    const left =
-      deadline.timeoutSec === undefined
-        ? undefined
-        : Math.ceil(deadline.timeoutSec - (currentMs() - began) / 1000);
-    if (left !== undefined && left <= 0)
-      return failed(
-        "unreadable",
-        "the comments could not be read (their deadline passed between pages)",
-      );
+    const left = allowanceLeft(deadline, began);
+    if (left !== null && left <= 0) return passed();
     return deps.plain(
       target,
-      left === undefined ? deadline : { ...deadline, timeoutSec: left },
+      left === null ? deadline : { ...deadline, timeoutSec: left },
     );
   };
 }
