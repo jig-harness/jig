@@ -752,7 +752,7 @@ function withMergeFailures<R extends { ok: boolean; detail: string }>(
 ): R {
   if (mergeFailures.length === 0) return read;
   const failure = combinedFailure([
-    ...("failure" in read && !read.ok ? [read.failure as never] : []),
+    ...(read.ok ? [] : [(read as { failure?: unknown }).failure as never]),
     ...mergeFailures.map(readFailureOfError),
   ]);
   const { failure: _previousFailure, ...rest } = read as R & {
