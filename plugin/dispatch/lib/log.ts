@@ -99,6 +99,8 @@ export interface EndedRow extends ReportFields {
   /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
   title?: string;
   url?: string;
+  /** For a run that left no report: the path of its transcript's copy on the host, until the copy is removed (`transcript-copy.ts`). */
+  transcript?: string;
 }
 
 /** One cause the tick observed. */
@@ -426,6 +428,7 @@ function sessionClass(
   const result = sessionResultClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,
+    r.waitsFor,
   );
   if (result !== null) return result;
   const s = r.state;

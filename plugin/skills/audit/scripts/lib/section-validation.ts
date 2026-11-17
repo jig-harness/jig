@@ -1,3 +1,4 @@
+import { parseFollowupSettings } from "../../../followup/scripts/lib/settings.ts";
 import { parseDeclaration } from "../../../../gc/config.ts";
 import { manualOpsLabel } from "../../../../dispatch/lib/owed-steps.ts";
 import { dispatchSection } from "../../../../dispatch/lib/section.ts";
@@ -165,6 +166,8 @@ export function skillValidation(
       ADAPTERS.map((a) => a.name),
     ),
   );
+  const followup = parseFollowupSettings(config);
+  if (!followup.ok) refuse("followup", followup.failure.reason);
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
   attempt("drive-pr (severity formats)", () => {
     const review = config.review;

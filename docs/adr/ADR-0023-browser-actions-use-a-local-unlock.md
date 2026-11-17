@@ -1,13 +1,13 @@
 ---
 title: "ADR-0023: Browser actions use the person's credential and a local unlock"
 type: adr
-status: draft
-description: "The overview's acts are writes the person's browser makes as the person, on the path the decision record of pull request #891 introduces, widened to the overview's acts, with a confirmation for each, no merge on a phone, an optional unlock that keeps the stored token encrypted through WebAuthn's key-derivation extension, and a scoped exception to the outbound-call rule for what a browser cannot record on a host"
+status: approved
+description: "The overview's acts are writes the person's browser makes as the person, on the path of ADR-0019, widened to the overview's acts, with a confirmation for each, no merge on a phone, an optional unlock that keeps the stored token encrypted through WebAuthn's key-derivation extension, and a scoped exception to the outbound-call rule for what a browser cannot record on a host"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-11-14
+last_updated: 2026-11-17
 owner: maintainers
-decision_date: 2026-11-14
+decision_date: 2026-11-17
 supersedes: ~
 superseded_by: ~
 tags: [adr, dashboard, security, phone, integrations]
@@ -15,11 +15,11 @@ tags: [adr, dashboard, security, phone, integrations]
 
 # ADR-0023: Browser actions use the person's credential and a local unlock
 
-**Status:** Draft · **Date:** 2026-11-14 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Approved · **Date:** 2026-11-17 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
-The decision record pull request #891 introduces (ADR-0019 there, "The
+[ADR-0019](ADR-0019-the-dashboard-page-answers-as-the-person.md) ("The
 dashboard's page answers a parked decision as the person") lets the
 [dispatch dashboard](../../GLOSSARY.md)'s page post one kind of write: the
 answer to a decision a drive (a pull request's review loop) parked for a
@@ -32,10 +32,10 @@ on a phone as on a desktop, over HTTPS or from loopback.
 The [overview design](../../design/priorities-and-overview.md) asks for more
 acts on that path: answers to pickup and follow-up questions, release, hold,
 re-arm (restart a drive) and assign, filing a prepared issue, approving a
-[steward](../../GLOSSARY.md) proposal, and a merge. ADR-0019 there says to reopen it
-when a [station](../../GLOSSARY.md) (a stage of the line, such as a pickup or
-a follow-up) other than the drive reads an answer from a comment, which
-these acts do. The dashboard's phone contract
+[steward](../../GLOSSARY.md) proposal, and a merge. ADR-0019 already covers
+answers that a [station](../../GLOSSARY.md) (a stage of the line, such as a
+pickup, follow-up or recovery) reads from a comment. This record extends that
+browser path to the remaining acts and to the new records they need. The dashboard's phone contract
 ([Phone scope and access](../../design/dispatch-dashboard.md#phone-scope-and-access))
 allowed no phone write beyond that answer until a separate phone design
 and proof of presence existed; this record and the overview design are
@@ -51,7 +51,7 @@ obligations cannot be met from the browser as they are on the host.
 
 ## Decision
 
-### What this keeps from the record pull request #891 introduces
+### What this keeps from ADR-0019
 
 - **The path.** Each act is one write made from the person's browser,
   directly to the forge or the tracker, as the person, with their own
@@ -88,7 +88,7 @@ obligations cannot be met from the browser as they are on the host.
   undone and has no station on its far side to check it, so it stays on a
   desktop, behind its own confirmation, with a token that holds the right
   to merge.
-- **The token's rights.** The record pull request #891 introduces limits
+- **The token's rights.** ADR-0019 limits
   the token to Issues and Pull requests. A desktop token that merges also
   needs the right to write the repository's contents; the settings panel
   names the rights each act needs and which of them the pasted token holds.
@@ -104,10 +104,11 @@ obligations cannot be met from the browser as they are on the host.
   extension (the [PRF extension](../../GLOSSARY.md), which returns secret
   bytes bound to the credential). With the unlock on, the token is stored
   only encrypted, under a key derived from those bytes; a check of the
-  person opens it into page memory for a session of 30 minutes by default,
-  and expiry, an explicit lock or closing the page drops it. The unlock is
-  on for a phone and off for a desktop by default; both, and the session's
-  length, are settings. With it off, the token is kept as ADR-0019 there
+  person opens it into page memory for a session of 30 minutes by default
+  and at most 4 hours, never extended by activity, and expiry, an explicit
+  lock or closing the page drops it. The unlock is on for a phone and off
+  for a desktop by default; both, and the session's length within that
+  maximum, are settings. With it off, the token is kept as ADR-0019
   keeps it, in the browser's local storage, and the settings panel says it
   is not protected at rest. The page never falls back to that storage on
   its own: where the unlock is on and the browser or credential cannot
@@ -121,7 +122,7 @@ obligations cannot be met from the browser as they are on the host.
 ### Outbound calls from the page
 
 Each of [ADR-0021](ADR-0021-outbound-calls-are-governed.md)'s obligations
-applies to a browser act, the answer Send ADR-0019 there introduces
+applies to a browser act, the answer Send ADR-0019 introduces
 included, as follows:
 
 1. **One door.** The page has one module per outside system, built from
@@ -162,7 +163,7 @@ included, as follows:
    [failure classes](../../GLOSSARY.md): no answer is `unreachable` with a
    mark that the request was sent, a limit refusal is `rate-limited` with
    its reset, and the forge's 401, 404, 422 and 5xx are `unauthorized`,
-   `not-found`, `invalid` and `server-fault`. The message ADR-0019 there
+   `not-found`, `invalid` and `server-fault`. The message ADR-0019
    gives for each status is kept and names its class. Met.
 7. **Say what the reader does without an answer.** An act with no answer
    says it may or may not have been sent and reads the target again before
@@ -182,7 +183,7 @@ for no other caller, these obligations are met as far as a browser can:
   The host's balance read shows the browser's spend only as unattributed,
   as it does for command-line calls whose answers it cannot read.
 
-The reason is the record pull request #891 introduces: a host route that
+The reason is ADR-0019's: a host route that
 took the page's calls would let any process running as the person press it.
 The cost is bounded because each act is a person's click and a handful of
 calls. The exception ends when a write route the person's acts may use
@@ -194,21 +195,21 @@ The unlock shows the page that the person is at the device and protects a
 lost or borrowed one. It tells the forge and the line nothing about who
 sent an act, and it does not defend against a host that serves a tampered
 page, which can read the token while it is unlocked. This record amends
-the phone contract and the record pull request #891 introduces; it does not
+the phone contract and ADR-0019; it does not
 amend the rule that a person merges
 ([ADR-0003](ADR-0003-a-person-merges.md)) or ADR-0013's rule against a
 resident coordinator.
 
 ## Alternatives considered
 
-- **The stored token of ADR-0019 there on every device, with no unlock.**
+- **The stored token of ADR-0019 on every device, with no unlock.**
   Kept as the setting a person may choose; rejected as a phone's default,
   since a lost phone gives its finder the token.
 - **A fingerprint prompt in front of a token kept in plain storage.** The
   prompt protects nothing a reader of the storage cannot skip; rejected.
 - **A phone that stays read-only without the unlock.** It would take away
-  the phone Send ADR-0019 there already gives; rejected.
-- **A host write route behind a passkey.** ADR-0019 there rejects it, and
+  the phone Send ADR-0019 already gives; rejected.
+- **A host write route behind a passkey.** ADR-0019 rejects it, and
   it would let the host's own processes write; rejected.
 - **Treating the unlock as proof to the line.** The forge sees only a token
   and cannot check the browser's local check; rejected.
@@ -236,7 +237,7 @@ stricter phone rule forbids), of a request address built from a record's
 URL or reached by a redirect, of a missing key-derivation result, of an
 act below the budget floor and of one admitted on a stale balance or on
 another login's balance; expiry after a
-suspended tab resumes; a confirmation invalidated by a changed head; and
+suspended tab resumes; a session length above 4 hours refused; a confirmation invalidated by a changed head; and
 that no plaintext token is stored while the unlock is on. Review checks
 that the page writes only through the existing request writers and its one
 module per system, and that the host receives no act. The nested dashboard

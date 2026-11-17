@@ -1,4 +1,4 @@
-/** The durable grace period and single re-run claim for a head. Additive SQLite state. */
+/** The durable grace period, single re-run claim and person-granted re-runs for a head. Additive SQLite state. */
 import { driveDb } from "./state/db.ts";
 import { canonicalPr, resolveStateDir } from "./state/store.ts";
 import type { RecoveryRecord } from "./cancelled-recovery.ts";
@@ -28,12 +28,14 @@ export async function readCancellation(
   const drive = driveDb(await resolveStateDir());
   const row = drive.db
     .query(
-      "SELECT first_seen, requested_at, workflow_ids FROM cancelled_ci WHERE clone = ? AND pr = ? AND head = ?",
+      "SELECT first_seen, requested_at, workflow_ids, grants, grant_pending FROM cancelled_ci WHERE clone = ? AND pr = ? AND head = ?",
     )
     .get(drive.clone, canonicalPr(pr), head) as {
     first_seen: number;
     requested_at: number | null;
     workflow_ids: string;
+    grants: number;
+    grant_pending: number;
   } | null;
   if (row === null) return null;
   const workflowIds: unknown = JSON.parse(row.workflow_ids);
@@ -46,6 +48,8 @@ export async function readCancellation(
     firstSeen: row.first_seen,
     requestedAt: row.requested_at,
     workflowIds,
+    grants: row.grants,
+    grantPending: row.grant_pending === 1,
   };
 }
 
@@ -68,5 +72,61 @@ export async function claimCancellation(
         canonicalPr(pr),
         head,
       ) !== null
+  );
+}
+
+/**
+ * A person's answer to the `cancelled-ci` park authorises one more re-run on
+ * the head the park was framed for: a spent claim is released and the grant
+ * counted, so the next recovery repeats every check the first one made (the
+ * exact head and the CI hold) before it requests the re-run.
+ * A claim younger than the 60-second replacement window may still be waiting
+ * for its own re-run, so it is kept and the grant is recorded as pending; the
+ * recovery releases it once the window passes with no replacement. `answer`
+ * names the answer, so a re-arm that reads it again grants nothing more.
+ * Returns how many records the answer reached.
+ */
+export async function grantCancellation(
+  pr: string,
+  head: string,
+  answer: string,
+): Promise<number> {
+  const drive = driveDb(await resolveStateDir());
+  const aged = "requested_at < ?";
+  const cutoff = currentMs() - 60_000;
+  return drive.db
+    .query(
+      `UPDATE cancelled_ci SET
+         workflow_ids = CASE WHEN ${aged} THEN '[]' ELSE workflow_ids END,
+         grant_pending = CASE WHEN ${aged} THEN 0 ELSE 1 END,
+         requested_at = CASE WHEN ${aged} THEN NULL ELSE requested_at END,
+         grants = grants + 1, granted_for = ?
+       WHERE clone = ? AND pr = ? AND head = ? AND requested_at IS NOT NULL
+         AND (granted_for IS NULL OR granted_for <> ?) RETURNING head`,
+    )
+    .all(
+      cutoff,
+      cutoff,
+      cutoff,
+      answer,
+      drive.clone,
+      canonicalPr(pr),
+      head,
+      answer,
+    ).length;
+}
+
+/** Release a claim a pending grant was waiting on; true when it did. */
+export async function releasePendingGrant(
+  pr: string,
+  head: string,
+): Promise<boolean> {
+  const drive = driveDb(await resolveStateDir());
+  return (
+    drive.db
+      .query(
+        "UPDATE cancelled_ci SET requested_at = NULL, workflow_ids = '[]', grant_pending = 0 WHERE clone = ? AND pr = ? AND head = ? AND grant_pending = 1 RETURNING head",
+      )
+      .get(drive.clone, canonicalPr(pr), head) !== null
   );
 }

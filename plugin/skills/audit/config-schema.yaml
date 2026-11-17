@@ -75,6 +75,7 @@ strict:
   - review.lenses
   - reflection
   - code_stats
+  - followup
   - docs
   - dispatch
   - specs
@@ -82,8 +83,6 @@ strict:
   - file_issue.sweep
   - work_batch
   - work_batch.ranking
-  - workspace_name
-  - workspace_name.statuses
   - orca.board
   - routing
   - routing.raise
@@ -104,6 +103,11 @@ null_refused:
 refused:
   do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
   clones: "it describes one machine, and every skill refuses a repository's file that sets it: move it to the user file"
+
+# Sections no skill reads, with what that means for a file that keeps one.
+# The skills ignore them; the configuration-fit check notes each once.
+retired:
+  workspace_name: "no skill renames a workspace, so the section can be removed"
 
 fields:
   gc.kinds:
@@ -140,7 +144,7 @@ fields:
 
   dispatch.identity:
     type: string
-    read_by: [dispatch]
+    read_by: [dispatch, do-item]
     repository_only: true
     since: 0.105.0
   dispatch.person:
@@ -923,19 +927,6 @@ fields:
     repository_only: true
     since: 0.222.0
 
-  workspace_name.template:
-    type: string
-    pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
-    allow_empty: true
-    default: "{id} {status} {title} {pr}"
-    read_by: [do-item, drive-pr]
-    since: 0.104.0
-  workspace_name.statuses:
-    type: map
-    keys: [implementing, driving, ready, done]
-    read_by: [do-item, drive-pr]
-    since: 0.104.0
-
   orca.board:
     type: map
     keys: [in_progress, in_review, completed]
@@ -1411,3 +1402,33 @@ fields:
     read_by: [code-stats]
     repository_only: true
     since: 0.50.0
+  followup.off:
+    type: list
+    items: { type: enum, values: [tracker, deferred-findings, out-of-tree, release, scaffolding, live-verification, next-step, workspace-board] }
+    distinct: true
+    nullable: true
+    read_by: [followup]
+    repository_only: true
+    since: 0.259.0
+  followup.authority:
+    type: map
+    keys: [tracker-status, file-items, read-only-checks, board-card, release-workflow, deploy-rerun, post-deploy-action, stop-driver, other-repository, origin-boundary, merge]
+    values_type: { type: enum, values: [own, ask, person, never] }
+    nullable: true
+    read_by: [followup]
+    since: 0.259.0
+  followup.arms:
+    type: list
+    items:
+      fields:
+        id: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
+        title: string
+        when: { type: list, items: string }
+        instructions: path
+        check_command: command
+        skill: { type: string, pattern: "^\\/[A-Za-z0-9][A-Za-z0-9._:-]*(?:\\s+\\S.*)?$" }
+      optional: [title, when, instructions, check_command, skill]
+    nullable: true
+    read_by: [followup]
+    repository_only: true
+    since: 0.261.0

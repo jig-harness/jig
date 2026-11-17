@@ -69,6 +69,7 @@ Jig only reads.
 | `ai-review-round` | forge | `ai-review-round`, `ai-review-backlog` | 0 | — | the repository's AI reviewer | The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads, which the drive counts as summary findings to answer. |
 | `coderabbit-comment` | forge | `coderabbit-ai-generated:v1`, `coderabbit-skip-review-comment-follow-up` | 0 | — | CodeRabbit | A review bot's follow-up on an answered thread that carries no new finding (a confirmation after a push, or an acknowledgement of a reply), which the drive lets pass without an answer. |
 | `coderabbit-review-body` | forge | `cr-comment:v` | 0 | — | CodeRabbit | A finding the reviewer put only in the body of its review, never in a thread, marked with its id, which the drive reads as a summary finding to answer. |
+| `tracker-footprint` | tracker | `jig:footprint` | 1 | `^(?:#[1-9]\d*\|[A-Za-z][A-Za-z0-9]*-[1-9]\d*)$` | Jig | An item's predicted repository paths and change areas, its source and base commit. The running pickup's newest prediction stands; otherwise the newest trusted record stands, with labels or unknown when absent. |
 | `do-item-pr-association` | tracker | `do-item-pr` | 0 | — | the session following the do-item skill | Binds a tracker item to the exact pull request opened for it, where no issue-link line is required, so the item's parent roll-up can tell whether that pull request merged. A link in any other comment is no evidence. |
 | `deferred-batch` | tracker | `defer-batch-key` | 0 | — | Jig | The issue that collects one pull request's deferred findings of one type, found by its key so that each finding is appended to it rather than filed alone; of two with one key the oldest wins. |
 | `tracker-claim-marker` | tracker | `jig-claim`, `jig-claim-data`, `jig-claim-outcome` | 1 | `^claim$` | Jig | The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing. |
@@ -132,17 +133,18 @@ one as a record.
 Labels and a tracker item's own fields carry no hidden marker, so they are
 not listed here. Nor are the forge claims, comments by which a host or a
 driver claims one act on a pull request: the follow-up claim has a chapter
-of its own, and [RECORDS.md](../RECORDS.md) gives the others' form. Of the
-trusted claims on one key, the earliest comment wins.
+of its own, and so do [the takeover claim, the launch claim and the
+merge-ready announcement](forge-claims.md). Of the trusted claims on one
+key, the earliest comment wins.
 
 <!-- protocol:generated source=plugin/shared/records/registry.ts#RECORD_KINDS -->
 
 | Kind | Medium | Why it is not listed |
 | --- | --- | --- |
-| `drive-takeover-claim` | forge | a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form |
+| `drive-takeover-claim` | forge | a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md) |
 | `dispatch-followup` | forge | the follow-up claim, which has a chapter of its own: [The follow-up claim and its result](followup-claim.md) |
-| `dispatch-launch-claim` | forge | a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form |
-| `drive-merge-ready` | forge | a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form |
+| `dispatch-launch-claim` | forge | a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md) |
+| `drive-merge-ready` | forge | a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md) |
 | `scanner-finding-reply` | forge | its marker line is written by the session the resolve-review-comments skill instructs, not by Jig's code, so the registry holds no marker for it; [RECORDS.md](../RECORDS.md) gives its form |
 | `ci-hold-label` | forge | a label on the pull request, not a hidden marker |
 | `dispatch-command-label` | forge | a label on the pull request, not a hidden marker |
@@ -164,5 +166,6 @@ fields. JSON records also have their own schemas: the
 [claim marker](schemas/tracker-claim-marker.json),
 [claim outcome](schemas/tracker-claim-outcome.json),
 [attachment header](schemas/tracker-attachment.json) and
-[reflection event](schemas/reflection-record.json). Text marker grammars
+[reflection event](schemas/reflection-record.json), and
+[tracker footprint](schemas/tracker-footprint.json). Text marker grammars
 remain the forms this chapter lists.

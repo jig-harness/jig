@@ -28,7 +28,7 @@ runs, what it hands over to.
 |-------|--------------|-----------|------------|
 | [jig](skills/jig/README.md) | Answers which skill fits a task and how the skills hand work on, from the reference installed with the plugin (these tables, the configuration reference, each skill's pages) and Jig's repository at the installed version's tag; when Jig itself is wrong, decides whether the fault is Jig's, searches for an existing issue, and drafts a bug report in the fields of Jig's bug form, with the repository's own names replaced, for a person to confirm before it is filed on jig-harness/jig | `/jig:jig` | Names the skill that does the work and hands over to it; sends a lesson that is not a defect to [reflect](skills/reflect/README.md), and in Jig's own repository files the bug through [file-issue](skills/file-issue/README.md) |
 
-**Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent; `operator` tells a person where a piece of work stands on the line and passes their commands to it. Each also works by hand.
+**Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent; `followup` settles what the merge still owes; `operator` tells a person where a piece of work stands on the line and passes their commands to it. Each also works by hand.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
@@ -39,8 +39,9 @@ runs, what it hands over to.
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
+| [followup](skills/followup/README.md) | After a merge, settles what it still owes, one arm at a time with the evidence that settled it: the tracker item and its epic, deferred review findings, out-of-tree steps, the release and its tags, temporary scaffolding and live drivers, live verification where the change was deployed, the next step, and the arms the repository declares of its own (`followup.arms`); carries out what its fixed authority table allows and files the rest. On an open pull request, previews what the merge will owe and carries out nothing | `/jig:followup` | Started by the dispatcher's follow-up stage where `dispatch.followup_command` names it; moves the item under [do-item](skills/do-item/SKILL.md)'s post-merge status rule and leaves an epic's close to do-item; files through [file-issue](skills/file-issue/README.md) and the deferral step of [resolve-review-comments](skills/resolve-review-comments/README.md); reads the release from [changelog](skills/changelog/README.md) and the post-deploy actions from [change-areas](skills/change-areas/README.md); hands small next items to [work-batch](skills/work-batch/README.md) |
 | [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
-| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, and frames what still needs a person; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
+| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, frames what still needs a person, and records why a run that left no closing report fell short; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
@@ -590,7 +591,7 @@ never held by it.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch report <record> <token> <file>
 ```
@@ -618,9 +619,25 @@ everything wrong in one refusal, so the pass can fix it and run the command
 again. It may run more than once, before or after the result: the last
 report that passes stands, and none touches the result. The launch record
 keeps the report whole; the outcome log's `ended` row keeps its fields and
-who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
-left none), with `cause` and `by` as columns. A run that ends without a
-report still leaves its `Question:` line.
+who wrote it (`by`: `agent` for a pass's own report, `wrapper`, `steward`,
+or `none` for a run that left none), with `cause` and `by` as columns. A
+run that ends without a report still leaves its `Question:` line.
+
+When a pass leaves no report, its wrapper records what it saw, `by:
+wrapper`: a pass that could not start (`startup`, or `usage-limit` on the
+vendor's notice), one it stopped at its deadline (`deadline`), and every
+steward pass, with the cause it saw, else `unknown`. A pickup's or a
+follow-up's pass whose end the wrapper cannot explain stays `by: none`, and
+the wrapper (or, for a run whose wrapper died, the tick) copies the end of
+its transcript, found by its session id (the one the tick gave Claude Code,
+or the one a Codex pass printed), at most 2 MiB with credentials redacted,
+to `~/.local/state/jig/dispatch/runs/<record>/`, readable only by you; the
+run's row names the copy (`transcript`). Where the steward runs, it reads an
+excerpt of the copy and records the run's cause and a summary of what it had
+got to, which the next tick writes onto the row, `by: steward`. The copy is
+removed seven days after that, and at the latest after `receipts_days`.
+Jig keeps no copy of a reported run's transcript and never deletes the
+vendor's files.
 
 A drive runs many passes, and most of its stops are decided by `drive.ts`
 after a pass has ended, so no pass knows it is the last. Each pass instead
@@ -655,9 +672,11 @@ piece of work, newest first, each with its report, the next step the
 report suggests beside the tick's own next owner where the two name
 different owners, with nothing decided between them. *Needs you* shows a
 report's `question` and framed `decision` where it shows a pass's
-`Question:` line, with what the run concluded beside them. `jig ask`'s
-answer prints the last run's stage, when it ended, what it concluded and
-the next step it suggests as `last.run`.
+`Question:` line, with what the run concluded beside them. A run that ended
+without a report shows the path of its transcript's copy while there is
+one. `jig ask`'s answer prints the last run's stage, when it ended, what it
+concluded and the next step it suggests as `last.run`, or, for a run that
+left no report, the copy's path.
 
 #### Every need is a decision
 
@@ -694,7 +713,8 @@ tick, counts an answer only from an author the forge vouches for (on
 another tracker, a member of its workspace who is not a guest), never its
 own login or the user its tracker credential acts as, and only when it
 names the decision's current digest and every person who answered chose
-the same option, then
+the same option (a need whose only answers on its item are by that tracker
+user reads as unread, and `jig ask` says why), then
 carries out the option once: it checks again that the step still may run
 (the stage is on, no hold label, the marker unchanged, no session holds the
 work, no open pull request carries the item, the checkout idle) and
@@ -711,7 +731,9 @@ account and load admission. It starts when the repository's
 [judgment backlog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds work no earlier pass
 judged, at once rather than on a cadence, and an empty or already judged
 backlog starts none. It can propose a transient-stop retry, a missing issue
-facet, queue tie order and the act and ask for a need nothing has framed. It can also propose one fixed resume of
+facet, queue tie order, the act and ask for a need nothing has framed, and
+the cause of a pickup's or a follow-up's run that left no closing report
+(above), read from the excerpt of its transcript as evidence. It can also propose one fixed resume of
 an ended dispatched pass that recommended an option outside the human-decision
 registry. The follow-up lane's own routine retry runs first. The next tick
 applies its closed records under the current holds and recovery budget;
@@ -724,8 +746,14 @@ See [steward](skills/steward/README.md) for setup and record boundaries.
 
 **Follow-ups** (the `followup` stage) start one headless pass per pull
 request merged since the stage was switched on (`followup_since`), running
-the repository's `dispatch.followup_command` on it (`/followup` in Jig) in
-the pull request's workspace. Follow-ups open their workspaces in a lane of
+the repository's `dispatch.followup_command` on it (another skill or
+procedure the repository names, which the pass's prompt opens with) in the
+pull request's workspace; a repository that names none runs the plugin's
+[followup](skills/followup/README.md) skill, `/jig:followup`. The stage
+stays a host's choice: nothing starts until the machine file lists
+`followup` among the repository's stages, and on a host that does not, a
+repository that names no command has none, so its merged pull requests are
+not read. Follow-ups open their workspaces in a lane of
 their own: at most `followup_opens_per_tick` a tick (2 by default), beside
 the drive launches' `opens_per_tick` and the notices workspace's reserved
 open, with at most `followup_concurrency` passes (2) running on the host at
@@ -742,16 +770,12 @@ with the host's own permission settings (`drive.pass_args`, and
 `drive.codex_bypass` and `drive.codex_pass_args` for a Codex account; see
 [a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)), never with
 one the dispatcher adds. So it starts on Orca, which cannot yet bind an
-interactive session to an account. A hidden-marker comment on the merged
-pull request is the claim: the dispatcher posts one naming its launch
-record before it starts the pass, reads the markers back, and stands down
-when an earlier one is there. A follow-up a person runs by hand claims the
-same way, marks its marker done once it succeeded, which also sets the
-pull request's `jig:followed-up` state label, and says it failed with
-`marker failed`, which sets `jig:followup-failed` and leaves the marker
-claiming the follow-up; since that label is all `marker failed` records,
-it exits `1` when the label is not written, and says it recorded nothing
-where the labels are off:
+interactive session to an account. The
+[follow-up claim chapter](protocol/followup-claim.md) gives the
+claim's form, its trusted-author rule, the runs and outcomes it carries and
+what a reader does when another marker holds it. Read it before writing a
+follow-up command that interprets those records. A person's command claims,
+checks and ends the marker through these operations:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker claim <PR> [--repo owner/name]
@@ -760,16 +784,12 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker failed <PR> --comment <id> [--repo owner/name]
 ```
 
-`claim` exits `3` when an earlier marker holds the follow-up, and `check`
-does when one has appeared since, so the run stops before it acts. Only a
-marker written by the dispatcher's own login or by an owner, member or
-collaborator counts. When a dispatched follow-up's pass ends, its wrapper
-writes the result onto the marker (`outcome: done` or `failed`), where
-another host reads it, and the next run writes it there when the wrapper
-could not; the wrapper then sets the pull request's state label
-(`jig:followed-up` or `jig:followup-failed`) where the labels are on, and
-the result is also kept in an outcome record per pull request
-that never expires. A follow-up that failed, or whose marker names a
+When a dispatched follow-up's pass ends, its wrapper writes the result
+onto the marker, where another host reads it, and the next run writes it
+there when the wrapper could not. The wrapper also projects the result as
+one of the [follow-up state labels](protocol/pr-labels.md#state-labels)
+where labels are on, and keeps an outcome record per pull request that
+never expires. A follow-up that failed, or whose marker names a
 launch record this machine no longer has and carries no answer, is notified
 and never started again: delete its marker to have it run again. A pass that
 died during its work (its wrapper gone, or a signal or a failing exit) with
@@ -814,8 +834,19 @@ that exits `5`) asks nothing and records `waits --until <time>`, the time
 the limit resets. Its marker stays until then, so no host starts the
 follow-up early; after the reset the tick releases it and a later tick
 starts the follow-up again as a first run, outside the recovery budget. The
-third wait in a row is notified as a failed follow-up that names the rate
-limit.
+third rate-limit wait in a row is notified as a failed follow-up that names
+the rate limit.
+
+A follow-up pass that finds an arm still pending, with nothing else left it
+may carry out (a release run still going, a deploy not started), asks
+nothing either and records
+`waits --until <time> --reason pending --arm <name>`, the time to look
+again and the arm. It is held and started again the same way, its waits
+are never reported as a rate limit, and they do not count toward the rate
+limit's three. A pass that still finds the arm pending once
+`dispatch.followup_within` has passed since the first pass that found it so
+is notified as a failed follow-up that names the arm. `--reason` absent is
+`rate-limit`.
 
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.
@@ -971,48 +1002,35 @@ session's terminal tab reads `jig dispatch · <stage> <key>`, and closes
 when its run ends with nothing for a person: a drive's exit that is not a
 park or a failure, a session that recorded `done`. A run that needs a
 person keeps its tab, and the next launch for the same pull request or item
-closes an earlier one of its own that is idle. A session may
-rename its workspace to what the work became; the mark outlives the name,
+closes an earlier one of its own that is idle. No skill renames the
+workspace after that, though a person may; the mark outlives the name,
 since the launch record keeps it too and a notification that rewrites the
 comment keeps it, and the morning report (`drives.ts --report`) lists the
 workspaces the dispatcher launched into by the mark on their launch records,
 each with the name it carries now.
 
-A drive stopped with exit 12 gets one recovery pass per head commit in its existing branch tree. The pass inspects the uncommitted work and commits and pushes what belongs to the change, discards only known disposable work, or stops for unclear ownership. A missing tree is reported; no replacement tree is opened. A second exit 12 at the same head waits for a person, whose notice names `jig send drive@owner/name#N rearm`.
+A drive stopped with [`WORKTREE_UNCLEAN`](protocol/drive-exits.md) gets one recovery pass per head commit in its existing branch tree. The pass inspects the uncommitted work and commits and pushes what belongs to the change, discards only known disposable work, or stops for unclear ownership. A missing tree is reported; no replacement tree is opened. A second such stop at the same head waits for a person, whose notice names `jig send drive@owner/name#N rearm`.
 
 **Pull request state labels** (`dispatch.labels` in the repository's
 [configuration](CONFIGURATION.md#dispatch), off by default) show where each
 driven pull request stands, from any forge client, and let a person steer
-the same way. Each pull request carries one state label (`jig:driving`,
-`jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
-`jig:followup-failed` under the default prefix), projected from its drive
-ledger by one mapping its writers share, each writing when what it owns
-changes: the drive itself when it arms (`jig:driving`) and when it stops,
-by the exit table it shares with the dispatcher (`jig:converged` at the
-head it verified; `jig:parked` for a park, a stop a person settles or
-made, and a stop the dispatcher re-drives, which a run turns into
-`jig:stale`), the follow-up when it ends, done or failed, whoever
-runs it, and the dispatcher's every `--apply` run, which also writes
-`jig:stale` and `jig:held` (from the serialized areas below) and corrects
-any label that disagrees, so a label changed by hand, or left behind by a
-drive that was killed, comes back. A drive's and a follow-up's writes need
-no dispatcher: a repository that only drives pull requests gets the labels
-too. Every writer reads `dispatch.labels` from the default branch, so all
-of them use one prefix. A run re-reads a pull request's ledger just before
-it writes, and leaves one whose ledger changed since it read it to a later
-run; no state label is ever read to decide what to start. The command
-labels are a person's commands, which the dispatcher reads and never
-adds: `jig:drive` on a pull request with no drive ledger arms a drive on
-it (the `rearm` stage, once per head commit) and is replaced by the state
-label once the ledger exists. `jig:rearm` asks to restart a stopped drive in its existing branch tree, on an admitted account, and is consumed after launch; it never restarts a running drive or one a person stopped. `jig:hold` keeps every stage off the
-pull request while it is there, reported at every run and removed only by
-a person. Marker labels without the prefix sit beside the set: the
+the same way. The
+[pull-request labels chapter](protocol/pr-labels.md) lists the state
+and command labels, their writers and their meanings. A state label is a
+view of the ledger; a command label lets a person ask the dispatcher to act.
+Read the chapter when filtering pull requests or choosing a command label.
+Every writer reads `dispatch.labels` from the default branch, so all use
+one prefix. A run re-reads the ledger just before writing, and leaves one
+that changed to a later run. A drive's and a follow-up's writes need no
+dispatcher: a repository that only drives pull requests gets the labels too.
+Marker labels without the prefix sit beside the set: the
 repository's manual-operations label (`issue_tracker.labels.manual_ops`,
 `manual-ops` by default) on a pull request whose
 `## Out-of-tree follow-ups` section lists a step not yet checked off, set
 from the description at every run and kept after the merge until the
 follow-up is done (a merged pull request is read only where
-`followup_command` is set); and `automation` on a pull request a bot opened
+`followup_command` is set or the host runs the repository's `followup`
+stage); and `automation` on a pull request a bot opened
 that carries no label of the `automation:` family a repository's workflows
 apply (`automation:docs-sync`), unless the bot is one the adoption rule
 names, which is the host's own identity. The dispatcher never removes `automation`
@@ -1087,16 +1105,20 @@ the model, the duration, a drive's rounds, and an outcome class from a
 closed list, with a reason that carries the stage's own answer (the exit,
 the recorded result, or the last state):
 
+The [drive exits chapter](protocol/drive-exits.md) gives the drive's state
+names, codes and meanings. The dispatcher groups those answers with other
+stages' results into these outcome classes:
+
 | Class | What ended there |
 | --- | --- |
-| converged | a drive's convergence, `CONVERGED` (`0`); a pickup's or follow-up's result `done` |
-| merged | a drive whose pull request merged while it ran, `PR_NOT_OPEN` (`5`) |
-| quota wall | a usage limit, `QUOTA_PARKED` (`16`), or a session that ended with no result while its wall stood |
-| parked for a person | a park, `HITL_PARKED` (`8`); a follow-up pass that stopped on a question |
-| stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
+| converged | a drive converged; a pickup or follow-up recorded success |
+| merged | a drive's pull request merged while it ran |
+| quota wall | a usage limit, or a session that ended with no result while its wall stood |
+| parked for a person | a drive parked, or a follow-up stopped on a question |
+| stalled | a drive stalled, reached its round limit or was replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
-| refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
-| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `REVIEW_SKIPPED` (`22`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`), `CI_INFRA_PERSISTED` (`23`); a result `failed` |
+| refused | a stage's own refusal or a stop it was given |
+| gates failed | a stage that ran to its end without achieving it, or recorded failure |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 
@@ -1566,9 +1588,9 @@ whose configuration names the tracker.
 | Field | What it says |
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
-| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
+| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
 | `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
-| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report |
+| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
 **What it reads.** A `drive` or a `followup` reads the pull request and its
@@ -1627,7 +1649,14 @@ stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
 An entry whose notice did not reach a person at that tick (held for room in
 the notices comment, lost, or its destination out of reach) says why in
-`notice`, and as a `notice not delivered:` line in text.
+`notice`, and as a `notice not delivered:` line in text. When the newest
+tick could not read a repository (the forge refused it, or its configuration
+did not read), the line keeps what the tick that last read it found, and the
+answer lists the repository in `incomplete` (`repo`, `refused` and `readAt`,
+the start of the tick its entries are from, `null` when no tick has read it),
+and in text as a `the line is incomplete:` block. Its entries are then as of
+that reading, and an empty `waiting` with a non-empty `incomplete` does not
+mean nothing waits.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this
@@ -1661,7 +1690,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
-| `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
+| the [mailbox directives](protocol/mailbox.md#the-inbox), with the target argument for `resume` | `drive` | a directive in the mailbox of the working tree that holds the drive on this machine | the driver, at the checkpoints the [mailbox chapter](protocol/mailbox.md) names |
 
 **It checks before it writes.** It reads the address first, through `jig
 ask`'s readers, and refuses (exit `1`) a request the station cannot take:
@@ -1681,7 +1710,12 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   to a need's decision, an answer whose key no need of the address carries
   in this machine's newest line, your own words (the tick carries out an
   option), and, on another tracker's item, a tracker that cannot name who
-  wrote a comment or a credential that acts as the factory identity;
+  wrote a comment, a credential that acts as the factory identity, or a
+  send from the host that owns the repository, whose tick reads with that
+  same credential and never counts its user's comments; where the user the
+  tick leaves out cannot be told here (the repository names no factory
+  identity, or this machine cannot tell whether it owns the repository), it
+  is sent with a notice that the tick may not read it;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
@@ -1818,10 +1852,10 @@ the tracker until the tick starts the pick-up. An `answer` the re-arm has
 read cannot be taken back, which is why it is checked, shown and sent in
 your own words; until then, deleting the comment withdraws it.
 
-A drive stopped with `WORKTREE_UNCLEAN` (exit `12`) gets one automatic
+A drive stopped with [`WORKTREE_UNCLEAN`](protocol/drive-exits.md) gets one automatic
 recovery pass per pull-request head, in the tree holding its branch. That
 pass is told to commit and push edits belonging to the change, or discard
-them when they do not belong. A second exit `12` at that head waits for a
+them when they do not belong. A second such stop at that head waits for a
 person; after inspecting the handoff, request another attempt with
 `jig send drive@<owner>/<name>#<PR> rearm`. A missing tree waits for a
 person too: recovery never opens a replacement tree without the edits.

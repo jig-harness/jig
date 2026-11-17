@@ -108,6 +108,23 @@ describe("the tick strip", () => {
     expect(row?.busy).toEqual(["/srv/work/docs"]);
   });
 
+  it("marks a tick that could read none of the repositories it reported on, and one that could not read some", () => {
+    const [none, some] = tickRows(
+      withTicks([
+        { ...TICK, runId: "run-0", refused: ["example-org/web"] },
+        { ...TICK, refused: ["example-org/web", "example-org/api"] },
+      ]),
+      CLOCK,
+    );
+    expect(none?.marks.map((m) => [m.word, m.tone])).toEqual([
+      ["read nothing", "badly"],
+    ]);
+    expect(some?.marks.map((m) => [m.word, m.tone])).toEqual([
+      ["1 refused", "waiting"],
+    ]);
+    expect(some?.marks[0]?.meaning).toContain("example-org/web");
+  });
+
   it("marks a failed exit without a defect, and leaves out what the receipt did not record", () => {
     const [row] = tickRows(
       withTicks([

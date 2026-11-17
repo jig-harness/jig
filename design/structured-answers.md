@@ -859,8 +859,13 @@ keeps a comment in its own document format, which need not keep a hidden
 record as written. It refuses words (the tick carries out an option), an
 option the decision does not offer, a missing or stale digest, and, on
 another tracker's item, a tracker whose comments do not name their author
-and a credential that acts as the factory identity, whose comments the tick
-never counts.
+and a credential that acts as the user the tick leaves out, the user the
+owning host's tracker credential acts as. On the host that owns the
+repository that is the user a send writes as, so a send there is refused.
+From another host the user is taken to be the factory identity; where the
+repository names none, or the machine cannot tell whether it owns the
+repository (an owned checkout whose remote names no repository), it cannot
+be told, and the plan's notice says the tick may not read the answer.
 
 #### The tick acts
 
@@ -874,7 +879,9 @@ vouches for (a member of its workspace who is not a guest) counts as the
 forge's members do; a tracker whose adapter cannot name an author is not
 read, and the need says why. A comment by the dispatcher's own forge
 login, or by the user its tracker credential acts as, never answers: a
-dispatcher does not answer on a person's behalf. An
+dispatcher does not answer on a person's behalf. A need whose only answers
+on its tracker item are that user's reads as unread, with why, so `jig ask`
+tells whoever wrote them that the tick will not act. An
 answer counts only when it names the decision's current digest; each
 person's latest answer is theirs, two that differ leave the need disputed,
 and a free answer is shown and never acted on. The line shows the answers,

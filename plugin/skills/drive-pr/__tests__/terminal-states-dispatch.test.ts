@@ -1,3 +1,5 @@
+import { checkDriveExitChapter } from "../../../../tools/protocol/drive-exit-gate.ts";
+import { CHECKER_PATH } from "./protocol-check.ts";
 /**
  * The dispatcher's part of the terminal-state drift check: a dispatcher file
  * that restates a drive exit as a number, or stops reading the registry,
@@ -25,7 +27,7 @@ afterAll(closeTypeScriptService);
 
 const TOOLS = { program: createSingleFileProgram, resolveLiteral };
 const PLUGIN = resolve(import.meta.dir, "..", "..", "..");
-const CHECK = join(import.meta.dir, "terminal-states-consistency.ts");
+const REPOSITORY = resolve(PLUGIN, "..");
 
 const valuesIn = async (source: string) =>
   (await findDispatchExitLiterals(source, "fixture.ts", TOOLS)).map((f) =>
@@ -235,15 +237,23 @@ describe("the consistency check over dispatcher files", () => {
     writeFileSync(path, body);
     return path;
   };
-  const check = (files: string[]) =>
-    Bun.spawnSync([process.execPath, CHECK], {
-      env: {
-        ...process.env,
-        DRIVE_PR_TERMINAL_STATES_TEST_DISPATCH_FILES: files.join(delimiter),
-      },
-      stdout: "pipe",
-      stderr: "pipe",
+  const check = (files: string[]) => {
+    const findings = checkDriveExitChapter(REPOSITORY, {
+      ...process.env,
+      DRIVE_PR_TERMINAL_STATES_TEST_DISPATCH_FILES: files.join(delimiter),
     });
+    return {
+      exitCode: findings.length ? 1 : 0,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.from(
+        findings.map((finding) => finding.problem).join("\n"),
+      ),
+    };
+  };
+
+  test("keeps the chapter-check executable in the mutation corpus", () => {
+    expect(CHECKER_PATH).toEndWith("protocol-check.ts");
+  });
 
   test("passes a file that reads the registry", () => {
     const clean = fixture(

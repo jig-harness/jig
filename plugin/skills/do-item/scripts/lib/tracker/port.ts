@@ -15,6 +15,7 @@
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
+import type { TrackerFootprints } from "./footprint-port.ts";
 import type {
   FoundComment,
   IssueComment,
@@ -327,10 +328,7 @@ export const CLOSED_STATE_TYPES = [
  * states of one category), and a claim re-check compares ids.
  */
 export interface PoolIssue {
-  /**
-   * The tracker's own issue type, where the read took it: an adapter with
-   * type-specific workflows, or one that reads `isEpic` from it.
-   */
+  /** The tracker's own issue type, where the read took it (type-specific workflows, `isEpic`). */
   nativeType?: string | null;
   /** Complete labels hidden by ordinary pool display, for migration validation. */
   hiddenLabels?: string[];
@@ -669,7 +667,10 @@ export type AssignmentResult =
   | { assigned: true }
   | { assigned: false; reason: "race" | "unverified" | "race-unverified" };
 
-export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
+export interface Tracker
+  extends TrackerAttachments,
+    TrackerBlockedFields,
+    TrackerFootprints {
   /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
   readonly dispatchSource?: DispatchSource;
   /** The adapter name, as `issue_tracker.adapter` spells it. */
@@ -840,9 +841,9 @@ export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
    * the history's definite answer that no user made the assignment (it holds no
    * assignment of `assignee`, or one made by an integration or an automation)
    * throws `AssignerUnknown` for it, which a caller may keep until the issue
-   * changes; any other throw is a read to try again. Linear classifies this
-   * way; the GitHub and Jira adapters throw their API errors for it. An aborted
-   * `signal` ends the read.
+   * changes; any other throw is a read to try again. An issue that is no
+   * longer assigned to that account is a definite absent answer too. An
+   * aborted `signal` ends the read.
    */
   assignedBy(
     key: string,

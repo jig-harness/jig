@@ -17,13 +17,19 @@ values generated from the code, their meaning written beside them in the
 code, and a gate that fails the build when the chapter and the code
 disagree.
 
-This is the design of [plan.md](plan.md) item 53. Its stable chapters and their schemas are in place, in [plugin/protocol/](../plugin/protocol/README.md):
+This is the design of [plan.md](plan.md) item 53. Its stable chapters, their
+restatements and their schemas are in place, in
+[plugin/protocol/](../plugin/protocol/README.md):
 the generator, its gate and the chapter on the drive's end states and exit
 codes; the records chapters, on hidden comment markers and on the
 follow-up claim and its result; the chapters on the drive mailbox and on
 the pull-request labels; the chapter on the commands a repository
-supplies; and the chapter on rule matchers in configuration, with JSON Schemas generated from the readers' shape descriptions; the site renders the chapters at `/protocol/`. Of the provisional chapters, the ones on addresses and the verbs of `jig send` and on tracker facets are in place. The steps after
-them in § Build order are open. The decision that a chapter and the code must agree is
+supplies; and the chapter on rule matchers in configuration, with JSON Schemas generated from the readers' shape descriptions;
+the site renders the chapters at `/protocol/`. Of the provisional chapters, the ones on addresses and the verbs of `jig send`,
+on forge claims and on tracker facets are in place. The restatements link to the
+chapters, with the values a skill needs within a step held by the chapter's
+gate. The steps after them in § Build order are open. The decision that a
+chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works
@@ -162,7 +168,7 @@ free while it is in use.
 | Addresses and the verbs of `jig send` | provisional | `STATIONS` in `shared/address.ts` and `SEND_VERBS` in `send/lib/verb-values.ts` | 39, 42 |
 | Needs and structured answers | provisional | the decision record (`parked-decision/v1`) and the need classes | 46, 50 |
 | Steward records | provisional | the steward's record kinds and their closed fields | 50 |
-| Forge claims: takeover, launch and merge-ready | provisional | the `drive-takeover-claim`, `dispatch-launch-claim` and `drive-merge-ready` kinds of the records registry | 40, 49 |
+| Forge claims: takeover, launch and merge-ready | provisional | the `drive-takeover-claim`, `dispatch-launch-claim` and `drive-merge-ready` kinds of the records registry, and each claim's fields and the launch claim's closed values (`shared/records/forge-claim-values.ts`), which their readers check through the shapes beside them | 40, 49 |
 | Tracker facets: type, priority and size | provisional | the facets, the priorities, the stores, the stores each adapter holds and the reasons `facetStores` gives, in `skills/do-item/scripts/lib/tracker/facets/facet-values.ts`; the command store, whose JSON answer would get a schema, is not built | 41 |
 
 Paths in the third column are written from the plugin directory. The

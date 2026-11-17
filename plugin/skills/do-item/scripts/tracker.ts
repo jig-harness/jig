@@ -21,6 +21,7 @@
  *     bun tracker.ts sync-plan-blocks <epic-key> [--dry-run]
  *     bun tracker.ts available-labels             # every label issues can carry
  *     bun tracker.ts facet-stores                 # where type, priority and size are kept
+ *     bun tracker.ts footprint <issue-key> [--input prediction.json]
  *     bun tracker.ts attachments <issue-key>      # the files attached to an issue
  *     bun tracker.ts attach <issue-key> --input attachment.json
  *     bun tracker.ts fetch-attachment <issue-key> <attachment-id> --out <file>
@@ -136,6 +137,7 @@ import {
 import {
   type ServedClaim,
   claimServedIssue,
+  claimFactoryIssue,
   servedClaimStillStands,
 } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
@@ -149,6 +151,7 @@ import {
 } from "./lib/preflight.ts";
 import {
   claimPlanBlockFromDefaultBranch,
+  claimFactoryIdentityFromDefaultBranch,
   claimSettingsFromDefaultBranch,
 } from "./lib/claim-settings.ts";
 import { claimBranch, claimSession } from "./lib/claim-marker.ts";
@@ -162,6 +165,7 @@ import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ATTACHMENT_OPERATIONS } from "./lib/attachment-ops.ts";
+import { footprintOperations } from "./lib/footprint-ops.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { closerSentence, parsePostMerge } from "./lib/post-merge.ts";
 import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
@@ -200,6 +204,7 @@ const USAGE = `usage:
   tracker.ts sync-plan-blocks <epic-key> [--dry-run]
   tracker.ts available-labels
   tracker.ts facet-stores
+  tracker.ts footprint <issue-key> [--input prediction.json]
   tracker.ts attachments <issue-key>
   tracker.ts attach <issue-key>    (attachment as JSON on stdin)
   tracker.ts fetch-attachment <issue-key> <attachment-id> --out <file>`;
@@ -413,6 +418,7 @@ async function claim(
   person: string | undefined,
   ancestor: string | undefined,
   blocking: string | undefined,
+  factoryAncestor: string | undefined,
 ): Promise<unknown> {
   const config = ownTrackerConfig();
   const shape = issueKeysOf(config);
@@ -425,11 +431,18 @@ async function claim(
   const read = await claimSettingsFromDefaultBranch(root, overlay);
   if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
   const settings = read.value;
-  // Only a pulled-blocker claim enforces the epic plan; any other claim never reads it.
+  // Pulled blockers and factory-inherited children enforce ancestor plans at the claim.
   const planBlock =
-    person && blocking ? await claimPlanBlockFromDefaultBranch(root) : null;
+    (person && blocking) || factoryAncestor
+      ? await claimPlanBlockFromDefaultBranch(root)
+      : null;
   if (planBlock !== null && !planBlock.ok)
     return unreadablePreflight(normalized, planBlock.failure.reason);
+  const factoryIdentity = factoryAncestor
+    ? await claimFactoryIdentityFromDefaultBranch(root)
+    : null;
+  if (factoryIdentity !== null && !factoryIdentity.ok)
+    return unreadablePreflight(normalized, factoryIdentity.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.
   const command = await claimPreflightCommand(root, overlay);
   if (!command.ok)
@@ -443,6 +456,18 @@ async function claim(
   if (refusal !== null) return refusal;
   const blocked = await blockedClaimRefusal(tracker, normalized);
   if (blocked !== null) return blocked;
+  const factory = await factoryClaimOptions(
+    tracker,
+    factoryAncestor,
+    factoryIdentity,
+    shape,
+    planBlock,
+    {
+      hitlLabel: config.labels.hitl,
+      manualOpsLabel: config.labels.manualOps,
+      claimFrom: settings.claimFrom,
+    },
+  );
   const result = await withClaimLock(
     claimLockKey(tracker, normalized),
     async () => {
@@ -467,10 +492,9 @@ async function claim(
             claimFrom: settings.claimFrom,
           }
         : null;
+      const assignment = served ?? factory;
       const body = () =>
-        served
-          ? claimServedIssue(tracker, normalized, served)
-          : claimIssue(tracker, normalized, { claimFrom: settings.claimFrom });
+        claimAssignment(tracker, normalized, assignment, settings.claimFrom);
       if (!settings.claimMarker) return body();
       // The marker names who the item will be assigned to, before it is.
       const claimant = person
@@ -484,14 +508,52 @@ async function claim(
         undefined,
         async (claimed) =>
           (await claimStillStands(tracker, normalized, claimed)) ??
-          (served
-            ? await servedClaimStillStands(tracker, normalized, served)
+          (assignment
+            ? await servedClaimStillStands(tracker, normalized, assignment)
             : null),
       );
     },
   );
   if (result.outcome === "claimed") noteDispatchedClaim(result.issue);
   return result;
+}
+
+/** Assemble inherited factory authority separately from the write held under the claim lock. */
+async function factoryClaimOptions(
+  tracker: ReturnType<typeof openTracker>,
+  ancestor: string | undefined,
+  identity: Awaited<
+    ReturnType<typeof claimFactoryIdentityFromDefaultBranch>
+  > | null,
+  shape: ReturnType<typeof issueKeysOf>,
+  planBlock: Awaited<ReturnType<typeof claimPlanBlockFromDefaultBranch>> | null,
+  policy: Pick<ServedClaim, "hitlLabel" | "manualOpsLabel" | "claimFrom">,
+): Promise<(ServedClaim & { ancestor: string }) | null> {
+  if (!ancestor || !identity?.ok) return null;
+  return {
+    ...policy,
+    person: identity.value,
+    ancestor: shape?.normalize(ancestor) ?? ancestor,
+    ...(planBlock?.ok ? { executionPlanBlock: planBlock.value } : {}),
+    factoryClaimant: await tracker.viewer(),
+  };
+}
+
+/** Choose the assignment mechanism after authorization options have been assembled. */
+function claimAssignment(
+  tracker: ReturnType<typeof openTracker>,
+  key: string,
+  options: ServedClaim | null,
+  claimFrom: ServedClaim["claimFrom"],
+) {
+  if (options === null)
+    return claimIssue(tracker, key, { claimFrom: claimFrom ?? null });
+  if (options.factoryClaimant && options.ancestor)
+    return claimFactoryIssue(tracker, key, {
+      ...options,
+      ancestor: options.ancestor,
+    });
+  return claimServedIssue(tracker, key, options);
 }
 
 /**
@@ -629,12 +691,32 @@ const OPERATIONS: Record<string, Operation> = {
         throw new UsageError(
           "claim accepts one nonempty --for=PERSON, --ancestor=ISSUE and --blocking=ISSUE",
         );
+      const factoryFlags = [...flags].filter((f) =>
+        f.startsWith("--factory-ancestor"),
+      );
+      if (
+        factoryFlags.length > 1 ||
+        factoryFlags.some(
+          (f) => !f.startsWith("--factory-ancestor=") || f.length === 19,
+        )
+      )
+        throw new UsageError(
+          "claim accepts one nonempty --factory-ancestor=ISSUE",
+        );
+      const factoryAncestor = factoryFlags[0]?.slice(19);
+      if (
+        factoryAncestor &&
+        (forFlags.length || ancestorFlags.length || blockingFlags.length)
+      )
+        throw new UsageError(
+          "--factory-ancestor cannot be combined with served claim options",
+        );
       const person = forFlags[0]?.slice(6);
       const ancestor = ancestorFlags[0]?.slice(11);
       const blocking = blockingFlags[0]?.slice(11);
       if ((ancestor || blocking) && !person)
         throw new UsageError("--ancestor and --blocking require --for");
-      return claim(key as string, person, ancestor, blocking);
+      return claim(key as string, person, ancestor, blocking, factoryAncestor);
     },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;
@@ -758,6 +840,7 @@ const OPERATIONS: Record<string, Operation> = {
     run: () => openTracker().facetStores(),
   },
   ...ATTACHMENT_OPERATIONS,
+  ...footprintOperations(),
 };
 
 /** Whether an error is the caller's input rather than a failed operation. */
@@ -813,7 +896,8 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
         name === "claim" &&
         (/^--for=.+/.test(flag) ||
           /^--ancestor=.+/.test(flag) ||
-          /^--blocking=.+/.test(flag))
+          /^--blocking=.+/.test(flag) ||
+          /^--factory-ancestor=.+/.test(flag))
       ),
   );
   if (unknown.length)
@@ -868,7 +952,12 @@ function reportFailure(error: unknown): number {
 
 /** Normalize valued claim options before generic positional/flag validation. */
 function normalizeClaimOptions(rest: string[]): void {
-  for (const flag of ["--for", "--ancestor", "--blocking"]) {
+  for (const flag of [
+    "--for",
+    "--ancestor",
+    "--blocking",
+    "--factory-ancestor",
+  ]) {
     const index = rest.indexOf(flag);
     if (index === -1) continue;
     const value = rest[index + 1];
@@ -876,7 +965,12 @@ function normalizeClaimOptions(rest: string[]): void {
       throw new UsageError(`${flag} requires an identity or issue key`);
     rest.splice(index, 2, `${flag}=${value}`);
   }
-  for (const flag of ["--for=", "--ancestor=", "--blocking="])
+  for (const flag of [
+    "--for=",
+    "--ancestor=",
+    "--blocking=",
+    "--factory-ancestor=",
+  ])
     if (rest.filter((v) => v.startsWith(flag)).length > 1)
       throw new UsageError("duplicate claim option");
 }

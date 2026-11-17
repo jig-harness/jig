@@ -20,6 +20,7 @@ import { guardedCollection } from "../kinds/worktree-guard.ts";
 import { type OrcaCall, removeThroughOrca } from "../worktree-removal.ts";
 
 const PATH = "/home/someone/orca/workspaces/app/topic";
+const REPO = "/home/someone/dev/app";
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -46,6 +47,7 @@ async function collect(root: string, answer: Answer) {
   const collected = await guardedCollection(
     { id: PATH, details: { runtime: "orca" } },
     PATH,
+    REPO,
     async (guard) => {
       const removed = await removeThroughOrca({
         worktree: PATH,
@@ -192,6 +194,7 @@ describe("the admission around orca worktree rm", () => {
     const collected = await guardedCollection(
       { id: PATH },
       PATH,
+      REPO,
       async (guard) => {
         // Another collection's admission now stands where gc's was.
         const text = JSON.parse(readFileSync(file, "utf8"));

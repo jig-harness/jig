@@ -169,6 +169,31 @@ id), so its owner is the installation its issuer declares beside it
 (`JIG_GITHUB_INSTALLATION_ID`), on the host it is used on: a replacement
 token after expiry keeps the record and its hold.
 
+**Several GitHub accounts on one machine.** A token per repository, or a
+client configuration directory per repository, is keyed apart already: each
+is its own credential and is asked who it is. A client that picks its
+account per repository with the stored login (a `gh` wrapper that, with no
+token in the environment, chooses among the stored logins by the repository
+a command addresses) sends one credential as several accounts, so the
+stored login's owner is asked and kept per repository a call addresses: the
+`-R`/`--repo` value, else a positional repository-page URL, else a `gh api`
+route under `repos/<owner>/<repo>`, else `GH_REPO`, else the repository
+`gh repo set-default` chose, else the `origin` remote, of the call's working
+directory (two local `git config` reads, each bounded at 2 seconds and
+reused for 30 seconds). The pages of a paged read keep the first page's
+repository. The question
+is asked with `GH_REPO` set to that repository and from the call's working
+directory, so the client picks the account it picks for the call; it costs
+one `GET /user` a day for each repository the stored login addresses. A
+call that addresses no repository keeps the credential's own mapping, and a
+token's mapping has no repository, since a token names its own user. A
+rate-limit refusal whose text names another user than the owner the call
+was admitted against ("rate limit exceeded for user ID N") is held on that
+user's record, the call's reservation given back to the other, and the
+mapping is asked again at the next call. A call the record refuses says
+whose allowance is spent: the GitHub account, the installation, or the
+host's shared record below.
+
 **When the owner cannot be established** (the question failed or waits to
 be asked again, an installation token with no declaration, an answer that
 does not read), the credential is kept under one record per host that every

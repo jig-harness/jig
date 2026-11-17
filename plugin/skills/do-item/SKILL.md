@@ -121,7 +121,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
-| `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, read from the default branch, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
+| `do_item.preflight_command` | The repository's own start rules, run by every claim; [the commands chapter](../../protocol/repo-commands.md) gives its input, exits, deadline and command-store rules | No check beyond the claim's own |
 | `do_item.claim_from` | The canonical states a claim may start from, read from the default branch; any other state, or a status that maps to no canonical state, is refused | None: the claim's own restrictions apply (never an `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted one) |
 | `do_item.claim_marker` | A claim posts a marker comment naming the session, host and branch before it writes, and the earliest marker on the item wins, so two hosts rarely both claim it (best effort: a lagging listing can let both win); read from the default branch | No marker; claims serialize on one host only |
 | `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
@@ -757,6 +757,13 @@ implementation. Skip this check for issues about the repository's own code.
    A served-person dispatch prompt supplies the tracker identity and, for
    inherited assignment, its ancestor epic. Use the same claim command with
    `--for <identity>` and, when supplied, `--ancestor <epic-key>`.
+   A factory-inherited dispatch prompt instead supplies `--factory-ancestor <epic-key>`.
+   Pass it alone, without `--for`, `--ancestor` or `--blocking`. The claim reads
+   `dispatch.identity` from the default branch, verifies the live ancestor
+   assignment and writer authority, and assigns the empty child to the
+   credential identity. An absent or unreadable default-branch identity refuses
+   the claim; a refusal stops the pickup.
+
    Keep these as separate quoted arguments. The claim keeps that person as
    sole assignee, checks writer authority and live ancestry, and refuses
    changed holds or assignment. A refusal or stand-down requires a fresh
@@ -829,19 +836,6 @@ implementation. Skip this check for issues about the repository's own code.
 
    ```bash
    bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
-   ```
-
-   Then name the workspace for the stage. With a runtime that can rename its workspaces (Herdr or Orca), this renames it, for
-   example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
-   with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
-   while a malformed argument, an invalid `workspace_name` field or an unreadable title
-   file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
-   tracker text, so write it alone to `.context/scratch/workspace-title.md` with the
-   file editor and pass the file, never the title inside the command; quote
-   the key, since a GitHub key (`#123`) starts a shell comment unquoted:
-
-   ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/scratch/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -1444,18 +1438,11 @@ implementation. Skip this check for issues about the repository's own code.
         report it with the exit code and captured output.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
-      - Still running → armed; move on to the rename and the tracker comment
-        below. Only when the Codex host requires this session to stay alive
-        do you then keep polling the same task until the drive ends, after
-        those steps, so the outcome and handles are published first; never
+      - Still running → armed; move on to the tracker comment below. Only
+        when the Codex host requires this session to stay alive do you then
+        keep polling the same task until the drive ends, after that comment,
+        so the outcome and handles are published first; never
         launch it again, and report the drive's terminal outcome afterward.
-
-      Once armed, name the workspace for the driving stage (same rules as at
-      pickup, with `.context/scratch/workspace-title.md` still holding the title):
-
-      ```bash
-      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/scratch/workspace-title.md --pr <PR>
-      ```
 
       Post the prepared tracker comment with the arm outcome and the
       observability handles. Report the log path's verified, unavailable or
@@ -2005,7 +1992,7 @@ report. In such a pass:
 |--------|---------|-------|--------|
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
-| `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
+| `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, `footprint` (read; write with `--input`), the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state, body from `--body-file`, or footprint payload from `--input` | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts, and list its guidance and review gates | Issue JSON (path or `-`) | JSON with agent, scouts, guidance and gates |
 | `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |

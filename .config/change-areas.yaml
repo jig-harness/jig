@@ -34,7 +34,10 @@ areas:
   drive-pr:
     title: "drive-pr skill"
     category: skill
-    paths: ["plugin/skills/drive-pr/**"]
+    paths:
+      - "plugin/skills/drive-pr/**"
+      - "tools/protocol/drive-exit-gate.ts"
+      - "tools/protocol/chapters/drive-exits.ts"
     workspace: []
     # Its scripts import the plugin's shared code and spawn the other two
     # skills' scripts, and its tests run with the shared test preloads and
@@ -380,10 +383,10 @@ areas:
     # generated from drive-pr's terminal-state table, the drive mailbox's
     # tables, the pull-request label projection, the table of commands a
     # repository supplies, the records registry, the record envelope's codec,
-    # the follow-up marker's tables, the rule matcher's tables, the stations an
-    # address names, the verbs of `jig send` and the issue facets' closed
-    # lists, and its base comparison reads change notes through the changelog
-    # skill's scripts.
+    # the follow-up marker's tables, the forge claims' tables and shapes, the
+    # rule matcher's tables, the stations an address names, the verbs of
+    # `jig send` and the issue facets' closed lists, and its base comparison
+    # reads change notes through the changelog skill's scripts.
     category: tooling
     paths: ["plugin/protocol/**", "tools/protocol/**"]
     workspace: []
@@ -408,6 +411,7 @@ areas:
           - "plugin/protocol/schemas/tracker-claim-marker.json"
           - "plugin/protocol/schemas/tracker-claim-outcome.json"
           - "plugin/protocol/schemas/tracker-attachment.json"
+          - "plugin/protocol/schemas/tracker-footprint.json"
           - "plugin/protocol/schemas/reflection-record.json"
           - "plugin/protocol/repo-commands.md"
           - "plugin/protocol/data/repo-commands.json"
@@ -416,6 +420,7 @@ areas:
           - "plugin/protocol/schemas/reflection-check.json"
           - "plugin/protocol/schemas/reflection-append.json"
           - "plugin/protocol/schemas/reflection-diagnose.json"
+          - "plugin/protocol/schemas/followup-verdict.json"
           - "plugin/protocol/schemas/reflection-event.json"
           - "plugin/protocol/followup-claim.md"
           - "plugin/protocol/data/followup-claim.json"
@@ -426,6 +431,11 @@ areas:
           - "plugin/protocol/schemas/rule.json"
           - "plugin/protocol/addresses.md"
           - "plugin/protocol/data/addresses.json"
+          - "plugin/protocol/forge-claims.md"
+          - "plugin/protocol/data/forge-claims.json"
+          - "plugin/protocol/schemas/drive-takeover-claim.json"
+          - "plugin/protocol/schemas/dispatch-launch-claim.json"
+          - "plugin/protocol/schemas/drive-merge-ready.json"
           - "plugin/protocol/tracker-facets.md"
           - "plugin/protocol/data/tracker-facets.json"
         source:
@@ -436,6 +446,40 @@ areas:
           - "plugin/send/lib/verb-values.ts"
           - "plugin/shared/address.ts"
           - "plugin/shared/autonomy-values.ts"
+          - "lib/findings.ts"
+          - "plugin/README.md"
+          - "plugin/skills/do-item/SKILL.md"
+          - "plugin/skills/drive-pr/SKILL.md"
+          - "plugin/skills/drive-pr/scripts/drive-status.ts"
+          - "plugin/skills/drive-pr/scripts/drive.ts"
+          - "plugin/skills/drive-pr/scripts/lib/driver/**"
+          - "plugin/skills/drive-pr/scripts/lib/state/lease.ts"
+          - "plugin/skills/drive-pr/scripts/lib/state/lease-model.ts"
+          - "plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts"
+          - "plugin/skills/drive-pr/__tests__/terminal-states-dispatch.ts"
+          - "plugin/skills/drive-pr/__tests__/terminal-state-source-files.ts"
+          - "plugin/skills/drive-pr/__tests__/protocol-check.ts"
+          - "plugin/skills/drive-pr/__tests__/protocol-test.ts"
+          - "plugin/dispatch/run.ts"
+          - "plugin/dispatch/lib/launches.ts"
+          - "plugin/dispatch/lib/actions/drive-hold.ts"
+          - "plugin/dispatch/lib/log.ts"
+          - "plugin/dispatch/lib/sources/ledgers.ts"
+          - "plugin/dispatch/lib/log-ended.ts"
+          - "plugin/dispatch/lib/labels.ts"
+          - "plugin/dispatch/lib/contention.ts"
+          - "plugin/ask/lib/drive.ts"
+          - "plugin/shared/orca-tabs.ts"
+          - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
+          - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
+          - "plugin/shared/pr-labels/projection.ts"
+          - "plugin/shared/repo-commands.ts"
+          - "plugin/shared/records/registry*.ts"
+          - "plugin/shared/records/registry-machine-rows.json"
+          - "plugin/shared/records/not-records.ts"
+          - "plugin/shared/records/envelope.ts"
+          - "plugin/shared/records/followup-values.ts"
+          - "plugin/shared/records/writer.ts"
           - "plugin/shared/errors.ts"
           - "plugin/shared/fixture-observer.ts"
           - "plugin/shared/guards.ts"
@@ -448,7 +492,11 @@ areas:
           - "plugin/shared/records/envelope.ts"
           - "plugin/shared/records/followup-shapes.ts"
           - "plugin/shared/records/followup-values.ts"
+          - "plugin/shared/records/forge-claim-shapes.ts"
+          - "plugin/shared/records/forge-claim-values.ts"
           - "plugin/shared/records/marker-shapes.ts"
+          - "plugin/shared/footprint.ts"
+          - "plugin/shared/outbound/failure.ts"
           - "plugin/shared/records/not-records.ts"
           - "plugin/shared/records/registry-forge.ts"
           - "plugin/shared/records/registry-kind.ts"
@@ -484,6 +532,9 @@ areas:
           every file a chapter's sections import, directly or through the
           files they import, which tools/protocol/__tests__/sources.test.ts
           holds to the code.
+          The check also reads the drive's held restatements and code
+          bindings through its compiler-backed consistency check; these
+          inputs are listed alongside the generated tables' sources.
 
   dashboard:
     title: "The source of the page jig dispatch dashboard serves"

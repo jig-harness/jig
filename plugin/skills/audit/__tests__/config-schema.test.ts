@@ -76,7 +76,6 @@ import {
   DEFAULT_POST_MERGE,
   POST_MERGE_STATES,
 } from "../../do-item/scripts/lib/post-merge.ts";
-import { DEFAULT_TEMPLATE as DEFAULT_WORKSPACE_TEMPLATE } from "../../do-item/scripts/workspace-name.ts";
 import {
   parseRouting,
   RAISE_FIELDS,
@@ -105,6 +104,14 @@ import {
   parseChangelogSection,
 } from "../../changelog/scripts/config.ts";
 import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
+import { ARM_IDS } from "../../followup/scripts/lib/arms.ts";
+import { ACT_IDS, LEVELS } from "../../followup/scripts/lib/authority.ts";
+import {
+  REPO_ARM_FORMS,
+  REPO_ARM_ID_PATTERN,
+  REPO_ARM_SKILL_PATTERN,
+} from "../../followup/scripts/lib/repo-arms.ts";
+import { parseFollowupSettings } from "../../followup/scripts/lib/settings.ts";
 import { DEFAULT_TAXONOMY } from "../../file-issue/scripts/lib/config.ts";
 import { SAFE_KEY_COMPONENT_PATTERN } from "../../resolve-review-comments/scripts/lib/batch-description.ts";
 import {
@@ -291,6 +298,10 @@ test("its complete example's work_batch section passes the skill", () => {
   expect(() => parseWorkBatchSection(example, batchSizes)).not.toThrow();
 });
 
+test("its complete example's followup section passes the skill", () => {
+  expect(parseFollowupSettings(completeExample()).ok).toBe(true);
+});
+
 test("its complete example's file_issue section passes the skill", () => {
   expect(sweepSettings(completeExample()).move).toBe(false);
 });
@@ -323,6 +334,30 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+    expect(field("followup.off")?.items).toEqual({
+      type: "enum",
+      values: [...ARM_IDS],
+    });
+    expect(field("followup.authority")?.keys).toEqual([...ACT_IDS]);
+    expect(field("followup.authority")?.values_type).toEqual({
+      type: "enum",
+      values: [...LEVELS],
+    });
+  });
+
+  test("type a repository arm's keys as the follow-up reads them", () => {
+    const items = field("followup.arms")?.items as
+      | { fields: Record<string, { pattern?: string }> }
+      | undefined;
+    const fields = items?.fields ?? {};
+    expect(Object.keys(fields)).toEqual([
+      "id",
+      "title",
+      "when",
+      ...REPO_ARM_FORMS,
+    ]);
+    expect(fields.id?.pattern).toBe(REPO_ARM_ID_PATTERN.source);
+    expect(fields.skill?.pattern).toBe(REPO_ARM_SKILL_PATTERN.source);
   });
 
   test("map the board stages the Orca card moves through", () => {
@@ -459,7 +494,6 @@ describe("the reading skills", () => {
       "specs.verification_section": DEFAULT_VERIFICATION_SECTION,
       "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
         .reviews,
-      "workspace_name.template": DEFAULT_WORKSPACE_TEMPLATE,
       "verify.output_lines": DEFAULT_OUTPUT_LINES,
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
@@ -790,6 +824,39 @@ describe("the schema's own format", () => {
         ?.default,
     ).toBe(1);
   });
+
+  test("a retired section is noted once, not refused or called unknown", () => {
+    const retiring = parseSchema({
+      ...withField({ type: "string" }),
+      retired: { old: "nothing reads it" },
+    });
+    expect(
+      checkConfig({ old: { anything: 1 }, a: { b: "x" } }, retiring),
+    ).toEqual([
+      {
+        id: "retired:old",
+        severity: "info",
+        message: "old no longer has an effect: nothing reads it",
+      },
+    ]);
+    expect(() =>
+      parseSchema({ ...withField({ type: "string" }), retired: { old: 1 } }),
+    ).toThrow("retired must map a section to a message");
+    for (const retired of [{ a: "x" }, { "a.b": "x" }])
+      expect(() =>
+        parseSchema({ ...withField({ type: "string" }), retired }),
+      ).toThrow("which the schema also declares");
+  });
+});
+
+test("workspace_name is retired: a file that keeps it gets only a notice", () => {
+  const findings = checkConfig(
+    { workspace_name: { template: "{id} {status} {title}", statuses: {} } },
+    schema,
+  );
+  expect(findings.map((f) => [f.id, f.severity])).toEqual([
+    ["retired:workspace_name", "info"],
+  ]);
 });
 
 test("dispatch.person accepts only usable recipient logins", () => {

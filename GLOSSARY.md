@@ -1650,6 +1650,15 @@ make, use the entry's term instead.
   done) or *not owed* (with the evidence that settled it). "Nothing found" is
   not evidence
   ([M7](modules/M7-pr-lifecycle-review/README.md#core-pieces)).
+- **Follow-up arm** — one class of obligation the *post-merge stage* checks,
+  such as the tracker item, deferred findings or live verification, ending
+  with one verdict: owed (done or filed), not owed (with a checkable fact),
+  pending (it settles by itself, such as a rollout in progress) or unread.
+  The plugin's [followup](plugin/skills/followup/README.md) skill runs a
+  fixed list of core arms, plus the **repository arms** a repository
+  declares in its configuration (an instructions file, a read-only check
+  command or a skill), and will not end a run while one has no verdict;
+  before the merge it runs them as a preview that carries out nothing.
 - **Ops-pending** — the tracker state a merged item waits in while a step a
   person performs outside the code (a setting, a host change, a live check)
   is still owed. The *post-merge stage* moves a merged item there instead
@@ -2010,6 +2019,17 @@ make, use the entry's term instead.
   a comment only if none exists, so the claim is read back after posting and
   checked again before each act it guards
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Launch claim** — the *forge claim* a host dispatching a repository
+  posts on a pull request for one launch of its drive (a re-arm, a
+  *re-drive*, an arm or a takeover), on the attempt after the latest, so no
+  other host launches it twice; once the launch ended, the same host writes
+  how it ended onto the same comment
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)).
+- **Merge-ready announcement** — the *forge claim* a *PR drive loop* posts
+  on a pull request to say that one head is converged, green, mergeable and
+  clean, kept only while that holds and withdrawn when it stops holding; of
+  the announcements of one head the earliest stands
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)).
 - **Shared records** — what a host dispatching a repository publishes so
   that another host dispatching the same repository can read it: which host
   holds a launch, and how the launch ended. On the forge, each is a *forge
@@ -2421,6 +2441,15 @@ make, use the entry's term instead.
   drive stops, the driver's own closing report ends with the `concluded`
   of the last round report of its launch. Designed in
   [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report).
+- **Transcript copy** — the end of a dispatched run's transcript, the
+  agent vendor's own record of the session, that Jig copies to the host's
+  state directory, with credentials redacted, when the run ended without a
+  *closing report* and its wrapper could not say why. The *steward* reads an
+  excerpt of it to record the run's cause, and a person can read the rest;
+  it is removed seven days after that cause is recorded, and at the latest
+  after the host's receipts retention. Jig keeps none for a run that
+  reported, and never deletes the vendor's own files
+  ([plugin/README.md](plugin/README.md#the-closing-report)).
 - **Process runtime** — a *session runtime* that runs a *headless pass* as
   a plain managed process in a git worktree Jig opens itself, with no
   terminal and no desktop app; a host chooses it in its machine dispatch
@@ -2618,9 +2647,8 @@ make, use the entry's term instead.
   record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in
   the workspace's comment and on the launch record, and a workspace the
   dispatcher creates is named by its first part (`⚙ dispatched · rearm
-  #456`). A session may rename the workspace to what the work became; the
-  mark outlives the name, so the morning report still lists the workspace
-  as dispatched.
+  #456`). A person may rename the workspace; the mark outlives the name,
+  so the morning report still lists the workspace as dispatched.
 - **Run tab** — a terminal tab Jig opens in a workspace to run a drive or
   another stage of the line: one `drive-pr` arms a drive in, or one the
   *dispatcher* launches into. Jig records each one it opens, and the tab
@@ -2822,7 +2850,8 @@ make, use the entry's term instead.
   what is stopped and waiting on the line and propose what to do about it:
   re-arm a drive once when its logs show a passing cause, frame a need that
   arrived with no framing with its *act*, fill in a missing priority, size
-  or type, and order the queue.
+  or type, order the queue, and record why a run that left no *closing
+  report* fell short, from its *transcript copy*.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
@@ -2832,22 +2861,44 @@ make, use the entry's term instead.
   *tick* settles and no *steward* pass has judged yet: a stalled pickup or
   failed follow-up with no running session, a stopped drive a re-arm could
   resolve, an ended pass that recommends a resume, a queued item missing a
-  facet, a need with no framing. The steward starts only when it holds a
+  facet, a need with no framing, a run that ended without a *closing
+  report*. The steward starts only when it holds a
   member no earlier pass saw
   ([the steward's trigger](design/dark-factory-dispatch.md#the-stewards-trigger)).
 - **Steward remit** — the record kinds a *steward* may submit for a
-  repository on a host: today, a re-arm, a resume, a need, a facet and an
-  order. The planned widening lets a host add record kinds that settle a
+  repository on a host: today, a re-arm, a resume, a need, a facet, an
+  order and a run's cause. The planned widening lets a host add record kinds that settle a
   stalled pickup, re-drive once more after a flaky check or re-run a run's
   failed jobs. Each would apply only when the *tick*'s own reads confirm it
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
 - **Priorities record** — the proposed versioned declaration of objectives,
-  purposes, end states, owners and capacity shares or limits at site,
-  repository or individual level. A mechanical ranker reads it with a tracker
-  snapshot to propose a reproducible shortlist; a person picks from it.
+  their purposes, end states, owners, classes and shares at site, repository
+  or individual level. A mechanical ranker reads it with a tracker snapshot
+  and the host's *lane* weights to propose a reproducible shortlist; a person
+  picks from it.
   See [the design](design/priorities-and-overview.md).
+- **Priority lane** (lane, in the priorities design) — one kind of work that
+  competes for starts: Urgent issues first, then High-priority bugs, then the
+  weighted lanes (other bugs and the core, tactical and peripheral objectives)
+  that share the remaining starts in proportion to their
+  weights. A weight of 0 takes a lane out of rotation. A weight divides
+  starts over time and never reserves a slot; how many sessions run at once
+  follows the host's load and its accounts' remaining quota. Not the *lane*
+  of an *execution plan*.
+  See [lanes and their weights](design/priorities-and-overview.md#lanes-and-their-weights).
+- **Peripheral floor** — the *priority lane* weight of peripheral objectives,
+  read as a minimum: a share the lane could not use while none of its work
+  was ready is owed to it later that week and carried into the next week,
+  then dropped.
+  See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
+- **Weights file** — a host's own file, `$JIG_HOME/weights.local.yaml`, never
+  committed, that sets each *priority lane*'s weight and each subscription
+  account's share of new launches. The *dispatcher* reads it on every *tick*,
+  so a change takes effect without a pull request or a restart; a missing
+  file or entry means the defaults.
+  See [lanes and their weights](design/priorities-and-overview.md#lanes-and-their-weights).
 - **File draft** — the proposed record of an issue a progress review
   suggests, prepared through the filing skill's checks (type, priority,
   duplicates, scope) and kept with their evidence and age. It is not an issue
@@ -2860,8 +2911,8 @@ make, use the entry's term instead.
   re-reads them before it applies anything, and a stale proposal is refused
   ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
 - **Allocation owner** — the first objective matching an item at a priorities
-  level. That objective alone counts the item's start for capacity and the
-  peripheral floor; other matching objectives show it for reporting only.
+  level. That objective alone counts the item's start toward its share and the
+  *peripheral floor*; other matching objectives show it for reporting only.
   See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
 - **Progress review** — the proposed scheduled or on-demand pass that reads
   declared objectives, tracker progress and the line's records, and proposes
@@ -3076,7 +3127,9 @@ make, use the entry's term instead.
   released on every exit and judged abandoned when its owner is no longer
   alive; one submitted to Orca stays until the removal is known to have
   settled, since the owner dying or the call failing does not say whether
-  Orca finished.
+  Orca finished. It names the repository whose collection took it, the only
+  one that settles it from Orca's list, and the *worktree incarnation* it was
+  taken on, so a worktree made again at the path does not inherit it.
 - **Temporal** — the platform's date and time API, which Jig's code uses
   instead of `Date`: an `Instant` is a moment, a `ZonedDateTime` a moment
   on a named calendar, a `PlainDate` a day, a `Duration` a length, all

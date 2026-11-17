@@ -46,6 +46,22 @@ export const REPORT_CAUSES = [
 ] as const;
 export type ReportCause = (typeof REPORT_CAUSES)[number];
 
+/**
+ * The causes the steward records for a run that left no report, from what
+ * its transcript shows: its own, and `unknown`. What the wrapper or the
+ * driver observed (`deadline`, `startup`, `usage-limit`) is theirs to record.
+ */
+export const STEWARD_CAUSES = [
+  "needs-person",
+  "refused",
+  "tool-failed",
+  "environment",
+  "scope",
+  "crashed",
+  "unknown",
+] as const satisfies readonly ReportCause[];
+export type StewardCause = (typeof STEWARD_CAUSES)[number];
+
 /** Who wrote a run's report; `none` for a run that ended without one. */
 export const REPORT_WRITERS = [
   "agent",

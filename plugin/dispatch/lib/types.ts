@@ -37,7 +37,7 @@ export interface DispatchSection {
   identity: string | null;
   /** The canonical states that mean "ready to pick up". */
   states: string[];
-  /** The command a follow-up runs; `null` = no follow-ups. */
+  /** The command a follow-up runs; `null` = no follow-ups. As read from the file, the repository's own; the tick puts the default (`followupCommandOn`) in its place where the host runs the stage. */
   followupCommand: string | null;
   /** How long a claimed item may have no running session before it is reported stalled. */
   stalledAfterMs: number;
@@ -51,7 +51,7 @@ export interface DispatchSection {
   pickupWithinMs: number;
   /** The deadline a pickup's headless pass runs under (`pickup_deadline`), after which its wrapper stops it. */
   pickupDeadlineMs: number;
-  /** How long a follow-up may run before it has ended. */
+  /** How long a follow-up may run before it has ended, and how long one may wait on an arm still pending before it is a person's. */
   followupWithinMs: number;
   /** How old a follow-up claim with no done mark and no session joined to it may grow before the tick releases it, once (`followup_stale_after`). */
   followupStaleAfterMs: number;
@@ -126,6 +126,8 @@ export interface WantedItem {
   pooled?: true;
   servedPerson?: string;
   ancestorEpic?: string;
+  /** Factory-assigned epic whose authority an unassigned child inherits. */
+  factoryAncestor?: string;
   /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
   blockingFor?: string;
   batchAllowed?: boolean;

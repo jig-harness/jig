@@ -18,9 +18,9 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 35;
+const DISPATCH_DB = 36;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 5;
+const DRIVE_DB = 7;
 const REFLECT = "skills/reflect/scripts/";
 
 /** A file in a drive's per-clone state directory, of one state family. */
@@ -150,7 +150,7 @@ export const DRIVE_STATE: RecordKind[] = [
     "drive-cancelled-ci",
     `${DRIVE}lib/cancelled-recovery-state.ts`,
     "cancelled_ci",
-    "A head's cancelled required check: when the drive first saw it and whether it has claimed the head's one re-run, so the grace period and the re-run outlast a re-arm.",
+    "A head's cancelled required check: when the drive first saw it, whether it has claimed the head's one re-run, how many further re-runs a person's answer granted, which answers the last was for and whether a grant waits for a young claim to age out, so the grace period, the re-run and each grant outlast a re-arm.",
   ),
   driveTable(
     "review-round-counter",
@@ -249,7 +249,7 @@ export const DISPATCHER: RecordKind[] = [
     table: "github_owner",
     version: 1,
     meaning:
-      "Which quota owner a GitHub credential's runs are admitted against, per hashed credential and host: the hashed user or installation, whether it was verified, the login GitHub answered with, and when to ask again. Every process reads it, so a credential is asked who it is at most once a check period.",
+      "Which quota owner a GitHub credential's runs are admitted against, per hashed credential (for a stored login, hashed with the repository a run addresses when it addresses one) and host: the hashed user or installation, whether it was verified, the login GitHub answered with, and when to ask again. Every process reads it, so a credential is asked who it is at most once a check period.",
   },
   {
     name: "outbound-cost-quota",
@@ -445,7 +445,7 @@ export const MACHINE: RecordKind[] = [
     medium: "machine",
     owner: "shared/orca-guard.ts",
     at: `${ORCA_GUARD_DIR}admissions/<key>.json`,
-    version: 1,
+    version: 2,
     key: ORCA_GUARD_KEY,
     meaning:
       "Written by `jig gc` while it collects a worktree: Jig's plugin for Orca refuses an agent launch into a worktree that has one.",

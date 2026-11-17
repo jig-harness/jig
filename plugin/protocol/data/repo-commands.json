@@ -190,6 +190,20 @@
     },
     {
       "kind": "command",
+      "name": "followup.arms",
+      "setting": "followup.arms",
+      "exit": null,
+      "runBy": "followup",
+      "shell": true,
+      "given": "The follow-up's merge facts as one JSON object on standard input (`followup.ts facts` prints the same object). Each entry's `check_command` runs from the repository root, as the integration branch's configuration names it.",
+      "answers": "Exit 0 and one verdict JSON object on standard output, `{\"verdict\": \"owed\"|\"not-owed\"|\"pending\"|\"unread\", \"items\": [...], \"evidence\": \"...\"}`, at most 64 KiB. A run past its deadline, any other exit, or output that is not such an object records the arm `unread` with the reason, never `not-owed`.",
+      "commandStore": true,
+      "deadlineSec": 60,
+      "deadlineChangedBy": "JIG_FOLLOWUP_CHECK_TIMEOUT_SEC",
+      "meaning": "A repository's own follow-up arm, read-only: says whether a merge owes what that arm checks. The followup skill records its verdict through the same ledger as every other arm."
+    },
+    {
+      "kind": "command",
       "name": "descar.lint_command",
       "setting": "descar.lint_command",
       "exit": null,
@@ -397,6 +411,25 @@
       "type": "object",
       "properties": {},
       "required": [],
+      "additionalProperties": true
+    },
+    "followup-verdict": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "enum": ["owed", "not-owed", "pending", "unread"]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "string"
+        }
+      },
+      "required": ["verdict", "evidence"],
       "additionalProperties": true
     },
     "reflection-event": {

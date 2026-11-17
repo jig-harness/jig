@@ -23,33 +23,34 @@ function findings(yaml: string): Finding[] {
   return (JSON.parse(run.out) as { findings: Finding[] }).findings;
 }
 
-const aboutTemplate = (yaml: string) =>
-  findings(yaml).filter((f) => f.message.includes("workspace_name.template"));
+const aboutSection = (yaml: string) =>
+  findings(yaml).filter((f) => f.message.includes("workspace_name"));
 
-test("a template naming a variable the skill refuses is a finding", () => {
-  const found = aboutTemplate("workspace_name:\n  template: '{branch} {id}'\n");
+test("a workspace_name section is reported as no longer having an effect, not as a bad template", () => {
+  const found = aboutSection(
+    "workspace_name:\n  template: '{branch} {id}'\n  statuses:\n    ready: ''\n",
+  );
+  expect(found).toHaveLength(1);
+  expect(found[0]?.message).toContain("no longer has an effect");
+});
+
+test("a configuration without the section has no finding about it", () => {
+  expect(aboutSection("do_item:\n  arm_drive: auto\n")).toEqual([]);
+});
+
+test("a section holding only a template is reported the same way", () => {
+  const found = aboutSection("workspace_name:\n  template: '{status} {id}'\n");
+  expect(found).toHaveLength(1);
+  expect(found[0]?.message).toContain("no longer has an effect");
+});
+
+test("a section holding only statuses is reported the same way", () => {
+  const found = aboutSection(
+    "workspace_name:\n  statuses:\n    ready: 'Ready'\n",
+  );
   expect(found).toHaveLength(1);
 });
 
-test("a template over the variables the skill fills is not", () => {
-  expect(
-    aboutTemplate(
-      "workspace_name:\n  template: '{status} {id} {title} {pr}'\n",
-    ),
-  ).toEqual([]);
-});
-
-test("an empty template, which turns the renaming off, is not", () => {
-  expect(aboutTemplate("workspace_name:\n  template: ''\n")).toEqual([]);
-});
-
-test("a blank template is a finding", () => {
-  expect(aboutTemplate("workspace_name:\n  template: '   '\n")).toHaveLength(1);
-});
-
-test("a blank status text is a finding", () => {
-  const found = findings(
-    "workspace_name:\n  statuses:\n    ready: ''\n",
-  ).filter((f) => f.message.includes("workspace_name.statuses"));
-  expect(found).toHaveLength(1);
+test("a section that turned the renaming off with an empty template is reported too", () => {
+  expect(aboutSection("workspace_name:\n  template: ''\n")).toHaveLength(1);
 });

@@ -3,7 +3,9 @@
  * decision on an item of a tracker other than the forge: written through
  * the tracker as the comment a person could type there, as the user the
  * tracker's credential acts as here; refused, with why, by a tracker that
- * cannot name who wrote a comment and to the repository's factory identity.
+ * cannot name who wrote a comment, to the repository's factory identity,
+ * and on the host that owns the repository, whose tick leaves out the user a
+ * send there writes as.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -22,7 +24,7 @@ import { closeStateDb } from "../../dispatch/lib/state.ts";
 import type { Action } from "../../dispatch/lib/types.ts";
 import { reading } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
-import { ok } from "../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type {
   Tracker,
   TrackerUser,
@@ -171,12 +173,25 @@ const approve = (decision?: string): Extract<AnswerRequest, { all: false }> =>
 const plan = (
   t: Tracker,
   request = approve(DIGEST),
-  options: { as?: string; dryRun?: boolean } = {},
+  options: {
+    as?: string;
+    dryRun?: boolean;
+    identity?: string | null;
+    owner?: Outcome<boolean, "unreadable">;
+  } = {},
 ) =>
   planTrackerAnswer(context(), request, {
     as: options.as,
     dryRun: options.dryRun ?? false,
-    open: () => ok({ tracker: t, identity: "factory@example.com" }),
+    open: () =>
+      ok({
+        tracker: t,
+        identity:
+          options.identity === undefined
+            ? "factory@example.com"
+            : options.identity,
+        owner: options.owner ?? ok(false),
+      }),
   });
 
 describe("jig send … answer on an item of another tracker", () => {
@@ -248,6 +263,67 @@ describe("jig send … answer on an item of another tracker", () => {
     }
   });
 
+  it("refuses, writing nothing, on the host that owns the repository, whether or not it names a factory identity", async () => {
+    for (const identity of [null, "factory@example.com"])
+      for (const dryRun of [false, true]) {
+        const t = tracker(DANA);
+        const planned = await plan(t, approve(DIGEST), {
+          identity,
+          owner: ok(true),
+          dryRun,
+        });
+        expect(planned?.ok).toBe(false);
+        const reason =
+          planned !== null && !planned.ok ? planned.failure.reason : "";
+        expect(reason).toContain(
+          `this machine owns ${REPO}, so its tick reads the answers with the tracker credential a send here uses, which acts as Dana Lee`,
+        );
+        expect(reason).toContain(
+          "answer on the tracker as another user, or give the dispatcher a tracker user of its own",
+        );
+        expect(t.posted).toEqual([]);
+      }
+  });
+
+  it("posts when whether this machine owns the repository cannot be told, saying the tick may not read it", async () => {
+    const t = tracker(DANA);
+    const planned = await plan(t, approve(DIGEST), {
+      owner: failed(
+        "unreadable",
+        "the git remote of /src/web names no repository",
+      ),
+    });
+    if (planned === null || !planned.ok)
+      throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
+    expect(planned.value.notice).toContain(
+      `whether this machine owns ${REPO}, and so reads its answers with the tracker credential a send here uses (which acts as Dana Lee), cannot be told: the git remote of /src/web names no repository`,
+    );
+    await planned.value.write();
+    expect(t.posted).toHaveLength(1);
+  });
+
+  it("posts, from a host that does not own the repository, a writer other than the factory identity", async () => {
+    const t = tracker(DANA);
+    const planned = await plan(t, approve(DIGEST));
+    if (planned === null || !planned.ok)
+      throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
+    expect(planned.value.notice).not.toContain("cannot be told here");
+    await planned.value.write();
+    expect(t.posted).toHaveLength(1);
+  });
+
+  it("posts from a host that does not own a repository naming no factory identity, saying the tick may not read it", async () => {
+    const t = tracker(DANA);
+    const planned = await plan(t, approve(DIGEST), { identity: null });
+    if (planned === null || !planned.ok)
+      throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
+    expect(planned.value.notice).toContain(
+      "the repository names no factory identity (dispatch.identity), so whether Dana Lee is the user the tick's own tracker credential acts as on the host that owns the repository cannot be told here",
+    );
+    await planned.value.write();
+    expect(t.posted).toHaveLength(1);
+  });
+
   it("leaves a decision answered on the forge to the forge's reader", async () => {
     const forge = {
       ...NEED,
@@ -262,7 +338,8 @@ describe("jig send … answer on an item of another tracker", () => {
     const planned = await planTrackerAnswer(ctx, approve(DIGEST), {
       as: undefined,
       dryRun: false,
-      open: () => ok({ tracker: tracker(DANA), identity: null }),
+      open: () =>
+        ok({ tracker: tracker(DANA), identity: null, owner: ok(false) }),
     });
     expect(planned).toBeNull();
   });
@@ -342,6 +419,53 @@ describe("jig send … answer on another tracker's item, from the command line",
     w.env.JIG_GITHUB_GRAPHQL_URL = `http://127.0.0.1:${server.port}/graphql`;
     return { w, ops, digest: decision.digest ?? "" };
   }
+
+  it("refuses on the host that owns the repository, posting nothing", async () => {
+    const { w, ops, digest } = trackerWorld();
+    mkdirSync(join(w.home, ".jig"), { recursive: true });
+    writeFileSync(
+      join(w.home, ".jig", "dispatch.yaml"),
+      `repositories:\n  - path: ${w.repo}\n    stages: [pickup]\n`,
+    );
+    for (const extra of [["--dry-run"], ["--decision", digest]]) {
+      const r = await w.send([
+        `pickup@${REPO_OF_WORLD}#14`,
+        "answer",
+        "pickup",
+        "--approve",
+        ...extra,
+      ]);
+      expectSpawnExit(r, 1);
+      expect(r.stderr).toContain(
+        "so its tick reads the answers with the tracker credential a send here uses, which acts as maintainer",
+      );
+    }
+    expect(ops.some((o) => o.op === "TrackerComment")).toBe(false);
+    expect(w.writes()).toEqual([]);
+  });
+
+  it("says the tick may not read it when an owned checkout's remote names no repository", async () => {
+    const { w, ops } = trackerWorld();
+    const bare = join(w.root, "no-remote");
+    mkdirSync(bare, { recursive: true });
+    mkdirSync(join(w.home, ".jig"), { recursive: true });
+    writeFileSync(
+      join(w.home, ".jig", "dispatch.yaml"),
+      `repositories:\n  - path: ${bare}\n    stages: [pickup]\n`,
+    );
+    const r = await w.send([
+      `pickup@${REPO_OF_WORLD}#14`,
+      "answer",
+      "pickup",
+      "--approve",
+      "--dry-run",
+    ]);
+    expectSpawnExit(r, 0);
+    expect(r.stdout.replace(/\s+/g, " ")).toContain(
+      `the git remote of ${bare}, a checkout the dispatch file says this machine owns, names no repository`,
+    );
+    expect(ops.some((o) => o.op === "TrackerComment")).toBe(false);
+  });
 
   it("posts the answer on the item through the tracker, and nothing on the forge", async () => {
     const { w, ops, digest } = trackerWorld();

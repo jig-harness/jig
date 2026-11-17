@@ -5,9 +5,9 @@
  * (`ENVELOPE_FIELDS`, `encodeMarker`).
  *
  * It lists every forge and tracker kind that carries a hidden marker, except
- * the claims: the follow-up claim has its own chapter (`followup-claim.ts`),
- * and the other forge claims are left out while their contract moves. A
- * kind on another medium is outside the chapter, whatever it carries; a
+ * the forge claims, which have chapters of their own: the follow-up claim
+ * (`followup-claim.ts`) and the takeover, launch and merge-ready claims
+ * (`forge-claims.ts`). A kind on another medium is outside the chapter, whatever it carries; a
  * forge or tracker kind it does not list is named in `EXCLUSIONS` with why.
  */
 import { Defect } from "../../../plugin/shared/errors.ts";
@@ -24,6 +24,7 @@ import {
 } from "../../../plugin/shared/records/registry.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { table } from "../markdown.ts";
+import { checkHeldPhrases } from "../held.ts";
 import { s } from "../../../plugin/shared/shapes.ts";
 import {
   ENVELOPE_SHAPE,
@@ -36,6 +37,7 @@ import {
   CLAIM_OUTCOME_PAYLOAD_SHAPE,
 } from "../../../plugin/shared/records/marker-shapes.ts";
 import { REFLECTION_EVENT_SHAPE } from "../../../plugin/skills/reflect/scripts/lib/event-shapes.ts";
+import { FOOTPRINT_SHAPE } from "../../../plugin/shared/footprint.ts";
 import {
   LEDGER_PAYLOAD_SHAPE,
   LEDGER_PAYLOAD_FIELDS,
@@ -53,6 +55,12 @@ function enveloped(name: string, shape: Parameters<typeof s.intersection>[1]) {
 
 /** Stable kinds carrying JSON documents; other marker grammars are explicitly listed below. */
 export const MARKER_SCHEMAS = {
+  "tracker-footprint": [
+    {
+      name: "tracker-footprint",
+      shape: enveloped("tracker-footprint", FOOTPRINT_SHAPE),
+    },
+  ],
   "drive-ledger": [
     {
       name: "drive-ledger",
@@ -115,7 +123,7 @@ const LABEL = "a label on the pull request, not a hidden marker";
 const ITEM =
   "the item's own assignee and state on the tracker, not a hidden marker";
 const FORGE_CLAIM =
-  "a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form";
+  "a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md)";
 
 /** The forge and tracker kinds the chapter does not list, each with why. */
 export const EXCLUSIONS: Readonly<Record<string, string>> = {
@@ -375,6 +383,13 @@ export const COMMENT_MARKERS: Chapter = {
     ...Object.values(MARKER_SCHEMAS).flat(),
   ],
   id: "comment-markers",
+  check: (root) =>
+    checkHeldPhrases(root, "comment-markers", [
+      {
+        file: "plugin/skills/do-item/SKILL.md",
+        text: `<!-- ${recordKind("do-item-pr-association")?.markers?.[0]}: <PR URL> -->`,
+      },
+    ]),
   title: "Hidden comment markers on the forge and the tracker",
   summary:
     "The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means.",

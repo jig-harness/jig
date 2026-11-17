@@ -3,8 +3,8 @@
  * How well the repository's `.config/jig.yaml` fits the repository and this
  * plugin version. Reports, each with a stable id:
  *
- *   - fields the schema does not know, refuses, or reads only under an older
- *     name, and values of the wrong shape (`config-schema.yaml`);
+ *   - fields the schema does not know, refuses, has retired, or reads only
+ *     under an older name, and values of the wrong shape (`config-schema.yaml`);
  *   - what the skills' own validation rejects;
  *   - derivations that fail: a command whose program or script does not
  *     exist, a configured path that is missing, an integration branch that
@@ -92,10 +92,10 @@ import {
   titlePatternFindings,
 } from "./lib/trunk-fit.ts";
 import { policyFindings } from "./lib/pr-policy-fit.ts";
+import { pathFindings } from "./lib/path-fit.ts";
 import { ciPolicyFindings } from "./lib/ci-policy-fit.ts";
 import { reviewerEvidenceRule, reviewerFindings } from "./lib/reviewer-fit.ts";
 import {
-  configuredAt,
   trackedNeeds,
   newerInstalledVersion,
   onDisk,
@@ -476,24 +476,6 @@ function commandFindings(
   }));
 }
 
-/** A configured path that does not exist, when the field expects it to. */
-function pathFindings(field: Field, value: unknown, root: string): Finding[] {
-  if (!field.exists || field.exists === "machine") return [];
-  if (typeof value !== "string" || value.trim() === "") return [];
-  if (value.startsWith("~")) return [];
-  if (existsSync(configuredAt(root, value))) return [];
-  const required = field.exists === "required";
-  return [
-    {
-      id: `derivation:${field.path}`,
-      severity: required ? "error" : "warning",
-      message: `${field.path}: ${value} does not exist${
-        required ? `; ${field.read_by.join(", ")} refuse(s) to run` : ""
-      }`,
-    },
-  ];
-}
-
 /** The derivation findings of one entry of a list field. */
 function listEntryFindings(
   field: Field,
@@ -512,10 +494,24 @@ function listEntryFindings(
   if (
     typeof field.items === "object" &&
     "fields" in field.items &&
-    field.items.fields.command === "command" &&
     isRecord(entry)
-  )
-    return commandFindings(`${field.path}[${i}].command`, entry.command, root);
+  ) {
+    const { fields } = field.items;
+    return Object.entries(fields).flatMap(([key, spec]) => {
+      const type = typeof spec === "string" ? spec : spec.type;
+      const at = `${field.path}[${i}].${key}`;
+      if (type === "command") return commandFindings(at, entry[key], root);
+      // A path inside a list entry names a file its readers need.
+      if (type === "path")
+        return pathFindings(
+          { ...field, path: at, exists: "required" },
+          entry[key],
+          root,
+          true,
+        );
+      return [];
+    });
+  }
   return [];
 }
 

@@ -536,24 +536,31 @@ waited.
 
 ### 58. Declared priorities, a progress review and the overview
 
-A person sees individual failures without seeing whether their goals are
-advancing. [The design](priorities-and-overview.md) defines one priorities record
-at site, repository and individual levels. A reproducible shortlist carries
-each epic's rank to its children. A progress review proposes systematic fixes
-and never acts, and an overview joins the facts inside the existing dashboard.
-Urgent issues stay visible, assigned bugs retain their priority, and a
-minimum share keeps peripheral goals moving. The overview pairs each issue
-with its pull request and shows the decisions owed, with confirmed actions
-made by the person's browser, phone unlock and no phone merge.
+A person can see each failure on its own, but not whether the team's goals
+are moving. With this item, a team writes its goals down once, and Jig
+ranks the open work against them. Urgent issues always come first, and
+high-priority bugs come next. The team's core goals, tactical goals,
+peripheral goals and other bugs share the remaining starts by weight; work
+outside those lanes stays visible but unallocated. A small weekly floor keeps
+the peripheral goals moving. The
+same inputs always give the same ranked list. A person picks from that
+list, and Jig reports the list before it lets the list decide what starts.
 
-The person reviews the design before implementation. Build the record and
-ranker, then trial the progress review on Jig and a consumer repository,
-then the overview after its visual design round. Browser actions wait for
-the browser write path to merge and for device probes; site-level records arrive with
-the optional hub. Done when equal input snapshots reproduce the shortlist
-and every Urgent issue appears in each review. The overview must explain
-progress and waiting from structured facts, and browser actions must preserve
-the person's authority. The trial precedes new M9 audit criteria.
+A scheduled review reads what the dispatcher and its sessions did, and
+proposes fixes for problems that repeat. It never acts on its own. One
+overview in Jig's dashboard shows the goals, each group of issues beside
+its pull requests, what is running and what waits for a person. A person
+confirms each action from the overview in their own browser. A phone can do
+every action except a merge; its optional local unlock is on by default.
+
+[The design](priorities-and-overview.md) says how it works. The goals file and the ranking
+come first, as a report. Then a host can opt in to let the ranking decide
+what starts. The review runs as a trial on Jig and one other repository,
+then the overview and its actions follow. Done when the same inputs always
+give the same list, and every review lists every Urgent issue. The overview
+must explain progress and waiting from recorded facts.
+
+Its build steps are issues under epic #1177, in the design's order.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
@@ -668,10 +675,6 @@ order, after `jig gc`'s fixes (#990, #991):
   from `drive.ts` at its stop, built on its passes' round reports. It is
   kept on the launch record and the outcome log, and shown on the dashboard
   and by `jig ask`.
-- **The steward's `cause` record** for a run that left no report, read from
-  an excerpt of its transcript, whose copy is kept only for such runs and
-  until seven days after the cause is applied, and at the latest until the
-  receipts retention ends.
 - **Tabs close on every exit**, a park and a failure included, once the
   report and the cause record hold what a tab showed; the tick ends what a
   run whose wrapper died left (`endRun`).
@@ -705,13 +708,7 @@ dispatcher when an agent's status changes, refuses a launch into a worktree
 opens a panel on the person's inbox, where a park is answered.
 [design/orca-integration.md](orca-integration.md) has how it works, in
 classes built in order. Still open, one pull request per step, in
-parallel where nothing orders them: the launch guard admission names only
-a worktree path today, and the step makes it record the repository that
-owns the worktree and the worktree's incarnation
-([#1201](https://github.com/jig-harness/jig/issues/1201)); a spike on
-binding a launch to the dispatcher's chosen account through the
-`agent.launch.before` hook, for Claude Code and for Codex
-([#1306](https://github.com/jig-harness/jig/issues/1306)); the
+parallel where nothing orders them: the
 dispatcher's account cap reading each account's usage from
 `orca account usage --json`, once Orca offers it
 ([#1307](https://github.com/jig-harness/jig/issues/1307)); and, in the
@@ -726,16 +723,12 @@ browser. Orca stays
 optional: every view of the dashboard works in any browser, and each thing
 the plugin adds has a Herdr or plain-text equivalent. Also open: what Jig
 asks of Orca, filed by a person, each with its pull request offered: usage
-per account from the command line, a phone
+per account from the command line, an account named for each agent
+launch, a phone
 push only when an agent needs input, and a hook before a workspace's
 removal.
 
-Done when a launch guard admission is honoured only for the repository
-that owns it and the worktree incarnation it was taken on, so another
-repository's list cannot release it and a worktree recreated at the same
-path inherits no launch block; the spike's answer is recorded and, where a
-launch binds to its account, the dispatcher starts pickups through Orca on
-the account it chose, or, where it does not, the design records why; the dispatcher's account cap reads `orca account
+Done when the dispatcher's account cap reads `orca account
 usage --json` where Orca has it, an `unavailable` row holding its account;
 the panel shows a parked decision's options and choice as `jig ask` and
 the dashboard do, and a Send settles it; and a merge-now entry in the
@@ -875,11 +868,10 @@ states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
 repository supplies, on the follow-up claim and its result, on rule
 matchers in configuration, and the provisional chapters on addresses and the
-verbs of `jig send` and on tracker facets
+verbs of `jig send`, on forge claims and on tracker facets
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
-Open, in order: the stable chapters' restatements as links
-and the other provisional chapters.
+Open, in order: the other provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the
@@ -1250,9 +1242,6 @@ Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion.
-- **M7**:
-  - a skill that runs the post-merge stage M7 states, for any repository (the
-    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;

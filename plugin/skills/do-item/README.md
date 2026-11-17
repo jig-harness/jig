@@ -134,6 +134,13 @@ racing inside that re-read can both pass; the
 [dispatcher](../../README.md#the-dispatcher) reports an item two running
 sessions work on.
 
+A factory epic passes its unassigned child to `claim --factory-ancestor <epic-key>`.
+The claim reads `dispatch.identity` from the repository's default branch and
+checks that epic's live assignment, writer authority and ancestry. It assigns
+the child to the credential identity, while preserving the epic's assignment.
+A missing default-branch factory identity refuses the claim. The option cannot
+be combined with the served-person options.
+
 A dispatcher pickup serving a named person uses `claim --for <identity>`.
 It verifies that a repository writer made the assignment, keeps the person
 as the sole assignee, and moves the item in progress. With
@@ -176,14 +183,12 @@ repository, its driver is an agent, every blocker is finished) states them as
 one command, `do_item.preflight_command`. Every claim runs it first, before
 the claim lock and before anything is written, so `do-item`, `work-batch` and
 a dispatched pickup all honour it without any of them remembering to call it.
-It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
-3 refuses it: the claim exits 3, nothing is written, and the first line the
-command printed is the reason. Any other exit, or a run past 60 seconds,
-refuses too. The command text is read from the default branch, so a branch cannot
-change the command its own claim runs; the command runs in the current
-checkout, so a program it names inside the repository (`bun
-scripts/start-rules.ts`) is the branch's own copy, and the rules are only as
-trusted as that program: a branch can bypass a rule by editing a script the command runs, so name an executable that is trusted independently of the branch, such as one installed on the machine. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
+The [repository commands chapter](../../protocol/repo-commands.md) gives
+its input, exits, deadline and command-store rules. The command text comes
+from the default branch, but a repository-relative program it names is the
+branch's copy: name an executable trusted independently of the branch when
+the start rule must hold against a branch editing its own scripts.
+Telling the agent to proceed does not clear a refusal: the
 item or the command changes. A dispatched pickup the command refused shows
 in the dispatcher's queue as held, with the reason, until the item changes.
 
@@ -325,6 +330,22 @@ skill never moves an item into or out of `blocked`, and its claim refuses
 an item there. The [configuration reference](../../CONFIGURATION.md#issue_tracker)
 has the rules.
 
+## Predicted paths
+
+You can inspect an item's predicted paths with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>"`
+or append a prediction with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>" --input "<file>"`.
+Run the script from the consumer repository through Bun, using its path
+under the installed plugin directory (`<plugin-root>` above). The input
+is JSON with `source` (`pickup`, `scout`, `planner` or `filing`), `base`
+(the commit read), `paths` and `areas`; it may include the matching `key`
+and a claiming session as `pickup`. The command generates the record's
+writer and time, and rejects invalid input before writing. The standalone
+read chooses the newest trusted prediction; it does not assert that a
+pickup's claim and session are still running. With no prediction, it uses
+the configured change-area catalog's labels, otherwise reports unknown.
+See [the footprint record](../../RECORDS.md#the-registry-and-the-envelope)
+for bounds, reuse and failure behavior.
+
 ## Continuing work
 
 Invoke the same skill with the issue key again. It refreshes tracker state,
@@ -349,11 +370,9 @@ board with custom columns maps these stages onto them in
 nothing in another runtime changes: outside Orca it makes no call, and an
 Orca call that fails only warns.
 
-In Herdr as well as Orca, the workspace is renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
-implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
-a follow-up step and nothing sets it yet), `{id} {status} {title} {pr}` by
-default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the
-template, and `template: ""` turns the renaming off.
+The workspace keeps its name throughout: the skill never renames it, and
+where the work stands is shown by the board card, the workspace's comment
+and the pull request.
 
 It also arms the drive in a terminal tab of its own in the workspace, titled
 `drive #<PR>`, so the drive outlives the session, a person can watch its

@@ -33,6 +33,7 @@
  *   the walk reports the limit once (`served.ts`).
  */
 import { coalesce } from "../../../shared/outbound/coalesce.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
 import { ended, within } from "./bounded.ts";
 import type { FacetBound } from "./tracker-facets.ts";
@@ -127,14 +128,17 @@ export interface ServedView {
   held(key: string): HeldIssue | undefined;
   /** The parent the queue read carried with its description, by the parent's key. */
   parentBody(key: string): QueueParent | undefined;
-  /** `read` once per `key` in the tick, every repository sharing the view waiting on the same read. */
-  once<T>(key: string, read: () => Promise<T>): Promise<T>;
+  /** `read` once per key with the shared reading's bound, independently of caller projections. */
+  once<T>(key: string, read: (bound?: FacetBound) => Promise<T>): Promise<T>;
   /** Keep the reading for the next tick. */
   save(): void;
 }
 
 /** The views of one tick, shared by its repositories. */
-export type ServedViews = Map<string, Promise<ServedView>>;
+export type ServedViews = Map<string, Promise<ServedView>> & {
+  /** The whole tick's bound, independent of a caller's facet-read allowance. */
+  readonly bound?: FacetBound;
+};
 
 function snapshotOf(value: unknown): Snapshot | null {
   if (typeof value !== "object" || value === null) return null;
@@ -177,15 +181,28 @@ const blockedStates = (tracker: Tracker): CanonicalState[] =>
 async function readQueue(
   tracker: Tracker,
   identity: string,
+  bound?: FacetBound,
 ): Promise<{ open: HeldIssue[]; progress: PoolIssue[] }> {
+  const options =
+    bound === undefined
+      ? undefined
+      : { signal: bound.signal, deadline: bound.deadline };
+  const bounded = <T>(read: Promise<T>): Promise<T> =>
+    bound === undefined ? read : within(read, bound);
   if (tracker.queueIssues === undefined) {
-    const open = await tracker.assignedIssues(identity, [
-      ...OPEN,
-      ...blockedStates(tracker),
-    ]);
-    const progress = await tracker.assignedIssues(
-      identity,
-      workingStates(tracker),
+    const open = await bounded(
+      tracker.assignedIssues(
+        identity,
+        [...OPEN, ...blockedStates(tracker)],
+        options,
+      ),
+    );
+    if (ended(bound))
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
+    const progress = await bounded(
+      tracker.assignedIssues(identity, workingStates(tracker), options),
     );
     return {
       open: open.map((issue) => ({
@@ -200,11 +217,13 @@ async function readQueue(
     };
   }
   const working = workingStates(tracker);
-  const read = await tracker.queueIssues(identity, [
-    ...OPEN,
-    ...blockedStates(tracker),
-    ...working,
-  ]);
+  const read = await bounded(
+    tracker.queueIssues(
+      identity,
+      [...OPEN, ...blockedStates(tracker), ...working],
+      options,
+    ),
+  );
   const open: HeldIssue[] = [];
   const progress: PoolIssue[] = [];
   for (const { relations, parent, ...issue } of read)
@@ -371,6 +390,32 @@ interface Plan {
   unavailableCause?: unknown;
 }
 
+/** Read the change probe only while the tick can still use its result. */
+async function changedSince(
+  probe: NonNullable<Tracker["changedSince"]>,
+  identity: string,
+  kept: Snapshot,
+  bound?: FacetBound,
+) {
+  if (ended(bound))
+    return Promise.reject(
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
+  const reading = probe(
+    {
+      since: kept.since,
+      ...(kept.watermarks === undefined ? {} : { watermarks: kept.watermarks }),
+      ...(kept.boundaryRows === undefined
+        ? {}
+        : { boundaryRows: kept.boundaryRows }),
+      identity,
+      keys: watched(kept),
+    },
+    bound?.signal,
+  );
+  return bound === undefined ? await reading : await within(reading, bound);
+}
+
 /** Whether the kept reading serves, needs part re-read, or must be taken whole. */
 async function plan(
   tracker: Tracker,
@@ -378,6 +423,7 @@ async function plan(
   kept: Snapshot | null,
   nowMs: number,
   headroom: boolean,
+  bound?: FacetBound,
 ): Promise<Plan> {
   const full: Plan = {
     source: "full",
@@ -396,15 +442,12 @@ async function plan(
       since: kept.since,
     };
   if (tracker.changedSince === undefined) return full;
-  const answer = await tracker.changedSince({
-    since: kept.since,
-    ...(kept.watermarks === undefined ? {} : { watermarks: kept.watermarks }),
-    ...(kept.boundaryRows === undefined
-      ? {}
-      : { boundaryRows: kept.boundaryRows }),
+  const answer = await changedSince(
+    tracker.changedSince,
     identity,
-    keys: watched(kept),
-  });
+    kept,
+    bound,
+  );
   if (!answer.complete) return full;
   if (answer.keys.length === 0)
     return {
@@ -454,7 +497,10 @@ function offlineReason(p: Plan): unknown | null {
 
 function factReader(p: Plan, gate: Gate): ServedView["once"] {
   const reads = new Map<string, Promise<unknown>>();
-  return <T>(key: string, read: () => Promise<T>): Promise<T> =>
+  return <T>(
+    key: string,
+    read: (bound?: FacetBound) => Promise<T>,
+  ): Promise<T> =>
     coalesce(reads, key, () =>
       p.source === "offline" || ended(p.bound)
         ? Promise.reject(
@@ -462,7 +508,10 @@ function factReader(p: Plan, gate: Gate): ServedView["once"] {
           )
         : p.bound === undefined
           ? gate(read)
-          : within(gate(read), p.bound),
+          : within(
+              gate(() => read(p.bound)),
+              p.bound,
+            ),
     ) as Promise<T>;
 }
 
@@ -659,16 +708,35 @@ async function openView(
   const save = (s: Snapshot) =>
     cache.set(key, { ...s, ...(shape === undefined ? {} : { shape }) });
   let p: Plan;
+  if (ended(options.bound))
+    return failedView(
+      tracker,
+      kept,
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
   try {
-    p = await plan(tracker, identity, kept, options.nowMs, options.headroom);
+    p = await plan(
+      tracker,
+      identity,
+      kept,
+      options.nowMs,
+      options.headroom,
+      options.bound,
+    );
     if (options.bound !== undefined) p.bound = options.bound;
   } catch (error) {
     return failedView(tracker, kept, error);
   }
+  if (ended(p.bound))
+    return failedView(
+      tracker,
+      kept,
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
   if (p.source === "kept" || p.source === "unchanged")
     return assemble(tracker, p, undefined, save, options.nowMs);
   try {
-    const queue = await readQueue(tracker, identity);
+    const queue = await readQueue(tracker, identity, p.bound);
     return assemble(tracker, p, queue, save, options.nowMs);
   } catch (error) {
     return failedView(tracker, kept, error);

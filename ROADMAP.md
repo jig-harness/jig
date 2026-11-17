@@ -155,24 +155,29 @@ that a person answered.
 
 ### 58. Declared priorities, a progress review and the overview
 
-A person sees individual failures without seeing whether their goals are
-advancing. [The design](design/priorities-and-overview.md) defines one priorities record
-at site, repository and individual levels. A reproducible shortlist carries
-each epic's rank to its children. A progress review proposes systematic fixes
-and never acts, and an overview joins the facts inside the existing dashboard.
-Urgent issues stay visible, assigned bugs retain their priority, and a
-minimum share keeps peripheral goals moving. The overview pairs each issue
-with its pull request and shows the decisions owed, with confirmed actions
-made by the person's browser, phone unlock and no phone merge.
+A person can see each failure on its own, but not whether the team's goals
+are moving. With this item, a team writes its goals down once, and Jig
+ranks the open work against them. Urgent issues always come first, and
+high-priority bugs come next. The team's core goals, tactical goals,
+peripheral goals and other bugs share the remaining starts by weight; work
+outside those lanes stays visible but unallocated. A small weekly floor keeps
+the peripheral goals moving. The
+same inputs always give the same ranked list. A person picks from that
+list, and Jig reports the list before it lets the list decide what starts.
 
-The person reviews the design before implementation. Build the record and
-ranker, then trial the progress review on Jig and a consumer repository,
-then the overview after its visual design round. Browser actions wait for
-the browser write path to merge and for device probes; site-level records arrive with
-the optional hub. Done when equal input snapshots reproduce the shortlist
-and every Urgent issue appears in each review. The overview must explain
-progress and waiting from structured facts, and browser actions must preserve
-the person's authority. The trial precedes new M9 audit criteria.
+A scheduled review reads what the dispatcher and its sessions did, and
+proposes fixes for problems that repeat. It never acts on its own. One
+overview in Jig's dashboard shows the goals, each group of issues beside
+its pull requests, what is running and what waits for a person. A person
+confirms each action from the overview in their own browser. A phone can do
+every action except a merge; its optional local unlock is on by default.
+
+[The design](design/priorities-and-overview.md) says how it works. The goals file and the ranking
+come first, as a report. Then a host can opt in to let the ranking decide
+what starts. The review runs as a trial on Jig and one other repository,
+then the overview and its actions follow. Done when the same inputs always
+give the same list, and every review lists every Urgent issue. The overview
+must explain progress and waiting from recorded facts.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
@@ -226,15 +231,16 @@ is best-effort: a restored session, a hook that fails and a plugin that
 is down are not covered. Orca's status bar shows how many questions wait on a
 person, and how many pull requests are ready to merge once the plugin's
 line carries them. A panel lists
-what waits on that person, who answers a parked question there. Next,
-the guard will tell apart repositories that share a worktree folder, and
-a worktree recreated at the same path. A person will pick a parked
+what waits on that person, who answers a parked question there. The guard
+tells apart repositories that share a worktree folder, and worktrees
+recreated at the same path. Next, a person will pick a parked
 decision's answer in the panel as on the dashboard, and merge a pull
 request that is ready to merge with one click. A command will open the
 dashboard in Orca's own browser for the board and each piece of work.
 The dispatcher will read each account's usage from Orca's command line
-once Orca offers it. A trial will find whether a launch can be bound to
-the account the dispatcher chose. The plugin is Orca-bound.
+once Orca offers it. Once Orca lets a launch name its account, the
+dispatcher will start pickups through Orca on the account it chose. The
+plugin is Orca-bound.
 
 ## Next
 
