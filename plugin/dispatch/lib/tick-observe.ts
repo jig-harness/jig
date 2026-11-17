@@ -89,6 +89,7 @@ import {
   type SharedContext,
 } from "./shared-launches.ts";
 import { observeContention } from "./sources/contention.ts";
+import type { FilesObservation } from "./sources/pr-files.ts";
 import { type HolderReadings, readHolders } from "./sources/doctor.ts";
 import type { readDrives } from "./sources/ledgers.ts";
 import { batchSafePickups } from "./queue-batch-areas.ts";
@@ -204,6 +205,8 @@ export interface RepoObservation {
   join: JoinTargets;
   sessions: SessionsReport;
   serialized: Contention;
+  /** Changed-file paths and their freshness, kept in memory for planning. */
+  prFiles?: FilesObservation;
   /** The pull requests a person's hold label keeps every stage off. */
   held: Set<number>;
   /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
@@ -451,7 +454,7 @@ export async function observeRepo(
   );
 
   const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
-  const serialized = await timer.time("observe", () =>
+  const { serialized, prFiles } = await timer.time("observe", () =>
     pool.run(async () => {
       const skipped = await optionalSkipped(reads, context.bound);
       const threads = boundedThreads(
@@ -542,6 +545,7 @@ export async function observeRepo(
     join,
     sessions,
     serialized,
+    ...(prFiles === undefined ? {} : { prFiles }),
     held,
     board,
     ...(holders === undefined ? {} : { holders }),

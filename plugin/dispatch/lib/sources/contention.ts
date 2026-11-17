@@ -16,7 +16,12 @@ import {
   readContention,
   UNREAD_CONTENTION,
 } from "../contention.ts";
-import { defaultBranchFile, pullRequestFiles } from "../forge.ts";
+import { defaultBranchFile, type ListedPr } from "../forge.ts";
+import {
+  type FilesObservation,
+  observePrFiles,
+  summarizePrFiles,
+} from "./pr-files.ts";
 import type { ReadRecord } from "../launches.ts";
 import { CUT_AT_BOUND, ended, heldRead, type TickBound } from "./bounded.ts";
 import { settleHolds } from "../serial-holds.ts";
@@ -27,6 +32,7 @@ import { isoFromMs } from "../../../shared/time.ts";
 export interface ForgeView {
   ok: boolean;
   drives: readonly DrivenPr[];
+  open: readonly ListedPr[];
   merged: ReadonlyArray<{ number: number }>;
   created: ReadonlyMap<number, string>;
 }
@@ -115,13 +121,24 @@ export async function observeContention(
   threads: (pr: number) => Promise<Outcome<number>>,
   skipped: string | null = null,
   bound?: TickBound,
-): Promise<Contention> {
-  if (!forge.ok) return UNREAD_CONTENTION;
+): Promise<{ serialized: Contention; prFiles?: FilesObservation }> {
+  if (!forge.ok) return { serialized: UNREAD_CONTENTION };
   const merged = new Set(forge.merged.map((m) => m.number));
   const drives = forge.drives.filter((d) => !merged.has(d.number));
+  const prFiles = await observePrFiles(
+    repo.slug,
+    forge.open,
+    nowMs,
+    skipped,
+    bound,
+  );
+  report.prFiles = summarizePrFiles(prFiles.evidence);
   const path = configuredCatalog(values);
   if (skipped !== null && path !== null)
-    return skippedContention(repo, report, drives, path, skipped, bound);
+    return {
+      serialized: skippedContention(repo, report, drives, path, skipped, bound),
+      prFiles,
+    };
   const where = `${repo.slug}@${repo.defaultBranch}:${path ?? ""}`;
   const contention = await readContention(
     {
@@ -143,21 +160,19 @@ export async function observeContention(
             )
           : relative;
       },
-      files: (pr) =>
-        heldRead(bound, "the pull request's files were read", () =>
-          pullRequestFiles(repo.slug, pr),
-        ),
+      files: prFiles.files,
       threads,
     },
   );
   if (path !== null) report.records.push(catalogRecord(where, contention));
   if (contention.report !== null) report.serialized = contention.report;
-  if (forge.owner === false) return contention;
+  const observed = { serialized: contention, prFiles };
+  if (forge.owner === false) return observed;
   for (const reason of settleHolds(repo.slug, contention, isoFromMs(nowMs)))
     report.unplaced.push({
       target: "the outcome log",
       record: "runtime",
       reason,
     });
-  return contention;
+  return observed;
 }
