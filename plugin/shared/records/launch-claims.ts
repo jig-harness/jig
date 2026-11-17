@@ -45,7 +45,6 @@
  * instance (`dispatch/lib/shared-launches.ts`): a public comment names no
  * machine, and the host that made a claim recognises it as its own.
  */
-import { isRecord } from "../guards.ts";
 import { decodeMarker } from "./envelope.ts";
 import {
   FOLLOWUP_OUTCOMES,
@@ -70,11 +69,20 @@ import {
   type ReportCause,
   type ReportWriter,
 } from "../closing-report.ts";
-import { matches } from "../shapes.ts";
+import { matches, s } from "../shapes.ts";
 import { FOLLOWUP_RUN_SHAPE } from "./followup-shapes.ts";
+import {
+  LAUNCH_ATTEMPT_SHAPE,
+  LAUNCH_END_SHAPE,
+  type LAUNCH_END_STATE_SHAPES,
+  LAUNCH_END_TIME_SHAPE,
+  LAUNCH_PAYLOAD_FIELDS,
+  LAUNCH_PAYLOAD_SHAPE,
+  LAUNCH_RECORD_ID_PATTERN,
+} from "./forge-claim-shapes.ts";
 
 /** The shape of a dispatcher's launch record id (`dispatch/lib/launches.ts`). */
-export const LAUNCH_RECORD_ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
+export const LAUNCH_RECORD_ID = new RegExp(LAUNCH_RECORD_ID_PATTERN);
 
 export const FOLLOWUP_MARKER = "<!-- jig-dispatch-followup -->";
 /** The follow-up marker's kind in the records registry. */
@@ -102,33 +110,23 @@ const textOrNull = (v: unknown): string | null =>
 const flagOrNull = (v: unknown): boolean | null =>
   typeof v === "boolean" ? v : null;
 
-/** The answers a launch that ended may carry: none, or a follow-up's. */
-const OUTCOMES: ReadonlySet<unknown> = new Set([
-  undefined,
-  null,
-  ...Object.keys(FOLLOWUP_OUTCOMES.tick),
-]);
+/** Why each end state's form does not read, when an end in that state does not fit it. */
+const END_STATE_FAULTS = {
+  died: "its end reason or execution evidence does not read",
+  ended: "its end's exit or outcome does not read",
+} as const satisfies Record<keyof typeof LAUNCH_END_STATE_SHAPES, string>;
 
-/** Why a launch's end as written is not one, or `null` when it is. */
+/**
+ * Why a launch's end as written is not one, or `null` when it is: it fits
+ * `LAUNCH_END_SHAPE`, and otherwise the reason names the part that does not.
+ */
 function endFault(end: unknown): string | null {
-  if (end === undefined) return null;
-  if (!isRecord(end) || !isText(end.at)) return "its end has no time";
-  if (end.state === "died")
-    return isText(end.reason) &&
-      (end.executed === undefined || end.executed === false)
-      ? null
-      : "its end reason or execution evidence does not read";
-  return end.state === "ended"
-    ? endedFault(end)
+  if (end === undefined || matches(LAUNCH_END_SHAPE, end)) return null;
+  if (!matches(LAUNCH_END_TIME_SHAPE, end)) return "its end has no time";
+  const { state } = end as Record<string, unknown>;
+  return typeof state === "string" && Object.hasOwn(END_STATE_FAULTS, state)
+    ? END_STATE_FAULTS[state as keyof typeof END_STATE_FAULTS]
     : "its end is neither ended nor died";
-}
-
-/** Why a launch's end as ended is not one, or `null` when it is. */
-function endedFault(end: Record<string, unknown>): string | null {
-  const exitOk = end.exit === null || Number.isSafeInteger(end.exit);
-  return exitOk && OUTCOMES.has(end.outcome)
-    ? null
-    : "its end's exit or outcome does not read";
 }
 
 /** The closing report's writer and cause a launch's end carries, those that read; none on an older end. */
@@ -385,29 +383,44 @@ function followupSays(r: ClaimRecord, pr: number): ClaimSays {
 
 // ------------------------------------------------------------------- launch
 
-/** What a launch claim's payload holds, each field with what it says when it does not. */
-const LAUNCH_FIELDS: ReadonlyArray<
-  readonly [(p: Record<string, unknown>) => boolean, string]
-> = [
-  [
-    (p) => p.action === "rearm" || p.action === "takeover",
-    "its action is neither a re-arm nor a takeover",
-  ],
-  [(p) => isRecordId(p.record), "it names no launch record"],
-  [(p) => textOrNull(p.host) !== null, "it names no host"],
-  [(p) => isText(p.facts), "it names no ledger facts"],
-  [(p) => p.change === undefined || isText(p.change), "its change is not text"],
-  [
-    (p) =>
-      p.earlier === undefined ||
-      (Array.isArray(p.earlier) && p.earlier.every(isText)),
-    "its earlier changes are not a list of text",
-  ],
-  [
-    (p) => p.owner === undefined || flagOrNull(p.owner) !== null,
-    "its owner is neither true nor false",
-  ],
-];
+/**
+ * What a launch claim's payload says when one of its fields does not fit its
+ * shape (`LAUNCH_PAYLOAD_FIELDS`), in the order the reader reports the first;
+ * the end's reason is `endFault`'s.
+ */
+const LAUNCH_FIELD_FAULTS = {
+  action: "its action is neither a re-arm nor a takeover",
+  record: "it names no launch record",
+  host: "it names no host",
+  facts: "it names no ledger facts",
+  change: "its change is not text",
+  earlier: "its earlier changes are not a list of text",
+  owner: "its owner is neither true nor false",
+} as const satisfies Partial<
+  Record<keyof typeof LAUNCH_PAYLOAD_FIELDS, string>
+>;
+
+/** Each field's shape on its own, as the object around it reads it: absent where it is optional. */
+const LAUNCH_FIELD_CHECKS = Object.entries(LAUNCH_FIELD_FAULTS).map(
+  ([name, fault]) => ({
+    fits: s.object({
+      [name]: LAUNCH_PAYLOAD_FIELDS[name as keyof typeof LAUNCH_FIELD_FAULTS],
+    }),
+    fault,
+  }),
+);
+
+/**
+ * Why a launch claim's payload does not read, or `null` when it fits
+ * `LAUNCH_PAYLOAD_SHAPE`: the first field that does not, else its end.
+ */
+function payloadFault(p: Record<string, unknown>): string | null {
+  if (matches(LAUNCH_PAYLOAD_SHAPE, p)) return null;
+  const field = LAUNCH_FIELD_CHECKS.find((c) => !matches(c.fits, p));
+  return (
+    field?.fault ?? endFault(p.end) ?? "its record does not read as a launch"
+  );
+}
 
 /** Why a read record is not a launch claim on `target`, or `null` when it is one. */
 function launchFault(
@@ -416,11 +429,11 @@ function launchFault(
 ): string | null {
   if (r.key !== DRIVE_KEY)
     return `its record claims ${JSON.stringify(r.key)}, not a drive's launch`;
-  if ((r.generation ?? 0) < 1) return "its record names no attempt";
+  if (!matches(LAUNCH_ATTEMPT_SHAPE, r.generation))
+    return "its record names no attempt";
   if (target !== null && r.payload.pr !== target.number)
     return `its record names pull request #${String(r.payload.pr)}`;
-  const fault = LAUNCH_FIELDS.find(([holds]) => !holds(r.payload));
-  return fault === undefined ? endFault(r.payload.end) : fault[1];
+  return payloadFault(r.payload);
 }
 
 /** The launch claim as a kind of forge claim. A trusted one that does not read is reported, and holds nothing it could not name. */

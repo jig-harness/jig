@@ -1650,6 +1650,13 @@ make, use the entry's term instead.
   done) or *not owed* (with the evidence that settled it). "Nothing found" is
   not evidence
   ([M7](modules/M7-pr-lifecycle-review/README.md#core-pieces)).
+- **Follow-up arm** — one class of obligation the *post-merge stage* checks,
+  such as the tracker item, deferred findings or live verification, ending
+  with one verdict: owed (done or filed), not owed (with a checkable fact),
+  pending (it settles by itself, such as a rollout in progress) or unread.
+  The plugin's [followup](plugin/skills/followup/README.md) skill runs a
+  fixed list of core arms and will not end a run while one has no verdict;
+  before the merge it runs them as a preview that carries out nothing.
 - **Ops-pending** — the tracker state a merged item waits in while a step a
   person performs outside the code (a setting, a host change, a live check)
   is still owed. The *post-merge stage* moves a merged item there instead
@@ -2010,6 +2017,17 @@ make, use the entry's term instead.
   a comment only if none exists, so the claim is read back after posting and
   checked again before each act it guards
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Launch claim** — the *forge claim* a host dispatching a repository
+  posts on a pull request for one launch of its drive (a re-arm, a
+  *re-drive*, an arm or a takeover), on the attempt after the latest, so no
+  other host launches it twice; once the launch ended, the same host writes
+  how it ended onto the same comment
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)).
+- **Merge-ready announcement** — the *forge claim* a *PR drive loop* posts
+  on a pull request to say that one head is converged, green, mergeable and
+  clean, kept only while that holds and withdrawn when it stops holding; of
+  the announcements of one head the earliest stands
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)).
 - **Shared records** — what a host dispatching a repository publishes so
   that another host dispatching the same repository can read it: which host
   holds a launch, and how the launch ended. On the forge, each is a *forge

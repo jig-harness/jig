@@ -5,7 +5,8 @@
  * comment by a trusted author (`CommentFact.trusted`: a real, non-guest
  * member of the tracker's workspace) read as a member's, and a comment by
  * the user the tracker's credential acts as left out, since a dispatcher
- * never answers on a person's behalf.
+ * never answers on a person's behalf. The comments left out are kept apart,
+ * so a need whose only answer is one of them can say why it is not read.
  *
  * A tracker that cannot name who wrote each comment (`Tracker.commentAuthors`)
  * is not read: one person's answer could not be told from another's, or
@@ -24,6 +25,13 @@ import type {
 import type { CommentLike } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { failureText } from "./text.ts";
+
+/** An item's comments as answers are read: those that may answer, and those by the user the tracker's credential acts as, which never do. */
+export interface TrackerConversation {
+  comments: CommentLike[];
+  /** The user the tracker's credential acts as, and its comments, left out of `comments`. */
+  own: { name: string; comments: CommentLike[] };
+}
 
 /** The longest one read of the tracker for answers runs. */
 const TRACKER_READ_MS = 60_000;
@@ -83,25 +91,33 @@ function namesOf(comments: readonly CommentFact[]): Map<string, string> {
 
 /**
  * The comments of tracker item `item` as the answer reader reads a
- * conversation, `self`'s left out. A comment whose author the tracker does
+ * conversation, `self`'s kept apart. A comment whose author the tracker does
  * not name reads with no author, which never answers.
  */
 function trackerConversation(
   item: string,
   comments: readonly CommentFact[],
   self: TrackerUser,
-): CommentLike[] {
+): TrackerConversation {
   const names = namesOf(comments);
-  return comments
-    .filter((c) => c.author?.id !== self.id)
-    .map((c) => ({
-      author: c.author == null ? "" : (names.get(c.author.id) ?? ""),
-      association: c.trusted ? MEMBER : NONE,
-      at: c.createdAt,
-      editedAt: c.editedAt ?? null,
-      url: c.url ?? `${item}#comment-${c.id ?? c.createdAt}`,
-      body: plainText(c.body),
-    }));
+  const read = (c: CommentFact, trusted = c.trusted): CommentLike => ({
+    author: c.author == null ? "" : (names.get(c.author.id) ?? ""),
+    association: trusted ? MEMBER : NONE,
+    at: c.createdAt,
+    editedAt: c.editedAt ?? null,
+    url: c.url ?? `${item}#comment-${c.id ?? c.createdAt}`,
+    body: plainText(c.body),
+  });
+  const mine = (c: CommentFact) => c.author?.id === self.id;
+  return {
+    comments: comments.filter((c) => !mine(c)).map((c) => read(c)),
+    // Read as a member's whatever the user's standing: these are never acted
+    // on, only detected, so that a need whose only answer is one of them can say why.
+    own: {
+      name: self.name,
+      comments: comments.filter(mine).map((c) => read(c, true)),
+    },
+  };
 }
 
 /** `work`'s value, or why it failed or did not settle within `TRACKER_READ_MS`. */
@@ -148,7 +164,7 @@ export async function readTrackerAnswers(
   tracker: Tracker | null,
   item: string,
   self: (tracker: Tracker, signal: AbortSignal) => Promise<TrackerUser>,
-): Promise<Outcome<CommentLike[], "unreadable">> {
+): Promise<Outcome<TrackerConversation, "unreadable">> {
   if (tracker === null)
     return failed(
       "unreadable",

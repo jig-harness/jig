@@ -396,6 +396,53 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.260.0] - 2026-11-17
+
+### Added
+
+- The Jig Protocol has a provisional chapter on forge claims
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)):
+  the takeover claim a driver posts to take a drive over from another
+  clone, the launch claim a dispatching host posts for each launch of a
+  drive and writes its end onto, and the announcement that a head is safe
+  to merge. It gives each claim's markers, version and key, every field of
+  its record with its type and which claims carry it, the actions a launch
+  takes and the states its end is in, and what a reader does with a claim
+  that does not read. Its data file, `plugin/protocol/data/forge-claims.json`,
+  and a JSON Schema per claim (`drive-takeover-claim.json`,
+  `dispatch-launch-claim.json`, `drive-merge-ready.json` under
+  `plugin/protocol/schemas/`) carry them for a program that reads who
+  launched a drive, how the launch ended, or whether a head was announced.
+  The three readers now check a claim against the same description the
+  schemas are generated from, and read every claim they read before, except a takeover claim whose generation is above 9007199254740991, which no ledger reaches.
+  **Consumer action:** none.
+
+### Fixed
+
+- `jig send <address> answer <key>` to a pickup's decision on a Linear or
+  Jira item no longer posts an answer the dispatcher will never read. A
+  send from the host that owns the repository is refused: its tick reads
+  the item with the same tracker credential and never counts that user's
+  comments. The refusal says to answer as another tracker user or give the
+  dispatcher a tracker user of its own. From another host the writer is
+  still checked against the factory identity (`dispatch.identity`); where
+  the repository names none, or the machine cannot tell whether it owns the
+  repository, the answer posts with a notice that the tick may not read it.
+- When the only answers on such an item are by the dispatcher's own tracker
+  user, the tick now reads the decision as unread and says why, and
+  `jig ask pickup@…` shows that reason instead of a plain wait.
+
+## [0.259.0] - 2026-11-16
+
+### Added
+
+- The [followup](plugin/skills/followup/README.md) skill (`/jig:followup`) runs the post-merge stage in any repository: after a merge it settles each class of obligation the merge can leave (the tracker item and epic, deferred review findings, out-of-tree steps, the release and its tags, temporary scaffolding and live drivers, live verification, the next step, and the workspace card in Orca) with one verdict and its evidence, carries out what its fixed authority table allows and files the rest; on an open pull request it previews what the merge will owe. Its script keeps the protocol the dispatcher expects: the claim checked before every outside write, and no run ended while an arm has no verdict. Name it in `dispatch.followup_command` to have the dispatcher start it after each merge.
+- The configuration fields `followup.off` (core arms a repository does not run) and `followup.authority` (acts moved to a stricter level; a looser one is refused), documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#followup).
+
+### Fixed
+
+- Native dispatcher queue preloading no longer lends its expired facet-read deadline to later issue reads in the same tick. Shared lazy reads keep the tick's deadline, while each caller retains its own cancellation and incomplete readings remain nonauthoritative.
+
 ## [0.258.0] - 2026-11-16
 
 ### Added
@@ -9126,7 +9173,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.258.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.260.0...HEAD
+[0.260.0]: https://github.com/jig-harness/jig/compare/v0.259.0...v0.260.0
+[0.259.0]: https://github.com/jig-harness/jig/compare/v0.258.0...v0.259.0
 [0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0
 [0.257.0]: https://github.com/jig-harness/jig/compare/v0.256.7...v0.257.0
 [0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7

@@ -322,6 +322,7 @@ values and gate commands from its configuration at run time
 | [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/README.md) | The comment-resolution loop (core pieces 5 and 6): walks every unresolved thread to a declared outcome, and its `reply-to-thread.ts` validates the verdict as the reply is written (`--no-outcome` is the opt-out for a reply that is not a verdict) |
 | [`drive-pr`](../../plugin/skills/drive-pr/README.md) | The [PR drive loop](../../GLOSSARY.md) (core piece 7) run unattended: waits for reviewers to settle, stops on a named end state, marks a draft Ready at the point `pull_requests.mark_ready` declares, and never merges |
 | [`do-item`](../../plugin/skills/do-item/SKILL.md) | Opens the pull request under the declared shape policy (core piece 11) through its `pr-plan.ts`, and refuses one that breaks it; its post-merge status rule and mandatory `## Out-of-tree follow-ups` section run the tracker-state and out-of-tree classes of the post-merge stage (core piece 12) |
+| [`followup`](../../plugin/skills/followup/README.md) | The post-merge stage (core piece 12) in any repository: one verdict with its evidence per class of residual obligation, a settle step that refuses to end a run while a class has no verdict, a preview before the merge, and a fixed authority table a repository can only tighten |
 | [`review`](../../plugin/skills/review/SKILL.md) | The author-side tiered review before pushing (the agent-runtime reviewer in core piece 3) |
 | [Review Arbiter](../../plugin/agents/review-arbiter.md) | Rules on contested findings the triage rubric cannot settle |
 | [`resolve-conflicts`](../../plugin/skills/resolve-conflicts/SKILL.md) | Brings a conflicting pull request up to date with its base: records each conflict decision in the merge commit for reviewers and refuses a resolution that silently drops either side's change |
@@ -397,12 +398,6 @@ change; the practice references above would not.
   [M13 pipeline economy](../M13-pipeline-economy/README.md).
 
 ### Future
-
-- **A runnable post-merge stage for any repository.** The stage is stated
-  here and run by hand or by a repository's own skill; the plugin does not
-  yet ship a skill that runs the whole pass (it runs the status rule and the
-  out-of-tree section only). It is part of
-  [ROADMAP item 17](../../ROADMAP.md#17-corrected-designs-for-the-existing-modules).
 
 - **Delegated merge.** Letting a converged drive arm the forge's auto-merge
   for the exact head it certified relaxes "a human merges", so it waits on

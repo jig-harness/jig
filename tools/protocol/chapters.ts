@@ -16,6 +16,7 @@ import { ADDRESSES } from "./chapters/addresses.ts";
 import { COMMENT_MARKERS } from "./chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "./chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "./chapters/followup-claim.ts";
+import { FORGE_CLAIMS_CHAPTER } from "./chapters/forge-claims.ts";
 import { MAILBOX } from "./chapters/mailbox.ts";
 import { PR_LABELS } from "./chapters/pr-labels.ts";
 import { REPO_COMMANDS_CHAPTER } from "./chapters/repo-commands.ts";
@@ -31,6 +32,7 @@ export const CHAPTERS: readonly Chapter[] = [
   FOLLOWUP_CLAIM_CHAPTER,
   RULE_MATCHERS_CHAPTER,
   ADDRESSES,
+  FORGE_CLAIMS_CHAPTER,
   TRACKER_FACETS,
 ];
 

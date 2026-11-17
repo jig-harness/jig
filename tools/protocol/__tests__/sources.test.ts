@@ -18,6 +18,10 @@ import {
   FOLLOWUP_RUNS,
 } from "../../../plugin/shared/records/followup-values.ts";
 import {
+  FORGE_CLAIM_FIELDS,
+  LAUNCH_CLAIM_VALUES,
+} from "../../../plugin/shared/records/forge-claim-values.ts";
+import {
   NOT_RECORDS,
   RECORD_KINDS,
 } from "../../../plugin/shared/records/registry.ts";
@@ -37,6 +41,7 @@ import { ADDRESSES } from "../chapters/addresses.ts";
 import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
+import { FORGE_CLAIMS_CHAPTER } from "../chapters/forge-claims.ts";
 import { TRACKER_FACETS } from "../chapters/tracker-facets.ts";
 
 const root = join(import.meta.dir, "..", "..", "..");
@@ -243,6 +248,13 @@ describe("the hidden comment markers", () => {
     expect(FOLLOWUP_CLAIM_CHAPTER.takes()).toContain(
       "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-followup",
     );
+    // Each forge claim it leaves out is taken by a chapter of its own.
+    for (const name of Object.keys(FORGE_CLAIM_FIELDS)) {
+      expect(excluded).toContain(name);
+      expect(FORGE_CLAIMS_CHAPTER.takes()).toContain(
+        `plugin/shared/records/registry.ts#RECORD_KINDS.${name}`,
+      );
+    }
   });
 
   test("renders every field of the envelope as a value of its own, with its type and requiredness", () => {
@@ -355,6 +367,85 @@ describe("the follow-up claim and its result", () => {
       Object.keys(outcomes).map((o) => `| \`${o}\` | \`${run}\` |`),
     );
     expect(pairs.filter((p) => !rows.some((r) => r.startsWith(p)))).toEqual([]);
+  });
+});
+
+describe("forge claims: takeover, launch and merge-ready", () => {
+  // Enumerated from the registry and the tables on their own, not through the chapter.
+  const claims = Object.keys(FORGE_CLAIM_FIELDS);
+  const kinds = claims.map((name) => RECORD_KINDS.find((k) => k.name === name));
+  const fields = Object.entries(FORGE_CLAIM_FIELDS).flatMap(([claim, f]) =>
+    Object.keys(f).map((name) => [claim, name]),
+  );
+  const closed = Object.entries(LAUNCH_CLAIM_VALUES).flatMap(([field, v]) =>
+    Object.keys(v).map((value) => `${field}.${value}`),
+  );
+  const values = FORGE_CLAIMS_CHAPTER.values();
+  const of = (kind: string) =>
+    values.filter((v) => v.kind === kind).map((v) => [v.claim, v.name]);
+
+  test("renders each claim's kind and markers, every field of each claim and every closed value, and nothing else", () => {
+    expect(kinds.every((k) => k?.medium === "forge")).toBe(true);
+    expect(of("record")).toEqual(claims.map((c) => [c, c]));
+    expect(of("marker")).toEqual(
+      kinds.flatMap((k) => (k?.markers ?? []).map((m) => [k?.name, m])),
+    );
+    expect(of("field")).toEqual(fields);
+    expect(of("value")).toEqual(
+      closed.map((v) => ["dispatch-launch-claim", v]),
+    );
+    expect(values).toHaveLength(
+      ["record", "marker", "field", "value"].reduce(
+        (n, k) => n + of(k).length,
+        0,
+      ),
+    );
+    expect(FORGE_CLAIMS_CHAPTER.excluded).toEqual([]);
+  });
+
+  test("keeps a value's identity apart from its kind, so a withdrawal to a tombstone stays representable", () => {
+    expect(FORGE_CLAIMS_CHAPTER.fields.kind?.identifies).toBe(false);
+    const identities = values.map((v) => JSON.stringify([v.claim, v.name]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("carries each kind's meaning, version and key as the registry holds them", () => {
+    for (const k of kinds)
+      expect(
+        values.find((v) => v.kind === "record" && v.name === k?.name),
+      ).toMatchObject({
+        meaning: k?.meaning,
+        version: k?.version,
+        key: k?.key?.source ?? null,
+      });
+  });
+
+  test("shows each kind, each field with its claim and each closed value with its field in its own section", () => {
+    const [kindSection, valueSection, fieldSection] =
+      FORGE_CLAIMS_CHAPTER.sections.map((s) => s.render());
+    const missing = (text: string | undefined, rows: readonly string[]) =>
+      rows.filter((r) => !(text ?? "").includes(`\n${r}`));
+    expect(
+      missing(
+        kindSection,
+        claims.map((c) => `| \`${c}\` |`),
+      ),
+    ).toEqual([]);
+    expect(
+      missing(
+        fieldSection,
+        fields.map(([claim, name]) => `| \`${claim}\` | \`${name}\` |`),
+      ),
+    ).toEqual([]);
+    expect(
+      missing(
+        valueSection,
+        closed.map((v) => {
+          const at = v.lastIndexOf(".");
+          return `| \`${v.slice(0, at)}\` | \`${v.slice(at + 1)}\` |`;
+        }),
+      ),
+    ).toEqual([]);
   });
 });
 
