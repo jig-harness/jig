@@ -26,7 +26,7 @@ follow-up claim and its result; the chapters on the drive mailbox and on
 the pull-request labels; the chapter on the commands a repository
 supplies; and the chapter on rule matchers in configuration, with JSON Schemas generated from the readers' shape descriptions;
 the site renders the chapters at `/protocol/`. Of the provisional chapters, the ones on addresses and the verbs of `jig send`,
-on forge claims and on tracker facets are in place. The restatements link to the
+on forge claims, on tracker facets and on needs and structured answers are in place. The restatements link to the
 chapters, with the values a skill needs within a step held by the chapter's
 gate. The steps after them in § Build order are open. The decision that a
 chapter and the code must agree is
@@ -166,7 +166,7 @@ free while it is in use.
 | The follow-up claim and its result | stable | the `dispatch-followup` kind of the records registry and its runs, outcomes and fields (`shared/records/followup-values.ts`) | — |
 | Rule matchers in configuration | stable | the tables of `shared/rule-matcher-values.ts`: the facts a rule may test, how a rule combines its values, each list semantics and form, and every configuration field that selects by an item's or a change's facts, which the matcher in `shared/rule-matcher.ts` and each field's reader use | — |
 | Addresses and the verbs of `jig send` | provisional | `STATIONS` in `shared/address.ts` and `SEND_VERBS` in `send/lib/verb-values.ts` | 39, 42 |
-| Needs and structured answers | provisional | the decision record (`parked-decision/v1`) and the need classes | 46, 50 |
+| Needs and structured answers | provisional | the decision record (`parked-decision/v1`), the answer forms and lines, their normalization and limits (`shared/decisions/decision-values.ts`, `answer-normalize.ts`), the acts and each decision class's act (`shared/acts.ts`) and the dispatcher's own framings (`shared/decisions/station.ts`); the need classes join once item 50 settles them | 46, 50 |
 | Steward records | provisional | the steward's record kinds and their closed fields | 50 |
 | Forge claims: takeover, launch and merge-ready | provisional | the `drive-takeover-claim`, `dispatch-launch-claim` and `drive-merge-ready` kinds of the records registry, and each claim's fields and the launch claim's closed values (`shared/records/forge-claim-values.ts`), which their readers check through the shapes beside them | 40, 49 |
 | Tracker facets: type, priority and size | provisional | the facets, the priorities, the stores, the stores each adapter holds and the reasons `facetStores` gives, in `skills/do-item/scripts/lib/tracker/facets/facet-values.ts`; the command store, whose JSON answer would get a schema, is not built | 41 |

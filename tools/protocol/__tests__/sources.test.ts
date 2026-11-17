@@ -43,6 +43,19 @@ import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
 import { FORGE_CLAIMS_CHAPTER } from "../chapters/forge-claims.ts";
 import { TRACKER_FACETS } from "../chapters/tracker-facets.ts";
+import { NEEDS_AND_ANSWERS } from "../chapters/needs-and-answers.ts";
+import { CLASS_ACTS, NEED_ACT_VALUES } from "../../../plugin/shared/acts.ts";
+import { ANSWER_NORMALIZATION } from "../../../plugin/shared/decisions/answer-normalize.ts";
+import {
+  ANSWER_FORMS,
+  ANSWER_LINES,
+  DECISION_LIMITS,
+  PARKED_DECISION_FIELDS,
+} from "../../../plugin/shared/decisions/decision-values.ts";
+import {
+  STATION_KEYS,
+  STATION_OPTIONS,
+} from "../../../plugin/shared/decisions/station.ts";
 
 const root = join(import.meta.dir, "..", "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -573,5 +586,98 @@ describe("tracker facets", () => {
           expect(text).toContain((hold?.meaning ?? "").replaceAll("<", "&lt;"));
         });
       }
+  });
+});
+
+describe("needs and structured answers", () => {
+  // Enumerated from the tables on their own, not through the chapter.
+  const tables = {
+    field: Object.keys(PARKED_DECISION_FIELDS),
+    line: Object.keys(ANSWER_LINES),
+    form: Object.keys(ANSWER_FORMS),
+    normalization: Object.keys(ANSWER_NORMALIZATION),
+    limit: Object.keys(DECISION_LIMITS),
+    act: Object.keys(NEED_ACT_VALUES),
+    class: Object.keys(CLASS_ACTS),
+    "station-key": Object.keys(STATION_KEYS),
+    "station-option": Object.keys(STATION_OPTIONS),
+  };
+  const values = NEEDS_AND_ANSWERS.values();
+  const of = (kind: string) =>
+    values.filter((v) => v.kind === kind).map((v) => String(v.name));
+
+  test("renders every entry of each table, in the tables' order, and nothing else", () => {
+    for (const [kind, names] of Object.entries(tables))
+      expect({ kind, names: of(kind) }).toEqual({ kind, names });
+    expect(values).toHaveLength(
+      Object.values(tables).reduce((n, names) => n + names.length, 0),
+    );
+    expect(NEEDS_AND_ANSWERS.excluded).toEqual([]);
+  });
+
+  test("identifies a value by its kind and name, which no two values share", () => {
+    expect(NEEDS_AND_ANSWERS.fields.kind?.identifies).toBe(true);
+    const identities = values.map((v) => JSON.stringify([v.kind, v.name]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("carries each value's own fields as its table holds them", () => {
+    const find = (kind: string, name: string) =>
+      values.find((v) => v.kind === kind && v.name === name);
+    for (const [name, f] of Object.entries(PARKED_DECISION_FIELDS))
+      expect(find("field", name)).toMatchObject({
+        type: f.type,
+        carried: f.carried,
+        meaning: f.meaning,
+      });
+    for (const [name, l] of Object.entries(DECISION_LIMITS))
+      expect(find("limit", name)).toMatchObject({
+        value: l.value,
+        unit: l.unit,
+      });
+    Object.keys(ANSWER_NORMALIZATION).forEach((name, i) => {
+      expect(find("normalization", name)?.step).toBe(i + 1);
+    });
+    for (const [name, c] of Object.entries(CLASS_ACTS))
+      expect(find("class", name)).toMatchObject({ act: c.act });
+    for (const [name, k] of Object.entries(STATION_KEYS))
+      expect(find("station-key", name)).toMatchObject({
+        class: k.class,
+        options: k.options.join(", "),
+      });
+    for (const [name, o] of Object.entries(STATION_OPTIONS))
+      expect(find("station-option", name)).toMatchObject({
+        option: o.name,
+        reversible: o.reversible ?? null,
+        meaning: o.summary,
+      });
+  });
+
+  test("shows each table's entries in its own section", () => {
+    const sections = NEEDS_AND_ANSWERS.sections.map((s) => s.render());
+    const order = [
+      "field",
+      "line",
+      "form",
+      "normalization",
+      "limit",
+      "act",
+      "class",
+      "station-key",
+      "station-option",
+    ] as const;
+    expect(sections).toHaveLength(order.length);
+    order.forEach((kind, i) => {
+      const text = sections[i] ?? "";
+      // A normalization step's row opens with its number, then its name.
+      const rows =
+        kind === "normalization"
+          ? tables[kind].map((n, j) => `\n| ${j + 1} | \`${n}\` |`)
+          : tables[kind].map((n) => `\n| \`${n}\` |`);
+      expect({ kind, missing: rows.filter((r) => !text.includes(r)) }).toEqual({
+        kind,
+        missing: [],
+      });
+    });
   });
 });

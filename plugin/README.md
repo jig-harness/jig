@@ -681,9 +681,10 @@ left no report, the copy's path.
 #### Every need is a decision
 
 A pass that stops for a person frames what it asks, as a drive frames a
-park: it writes a `parked-decision/v1` record (the question, two or more
-options each with what it changes and costs, the one it recommends and
-why, the class, the steps a person must take and what it already did) and
+park: it writes a [`parked-decision/v1` record](protocol/needs-and-answers.md#the-decision-record)
+(the question, two or more options each with what it changes and costs, the
+one it recommends and why, the class, the steps a person must take and what
+it already did) and
 records `failed --decision <file>`, which checks the record as a park's is
 and keeps it with the result; a record the check refuses records nothing,
 so the pass fixes it and sends it again. The need it raises (a failed
@@ -692,7 +693,9 @@ finds itself it frames the decision from the facts that identify it, with
 options it can carry out, each set ending with **I'll handle it — hide this card**.
 Nothing is done; the work stays where it is. The answered hold stays visible
 until its facts change. Answers naming **Leave it to me** still count, including
-answers sent from an older dashboard snapshot while the facts remain the same:
+answers sent from an older dashboard snapshot while the facts remain the same.
+The keys, the options and the answer forms are listed in
+[the needs and answers chapter](protocol/needs-and-answers.md#the-dispatchers-own-framings):
 
 | Need | Key | The other options, and what the tick does |
 | --- | --- | --- |

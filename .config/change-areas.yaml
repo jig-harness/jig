@@ -385,7 +385,8 @@ areas:
     # repository supplies, the records registry, the record envelope's codec,
     # the follow-up marker's tables, the forge claims' tables and shapes, the
     # rule matcher's tables, the stations an address names, the verbs of
-    # `jig send` and the issue facets' closed lists, and its base comparison
+    # `jig send`, the issue facets' closed lists and the tables of a decision
+    # waiting for a person and its answers, and its base comparison
     # reads change notes through the changelog skill's scripts.
     category: tooling
     paths: ["plugin/protocol/**", "tools/protocol/**"]
@@ -438,6 +439,9 @@ areas:
           - "plugin/protocol/schemas/drive-merge-ready.json"
           - "plugin/protocol/tracker-facets.md"
           - "plugin/protocol/data/tracker-facets.json"
+          - "plugin/protocol/needs-and-answers.md"
+          - "plugin/protocol/data/needs-and-answers.json"
+          - "plugin/protocol/schemas/parked-decision.json"
         source:
           - "tools/protocol/**"
           - "biome.json"
@@ -518,6 +522,11 @@ areas:
           - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
           - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
           - "plugin/skills/reflect/scripts/lib/event-shapes.ts"
+          - "plugin/shared/acts.ts"
+          - "plugin/shared/decisions/answer-normalize.ts"
+          - "plugin/shared/decisions/decision-values.ts"
+          - "plugin/shared/decisions/park-shape.ts"
+          - "plugin/shared/decisions/station.ts"
         command: "bun tools/protocol/generate.ts"
         check: "bun tools/protocol/generate.ts --check"
         notes: >-

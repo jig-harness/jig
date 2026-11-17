@@ -61,6 +61,16 @@ import {
   commentsFor,
   recordsIn,
 } from "../../../plugin/skills/reflect/scripts/lib/github/model.ts";
+import {
+  checkParkedDecision,
+  isParkedDecision,
+} from "../../../plugin/shared/decisions/park.ts";
+import {
+  frameStationDecision,
+  type StationFacts,
+} from "../../../plugin/shared/decisions/station.ts";
+import { advisoryDecision } from "../../../plugin/skills/drive-pr/scripts/lib/ci-special-checks.ts";
+import { cancelledCiDecision } from "../../../plugin/skills/drive-pr/scripts/lib/cancelled-recovery-live.ts";
 import { CHAPTERS } from "../chapters.ts";
 import { schemaFile, schemaOf } from "../chapter.ts";
 import {
@@ -540,5 +550,89 @@ describe("the rule schema", () => {
       expectSchemaRejects(published("rule"), rule);
       expect(parseRule("pull_requests.base_rules", rule, at).ok).toBe(false);
     }
+  });
+});
+
+describe("the decision record's writers", () => {
+  const FACTS: StationFacts[] = [
+    {
+      kind: "followup-failed",
+      pr: 12,
+      record: null,
+      marker: 3,
+      question: null,
+    },
+    {
+      kind: "followup-failed",
+      pr: 12,
+      record: "20260101T000000Z-01234567",
+      marker: null,
+      question: "Which branch?",
+    },
+    { kind: "followup-stale", pr: 12, marker: 3, released: 2 },
+    { kind: "stalled", item: "ENG-1", state: "In Progress", carriedBy: [] },
+    {
+      kind: "pickup-question",
+      item: "ENG-1",
+      record: "20260101T000000Z-01234567",
+      question: "Which scope?",
+    },
+    {
+      kind: "pickup-ended",
+      item: "ENG-1",
+      record: "20260101T000000Z-01234567",
+      ended: null,
+      carriedBy: null,
+    },
+    { kind: "checkout", target: "#12", branch: "b", path: "/tmp/x" },
+    { kind: "drive", pr: 12, exit: "6", started: null, failedRearm: null },
+    { kind: "launch", target: "#12", record: "20260101T000000Z-01234567" },
+  ];
+  const written = [
+    ...FACTS.map((f) => frameStationDecision(f).decision),
+    advisoryDecision(["sonar"]),
+    cancelledCiDecision("the run was cancelled twice"),
+  ];
+
+  test("every record a writer writes fits the schema, passes the strict check and reads", () => {
+    for (const decision of written) {
+      const json = JSON.parse(JSON.stringify(decision));
+      expectSchemaAccepts(published("parked-decision"), json);
+      expect(isParkedDecision(json)).toBe(true);
+      expect(checkParkedDecision(json, json.class)).toEqual([]);
+    }
+  });
+
+  test("the schema refuses exactly what the stored reader refuses", () => {
+    const [base] = written;
+    const json = JSON.parse(JSON.stringify(base)) as Record<string, unknown>;
+    const call = json.call as Record<string, unknown>;
+    const options = call.options as Record<string, unknown>[];
+    const variants: unknown[] = [
+      json,
+      { ...json, later: 1 },
+      { ...json, sheet: "https://example.test/s" },
+      { ...json, facts: [{ text: "t", source: "s" }] },
+      { ...json, interplay: [{ from: "a", to: "b", text: "t" }] },
+      { ...json, call: { ...call, options: [{ ...options[0], keep: [] }] } },
+      { ...json, schema: "parked-decision/v2" },
+      { ...json, class: 1 },
+      { ...json, steps: [1] },
+      { ...json, sheet: null },
+      { ...json, facts: [{ text: "t" }] },
+      { ...json, interplay: [{ from: "a", to: "b" }] },
+      { ...json, call: { ...call, why: null } },
+      { ...json, call: { ...call, options: [{ ...options[0], pay: "x" }] } },
+      {
+        ...json,
+        call: { ...call, options: [{ ...options[0], reversible: "no" }] },
+      },
+      [json],
+      null,
+    ];
+    for (const value of variants)
+      if (isParkedDecision(value))
+        expectSchemaAccepts(published("parked-decision"), value);
+      else expectSchemaRejects(published("parked-decision"), value);
   });
 });

@@ -1468,6 +1468,12 @@ make, use the entry's term instead.
   line, which binds the pass. A **free answer** is
   anything else, in the person's own words, which a pass interprets
   ([design](design/structured-answers.md)).
+- **NFKC (Unicode compatibility normalization)** — the Unicode standard's
+  rewriting of text so that characters which differ only in form become
+  the same: a full-width `Ａ` becomes `A`, the ligature `ﬁ` becomes `fi`.
+  It is the first step Jig takes to normalize a *structured answer* and an
+  option's name before it compares them
+  ([the steps](plugin/protocol/needs-and-answers.md#answering-a-decision)).
 - **Decision model** — the shape of a decision for a person that a *park*
   and a decision sheet share: a **call** is one question with options that
   exclude each other. A park is one call; a sheet is one or more calls, with their

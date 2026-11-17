@@ -973,8 +973,8 @@ stops admit it on a mechanical state:
 
 **Structured answers.** In a pull-request comment, write
 `answer <key>: approve` for the recommended option, or
-`answer <key>: choose <option name>` for another option. A thread reply may
-contain just `approve` or `choose <option name>`. A line
+`answer <key>: choose <option>` for another option, `<option>` being its
+name. A thread reply may contain just `approve` or `choose <option>`. A line
 `note <key>: <text>` may add a condition of at most 500 characters.
 The whole comment must contain only answers and their notes, apart from
 blank lines, the `jig send` record and identifiable notification quotes.
@@ -997,7 +997,9 @@ Matching normalizes Unicode, case, phone quotes and dashes, bold marks,
 backticks and whitespace, and drops one final full stop or exclamation mark.
 Every person's latest structured answer must choose the same option with
 the same note. If all latest answers are free, the pass receives them all
-to interpret. `jig ask` labels answers structured, free or disputed.
+to interpret. `jig ask` labels answers structured, free or disputed. The
+forms, the normalization and the limits are listed in the Protocol's
+[needs and structured answers](../../protocol/needs-and-answers.md) chapter.
 
 **Apply a structured verdict.** The pass notice and kept answers include
 the chosen option, its framed decision and any note. Apply that option as

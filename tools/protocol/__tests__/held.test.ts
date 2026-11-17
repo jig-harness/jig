@@ -5,6 +5,7 @@ import { checkDriveExitPhrases } from "../chapters/drive-exits.ts";
 import { MAILBOX } from "../chapters/mailbox.ts";
 import { PR_LABELS } from "../chapters/pr-labels.ts";
 import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
+import { NEEDS_AND_ANSWERS } from "../chapters/needs-and-answers.ts";
 import { checkHeldPhrases } from "../held.ts";
 import { cleanUp, put, tempDir } from "./fixture.ts";
 
@@ -330,4 +331,35 @@ test("held phrases follow CommonMark paragraph interruption for code spans and H
     exitPhrase,
     "mailbox",
   );
+});
+
+test("the needs and answers chapter rejects a changed answer form, limit or dispatcher option", () => {
+  const root = tempDir("held-needs-and-answers");
+  const driveFile = "plugin/skills/drive-pr/SKILL.md";
+  const readme = "plugin/README.md";
+  const drive = readFileSync(resolve(repo, driveFile), "utf8");
+  const page = readFileSync(resolve(repo, readme), "utf8");
+  put(root, driveFile, drive);
+  put(root, readme, page);
+  expect(NEEDS_AND_ANSWERS.check?.(root)).toEqual([]);
+  for (const [before, after] of [
+    ["`answer <key>: approve` for", "`answer <key>: accept` for"],
+    [
+      "`answer <key>: choose <option>` for",
+      "`answer <key>: pick <option>` for",
+    ],
+    ["of at most 500 characters", "of at most 400 characters"],
+    ["the first 12 hexadecimal", "the first 16 hexadecimal"],
+  ]) {
+    put(root, driveFile, drive.replaceAll(before ?? "", after ?? ""));
+    expect(NEEDS_AND_ANSWERS.check?.(root)?.length).toBeGreaterThan(0);
+  }
+  put(root, driveFile, drive);
+  for (const [before, after] of [
+    ["| `launch` | **Clear the record**", "| `launch` | **Drop the record**"],
+    ["**I'll handle it — hide this card**", "**Leave it to me**"],
+  ]) {
+    put(root, readme, page.replaceAll(before ?? "", after ?? ""));
+    expect(NEEDS_AND_ANSWERS.check?.(root)?.length).toBeGreaterThan(0);
+  }
 });

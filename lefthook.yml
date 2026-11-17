@@ -103,6 +103,11 @@ pre-commit:
         - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
         - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
         - "plugin/skills/reflect/scripts/lib/event-shapes.ts"
+        - "plugin/shared/acts.ts"
+        - "plugin/shared/decisions/answer-normalize.ts"
+        - "plugin/shared/decisions/decision-values.ts"
+        - "plugin/shared/decisions/park-shape.ts"
+        - "plugin/shared/decisions/station.ts"
       run: bun tools/protocol/generate.ts --stage
       stage_fixed: true
 
