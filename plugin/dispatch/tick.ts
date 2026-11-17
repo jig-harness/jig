@@ -457,6 +457,12 @@ async function actAll(
   // Only a repository this host owns is prepared, so only those are counted.
   const asked = new Set(order);
   const owned = (options.machine?.repositories ?? []).filter((r) => r.owner);
+  // A listed repository this host does not own is requested but never prepared for priorities.
+  const notOwned = new Set(
+    (options.machine?.repositories ?? [])
+      .filter((r) => !r.owner)
+      .map((r) => r.path),
+  );
   // Coverage is by identity: an unlisted repository is prepared too, and must not stand in for an owned one that failed.
   const preparedPaths = new Set(
     (context.priorities ?? []).map((p) => p.report.path),
@@ -466,7 +472,7 @@ async function actAll(
     observe.busy.size === 0 &&
     options.machine != null &&
     owned.every((r) => asked.has(r.path) && preparedPaths.has(r.path)) &&
-    [...asked].every((path) => preparedPaths.has(path));
+    [...asked].every((path) => notOwned.has(path) || preparedPaths.has(path));
   rankPriorities(context.priorities ?? [], context.nowMs, complete);
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
