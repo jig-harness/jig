@@ -545,7 +545,9 @@ port.
   keys; its scope is read, and write only where the hub runs the chat
   bridge. Its webhooks are registered for the teams the hub serves, and a
   delivery for an issue outside every served queue is dropped before it is
-  admitted, counted as filtered. On Jira it is a service account with
+  admitted, counted as filtered, unless the hub already holds that issue:
+  then it is admitted, the move out of every queue is applied as a
+  departure, and the issue's content is purged. On Jira it is a service account with
   read access to the served projects only, which the change probe's small
   question reads with; an Atlassian OAuth application replaces it if
   Jira's webhooks become verifiable and the hub takes them. The hub writes nothing on the forge or the tracker:
@@ -865,7 +867,12 @@ instead, and read the forge only when their target moved.
   `read`, a drive pass from the forge with its conditional requests, nearly
   all answered "not modified" at no cost against GitHub's hourly limit),
   and carries on from the fresh cursor. A first call names no
-  cursor, and is answered at once with the current one.
+  cursor, and is answered at once with the current one and the same
+  resynchronization as `cursor-expired`: the subscriber treats every
+  subscribed target as moved in every kind once and reads it, so a change
+  that landed before the cursor was minted is never lost behind it. A
+  subscription that gains a target or a partition resynchronizes the added
+  ones the same way.
 - **A held call, then an answer.** When nothing has moved past the
   cursor, the hub holds the call until something does, for the hold the
   call asks (at most 55 seconds, under the proxies' and tunnels' usual 60),
@@ -928,7 +935,13 @@ to a source, and a scheduled job that stops reads as stale, never green.
 One person runs most hubs, so the first wave's minimum is what that person
 reads without running anything else: `health`, structured logs, the
 metrics `health` serves and the dashboard. An OpenTelemetry collector and
-an external heartbeat monitor are settings, off by default.
+an external heartbeat monitor are settings, off by default. That is an
+exception to M11's external-monitor invariant, and the hosts are the
+independent watcher that stands in for it: a host that cannot reach its
+hub raises a [need](../GLOSSARY.md) on its own receipt and dashboard
+within 30 minutes ([Owner duties](#owner-duties)), so a hub that dies
+is noticed by something that does not depend on it. A team that wants the
+monitor sets it, and a setting that names one is checked to be wired.
 
 - **An observability port.** The core emits typed events, metrics and
   spans, each failure named by its `Outcome` code; an adapter exports
@@ -1146,7 +1159,12 @@ name the owner in a machine file. With the hub down, the person stops it
 first if it still runs, runs the command against its store, which records
 the disable the same way, waits out one lease and its drain margin (6
 minutes) since the hub last answered, and only then edits the machine
-file; the hub is not started again until the disable is recorded. A
+file; the hub is not started again until the disable is recorded.
+A disable is not rollbackable state: it is also written to a record beside
+the hub's machine file, outside what `jig hub backup` copies and restores,
+and the hub reads the union of both at every start, so restoring an
+earlier backup never lifts it. Only `jig hub release-owner --undo
+<repository>` removes a disable, from both places. A
 machine-file edit alone never transfers an owner duty while the hub may
 still name an owner. This is the one exception to "works
 as it does today": it is stated in the levels above, in ADR-0016's

@@ -238,8 +238,10 @@ units off the webhook listener's event loop.
   report is stale, never green, past its cadence. For one person,
   `health`, structured logs, the metrics and the dashboard are the
   minimum; an OTLP collector and an external heartbeat monitor (a
-  dead-man's switch for the hub itself) are optional settings, and a
-  setting that names one is checked to be wired, since M11 counts a
+  dead-man's switch for the hub itself) are optional settings, an
+  exception to M11's external-monitor invariant that the hosts stand in
+  for: a host that cannot reach the hub raises a need on its own receipt
+  within 30 minutes. A setting that names one is checked to be wired, since M11 counts a
   claimed but unwired signal as a failure.
 
 ### Where it stands against earlier decisions

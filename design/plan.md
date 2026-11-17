@@ -828,7 +828,7 @@ PostgreSQL adapter built, with rework, when a team needs it; errors as
 `Outcome` values with a defect boundary per unit of work (ADR-0012 kept);
 an observability port with M11's typed events, wired metrics, a health
 answer and the dashboard, an OTLP collector and an external heartbeat as
-optional settings checked when set. Enrolled hosts call it
+optional settings checked when set (an exception to M11's external-monitor invariant that the hosts' own need on an unreachable hub stands in for). Enrolled hosts call it
 over HTTPS and it calls no host; enrollment is by device grant, with a
 credential per host; a host protocol of `hello`, `changes`, `read` with a
 `notOlderThan` bound, `report`, `health`, claims with leases and, last,
