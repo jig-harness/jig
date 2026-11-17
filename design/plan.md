@@ -701,10 +701,7 @@ dispatcher when an agent's status changes, refuses a launch into a worktree
 opens a panel on the person's inbox, where a park is answered.
 [design/orca-integration.md](orca-integration.md) has how it works, in
 classes built in order. Still open, one pull request per step, in
-parallel where nothing orders them: a spike on
-binding a launch to the dispatcher's chosen account through the
-`agent.launch.before` hook, for Claude Code and for Codex
-([#1306](https://github.com/jig-harness/jig/issues/1306)); the
+parallel where nothing orders them: the
 dispatcher's account cap reading each account's usage from
 `orca account usage --json`, once Orca offers it
 ([#1307](https://github.com/jig-harness/jig/issues/1307)); and, in the
@@ -719,13 +716,12 @@ browser. Orca stays
 optional: every view of the dashboard works in any browser, and each thing
 the plugin adds has a Herdr or plain-text equivalent. Also open: what Jig
 asks of Orca, filed by a person, each with its pull request offered: usage
-per account from the command line, a phone
+per account from the command line, an account named for each agent
+launch, a phone
 push only when an agent needs input, and a hook before a workspace's
 removal.
 
-Done when the spike's answer is recorded and, where a
-launch binds to its account, the dispatcher starts pickups through Orca on
-the account it chose, or, where it does not, the design records why; the dispatcher's account cap reads `orca account
+Done when the dispatcher's account cap reads `orca account
 usage --json` where Orca has it, an `unavailable` row holding its account;
 the panel shows a parked decision's options and choice as `jig ask` and
 the dashboard do, and a Send settles it; and a merge-now entry in the
@@ -865,7 +861,7 @@ states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels, on hidden comment markers, on the commands a
 repository supplies, on the follow-up claim and its result, on rule
 matchers in configuration, and the provisional chapters on addresses and the
-verbs of `jig send` and on tracker facets
+verbs of `jig send`, on forge claims and on tracker facets
 ([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
 for the chapters at `/protocol/`.
 Open, in order: the other provisional chapters.
@@ -1241,7 +1237,8 @@ Practices a working repository validated, for modules that exist today:
   - a ledger of out-of-tree work that blocks promotion.
 - **M7**:
   - a skill that runs the post-merge stage M7 states, for any repository (the
-    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
+    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md);
+    its [design](followup.md));
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;

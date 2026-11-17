@@ -27,7 +27,7 @@ Contents: [the file](#the-file) ·
 [`file_issue`](#file_issue) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
-[`code_stats`](#code_stats) · [`gc`](#gc) · [`dispatch`](#dispatch) ·
+[`code_stats`](#code_stats) · [`followup`](#followup) · [`gc`](#gc) · [`dispatch`](#dispatch) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -1078,6 +1078,33 @@ The default areas, in order:
 The [skill's README](skills/code-stats/README.md#default-areas) lists each
 area's paths, the build tools and the database conventions.
 
+## `followup`
+
+How the [followup](skills/followup/README.md) skill settles what a merge
+still owes. Without the section the skill runs every core arm that applies
+and the fixed authority table. The skill reads the section from the
+committed `.config/jig.yaml` of the integration branch, named by the
+remote's HEAD and fetched first, so a pull request's own change to it does
+not decide that pull request's preview. The remote must fetch from the
+pull request's repository. A clone that cannot fetch the branch, a remote
+that is another repository, or a configuration that cannot be read stops the
+facts with a message; `JIG_OVERLAY` is the one explicit exception, and the
+working tree's file is not a fallback. An unknown key, arm, act or
+level is refused with a message naming the field, and so is a level that
+would loosen the fixed table.
+
+```yaml
+followup:
+  off: [workspace-board]
+  authority:
+    file-items: ask
+```
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `followup.off` | list of core arm ids: `tracker`, `deferred-findings`, `out-of-tree`, `release`, `scaffolding`, `live-verification`, `next-step`, `workspace-board` | Every core arm that applies runs | followup | The core arms this repository does not run; each is reported as skipped, with this field as the reason. Repository-only |
+| `followup.authority` | map of act id (`tracker-status`, `file-items`, `read-only-checks`, `board-card`, `release-workflow`, `deploy-rerun`, `post-deploy-action`, `stop-driver`, `other-repository`, `origin-boundary`, `merge`) to a level (`own`, `ask`, `person`, `never`) | The fixed table ([the skill's README](skills/followup/README.md#authority)) | followup | Moves an act to a stricter level: `file-items: ask` makes the follow-up ask before it files. A looser level than the fixed table's is refused, so no value lets a follow-up merge, act in another repository or cross the origin-reference boundary |
+
 ## Procedure skills
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
@@ -1350,7 +1377,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups | dispatch |
 | `dispatch.person` | forge login | None: a parked question routes to the owner of its anchor's change area, else this login when configured, else the pull request's author. Only owners that are forge logins are recipients; other owner values are ignored. Overlapping areas with different person owners and unreadable catalogs use the fallback. This routes the question and changes no answer permissions; dispatch and ask read the recorded person | drive-pr |
 | `dispatch.states` | nonempty list of [canonical states](#issue_tracker), without `in_progress` (the state `do-item`'s claim moves an item to), `pr_open`, `blocked`, or a state whose configured tracker name shares `pr_open`'s name | `[todo]` | dispatch |
-| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command, which claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
+| `dispatch.followup_command` | string | None: no follow-ups. `/jig:followup` runs the plugin's [followup](skills/followup/README.md) skill; a repository may name another instead: the dispatcher hands it to the agent as the first line of the pass's prompt, so it can be a skill in the repository, in the user's home or from another plugin, or a procedure the agent carries out from a script or a prompt file the repository keeps; it claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
 | `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`, or in a distinctly named `pr_open` state) with no running session for longer is reported as a stalled pickup, never relaunched. A served person's item in those states is watched only when a pickup of this host claimed it: the rest is their own work. A `pr_open` state that shares a name with `in_review` is not watched, because that name also holds merged items | dispatch |
 | `dispatch.stalled_scope` | `claimed`, `assigned` | `claimed`: the stall watch (`stalled_after`) reads one of `identity`'s claimed items as a pickup only when a launch record of this host took it, or a trusted claim marker (`do_item.claim_marker`) is on it; any other is quiet, its idle clock never starts. `assigned` watches every item assigned to `identity` in those states, for a repository whose `identity` nobody else uses. Each item's claim markers are read once per change of the item. A double claim is reported either way | dispatch |
 | `dispatch.blocked_after` | duration | `30m`: a session the dispatcher started that its runtime reports waiting (on a question or a permission prompt) for longer is reported; it keeps its slot | dispatch |
@@ -2165,6 +2192,10 @@ code_stats:
     test: ["scripts/smoke-*.sh"]
   modules: ["apps/*", "packages/*"]      # default: from the workspace manifests
   classify_command: "<your classify command>"   # paths on stdin, JSON lines on stdout
+followup:
+  off: [workspace-board]                 # core arms this repository does not run
+  authority:
+    file-items: ask                      # tighten an act; a looser level is refused
 specs:
   adapters: [body]                       # default: every layout present, then body
   body_section: Spec

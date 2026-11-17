@@ -13,10 +13,19 @@ import {
   readClaim,
 } from "../../../plugin/shared/records/forge-claims.ts";
 import {
+  endedClaim,
   FOLLOWUP_CLAIM,
+  LAUNCH_CLAIM,
+  launchClaim,
   manualClaim,
   tickClaim,
 } from "../../../plugin/shared/records/launch-claims.ts";
+import type { LaunchDraft } from "../../../plugin/shared/records/shared.ts";
+import {
+  announcementDraft,
+  headMarker,
+  MERGE_READY,
+} from "../../../plugin/skills/drive-pr/scripts/lib/announce.ts";
 import {
   claimMarkerBody,
   claimOutcomeBody,
@@ -34,6 +43,8 @@ import {
   ledgerFromState,
   renderLedger,
   parseLedger,
+  renderClaim,
+  TAKEOVER_CLAIM,
 } from "../../../plugin/skills/drive-pr/scripts/lib/state/ledger.ts";
 import { freshState } from "../../../plugin/skills/drive-pr/scripts/lib/state/schema.ts";
 import {
@@ -132,7 +143,7 @@ describe("schema generation", () => {
       for (const { name, shape } of chapter.schemas ?? [])
         expect(schemaValidator(schemaOf(chapter, name, shape))).toBeFunction();
   });
-  test("accounts for every stable marker kind and publishes no provisional claim payload", () => {
+  test("accounts for every stable marker kind, and publishes the forge claims from their own chapter alone", () => {
     const kinds = [
       ...new Set(
         COMMENT_MARKERS.values()
@@ -146,10 +157,20 @@ describe("schema generation", () => {
     for (const reason of Object.values(NON_JSON_MARKERS))
       expect(reason.trim()).not.toBe("");
     for (const chapter of CHAPTERS)
-      for (const schema of chapter.schemas ?? [])
-        expect(schema.name).not.toMatch(
-          /takeover|launch-claim|merge-ready|facet/,
-        );
+      for (const schema of chapter.schemas ?? []) {
+        expect(schema.name).not.toMatch(/facet/);
+        if (/takeover|launch-claim|merge-ready/.test(schema.name))
+          expect(chapter.id).toBe("forge-claims");
+      }
+    expect(
+      (CHAPTERS.find((c) => c.id === "forge-claims")?.schemas ?? []).map(
+        (s) => s.name,
+      ),
+    ).toEqual([
+      "drive-takeover-claim",
+      "dispatch-launch-claim",
+      "drive-merge-ready",
+    ]);
   });
 });
 
@@ -183,7 +204,7 @@ describe("stable JSON writers", () => {
       outcome: "done",
     });
   });
-  test("the generic envelope publication leaves provisional kind constraints to registry readers", () => {
+  test("the generic envelope publication leaves each kind's own constraints to its chapter", () => {
     const schema = published("record-envelope");
     expect(schema).toMatchObject({
       type: "object",
@@ -356,6 +377,149 @@ describe("stable JSON writers", () => {
         kind: "future",
       });
     }
+  });
+});
+
+describe("the forge claims' writers", () => {
+  /** A record's JSON fits its schema exactly when its reader reads the comment. */
+  function agree(
+    name: string,
+    kind: typeof LAUNCH_CLAIM,
+    body: string,
+    reads: boolean,
+  ) {
+    const json = markerJson(body, kind.data.slice("<!-- ".length));
+    const read = readClaim(kind, body, { repo: "example/repo", number: 12 });
+    expect(read?.ok ?? false).toBe(reads);
+    if (reads) expectSchemaAccepts(published(name), json);
+    else expectSchemaRejects(published(name), json);
+  }
+  const record = "20260101T000000Z-01234567";
+  const draft: LaunchDraft = {
+    stage: "drive",
+    pr: 12,
+    run: "tick",
+    action: "rearm",
+    record,
+    host: "sha256:aaaaaaaaaaaaaaaa",
+    owner: true,
+    facts: "generation 3, exit 16",
+    writer,
+  };
+
+  test("takeover claims, in the envelope and in the form before it, fit the takeover schema", () => {
+    const body = renderClaim(
+      { actor: "wt-bbbbbbbbbbbbbbbb", clone: "clone-b", generation: 4, at },
+      writer,
+    );
+    agree("drive-takeover-claim", TAKEOVER_CLAIM, body, true);
+    agree(
+      "drive-takeover-claim",
+      TAKEOVER_CLAIM,
+      body.replace('"actor":"wt-bbbbbbbbbbbbbbbb"', '"actor":5'),
+      false,
+    );
+    const legacy = {
+      actor: "wt-cccccccccccccccc",
+      clone: "clone-c",
+      generation: 4,
+      at: "2026-10-01T12:00:00.000Z",
+    };
+    expectSchemaAccepts(published("drive-takeover-claim"), legacy);
+    expectSchemaRejects(published("drive-takeover-claim"), {
+      ...legacy,
+      generation: -1,
+    });
+    // A record that names its kind is read as one in the envelope, never as the older form.
+    expectSchemaRejects(published("drive-takeover-claim"), {
+      ...legacy,
+      kind: "drive-takeover-claim",
+    });
+  });
+
+  test("launch claims, posted and with each end, fit the launch schema", () => {
+    const posted = launchClaim(
+      {
+        ...draft,
+        change: "head abc",
+        earlier: ["head 123"],
+        conflictStop: true,
+      },
+      2,
+      at,
+    );
+    const claim = {
+      key: posted.key,
+      generation: 2,
+      at,
+      writer,
+      payload: posted.payload,
+      legacy: false,
+    };
+    for (const d of [
+      launchClaim(draft, 1, at),
+      launchClaim(
+        { ...draft, action: "takeover", owner: null, facts: null },
+        1,
+        at,
+      ),
+      posted,
+      endedClaim(
+        "drive",
+        claim,
+        12,
+        { state: "ended", at, exit: 16, outcome: null },
+        writer,
+      ),
+      endedClaim(
+        "drive",
+        claim,
+        12,
+        {
+          state: "ended",
+          at,
+          exit: null,
+          outcome: null,
+          by: "agent",
+          cause: "needs-person",
+        },
+        writer,
+      ),
+      endedClaim(
+        "drive",
+        claim,
+        12,
+        { state: "died", at, reason: "gone", executed: false },
+        writer,
+      ),
+    ]) {
+      const body = claimBody(LAUNCH_CLAIM, d);
+      agree("dispatch-launch-claim", LAUNCH_CLAIM, body, true);
+      const json = markerJson(body, "jig-dispatch-launch-claim-data");
+      for (const broken of [
+        { ...json, action: "arm" },
+        { ...json, host: "" },
+        { ...json, end: { state: "running", at } },
+        { ...json, generation: 0 },
+      ])
+        expectSchemaRejects(published("dispatch-launch-claim"), broken);
+      const { pr: _pr, ...noPr } = json;
+      expectSchemaRejects(published("dispatch-launch-claim"), noPr);
+    }
+  });
+
+  test("a merge-ready announcement fits the merge-ready schema", () => {
+    const head = "0123456789abcdef0123456789abcdef01234567";
+    const body = claimBody(
+      MERGE_READY,
+      announcementDraft(head, `done\n\n${headMarker(head)}`, writer),
+    );
+    agree("drive-merge-ready", MERGE_READY, body, true);
+    const json = markerJson(body, "drive-pr-merge-ready-data");
+    expectSchemaRejects(published("drive-merge-ready"), {
+      ...json,
+      key: "merge-ready:not-a-head",
+    });
   });
 });
 
