@@ -71,7 +71,7 @@ import {
 } from "../../../shared/config-layers.ts";
 import { machineLayers } from "./lib/machine-layers.ts";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, normalize, posix, relative } from "node:path";
+import { isAbsolute, join, normalize, relative } from "node:path";
 import {
   consumerRoot,
   layeredConfig,
@@ -96,6 +96,7 @@ import { ciPolicyFindings } from "./lib/ci-policy-fit.ts";
 import { reviewerEvidenceRule, reviewerFindings } from "./lib/reviewer-fit.ts";
 import {
   configuredAt,
+  repoRelativeAt,
   trackedNeeds,
   newerInstalledVersion,
   onDisk,
@@ -486,11 +487,8 @@ function pathFindings(
   if (!field.exists || field.exists === "machine") return [];
   if (typeof value !== "string" || value.trim() === "") return [];
   if (!fromRoot && value.startsWith("~")) return [];
-  const where = fromRoot
-    ? posix.normalize(value.trim().replace(/\\/g, "/")).replace(/^\.\//, "")
-    : value;
-  if (existsSync(fromRoot ? join(root, where) : configuredAt(root, value)))
-    return [];
+  const at = fromRoot ? repoRelativeAt : configuredAt;
+  if (existsSync(at(root, value))) return [];
   const required = field.exists === "required";
   return [
     {
