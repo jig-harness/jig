@@ -128,10 +128,9 @@ function arrayFits(schema: Constraints, value: unknown): boolean {
       value.length >= Number(schema.minItems)) &&
     (schema.maxItems === undefined ||
       value.length <= Number(schema.maxItems)) &&
+    value.every((item) => fits(schema.items as JsonSchema, item)) &&
     (schema.uniqueItems !== true ||
-      new Set(value.map((item) => canonicalJson(item))).size ===
-        value.length) &&
-    value.every((item) => fits(schema.items as JsonSchema, item))
+      new Set(value.map((item) => canonicalJson(item))).size === value.length)
   );
 }
 

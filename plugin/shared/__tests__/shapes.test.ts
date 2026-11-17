@@ -41,6 +41,13 @@ describe("shared shape descriptions", () => {
     expect(matches(s.integer(), Number.MAX_SAFE_INTEGER + 1)).toBe(false);
   });
 
+  test("items of the wrong shape are refused before they are compared", () => {
+    let deep: unknown = "leaf";
+    for (let i = 0; i < 20_000; i++) deep = { deep };
+    const targets = s.array(s.string(), { uniqueItems: true });
+    expect(matches(targets, [deep, "a"])).toBe(false);
+  });
+
   test("unique items compare objects whatever their key order", () => {
     const unique = s.array(s.unknown(), { uniqueItems: true });
     expect(
