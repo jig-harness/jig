@@ -43,8 +43,10 @@ function inheritWorking(shared: {
   }
   for (const key of working) {
     const parent = shared.serials.get(key);
-    if (parent !== undefined && !parent.busy.includes(key))
-      parent.busy.push(key);
+    if (parent !== undefined) {
+      parent.unread = parent.unread.filter((unread) => unread !== key);
+      if (!parent.busy.includes(key)) parent.busy.push(key);
+    }
   }
 }
 

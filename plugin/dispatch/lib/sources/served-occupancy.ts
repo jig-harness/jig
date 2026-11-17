@@ -46,6 +46,7 @@ async function occupiedBranch(
   if (path.has(issue.identifier) || path.size >= 100) return "unknown";
   const read = await inspect(issue);
   if (read.unread.length > 0) return "unknown";
+  if (read.children.length === 0) return "unknown";
   const next = new Set(path).add(issue.identifier);
   const results = await Promise.allSettled(
     read.children.map((c) => occupiedBranch(c, inspect, parked, failed, next)),

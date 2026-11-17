@@ -809,7 +809,14 @@ export async function readPickups(
       : await readPool(once, section, served, facets?.bound()),
     once,
   );
-  if (factory.claimed === null) return factory;
+  // A failed shared native scope is a wall for every lane. A factory-only
+  // claim failure is not: served identities can still be read independently.
+  if (
+    factory.claimed === null &&
+    once().dispatchSource !== undefined &&
+    factoryReading.factoryView === undefined
+  )
+    return factory;
   const roots = [
     ...(factoryReading.epicRoots ?? []),
     ...factoryReading.wanted.flatMap((i) =>
