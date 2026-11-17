@@ -326,6 +326,7 @@ function newFollowupRecord(
     marker: null,
     sessionId: sessionIdFor(admittedVendor(slots.account)),
     routineTags: true,
+    followupWithinMs: ctx.section.followupWithinMs,
     // `failures.rerun_died` as it is now; only `0`, which turns the run again off, is kept.
     ...(failureSettings(state.machine).rerunDied === 0 ? { rerunDied: 0 } : {}),
     ...(action.standing === undefined ? {} : { standing: action.standing }),
@@ -584,7 +585,7 @@ async function retryMarked(
       report.launches.push({
         ...waits(
           action,
-          `no dispatch.followup_command: the pending launch of ${record.id} is not replayed while follow-ups are not configured`,
+          `no dispatch.followup_command, and the follow-up stage is off on this host: the pending launch of ${record.id} is not replayed while follow-ups are off`,
           record.account,
         ),
         record: record.id,

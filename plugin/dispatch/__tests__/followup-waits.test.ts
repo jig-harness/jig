@@ -7,7 +7,7 @@
  * way, and a person's restart starts the count again.
  */
 import { afterEach, expect, it } from "bun:test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -18,7 +18,6 @@ import {
   tickClaim,
 } from "../../shared/records/launch-claims.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
-import { MARKER } from "../lib/followup-marker.ts";
 import { waitEnd, waitStreak, waitUntil } from "../lib/followup-waits.ts";
 import {
   claimRecord,
@@ -30,10 +29,16 @@ import {
 import { followupPassArgv } from "../lib/session.ts";
 import { stateDb } from "../lib/state.ts";
 import { resultMain } from "../result.ts";
-import type { TickReceipt } from "../receipts.ts";
 import type { World } from "./fixtures.ts";
 import { SLUG, world } from "./fixtures.ts";
-import { followupWorkspace } from "./followup-fixtures.ts";
+import {
+  followupWorkspace,
+  launches,
+  markers,
+  notices,
+  passWaits,
+  released as releasedWith,
+} from "./followup-fixtures.ts";
 import {
   dispatchState,
   earlierRecord,
@@ -56,65 +61,19 @@ function fixture(): World {
   return w;
 }
 
-type Comment = { id: number; body: string };
-const markers = (w: World): Comment[] =>
-  (
-    JSON.parse(
-      readFileSync(join(w.dir, "comments-9.json"), "utf8"),
-    ) as Comment[]
-  ).filter((c) => c.body.startsWith(MARKER));
-const launches = (r: TickReceipt) => r.repos[0]?.launches ?? [];
-const notices = (r: TickReceipt) =>
-  (r.repos[0]?.actions ?? []).filter((a) => a.stage === "notify");
-
 /** Launch the follow-up and let its pass record `waits` until `until`, then exit; its launch record. */
-async function waits(w: World, until: string): Promise<string> {
-  const runs = claudeRuns(w).length;
-  const [launched] = launches(await applyTick(w, false));
-  expect(launched).toMatchObject({ action: "followup", outcome: "launched" });
-  const id = String(launched?.record);
-  await waitFor("the pass", () => claudeRuns(w).length === runs + 1);
-  const record = readRecord(id, dispatchState(w));
-  expect(record?.facts.startsWith("recovery: ")).toBe(false);
-  expectSpawnExit(
-    await w.dispatch([
-      "result",
-      id,
-      String(record?.token),
-      "waits",
-      "--until",
-      until,
-    ]),
-    0,
-  );
-  writeFileSync(join(w.dir, "claude-exit"), "0");
-  await waitFor("the exit", () => exitWritten(w, id));
-  rmSync(join(w.dir, "claude-exit"));
-  return id;
-}
+const waits = (w: World, until: string): Promise<string> =>
+  passWaits(w, ["--until", until]);
+
+/** The tick after a wait's reset: it starts nothing, deletes the marker, and asks no person. */
+const released = (w: World, id: string): Promise<void> =>
+  releasedWith(w, `launch record ${id}'s pass met a rate limit`);
 
 /** Move a wait's reset into the past, as if the time it named had come. */
 function resetPassed(w: World, id: string): void {
   stateDb(dispatchState(w))
     .query("UPDATE launches SET result_until = ? WHERE id = ?")
     .run(new Date(Date.now() - 1000).toISOString(), id);
-}
-
-/** The tick after a wait's reset: it starts nothing, deletes the marker, and asks no person. */
-async function released(w: World, id: string): Promise<void> {
-  const r = await applyTick(w, false);
-  expect(launches(r)).toEqual([]);
-  expect(notices(r)).toEqual([]);
-  expect(r.repos[0]?.running).toContainEqual(
-    expect.objectContaining({
-      target: "PR #9",
-      stage: "followup",
-      reason: expect.stringContaining(
-        `launch record ${id}'s pass met a rate limit`,
-      ),
-    }),
-  );
-  expect(markers(w)).toEqual([]);
 }
 
 it("holds a follow-up that waits on a rate limit until the reset, releases its marker after it, and starts it again as a first run", async () => {

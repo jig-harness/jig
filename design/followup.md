@@ -139,6 +139,8 @@ consumer arms declared this way.
 - **A closure sweep of epics.** The follow-up calls `do-item`'s epic rule;
   an epic closes only on an accepted verdict or a waiver, and a sweep that
   moves an epic's tails is its own piece of work.
-- **Running a deferred pending arm again by itself.** A pending arm ends the
-  run as a wait only once the dispatcher accepts a pending wait as a result;
-  until then the run reports the pending arm and ends done.
+- **Running a pending arm again by itself on a run started by hand.** A
+  dispatched run ends a pending arm as a wait (`waits --reason pending`),
+  which the dispatcher starts again after its time; a run started by hand
+  reports the pending arm and leaves its marker open, and a person runs it
+  again with that marker once the arm can settle.

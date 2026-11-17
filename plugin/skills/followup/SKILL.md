@@ -50,11 +50,11 @@ pull request starts over):
 | Field | What it holds |
 |---|---|
 | `mode` | `post-merge` for a merged pull request, `preview` for an open one (go to [Before the merge: preview](#before-the-merge-preview)); any other state is refused, exit `3` |
-| `integrationBranch`, `baseBranch` | The repository's integration branch (the remote's HEAD, unless the configuration read from that branch names another: never the preview's own) and the pull request's base; a base that is neither it nor a `pull_requests.base_rules` base is refused, exit `3` |
-| `mergeSha`, `range` | The merge commit, and the range it brought in, from its parents: `squash` (one parent), `rebase` (one single-parent commit per pull request commit, found by their message subjects) or `merge-commit` (two; `branchHead` is the branch's own head), `base..head`; a preview's `open` range is the branch since it left its base |
+| `integrationBranch`, `baseBranch` | The repository's integration branch (`repository.base_branch`, else the remote's HEAD) and the pull request's base; a base that is neither it nor a `pull_requests.base_rules` base is refused, exit `3` |
+| `mergeSha`, `range` | The merge commit, and the range it brought in, from its parents: `squash` (one parent) or `merge-commit` (two; `branchHead` is the branch's own head), `base..head`; a preview's `open` range is the branch since it left its base |
 | `changedFiles`, `changeAreas` | The files the range changes, and the change areas they touch with their `postDeploy` actions (from `drive.validation_plan_command`, else the change-area catalog); `known: false` says why they could not be read |
 | `items`, `item`, `epics` | Every tracker item the merge closes (each `Closes <key>` in the description, so a batch lists them all, else the key the branch name carries); `item` is the first of them. The epics a `Part of <key>` names; an epic is never an item |
-| `outOfTree` | The `## Out-of-tree follow-ups` section: whether it is `declared`, whether it `saysNone`, and each step with whether it is checked off |
+| `outOfTree` | The `## Out-of-tree follow-ups` section: whether it is `declared`, and each step with whether it is checked off |
 | `scaffolding` | Added lines that look like temporary scaffolding, as candidates |
 | `notes` | What a reader should know about how the facts were read |
 
@@ -172,8 +172,8 @@ out where your authority covers it, else file it as an item carrying the
 repository's manual-operations label (`issue_tracker.labels.manual_ops`)
 and record it `owed` with the item. The dispatcher keeps that label on the
 merged pull request until every step is checked off or this follow-up ends
-done. A declared section with `saysNone` set and no step is evidence: `not-owed`. A
-heading with no step and `saysNone` unset is an unfilled template:
+done. A declared section that says "None" (or "N/A") is evidence: `not-owed`. A
+heading with no step and no such statement is an unfilled template:
 report it and treat it as silence. **Silence is not none**: with no
 section or an unfilled one, `not-owed` needs the
 facts that the item carries no manual-operations label and the change areas
@@ -197,15 +197,15 @@ there is the commit that added it at the merge: a later merge's note of the
 same name is that merge's); and `status`, the changelog skill's `status.ts`
 report (`report`, its `exit` and `stderr`), read from a throwaway checkout
 of the integration branch, since the working tree is the branch `status.ts`
-reads. Then:
+reads. Take the rows in order, the first that holds:
 
 | What `status.ts` and the notes say | Verdict |
 |---|---|
+| `notesRead` is not null | `unread`, with that reason: a note's state could not be read |
 | No note of the merge is `waiting`, or it added none | Go on to the tags |
 | A waiting note is in the report's `errors` | `owed`, a person's step: the release cannot read it |
 | A waiting note and the report's `releaseRun.state` `running` | `pending`: read again once the run finishes |
 | A waiting note, and `releaseRun.state` `success`, `failure` or `none` on a second read | `owed`, a person's step: the workflow did not consume it (link `releaseRun.url`), unless `status.ts` lists the note in the report's `waiting` and none requests a release: the format waits for the next release, so `not-owed`, naming the note |
-| `notesRead` is not null | `unread`, with that reason: a note's state could not be read |
 | `releaseRun.state` `unknown`, or `report` is null | `unread`, with its `exit` and `stderr` |
 
 Then the tags, on every merge (a tag an earlier release left owed is owed
@@ -400,13 +400,14 @@ Then end as `settle` says:
 | Ending | When | Run by hand | Started by the dispatcher |
 |---|---|---|---|
 | done | every arm settled | `jig dispatch marker done <PR> --comment <marker>` | record done with the `jig dispatch result` command your prompt names |
-| wait | an arm is `pending` | report each pending arm, mark done, and run the follow-up again once it can settle | report each pending arm and record done; the dispatcher does not take a pending wait as a result, so the follow-up is not started again by itself |
+| wait | an arm is `pending` | report each pending arm and leave the marker open (it keeps the claim); once the arm can settle, run the follow-up again with the same marker instead of claiming a new one | report each pending arm, then record `waits --until <when to look again> --reason pending --arm "<arm>"` with the `jig dispatch result` command your prompt names (the time at most a day ahead; the arm as `settle` prints it); the dispatcher starts the follow-up again after that time, and tells a person if the arm is still pending past `dispatch.followup_within` |
 | failed | an arm is `unread` | `jig dispatch marker failed <PR> --comment <marker>` | record failed |
 | preview | an open pull request | nothing to mark | nothing to record |
 
-Mark the marker done as soon as the last act succeeds. In a session the
-dispatcher started, its closing report comes last, with the
-`jig dispatch report` command its prompt names.
+In a run by hand, mark the marker done as soon as the last act succeeds and
+the ending is done. A wait leaves it open. In a session the dispatcher started, the wrapper
+ends the marker; record only what the table's last column says. Its closing
+report comes last, with the `jig dispatch report` command its prompt names.
 
 ## Questions, waits and rate limits
 

@@ -9,9 +9,9 @@ import {
   changedFilesOf,
   type GitRunner,
   mergeRange,
-  previewRange,
   type PrView,
-  settleSquash,
+  previewRange,
+  rebaseRange,
 } from "../scripts/lib/facts.ts";
 import { scanDiff } from "../scripts/lib/scaffolding.ts";
 import { gitRun, repository, write } from "./helpers.ts";
@@ -98,192 +98,79 @@ describe("the range a merge brought in", () => {
   });
 });
 
-describe("a single-parent merge of several commits", () => {
-  const viewOf = (
-    commitSubjects: string[],
-    files = ["feature.ts", "shared.ts"],
-    headRefOid = "",
-  ): PrView => ({ commitSubjects, files, headRefOid }) as unknown as PrView;
+describe("a multi-commit pull request landed by rebase", () => {
+  const viewOf = (commits: string[]): PrView => ({
+    number: 7,
+    url: "",
+    title: "",
+    state: "MERGED",
+    mergeCommit: null,
+    baseRefName: "main",
+    headRefName: "feature",
+    headRefOid: "",
+    body: "",
+    labels: [],
+    files: [],
+    commits,
+  });
 
-  test("a squash stays a squash although main moved after its parent", async () => {
+  test("a squash of several commits keeps its first-parent range", async () => {
     const root = withFeature();
-    const before = gitRun(root, "rev-parse", "HEAD");
+    const commits = gitRun(
+      root,
+      "rev-list",
+      "--reverse",
+      "main..feature",
+    ).split("\n");
     gitRun(root, "merge", "-q", "--squash", "feature");
     gitRun(root, "commit", "-qm", "feature (#7)");
     const merge = gitRun(root, "rev-parse", "HEAD");
-    const squash = { kind: "squash" as const, base: before, head: merge };
-    const settled = await settleSquash(
-      viewOf(["add feature", "edit shared"]),
-      squash,
-      runnerIn(root),
-    );
-    expect(settled).toEqual({ ok: true, value: squash });
+    const git = runnerIn(root);
+    const read = await mergeRange(git, merge);
+    if (!read.ok) throw new Error("unreadable");
+    expect(await rebaseRange(viewOf(commits), merge, read.value, git)).toEqual({
+      ok: true,
+      value: read.value,
+    });
   });
 
-  test("a rebase reaches back over every landed commit, whatever files they touch", async () => {
+  test("a failed `git cherry` is unreadable, never the squash range", async () => {
     const root = withFeature();
+    const commits = gitRun(
+      root,
+      "rev-list",
+      "--reverse",
+      "main..feature",
+    ).split("\n");
+    gitRun(root, "cherry-pick", ...commits);
+    const merge = gitRun(root, "rev-parse", "HEAD");
+    const git = runnerIn(root);
+    const read = await mergeRange(git, merge);
+    if (!read.ok) throw new Error("unreadable");
+    const failing: typeof git = async (args) =>
+      args[0] === "cherry"
+        ? { ...(await git(["--version"])), code: 128, stdout: "" }
+        : git(args);
+    const out = await rebaseRange(viewOf(commits), merge, read.value, failing);
+    expect(out.ok).toBe(false);
+  });
+
+  test("a rebase keeps the landed sequence: the base is below its first commit", async () => {
+    const root = withFeature();
+    const commits = gitRun(
+      root,
+      "rev-list",
+      "--reverse",
+      "main..feature",
+    ).split("\n");
     const before = gitRun(root, "rev-parse", "HEAD");
-    gitRun(root, "cherry-pick", "feature~1", "feature");
+    gitRun(root, "cherry-pick", ...commits);
     const merge = gitRun(root, "rev-parse", "HEAD");
-    const squash = {
-      kind: "squash" as const,
-      base: gitRun(root, "rev-parse", "HEAD~1"),
-      head: merge,
-    };
-    const settled = await settleSquash(
-      viewOf(
-        ["add feature", "edit shared"],
-        undefined,
-        gitRun(root, "rev-parse", "feature"),
-      ),
-      squash,
-      runnerIn(root),
-    );
-    expect(settled).toEqual({
-      ok: true,
-      value: { kind: "rebase", base: before, head: merge, branchHead: merge },
-    });
-  });
-});
-
-describe("a landed history that cannot be trusted", () => {
-  const view = {
-    commitSubjects: ["prepare", "finish"],
-    files: ["b.ts"],
-  } as unknown as PrView;
-
-  test("a subject collision with an unrelated commit is ambiguous", async () => {
-    const root = repository({ "a.ts": "1\n" });
-    write(root, "unrelated.ts", "x\n");
-    gitRun(root, "add", "-A");
-    gitRun(root, "commit", "-qm", "prepare");
-    write(root, "b.ts", "y\n");
-    gitRun(root, "add", "-A");
-    gitRun(root, "commit", "-qm", "finish");
-    const merge = gitRun(root, "rev-parse", "HEAD");
-    const settled = await settleSquash(
-      view,
-      {
-        kind: "squash",
-        base: gitRun(root, "rev-parse", "HEAD~1"),
-        head: merge,
-      },
-      runnerIn(root),
-    );
-    expect(settled.ok).toBe(false);
-  });
-
-  test("subjects and files that match over different content are ambiguous", async () => {
-    const root = repository({ "a.ts": "1\n" });
-    gitRun(root, "checkout", "-q", "-b", "feature");
-    write(root, "b.ts", "the pull request's\n");
-    gitRun(root, "add", "-A");
-    gitRun(root, "commit", "-qm", "own");
-    const own = gitRun(root, "rev-parse", "HEAD");
-    gitRun(root, "checkout", "-q", "main");
-    write(root, "b.ts", "main's\n");
-    gitRun(root, "add", "-A");
-    gitRun(root, "commit", "-qm", "prepare");
-    write(root, "b.ts", "squashed\n");
-    gitRun(root, "commit", "-qam", "finish");
-    const settled = await settleSquash(
-      { ...view, headRefOid: own } as unknown as PrView,
-      {
-        kind: "squash",
-        base: gitRun(root, "rev-parse", "HEAD~1"),
-        head: gitRun(root, "rev-parse", "HEAD"),
-      },
-      runnerIn(root),
-    );
-    expect(settled.ok).toBe(false);
-  });
-
-  test("a pull request head missing from the clone is ambiguous", async () => {
-    const root = repository({ "a.ts": "1\n" });
-    write(root, "b.ts", "y\n");
-    gitRun(root, "add", "-A");
-    gitRun(root, "commit", "-qm", "prepare");
-    write(root, "b.ts", "z\n");
-    gitRun(root, "commit", "-qam", "finish");
-    const settled = await settleSquash(
-      { ...view, headRefOid: "e".repeat(40) } as unknown as PrView,
-      {
-        kind: "squash",
-        base: gitRun(root, "rev-parse", "HEAD~1"),
-        head: gitRun(root, "rev-parse", "HEAD"),
-      },
-      runnerIn(root),
-    );
-    expect(settled.ok).toBe(false);
-  });
-
-  test("a rebase that deletes a file still reaches back", async () => {
-    const root = repository({ "a.ts": "1\n", "gone.ts": "x\n" });
-    gitRun(root, "checkout", "-q", "-b", "feature");
-    gitRun(root, "rm", "-q", "gone.ts");
-    gitRun(root, "commit", "-qm", "prepare");
-    write(root, "a.ts", "2\n");
-    gitRun(root, "commit", "-qam", "finish");
-    gitRun(root, "checkout", "-q", "main");
-    const before = gitRun(root, "rev-parse", "HEAD");
-    gitRun(root, "cherry-pick", "feature~1", "feature");
-    const merge = gitRun(root, "rev-parse", "HEAD");
-    const settled = await settleSquash(
-      {
-        commitSubjects: ["prepare", "finish"],
-        files: ["a.ts", "gone.ts"],
-        headRefOid: gitRun(root, "rev-parse", "feature"),
-      } as unknown as PrView,
-      {
-        kind: "squash",
-        base: gitRun(root, "rev-parse", "HEAD~1"),
-        head: merge,
-      },
-      runnerIn(root),
-    );
-    expect(settled).toEqual({
-      ok: true,
-      value: { kind: "rebase", base: before, head: merge, branchHead: merge },
-    });
-  });
-
-  test("an unreadable history is unreadable, not a squash", async () => {
-    const root = repository({ "a.ts": "1\n" });
-    const settled = await settleSquash(
-      view,
-      { kind: "squash", base: "a".repeat(40), head: "f".repeat(40) },
-      runnerIn(root),
-    );
-    expect(settled.ok).toBe(false);
-  });
-});
-
-describe("a rebase whose commits edit one file", () => {
-  test("still reaches back over the first commit", async () => {
-    const root = repository({ "a.test.ts": "test('a', () => {});\n" });
-    gitRun(root, "checkout", "-q", "-b", "feature");
-    write(root, "a.test.ts", "test.skip('a', () => {});\n");
-    gitRun(root, "commit", "-qam", "skip a");
-    write(root, "a.test.ts", "test.skip('a', () => {});\n// note\n");
-    gitRun(root, "commit", "-qam", "annotate a");
-    gitRun(root, "checkout", "-q", "main");
-    const before = gitRun(root, "rev-parse", "HEAD");
-    gitRun(root, "cherry-pick", "feature~1", "feature");
-    const merge = gitRun(root, "rev-parse", "HEAD");
-    const settled = await settleSquash(
-      {
-        commitSubjects: ["skip a", "annotate a"],
-        files: ["a.test.ts"],
-        headRefOid: gitRun(root, "rev-parse", "feature"),
-      } as unknown as PrView,
-      {
-        kind: "squash",
-        base: gitRun(root, "rev-parse", "HEAD~1"),
-        head: merge,
-      },
-      runnerIn(root),
-    );
-    expect(settled).toEqual({
+    const git = runnerIn(root);
+    const read = await mergeRange(git, merge);
+    if (!read.ok) throw new Error("unreadable");
+    const range = await rebaseRange(viewOf(commits), merge, read.value, git);
+    expect(range).toEqual({
       ok: true,
       value: { kind: "rebase", base: before, head: merge, branchHead: merge },
     });

@@ -8,7 +8,7 @@ import { CORE_ARMS, planArms } from "../scripts/lib/arms.ts";
 import { ACTS, authorityTable } from "../scripts/lib/authority.ts";
 import { recordVerdict, type RunFile } from "../scripts/lib/run.ts";
 import { parseFollowupSettings } from "../scripts/lib/settings.ts";
-import { renderSettled, settle } from "../scripts/lib/settle.ts";
+import { pendingArm, renderSettled, settle } from "../scripts/lib/settle.ts";
 import { factsOf } from "./helpers.ts";
 
 const everything = {
@@ -192,6 +192,34 @@ describe("settling a run", () => {
     );
     expect(failedRun.ok && failedRun.value.ending).toBe("failed");
     expect(failedRun.ok && failedRun.value.because).toEqual(["tracker"]);
+  });
+
+  test("a wait tells a dispatched pass to record a pending wait naming the arm, and a hand run to leave the marker open", () => {
+    const wait = settle(settled(runOf(), { release: "pending" }));
+    expect(wait.ok).toBe(true);
+    if (!wait.ok) return;
+    const text = renderSettled(wait.value);
+    expect(text).toContain(
+      'waits --until <when to look again> --reason pending --arm "<arm>"',
+    );
+    expect(pendingArm(wait.value)).toStartWith("release: ");
+    expect(text).toContain(pendingArm(wait.value));
+    expect(text).toContain("leave the marker open");
+    expect(text).toContain("this marker (42)");
+    expect(text).not.toContain("jig dispatch marker done 7 --comment 42");
+    expect(text).not.toContain("record done");
+  });
+
+  test("the pending arm stays within what --arm takes", () => {
+    const wait = settle(settled(runOf(), { release: "pending" }));
+    if (!wait.ok) throw new Error(wait.failure.reason);
+    const long = {
+      ...wait.value,
+      rows: wait.value.rows.map((r) =>
+        r.verdict === "pending" ? { ...r, evidence: "x ".repeat(300) } : r,
+      ),
+    };
+    expect(pendingArm(long).length).toBeLessThanOrEqual(200);
   });
 
   test("a preview carries out nothing: no marker, no result to record", () => {

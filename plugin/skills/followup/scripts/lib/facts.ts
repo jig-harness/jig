@@ -147,8 +147,6 @@ export interface PrView {
   labels: string[];
   files: string[];
   commits: string[];
-  /** The first line of each commit's message, oldest first. */
-  commitSubjects: string[];
 }
 
 /** The `gh pr view` fields `parsePrView` reads. */
@@ -185,7 +183,6 @@ export function parsePrView(text: string): PrView | null {
     labels: names(raw.labels, "name"),
     files: names(raw.files, "path"),
     commits: names(raw.commits, "oid"),
-    commitSubjects: names(raw.commits, "messageHeadline"),
   };
 }
 
@@ -296,6 +293,16 @@ export async function integrationBranchOf(
     : null;
 }
 
+/** The remote's default branch, asked of the remote when the clone holds no `refs/remotes/<remote>/HEAD`. */
+export async function remoteDefaultBranch(
+  remote: string,
+  git: GitRunner,
+): Promise<string | null> {
+  const r = await git(["ls-remote", "--symref", remote, "HEAD"]);
+  const m = /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(r.stdout);
+  return r.code === 0 && m?.[1] !== undefined ? m[1] : null;
+}
+
 /** The bases a merge may land on: the integration branch and every base `pull_requests.base_rules` names. */
 export function allowedBases(
   values: Record<string, unknown>,
@@ -372,115 +379,83 @@ export interface FactsDeps {
 
 export type FactsFailure = "unreadable" | "refused" | "rate-limited";
 
+/** A range read, or `null` with its reason added to `notes`. */
+function rangeOrNote(
+  read: Outcome<DiffRange, "unreadable">,
+  notes: string[],
+): DiffRange | null {
+  if (read.ok) return read.value;
+  notes.push(read.failure.reason);
+  return null;
+}
+
+/** The identity a rebase keeps: a commit's author time and subject. */
+async function landedIdentity(
+  git: GitRunner,
+  args: string[],
+): Promise<string[] | null> {
+  const r = await git([
+    "log",
+    "--no-walk=unsorted",
+    "--format=%at%x09%s",
+    ...args,
+  ]);
+  return r.code === 0 ? r.stdout.trim().split("\n") : null;
+}
+
 /**
- * A single-parent merge is a squash or a rebase of several commits.  A rebase
- * lands one single-parent commit per pull request commit, with its message
- * subject; a squash lands one commit whose subject is the pull request's own.
- * A landed sequence whose subjects are the pull request's, in order, widens
- * the range back over it only when the files it changes are the pull
- * request's own: equal subjects alone do not prove the commits are the pull
- * request's.  A history that cannot be read, or whose files disagree with the
- * pull request's list, is unreadable rather than guessed.
+ * A multi-commit pull request landed by rebase: the merge's first-parent
+ * chain holds one commit per original commit, each with the original's
+ * author time and subject.  A squash merge does not: its parent is whatever
+ * main held, so the chain fails the comparison and the squash range stays.
+ * A comparison that cannot be made is `unreadable`, never a squash: the
+ * narrower range would drop the earlier commits' notes and obligations
+ * without saying so.
  */
-export async function settleSquash(
+export async function rebaseRange(
   view: PrView,
-  squash: DiffRange,
+  merge: string,
+  range: DiffRange,
   git: GitRunner,
 ): Promise<Outcome<DiffRange, "unreadable">> {
-  const wanted = view.commitSubjects;
-  if (squash.kind !== "squash" || wanted.length < 2) return ok(squash);
-  const log = await git([
-    "log",
+  const count = view.commits.length;
+  if (range.kind !== "squash" || count < 2) return ok(range);
+  if (!view.commits.every((oid) => SHA.test(oid))) return ok(range);
+  const unreadable = (what: string) =>
+    failed(
+      "unreadable",
+      `${what} for PR #${view.number}, so a rebase merge cannot be told from a squash`,
+    );
+  const landed = await git([
+    "rev-list",
     "--first-parent",
-    `-n${wanted.length}`,
-    "--format=%P%x1f%s%x1e",
-    squash.head,
+    "--reverse",
+    "-n",
+    String(count),
+    merge,
   ]);
-  if (log.code !== 0)
-    return failed(
-      "unreadable",
-      `git log of the merge exited ${log.code}: whether it landed as a rebase is unknown`,
-    );
-  const landed = log.stdout
-    .split("\x1e")
-    .map((r) => r.replace(/^\n/, ""))
-    .filter((r) => r !== "")
-    .map((r) => r.split("\x1f") as [string, string]);
-  if (landed.length < wanted.length) {
-    const shallow = await git(["rev-parse", "--is-shallow-repository"]);
-    if (shallow.code !== 0 || shallow.stdout.trim() !== "false")
-      return failed(
-        "unreadable",
-        "the clone's history is too short to tell a squash from a rebase: fetch more history",
-      );
-    return ok(squash);
-  }
-  const linear = landed.every(([parents]) => SHA.test(parents.trim()));
-  const subjects = landed.map(([, subject]) => subject.trim()).reverse();
-  const same = subjects.every((subject, i) => subject === wanted[i]?.trim());
-  if (!linear || !same) return ok(squash);
-  const base = landed.at(-1)?.[0].trim() ?? "";
-  const widened: DiffRange = {
-    kind: "rebase",
-    base,
-    head: squash.head,
-    branchHead: squash.head,
-  };
-  const files = await changedFilesOf(git, widened);
-  if (!files.ok) return files;
-  const own = new Set(view.files);
-  const sameFiles =
-    files.value.length === own.size && files.value.every((f) => own.has(f));
-  if (!sameFiles)
-    return failed(
-      "unreadable",
-      "the landed commits share the pull request's subjects but not its files: whether they are its rebase is ambiguous",
-    );
-  return (await sameContent(view, git, squash.head))
-    ? ok(widened)
-    : failed(
-        "unreadable",
-        "the landed commits share the pull request's subjects and files but not its content, or its head is not in the clone: whether they are its rebase is ambiguous",
-      );
-}
-
-/**
- * A path's tree entry at a commit: its mode and blob, `""` when the commit
- * confirmably lacks the path, `null` when the commit cannot be read.
- */
-async function entryAt(
-  git: GitRunner,
-  commit: string,
-  file: string,
-): Promise<string | null> {
-  const tree = await git([
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `${commit}^{tree}`,
+  if (landed.code !== 0) return unreadable("the merge's history is unreadable");
+  const chain = landed.stdout.trim().split("\n");
+  if (chain.length !== count) return ok(range);
+  const [original, rebased] = await Promise.all([
+    landedIdentity(git, view.commits),
+    landedIdentity(git, chain),
   ]);
-  if (tree.code !== 0) return null;
-  const entry = await git(["ls-tree", commit, "--", file]);
-  if (entry.code !== 0) return null;
-  return entry.stdout.split("\t")[0]?.trim() ?? "";
-}
-
-/**
- * Whether every file the pull request lists is, at the landed head, what its
- * own head holds: the same blob, or absent from both (a deletion or a rename
- * away).  A commit that cannot be read is not a match.
- */
-async function sameContent(
-  view: PrView,
-  git: GitRunner,
-  landedHead: string,
-): Promise<boolean> {
-  for (const file of view.files) {
-    const landed = await entryAt(git, landedHead, file);
-    const own = await entryAt(git, view.headRefOid, file);
-    if (landed === null || own === null || landed !== own) return false;
-  }
-  return true;
+  if (original === null || rebased === null)
+    return unreadable("the commits' author times and subjects are unreadable");
+  if (original.some((line, i) => line !== rebased[i])) return ok(range);
+  // Matching times and subjects do not make the changes the same: `git cherry`
+  // marks a commit `-` only when its patch is already in the merge's history.
+  const cherry = await git(["cherry", merge, view.commits[count - 1] ?? ""]);
+  if (cherry.code !== 0) return unreadable("`git cherry` failed");
+  const marks = cherry.stdout.trim().split("\n");
+  if (marks.length < count) return ok(range);
+  if (!marks.every((line) => line.startsWith("- "))) return ok(range);
+  const parent = await git(["rev-parse", `${chain[0]}^`]);
+  const base = parent.stdout.trim();
+  if (parent.code !== 0 || !SHA.test(base))
+    return unreadable("the first landed commit's parent is unreadable");
+  return ok({ kind: "rebase", base, head: merge, branchHead: merge });
 }
 
 /** The range of a merged pull request, fetching its merge commit when the clone lacks it. */
@@ -494,13 +469,29 @@ async function mergedRange(
     await deps.fetch(["fetch", "--no-tags", deps.remote, merge]);
     read = await mergeRange(deps.git, merge);
   }
-  await deps.fetch([
-    "fetch",
-    "--no-tags",
-    deps.remote,
-    `refs/pull/${view.number}/head`,
-  ]);
-  return read.ok ? settleSquash(view, read.value, deps.git) : read;
+  if (!read.ok) return read;
+  if (read.value.kind === "squash" && view.commits.length >= 2) {
+    // The landed commits are compared with the pull request's own, so the
+    // clone must hold both; a range narrowed because they are missing would
+    // drop the earlier commits' notes and obligations without saying so.
+    const missing = async (): Promise<boolean> =>
+      (
+        await Promise.all(
+          view.commits.map((oid) =>
+            deps.git(["cat-file", "-e", `${oid}^{commit}`]),
+          ),
+        )
+      ).some((r) => r.code !== 0);
+    if (await missing()) {
+      await deps.fetch(["fetch", "--no-tags", deps.remote, ...view.commits]);
+      if (await missing())
+        return failed(
+          "unreadable",
+          `the commits of PR #${view.number} are not in this clone, so a rebase merge cannot be told from a squash`,
+        );
+    }
+  }
+  return rebaseRange(view, merge, read.value, deps.git);
 }
 
 /** The range of a merged or open pull request, after fetching its base (and a preview's head). */
@@ -509,7 +500,7 @@ async function rangeOf(
   mode: Mode,
   deps: FactsDeps,
   notes: string[],
-): Promise<Outcome<DiffRange, "unreadable">> {
+): Promise<DiffRange | null> {
   const baseRef = `${deps.remote}/${view.baseRefName}`;
   const head = mode === "preview" ? [`refs/pull/${view.number}/head`] : [];
   const fetched = await deps.fetch([
@@ -527,7 +518,7 @@ async function rangeOf(
     mode === "preview"
       ? await previewRange(deps.git, baseRef, view.headRefOid)
       : await mergedRange(view, deps);
-  return read;
+  return rangeOrNote(read, notes);
 }
 
 /** Whether the pull request lists a file a squash range does not change: the sign of a rebase merge. */
@@ -539,17 +530,20 @@ function listsMore(view: PrView, range: DiffRange, files: string[]): boolean {
 /** The changed files: the range's, else the pull request's own list. */
 async function filesOf(
   view: PrView,
-  range: DiffRange,
+  range: DiffRange | null,
   git: GitRunner,
   notes: string[],
 ): Promise<string[]> {
-  const read = await changedFilesOf(git, range);
+  const read =
+    range === null
+      ? failed("unreadable", "the merge's range could not be read")
+      : await changedFilesOf(git, range);
   if (!read.ok) {
     notes.push(read.failure.reason);
     notes.push("the changed files are the pull request's own list");
     return view.files;
   }
-  if (listsMore(view, range, read.value))
+  if (range !== null && listsMore(view, range, read.value))
     notes.push(
       "the pull request lists files the merge commit's range does not change: the merge may have rebased several commits, so read the pull request's own diff as well",
     );
@@ -622,27 +616,20 @@ async function changeFacts(
   deps: FactsDeps,
   notes: string[],
 ): Promise<
-  Outcome<
-    Pick<Facts, "range" | "changedFiles" | "changeAreas" | "scaffolding">,
-    "unreadable"
-  >
+  Pick<Facts, "range" | "changedFiles" | "changeAreas" | "scaffolding">
 > {
-  const read = await rangeOf(view, mode, deps, notes);
-  if (!read.ok) return read;
-  const range = read.value;
+  const range = await rangeOf(view, mode, deps, notes);
   const changedFiles = await filesOf(view, range, deps.git, notes);
-  const scaffolding = await scanAddedLines(
-    deps.git,
-    range.base,
-    range.head,
-    notes,
-  );
-  return ok({
+  const scaffolding =
+    range === null
+      ? []
+      : await scanAddedLines(deps.git, range.base, range.head, notes);
+  return {
     range,
     changedFiles,
     changeAreas: await deps.areas(changedFiles),
     scaffolding,
-  });
+  };
 }
 
 /** The merge facts of pull request `pr`. */
@@ -660,7 +647,6 @@ export async function gatherFacts(
   if (!base.ok) return base;
   const notes: string[] = [];
   const changes = await changeFacts(view, mode.value, deps, notes);
-  if (!changes.ok) return changes;
   return ok({
     schema: 1,
     pr: view.number,
@@ -673,7 +659,7 @@ export async function gatherFacts(
     headRefName: view.headRefName,
     headRefOid: view.headRefOid,
     mergeSha: view.mergeCommit?.oid ?? null,
-    ...changes.value,
+    ...changes,
     ...describedFacts(view, deps.values, notes),
     configOrigin: deps.configOrigin,
     notes,

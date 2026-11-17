@@ -91,6 +91,7 @@ import {
   type FactsFailure,
   gatherFacts,
   integrationBranchOf,
+  remoteDefaultBranch,
   PR_VIEW_FIELDS,
   prViewOf,
   type PrView,
@@ -111,7 +112,6 @@ import {
 } from "./lib/settings.ts";
 import { mergeNotes, statusInCheckout } from "./lib/release.ts";
 import { renderSettled, settle } from "./lib/settle.ts";
-import { verifyRemoteIsPrRepo } from "../../drive-pr/scripts/lib/base-drift.ts";
 import {
   shellArgv,
   validationPlanCommand,
@@ -301,92 +301,6 @@ const FACTS_EXIT: Record<FactsFailure, number> = {
   "rate-limited": 5,
 };
 
-/** The settings a freshly fetched snapshot of `branch` holds; a failed fetch or an unreadable snapshot stops the run. */
-async function fetchedPolicy(
-  dir: string,
-  remote: string,
-  branch: string,
-): Promise<RunSettings> {
-  const policyRef = `${remote}/${branch}`;
-  const refspec = `+refs/heads/${branch}:refs/remotes/${policyRef}`;
-  const fetch = gitIn(dir, FETCH_TIMEOUT_SEC);
-  const fetched = await fetch(["fetch", "--no-tags", remote, refspec]);
-  if (fetched.code !== 0)
-    stop(
-      1,
-      `the fetch of ${policyRef} exited ${fetched.code}: its policy may be stale`,
-    );
-  const read = await settingsFor(dir, remote, branch);
-  const unread =
-    read.origin !== "integration branch" && !process.env.JIG_OVERLAY;
-  if (unread) stop(1, `the configuration at ${policyRef} cannot be read`);
-  return read;
-}
-
-/** The `repository.base_branch` a snapshot names when it is not `head`. */
-function otherBranch(
-  values: Record<string, unknown>,
-  head: string,
-): string | null {
-  const named = valueAt(values, "repository.base_branch");
-  return typeof named === "string" && named !== "" && named !== head
-    ? named
-    : null;
-}
-
-/**
- * The integration branch and the settings its snapshot holds.  The remote's
- * HEAD bootstraps the choice, since the working tree and the pull request are
- * the preview's own; the configuration read from that branch may name another
- * `repository.base_branch`, whose snapshot then decides.
- */
-async function trustedPolicy(
-  dir: string,
-  remote: string,
-): Promise<{ integration: string; read: RunSettings }> {
-  const head = await integrationBranchOf({}, remote, gitIn(dir));
-  if (head === null)
-    return stop(
-      2,
-      `the remote's HEAD is unknown: run git remote set-head ${remote} -a`,
-    );
-  const first = await fetchedPolicy(dir, remote, head);
-  const named = otherBranch(first.values, head);
-  return named === null
-    ? { integration: head, read: first }
-    : { integration: named, read: await fetchedPolicy(dir, remote, named) };
-}
-
-/** Stops unless `remote` fetches from the repository the pull request belongs to. */
-async function bindRemoteToPr(
-  dir: string,
-  remote: string,
-  prUrl: string,
-): Promise<void> {
-  const repo = /^https?:\/\/[^/]+\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/.exec(
-    prUrl,
-  );
-  if (repo === null)
-    return stop(
-      1,
-      `cannot tell the repository of the pull request from ${prUrl}`,
-    );
-  const check = await verifyRemoteIsPrRepo(
-    (args, opts) =>
-      git(args, {
-        cwd: dir,
-        timeoutSec: opts?.timeoutSec ?? GIT_TIMEOUT_SEC,
-        env: gitIdentityEnv(),
-      }),
-    dir,
-    repo[1] as string,
-    undefined,
-    remote,
-    prUrl,
-  );
-  if (!check.ok) stop(2, `cannot trust the policy of ${remote}: ${check.why}`);
-}
-
 async function factsCommand(args: string[]): Promise<number> {
   const facts = "facts takes one PR number";
   const pr = numberArg(exactly(args, 1, facts)[0], facts);
@@ -396,12 +310,33 @@ async function factsCommand(args: string[]): Promise<number> {
     2,
   );
   const local = gitIn(dir);
+  // GitHub's base ref is not controlled by the preview branch.  Reading this
+  // from the working configuration would let a preview choose the snapshot
+  // that decides its authority.
   const viewed = await viewPr(pr);
   if (!viewed.ok) stop(FACTS_EXIT[viewed.failure.code], viewed.failure.reason);
-  await bindRemoteToPr(dir, remote, viewed.value.url);
-  const { integration, read } = await trustedPolicy(dir, remote);
+  if (viewed.value.baseRefName === "")
+    stop(1, `PR #${pr} names no base branch`);
+  // The integration branch is established apart from the pull request: the
+  // remote's default branch names it, and that branch's configuration may name
+  // another.  The pull request's base is then checked against its policy.
+  const defaulted =
+    (await integrationBranchOf({}, remote, local)) ??
+    (await remoteDefaultBranch(remote, local));
+  if (defaulted === null)
+    stop(
+      1,
+      `the remote's default branch is unknown, so the integration branch cannot be established; run git remote set-head ${remote} --auto`,
+    );
+  const bootstrap = await settingsFor(dir, remote, defaulted);
+  const integration =
+    (await integrationBranchOf(bootstrap.values, remote, local)) ?? defaulted;
+  const read =
+    integration === defaulted
+      ? bootstrap
+      : await settingsFor(dir, remote, integration);
   const gathered = await gatherFacts(pr, integration, {
-    view: async () => viewed,
+    view: viewPr,
     git: local,
     fetch: gitIn(dir, FETCH_TIMEOUT_SEC),
     areas: (files) => changeAreasOf(dir, files),
@@ -709,6 +644,9 @@ async function releaseCommand(args: string[]): Promise<number> {
   });
   const { dir, run: loaded } = loadRun(values.pr);
   const { facts } = loaded;
+  const notesDir = notesDirOf(
+    (await settingsFor(dir, facts.remote, facts.integrationBranch)).values,
+  );
   const integrationRef = `${facts.remote}/${facts.integrationBranch}`;
   const fetched = await gitIn(
     dir,
@@ -720,9 +658,6 @@ async function releaseCommand(args: string[]): Promise<number> {
     `+refs/heads/${facts.integrationBranch}:refs/remotes/${integrationRef}`,
   ]);
   const local = gitIn(dir);
-  const notesDir = notesDirOf(
-    (await settingsFor(dir, facts.remote, facts.integrationBranch)).values,
-  );
   const notes =
     fetched.code !== 0
       ? {
