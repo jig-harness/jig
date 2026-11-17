@@ -54,6 +54,7 @@ import {
   resetProbeBaselines,
 } from "../gh-conditional.ts";
 import { CACHE_RETENTION_MS } from "../gh-cache-storage.ts";
+import { currentMs } from "../time.ts";
 
 function runScratch(
   command: string,
@@ -408,13 +409,21 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     await ghConditionalGet(PULL);
     const [entry = ""] = entryFiles();
     expect(entry).not.toBe("");
-    const expired = new Date(Date.now() - CACHE_RETENTION_MS - 1_000);
-    utimesSync(join(cacheDir, entry), expired, expired);
+    const file = join(cacheDir, entry);
+    const retainedAt = statSync(file).mtimeMs;
+
+    // Revalidation updates recency for eviction, but response retention is
+    // measured from when the response was written, not its last reuse.
+    await ghConditionalGet(PULL);
+    expect(Math.floor(statSync(file).mtimeMs)).toBe(Math.floor(retainedAt));
+
+    const expired = new Date(currentMs() - CACHE_RETENTION_MS - 1_000);
+    utimesSync(file, expired, expired);
 
     await ghConditionalGet(PULL);
     // An expired entry is removed before the request, so it cannot supply an
     // ETag or response body to the new read.
-    expect(conditionalCalls()).toHaveLength(0);
+    expect(conditionalCalls()).toHaveLength(1);
   });
 
   it("prunes the oldest entries once the directory outgrows its bound", async () => {

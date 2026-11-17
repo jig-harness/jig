@@ -59,14 +59,15 @@ export function readJsonFile(file: string): Record<string, unknown> | null {
 
 /**
  * Mark `file` as just used, so pruning, which removes the least recently
- * written or used entries first, keeps an entry a caller still reuses.
+ * used entries first, keeps an entry a caller still reuses. Preserve mtime:
+ * it is the response's retention clock, and reuse must not prolong retention.
  * Best effort: an entry that cannot be touched may be pruned, costing a
  * re-read.
  */
 export function touchFile(file: string): void {
   try {
     const now = currentMs() / 1000;
-    utimesSync(file, now, now);
+    utimesSync(file, now, statSync(file).mtime);
   } catch (error) {
     swallow(error, "an entry that cannot be marked used may be pruned");
   }
@@ -112,7 +113,7 @@ function prune(dir: string, limit: EntryLimit): void {
   const aged = retained
     .map((n) => {
       try {
-        return { n, t: statSync(join(dir, n)).mtimeMs };
+        return { n, t: statSync(join(dir, n)).atimeMs };
       } catch {
         return { n, t: 0 };
       }

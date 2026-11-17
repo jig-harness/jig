@@ -1428,50 +1428,56 @@ export async function summaryReport(
   configuredReviewerOnly: boolean,
   comments?: IssueComment[],
 ): Promise<SummaryReport | null> {
-  if (readsNoComments(configuredReviewerOnly, undefined))
-    return emptyReport(prNumber);
+  try {
+    if (readsNoComments(configuredReviewerOnly, undefined))
+      return emptyReport(prNumber);
 
-  const issueComments =
-    comments ?? (await issueCommentsFor(repo, prNumber, undefined));
-  const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
-  const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
-  const winddownDeferred = sticky
-    ? winddownFingerprintsOf(sticky.body)
-    : new Set<string>();
-  const bodyFormat = reviewBodyFormat();
-  if (bodyFormat !== undefined)
-    return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
-  if (!sticky) return emptyReport(prNumber);
+    const issueComments =
+      comments ?? (await issueCommentsFor(repo, prNumber, undefined));
+    const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
+    const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
+    const winddownDeferred = sticky
+      ? winddownFingerprintsOf(sticky.body)
+      : new Set<string>();
+    const bodyFormat = reviewBodyFormat();
+    if (bodyFormat !== undefined)
+      return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
+    if (!sticky) return emptyReport(prNumber);
 
-  const reviewComments: ReviewComment[] = JSON.parse(
-    await slurp(
-      `repos/${repo}/pulls/${prNumber}/comments?per_page=100`,
-      "observed",
-    ),
-  ).flat();
-  const anchoredKeys =
-    stickyRound === null
-      ? []
-      : reviewComments
-          .filter((c) => isReviewerLogin(c.user?.login ?? ""))
-          .filter((c) => parseReviewRound(c.body ?? "") === stickyRound)
-          .map((c) => anchorKey(c.path, c.line ?? null));
-  const reviewedSha = reviewedShaFrom(sticky.body);
-  const addressed = collectAddressed(markerSourcesOf(issueComments), {
-    reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
-    backlogFingerprints: backlogFingerprintsOf(sticky.body),
-    winddownDeferred,
-    currentRound: stickyRound,
-  });
-  return classify({
-    pr: prNumber,
-    stickyCommentId: sticky.id,
-    stickyBody: sticky.body,
-    stickyAuthor: sticky.user.login,
-    anchoredKeys,
-    addressedFingerprints: addressed,
-    ...definedFields({ reviewedSha }),
-  });
+    const reviewComments: ReviewComment[] = JSON.parse(
+      await slurp(
+        `repos/${repo}/pulls/${prNumber}/comments?per_page=100`,
+        "observed",
+      ),
+    ).flat();
+    const anchoredKeys =
+      stickyRound === null
+        ? []
+        : reviewComments
+            .filter((c) => isReviewerLogin(c.user?.login ?? ""))
+            .filter((c) => parseReviewRound(c.body ?? "") === stickyRound)
+            .map((c) => anchorKey(c.path, c.line ?? null));
+    const reviewedSha = reviewedShaFrom(sticky.body);
+    const addressed = collectAddressed(markerSourcesOf(issueComments), {
+      reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
+      backlogFingerprints: backlogFingerprintsOf(sticky.body),
+      winddownDeferred,
+      currentRound: stickyRound,
+    });
+    return classify({
+      pr: prNumber,
+      stickyCommentId: sticky.id,
+      stickyBody: sticky.body,
+      stickyAuthor: sticky.user.login,
+      anchoredKeys,
+      addressedFingerprints: addressed,
+      ...definedFields({ reviewedSha }),
+    });
+  } catch {
+    // This boundary is evidence only: an unreadable response or reviewer
+    // payload must reach evaluate() as INDETERMINATE, not reject its promise.
+    return null;
+  }
 }
 
 async function main(): Promise<number> {

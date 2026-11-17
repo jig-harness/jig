@@ -40,10 +40,14 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { utimesSync } from "node:fs";
 import { definedFields } from "../defined-fields.ts";
 import { swallow } from "../errors.ts";
-import { entryFile, readJsonFile, writeJsonFile } from "../gh-cache-storage.ts";
+import {
+  entryFile,
+  readJsonFile,
+  touchFile,
+  writeJsonFile,
+} from "../gh-cache-storage.ts";
 import { log } from "../log.ts";
 import { currentMs } from "../time.ts";
 import { coalesce } from "./coalesce.ts";
@@ -493,10 +497,5 @@ function withinBudget(
 
 /** Mark a kept entry used, so pruning drops the entries nobody revalidates first. */
 function touch(file: string): void {
-  try {
-    const nowSec = currentMs() / 1000;
-    utimesSync(file, nowSec, nowSec);
-  } catch (error) {
-    swallow(error, "an entry that cannot be touched is only pruned sooner");
-  }
+  touchFile(file);
 }
