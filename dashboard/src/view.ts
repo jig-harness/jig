@@ -9,6 +9,7 @@ import type {
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural, span, until } from "./format.ts";
+import { retainedSlug } from "../../plugin/dispatch/lib/line-unread.ts";
 import { noLinkText } from "./links.ts";
 import { type Role, roleOf } from "./status.ts";
 
@@ -124,7 +125,7 @@ export function staleBanners(
     if (repo.readAt === undefined) return [];
     const read = Date.parse(repo.readAt);
     if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
-    const name = repo.slug ?? repo.lastSlug ?? repo.path;
+    const name = retainedSlug(repo) ?? repo.path;
     const since = (line.ticks ?? []).filter(
       (t) => Date.parse(t.startedAt) > read,
     );

@@ -555,5 +555,8 @@ describe("mergeLine", () => {
     );
     expect(twice.needs.map((x) => x.target)).toEqual(["A-N0"]);
     expect(refusedRepos(twice)[0]?.readAt).toBe("2026-11-10T10:00:00.000Z");
+    // The readers name the retained part's identity, and park memory keeps it.
+    expect(refusedRepos(twice)[0]?.repo).toBe("A");
+    expect([...identifiedSlugs(once, read, LISTED)].sort()).toEqual(["A", "B"]);
   });
 });

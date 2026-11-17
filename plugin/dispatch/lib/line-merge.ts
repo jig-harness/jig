@@ -20,7 +20,7 @@
  * that stopped still shows as one while woken ticks run.
  */
 import type { LineRepo, LineSnapshot } from "./dashboard-contract.ts";
-import { unread } from "./line-unread.ts";
+import { retainedSlug, unread } from "./line-unread.ts";
 
 /** The line with each repository's entry marked as read by the tick `runId` that started at `at`; an entry that read nothing is marked as tried then, with no reading. */
 export function readBy(
@@ -74,7 +74,7 @@ export function mergeLine(
   };
   const kept = new Set(
     previous.repos.flatMap((r) => {
-      const slug = knownSlug(r);
+      const slug = retainedSlug(r);
       // An entry that no tick read holds no part to keep.
       return slug === undefined ||
         (unread(r) && r.readAt === undefined) ||
@@ -136,7 +136,7 @@ export function mergeLine(
       if (now === undefined)
         return before === undefined ? [] : [{ ...before, ...from }];
       // An entry that read nothing and whose part was kept names the tick that part is from.
-      const slug = before === undefined ? undefined : knownSlug(before);
+      const slug = before === undefined ? undefined : retainedSlug(before);
       if (!(unread(now) && slug !== undefined && kept.has(slug))) return [now];
       // The retained part keeps its own identity and Ready omission count beside this attempt's entry.
       const { readyOmitted: _attempted, ...attempt } = now;
@@ -155,13 +155,6 @@ export function mergeLine(
   };
 }
 
-/** The slug the repository's retained part is under: an entry that read nothing names it in `lastSlug`, whatever slug the newest attempt found; else the entry's slug. */
-function knownSlug(r: LineRepo): string | undefined {
-  return unread(r) && r.lastSlug !== undefined
-    ? r.lastSlug
-    : (r.slug ?? r.lastSlug);
-}
-
 /**
  * The slugs of the line's repositories, with the identity the line before
  * held for a configured path whose report found none: a report that found no
@@ -177,11 +170,11 @@ export function identifiedSlugs(
   );
   for (const old of before?.repos ?? []) {
     const now = line.repos.find((r) => r.path === old.path);
-    const known = knownSlug(old);
+    const known = retainedSlug(old);
     if (
       known !== undefined &&
       now !== undefined &&
-      now.slug === null &&
+      (now.slug === null || unread(now)) &&
       listed.some((m) => m.path === old.path)
     )
       slugs.add(known);
@@ -199,7 +192,7 @@ export function withLastSlugs(
     repos: line.repos.map((r) => {
       if (r.slug !== null) return r;
       const old = before?.repos.find((b) => b.path === r.path);
-      const known = old === undefined ? undefined : knownSlug(old);
+      const known = old === undefined ? undefined : retainedSlug(old);
       return known === undefined ? r : { ...r, lastSlug: known };
     }),
   };

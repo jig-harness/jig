@@ -13,6 +13,15 @@ export function unread(r: Pick<LineRepo, "slug" | "unobserved">): boolean {
   return r.slug === null || r.unobserved === true;
 }
 
+/** The slug the repository's retained part is under: an entry that read nothing names it in `lastSlug`, whatever slug the newest attempt found; else the entry's slug, else its last one. */
+export function retainedSlug(
+  r: Pick<LineRepo, "slug" | "unobserved" | "lastSlug">,
+): string | undefined {
+  return unread(r) && r.lastSlug !== undefined
+    ? r.lastSlug
+    : (r.slug ?? r.lastSlug);
+}
+
 /** A repository whose newest read was refused, and the reading its part of the line is from. */
 export interface RefusedRepo {
   /** Its slug, else the slug its path last had, else its path when no tick has identified it. */
@@ -27,7 +36,7 @@ export interface RefusedRepo {
 export function refusedRepos(line: LineSnapshot): RefusedRepo[] {
   return line.repos.flatMap((r) => {
     if (r.refused === null) return [];
-    const known = r.slug ?? r.lastSlug;
+    const known = retainedSlug(r);
     // An entry that read nothing holds the part its path last had, if any, with that reading's time.
     const readAt = !unread(r)
       ? (r.readAt ?? line.startedAt)
