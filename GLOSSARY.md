@@ -1655,7 +1655,9 @@ make, use the entry's term instead.
   with one verdict: owed (done or filed), not owed (with a checkable fact),
   pending (it settles by itself, such as a rollout in progress) or unread.
   The plugin's [followup](plugin/skills/followup/README.md) skill runs a
-  fixed list of core arms and will not end a run while one has no verdict;
+  fixed list of core arms, plus the **repository arms** a repository
+  declares in its configuration (an instructions file, a read-only check
+  command or a skill), and will not end a run while one has no verdict;
   before the merge it runs them as a preview that carries out nothing.
 - **Ops-pending** — the tracker state a merged item waits in while a step a
   person performs outside the code (a setting, a host change, a live check)

@@ -48,6 +48,7 @@ command runs as long as the step that runs it lets it.
 | `drive.load_guard_command` | drive-pr | no | — | Waits until the machine can take a round's heavy checks. |
 | `ci.log_command` | fix-ci | yes | 300 s (`JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC`) | Reads the failed log of a commit status, for a CI service that reports as commit statuses and keeps its logs where only the repository knows how to reach them. |
 | `do_item.preflight_command` | do-item, work-batch, dispatch | yes | 60 s (`JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC`) | The repository's own start rules, run by every claim of an item: by do-item, by work-batch for each member, and by a dispatched pickup. |
+| `followup.arms` | followup | yes | 60 s (`JIG_FOLLOWUP_CHECK_TIMEOUT_SEC`) | A repository's own follow-up arm, read-only: says whether a merge owes what that arm checks. The followup skill records its verdict through the same ledger as every other arm. |
 | `descar.lint_command` | descar | no | — | Finds review scars in documents. |
 | `promote_memory.lint_command` | promote-memory | no | — | Checks one agent memory against the repository. |
 | `fix_ci.regenerate_commands` | fix-ci | no | — | Each regenerates committed generated files a CI check compares; a list of commands. |
@@ -70,6 +71,7 @@ command runs as long as the step that runs it lets it.
 | `drive.load_guard_command` | yes | Nothing: it runs from the repository root before a round's heavy checks. | Exit 0 once the machine can take the checks; any other exit is a warning that the round's heavy checks may be refused. |
 | `ci.log_command` | yes | One JSON object, `{"context", "target_url"}`, the failing commit status's context and the page it links to (null when it links to none), on standard input. It runs in a temporary copy of the default branch's files, not in the pull request's working tree. | Exit 0 and the status's failed log on standard output, at most 64 KiB of it. |
 | `do_item.preflight_command` | yes | The item's JSON, as `get_issue.ts` prints it, on standard input. It runs from the repository root before a claim takes its lock or writes anything. | Exit 0 lets the claim go on. |
+| `followup.arms` | yes | The follow-up's merge facts as one JSON object on standard input (`followup.ts facts` prints the same object). Each entry's `check_command` runs from the repository root, as the integration branch's configuration names it. | Exit 0 and one verdict JSON object on standard output, `{"verdict": "owed"\|"not-owed"\|"pending"\|"unread", "items": [...], "evidence": "..."}`, at most 64 KiB. A run past its deadline, any other exit, or output that is not such an object records the arm `unread` with the reason, never `not-owed`. |
 | `descar.lint_command` | yes | The paths of the documents to check, as arguments. | The scars it finds, which descar's steps read. |
 | `promote_memory.lint_command` | yes | The command line with `{dir}` and `{file}` replaced by the memory's folder and file. | Exit 0 when the memory is clean. |
 | `fix_ci.regenerate_commands` | yes | Nothing: each runs from the repository root. | Exit 0 once it has rewritten its generated files. |

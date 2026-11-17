@@ -62,10 +62,26 @@ export const REFLECTION_APPEND_SHAPE = s.object({
 /** Diagnose notices are JSON objects whose fields are specific to the store. */
 export const REFLECTION_DIAGNOSE_SHAPE = s.object({});
 
+/** The verdicts a follow-up arm ends with; the followup skill's ledger holds the same list. */
+export const FOLLOWUP_VERDICTS = [
+  "owed",
+  "not-owed",
+  "pending",
+  "unread",
+] as const;
+
+/** What the check command of a `followup.arms` entry prints: one arm's verdict, with its evidence. */
+export const FOLLOWUP_VERDICT_SHAPE = s.object({
+  verdict: s.enum(FOLLOWUP_VERDICTS),
+  items: s.optional(s.array(s.string())),
+  evidence: s.string(),
+});
+
 export const COMMAND_OUTPUT_SHAPES = {
   "validation-plan": VALIDATION_PLAN_SHAPE,
   "classify-output": CLASSIFY_OUTPUT_SHAPE,
   "reflection-check": REFLECTION_CHECK_SHAPE,
   "reflection-append": REFLECTION_APPEND_SHAPE,
   "reflection-diagnose": REFLECTION_DIAGNOSE_SHAPE,
+  "followup-verdict": FOLLOWUP_VERDICT_SHAPE,
 } as const;

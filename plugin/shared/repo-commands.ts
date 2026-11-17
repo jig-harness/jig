@@ -21,6 +21,10 @@ export const PREFLIGHT_REFUSAL_EXIT = 3;
 export const PREFLIGHT_TIMEOUT_ENV = "JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC";
 export const DEFAULT_PREFLIGHT_TIMEOUT_SEC = 60;
 
+/** The variable that bounds the check command of a `followup.arms` entry, in seconds. */
+export const FOLLOWUP_CHECK_TIMEOUT_ENV = "JIG_FOLLOWUP_CHECK_TIMEOUT_SEC";
+export const DEFAULT_FOLLOWUP_CHECK_TIMEOUT_SEC = 60;
+
 /** The exit by which `ci.log_command` says the log no longer exists. */
 export const LOG_GONE_EXIT = 3;
 /** The variable that overrides `ci.log_command`'s deadline. */
@@ -149,6 +153,21 @@ export const REPO_COMMANDS = {
     },
     meaning:
       "The repository's own start rules, run by every claim of an item: by do-item, by work-batch for each member, and by a dispatched pickup.",
+  },
+  "followup.arms": {
+    runBy: ["followup"],
+    shell: true,
+    given:
+      "The follow-up's merge facts as one JSON object on standard input (`followup.ts facts` prints the same object). Each entry's `check_command` runs from the repository root, as the integration branch's configuration names it.",
+    answers: `Exit 0 and one verdict JSON object on standard output, \`{"verdict": "owed"|"not-owed"|"pending"|"unread", "items": [...], "evidence": "..."}\`, at most ${REPO_COMMAND_MAX_OUTPUT_BYTES / 1024} KiB. A run past its deadline, any other exit, or output that is not such an object records the arm \`unread\` with the reason, never \`not-owed\`.`,
+    commandStore: true,
+    deadline: {
+      seconds: DEFAULT_FOLLOWUP_CHECK_TIMEOUT_SEC,
+      changedBy: FOLLOWUP_CHECK_TIMEOUT_ENV,
+    },
+    exits: {},
+    meaning:
+      "A repository's own follow-up arm, read-only: says whether a merge owes what that arm checks. The followup skill records its verdict through the same ledger as every other arm.",
   },
   "descar.lint_command": {
     runBy: ["descar"],
