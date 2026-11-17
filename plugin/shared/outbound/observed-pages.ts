@@ -5,8 +5,8 @@
  * once.
  *
  * - **Within one evaluation** (`withObservedEvaluation`), every ask for the
- *   same resource (the call's directory and repository, its credential, the
- *   path) shares one reading. A failed reading is not kept: the next ask
+ *   same resource (the resolved repository scope and path) shares one reading.
+ *   A failed reading is not kept: the next ask
  *   reads again. Outside an evaluation nothing is shared, so a long-lived
  *   process that polls never answers from an earlier poll.
  * - **Across evaluations**, every page is kept on disk with its URL, ETag,
@@ -41,7 +41,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { utimesSync } from "node:fs";
-import { resolve } from "node:path";
 import { definedFields } from "../defined-fields.ts";
 import { swallow } from "../errors.ts";
 import { entryFile, readJsonFile, writeJsonFile } from "../gh-cache-storage.ts";
@@ -49,7 +48,6 @@ import { log } from "../log.ts";
 import { currentMs } from "../time.ts";
 import { coalesce } from "./coalesce.ts";
 import { PAGE_CAP, nextPageUrl } from "./gh-paginate.ts";
-import { githubCredential } from "./github-credential.ts";
 import { splitHeaders } from "./github-budget.ts";
 
 /** The answer of an observed read: the fields a `gh` run reports. */
@@ -126,7 +124,13 @@ const isString = (v: unknown): v is string => typeof v === "string";
 function keptPage(v: unknown): KeptPage | null {
   if (typeof v !== "object" || v === null) return null;
   const p = v as Record<string, unknown>;
-  if (!isString(p.url) || !isString(p.etag) || !isString(p.body)) return null;
+  if (
+    !isString(p.url) ||
+    !isString(p.etag) ||
+    !isString(p.body) ||
+    pageItems(p.body) === null
+  )
+    return null;
   if (p.next !== null && !isString(p.next)) return null;
   return { url: p.url, etag: p.etag, body: p.body, next: p.next };
 }
@@ -273,11 +277,17 @@ export function createObservedPages<R extends ObservedRun>(
         : rejectedPage(r, "304 without a validator");
     if (status[1] !== "200" || r.code !== 0 || pageItems(body) === null)
       return rejectedPage(r, "response was not a whole JSON page");
+    const next = nextPageUrl(headers, ctx.env ?? process.env);
+    if (
+      /(?:^|,)\s*<[^>]+>;\s*rel="next"/.test(headers?.get("link") ?? "") &&
+      next === null
+    )
+      return rejectedPage(r, "next page is not safe to follow");
     return {
       status: 200,
       etag: headers?.get("etag") ?? "",
       body,
-      next: nextPageUrl(headers, ctx.env ?? process.env),
+      next,
     };
   }
 
@@ -356,6 +366,9 @@ export function createObservedPages<R extends ObservedRun>(
         url = page.next;
         return "next";
       }
+      // A full final page proves this walk complete. There is no room for the
+      // optional tail probe, but a real next link above still fails closed.
+      if (pages.length >= PAGE_CAP) return "done";
       const after = followingPage(page.url);
       const known =
         after === null
@@ -392,10 +405,16 @@ export function createObservedPages<R extends ObservedRun>(
   async function read(
     path: string,
     ctx: ObservedOptions,
+    knownScope?: string | null,
   ): Promise<ObservedRun> {
     const startMs = currentMs();
     const dir = deps.cacheDir();
-    const scope = dir === null ? null : await deps.repoScope(ctx);
+    const scope =
+      dir === null
+        ? null
+        : knownScope === undefined
+          ? await deps.repoScope(ctx)
+          : knownScope;
     if (dir === null || scope === null) return wholeRead(path, ctx, startMs);
     const request = `pages ${path}`;
     const file = entryFile(dir, scope, request);
@@ -420,16 +439,20 @@ export function createObservedPages<R extends ObservedRun>(
    * page by page across evaluations, read whole whenever that cannot be
    * trusted.
    */
-  function ghObservedSlurp(
+  async function ghObservedSlurp(
     path: string,
     ctx: ObservedOptions = {},
   ): Promise<ObservedRun> {
     ctx = { ...ctx, timeoutSec: ctx.timeoutSec ?? deps.defaultTimeoutSec() };
     const reads = evaluation.getStore();
     if (reads === undefined) return read(path, ctx);
-    const shared = coalesce(reads, memoKey(path, ctx), async () => {
-      const answer = await read(path, ctx);
-      if (answer.code !== 0) reads.delete(memoKey(path, ctx));
+    const dir = deps.cacheDir();
+    const scope = dir === null ? null : await deps.repoScope(ctx);
+    if (scope === null) return read(path, ctx, scope);
+    const key = memoKey(path, scope);
+    const shared = coalesce(reads, key, async () => {
+      const answer = await read(path, ctx, scope);
+      if (answer.code !== 0) reads.delete(key);
       return answer;
     });
     return withinBudget(shared, path, ctx);
@@ -439,22 +462,12 @@ export function createObservedPages<R extends ObservedRun>(
 }
 
 /**
- * What a reading is shared under within one evaluation: the directory and
- * the repository `gh` resolves `{owner}/{repo}` from, the credential the call
- * sends (hashed), and the path.
+ * What a reading is shared under within one evaluation: the resolved repository
+ * scope (which includes the credential) and path.
  */
-function memoKey(path: string, ctx: ObservedOptions): string {
-  const env = ctx.env ?? process.env;
+function memoKey(path: string, scope: string): string {
   return createHash("sha256")
-    .update(
-      [
-        resolve(ctx.cwd ?? process.cwd()),
-        env.GH_HOST ?? "",
-        env.GH_REPO ?? "",
-        githubCredential(env),
-        path,
-      ].join("\n--\n"),
-    )
+    .update([scope, path].join("\n--\n"))
     .digest("hex");
 }
 
