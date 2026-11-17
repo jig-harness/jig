@@ -426,6 +426,19 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     expect(conditionalCalls()).toHaveLength(1);
   });
 
+  it("expires quiet cache entries while another entry is read", async () => {
+    serve(PULL, pull("open", false, SHA));
+    await ghConditionalGet(PULL);
+    const quiet = join(cacheDir, `${"f".repeat(40)}.json`);
+    writeFileSync(quiet, JSON.stringify({ path: "quiet" }));
+    const expired = new Date(currentMs() - CACHE_RETENTION_MS - 1_000);
+    utimesSync(quiet, expired, expired);
+
+    await ghConditionalGet(PULL);
+
+    expect(existsSync(quiet)).toBe(false);
+  });
+
   it("prunes the oldest entries once the directory outgrows its bound", async () => {
     mkdirSync(cacheDir, { recursive: true });
     const fakes = 300;

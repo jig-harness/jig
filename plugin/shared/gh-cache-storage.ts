@@ -10,7 +10,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { swallow } from "./errors.ts";
 import { renameWithRetry } from "./rename-with-retry.ts";
 import { currentMs } from "./time.ts";
@@ -41,6 +41,9 @@ export function entryFile(dir: string, scope: string, request: string): string {
 
 export function readJsonFile(file: string): Record<string, unknown> | null {
   try {
+    // A read is a cache operation too: expire siblings even if this resource
+    // keeps returning 304, so quiet entries cannot outlive active neighbours.
+    prune(dirname(file), DEFAULT_ENTRIES, false);
     if (
       CACHE_ENTRY_NAME.test(basename(file)) &&
       currentMs() - statSync(file).mtimeMs >= CACHE_RETENTION_MS
@@ -93,7 +96,7 @@ export function writeJsonFile(
   }
 }
 
-function prune(dir: string, limit: EntryLimit): void {
+function prune(dir: string, limit: EntryLimit, enforceLimit = true): void {
   const names = readdirSync(dir).filter((n) => n.endsWith(".json"));
   const now = currentMs();
   for (const n of names) {
@@ -109,6 +112,7 @@ function prune(dir: string, limit: EntryLimit): void {
       );
     }
   }
+  if (!enforceLimit) return;
   const retained = readdirSync(dir).filter((n) => n.endsWith(".json"));
   if (retained.length <= limit.max) return;
   const aged = retained
