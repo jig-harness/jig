@@ -79,12 +79,12 @@ export function pathLines(text: string): string[] {
     .map((line) => line.replace(/^(?:\.\/)+/, ""));
 }
 
+/** Whether `path` is a directory in the working tree; a path not there yet is a file to come. */
 function isDirectory(root: string, path: string): boolean {
-  try {
-    return statSync(join(root, path)).isDirectory();
-  } catch {
-    return false;
-  }
+  return (
+    statSync(join(root, path), { throwIfNoEntry: false })?.isDirectory() ===
+    true
+  );
 }
 
 /** Each path once, sorted; a directory that exists ends in `/`, and each is checked against the record's path shape. */
