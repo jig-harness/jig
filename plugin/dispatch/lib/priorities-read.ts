@@ -7,7 +7,10 @@
  * reported with its age. A repository with no record ranks with no
  * objectives: urgent and bug work still rank.
  */
-import { spawnSync } from "../../shared/guarded-git-spawn.ts";
+import {
+  spawnSync,
+  withoutLeakyGitEnv,
+} from "../../shared/guarded-git-spawn.ts";
 import {
   parsePrioritiesRecord,
   type PrioritiesRecord,
@@ -133,6 +136,10 @@ function readAt(
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const r = spawnSync("git", args, { cwd, timeout: GIT_TIMEOUT_MS });
+  const r = spawnSync("git", args, {
+    cwd,
+    timeout: GIT_TIMEOUT_MS,
+    env: withoutLeakyGitEnv(process.env),
+  });
   return r.status === 0 ? r.stdout : null;
 }

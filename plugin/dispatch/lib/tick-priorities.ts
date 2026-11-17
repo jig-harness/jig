@@ -124,7 +124,8 @@ export function snapshotItems(
 ): SnapshotItem[] {
   const reasons = new Map(input.unplaced.map((u) => [u.target, u.reason]));
   return input.pickups.flatMap((p) => {
-    if (p.queueIssue === undefined) return [];
+    if (p.queueIssue === undefined)
+      return [bareItem(p, input.scope, reasons.get(p.key) ?? null)];
     const item = snapshotItem(p.queueIssue, {
       scope: input.scope,
       excluded: reasons.get(p.key) ?? null,
@@ -141,6 +142,41 @@ export function snapshotItems(
         : item;
     return [{ ...withAncestor, state: "ready" }];
   });
+}
+
+/** An item the read carried only in its listing form: every facet it lacks is a gap. */
+function bareItem(
+  p: WantedItem,
+  scope: string,
+  excluded: string | null,
+): SnapshotItem {
+  return {
+    scope,
+    key: p.key,
+    title: p.title,
+    priority: null,
+    type: null,
+    state: "ready",
+    isEpic: false,
+    parent: p.ancestorEpic ?? null,
+    children: [],
+    blockers: [],
+    assigned: p.pooled !== true,
+    labels: [],
+    dueDate: null,
+    project: null,
+    cycle: null,
+    excluded,
+    gaps: [
+      "priority",
+      "type",
+      ...(p.ancestorEpic === undefined ? (["parent"] as const) : []),
+      "blockers",
+      "dueDate",
+      "project",
+      "cycle",
+    ],
+  };
 }
 
 function classesOf(

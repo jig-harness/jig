@@ -89,6 +89,12 @@ function classifyOne(
       alsoIn,
       why: "an epic: its children carry its rank",
     };
+  if (records.length === 0)
+    return {
+      ...base,
+      lane: "unallocated",
+      why: "no priorities record names any objective",
+    };
   if (!ancestry.ok) return { ...base, lane: "excluded", why: ancestry.why };
   if (memberships.length === 0)
     return {
