@@ -415,7 +415,8 @@ describe("the line a tick leaves", () => {
       stored?.line.repos.map((repo) => [repo.path, repo.runId, repo.readAt]),
     ).toEqual([
       [w.repo, first.runId, first.startedAt],
-      [other, second.runId, second.startedAt],
+      // The repository no tick identified has no reading to name.
+      [other, undefined, undefined],
     ]);
     expect(
       stored?.line.ticks?.map((t) => ({ runId: t.runId, busy: t.busy })),
@@ -455,7 +456,8 @@ describe("the line a tick leaves", () => {
       stored?.line.repos.map((repo) => [repo.path, repo.runId, repo.readAt]),
     ).toEqual([
       [w.repo, second.runId, second.startedAt],
-      [other, first.runId, first.startedAt],
+      // The repository no tick has read has no reading to name.
+      [other, undefined, undefined],
     ]);
     expect(
       stored?.line.ticks?.map((t) => ({ runId: t.runId, sweep: t.sweep })),

@@ -4,7 +4,10 @@ import { uniqueLogins } from "../../shared/forge-logins.ts";
  * each waits for, across the repositories this machine dispatches. It reads
  * the newest tick's line, which the dispatcher keeps for its dashboard
  * (`dispatch/lib/line-store.ts`), so it makes no forge or tracker call and
- * is as fresh as that tick, whose time it prints.
+ * is as fresh as that tick, whose time it prints. Where the newest read of a
+ * repository was refused, the line holds what an earlier reading found, or
+ * nothing of it, and the answer says so (`incomplete`): an empty list then
+ * does not mean nothing waits.
  */
 import { formatAddress, type Station } from "../../shared/address.ts";
 import type {
@@ -12,6 +15,10 @@ import type {
   NeedCause,
 } from "../../dispatch/lib/dashboard-contract.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
+import {
+  type RefusedRepo,
+  refusedRepos,
+} from "../../dispatch/lib/line-unread.ts";
 import { ANSWER_VERSION, type PersonAct } from "./answer.ts";
 import { actOfLineNeed, type NeedAct } from "../../shared/acts.ts";
 import { HOST_NEED_REPO } from "../../dispatch/lib/preflight.ts";
@@ -67,6 +74,8 @@ export interface WaitingAnswer {
   waiting: WaitingEntry[];
   /** Why there is no line, or why it does not read; `null` when it read. */
   unread: string | null;
+  /** The repositories whose newest read was refused, so what waits on them is as of the reading named or unknown; empty when the line read every one, and when there is no line. */
+  incomplete: RefusedRepo[];
 }
 
 /** The station a need is about. */
@@ -130,6 +139,7 @@ export function waitingAnswer(
     tick: null,
     waiting: [],
     unread,
+    incomplete: [],
   });
   if (root === null)
     return none("this machine dispatches nothing, so there is no line to read");
@@ -151,5 +161,6 @@ export function waitingAnswer(
           e.people.some((p) => p.toLowerCase() === person.toLowerCase()),
       ),
     unread: null,
+    incomplete: refusedRepos(line.value),
   };
 }

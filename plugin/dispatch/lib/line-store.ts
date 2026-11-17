@@ -222,6 +222,8 @@ const TICK_FIELDS: Fields = {
   busy: (value) => Array.isArray(value) && value.every(isString),
   lowBudget: nullOr((value) => Array.isArray(value) && value.every(isString)),
   defects: isNumber,
+  refused: (value) =>
+    value === undefined || (Array.isArray(value) && value.every(isString)),
 };
 
 const LOAD_GAUGES = [
