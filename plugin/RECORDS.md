@@ -26,6 +26,49 @@ Contents: [the registry and the envelope](#the-registry-and-the-envelope) ·
 
 ## The registry and the envelope
 
+`tracker-footprint` predicts the files and directories an item will touch.
+It is an append-only tracker comment, inside the multiline `jig:footprint`
+marker, carrying the common envelope (version 1, key = the item's key,
+writer and write time) and `source` (`pickup`, `scout`, `planner`, `filing`),
+`base` (the commit read), `paths` (repository-relative files or directories
+ending in `/`) and `areas` (catalog area keys, without implied areas).
+It accepts up to 1,000 paths and 100 areas; absolute paths, traversal,
+control characters and glob patterns are refused. Paths may contain spaces.
+An optional `pickup` names the claiming session (at most 200 characters).
+The caller supplies that session as active only after verifying its claim
+and running session: its newest trusted `pickup` record stands, otherwise
+the newest trusted record stands. A successful read with no record derives
+areas from catalog labels; with none, it is unknown.
+
+The tracker port's `footprints` and `writeFootprint` use each adapter's
+trusted comments and governed transport. Reads share an operation named
+`footprint`, as do writes. The caller owns the cache and passes a cycle
+identity and the generation of the scheduled full tracker read. Cache keys
+bind each item to a private reader identity: reuse across ticks requires
+retaining the same adapter instance and its in-memory cache. A newly opened
+adapter reads again, even when its displayed team and configuration match;
+neither those names nor a shared cache establish a workspace or an author's
+trust across credentials. Within that instance, unchanged `updatedAt`
+reuses the last complete comment read. GitHub declares
+that comments move that timestamp; Linear and Jira conservatively require
+the full-read generation to match too. A cycle sends an item once even
+after failure. Callers pass wanted pickups first; at most 20 items are read
+fresh per cycle by default (a caller may set 0 to 100), in groups of at most
+5, with a 30-second overall deadline or the caller's earlier deadline.
+GitHub and Linear alias each group's comment requests into one query;
+Jira reads each item's REST comment pages. A comment read takes at most
+10 pages of 100 comments. A failed or deferred read keeps its last complete
+reading and its age; one never read is unknown, with the failure class or
+fresh-read-limit reason. No partial population replaces the last reading.
+
+The shared codec is `shared/footprint.ts`. From a consumer repository,
+`tracker.ts footprint <KEY>` reads an item's prediction;
+`tracker.ts footprint <KEY> --input <file>` appends one. The input file
+holds `source`, `base`, `paths` and `areas`, optionally `pickup` and a
+matching `key`, with a 2,000,000-byte limit. The command supplies the
+envelope's writer and time; input cannot impersonate them. The standalone
+read claims no active pickup without evidence of its running session.
+
 The drive state and drive ledger carry optional `ciActions` telemetry beside
 their control fields: the last 10 retries or charged repairs, with time,
 round, action and at most 1,024 characters of detail each. The driver log
@@ -313,6 +356,7 @@ readable and keep their time-based answer binding.
 | `dispatch-state-label`       | a state label on the pull request, from the [pull-request labels chapter](protocol/pr-labels.md), where a repository turns dispatch labels on | labels                                                                                                                                                                                                                                                                                                                                                                                                            | `dispatch/lib/actions/labels.ts`                                                                                                                                                                                                                                                                                          | derived from the ledger every tick; never read to decide what to start                                                                                                                                                                                                                                                                                        |
 | `do-item-pr-association`     | the opening tracker comment on an item, with the pull request's URL in its marker | Markdown                                                                                                                                                                                                                                                                                                                                                                                                          | the session following `do-item`; read by `skills/do-item/scripts/lib/linked-pr.ts`                                                                                                                                                                                                                                      | the marker binds the item to that exact pull request when no issue-link line exists; unrelated URLs or item-key mentions do not count                                                                                                                                                                                                                       |
 | `tracker-claim`              | an item's assignee and its in-progress state                                                                                                                                                                                    | tracker fields                                                                                                                                                                                                                                                                                                                                                                                                    | `skills/do-item/scripts/lib/claim.ts`, through each tracker adapter                                                                                                                                                                                                                                                       | refuses an item someone else holds; assigns first, then rereads and stands down on a race (exit 4)                                                                                                                                                                                                                                                            |
+| `tracker-footprint` | an append-only marked comment on a tracker item | record envelope, `v: 1`, item key, source, base commit, paths and areas; optional claiming session | `skills/do-item/scripts/lib/tracker/footprints.ts` | trusted authors only; active pickup’s newest record, otherwise newest record; bounded governed reads with cache reuse and aged/unknown fallback |
 | `tracker-claim-marker` | a comment on an item a claim started, where `do_item.claim_marker` is set: the claim's attempt, session, branch and claimant in a data marker, then one line a person reads; an outcome comment beside it records how that attempt ended | the [chapter-listed envelope, version and key](protocol/comment-markers.md#the-kinds-that-carry-markers); the writer's host and boot id as digests; a marker without an attempt still reads; the outcome form's payload is `attempt` (the marker's), `outcome` (`claimed`, `released` or `unresolved`); it names no reason | `skills/do-item/scripts/lib/claim-marker.ts`, posted and arbitrated by `skills/do-item/scripts/lib/claim-token.ts` for `tracker.ts claim` | a [tracker claim token](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): trusted authors only; posted before the claim writes the item and read back, and of the markers posted within 10 minutes of a claim's own the earliest wins; each ending attempt records its outcome once: `claimed` when it holds the item, `released` before it withdraws its marker, `unresolved` when it stood down after writing without evidence of who holds the item; a marker whose attempt recorded `released` or `unresolved` holds nothing, and a marker's absence is never read as a release; a claim that loses, refuses or stands down records `released` (`unresolved` for an unresolved stand-down), then deletes its own; a post or first read-back that fails refuses the claim with nothing written to the item; read again after the write, an earlier holding marker or a missing own one starts recovery from the outcome records, never undoing the claim's writes: it keeps the item only when every earlier attempt it saw recorded `released` or `unresolved`, yields to one that recorded `claimed`, and stops `unresolved` otherwise; and a failed re-read leaves the claim standing with the marker unconfirmed, its writes kept |
 | `dispatch-pickup-assignment` | an item assigned to the factory identity (`dispatch.identity`) in a dispatch state (`dispatch.states`)                                                                                                                          | tracker fields                                                                                                                                                                                                                                                                                                                                                                                                    | a person, by hand or with `jig send … assign` (`send/`, through `dispatch/lib/requests.ts` and each tracker adapter); read by `dispatch/lib/sources/tracker.ts`                                                                                                                                                           | the tick starts a pick-up only when the person who made the assignment can write to the repository; `jig send` refuses an item already assigned, claimed or closed                                                                                                                                                                                            |
 | `dispatch-pool-readiness` | an unassigned item moved into a ready-pool state (`dispatch.pool.states`) | tracker fields: the item's state and its history | a person, by moving the item there (or creating it there); read by `dispatch/lib/sources/ready-pool.ts` through each tracker adapter's `stateChangedBy` | the tick starts a pick-up only when the person who made the latest move into the state can write to the repository; the claim then assigns the item to the factory identity |

@@ -15,6 +15,7 @@
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
+import type { TrackerFootprints } from "./footprint-port.ts";
 import type {
   FoundComment,
   IssueComment,
@@ -666,7 +667,10 @@ export type AssignmentResult =
   | { assigned: true }
   | { assigned: false; reason: "race" | "unverified" | "race-unverified" };
 
-export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
+export interface Tracker
+  extends TrackerAttachments,
+    TrackerBlockedFields,
+    TrackerFootprints {
   /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
   readonly dispatchSource?: DispatchSource;
   /** The adapter name, as `issue_tracker.adapter` spells it. */

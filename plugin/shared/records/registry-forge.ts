@@ -212,6 +212,17 @@ export const FORGE: RecordKind[] = [
 
 export const TRACKER: RecordKind[] = [
   {
+    name: "tracker-footprint",
+    medium: "tracker",
+    owner: "shared/footprint.ts",
+    at: "a marked comment on a tracker item, read from trusted authors only",
+    markers: ["jig:footprint"],
+    version: 1,
+    key: /^(?:#[1-9]\d*|[A-Za-z][A-Za-z0-9]*-[1-9]\d*)$/,
+    meaning:
+      "An item's predicted repository paths and change areas, its source and base commit. The running pickup's newest prediction stands; otherwise the newest trusted record stands, with labels or unknown when absent.",
+  },
+  {
     name: "do-item-pr-association",
     medium: "tracker",
     owner: "skills/do-item/scripts/lib/linked-pr.ts",
