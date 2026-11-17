@@ -129,6 +129,7 @@ import {
   settleOutcomes,
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
+import { rankPriorities } from "./lib/tick-priorities.ts";
 import type { RepoReport } from "./lib/types.ts";
 import {
   type ScheduledUpgrade,
@@ -464,6 +465,28 @@ async function actAll(
     receipt.repos.push(await boundedAct(observed, context));
     acted.push(path);
   }
+  // The host's lane epochs read every owned repository's ready lanes at once.
+  // A tick that did not see every owned repository cannot say a lane has no ready work.
+  // Only a repository this host owns is prepared, so only those are counted.
+  const asked = new Set(order);
+  const owned = (options.machine?.repositories ?? []).filter((r) => r.owner);
+  // A listed repository this host does not own is requested but never prepared for priorities.
+  const notOwned = new Set(
+    (options.machine?.repositories ?? [])
+      .filter((r) => !r.owner)
+      .map((r) => r.path),
+  );
+  // Coverage is by identity: an unlisted repository is prepared too, and must not stand in for an owned one that failed.
+  const preparedPaths = new Set(
+    (context.priorities ?? []).map((p) => p.report.path),
+  );
+  // Without a machine file there is no inventory of what the host owns, so no tick can vouch for host-wide coverage.
+  const complete =
+    observe.busy.size === 0 &&
+    options.machine != null &&
+    owned.every((r) => asked.has(r.path) && preparedPaths.has(r.path)) &&
+    [...asked].every((path) => notOwned.has(path) || preparedPaths.has(path));
+  rankPriorities(context.priorities ?? [], context.nowMs, complete);
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
   // A repository's observe lock is kept until its launches and close are done.
