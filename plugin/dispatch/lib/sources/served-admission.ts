@@ -1,5 +1,6 @@
 /** Shared width reservations for factory and served candidates, through every ancestor. */
 import type { QueueItem } from "../queue-rank.ts";
+import type { QueueIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { rankQueue } from "../queue-rank.ts";
 import type { ServedOptions, ServedReading } from "./served.ts";
 import {
@@ -17,6 +18,8 @@ export interface Candidate extends QueueItem {
   factory?: boolean;
   by: string;
   ancestor?: string | undefined;
+  /** The relations and parent the queue read carried for the issue; absent where it carried no parent. */
+  queueRead?: Pick<QueueIssue, "relations" | "parent">;
   blockingFor?: string | undefined;
   serial?: Serial | undefined;
 }
@@ -85,7 +88,8 @@ export function finishAdmission(
     assignee: c.identity,
     assignedBy: c.by,
     ...(c.factory ? {} : { servedPerson: c.identity }),
-    queueIssue: c.issue,
+    queueIssue:
+      c.queueRead === undefined ? c.issue : { ...c.issue, ...c.queueRead },
     ...(c.issue.updatedAt === undefined
       ? {}
       : { updatedAt: c.issue.updatedAt }),

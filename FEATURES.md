@@ -155,6 +155,11 @@ at a time, the one closest to merge first. The others are
 [held](GLOSSARY.md) until each leads, and the outcome log records how long
 each waited.
 
+A repository can also write down what matters most in a
+[priorities record](GLOSSARY.md). The dispatcher ranks a shortlist from it
+and the host's lane weights. For now it reports that shortlist beside what it
+started, and it changes nothing it starts.
+
 Nothing needs restarting after a night: the timer ran every few minutes. In
 the morning a person reads one report of what the drives and the dispatcher
 did. They answer each park from the phone and merge what converged.
@@ -174,7 +179,8 @@ is removing.
 - **Skills:** [`do-item`](plugin/skills/do-item/SKILL.md),
   [`steward`](plugin/skills/steward/README.md),
   [`drive-pr`](plugin/skills/drive-pr/README.md),
-  [`operator`](plugin/skills/operator/SKILL.md)
+  [`operator`](plugin/skills/operator/SKILL.md),
+  [`priorities`](plugin/skills/priorities/README.md)
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),
