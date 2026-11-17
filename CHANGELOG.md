@@ -396,6 +396,28 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.261.0] - 2026-11-17
+
+### Added
+
+- A repository adds its own arms to the [followup](plugin/skills/followup/README.md) skill with `followup.arms` in `.config/jig.yaml`: for each, the change areas it applies to and what settles it, as an instructions file read from the integration branch (never the pull request's tree), a read-only check command that reads the merge facts and prints a verdict, or a skill from the repository, the user's home or another plugin. Repository arms are listed with the core arms, settled under the same rules (a run still cannot end while one has no verdict) and act only within the fixed authority table. A check command runs from a copy of the integration branch's files, only where `followup.authority.read-only-checks` leaves it to the follow-up, without the tracker and forge tokens, within 60 seconds (`JIG_FOLLOWUP_CHECK_TIMEOUT_SEC`) and 64 KiB of output, and one that runs past its limit, fails or prints no verdict is recorded unread, never not owed. The field is documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#followup), and the check command's contract in the [repository commands chapter](plugin/protocol/repo-commands.md).
+
+## [0.260.1] - 2026-11-17
+
+### Fixed
+
+- A machine whose `gh` picks the GitHub account per repository from the
+  stored logins (a wrapper that chooses the account by the repository a
+  command addresses) no longer refuses every repository's GitHub calls when
+  one account's rate limit is spent. The stored login's quota owner is now
+  asked and kept per repository a call addresses (`-R`, a
+  positional repository URL, `repos/<owner>/<repo>` route, `GH_REPO`, else
+  the working directory's `gh repo set-default` or `origin` remote), with `GH_REPO` set for the question: one `GET /user` a
+  day for each repository. A rate-limit refusal that names another user
+  than the cached owner holds that user's allowance and makes the owner be
+  asked again, and a call refused before sending names the account whose
+  allowance is spent, as in `(the allowance of GitHub account alice)`.
+
 ## [0.260.0] - 2026-11-17
 
 ### Added
@@ -9173,7 +9195,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.260.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.261.0...HEAD
+[0.261.0]: https://github.com/jig-harness/jig/compare/v0.260.1...v0.261.0
+[0.260.1]: https://github.com/jig-harness/jig/compare/v0.260.0...v0.260.1
 [0.260.0]: https://github.com/jig-harness/jig/compare/v0.259.0...v0.260.0
 [0.259.0]: https://github.com/jig-harness/jig/compare/v0.258.0...v0.259.0
 [0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0
