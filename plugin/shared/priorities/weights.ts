@@ -73,46 +73,71 @@ export function parseLaneWeights(raw: string, file: string): LaneWeights {
     );
   }
   // A file with no content (blank or only comments) means the defaults; an explicit `null` or `~` is not a mapping.
-  const empty = raw
-    .split("\n")
-    .every((l) => l.trim() === "" || l.trim().startsWith("#"));
-  if (values === null && !empty)
+  if (values === null && !isBlank(raw))
     return allOut(file, `${file} is not a mapping`);
   if (values === null || values === undefined)
     return { weights: { ...DEFAULT_WEIGHTS }, source: file, problems: [] };
   if (!isRecord(values)) return allOut(file, `${file} is not a mapping`);
-  for (const key of Object.keys(values))
-    if (key !== "lanes" && key !== "accounts")
-      return allOut(file, `${file} has an unknown section \`${key}\``);
+  const refused = topLevelProblem(values, file);
+  if (refused !== null) return allOut(file, refused);
   const lanes = values.lanes;
   if (lanes === undefined)
     return { weights: { ...DEFAULT_WEIGHTS }, source: file, problems: [] };
   if (!isRecord(lanes))
     return allOut(file, `${file}: \`lanes\` is not a mapping`);
-  for (const key of Object.keys(lanes))
-    if (!isWeightedLane(key))
-      return allOut(
-        file,
-        `${file}: \`lanes\` names an unknown lane \`${key}\` (known: ${WEIGHTED_LANES.join(", ")})`,
-      );
+  const unknown = Object.keys(lanes).find((key) => !isWeightedLane(key));
+  if (unknown !== undefined)
+    return allOut(
+      file,
+      `${file}: \`lanes\` names an unknown lane \`${unknown}\` (known: ${WEIGHTED_LANES.join(", ")})`,
+    );
+  return laneWeights(lanes, file);
+}
+
+function laneWeights(
+  lanes: Record<string, unknown>,
+  file: string,
+): LaneWeights {
   const weights = { ...DEFAULT_WEIGHTS } as Record<WeightedLane, number | null>;
   const problems: string[] = [];
   for (const lane of WEIGHTED_LANES) {
     if (!(lane in lanes)) continue;
     const value = lanes[lane];
-    if (
-      typeof value !== "number" ||
-      !Number.isFinite(value) ||
-      value < 0 ||
-      value > 100
-    ) {
+    if (isWeight(value)) weights[lane] = value;
+    else {
       weights[lane] = null;
       problems.push(
         `${file}: lanes.${lane} is ${JSON.stringify(value)}, not a number from 0 to 100; ${lane} is out of rotation`,
       );
-    } else weights[lane] = value;
+    }
   }
   return { weights, source: file, problems };
+}
+
+/** Why the file's top level is refused, or `null` when it holds only known sections. */
+function topLevelProblem(
+  values: Record<string, unknown>,
+  file: string,
+): string | null {
+  const key = Object.keys(values).find(
+    (k) => k !== "lanes" && k !== "accounts",
+  );
+  return key === undefined ? null : `${file} has an unknown section \`${key}\``;
+}
+
+function isBlank(raw: string): boolean {
+  return raw
+    .split("\n")
+    .every((l) => l.trim() === "" || l.trim().startsWith("#"));
+}
+
+function isWeight(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 100
+  );
 }
 
 function allOut(file: string, problem: string): LaneWeights {

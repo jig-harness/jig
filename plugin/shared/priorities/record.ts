@@ -117,35 +117,7 @@ export function validatePrioritiesRecord(value: unknown): string[] {
       problems.push(`${where} is not a mapping`);
       return;
     }
-    unknownFields(raw, OBJECTIVE, where, problems);
-    if (text(raw.id, `${where}.id`, problems)) {
-      if (ids.has(raw.id as string))
-        problems.push(`${where}.id ${JSON.stringify(raw.id)} is a duplicate`);
-      ids.add(raw.id as string);
-    }
-    if (!(OBJECTIVE_CLASSES as readonly unknown[]).includes(raw.class))
-      problems.push(
-        `${where}.class must be one of ${OBJECTIVE_CLASSES.join(", ")}`,
-      );
-    for (const field of ["purpose", "endState", "owner"])
-      text(raw[field], `${where}.${field}`, problems);
-    const hasEpics = raw.epics !== undefined;
-    const hasRefs = raw.refs !== undefined;
-    if (hasEpics === hasRefs)
-      problems.push(`${where} must have exactly one of epics and refs`);
-    if (hasEpics) selectors(raw.epics, `${where}.epics`, problems);
-    if (hasRefs) refs(raw.refs, `${where}.refs`, problems);
-    if (raw.share !== undefined) {
-      if (typeof raw.share !== "number" || !Number.isFinite(raw.share))
-        problems.push(`${where}.share must be a number`);
-      else if (raw.share < 0) problems.push(`${where}.share is negative`);
-      else if (raw.share > 1) problems.push(`${where}.share is above one`);
-      else if (typeof raw.class === "string")
-        shareByLane.set(
-          raw.class,
-          (shareByLane.get(raw.class) ?? 0) + raw.share,
-        );
-    }
+    objectiveProblems(raw, where, ids, shareByLane, problems);
   });
   for (const [lane, total] of shareByLane)
     if (total > 1 + 1e-9)
@@ -153,6 +125,48 @@ export function validatePrioritiesRecord(value: unknown): string[] {
         `the ${lane} objectives' shares total ${round(total)}, above one`,
       );
   return problems;
+}
+
+function objectiveProblems(
+  raw: Record<string, unknown>,
+  where: string,
+  ids: Set<string>,
+  shareByLane: Map<string, number>,
+  problems: string[],
+): void {
+  unknownFields(raw, OBJECTIVE, where, problems);
+  if (text(raw.id, `${where}.id`, problems)) {
+    if (ids.has(raw.id as string))
+      problems.push(`${where}.id ${JSON.stringify(raw.id)} is a duplicate`);
+    ids.add(raw.id as string);
+  }
+  if (!(OBJECTIVE_CLASSES as readonly unknown[]).includes(raw.class))
+    problems.push(
+      `${where}.class must be one of ${OBJECTIVE_CLASSES.join(", ")}`,
+    );
+  for (const field of ["purpose", "endState", "owner"])
+    text(raw[field], `${where}.${field}`, problems);
+  const hasEpics = raw.epics !== undefined;
+  const hasRefs = raw.refs !== undefined;
+  if (hasEpics === hasRefs)
+    problems.push(`${where} must have exactly one of epics and refs`);
+  if (hasEpics) selectors(raw.epics, `${where}.epics`, problems);
+  if (hasRefs) refs(raw.refs, `${where}.refs`, problems);
+  if (raw.share === undefined) return;
+  const bad = shareProblem(raw.share);
+  if (bad !== null) problems.push(`${where}.share ${bad}`);
+  else if (typeof raw.class === "string")
+    shareByLane.set(
+      raw.class,
+      (shareByLane.get(raw.class) ?? 0) + (raw.share as number),
+    );
+}
+
+function shareProblem(share: unknown): string | null {
+  if (typeof share !== "number" || !Number.isFinite(share))
+    return "must be a number";
+  if (share < 0) return "is negative";
+  return share > 1 ? "is above one" : null;
 }
 
 /** A reference that does not resolve: a cycle, or a target no record read holds. */

@@ -314,31 +314,47 @@ export function recordEpochs(
 ): LaneEpochs {
   const n = week.charges.filter((c) => isWeightedLane(c.lane)).length;
   for (const lane of ["core", "tactical", "peripheral", "bug-other"] as const) {
-    const last = db
-      .query(
-        "SELECT ready, week FROM allocation_lane_epoch WHERE lane = ? ORDER BY seq DESC LIMIT 1",
-      )
-      .get(lane) as { ready: number; week: string } | null;
     const isReady = ready.has(lane);
     // A tick that missed a repository cannot say a lane has no ready work.
     if (!isReady && !complete) continue;
-    if (
-      last === null ||
-      last.ready !== (isReady ? 1 : 0) ||
-      (isReady && last.week !== week.week)
-    )
-      db.query(
-        "INSERT INTO allocation_lane_epoch (lane, week, ready, start_n, snapshot, at_ms) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(
-        lane,
-        week.week,
-        isReady ? 1 : 0,
-        continuous(last, week.week, isReady) ? 0 : n,
-        snapshotHash,
-        nowMs,
-      );
+    const last = lastEpoch(db, lane);
+    if (!changed(last, week.week, isReady)) continue;
+    db.query(
+      "INSERT INTO allocation_lane_epoch (lane, week, ready, start_n, snapshot, at_ms) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      lane,
+      week.week,
+      isReady ? 1 : 0,
+      continuous(last, week.week, isReady) ? 0 : n,
+      snapshotHash,
+      nowMs,
+    );
   }
   return readEpochs(db, week.week);
+}
+
+function lastEpoch(
+  db: Database,
+  lane: WeightedLane,
+): { ready: number; week: string } | null {
+  return db
+    .query(
+      "SELECT ready, week FROM allocation_lane_epoch WHERE lane = ? ORDER BY seq DESC LIMIT 1",
+    )
+    .get(lane) as { ready: number; week: string } | null;
+}
+
+/** Whether a lane's readiness differs from its latest row, or is ready in a new week. */
+function changed(
+  last: { ready: number; week: string } | null,
+  week: string,
+  isReady: boolean,
+): boolean {
+  return (
+    last === null ||
+    last.ready !== (isReady ? 1 : 0) ||
+    (isReady && last.week !== week)
+  );
 }
 
 /** Whether a lane ready now has been ready since the week opened: its first row, or ready across the week boundary. */

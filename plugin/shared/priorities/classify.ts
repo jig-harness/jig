@@ -79,16 +79,8 @@ function classifyOne(
       )
     : [];
   const alsoIn = memberships.map((m) => refKey(m.level, m.scope, m.objective));
-  if (item.type === "bug" && item.assigned === true) {
-    const lane: Lane = item.priority === 2 ? "bug-high" : "bug-other";
-    const why =
-      item.priority === 2
-        ? "a High bug: ahead of the weighted lanes"
-        : item.priority === null
-          ? "a bug with no priority (a gap): after the bugs whose priority is known"
-          : "a Medium or Low bug";
-    return { ...base, lane, alsoIn, why };
-  }
+  if (item.type === "bug" && item.assigned === true)
+    return { ...base, ...bugLane(item), alsoIn };
   if (item.isEpic)
     return {
       ...base,
@@ -114,6 +106,28 @@ function classifyOne(
           ? "an unassigned bug outside every objective"
           : "outside every objective and not a bug",
     };
+  return place(base, memberships, alsoIn, records);
+}
+
+function bugLane(item: SnapshotItem): { lane: Lane; why: string } {
+  if (item.priority === 2)
+    return { lane: "bug-high", why: "a High bug: ahead of the weighted lanes" };
+  return {
+    lane: "bug-other",
+    why:
+      item.priority === null
+        ? "a bug with no priority (a gap): after the bugs whose priority is known"
+        : "a Medium or Low bug",
+  };
+}
+
+/** The lane, owners and placement of an item that belongs to at least one objective. */
+function place(
+  base: Pick<Classified, "item" | "owners" | "placement" | "alsoIn">,
+  memberships: Placement[],
+  alsoIn: string[],
+  records: readonly PrioritiesRecord[],
+): Classified {
   const owners: Partial<Record<Level, string>> = {};
   const firstByLevel = new Map<Level, Placement>();
   for (const m of memberships)
@@ -200,32 +214,12 @@ function matches(
   const out: Placement[] = [];
   for (const record of records)
     record.objectives.forEach((objective, objectiveIndex) => {
-      let position = 0;
-      let found: {
-        position: number;
-        epic: string | null;
-        depth: number;
-      } | null = null;
-      for (const selector of resolvedSelectors(objective, records)) {
-        const inScope = selector.scope === item.scope;
-        for (const key of selector.keys ?? []) {
-          const at = ancestorKeys.indexOf(key);
-          const depth = key === item.key ? 0 : at < 0 ? -1 : at + 1;
-          if (inScope && depth >= 0)
-            if (found === null || depth < found.depth)
-              found = { position, epic: key, depth };
-          position++;
-        }
-        for (const label of selector.labels ?? []) {
-          if (
-            inScope &&
-            (item.labels.includes(label) || ancestorLabels.includes(label)) &&
-            found === null
-          )
-            found = { position, epic: null, depth: 0 };
-          position++;
-        }
-      }
+      const found = findPosition(
+        item,
+        ancestorKeys,
+        ancestorLabels,
+        resolvedSelectors(objective, records),
+      );
       if (found !== null)
         out.push({
           level: record.level,
@@ -238,4 +232,64 @@ function matches(
         });
     });
   return out;
+}
+
+interface Found {
+  position: number;
+  epic: string | null;
+  depth: number;
+}
+
+/** Where `item` sits in an objective's selectors: the nearest named ancestor, else the first label match. */
+function findPosition(
+  item: SnapshotItem,
+  ancestorKeys: readonly string[],
+  ancestorLabels: readonly string[],
+  selectors: ReturnType<typeof resolvedSelectors>,
+): Found | null {
+  let position = 0;
+  let found: Found | null = null;
+  for (const selector of selectors) {
+    const inScope = selector.scope === item.scope;
+    for (const key of selector.keys ?? []) {
+      const depth = keyDepth(item, ancestorKeys, key);
+      if (inScope && closer(depth, found))
+        found = { position, epic: key, depth };
+      position++;
+    }
+    for (const label of selector.labels ?? []) {
+      if (
+        inScope &&
+        found === null &&
+        carriesLabel(item, ancestorLabels, label)
+      )
+        found = { position, epic: null, depth: 0 };
+      position++;
+    }
+  }
+  return found;
+}
+
+function carriesLabel(
+  item: SnapshotItem,
+  ancestorLabels: readonly string[],
+  label: string,
+): boolean {
+  return item.labels.includes(label) || ancestorLabels.includes(label);
+}
+
+/** How far `key` sits above the item: 0 for the item itself, -1 when it is not an ancestor. */
+function keyDepth(
+  item: SnapshotItem,
+  ancestorKeys: readonly string[],
+  key: string,
+): number {
+  if (key === item.key) return 0;
+  const at = ancestorKeys.indexOf(key);
+  return at < 0 ? -1 : at + 1;
+}
+
+/** Whether an ancestor at `depth` beats what is found so far. */
+function closer(depth: number, found: Found | null): boolean {
+  return depth >= 0 && (found === null || depth < found.depth);
 }

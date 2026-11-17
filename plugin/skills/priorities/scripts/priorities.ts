@@ -32,7 +32,11 @@ import {
   isOwnReferenceProblem,
   referenceProblems,
 } from "../../../shared/priorities/record.ts";
-import { rank, type RankerOutput } from "../../../shared/priorities/ranker.ts";
+import {
+  rank,
+  type RankerInput,
+  type RankerOutput,
+} from "../../../shared/priorities/ranker.ts";
 import {
   readLaneWeights,
   weightsFilePath,
@@ -156,20 +160,8 @@ function shortlist(args: string[]): number {
   const repo = opts.get("repo") ?? originRepo();
   if (repo === null)
     usage("no --repo given and no origin remote to derive it from");
-  const opened = readOnlyStateDb();
-  if (!opened.ok) {
-    console.error(
-      `the dispatcher's state database cannot be read: ${opened.failure.reason}`,
-    );
-    return 1;
-  }
-  const ro = opened.value;
-  let ranking: ReturnType<typeof latestRanking> = null;
-  try {
-    ranking = ro === null ? null : latestRanking(ro.db, repo);
-  } finally {
-    ro?.db.close();
-  }
+  const ranking = readRanking(repo);
+  if (ranking === "failed") return 1;
   if (ranking === null) {
     console.log(
       `no dispatcher ranking for ${repo} on this host: the dispatcher has not ranked it yet, so there is no shortlist to compare against`,
@@ -177,27 +169,12 @@ function shortlist(args: string[]): number {
     return 0;
   }
   const input = structuredClone(ranking.input);
-  const recordFile = opts.get("record");
-  if (recordFile !== undefined) {
-    const read = readRecord(resolve(recordFile));
-    if ("problems" in read) {
-      console.log(`${recordFile} is not a valid priorities/v1 record:`);
-      for (const p of read.problems) console.log(`  - ${p}`);
-      return 1;
-    }
-    input.records = [
-      read.record,
-      ...input.records.filter((r) => r.level !== read.record.level),
-    ];
-    input.allocationBlocked = null;
-  }
-  const weightsFile = opts.get("weights");
-  if (weightsFile !== undefined)
-    input.weights = readLaneWeights(resolve(weightsFile));
+  const proposing = applyProposals(input, opts);
+  if (proposing === "failed") return 1;
   const proposed = rank(input);
   const diff = shortlistDiff(ranking.output, proposed);
   // A proposed weights file that does not read fails the run, as `weights` does.
-  const problems = weightsFile === undefined ? [] : input.weights.problems;
+  const problems = proposing.weightsProposed ? input.weights.problems : [];
   if (opts.has("json")) {
     console.log(
       JSON.stringify(
@@ -217,6 +194,50 @@ function shortlist(args: string[]): number {
   }
   printDiff(repo, ranking.output, proposed, diff);
   return problems.length > 0 ? 1 : 0;
+}
+
+/** The dispatcher's latest ranking of `repo`; `null` when it has none, `"failed"` (already reported) when the database cannot be read. */
+function readRanking(
+  repo: string,
+): ReturnType<typeof latestRanking> | "failed" {
+  const opened = readOnlyStateDb();
+  if (!opened.ok) {
+    console.error(
+      `the dispatcher's state database cannot be read: ${opened.failure.reason}`,
+    );
+    return "failed";
+  }
+  const ro = opened.value;
+  try {
+    return ro === null ? null : latestRanking(ro.db, repo);
+  } finally {
+    ro?.db.close();
+  }
+}
+
+/** Replace the ranking input's record and weights with the proposed files; `"failed"` (already reported) when the record is invalid. */
+function applyProposals(
+  input: RankerInput,
+  opts: ReturnType<typeof options>,
+): { weightsProposed: boolean } | "failed" {
+  const recordFile = opts.get("record");
+  if (recordFile !== undefined) {
+    const read = readRecord(resolve(recordFile));
+    if ("problems" in read) {
+      console.log(`${recordFile} is not a valid priorities/v1 record:`);
+      for (const p of read.problems) console.log(`  - ${p}`);
+      return "failed";
+    }
+    input.records = [
+      read.record,
+      ...input.records.filter((r) => r.level !== read.record.level),
+    ];
+    input.allocationBlocked = null;
+  }
+  const weightsFile = opts.get("weights");
+  if (weightsFile !== undefined)
+    input.weights = readLaneWeights(resolve(weightsFile));
+  return { weightsProposed: weightsFile !== undefined };
 }
 
 function printDiff(

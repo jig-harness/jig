@@ -42,40 +42,20 @@ export function snapshotItem(
   },
 ): SnapshotItem {
   const gaps: SnapshotFacet[] = [];
-  const priority =
-    issue.priority >= 1 && issue.priority <= 4
-      ? (issue.priority as 1 | 2 | 3 | 4)
-      : null;
+  const priority = priorityOf(issue.priority);
   if (priority === null) gaps.push("priority");
   if (issue.type === null) gaps.push("type");
-  const relations = "relations" in issue ? issue.relations : undefined;
-  let blockers: string[] = [];
-  if (relations === undefined || relations === null) gaps.push("blockers");
-  else
-    blockers = relations
-      .filter(
-        (r) =>
-          r.type === "blocked_by" &&
-          (r.state === null || !DONE.has(r.state.toLowerCase())),
-      )
-      .map((r) => r.issue)
-      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  let parent: string | null = null;
-  if ("parent" in issue) parent = issue.parent?.issue.identifier ?? null;
-  else gaps.push("parent");
-  const children = options.children ?? [];
-  if (options.children === undefined || options.children === null)
-    if (issue.isEpic || issue.hasOpenChildren) gaps.push("children");
-  const assigned =
-    options.assigned !== undefined ? options.assigned : issue.assignee !== null;
+  const blockers = openBlockers(
+    "relations" in issue ? issue.relations : undefined,
+  );
+  if (blockers === null) gaps.push("blockers");
+  const parent =
+    "parent" in issue ? (issue.parent?.issue.identifier ?? null) : undefined;
+  if (parent === undefined) gaps.push("parent");
+  if (lacksChildren(issue, options.children)) gaps.push("children");
+  const assigned = assignedOf(issue, options.assigned);
   if (assigned === null) gaps.push("assignee");
-  const stateName = issue.state.name;
-  const ready =
-    options.readyState === undefined
-      ? stateName
-      : stateName.toLowerCase() === options.readyState.toLowerCase()
-        ? "ready"
-        : stateName;
+  const ready = stateOf(issue.state.name, options.readyState);
   gaps.push("dueDate", "project", "cycle");
   return {
     scope: options.scope,
@@ -85,9 +65,9 @@ export function snapshotItem(
     type: issue.type === null ? null : issue.type.toLowerCase(),
     state: ready,
     isEpic: issue.isEpic,
-    parent,
-    children,
-    blockers,
+    parent: parent ?? null,
+    children: options.children ?? [],
+    blockers: blockers ?? [],
     assigned,
     labels: [...issue.labels].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     dueDate: null,
@@ -96,6 +76,55 @@ export function snapshotItem(
     excluded: options.excluded ?? null,
     gaps,
   };
+}
+
+function priorityOf(n: number): 1 | 2 | 3 | 4 | null {
+  return n >= 1 && n <= 4 ? (n as 1 | 2 | 3 | 4) : null;
+}
+
+/** Whether an epic or parent's children are unread: the walk carried none and the issue has some. */
+function lacksChildren(
+  issue: PoolIssue | QueueIssue,
+  children: string[] | null | undefined,
+): boolean {
+  if (children !== undefined && children !== null) return false;
+  return issue.isEpic || issue.hasOpenChildren;
+}
+
+/** The caller's answer where it gave one, else whether the issue has an assignee. */
+function assignedOf(
+  issue: PoolIssue | QueueIssue,
+  given: boolean | null | undefined,
+): boolean | null {
+  return given !== undefined ? given : issue.assignee !== null;
+}
+
+/** The keys of the open issues blocking this one, sorted; `null` where the read carried no relations. */
+function openBlockers(
+  relations:
+    | ReadonlyArray<{
+        type: string;
+        issue: string;
+        state: string | null;
+      }>
+    | null
+    | undefined,
+): string[] | null {
+  if (relations === undefined || relations === null) return null;
+  return relations
+    .filter(
+      (r) =>
+        r.type === "blocked_by" &&
+        (r.state === null || !DONE.has(r.state.toLowerCase())),
+    )
+    .map((r) => r.issue)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** The state name, or `ready` where it matches the configured ready state. */
+function stateOf(name: string, readyState: string | undefined): string {
+  if (readyState === undefined) return name;
+  return name.toLowerCase() === readyState.toLowerCase() ? "ready" : name;
 }
 
 /**

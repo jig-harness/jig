@@ -14,31 +14,11 @@ export function priorityLines(r: RepoReport, verb: string): string[] {
   const p = r.priorities;
   if (p === undefined) return [];
   if ("failed" in p) return [`  priorities ${p.failed}`];
-  const lines: string[] = [];
-  const rev =
-    p.record.revision === null ? "" : `, revision ${p.record.revision}`;
-  lines.push(`  priorities record ${p.record.source}${rev}`);
-  if (p.record.blocked !== null)
-    lines.push(`  priorities BLOCKED ${p.record.blocked}`);
-  if (p.record.lastValid !== null)
-    lines.push(
-      `  priorities last valid revision ${p.record.lastValid.revision} (${p.record.lastValid.commit}), ${p.record.lastValid.ageDays} day(s) old`,
-    );
+  const lines: string[] = recordLines(p.record);
   for (const problem of p.weights.problems)
     lines.push(`  priorities weights: ${problem}`);
   const { ranking } = p;
-  lines.push(
-    `  lanes    ${ranking.lanes
-      .map(
-        (l) =>
-          `${l.lane} ${l.inRotation ? `${Math.round(l.share * 100)}%` : "out"} (week ${l.weekStarts}, proposed ${l.proposed})`,
-      )
-      .join(", ")}`,
-  );
-  const { floor } = ranking;
-  lines.push(
-    `  floor    peripheral owed ${floor.owed} (opening debt ${floor.d0}${floor.d0Reason === null ? "" : `: ${floor.d0Reason}`})${floor.lent > 0 ? `; lent ${floor.lent} start(s) with no peripheral work ready` : ""}`,
-  );
+  lines.push(...laneLines(ranking));
   for (const s of ranking.shortlist.slice(0, SHOWN))
     lines.push(
       `  proposes ${String(s.position).padStart(2)}. ${s.key} [${s.lane}${s.objective === null ? "" : ` ${s.objective}`}]: ${s.reason}${s.gaps.length > 0 ? `; gaps: ${s.gaps.join(", ")}` : ""}`,
@@ -52,6 +32,50 @@ export function priorityLines(r: RepoReport, verb: string): string[] {
   for (const d of ranking.disagreements)
     lines.push(
       `  disagree ${d.objective}: ${d.ahead.key} (epic ${d.ahead.epic ?? "-"}, priority ${d.ahead.priority}) ranks ahead of ${d.behind.key} (epic ${d.behind.epic ?? "-"}, priority ${d.behind.priority}): ${d.rule}`,
+    );
+  return lines;
+}
+
+type Ranking =
+  NonNullable<RepoReport["priorities"]> extends infer T
+    ? T extends { ranking: infer R }
+      ? R
+      : never
+    : never;
+
+function laneLines(ranking: Ranking): string[] {
+  const { floor } = ranking;
+  const lanes = ranking.lanes
+    .map(
+      (l) =>
+        `${l.lane} ${l.inRotation ? `${Math.round(l.share * 100)}%` : "out"} (week ${l.weekStarts}, proposed ${l.proposed})`,
+    )
+    .join(", ");
+  const opening = floor.d0Reason === null ? "" : `: ${floor.d0Reason}`;
+  const lent =
+    floor.lent > 0
+      ? `; lent ${floor.lent} start(s) with no peripheral work ready`
+      : "";
+  return [
+    `  lanes    ${lanes}`,
+    `  floor    peripheral owed ${floor.owed} (opening debt ${floor.d0}${opening})${lent}`,
+  ];
+}
+
+function recordLines(
+  record: NonNullable<RepoReport["priorities"]> extends infer T
+    ? T extends { record: infer R }
+      ? R
+      : never
+    : never,
+): string[] {
+  const rev = record.revision === null ? "" : `, revision ${record.revision}`;
+  const lines = [`  priorities record ${record.source}${rev}`];
+  if (record.blocked !== null)
+    lines.push(`  priorities BLOCKED ${record.blocked}`);
+  if (record.lastValid !== null)
+    lines.push(
+      `  priorities last valid revision ${record.lastValid.revision} (${record.lastValid.commit}), ${record.lastValid.ageDays} day(s) old`,
     );
   return lines;
 }

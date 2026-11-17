@@ -130,96 +130,22 @@ export function readyLanes(
 
 /** Rank `input` into a shortlist. */
 export function rank(input: RankerInput): RankerOutput {
-  const inputHashes = {
-    snapshot: hashOf(input.snapshot),
-    records: hashOf({
-      records: input.records,
-      blocked: input.allocationBlocked,
-    }),
-    weights: hashOf({
-      weights: input.weights.weights,
-      problems: input.weights.problems,
-    }),
-    capacity: hashOf(input.capacity),
-    epochs: hashOf(input.epochs),
-    week: hashOf(input.week),
-    asOf: hashOf(input.asOf),
-  };
+  const inputHashes = hashesOf(input);
   const classified = classify(
     input.snapshot.items,
     input.records,
     input.allocationBlocked,
   );
   const shares = laneShares(input.weights.weights);
-  const shortlist: Position[] = [];
-  const excluded: RankerOutput["excluded"] = [];
-  const unallocated: RankerOutput["unallocated"] = [];
-  const pools = new Map<Lane, Classified[]>();
-  for (const c of classified) {
-    if (c.lane === "excluded") {
-      excluded.push({ key: c.item.key, reason: c.why });
-      continue;
-    }
-    if (c.lane === "unallocated") {
-      if (isReady(c.item)) unallocated.push({ key: c.item.key, reason: c.why });
-      else excluded.push({ key: c.item.key, reason: notReady(c.item) });
-      continue;
-    }
-    if (c.lane !== "urgent" && !isReady(c.item)) {
-      excluded.push({ key: c.item.key, reason: notReady(c.item) });
-      continue;
-    }
-    pools.set(c.lane, [...(pools.get(c.lane) ?? []), c]);
-  }
+  const { pools, excluded, unallocated } = partition(classified);
   for (const [lane, pool] of pools) pools.set(lane, order(lane, pool));
-  let capacity = Math.max(0, Math.floor(input.capacity.starts));
-  const place = (
-    c: Classified,
-    lane: Lane,
-    eligible: boolean,
-    reason: string,
-  ): void => {
-    shortlist.push({
-      position: shortlist.length + 1,
-      scope: c.item.scope,
-      key: c.item.key,
-      title: c.item.title,
-      lane,
-      objective: c.placement?.objective ?? null,
-      owners: c.owners,
-      alsoIn: c.alsoIn,
-      eligible,
-      reason,
-      gaps: c.item.gaps.filter(
-        (g) => g === "priority" || g === "type" || g === "assignee",
-      ),
-    });
-  };
-  for (const c of pools.get("urgent") ?? []) {
-    const ready = isReady(c.item);
-    const startable = ready && capacity > 0;
-    if (startable) capacity--;
-    place(
-      c,
-      "urgent",
-      ready,
-      ready
-        ? startable
-          ? "Urgent: first; not counted in N"
-          : "Urgent: first; no start capacity left"
-        : `Urgent: listed though not eligible (${notReady(c.item)})`,
-    );
-  }
-  for (const c of pools.get("bug-high") ?? [])
-    if (capacity > 0) {
-      capacity--;
-      place(
-        c,
-        "bug-high",
-        true,
-        "High bug: ahead of the weighted lanes; not counted in N",
-      );
-    }
+  const shortlist: Position[] = [];
+  const place = placer(shortlist);
+  let capacity = placeFront(
+    pools,
+    Math.max(0, Math.floor(input.capacity.starts)),
+    place,
+  );
   const state = counters(input);
   const proposed: Record<WeightedLane, number> = {
     core: 0,
@@ -227,71 +153,29 @@ export function rank(input: RankerInput): RankerOutput {
     peripheral: 0,
     "bug-other": 0,
   };
-  let owedNow = clean(state.d0 + state.e + shares.peripheral - state.p);
+  const owedNow = clean(state.d0 + state.e + shares.peripheral - state.p);
   let lent = 0;
   const disagreements = disagreementsOf(pools);
   for (; capacity > 0; capacity--) {
-    const fNext = shares.peripheral;
-    const owed = state.d0 + state.e + fNext - state.p;
+    const owed = state.d0 + state.e + shares.peripheral - state.p;
     const readyLanes = WEIGHTED_LANES.filter(
       (l) => shares[l] > 0 && (pools.get(l)?.length ?? 0) > 0,
     );
     if (readyLanes.length === 0) break;
-    let lane: WeightedLane;
-    let reason: string;
-    const floorOwed = owed >= 1 - EPSILON;
-    if (floorOwed && readyLanes.includes("peripheral")) {
-      lane = "peripheral";
-      reason = "owed a whole start";
-    } else {
-      let best: WeightedLane = "core";
-      let bestDeficit = Number.NEGATIVE_INFINITY;
-      for (const l of readyLanes) {
-        const d =
-          shares[l] * (state.N - (state.startN[l] ?? 0) + 1) - state.n[l];
-        if (d > bestDeficit + EPSILON) {
-          best = l;
-          bestDeficit = d;
-        }
-      }
-      lane = best;
-      const deficit = `largest deficit, ${fmt(bestDeficit)}`;
-      if (floorOwed) {
-        lent++;
-        reason = `floor owed, no peripheral work ready: lent; ${deficit}`;
-      } else reason = deficit;
-    }
-    const chosen = takeFrom(lane, pools, state, input.records);
+    const pick = chooseLane(readyLanes, shares, state, owed);
+    const chosen = takeFrom(pick.lane, pools, state, input.records);
     if (chosen === null) break;
+    if (pick.lent) lent++;
     place(
       chosen.item,
-      lane,
+      pick.lane,
       true,
-      `${reason} (N ${state.N}, P ${state.p}, owed ${fmt(owed)})${chosen.why}`,
+      `${pick.reason} (N ${state.N}, P ${state.p}, owed ${fmt(owed)})${chosen.why}`,
     );
-    state.N++;
-    state.n[lane]++;
-    if (chosen.objective !== null)
-      state.nObjective.set(
-        chosen.objective,
-        (state.nObjective.get(chosen.objective) ?? 0) + 1,
-      );
-    state.e += fNext;
-    if (lane === "peripheral") state.p++;
-    proposed[lane]++;
+    advance(state, pick.lane, chosen.objective, shares.peripheral);
+    proposed[pick.lane]++;
   }
-  for (const lane of WEIGHTED_LANES)
-    for (const c of pools.get(lane) ?? [])
-      if (
-        !shortlist.some(
-          (p) => p.key === c.item.key && p.scope === c.item.scope,
-        ) &&
-        shares[lane] === 0
-      )
-        excluded.push({
-          key: c.item.key,
-          reason: `its lane ${lane} is out of rotation`,
-        });
+  excluded.push(...outOfRotation(pools, shortlist, shares));
   const lanes: LaneReport[] = WEIGHTED_LANES.map((lane) => ({
     lane,
     weight: input.weights.weights[lane],
@@ -301,7 +185,6 @@ export function rank(input: RankerInput): RankerOutput {
     weekStarts: input.week.charges.filter((c) => c.lane === lane).length,
     proposed: proposed[lane],
   }));
-  owedNow = clean(owedNow);
   const output: Omit<RankerOutput, "inputHash"> = {
     algorithm: ALGORITHM_VERSION,
     asOf: input.asOf,
@@ -326,6 +209,175 @@ export function rank(input: RankerInput): RankerOutput {
     ...output,
     inputHash: hashOf({ algorithm: ALGORITHM_VERSION, inputHashes }),
   };
+}
+
+function hashesOf(input: RankerInput): Record<string, string> {
+  return {
+    snapshot: hashOf(input.snapshot),
+    records: hashOf({
+      records: input.records,
+      blocked: input.allocationBlocked,
+    }),
+    weights: hashOf({
+      weights: input.weights.weights,
+      problems: input.weights.problems,
+    }),
+    capacity: hashOf(input.capacity),
+    epochs: hashOf(input.epochs),
+    week: hashOf(input.week),
+    asOf: hashOf(input.asOf),
+  };
+}
+
+/** The classified items split into lane pools, the excluded and the unallocated. */
+function partition(classified: Classified[]): {
+  pools: Map<Lane, Classified[]>;
+  excluded: RankerOutput["excluded"];
+  unallocated: RankerOutput["unallocated"];
+} {
+  const excluded: RankerOutput["excluded"] = [];
+  const unallocated: RankerOutput["unallocated"] = [];
+  const pools = new Map<Lane, Classified[]>();
+  for (const c of classified) {
+    const ready = isReady(c.item);
+    if (c.lane === "excluded") {
+      excluded.push({ key: c.item.key, reason: c.why });
+    } else if (c.lane === "unallocated" && ready) {
+      unallocated.push({ key: c.item.key, reason: c.why });
+    } else if (c.lane === "unallocated" || (c.lane !== "urgent" && !ready)) {
+      excluded.push({ key: c.item.key, reason: notReady(c.item) });
+    } else pools.set(c.lane, [...(pools.get(c.lane) ?? []), c]);
+  }
+  return { pools, excluded, unallocated };
+}
+
+type Place = (
+  c: Classified,
+  lane: Lane,
+  eligible: boolean,
+  reason: string,
+) => void;
+
+function placer(shortlist: Position[]): Place {
+  return (c, lane, eligible, reason) => {
+    shortlist.push({
+      position: shortlist.length + 1,
+      scope: c.item.scope,
+      key: c.item.key,
+      title: c.item.title,
+      lane,
+      objective: c.placement?.objective ?? null,
+      owners: c.owners,
+      alsoIn: c.alsoIn,
+      eligible,
+      reason,
+      gaps: c.item.gaps.filter(
+        (g) => g === "priority" || g === "type" || g === "assignee",
+      ),
+    });
+  };
+}
+
+function urgentReason(c: Classified, startable: boolean): string {
+  if (!isReady(c.item))
+    return `Urgent: listed though not eligible (${notReady(c.item)})`;
+  return startable
+    ? "Urgent: first; not counted in N"
+    : "Urgent: first; no start capacity left";
+}
+
+/** Place the urgent items, then the high bugs, ahead of the weighted lanes; returns the capacity left. */
+function placeFront(
+  pools: Map<Lane, Classified[]>,
+  start: number,
+  place: Place,
+): number {
+  let capacity = start;
+  for (const c of pools.get("urgent") ?? []) {
+    const startable = isReady(c.item) && capacity > 0;
+    if (startable) capacity--;
+    place(c, "urgent", isReady(c.item), urgentReason(c, startable));
+  }
+  for (const c of pools.get("bug-high") ?? [])
+    if (capacity > 0) {
+      capacity--;
+      place(
+        c,
+        "bug-high",
+        true,
+        "High bug: ahead of the weighted lanes; not counted in N",
+      );
+    }
+  return capacity;
+}
+
+/** The lane that takes the next start: the owed peripheral start, else the largest deficit. */
+function chooseLane(
+  readyLanes: WeightedLane[],
+  shares: Record<WeightedLane, number>,
+  state: Counters,
+  owed: number,
+): { lane: WeightedLane; reason: string; lent: boolean } {
+  const floorOwed = owed >= 1 - EPSILON;
+  if (floorOwed && readyLanes.includes("peripheral"))
+    return {
+      lane: "peripheral",
+      reason: "owed a whole start",
+      lent: false,
+    };
+  let best: WeightedLane = "core";
+  let bestDeficit = Number.NEGATIVE_INFINITY;
+  for (const l of readyLanes) {
+    const d = shares[l] * (state.N - (state.startN[l] ?? 0) + 1) - state.n[l];
+    if (d > bestDeficit + EPSILON) {
+      best = l;
+      bestDeficit = d;
+    }
+  }
+  const deficit = `largest deficit, ${fmt(bestDeficit)}`;
+  return floorOwed
+    ? {
+        lane: best,
+        reason: `floor owed, no peripheral work ready: lent; ${deficit}`,
+        lent: true,
+      }
+    : { lane: best, reason: deficit, lent: false };
+}
+
+/** Count one placed start into the week's counters. */
+function advance(
+  state: Counters,
+  lane: WeightedLane,
+  objective: string | null,
+  peripheralShare: number,
+): void {
+  state.N++;
+  state.n[lane]++;
+  if (objective !== null)
+    state.nObjective.set(objective, (state.nObjective.get(objective) ?? 0) + 1);
+  state.e += peripheralShare;
+  if (lane === "peripheral") state.p++;
+}
+
+/** The unplaced items of lanes that carry no share. */
+function outOfRotation(
+  pools: Map<Lane, Classified[]>,
+  shortlist: Position[],
+  shares: Record<WeightedLane, number>,
+): RankerOutput["excluded"] {
+  const out: RankerOutput["excluded"] = [];
+  for (const lane of WEIGHTED_LANES) {
+    if (shares[lane] !== 0) continue;
+    for (const c of pools.get(lane) ?? [])
+      if (
+        !shortlist.some((p) => p.key === c.item.key && p.scope === c.item.scope)
+      )
+        out.push({
+          key: c.item.key,
+          reason: `its lane ${lane} is out of rotation`,
+        });
+  }
+  return out;
 }
 
 interface Counters {
@@ -381,35 +433,7 @@ function takeFrom(
     const item = pool.shift();
     return item === undefined ? null : { item, objective: null, why: "" };
   }
-  const record = records[0];
-  const objectives = (record?.objectives ?? []).filter((o) => o.class === lane);
-  const explicit = objectives.reduce((s, o) => s + (o.share ?? 0), 0);
-  const unshared = objectives.filter((o) => o.share === undefined).length;
-  const residual = Math.max(0, 1 - explicit);
-  const ready = objectives.filter((o) =>
-    pool.some((c) => c.placement?.objective === o.id),
-  );
-  let chosen: string | null = null;
-  let best = Number.NEGATIVE_INFINITY;
-  const nLane = state.n[lane];
-  for (const o of ready) {
-    const share = o.share ?? (unshared > 0 ? residual / unshared : 0);
-    const counted =
-      record === undefined
-        ? 0
-        : (state.nObjective.get(refKey(record.level, record.scope, o.id)) ?? 0);
-    const d = share * (nLane + 1) - counted;
-    if (d > EPSILON && d > best + EPSILON) {
-      chosen = o.id;
-      best = d;
-    }
-  }
-  let why = "";
-  const first = ready[0];
-  if (chosen === null && first !== undefined) {
-    chosen = first.id;
-    why = `; lent to ${chosen} in record order`;
-  }
+  const { chosen, why } = pickObjective(lane, pool, state, records[0]);
   const index = pool.findIndex((c) => c.placement?.objective === chosen);
   const [item] = pool.splice(Math.max(index, 0), 1);
   if (item === undefined) return null;
@@ -422,6 +446,40 @@ function takeFrom(
         : refKey(placed.level, placed.scope, placed.objective),
     why,
   };
+}
+
+/** The objective of `lane` with the largest deficit among those with ready work; the first one, lent, when none is owed. */
+function pickObjective(
+  lane: WeightedLane,
+  pool: Classified[],
+  state: Counters,
+  record: PrioritiesRecord | undefined,
+): { chosen: string | null; why: string } {
+  const objectives = (record?.objectives ?? []).filter((o) => o.class === lane);
+  const explicit = objectives.reduce((s, o) => s + (o.share ?? 0), 0);
+  const unshared = objectives.filter((o) => o.share === undefined).length;
+  const residual = Math.max(0, 1 - explicit);
+  const ready = objectives.filter((o) =>
+    pool.some((c) => c.placement?.objective === o.id),
+  );
+  let chosen: string | null = null;
+  let best = Number.NEGATIVE_INFINITY;
+  for (const o of ready) {
+    const share = o.share ?? (unshared > 0 ? residual / unshared : 0);
+    const counted =
+      record === undefined
+        ? 0
+        : (state.nObjective.get(refKey(record.level, record.scope, o.id)) ?? 0);
+    const d = share * (state.n[lane] + 1) - counted;
+    if (d > EPSILON && d > best + EPSILON) {
+      chosen = o.id;
+      best = d;
+    }
+  }
+  const first = ready[0];
+  if (chosen === null && first !== undefined)
+    return { chosen: first.id, why: `; lent to ${first.id} in record order` };
+  return { chosen, why: "" };
 }
 
 /** A lane's pool in its deterministic order. */
@@ -456,30 +514,37 @@ function disagreementsOf(pools: Map<Lane, Classified[]>): Disagreement[] {
   for (const lane of ["core", "tactical", "peripheral"] as const) {
     const pool = pools.get(lane) ?? [];
     for (const [i, a] of pool.entries()) {
-      const b = pool[i + 1];
-      if (b === undefined || a.placement === null || b.placement === null)
-        continue;
-      if (a.placement.objective !== b.placement.objective) continue;
-      if (a.placement.epic === b.placement.epic) continue;
-      if (a.item.priority === null || b.item.priority === null) continue;
-      if (b.item.priority < a.item.priority)
-        out.push({
-          objective: a.placement.objective,
-          ahead: {
-            key: a.item.key,
-            epic: a.placement.epic,
-            priority: a.item.priority,
-          },
-          behind: {
-            key: b.item.key,
-            epic: b.placement.epic,
-            priority: b.item.priority,
-          },
-          rule: "an epic's declared position orders its children before their own tracker Priority",
-        });
+      const found = disagreement(a, pool[i + 1]);
+      if (found !== null) out.push(found);
     }
   }
   return out;
+}
+
+function disagreement(
+  a: Classified,
+  b: Classified | undefined,
+): Disagreement | null {
+  if (b === undefined || a.placement === null || b.placement === null)
+    return null;
+  if (a.placement.objective !== b.placement.objective) return null;
+  if (a.placement.epic === b.placement.epic) return null;
+  if (a.item.priority === null || b.item.priority === null) return null;
+  if (b.item.priority >= a.item.priority) return null;
+  return {
+    objective: a.placement.objective,
+    ahead: {
+      key: a.item.key,
+      epic: a.placement.epic,
+      priority: a.item.priority,
+    },
+    behind: {
+      key: b.item.key,
+      epic: b.placement.epic,
+      priority: b.item.priority,
+    },
+    rule: "an epic's declared position orders its children before their own tracker Priority",
+  };
 }
 
 /** Whether an item may be proposed for a start. */
