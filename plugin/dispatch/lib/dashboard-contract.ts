@@ -172,6 +172,8 @@ export interface LineWall {
 
 /** One account on this machine. */
 export interface LineAccount {
+  /** Absent on snapshots written before host-local weights were supported. */
+  weight?: { configured: number | null; effective: number; reason: string };
   name: string;
   vendor: string;
   /** Sessions the dispatcher may hold on it at once. */

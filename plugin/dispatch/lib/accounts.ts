@@ -4,13 +4,13 @@
  *
  * An account's slots held are its launch records that hold their stage
  * (pending, alive, unknown), a takeover and the record it replaces counted
- * as one while both hold. A re-arm is admitted on an account with a free
- * slot and no wall in effect, the accounts taken in turn starting after the
- * account of the most recent launch record, so the turn survives between
- * ticks without state of its own. A takeover is admitted into the slot of
- * the record it replaces, on that record's account, while that account has
- * no wall. With no account free the action waits, and the reason names
- * every account's slots.
+ * as one while both hold. A new launch needs a free slot, a positive readable
+ * weight and no wall. Equal-weight eligible accounts take turns after the
+ * most recent launch's account; unequal weights divide launches using the
+ * sequence in weighted-turn.ts. Launch records carry both forms of progress
+ * between ticks. A takeover uses the replaced record's account and slot,
+ * while its weight remains positive and readable and no wall holds. With no
+ * account available the action waits, naming every account's slots and weights.
  *
  * The account's vendor chooses the agent a session runs in, so an account
  * is admitted only for a vendor the drive documents a pass command for
@@ -33,6 +33,8 @@
  * mismatch, or an identity that does not resolve, starts nothing.
  */
 import { resolve } from "node:path";
+import type { AccountWeights } from "./local-weights.ts";
+import { weightedTurn } from "./weighted-turn.ts";
 import {
   isMapping,
   sourceOf,
@@ -213,6 +215,7 @@ export function notAdmitted(
 export interface Slots {
   account: MachineAccount;
   held: number;
+  weight: { configured: number | null; reason: string };
   wall: Wall | null;
   /** A launch ended on this account's wall and the wall was never recorded: no launch is admitted until a person clears that record. */
   wallUnrecorded: boolean;
@@ -294,12 +297,20 @@ export function slotTable(
   records: ReadRecord[],
   nowMs: number,
   root?: string,
+  weights?: AccountWeights,
 ): Slots[] {
   const held = heldByAccount(accounts, records);
   const unrecorded = unrecordedAccounts(accounts, records, root);
   return accounts.map((account) => ({
     account,
     held: held.get(account.name) ?? 0,
+    weight:
+      weights === undefined
+        ? { configured: 100, reason: "default 100; no local weights snapshot" }
+        : (weights.get(account.name) ?? {
+            configured: null,
+            reason: "account weight was not read",
+          }),
     wall: accountWall(account, nowMs, root),
     wallUnrecorded: unrecorded.has(account.name),
   }));
@@ -327,22 +338,45 @@ export function refreshWalls(
   }
 }
 
+/** The weight available to a new launch after capacity, vendor and usage constraints. */
+export function effectiveAccountWeight(
+  slots: Slots,
+  refusal: string | null = null,
+): number {
+  return refusal !== null ||
+    slots.wall !== null ||
+    slots.wallUnrecorded ||
+    slots.held >= slots.account.maxPerAccount
+    ? 0
+    : (slots.weight.configured ?? 0);
+}
+
 /** Every account's slots, in one line for a report, an account `launch` is never admitted on named so. */
 function describeSlots(table: Slots[], launch: LaunchKind): string {
   if (table.length === 0) return "the machine file lists no accounts";
   return table
     .map((s) => {
       const refused = vendorRefusal(s.account.vendor, launch);
-      if (refused !== null) return `${s.account.name} (${refused})`;
-      return `${s.account.name} ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}${s.wallUnrecorded ? " (wall not recorded)" : ""}`;
+      const weight = `${s.account.name} weight ${s.weight.configured ?? "unreadable"} (effective ${effectiveAccountWeight(s, refused)})`;
+      if (refused !== null) return `${weight} (${refused})`;
+      return `${weight}, ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}${s.wallUnrecorded ? " (wall not recorded)" : ""}`;
     })
     .join(", ");
+}
+
+/** Why the account's launch weight closes admission; shared by new launches and pending replays. */
+export function accountWeightBlock(slots: Slots): string | null {
+  return slots.weight.configured === null || slots.weight.configured === 0
+    ? `weight ${slots.weight.configured ?? "unreadable"}: ${slots.weight.reason}`
+    : null;
 }
 
 /** Why an account cannot take `launch` now; `null` when it can. */
 function closed(slots: Slots, launch: LaunchKind): string | null {
   const refused = vendorRefusal(slots.account.vendor, launch);
   if (refused !== null) return refused;
+  const weightBlock = accountWeightBlock(slots);
+  if (weightBlock !== null) return weightBlock;
   if (slots.wallUnrecorded)
     return "its wall was not recorded; it stays closed until that launch record is cleared";
   if (slots.wall !== null) return `walled until ${slots.wall.resetAt}`;
@@ -351,13 +385,28 @@ function closed(slots: Slots, launch: LaunchKind): string | null {
 
 export type Admission = { admitted: Slots } | { waits: string };
 
-/** The account a re-arm (or an interactive session) runs on, taken in turn after `last`. */
+/** A new launch follows weighted shares, or the turn after `last` when eligible weights are equal. */
 export function admitRearm(
   table: Slots[],
   last: string | null,
   launch: LaunchKind,
   excluded: ReadonlySet<string> = new Set(),
+  records: readonly ReadRecord[] = [],
 ): Admission {
+  const eligible = table.filter(
+    (s) => !excluded.has(s.account.name) && closed(s, launch) === null,
+  );
+  if (
+    eligible.length > 0 &&
+    eligible.some((s) => s.weight.configured !== eligible[0]?.weight.configured)
+  )
+    return {
+      admitted: weightedTurn(
+        eligible,
+        (s) => s.weight.configured ?? 0,
+        records,
+      ),
+    };
   const start = table.findIndex((s) => s.account.name === last) + 1;
   for (let i = 0; i < table.length; i++) {
     const slots = table[(start + i) % table.length] as Slots;
@@ -369,7 +418,7 @@ export function admitRearm(
   };
 }
 
-/** The slot a takeover runs in under the pass deadline `deadlineSec`, on this host's opt-in: the replaced record's, on its account. */
+/** A takeover uses the replaced record's account and slot only with a positive readable weight, no wall and an admitted vendor. */
 export function admitTakeover(
   table: Slots[],
   replaced: ReadRecord,
@@ -383,6 +432,9 @@ export function admitTakeover(
     };
   const launch: LaunchKind = { kind: "pass", deadlineSec, codex };
   const refused = vendorRefusal(slots.account.vendor, launch);
+  const weightBlock = accountWeightBlock(slots);
+  if (weightBlock !== null)
+    return { waits: `${slots.account.name}: ${weightBlock}` };
   if (refused !== null) return { waits: `${slots.account.name}: ${refused}` };
   if (slots.wallUnrecorded)
     return {
@@ -400,7 +452,7 @@ export function admitTakeover(
   return { admitted: slots };
 }
 
-/** The account of the most recent launch record, where the turn resumes. */
+/** The most recent launch's account, where an equal-weight turn resumes. */
 export function lastAccount(records: ReadRecord[]): string | null {
   let latest: ReadRecord | null = null;
   for (const r of records)
