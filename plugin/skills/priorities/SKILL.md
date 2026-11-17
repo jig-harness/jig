@@ -67,6 +67,8 @@ bun --no-env-file --config="<skill-dir>/../../dispatch/bunfig.toml" "<skill-dir>
 It re-ranks the same tracker snapshot with the proposed record or weights
 and prints the positions added, removed and moved, and each lane share that
 changes. With no ranking on this host it says so: show the validation alone.
+A proposed weights file with a problem exits 1 with the problems named (in
+`problems` with `--json`): fix the file before showing the diff.
 
 ## Prepare the change
 
