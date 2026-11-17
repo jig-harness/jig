@@ -5,17 +5,13 @@
  * and a git failure is reported as one rather than as a missing file.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  spawnSync,
-  withoutLeakyGitEnv,
-} from "../../shared/guarded-git-spawn.ts";
 import { PRIORITIES_FILE } from "../../shared/priorities/record.ts";
 import { dump } from "../../shared/yaml.ts";
 import { currentMs } from "../../shared/time.ts";
 import { readRepositoryRecord } from "../lib/priorities-read.ts";
+import { git, scratchDir } from "./git-fixtures.ts";
 
 const NOW = Date.parse("2026-11-18T08:00:00Z");
 const dirs: string[] = [];
@@ -25,18 +21,7 @@ afterEach(() => {
 });
 
 function scratch(): string {
-  const dir = mkdtempSync(join(tmpdir(), "jig-priorities-read-"));
-  dirs.push(dir);
-  return dir;
-}
-
-function git(cwd: string, ...args: string[]): void {
-  const r = spawnSync(
-    "git",
-    ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args],
-    { cwd, env: withoutLeakyGitEnv(process.env) },
-  );
-  if (r.status !== 0) throw new Error(`git ${args[0]}: ${r.stderr}`);
+  return scratchDir("jig-priorities-read-", dirs);
 }
 
 /** A checkout whose `origin/main` holds each of `revisions` in turn (`null` removes the file). */

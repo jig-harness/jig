@@ -52,7 +52,8 @@ honest.
 > itself. **Every copy of the taxonomy's key sets is checked** for
 > exact equality with its source. **Prioritization is computed**: the ranked
 > shortlist is reproducible from a tracker snapshot and a committed weights
-> file, and a person picks from it.
+> file. A person picks from it, or opts the host in to have the dispatcher
+> start work in its order.
 
 Everything below is that one tool-independent statement made mechanical;
 concrete per-tracker, per-runtime wiring lives in [mappings.md](mappings.md).
@@ -222,7 +223,10 @@ The ranked shortlist of what to work on next is reproducible: the same
 tracker snapshot and the same committed weights file give the same ranking. A
 judgment layer may reorder it only with a stated reason per deviation; a
 deviation that recurs is a weight to retune. A person picks from the
-shortlist.
+shortlist, or authorizes the host to start work in its order: that opt-in
+(`priorities.enforce`) is the person's decision, it grants no power beyond the
+ready pool dispatch already selects from, and weights of 0 take a lane out of
+rotation.
 
 ## Maturity levels
 
@@ -367,11 +371,11 @@ build, which rejects a repeated key.
 - **The epic acceptance review and the tail sweep** as runnable skills. The
   rules above are stated now; the tools that run them (a review that writes
   the accepting verdict, and a sweep that extracts tails and closes the epic)
-  are planned to move into the plugin. The prioritization ranker runs in the
-  dispatcher over a tracker snapshot, the repository's priorities record and
-  the host's weights file, and reports its shortlist without changing what
-  the dispatcher starts; the
+  are planned to move into the plugin. Until then `do-item` asks for the
+  verdict or waiver and stops without one. The prioritization ranker runs in
+  the dispatcher over a tracker snapshot, the repository's priorities record
+  and the host's weights file, and reports its shortlist beside what the
+  dispatcher starts; a host that opts in (`priorities.enforce`) has its
+  pickups start in the shortlist's order. The
   [`priorities` skill](../../plugin/skills/priorities/README.md) validates the
-  record and shows how a change moves the shortlist. Using the shortlist to
-  choose starts is future. Until then `do-item`
-  asks for the verdict or waiver and stops without one.
+  record and shows how a change moves the shortlist.
