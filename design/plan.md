@@ -536,24 +536,30 @@ waited.
 
 ### 58. Declared priorities, a progress review and the overview
 
-A person sees individual failures without seeing whether their goals are
-advancing. [The design](priorities-and-overview.md) defines one priorities record
-at site, repository and individual levels. A reproducible shortlist carries
-each epic's rank to its children. A progress review proposes systematic fixes
-and never acts, and an overview joins the facts inside the existing dashboard.
-Urgent issues stay visible, assigned bugs retain their priority, and a
-minimum share keeps peripheral goals moving. The overview pairs each issue
-with its pull request and shows the decisions owed, with confirmed actions
-made by the person's browser, phone unlock and no phone merge.
+A person can see each failure on its own, but not whether the team's goals
+are moving. With this item, a team writes its goals down once, and Jig
+ranks the open work against them. Urgent issues always come first, and
+high-priority bugs come next. All other work shares the remaining starts by
+weight: the team's core goals, its tactical goals, its peripheral goals and
+its other bugs. A small weekly floor keeps the peripheral goals moving. The
+same inputs always give the same ranked list. A person picks from that
+list, and Jig reports the list before it lets the list decide what starts.
 
-The person reviews the design before implementation. Build the record and
-ranker, then trial the progress review on Jig and a consumer repository,
-then the overview after its visual design round. Browser actions wait for
-the browser write path to merge and for device probes; site-level records arrive with
-the optional hub. Done when equal input snapshots reproduce the shortlist
-and every Urgent issue appears in each review. The overview must explain
-progress and waiting from structured facts, and browser actions must preserve
-the person's authority. The trial precedes new M9 audit criteria.
+A scheduled review reads what the dispatcher and its sessions did, and
+proposes fixes for problems that repeat. It never acts on its own. One
+overview in Jig's dashboard shows the goals, each group of issues beside
+its pull requests, what is running and what waits for a person. A person
+confirms each action from the overview in their own browser. A phone can
+do every action except a merge, behind a fingerprint or face unlock.
+
+[The design](priorities-and-overview.md) says how it works. The goals file and the ranking
+come first, as a report. Then a host can opt in to let the ranking decide
+what starts. The review runs as a trial on Jig and one other repository,
+then the overview and its actions follow. Done when the same inputs always
+give the same list, and every review lists every Urgent issue. The overview
+must explain progress and waiting from recorded facts.
+
+Its build steps are issues under epic #1177, in the design's order.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
