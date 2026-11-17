@@ -15,42 +15,16 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 
 const PLUGIN = join(import.meta.dir, "..", "..", "..");
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
-// Comments are dropped by a scan that keeps string literals whole (a `//` in
-// a URL string is not a comment), and shell line continuations are joined, so
-// what is left is the command's own tokens: `workspace`, then any run of
-// whitespace and punctuation (quotes, commas, brackets, a spread), then
-// `rename`. A quote that never closes only keeps more text, which can add a
-// detection and never hides one.
-function withoutComments(text: string): string {
-  let out = "";
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    const next = text[i + 1];
-    if (c === "/" && next === "/") {
-      while (i < text.length && text[i] !== "\n") i++;
-      out += " ";
-    } else if (c === "/" && next === "*") {
-      const end = text.indexOf("*/", i + 2);
-      i = end < 0 ? text.length : end + 2;
-      out += " ";
-    } else if (c === '"' || c === "'" || c === "`") {
-      let j = i + 1;
-      while (j < text.length && text[j] !== c) j += text[j] === "\\" ? 2 : 1;
-      out += text.slice(i, j + 1);
-      i = j + 1;
-    } else {
-      out += c;
-      i++;
-    }
-  }
-  return out;
-}
+// The raw text is scanned, with no comment or quote handling to get wrong, so
+// nothing a file does with comments, strings or bindings can hide a rename: a
+// file is an offender when it carries the shell words `workspace rename`
+// (a line continuation or a quote between them included), or the word
+// `workspace` together with `rename` as a quoted string, which is how an
+// argument list or a binding spells the operation.
 const HERDR_RENAME = {
   test: (text: string): boolean =>
-    /\bworkspace\b\W+rename\b/.test(
-      withoutComments(text).replace(/\\\r?\n/g, " "),
-    ),
+    /\bworkspace\b[\s\\"'`]*\brename\b/.test(text) ||
+    (/\bworkspace\b/.test(text) && /["'`]rename["'`]/.test(text)),
 };
 const RENAMES = [/--display-name/, HERDR_RENAME];
 
@@ -59,7 +33,7 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test("the Herdr recognizer sees quoting and comment variants", () => {
+test("the Herdr recognizer sees quoting, comment and binding variants", () => {
   for (const text of [
     'run(["workspace", "rename", id, name])',
     "run(['workspace', 'rename', id, name])",
@@ -68,16 +42,16 @@ test("the Herdr recognizer sees quoting and comment variants", () => {
     'run(["workspace", `rename`, id, name])',
     "herdr workspace rename w1 name",
     "herdr workspace \\\nrename w1 name",
+    "cd //tmp; herdr workspace rename w1 name",
     'run(["workspace", ...["rename", id, name]])',
-    'const url = "https://example.invalid"; run(["herdr", "workspace", "rename", id, name]);',
+    'const operation = "rename"; run(["workspace", operation, id, name])',
     `run([\n  "workspace",\n${" ".repeat(60)}"rename", id, name])`,
   ])
     expect(HERDR_RENAME.test(text)).toBe(true);
   for (const text of [
     'run(["workspace", "list"])',
     "workspace renamed",
-    'run(["workspace", /* rename */ "list"])',
-    'run(["workspace", // rename\n"list"])',
+    "rename the file in this directory",
   ])
     expect(HERDR_RENAME.test(text)).toBe(false);
 });
