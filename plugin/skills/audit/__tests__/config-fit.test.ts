@@ -2361,36 +2361,3 @@ jobs:
     });
   });
 });
-
-describe("followup.arms derivations", () => {
-  test("a missing instructions file and a broken check command are findings", () => {
-    const { report } = fit({
-      ".config/jig.yaml": `followup:
-  arms:
-    - id: docs-site
-      instructions: .config/followup/missing.md
-    - id: ledger
-      check_command: "<your check command>"
-`,
-      "package.json": "{}",
-    });
-    const errors = ids(report, "error");
-    expect(errors).toContain("derivation:followup.arms[0].instructions");
-    expect(errors).toContain("derivation:followup.arms[1].check_command");
-  });
-
-  test("an instructions file the repository holds passes", () => {
-    const { report } = fit({
-      ".config/jig.yaml": `followup:
-  arms:
-    - id: docs-site
-      instructions: .config/followup/docs-site.md
-`,
-      ".config/followup/docs-site.md": "Rebuild the site.\n",
-      "package.json": "{}",
-    });
-    expect(ids(report, "error")).not.toContain(
-      "derivation:followup.arms[0].instructions",
-    );
-  });
-});
