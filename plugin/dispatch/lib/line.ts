@@ -678,6 +678,11 @@ function repoOf(
     stages: entry?.stages ?? [],
     ...(input?.tracker === undefined ? {} : { tracker: input.tracker }),
     refused: report.refused,
+    ...(report.slug !== null &&
+    report.refused !== null &&
+    report.section === null
+      ? { unobserved: true as const }
+      : {}),
     failedReads: report.records
       .filter((r) => !r.ok)
       .map((r) => ({

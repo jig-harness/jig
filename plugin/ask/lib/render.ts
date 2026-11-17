@@ -164,7 +164,13 @@ export function renderAnswer(a: AskAnswer): string {
 export function renderWaiting(w: WaitingAnswer): string {
   if (w.tick === null) return w.unread ?? "there is no line to read";
   const head = `waiting on a person, as the tick ${w.tick.runId} found it at ${w.tick.finishedAt}:`;
-  if (w.waiting.length === 0) return `${head}\n  nothing`;
+  const unread = incompleteLines(w.incomplete);
+  if (w.waiting.length === 0)
+    return [
+      head,
+      unread.length === 0 ? "  nothing" : "  none in what was read",
+      ...unread,
+    ].join("\n");
   return [
     head,
     ...w.waiting.flatMap((e) => [
@@ -178,5 +184,23 @@ export function renderWaiting(w: WaitingAnswer): string {
         : [printable(`    notice not delivered: ${e.notice}`)]),
       ...(e.url === null ? [] : [`    ${e.url}`]),
     ]),
+    ...unread,
   ].join("\n");
+}
+
+/** The repositories the line could not read, after what it found. */
+function incompleteLines(incomplete: WaitingAnswer["incomplete"]): string[] {
+  if (incomplete.length === 0) return [];
+  const count =
+    incomplete.length === 1
+      ? "1 repository was"
+      : `${incomplete.length} repositories were`;
+  return [
+    `the line is incomplete: ${count} not read, so what waits on ${incomplete.length === 1 ? "it" : "them"} is as of the reading named, or unknown:`,
+    ...incomplete.map((r) =>
+      printable(
+        `  ${r.repo}: ${r.readAt === null ? "never read" : `as read at ${r.readAt}`}; ${r.refused}`,
+      ),
+    ),
+  ];
 }

@@ -349,6 +349,26 @@ describe("staleness", () => {
     expect(staleBanners(notBusy, CLOCK)[0]?.body).toStartWith("None of the ");
   });
 
+  it("says a repository's part is old because the newest tick that tried could not identify it", () => {
+    const partial = lineOf("partial");
+    const refusal = "the forge cannot say which repository this is";
+    const refused = {
+      ...partial,
+      repos: partial.repos.map((r) =>
+        r.slug === "example-org/mobile"
+          ? { ...r, slug: null, lastSlug: r.slug, refused: refusal }
+          : r,
+      ),
+    };
+    expect(staleBanners(refused, CLOCK)).toEqual([
+      {
+        key: "/srv/work/mobile",
+        title: "example-org/mobile has not been read since 16:05, 42 min ago.",
+        body: `The newest tick that tried could not read it (${refusal}). Its needs, queue and sessions below are as of the 16:05 tick.`,
+      },
+    ]);
+  });
+
   it("says when the server is not answering, and alarms", () => {
     expect(freshOf(line, CLOCK, true).detail).toContain(
       "The next tick is due 16:50.",

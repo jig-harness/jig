@@ -16,6 +16,7 @@ import {
   readBy,
   withLastSlugs,
 } from "../lib/line-merge.ts";
+import { refusedRepos } from "../lib/line-unread.ts";
 
 const LISTED = [{ path: "/w/a" }, { path: "/w/b" }];
 
@@ -125,23 +126,113 @@ function tickLine(
   );
 }
 
+const REFUSAL =
+  "the forge cannot say which repository this is: the rate limit holds the call, so nothing was sent";
+
+/** The line of a tick that could not identify the repositories at `paths`, as `buildLine` leaves it. */
+function refusedTick(startedAt: string, paths: string[]): LineSnapshot {
+  return readBy(
+    {
+      ...tickLine(startedAt, []),
+      repos: paths.map((path) => ({
+        ...repo("?", path),
+        slug: null,
+        refused: REFUSAL,
+      })),
+    },
+    startedAt,
+    startedAt,
+  );
+}
+
+/** The line of a tick that identified the repository at `path` as `slug`, then could not read its configuration. */
+function unobservedTick(
+  startedAt: string,
+  slug: string,
+  path: string,
+  reason = REFUSAL,
+): LineSnapshot {
+  return readBy(
+    {
+      ...tickLine(startedAt, []),
+      repos: [{ ...repo(slug, path), refused: reason, unobserved: true }],
+    },
+    startedAt,
+    startedAt,
+  );
+}
+
 describe("mergeLine", () => {
-  test("a repository the tick reported on without a slug loses its old cards with its old entry", () => {
+  test("a repository the tick could not identify keeps its part from the tick that last read it, with this tick's refusal", () => {
     const before = tickLine("2026-11-10T10:00:00.000Z", [
       { slug: "A", path: "/w/a", n: 0 },
       { slug: "B", path: "/w/b", n: 0 },
     ]);
-    const failed = readBy(
-      {
-        ...tickLine("2026-11-10T10:02:00.000Z", []),
-        repos: [{ ...repo("B", "/w/b"), slug: null }],
-      },
-      "2026-11-10T10:02:00.000Z",
-      "2026-11-10T10:02:00.000Z",
-    );
+    const failed = refusedTick("2026-11-10T10:02:00.000Z", ["/w/b"]);
     const line = mergeLine(before, failed, LISTED, "fresh");
-    expect(line.needs.map((x) => x.repo)).toEqual(["A"]);
-    expect(line.sessions.map((x) => x.repo)).toEqual(["A"]);
+    expect(line.needs.map((x) => x.target)).toEqual(["A-N0", "B-N0"]);
+    expect(line.sessions.map((x) => x.target)).toEqual(["A-S0", "B-S0"]);
+    expect(line.queue.map((x) => x.target)).toEqual(["A-Q0", "B-Q0"]);
+    expect(line.repos.map((r) => [r.slug, r.refused, r.readAt])).toEqual([
+      ["A", null, "2026-11-10T10:00:00.000Z"],
+      [null, REFUSAL, "2026-11-10T10:00:00.000Z"],
+    ]);
+  });
+
+  test("a tick that could identify no repository keeps every repository's needs, across repeated refusals", () => {
+    const before = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+      { slug: "B", path: "/w/b", n: 0 },
+    ]);
+    const first = withLastSlugs(
+      mergeLine(
+        before,
+        refusedTick("2026-11-10T10:02:00.000Z", ["/w/a", "/w/b"]),
+        LISTED,
+        "fresh",
+      ),
+      before,
+    );
+    const second = withLastSlugs(
+      mergeLine(
+        first,
+        refusedTick("2026-11-10T10:04:00.000Z", ["/w/a", "/w/b"]),
+        LISTED,
+        "fresh",
+      ),
+      first,
+    );
+    expect(second.runId).toBe("2026-11-10T10:04:00.000Z");
+    expect(second.needs.map((x) => x.target)).toEqual(["A-N0", "B-N0"]);
+    expect(refusedRepos(second)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: "2026-11-10T10:00:00.000Z" },
+      { repo: "B", refused: REFUSAL, readAt: "2026-11-10T10:00:00.000Z" },
+    ]);
+    // The next tick that reads a repository replaces the part the refusals kept.
+    const read = mergeLine(
+      second,
+      tickLine("2026-11-10T10:06:00.000Z", [{ slug: "B", path: "/w/b", n: 3 }]),
+      LISTED,
+      "fresh",
+    );
+    expect(read.needs.map((x) => x.target)).toEqual(["A-N0", "B-N3"]);
+    expect(refusedRepos(read).map((r) => r.repo)).toEqual(["A"]);
+  });
+
+  test("a repository no tick has identified has nothing kept, and its refusal names no reading", () => {
+    const failed = refusedTick("2026-11-10T10:02:00.000Z", ["/w/a", "/w/b"]);
+    const before = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const line = withLastSlugs(
+      mergeLine(before, failed, LISTED, "fresh"),
+      before,
+    );
+    expect(line.needs.map((x) => x.target)).toEqual(["A-N0"]);
+    expect(refusedRepos(line)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: "2026-11-10T10:00:00.000Z" },
+      { repo: "/w/b", refused: REFUSAL, readAt: null },
+    ]);
   });
 
   test("a repository the tick could not identify keeps the identity the line before held for its path", () => {
@@ -346,5 +437,126 @@ describe("mergeLine", () => {
     expect(merged.repos.map((r) => r.slug)).toEqual(["A", "B"]);
     expect(merged.needs.map((x) => x.target)).toEqual(["A-N0", "B-N1"]);
     expect(merged.load?.factor).toBe(0.5);
+  });
+
+  test("a repository identified but not opened keeps the part the tick that last read it found", () => {
+    const before = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const merged = mergeLine(
+      before,
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(merged.needs.map((x) => x.target)).toEqual(["A-N0"]);
+    expect(refusedRepos(merged)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: "2026-11-10T10:00:00.000Z" },
+    ]);
+  });
+
+  test("a repository no tick has read yet and could not open names no reading", () => {
+    const merged = mergeLine(
+      tickLine("2026-11-10T10:00:00.000Z", []),
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(refusedRepos(merged)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: null },
+    ]);
+  });
+
+  test("a delayed older read does not clear a newer refusal that kept an earlier reading", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const refused = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:04:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    const late = mergeLine(
+      refused,
+      tickLine("2026-11-10T10:02:00.000Z", [{ slug: "A", path: "/w/a", n: 1 }]),
+      LISTED,
+      "kept",
+    );
+    expect(late.needs.map((x) => x.target)).toEqual(["A-N0"]);
+    expect(refusedRepos(late).map((r) => r.refused)).toEqual([REFUSAL]);
+  });
+
+  test("a delayed older refusal does not replace the newest refusal's reason", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const newest = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:04:00.000Z", "A", "/w/a", "newest"),
+      LISTED,
+      "fresh",
+    );
+    const late = mergeLine(
+      newest,
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a", "older"),
+      LISTED,
+      "kept",
+    );
+    expect(refusedRepos(late).map((r) => r.refused)).toEqual(["newest"]);
+  });
+  test("a wake-up for another repository leaves a never-read entry with no reading", () => {
+    const first = mergeLine(
+      tickLine("2026-11-10T10:00:00.000Z", []),
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    const woken = mergeLine(
+      first,
+      tickLine("2026-11-10T10:04:00.000Z", [{ slug: "B", path: "/w/b", n: 0 }]),
+      LISTED,
+      "kept",
+    );
+    expect(refusedRepos(woken)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: null },
+    ]);
+  });
+
+  test("a refusal keeps the retained Ready omission count", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    read.repos[0] = { ...read.repos[0], readyOmitted: 3 } as LineRepo;
+    const merged = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(merged.repos[0]?.readyOmitted).toBe(3);
+  });
+
+  test("a refusal under a changed slug keeps the retained part across consecutive refusals", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const once = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:02:00.000Z", "B", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    const twice = mergeLine(
+      once,
+      unobservedTick("2026-11-10T10:04:00.000Z", "B", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(twice.needs.map((x) => x.target)).toEqual(["A-N0"]);
+    expect(refusedRepos(twice)[0]?.readAt).toBe("2026-11-10T10:00:00.000Z");
+    // The readers name the retained part's identity, and park memory keeps it.
+    expect(refusedRepos(twice)[0]?.repo).toBe("A");
+    expect([...identifiedSlugs(once, read, LISTED)].sort()).toEqual(["A", "B"]);
   });
 });
