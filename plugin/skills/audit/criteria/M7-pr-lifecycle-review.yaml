@@ -141,6 +141,8 @@ criteria:
       - "routine local branches, retired workspaces and scratch notes are left to periodic cleanup, even without collector coverage, and do not make the follow-up incomplete or require a human retention decision; evidence of unlanded work or an active operational problem remains in scope"
       - "on recent merges, a closing comment or pass report records each class as owed or not owed (a scheduled or hook-run pass that only reports is advisory; mechanical needs a check that fails while a merge has a class nobody recorded)"
       - "a repository whose post-merge command is the plugin's /jig:followup (dispatch.followup_command, or the stage run by hand) has the stage's procedure: its arms are these classes and its settle step refuses to end a run with an arm unrecorded; the evidence of a settled merge is still the recorded report on recent merges, and an arm turned off in followup.off is a class the repository does not settle"
+      - "an obligation only this repository has after a merge (a site, a ledger, a status page) is settled in the same report as the classes above, by whatever procedure the repository runs; a check that cannot answer is recorded unread, never not owed, and an obligation kept only in a procedure the stage never runs is not settled"
+      - "a repository that adopts the plugin's /jig:followup declares such an obligation as a repository arm in followup.arms (an instructions file read from the integration branch, a read-only check command, or a skill), settled in the same report"
     since: 0.52.0
 
   - id: pr-target-wiring-fork-safe

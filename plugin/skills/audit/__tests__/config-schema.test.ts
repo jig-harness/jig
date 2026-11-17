@@ -106,6 +106,11 @@ import {
 import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
 import { ARM_IDS } from "../../followup/scripts/lib/arms.ts";
 import { ACT_IDS, LEVELS } from "../../followup/scripts/lib/authority.ts";
+import {
+  REPO_ARM_FORMS,
+  REPO_ARM_ID_PATTERN,
+  REPO_ARM_SKILL_PATTERN,
+} from "../../followup/scripts/lib/repo-arms.ts";
 import { parseFollowupSettings } from "../../followup/scripts/lib/settings.ts";
 import { DEFAULT_TAXONOMY } from "../../file-issue/scripts/lib/config.ts";
 import { SAFE_KEY_COMPONENT_PATTERN } from "../../resolve-review-comments/scripts/lib/batch-description.ts";
@@ -338,6 +343,21 @@ describe("the reading skills", () => {
       type: "enum",
       values: [...LEVELS],
     });
+  });
+
+  test("type a repository arm's keys as the follow-up reads them", () => {
+    const items = field("followup.arms")?.items as
+      | { fields: Record<string, { pattern?: string }> }
+      | undefined;
+    const fields = items?.fields ?? {};
+    expect(Object.keys(fields)).toEqual([
+      "id",
+      "title",
+      "when",
+      ...REPO_ARM_FORMS,
+    ]);
+    expect(fields.id?.pattern).toBe(REPO_ARM_ID_PATTERN.source);
+    expect(fields.skill?.pattern).toBe(REPO_ARM_SKILL_PATTERN.source);
   });
 
   test("map the board stages the Orca card moves through", () => {

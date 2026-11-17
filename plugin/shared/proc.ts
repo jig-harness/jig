@@ -14,6 +14,8 @@ import {
 import { windowsProcessLifecycle } from "./windows-process.ts";
 import { stopWindowsTree } from "./process-tree.ts";
 import { registerSignalHandler, shutdownRequested } from "./cleanup.ts";
+import { gitIdentityEnv } from "./git-env.ts";
+export { GIT_LOCATION_VARS, gitIdentityEnv } from "./git-env.ts";
 /**
  * Process spawning with deadlines — the TypeScript successor to
  * `lib/gh-deadline.sh`, and the place every skill's `gh` is spawned from.
@@ -722,64 +724,6 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
  */
 export function tsArgv(scriptPath: string, args: string[] = []): string[] {
   return [process.execPath, scriptPath, ...args];
-}
-
-/**
- * Every environment variable that overrides git's own `cwd`-based repository
- * discovery. Any of these exported into this process — a lefthook hook exports
- * `GIT_DIR` and `GIT_WORK_TREE` together, but nothing guarantees only that
- * shape reaches here — silently redirects a `cwd`-anchored `git` call at a
- * DIFFERENT repository than the caller is reasoning about.
- *
- * `GIT_DIR` alone, with no `GIT_WORK_TREE`, is the sharpest case: git then
- * treats the CURRENT DIRECTORY as the work tree while resolving refs from the
- * leaked dir, so `rev-parse --show-toplevel` reports `cwd` — matching whatever
- * anchor a caller checks it against — while `rev-parse HEAD` answers for
- * another repository entirely. `cwd` alone was never sufficient against any of
- * these. `GIT_NAMESPACE` is the same hazard through ref resolution
- * (`refs/namespaces/<ns>/…`) without touching which worktree is reported.
- *
- * ONE list and ONE scrubber, here (re-exported by drive-pr's `lib/proc.ts`), rather than a copy per entrypoint. Three
- * copies existed and had already drifted: only drive-status.ts's carried
- * `GIT_NAMESPACE` and the Windows case-folding below, so the other two were
- * strictly weaker against hazards that had been found and fixed once. A
- * measured-and-fixed leak that survives in a sibling copy is the defect, not
- * the duplication.
- */
-export const GIT_LOCATION_VARS = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_COMMON_DIR",
-  "GIT_PREFIX",
-  "GIT_NAMESPACE",
-];
-
-/**
- * `process.env` with every entry in `GIT_LOCATION_VARS` removed — pass as
- * `env:` to any `cwd`-anchored `git` call whose answer must be about the
- * repository at that `cwd`.
- *
- * Windows environment-variable names are case-INSENSITIVE, but a JS object's
- * property deletion is not: an inherited spelling like `Git_Dir` survives an
- * exact-match delete and is still read by git as `GIT_DIR`, reopening the leak
- * this exists to close. POSIX
- * names ARE case-sensitive, so the exact-match form stays correct and cheaper
- * there.
- */
-export function gitIdentityEnv(): Record<string, string | undefined> {
-  const env = { ...process.env };
-  if (process.platform === "win32") {
-    const targets = new Set(GIT_LOCATION_VARS.map((k) => k.toLowerCase()));
-    for (const key of Object.keys(env)) {
-      if (targets.has(key.toLowerCase())) delete env[key];
-    }
-  } else {
-    for (const key of GIT_LOCATION_VARS) delete env[key];
-  }
-  return env;
 }
 
 /**
