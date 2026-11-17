@@ -2005,7 +2005,7 @@ report. In such a pass:
 |--------|---------|-------|--------|
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
-| `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
+| `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, `footprint` (read; write with `--input`), the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state, body from `--body-file`, or footprint payload from `--input` | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts, and list its guidance and review gates | Issue JSON (path or `-`) | JSON with agent, scouts, guidance and gates |
 | `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |

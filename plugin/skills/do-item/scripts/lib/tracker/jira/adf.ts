@@ -142,6 +142,22 @@ const quote: BlockReader = (lines, at) => {
 
 const comment: BlockReader = (lines, at) => {
   const line = lines[at] as string;
+  if (line.trimStart().startsWith("<!--") && !line.includes("-->")) {
+    let end = at + 1;
+    while (end < lines.length && !lines[end]?.includes("-->")) end++;
+    if (end < lines.length)
+      return {
+        nodes: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: lines.slice(at, end + 1).join("\n") },
+            ],
+          },
+        ],
+        end: end + 1,
+      };
+  }
   return COMMENT_LINE.test(line)
     ? {
         nodes: [

@@ -78,6 +78,8 @@ pre-commit:
         - "plugin/shared/records/followup-shapes.ts"
         - "plugin/shared/records/followup-values.ts"
         - "plugin/shared/records/marker-shapes.ts"
+        - "plugin/shared/footprint.ts"
+        - "plugin/shared/outbound/failure.ts"
         - "plugin/shared/records/not-records.ts"
         - "plugin/shared/records/registry-forge.ts"
         - "plugin/shared/records/registry-kind.ts"

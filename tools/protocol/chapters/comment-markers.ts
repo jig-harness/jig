@@ -37,6 +37,7 @@ import {
   CLAIM_OUTCOME_PAYLOAD_SHAPE,
 } from "../../../plugin/shared/records/marker-shapes.ts";
 import { REFLECTION_EVENT_SHAPE } from "../../../plugin/skills/reflect/scripts/lib/event-shapes.ts";
+import { FOOTPRINT_SHAPE } from "../../../plugin/shared/footprint.ts";
 import {
   LEDGER_PAYLOAD_SHAPE,
   LEDGER_PAYLOAD_FIELDS,
@@ -54,6 +55,12 @@ function enveloped(name: string, shape: Parameters<typeof s.intersection>[1]) {
 
 /** Stable kinds carrying JSON documents; other marker grammars are explicitly listed below. */
 export const MARKER_SCHEMAS = {
+  "tracker-footprint": [
+    {
+      name: "tracker-footprint",
+      shape: enveloped("tracker-footprint", FOOTPRINT_SHAPE),
+    },
+  ],
   "drive-ledger": [
     {
       name: "drive-ledger",

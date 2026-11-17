@@ -280,6 +280,19 @@
     },
     {
       "kind": "active",
+      "name": "tracker-footprint",
+      "part": "marker",
+      "marker": "jig:footprint",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 1,
+      "key": "^(?:#[1-9]\\d*|[A-Za-z][A-Za-z0-9]*-[1-9]\\d*)$",
+      "writtenBy": "Jig",
+      "meaning": "An item's predicted repository paths and change areas, its source and base commit. The running pickup's newest prediction stands; otherwise the newest trusted record stands, with labels or unknown when absent."
+    },
+    {
+      "kind": "active",
       "name": "do-item-pr-association",
       "part": "marker",
       "marker": "do-item-pr",
@@ -631,6 +644,101 @@
       },
       "required": ["kind", "v", "key", "writer", "at"],
       "additionalProperties": true
+    },
+    "tracker-footprint": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tracker-footprint"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^(?:#[1-9]\\d*|[A-Za-z][A-Za-z0-9]*-[1-9]\\d*)$"
+            },
+            "writer": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bootId": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "start": {
+                  "type": "string"
+                }
+              },
+              "required": ["host"],
+              "additionalProperties": true
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "v", "key", "writer", "at"],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "enum": ["pickup", "scout", "planner", "filing"]
+            },
+            "base": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{7,64}$"
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "maxItems": 1000
+            },
+            "areas": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+                "maxLength": 100
+              },
+              "maxItems": 100
+            },
+            "pickup": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": ["source", "base", "paths", "areas"],
+          "additionalProperties": true
+        }
+      ]
     },
     "drive-ledger": {
       "anyOf": [
