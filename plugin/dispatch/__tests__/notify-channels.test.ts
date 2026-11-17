@@ -283,6 +283,10 @@ describe("the `channel` column", () => {
     );
     const old = new Database(statePath(root));
     old.run("DROP TABLE merge_facts");
+    old.run("DROP TABLE allocation_charge");
+    old.run("DROP TABLE allocation_week");
+    old.run("DROP TABLE allocation_lane_epoch");
+    old.run("DROP TABLE allocation_ranking");
     old.run("ALTER TABLE launches DROP COLUMN sessions");
     old.run("ALTER TABLE launches DROP COLUMN result_wait");
     old.run("DROP INDEX steward_records_run_effect");

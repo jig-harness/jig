@@ -571,6 +571,10 @@ function noteDispatchedClaim(issue: string): void {
     console.error(
       `the claim of ${issue} was not noted for the dispatcher: ${noted.value.why}`,
     );
+  else if (noted.value.noted && noted.value.chargeFailed !== undefined)
+    console.error(
+      `the claim of ${issue} was noted, but its priorities charge was not written: ${noted.value.chargeFailed}`,
+    );
 }
 
 /** `claim`'s exit codes: refused before any write, stood down after the re-read. */

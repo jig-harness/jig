@@ -708,6 +708,9 @@ async function placeNode(
   );
   const candidate = candidateOf(node, meta, identity, open);
   candidate.factory = options.factory?.identity === identity;
+  const read = view.held(issue.identifier);
+  if (read !== undefined && read.parent !== undefined)
+    candidate.queueRead = { relations: read.relations, parent: read.parent };
   const held = await heldReason(ctx, node, candidate, open, found);
   if (held !== null) return void unplace(held);
   if (meta.children.length > 0)

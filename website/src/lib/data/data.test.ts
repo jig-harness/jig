@@ -253,6 +253,7 @@ test("the skills are in families, in the order they are used, each saying how it
       [
         "explain",
         "orchestrate",
+        "priorities",
         "decide",
         "adr",
         "red-team",
