@@ -218,9 +218,10 @@ The shortlist is computed in this order:
      in the current UTC week plus tentative starts in this computation. For
      ordinary fair allocation, let `N[l]` and `n[l]` count only the weighted
      starts since lane `l` last had no ready work: `N[l]` is every such
-     opportunity and `n[l]` is the starts assigned to `l`. The ranker records
-     each empty-pool transition and its epoch with the tracker snapshot hash,
-     so the epoch remains a ranking input after a restart. A lane that
+     opportunity and `n[l]` is the starts assigned to `l`. The tracker-snapshot
+     tick records each empty-pool transition and its epoch with the snapshot
+     hash; the pure ranker reads those persisted epochs, including their
+     revision in its input hash, so they remain ranking inputs after a restart. A lane that
      becomes ready therefore starts with no catch-up entitlement. A lane's
      share `share[l]` is its weight over the sum of the weights in rotation;
      `fNext` is the `peripheral` lane's share for the prospective start.
@@ -646,11 +647,13 @@ Every step is a separate shippable pull request and an issue under epic
 visual design round (#1182) precedes its user interface.
 
 1. **Record, lanes and ranking, reporting only.** Add the repository record
-   schema and validator, the tracker snapshot contract, the weights file's
+   schema and validator, the tracker snapshot contract and its tick path that
+   writes `allocation_lane_epoch` transitions, the weights file's
    reader with its `lanes` section (its `accounts` section is #1402's; the
    step that lands first adds the shared reader), the `allocation_charge`
    table with the claim path's charge write, the `allocation_week` table
-   and the weekly counters and opening debt derived from them, the pure
+   and the weekly counters and opening debt derived from them, the
+   `allocation_lane_epoch` table and its revision in the ranker's input hash, the pure
    ranker (read-only over those inputs) and the `priorities` skill. The
    ranking only reports: the tick report and `jig dispatch`'s status show
    the shortlist, each lane's share and the floor owed beside what dispatch
