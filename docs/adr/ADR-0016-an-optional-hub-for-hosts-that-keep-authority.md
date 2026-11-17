@@ -1,13 +1,13 @@
 ---
 title: "ADR-0016: An optional hub serves hosts that keep authority"
 type: adr
-status: draft
-description: "Jig adds an optional shared control plane, the hub: a portable core behind small ports, run by a process adapter (Bun and SQLite, also a container image) and later a Cloudflare adapter, fed by the forge's and the tracker's signed webhooks with a slow reconciliation sweep, and the only reader of the forge and the tracker for enrolled dispatchers; it puts claims with leases in front of the forge and tracker claims, notices a stopped host, serves one view of every host and may offer work; no level of use requires it, hosts keep authority and their own credentials, and a hub that is down returns its hosts to dispatching alone"
+status: approved
+description: "Jig adds an optional shared control plane, the hub: a portable core behind small ports, its state partitioned per repository and per host, run by a process adapter (Bun and SQLite, in a container under its own OS user on a machine that runs sessions) and then a Cloudflare adapter, fed by the forge's and the tracker's signed webhooks with coalesced reads, a re-validation of active targets and an hourly reconciliation sweep, the only reader of the forge and the tracker for enrolled dispatchers, and a change feed that wakes dispatchers instead of their polling, and drives too where their polling proves to matter; hosts confirm every fact that gates a write on the forge at use and pin the hub's identity at enrollment; building it waits on a week's measurement of what hosts spend; it puts claims with leases in front of the forge and tracker claims, notices a stopped host, serves one view of every host and may offer work; no level of use requires it, hosts keep authority and their own credentials, and a hub that is down returns its hosts to dispatching alone"
 lifecycle: permanent
-version: "1.2"
+version: "1.4"
 last_updated: 2026-11-17
 owner: maintainers
-decision_date: 2026-11-11
+decision_date: 2026-11-17
 supersedes: ~
 superseded_by: ~
 tags: [adr, records, dispatcher, hub, control-plane]
@@ -15,7 +15,7 @@ tags: [adr, records, dispatcher, hub, control-plane]
 
 # ADR-0016: An optional hub serves hosts that keep authority
 
-**Status:** Draft · **Date:** 2026-11-11 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Approved · **Date:** 2026-11-17 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
@@ -43,9 +43,17 @@ person meet these forces:
   ADR-0013's conditions for reopening.
 - **A person with several machines has no single view** of the work they
   run.
+- **Drives poll while they wait.** A drive pass waiting for its checks asks
+  the forge about its pull request every 30 seconds, whether or not
+  anything moved: about 120 requests per pull request per active hour.
 - **Teams run services in different places**: on a machine they keep, in
   a container, or on a serverless platform, where no process, subprocess
   or local file exists.
+
+How much of a credential's spend is the dispatcher's reads, rather than
+the sessions', and how many deployments dispatch one repository from more
+than one host, is not yet measured; the decision below is taken with that
+measurement as the gate to building.
 
 ## Decision
 
@@ -57,6 +65,31 @@ leases in front of the forge and tracker claims, notices a host that
 stopped calling, serves the source feed of every host's work, and may
 offer work to a host with free slots. Its design is
 [design/control-plane.md](../../design/control-plane.md).
+
+### Building waits on a measurement
+
+Design and planning go on, and the dispatcher's seams may be built, but
+the hub's first wave is built only after a week of the cost ledger, taken
+once the drive's conditional reads
+([#1432](https://github.com/jig-harness/jig/pull/1432)) and the tick's
+cheaper re-reads ([#1436](https://github.com/jig-harness/jig/issues/1436))
+have landed, splitting the dispatcher's reads from the sessions' per
+credential and per repository, and a count of the real deployments that
+dispatch the same repositories from more than one host. The first wave is
+built when the dispatcher's reads and drive passes' polling together are
+at least a third of a shared credential's spend; otherwise the hub waits
+and the per-host fixes come first.
+
+### Sized for 50 hosts, partitioned
+
+One hub is sized for about 50 hosts, 30 repositories, 500 open pull
+requests and items and 10,000 webhook deliveries a day; the first wave
+proves about 5 hosts in use, and the claims wave's load test proves 50.
+Its state is partitioned per repository and per host, with one small
+directory partition, so no one process or object serializes every host:
+on the Cloudflare adapter each partition is one Durable Object, and the
+process adapter keeps the partitions in one SQLite database with its long
+units off the webhook listener's event loop.
 
 ### A portable core with adapters
 
@@ -71,18 +104,19 @@ offer work to a host with free slots. Its design is
   of these.
 - [Adapters](../../GLOSSARY.md) run the core. The first is the process
   adapter: `jig hub serve`, a Bun process with SQLite, also shipped as a
-  container image. The second is a Cloudflare adapter: Workers, with a
-  Durable Object's SQLite storage or D1, and alarms and cron triggers. A
+  container image. The second is a Cloudflare adapter: Workers, with one
+  Durable Object per partition, and alarms and cron triggers. It stays
+  second, before the claims wave, for a team with no always-on machine. A
   ranker that runs a program (`command`) is the process adapter's alone.
 - Storage goes through [Drizzle](../../GLOSSARY.md): one schema in its
   SQLite dialect and one implementation of the storage port's operations
-  serve `bun:sqlite`, D1 and Durable Object SQLite, with migrations
-  `drizzle-kit` generates and the repository keeps. Queries use only what
-  SQLite and PostgreSQL both support. A PostgreSQL adapter is designed for
-  and built only when a team needs a managed database: a second schema
-  module in Drizzle's PostgreSQL dialect and a second implementation of
-  the port's operations, held to the first by a test comparing the two
-  schemas and by one contract suite. Drizzle reaches the plugin as a
+  serve `bun:sqlite` and Durable Object SQLite, with migrations
+  `drizzle-kit` generates and the repository keeps. Queries are SQLite's
+  SQL, written freely, JSON functions included. A PostgreSQL adapter is
+  built only when a team needs a managed database, and accepts the rework
+  of what SQLite's SQL does differently: its own schema module and its own
+  implementation of the port's operations, held to the first by one
+  contract suite. Drizzle reaches the plugin as a
   bundle Jig builds from the pinned package and vendors, as
   [ADR-0001](ADR-0001-bun-typescript-toolchain.md) requires of code that
   runs from the plugin; `drizzle-kit` is a development dependency that
@@ -92,17 +126,48 @@ offer work to a host with free slots. Its design is
 
 - The forge's and the tracker's [webhooks](../../GLOSSARY.md) are the
   hub's main feed: GitHub through a [GitHub App](../../GLOSSARY.md) of the
-  hub's own, whose one webhook covers every repository of its installation
-  and whose reads count against the installation's own limits; Linear
-  through a signed webhook. Every delivery's signature is verified before
-  anything else is read, and a delivery is admitted once by its id.
-- A [reconciliation sweep](../../GLOSSARY.md), hourly by default, reads
-  every target with conditional requests and corrects what deliveries
-  lost or misordered; each change it finds that no delivery brought is
+  hub's own, read-only and without Contents (though Pull requests read can
+  expose changed code through diffs), whose one webhook covers every
+  repository of its installation and whose reads count against the
+  installation's own limits; Linear through an OAuth application of the
+  hub's own that acts as the application, with its own identity and rate
+  budget rather than a person's key, its webhooks filtered to the served
+  teams and queues. Every delivery's signature is verified before anything
+  else is read, a delivery is admitted once by its id, and GitHub
+  deliveries that failed are redriven from its delivery log.
+- A delivery's own facts are used when they suffice; otherwise the
+  deliveries for one target within about 10 seconds collapse into one
+  read, under a per-target cap a minute, and one read of a target runs at
+  a time.
+- Facts have stated freshness. A fact that gates a write (a claim, a
+  launch's labels, merge-ready, a label change) is confirmed by the host
+  on the forge at use with a conditional request; an open pull request
+  with a drive is re-validated by the hub every 10 minutes the same way,
+  its review threads' state included; everything else waits for the
+  hourly [reconciliation sweep](../../GLOSSARY.md), at most 75 minutes
+  stale after a lost delivery, except the review-thread state of a pull
+  request no drive holds, which has no bound of its own. GraphQL and Linear have no conditional
+  request, so the sweep reads review-thread state only for active targets
+  (other pull requests' thread state rests on their webhooks and the
+  sweep's conditional REST reads), and reads each served Linear queue's
+  inventory, at a cost every hour. Each change the sweep finds that no delivery brought is
   counted as drift. A tracker whose deliveries the hub cannot verify is
   read by the change probe's question at the dispatcher's interval.
+- A [change feed](../../GLOSSARY.md) keeps a growing version per target and
+  the kinds of fact that moved. Dispatchers, and drive passes on an
+  enrolled host, wait on it from a cursor, a long poll as the baseline
+  with server-sent events and WebSocket connections as options, and read
+  only for the kinds that moved: a dispatcher through the hub's read, a
+  drive pass from the forge with its host's credentials and conditional
+  requests. It passes signals, not data;
+  without a hub they poll as they do today. Its value is mainly the
+  dispatchers', which use it from the first wave. Drive passes join it
+  only if the measurement before the first wave shows drive polling is at
+  least 15% of the busiest shared credential's spend; below that they keep
+  polling.
 - While its hub answers, an enrolled dispatcher reads the hub's world view
-  and makes no forge or tracker read of its own but a fence's read-back.
+  and makes no forge or tracker read of its own but a fence's read-back
+  and the check, at use, of a fact that gates a write.
   When the hub does not answer, it reads for itself.
 - Only `/webhooks/` is public. On the process adapter a
   [tunnel](../../GLOSSARY.md) the hub's machine opens outward (Cloudflare
@@ -110,10 +175,30 @@ offer work to a host with free slots. Its design is
   else; the host protocol, the dashboard and the source feed stay on a
   private network or behind an identity-checking front, and are never
   published through the tunnel.
+- The hub's acceptance is its spend: over 7 days, per repository per day,
+  its GitHub spend (REST requests and GraphQL points apart) is at most 1.2
+  times what one host spends reading those repositories alone, expected
+  0.3 to 0.5 times, and the enrolled hosts' own dispatcher reads that spend
+  a forge limit are about zero.
+
+### Trust on a shared machine
+
+- On a machine that also runs agent sessions, the hub runs in a container
+  under an OS user of its own; its secrets (the App's key, the webhook
+  secrets, the tracker application's secret, its identity key) are
+  readable by that user alone, and only `/webhooks/` is public.
+- A host pins the hub's identity at enrollment: the fingerprint of the
+  hub's identity key, shown to both the host and the approving person,
+  and every answer after is signed with that key over the host's request
+  nonce. Since every fact that gates a write is confirmed on the forge at
+  use, a hub that lies can make a host consider work but not act past a
+  hold, a claim or an unqueued item.
 
 ### The rules it keeps
 
-- **No level of use requires it.** The skills never call it, the
+- **No level of use requires it.** The skills run without it; an enrolled
+  drive may optionally use its watch-only change-feed call while it waits,
+  and falls back to polling when that call fails. The
   dispatcher runs without it, and a host whose hub does not answer reads
   and claims by itself, as it does without one. The one exception is an
   owner's duties (notices, labels, board writes, steward, reflection
@@ -150,9 +235,14 @@ offer work to a host with free slots. Its design is
   or OTLP. Every declared metric has a wired source, which M11's
   no-dark-instruments check holds, and an emission-coverage check on the
   hub fails a declared metric no run emits; each scheduled job and each host's
-  report is stale, never green, past its cadence; and the hub sends a
-  heartbeat to an external monitor, a dead-man's switch for the hub
-  itself.
+  report is stale, never green, past its cadence. For one person,
+  `health`, structured logs, the metrics and the dashboard are the
+  minimum; an OTLP collector and an external heartbeat monitor (a
+  dead-man's switch for the hub itself) are optional settings, an
+  exception to M11's external-monitor invariant that the hosts stand in
+  for: a host that cannot reach the hub raises a need on its own receipt
+  within 30 minutes. A setting that names one is checked to be wired, since M11 counts a
+  claimed but unwired signal as a failure.
 
 ### Where it stands against earlier decisions
 
@@ -189,7 +279,7 @@ the sweep and the alarms, and Effect stays declined.
 - A change never spans an await: it is one conditional statement, or a
   batch prepared before the first statement is sent and committed
   atomically by the storage port (a synchronous transaction on
-  `bun:sqlite` and Durable Object SQLite, a batch on D1, a transaction on
+  `bun:sqlite` and Durable Object SQLite, a transaction on
   PostgreSQL). The decision lives in the statement's condition.
 - Background work runs only as scheduled jobs through the scheduling
   port, each idempotent, resumable from stored progress and held by a job
@@ -215,10 +305,25 @@ the sweep and the alarms, and Effect stays declined.
   writes would depend on the hub, so its outage would stop work instead of
   returning hosts to the level below, and the hub would hold write access
   it otherwise never needs.
-- **Plain SQL with no mapper.** Rejected: three SQLite drivers with
-  different calling styles, and a PostgreSQL dialect later, would each
-  need their own glue; Drizzle supplies the drivers and typed queries,
-  at the cost of one vendored bundle.
+- **Plain SQL with no mapper.** Not chosen: two SQLite drivers with
+  different calling styles would each need their own glue, and Drizzle
+  supplies one schema, its migrations and typed queries at the cost of one
+  vendored bundle. It stays the fall-back if that bundle's upkeep outweighs
+  what it saves.
+- **Queries limited to what SQLite and PostgreSQL share.** Rejected: it
+  forbids JSON functions and makes filtering happen in code, a cost paid
+  now for an adapter no team has asked for; a PostgreSQL adapter accepts
+  rework instead.
+- **Per-host fixes only.** Conditional reads on each host and each host's
+  tick sending a heartbeat to an external monitor close part of the
+  problem with no hub: the GitHub side of reads that did not change, and
+  the stopped host. They come first, and the measurement that gates the
+  first wave is taken after them; they leave the tracker's shared limit,
+  the drives' polling, shared pickups, a dead host's work and one view
+  across hosts.
+- **A WebSocket-only change feed.** Rejected: a held connection does not
+  pass every proxy and tunnel, and a long poll does; WebSocket and
+  server-sent events stay options over the same cursor contract.
 - **Effect for the hub alone.** Declined: two error models in one plugin
   for one component, for structured concurrency that one helper covers.
 - **The forge's own job system**, each host registered as a self-hosted CI
@@ -245,7 +350,8 @@ the sweep and the alarms, and Effect stays declined.
   the dispatcher; the hub spends reads where an event or the sweep finds a
   change, and where a fact's confirmation has expired and no completeness
   watermark confirms it.
-- A change reaches every host's next probe within seconds of its event.
+- A change reaches every host's next probe within seconds of its event,
+  and dispatchers stop polling every repository and queue.
 - A stopped host is noticed: a person is told, and its leases lapse, so
   the hub grants its work to another host, which takes a drive over by the
   forge's own path; a silent host's follow-up is named for a person.
@@ -261,7 +367,12 @@ the sweep and the alarms, and Effect stays declined.
 - One public path, a tunnel or a platform route to keep, and webhook
   secrets to hold and rotate.
 - One organization identity (a GitHub App) with read access to every
-  enrolled repository, kept in one place.
+  enrolled repository, with no repository contents but the changed code that
+  pull-request diffs and patches expose, and one tracker application,
+  kept in one place under an OS user of the hub's own.
+- A person runs the hub: its setup, upgrades before its hosts, daily
+  backups of what cannot be rebuilt, yearly rotation of its secrets, and a
+  stated recovery after a compromise, in which every host enrolls again.
 - The core's portability is a constraint on every change to it, and the
   outbound library splits its portable parts from its machine stores.
 - One vendored library, Drizzle, and a development dependency,
@@ -275,12 +386,15 @@ the sweep and the alarms, and Effect stays declined.
 
 ## When to reopen
 
+- The measurement before the first wave shows the dispatcher's reads and
+  drive passes' polling are less than a third of a shared credential's
+  spend.
 - The sweep's drift stays high enough that events cannot be the main
   feed, or low enough that the sweep's cadence can be slowed further.
 - The hub's grants and the forge's claims disagree often enough that the
   forge claim's writes are not worth keeping, or rarely enough that the
   hub could be the only fence.
-- A team outgrows one hub with one database.
+- A team outgrows one hub, partitioned per repository and per host.
 - A team needs to sign in to the hub without a private-network front.
 - The job helper grows toward a concurrency library of its own, which
   reopens Effect.
@@ -294,6 +408,8 @@ holds the hub's metric registry and its event-schema lint the hub's
 events; a test fails a delivery whose signature does not verify; the
 dispatcher's tests run a tick against a hub that does not answer and find
 it reads and claims by itself; the records registry's gate holds the hub
-medium's kinds; and a test compares the PostgreSQL schema with the SQLite
-one once both exist. That no hub code path edits a host's record or ends a
+medium's kinds; a test fails when an exported log line or span carries a
+token or comment text; the change feed's contract suite holds its cursor
+and resync rules; and the storage contract suite holds every adapter's
+implementation of the storage port. That no hub code path edits a host's record or ends a
 host's session is review's to hold.
