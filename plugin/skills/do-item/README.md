@@ -134,6 +134,13 @@ racing inside that re-read can both pass; the
 [dispatcher](../../README.md#the-dispatcher) reports an item two running
 sessions work on.
 
+A factory epic passes its unassigned child to `claim --factory-ancestor <epic-key>`.
+The claim reads `dispatch.identity` from the repository's default branch and
+checks that epic's live assignment, writer authority and ancestry. It assigns
+the child to the credential identity, while preserving the epic's assignment.
+A missing default-branch factory identity refuses the claim. The option cannot
+be combined with the served-person options.
+
 A dispatcher pickup serving a named person uses `claim --for <identity>`.
 It verifies that a repository writer made the assignment, keeps the person
 as the sole assignee, and moves the item in progress. With

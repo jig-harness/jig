@@ -219,3 +219,41 @@ async function parentStepHold(
     ? null
     : "waiting on the epic execution plan";
 }
+
+/** The complete ancestor chain, with the direct child whose slot each parent owns. */
+export async function servedParentSteps(
+  tracker: Tracker,
+  issue: PoolIssue,
+  cache: PickupReads,
+  reads: ParentReads,
+): Promise<Array<{
+  parent: PoolIssue;
+  child: string;
+  description: string;
+}> | null> {
+  const steps: Array<{
+    parent: PoolIssue;
+    child: string;
+    description: string;
+  }> = [];
+  const seen = new Set<string>();
+  let child = issue;
+  let up = await parentOf(tracker, child, cache, reads);
+  for (;;) {
+    if (seen.has(child.identifier) || seen.size >= 100 || up === null)
+      return null;
+    seen.add(child.identifier);
+    if (up.parent === null) return steps;
+    const parent = await reads.pool(up.parent);
+    if (parent === null || parent.truncated.length) return null;
+    const full = await body(tracker, parent, cache, reads);
+    if (full === null) return null;
+    steps.push({
+      parent,
+      child: child.identifier,
+      description: full.description,
+    });
+    child = parent;
+    up = { parent: full.parent };
+  }
+}

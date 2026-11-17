@@ -1,3 +1,10 @@
+import { anyWorking } from "./served-occupancy.ts";
+import {
+  attachAdmissions,
+  withOccupancySetup,
+  occupancySlots,
+  occupancyMetadata,
+} from "./served-occupancy.ts";
 /**
  * Served assignments, inherited through epics, with metadata kept at
  * updatedAt. The tracker is read through the tick's view of the person's
@@ -6,7 +13,15 @@
  * read the tracker's rate limit refuses stops the walk, which reports the
  * limit once rather than one unplaced row per item.
  */
+import { finishAdmission, type Candidate } from "./served-admission.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
+import {
+  personRoots,
+  personView,
+  readyForWalk,
+  carriedRelations,
+  pulledNodes,
+} from "./served-walk-inputs.ts";
 import type {
   PoolIssue,
   Tracker,
@@ -32,12 +47,9 @@ import {
 } from "./served-pull.ts";
 import {
   childPlanHold,
-  type PassedChild,
   type PassOver,
   parkedOnPerson,
   takeUnreadSlot,
-  serializeEpics,
-  summarizeEpics,
   type EpicWalk,
   type Serial,
 } from "./served-epics.ts";
@@ -50,31 +62,15 @@ import {
 } from "./served-repo.ts";
 import { freshAuthority } from "./served-authority.ts";
 import { planKeys, servedPlan, type ServedPlan } from "./served-plan.ts";
-import {
-  type ServedView,
-  type ServedViews,
-  sharedView,
-} from "./served-reads.ts";
+import type { ServedView, ServedViews } from "./served-reads.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { pickupReads, type PickupReads } from "../pickup-reads.ts";
-import {
-  PERSON_HOLD,
-  queueHold,
-  rankQueue,
-  type QueueItem,
-} from "../queue-rank.ts";
+import { PERSON_HOLD, queueHold } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
 
-interface Candidate extends QueueItem {
-  identity: string;
-  by: string;
-  ancestor?: string | undefined;
-  blockingFor?: string | undefined;
-  serial?: Serial | undefined;
-}
 export interface ServedReading {
   wanted: WantedItem[];
   unplaced: Unplaced[];
@@ -98,6 +94,13 @@ export interface ServedPolicy {
   trackerNamespace?: string;
 }
 export interface ServedOptions extends ServedPolicy {
+  /** Factory roots already authorized by its bounded assignment read. */
+  factory?: {
+    identity: string;
+    roots: PoolIssue[];
+    view?: ServedView | undefined;
+    eligible?: ReadonlySet<string>;
+  };
   cache?: PickupReads;
   nowMs: number;
   headroom: boolean;
@@ -168,7 +171,7 @@ async function readPerson(
   };
   let view: ServedView | null = null;
   try {
-    view = await sharedView(options.views, tracker, identity, options, cache);
+    view = await personView(tracker, identity, options, cache);
     if (view.limited !== null) got.limited = { error: view.limited, view };
     if (view.unavailable !== undefined) {
       got.failures.push(view.unavailableCause ?? view.unavailable);
@@ -188,10 +191,7 @@ async function readPerson(
     // keeps what the earlier ones placed.
     await walk(
       { tracker, identity, options, cache, view, seen, ...shared },
-      [
-        ...view.open().map((h) => h.issue),
-        ...progress.filter((i) => i.isEpic && i.hasOpenChildren),
-      ],
+      personRoots(view, identity, options.factory, progress),
       got,
     );
   } catch (error) {
@@ -222,6 +222,17 @@ export async function readServedPickups(
 ): Promise<ServedReading> {
   options =
     options.views === undefined ? { ...options, views: new Map() } : options;
+  if (
+    options.factory !== undefined &&
+    people.some(
+      (p) =>
+        p.tracker[tracker.adapter as keyof ServedPerson["tracker"]] ===
+        options.factory?.identity,
+    )
+  ) {
+    const { factory: _factory, ...withoutFactory } = options;
+    options = withoutFactory;
+  }
   const cache = cacheForTracker(tracker, options.cache ?? pickupReads);
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
@@ -238,7 +249,21 @@ export async function readServedPickups(
       record: "tracker",
       reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope.invalid}`,
     });
-  for (const person of people) {
+  const identities = [...people];
+  if (
+    options.factory !== undefined &&
+    !identities.some(
+      (p) =>
+        p.tracker[tracker.adapter as keyof ServedPerson["tracker"]] ===
+        options.factory?.identity,
+    )
+  )
+    identities.push({
+      name: options.factory.identity,
+      forge: [],
+      tracker: { [tracker.adapter]: options.factory.identity },
+    });
+  for (const person of identities) {
     const identity =
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
     if (identity === undefined) continue;
@@ -260,47 +285,7 @@ export async function readServedPickups(
     out.unplaced.push(limitedRow(tracker, limited.error, limited.view));
     out.limitedUntil = isoFromMs(limited.error.resetAt);
   }
-  for (const c of candidates) {
-    const serial = shared.serials.get(c.issue.identifier);
-    if (c.serial === undefined && serial !== undefined) c.serial = serial;
-  }
-  const passed = new Map<string, PassedChild>();
-  const ranked = serializeEpics(
-    rankQueue(candidates),
-    out.unplaced,
-    options.epicWidth,
-    options.passOver,
-    passed,
-  );
-  summarizeEpics(
-    shared.walks,
-    new Set(
-      ranked.map((c) => c.issue.identifier).filter((key) => !passed.has(key)),
-    ),
-    out.unplaced,
-    passed,
-  );
-  out.wanted = ranked.map((c) => ({
-    key: c.issue.identifier,
-    title: c.issue.title,
-    url: c.issue.url,
-    state: c.issue.state.name,
-    assignee: c.identity,
-    assignedBy: c.by,
-    servedPerson: c.identity,
-    queueIssue: c.issue,
-    ...(c.issue.updatedAt === undefined
-      ? {}
-      : { updatedAt: c.issue.updatedAt }),
-    queueRank: {
-      unblocks: c.unblocks,
-      ...(c.epicOrder === undefined ? {} : { epicOrder: c.epicOrder }),
-    },
-    ...(c.ancestor === undefined ? {} : { ancestorEpic: c.ancestor }),
-    ...(c.blockingFor === undefined
-      ? {}
-      : { blockingFor: c.blockingFor, batchAllowed: false }),
-  }));
+  finishAdmission(candidates, shared, out, options);
   return out;
 }
 
@@ -394,7 +379,7 @@ interface WalkContext {
   reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
-interface Found {
+export interface Found {
   unplaced: Unplaced[];
   candidates: Candidate[];
   pending: Pending[];
@@ -542,21 +527,39 @@ async function enqueueChildren(
     const parked = selection.present
       ? []
       : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
-    const busy = children
-      .filter(
-        (c) =>
-          c.state.type === "started" &&
-          !parked.includes(c) &&
-          !unread.includes(c.identifier),
-      )
-      .map((c) => c.identifier);
+    const busy = await occupancySlots(
+      children,
+      unread,
+      async (branch) => {
+        const info = await occupancyMetadata(
+          ctx.tracker,
+          branch,
+          ctx.cache,
+          ctx.view,
+        );
+        return readChildren(ctx, info, found);
+      },
+      (branch) => parkedOnPerson(branch, ctx.tracker, options),
+      (child, error) => {
+        unreadable(
+          child,
+          error === undefined
+            ? "the nested occupancy cannot be read completely"
+            : failureText(error),
+          found,
+          error === undefined ? [] : [error],
+        );
+      },
+      {
+        recursive: !selection.present,
+        failed: (error) => itemFailed(found, error),
+      },
+    );
     ctx.walks.push({
       key: issue.identifier,
       children: children.map((c) => c.identifier),
       unread,
-      working: children.some(
-        (c) => c.state.type === "started" && !parked.includes(c),
-      ),
+      working: anyWorking(children, parked, busy),
       parked: parked.map((c) => c.identifier),
     });
     serial = selection.present
@@ -602,8 +605,7 @@ function leavesNode(
   const walkedEpic = issue.isEpic && issue.hasOpenChildren && !closed(issue);
   if (
     seen.has(issue.identifier) ||
-    (!ready(issue, tracker.stateName("blocked", issue.nativeType ?? null)) &&
-      !walkedEpic)
+    (!readyForWalk(issue, tracker, options) && !walkedEpic)
   )
     return true;
   return (
@@ -679,7 +681,7 @@ async function placeNode(
   const { tracker, identity, options, cache, view } = ctx;
   const { issue, ancestor } = node;
   const unplace = unplacer(issue, options.trackerNamespace, found);
-  const carried = view.held(issue.identifier)?.relations ?? null;
+  const carried = carriedRelations(view, issue.identifier);
   const meta = await metadata(tracker, issue, identity, cache, carried, view);
   // A kept no-assigner answer is reported as the item's unreadable row.
   if (meta.noAssigner !== undefined)
@@ -695,6 +697,7 @@ async function placeNode(
     carried ?? meta.relations,
   );
   const candidate = candidateOf(node, meta, identity, open);
+  candidate.factory = options.factory?.identity === identity;
   const held = await heldReason(ctx, node, candidate, open, found);
   if (held !== null) return void unplace(held);
   if (meta.children.length > 0)
@@ -731,7 +734,7 @@ async function placeLeaf(
   const { tracker, options, cache, view } = ctx;
   const { issue } = candidate;
   if (
-    !ready(issue, tracker.stateName("blocked", issue.nativeType ?? null)) ||
+    !readyForWalk(issue, tracker, options) ||
     otherRepoLabel(issue.labels, options.repoScope) !== null
   )
     return;
@@ -750,8 +753,18 @@ async function placeLeaf(
     options.executionPlanBlock,
     view,
   );
-  if (parentHold !== null) unplace(parentHold);
-  else found.candidates.push(candidate);
+  if (parentHold !== null) return void unplace(parentHold);
+  const admissionHold = await attachAdmissions(
+    ctx,
+    candidate,
+    found,
+    (parent, meta) =>
+      withOccupancySetup(found, (setup) =>
+        enqueueChildren(ctx, parent, undefined, meta, candidate, setup),
+      ),
+  );
+  if (admissionHold !== null) return void unplace(admissionHold);
+  found.candidates.push(candidate);
 }
 
 function nodeHold(
@@ -890,7 +903,7 @@ async function heldReason(
 ): Promise<string | null> {
   const { tracker, options, cache, view } = ctx;
   const held = queueHold(candidate, options);
-  if (held === null || open.length === 0) return held;
+  if (held === null || open.length === 0 || candidate.factory) return held;
   if (queueHold({ ...candidate, blockers: [] }, options) !== null) return held;
   // An item behind its epic's human gate authorizes no work, its blockers' included: the served item and each pulled item between.
   const parentHold = await servedParentHold(
@@ -912,16 +925,7 @@ async function heldReason(
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
     return `${pull.reason}; this tracker cannot assign a blocker on its own, so a person assigns it`;
-  for (const blocker of pull.pulled)
-    if (!ctx.seen.has(blocker.identifier))
-      found.pending.push({
-        issue: blocker,
-        ancestor: pull.origin.rootAncestor,
-        by: candidate.by,
-        epicOrder: undefined,
-        planHold: undefined,
-        pull: pull.origin,
-      });
+  found.pending.push(...pulledNodes(pull, ctx.seen, candidate.by));
   return pull.reason;
 }
 
