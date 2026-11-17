@@ -56,12 +56,18 @@ function isTableStart(line: string, next: string | undefined): boolean {
   return line.includes("|") && next !== undefined && TABLE_RULE.test(next);
 }
 
+function startsMultilineComment(line: string): boolean {
+  return line.trimStart().startsWith("<!--") && !line.includes("-->");
+}
+
 /** Does `line` start a block other than a paragraph? */
 function startsBlock(line: string, next: string | undefined): boolean {
   return (
     [FENCE, HEADING, RULE, QUOTE, ITEM, COMMENT_LINE].some((re) =>
       re.test(line),
-    ) || isTableStart(line, next)
+    ) ||
+    startsMultilineComment(line) ||
+    isTableStart(line, next)
   );
 }
 
@@ -142,6 +148,22 @@ const quote: BlockReader = (lines, at) => {
 
 const comment: BlockReader = (lines, at) => {
   const line = lines[at] as string;
+  if (startsMultilineComment(line)) {
+    let end = at + 1;
+    while (end < lines.length && !lines[end]?.includes("-->")) end++;
+    if (end < lines.length)
+      return {
+        nodes: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: lines.slice(at, end + 1).join("\n") },
+            ],
+          },
+        ],
+        end: end + 1,
+      };
+  }
   return COMMENT_LINE.test(line)
     ? {
         nodes: [
