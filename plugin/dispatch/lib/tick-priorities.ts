@@ -9,8 +9,11 @@
  * completed week's row once), records the lanes' ready transitions once for
  * the host, from the union of every prepared repository's ready lanes, then
  * ranks each repository, keeps its newest ranking for the claim path's charge
- * and puts the shortlist on its report. Dispatch's selection does not read
- * any of it.
+ * and puts the shortlist on its report. Dispatch's selection reads none of it
+ * unless the host opts in (`priorities.enforce` in the machine file): then the
+ * ranking places every pickup the tick read, and the repository's pickups are
+ * reordered to start in its order, a lane out of rotation starting nothing
+ * (`priorities-order.ts`). A ranking that fails leaves the plan's own order.
  */
 import type { Database } from "bun:sqlite";
 import { currentIso } from "../../shared/time.ts";
@@ -46,6 +49,11 @@ import {
   type PrioritiesRecordRead,
 } from "./priorities-read.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import {
+  type EnforcedOrder,
+  enforcePickupOrder,
+  membersOf,
+} from "./priorities-order.ts";
 import { failureText } from "./text.ts";
 import type { RepoReport, Unplaced, WantedItem } from "./types.ts";
 
@@ -59,6 +67,8 @@ export interface PrioritiesReport {
   };
   weights: { source: string; problems: string[] };
   ranking: RankerOutput;
+  /** Under the host's `priorities.enforce`: the order the pickups start in, and the pickups the ranking held back. */
+  enforced?: EnforcedOrder;
 }
 
 /** What the ranking reads from the tick. */
@@ -77,6 +87,8 @@ export interface PrioritiesTickInput {
   deadlineMs?: number;
   env?: Record<string, string | undefined>;
   stateRoot?: string;
+  /** Whether the host's `priorities.enforce` orders the pickups by the ranking. */
+  enforce?: boolean;
 }
 
 /** One repository's inputs to the tick's ranking, read after its plan. */
@@ -110,13 +122,16 @@ export function preparePriorities(
       read,
       trackerComplete: input.trackerComplete,
       weights: readLaneWeights(weightsFilePath(input.env)),
-      snapshot: { readAt: currentIso(), items: snapshotItems(input) },
+      snapshot: {
+        readAt: currentIso(),
+        items: snapshotItems(input, notStarted(report)),
+      },
       records: read.record === null ? [] : [read.record],
       allocationBlocked: read.blocked,
       ...(input.stateRoot === undefined ? {} : { stateRoot: input.stateRoot }),
     };
   } catch (error) {
-    report.priorities = failedPart(error);
+    report.priorities = failedPart(error, input.enforce === true);
     return null;
   }
 }
@@ -125,15 +140,18 @@ export function preparePriorities(
  * Rank every prepared repository in one transaction: open the week, record
  * the host's lane transitions once from the union of their ready lanes, then
  * rank each. A failure is reported on the repositories' own parts, never
- * thrown, and never touches the plan.
+ * thrown, and never touches the plan: an enforced order reaches a
+ * repository's actions only once the transaction has committed.
  */
 export function rankPriorities(
   prepared: readonly PreparedPriorities[],
   nowMs: number,
   complete: boolean,
+  enforce = false,
 ): void {
   const first = prepared[0];
   if (first === undefined) return;
+  const orders: Array<[PreparedPriorities, Enforced]> = [];
   try {
     const db = stateDb(first.stateRoot);
     inTransaction(db, () => {
@@ -153,14 +171,27 @@ export function rankPriorities(
       );
       for (const p of prepared)
         try {
-          p.report.priorities = rankOne(db, p, { epochs, week }, nowMs);
+          const ranked = rankOne(db, p, { epochs, week }, nowMs, enforce);
+          p.report.priorities = ranked.part;
+          if (ranked.order !== null) orders.push([p, ranked.order]);
         } catch (error) {
-          p.report.priorities = failedPart(error);
+          p.report.priorities = failedPart(error, enforce);
         }
     });
   } catch (error) {
-    for (const p of prepared) p.report.priorities = failedPart(error);
+    for (const p of prepared) p.report.priorities = failedPart(error, enforce);
+    return;
   }
+  for (const [p, order] of orders) applyOrder(p.report, order);
+}
+
+type Enforced = ReturnType<typeof enforcePickupOrder>;
+
+/** Put an enforced order on the report: the pickups in its order, and each withheld pickup quiet with its paused lane. */
+function applyOrder(report: RepoReport, enforced: Enforced): void {
+  report.actions = enforced.actions;
+  for (const w of enforced.order.withheld)
+    report.quiet.push({ target: w.target, class: "lane-paused", why: w.why });
 }
 
 /** Whether the repository's record and tracker reads both answered: a failed read is no evidence a lane has no ready work. */
@@ -183,26 +214,30 @@ function rankOne(
   p: PreparedPriorities,
   host: Pick<RankerInput, "epochs" | "week">,
   nowMs: number,
-): PrioritiesReport {
+  enforce: boolean,
+): { part: PrioritiesReport; order: Enforced | null } {
   const rankerInput: RankerInput = {
     asOf: p.snapshot.readAt,
     snapshot: p.snapshot,
     records: p.records,
     allocationBlocked: p.allocationBlocked,
     weights: p.weights,
-    capacity: { starts: SHORTLIST_DEPTH },
+    // Enforced, the ranking places every pickup the tick read, so none waits behind the report's depth.
+    capacity: {
+      starts: enforce
+        ? Math.max(SHORTLIST_DEPTH, p.snapshot.items.length)
+        : SHORTLIST_DEPTH,
+    },
     ...host,
   };
   const output = rank(rankerInput);
-  saveRanking(
-    db,
-    p.slug,
-    rankerInput,
-    output,
-    classesOf(p.snapshot.items, p.records, p.allocationBlocked),
-    nowMs,
-  );
-  return {
+  const classes = classesOf(p.snapshot.items, p.records, p.allocationBlocked);
+  saveRanking(db, p.slug, rankerInput, output, classes, nowMs);
+  const enforced = enforce
+    ? enforcePickupOrder(p.report.actions, output, classes)
+    : null;
+  const part: PrioritiesReport = {
+    ...(enforced === null ? {} : { enforced: enforced.order }),
     record: {
       source: p.read.source,
       blocked: p.read.blocked,
@@ -212,19 +247,24 @@ function rankOne(
     weights: { source: p.weights.source, problems: p.weights.problems },
     ranking: output,
   };
+  return { part, order: enforced };
 }
 
-function failedPart(error: unknown): { failed: string } {
+function failedPart(error: unknown, enforce = false): { failed: string } {
   return {
-    failed: `the report-only priorities ranking failed: ${failureText(error)}`,
+    failed: enforce
+      ? `the priorities ranking failed, so pickups start in dispatch's own order this tick: ${failureText(error)}`
+      : `the report-only priorities ranking failed: ${failureText(error)}`,
   };
 }
 
 /** The tick's pickups as snapshot items, each excluded where the plan left it unplaced. */
 function snapshotItems(
   input: Pick<PrioritiesTickInput, "pickups" | "unplaced" | "scope">,
+  held: ReadonlyMap<string, string> = new Map(),
 ): SnapshotItem[] {
-  const reasons = new Map(input.unplaced.map((u) => [u.target, u.reason]));
+  const reasons = new Map(held);
+  for (const u of input.unplaced) reasons.set(u.target, u.reason);
   const starts: SnapshotItem[] = [];
   const ancestors: SnapshotItem[] = [];
   for (const p of input.pickups) {
@@ -262,6 +302,29 @@ function snapshotItems(
     ...starts,
     ...ancestors.filter((n) => !keys.has(n.key) && keys.add(n.key)),
   ];
+}
+
+/**
+ * Why each item the plan starts nothing for this tick is held: a session or
+ * a launch record running for it, a quiet class, a need that waits on a
+ * person. A pickup the plan starts, alone or in a batch, has no entry: only
+ * work the dispatcher may start now takes a place in the ranking.
+ */
+function notStarted(report: RepoReport): Map<string, string> {
+  const starts = new Set(
+    report.actions
+      .filter((a) => a.stage === "pickup")
+      .flatMap((a) => membersOf(a)),
+  );
+  const held = new Map<string, string>();
+  const hold = (target: string, why: string) => {
+    if (!starts.has(target) && !held.has(target)) held.set(target, why);
+  };
+  for (const r of report.running) hold(r.target, `running: ${r.reason}`);
+  for (const q of report.quiet) hold(q.target, q.why);
+  for (const a of report.actions)
+    if (a.stage === "notify") hold(a.target, a.reason);
+  return held;
 }
 
 /** An item the read carried only in its listing form: every facet it lacks is a gap. */

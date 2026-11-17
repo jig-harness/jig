@@ -11,8 +11,9 @@ A [priorities record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 states a level's objectives (`priorities/v1`); the host's
 [weights file](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 says how the weighted [priority lanes](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-share the starts. The dispatcher ranks a shortlist from them and only
-reports it: what it starts is unchanged. This skill prepares and checks a
+share the starts. The dispatcher ranks a shortlist from them and reports
+it; only a host that sets `priorities.enforce` starts its pickups in that
+order. This skill prepares and checks a
 change to either and shows the shortlist it would give. The human's page is
 [README.md](README.md); the fields are in
 [CONFIGURATION.md](../../CONFIGURATION.md#priorities). Run from the consumer
