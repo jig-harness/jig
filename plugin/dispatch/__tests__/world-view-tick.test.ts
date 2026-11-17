@@ -18,7 +18,7 @@ import { currentIso } from "../../shared/time.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { ForgeRead } from "../lib/tick-forge.ts";
 import type { DrivenPr, LedgerClass } from "../lib/types.ts";
-import { forgeFacts } from "../lib/world-view.ts";
+import { FRESHNESS_BOUND_MS, forgeFacts } from "../lib/world-view.ts";
 import {
   assignedIssue,
   BASE_SHA,
@@ -317,6 +317,13 @@ describe("each forge fact's freshness class", () => {
       9: "background",
     });
     expect(facts.freshness).toBe("active");
+  });
+
+  it("bounds an active fact at 10 minutes and every other at 75", () => {
+    expect(FRESHNESS_BOUND_MS).toEqual({
+      active: 10 * 60_000,
+      background: 75 * 60_000,
+    });
   });
 
   it("makes a read with no active pull request background as a whole", () => {

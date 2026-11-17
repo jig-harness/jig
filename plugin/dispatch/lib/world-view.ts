@@ -15,8 +15,10 @@
  *
  * | Class | Which facts | Stale for at most |
  * | --- | --- | --- |
- * | `active` | An open pull request whose drive runs or is armed: its ledger says its driver runs (`driven`, `silent`), or another instance holds its drive (`refused`) | `ACTIVE_BOUND_MS`, 10 minutes |
- * | `background` | Every other pull request, the repository's own facts, the tracker's queues and items | `BACKGROUND_BOUND_MS`, 75 minutes |
+ * | `active` | An open pull request whose drive runs or is armed: its ledger says its driver runs (`driven`, `silent`), or another instance holds its drive (`refused`) | 10 minutes |
+ * | `background` | Every other pull request, the repository's own facts, the tracker's queues and items | 75 minutes: an hourly sweep and its own 15 |
+ *
+ * `FRESHNESS_BOUND_MS` holds each bound.
  *
  * A third class, a fact that gates a write, is never served here: it is
  * read on the forge or the tracker at use. That is a launch's fresh read of
@@ -61,16 +63,10 @@ import type {
 /** How stale a fact the world view returns may be when it is served from a copy. */
 export type FreshnessClass = "active" | "background";
 
-/** The longest an `active` fact may be stale: 10 minutes. */
-export const ACTIVE_BOUND_MS = 10 * 60_000;
-
-/** The longest a `background` fact may be stale: 75 minutes, an hourly sweep and its own 15. */
-export const BACKGROUND_BOUND_MS = 75 * 60_000;
-
-/** Each class's bound, in milliseconds. */
+/** The longest a fact of each class may be stale when it is served from a copy, in milliseconds. */
 export const FRESHNESS_BOUND_MS: Readonly<Record<FreshnessClass, number>> = {
-  active: ACTIVE_BOUND_MS,
-  background: BACKGROUND_BOUND_MS,
+  active: 10 * 60_000,
+  background: 75 * 60_000,
 };
 
 /** One fact the world view returns, with its class. */
@@ -133,7 +129,7 @@ const ACTIVE_CLASSES: ReadonlySet<LedgerClass> = new Set<LedgerClass>([
 ]);
 
 /** A fact of the `background` class. */
-export function background<T>(value: T): Fact<T> {
+function background<T>(value: T): Fact<T> {
   return { value, freshness: "background" };
 }
 
@@ -160,7 +156,7 @@ export function forgeFacts(read: ForgeRead): ForgeFacts {
  * one by one; the tracker's queues and part; the forge's part
  * (`tick-forge.ts`).
  */
-export function directWorldView(
+function directWorldView(
   reads: TickReads,
   bound: TickBound | undefined,
 ): WorldView {
