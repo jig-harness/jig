@@ -713,7 +713,8 @@ tick, counts an answer only from an author the forge vouches for (on
 another tracker, a member of its workspace who is not a guest), never its
 own login or the user its tracker credential acts as, and only when it
 names the decision's current digest and every person who answered chose
-the same option, then
+the same option (a need whose only answers on its item are by that tracker
+user reads as unread, and `jig ask` says why), then
 carries out the option once: it checks again that the step still may run
 (the stage is on, no hold label, the marker unchanged, no session holds the
 work, no open pull request carries the item, the checkout idle) and
@@ -1702,7 +1703,12 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   to a need's decision, an answer whose key no need of the address carries
   in this machine's newest line, your own words (the tick carries out an
   option), and, on another tracker's item, a tracker that cannot name who
-  wrote a comment or a credential that acts as the factory identity;
+  wrote a comment, a credential that acts as the factory identity, or a
+  send from the host that owns the repository, whose tick reads with that
+  same credential and never counts its user's comments; where the user the
+  tick leaves out cannot be told here (the repository names no factory
+  identity, or this machine cannot tell whether it owns the repository), it
+  is sent with a notice that the tick may not read it;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so

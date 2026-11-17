@@ -35,6 +35,7 @@
 
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import {
+  type ClaimDraft,
   type ClaimKind,
   type ClaimRecord,
   type ClaimTarget,
@@ -48,7 +49,9 @@ import {
   type Standing,
   withdraw,
 } from "../../../../shared/records/forge-claims.ts";
-import { localWriter } from "../../../../shared/records/writer.ts";
+import { localWriter, type Writer } from "../../../../shared/records/writer.ts";
+import { MERGE_READY_PAYLOAD_SHAPE } from "../../../../shared/records/forge-claim-shapes.ts";
+import { matches } from "../../../../shared/shapes.ts";
 
 /** The announcement's literal opening line. Load-bearing, not decoration. */
 export const OPENER = "**Safe to merge from the driver's perspective.**";
@@ -76,7 +79,7 @@ export function headMarker(head: string): string {
   return `<!-- drive-pr-merge-ready: ${head} -->`;
 }
 
-const HEAD_MARKER = /<!-- drive-pr-merge-ready: ([0-9a-f]{7,40}) -->$/;
+const HEAD_MARKER = /<!-- drive-pr-merge-ready: ([0-9a-f]{7,64}) -->$/;
 
 /** An announcement written before it carried a record: its head, from the marker it ends with. */
 function legacyAnnouncement(
@@ -88,9 +91,15 @@ function legacyAnnouncement(
     : ok({ key: headKey(m[1] ?? ""), at: "", payload: {}, legacy: true });
 }
 
-/** Why a record that reads is not an announcement of the head its text ends with, or `null`. */
+/**
+ * Why a record that reads is not an announcement of the head its text ends
+ * with, or `null`: its payload fits `MERGE_READY_PAYLOAD_SHAPE`, and its key
+ * and its head marker name one head.
+ */
 function announcementFault(record: ClaimRecord, _: unknown, body: string) {
   if (record.legacy) return null;
+  if (!matches(MERGE_READY_PAYLOAD_SHAPE, record.payload))
+    return "its record is not an announcement's";
   const marked = body.replace(/\s+$/, "").match(HEAD_MARKER)?.[1];
   return marked !== undefined && record.key === headKey(marked)
     ? null
@@ -178,12 +187,16 @@ export function postAnnouncement(
   head: string,
   text: string,
 ): Promise<Outcome<Published, PostCode>> {
-  return publish(onPr(pr), MERGE_READY, {
-    key: headKey(head),
-    writer: localWriter("forge"),
-    payload: {},
-    text,
-  });
+  return publish(onPr(pr), MERGE_READY, announcementDraft(head, text));
+}
+
+/** The claim an announcement of `head` posts, its record before `text` (which ends with the head marker). */
+export function announcementDraft(
+  head: string,
+  text: string,
+  writer: Writer = localWriter("forge"),
+): ClaimDraft {
+  return { key: headKey(head), writer, payload: {}, text };
 }
 
 /** How the posted announcement stands among the announcements of its head, read back. */

@@ -233,8 +233,9 @@ decision's answer in the panel as on the dashboard, and merge a pull
 request that is ready to merge with one click. A command will open the
 dashboard in Orca's own browser for the board and each piece of work.
 The dispatcher will read each account's usage from Orca's command line
-once Orca offers it. A trial will find whether a launch can be bound to
-the account the dispatcher chose. The plugin is Orca-bound.
+once Orca offers it. Once Orca lets a launch name its account, the
+dispatcher will start pickups through Orca on the account it chose. The
+plugin is Orca-bound.
 
 ## Next
 

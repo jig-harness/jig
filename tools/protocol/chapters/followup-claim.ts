@@ -19,6 +19,7 @@ import {
 } from "../../../plugin/shared/records/registry.ts";
 import type { Chapter, DataValue, FieldSpec } from "../chapter.ts";
 import { table } from "../markdown.ts";
+import { recordKindsTable } from "../record-kinds.ts";
 import { s } from "../../../plugin/shared/shapes.ts";
 import { envelopeShape } from "../../../plugin/shared/records/envelope-shape.ts";
 import {
@@ -56,22 +57,7 @@ const outcomes = () =>
     })),
   );
 
-function recordTable(): string {
-  const k = followupKind();
-  return table(
-    ["Kind", "Medium", "Markers", "Version", "Key", "Meaning"],
-    [
-      [
-        ticked(k.name),
-        k.medium,
-        (k.markers ?? []).map(ticked).join(", "),
-        String(k.version),
-        k.key === undefined ? "—" : ticked(k.key.source),
-        k.meaning,
-      ],
-    ],
-  );
-}
+const recordTable = () => recordKindsTable([followupKind()]);
 
 function runsTable(): string {
   return table(

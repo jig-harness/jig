@@ -78,6 +78,28 @@ function slugAt(path: string): string | null {
   return repo === null ? null : `${repo.owner}/${repo.name}`;
 }
 
+/**
+ * Whether this machine's dispatch file lists `repo` as one it owns, so its
+ * tick reads the repository's answers; why it cannot be told when the
+ * dispatch file does not read, or no owned checkout names `repo` and one
+ * names no repository.
+ */
+export function ownsRepository(repo: string): Outcome<boolean, "unreadable"> {
+  const machine = machineFile();
+  if (!machine.ok) return machine;
+  const owned = (machine.value?.repositories ?? []).filter((r) => r.owner);
+  const slugs = owned.map((r) => ({ path: r.path, slug: slugAt(r.path) }));
+  if (slugs.some((s) => s.slug?.toLowerCase() === repo.toLowerCase()))
+    return ok(true);
+  const unnamed = slugs.find((s) => s.slug === null);
+  return unnamed === undefined
+    ? ok(false)
+    : failed(
+        "unreadable",
+        `the git remote of ${unnamed.path}, a checkout the dispatch file says this machine owns, names no repository`,
+      );
+}
+
 /** What a written repository resolves against: the dispatch file's repositories and the checkout this runs in. */
 export function repositoryChoices(
   machine: MachineConfig | null,
