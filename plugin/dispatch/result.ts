@@ -15,8 +15,12 @@
  * `waits --until <time>` is a pickup the tracker's rate limit stopped, or a
  * follow-up the forge's or the tracker's rate limit stopped: the tick starts
  * it again once `time` (ISO 8601, at most a day ahead) has passed, and asks
- * no person (a follow-up's third wait in a row is a person's:
- * `lib/followup-waits.ts`).
+ * no person (a follow-up's third rate-limit wait in a row is a person's:
+ * `lib/followup-waits.ts`). `--reason` says what it waits for:
+ * `rate-limit`, the default, or `pending`, a follow-up one of whose arms is
+ * still pending (a release run still going, a deploy not started), which
+ * `--arm <name>` names; a follow-up that finds its arm still pending once
+ * `dispatch.followup_within` has passed since it first did is a person's.
  *
  * `failed --decision <file>` (`-` for standard input) is a pass that stopped
  * for a person and framed what it asks: a `parked-decision/v1` record, the
@@ -54,9 +58,16 @@ import {
   type SessionResult,
 } from "./lib/launches.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
+import {
+  ARM_MAX,
+  armWords,
+  WAIT_REASONS,
+  type WaitFor,
+  type WaitReason,
+} from "./lib/wait-for.ts";
 
 const USAGE =
-  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time>";
+  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>]";
 /** The host could not write the result: the evidence is kept, and the dispatcher settles the stage. */
 const UNWRITTEN = 4;
 /** The longest a pass may wait on a rate limit: a tracker's or the forge's window is an hour or less. */
@@ -256,20 +267,73 @@ function refusalFor(
 }
 
 /** The time a `waits` result names, in the column's form; `null` when it is not one. */
-function waitsUntil(flag?: string, value?: string): string | null {
-  if (flag !== "--until" || value === undefined) return null;
+function waitsUntil(value?: string): string | null {
+  if (value === undefined) return null;
   const at = parseMs(value);
   if (!Number.isFinite(at) || at > currentMs() + MAX_WAIT_MS) return null;
   return isoFromMs(at);
 }
 
-/** A command line this command takes: `done|failed` with their options, or `waits --until <time>`. */
+/** What a `waits` result says: the time it waits until, and what for. */
+interface WaitsArgs {
+  until: string;
+  wait: WaitFor;
+}
+
+const WAITS_FLAGS = ["--until", "--reason", "--arm"];
+
+/**
+ * `--until <time> [--reason rate-limit|pending] [--arm <name>]`, each at
+ * most once and in any order: `--reason` absent is a rate limit's, and
+ * `--arm`, one line of at most `ARM_MAX` characters, goes only with
+ * `pending`; `null` when they do not read.
+ */
+function waitsArgs(rest: readonly string[]): WaitsArgs | null {
+  const named = waitsFlags(rest);
+  if (named === null) return null;
+  const until = waitsUntil(named.get("--until"));
+  const wait = waitFor(named.get("--reason"), named.get("--arm"));
+  return until === null || wait === null ? null : { until, wait };
+}
+
+/** The `waits` options by flag, each named once; `null` for an unknown, repeated or valueless one. */
+function waitsFlags(rest: readonly string[]): Map<string, string> | null {
+  const named = new Map<string, string>();
+  for (let i = 0; i < rest.length; i += 2) {
+    const [flag, value] = [rest[i], rest[i + 1]];
+    if (flag === undefined || value === undefined) return null;
+    if (!WAITS_FLAGS.includes(flag) || named.has(flag)) return null;
+    named.set(flag, value);
+  }
+  return named;
+}
+
+/** What `--reason` and `--arm` say a wait waits for; `null` when they do not read. */
+function waitFor(reason = "rate-limit", raw?: string): WaitFor | null {
+  if (!(WAIT_REASONS as readonly string[]).includes(reason)) return null;
+  if (raw === undefined)
+    return reason === "pending" ? null : { reason: reason as WaitReason };
+  const arm = oneLine(raw);
+  if (reason !== "pending" || arm === "" || arm.length > ARM_MAX) return null;
+  return { reason: "pending", arm };
+}
+
+/** A command line this command takes: `done|failed` with their options, or `waits` with its own. */
 function wellFormed(argv: string[]): boolean {
-  const [id, token, result, flag, value] = argv;
-  if (argv.length !== 3 && argv.length !== 5) return false;
+  const [id, token, result] = argv;
   if (id === undefined || token === undefined) return false;
-  if (result === "waits") return waitsUntil(flag, value) !== null;
+  if (result === "waits") return waitsArgs(argv.slice(3)) !== null;
+  if (argv.length !== 3 && argv.length !== 5) return false;
   return result === "done" || result === "failed";
+}
+
+/** The handoff a `waits` result records: nobody's, until the time it names. */
+function waitsNext(waited: WaitsArgs): NextOwner {
+  return waited.wait.reason === "pending"
+    ? {
+        none: `waits for ${armWords(waited.wait)} still pending until ${waited.until}`,
+      }
+    : { none: `waits for a rate limit until ${waited.until}` };
 }
 
 /** The record this session may answer for, or why not. */
@@ -303,11 +367,17 @@ export function resultMain(argv: string[], root?: string): number {
     console.error(`jig dispatch result: ${record}`);
     return 2;
   }
-  const until = result === "waits" ? waitsUntil(flag, value) : null;
+  const waited = result === "waits" ? waitsArgs(argv.slice(3)) : null;
+  if (waited?.wait.reason === "pending" && record.action !== "followup") {
+    console.error(
+      "jig dispatch result: --reason pending is a follow-up's; a pickup waits only on a rate limit",
+    );
+    return 2;
+  }
   const next =
-    until === null
+    waited === null
       ? nextForResult(record, result, flag, value)
-      : { none: `waits for a rate limit until ${until}` };
+      : waitsNext(waited);
   if (next === null) return 2;
   if (
     !recordResult(
@@ -316,7 +386,9 @@ export function resultMain(argv: string[], root?: string): number {
       root,
       next,
       null,
-      until ?? undefined,
+      waited?.until,
+      undefined,
+      waited?.wait,
     )
   ) {
     return already(id, root);
@@ -326,7 +398,7 @@ export function resultMain(argv: string[], root?: string): number {
       record: id,
       ...(record.item === null ? { pr: record.pr } : { item: record.item }),
       result,
-      ...(until === null ? {} : { until }),
+      ...(waited === null ? {} : { until: waited.until, ...waited.wait }),
       next,
     }),
   );

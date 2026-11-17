@@ -348,6 +348,7 @@ function followupPrompt(record: LaunchRecord): string {
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
     `- the forge or the tracker refused a request for its rate limit (a gh call reporting it, such as "API rate limit exceeded", "secondary rate limit" or HTTP 429, or a tracker script that exited 5, naming the time it resets): ${resultCommand(record, "waits")} --until <that time>, for the forge the reset gh api rate_limit names for the spent resource, else an hour from now; ask no question, the dispatcher starts the follow-up again after the reset, and its steps check what is already done`,
+    `- an arm is still pending, with nothing else left you may carry out now (a release run still going, a deploy not started): ${resultCommand(record, "waits")} --until <when to look again> --reason pending --arm "<the arm and what it waits for>", with --until at most a day ahead; ask no question, the dispatcher starts the follow-up again after that time, and tells a person if the arm is still pending once dispatch.followup_within has passed since the first pass that found it so`,
     `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
     UNWRITTEN_LINE,
     ...reportLines(record),

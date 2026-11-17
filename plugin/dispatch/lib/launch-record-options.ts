@@ -22,6 +22,12 @@ function optionalSeconds(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+/** Whether a value is absent or a positive whole number of milliseconds. */
+function optionalDuration(value: unknown): boolean {
+  if (value === undefined) return true;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
 /** Whether a value is absent or an array whose members are strings. */
 function optionalStrings(value: unknown): boolean {
   return (
@@ -59,8 +65,8 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalStrings(value.claimedItems) &&
     optionalStrings(value.releasedItems) &&
     optionalStrings(value.codexPassArgs) &&
-    optionalSeconds(value.passTimeoutSec) &&
-    optionalSeconds(value.rerunDied) &&
+    [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&
+    optionalDuration(value.followupWithinMs) &&
     optionalBooleans(value, [
       "rearmConsumed",
       "pooled",

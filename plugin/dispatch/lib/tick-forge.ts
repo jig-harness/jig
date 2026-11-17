@@ -235,7 +235,7 @@ export async function readForge(
     out.ok = true;
     const detail = `${out.open.length} open pull request(s)${queryNote(queried)}, ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
       section.followupCommand === null
-        ? "no dispatch.followup_command: no follow-ups"
+        ? "no dispatch.followup_command, and the follow-up stage is off on this host: no follow-ups"
         : `${out.merged.length} merged since ${since} (${marked.kept} unchanged since a tick read their markers, not read again${commentsNote(marked.queried)})`
     }`;
     report.records.push({
