@@ -3,7 +3,8 @@
  * phases: each repository's query (`forge-batch.ts`: the repository, its
  * configuration, its open pull requests and their comments), each pull
  * request's comments (`tick-comments.ts`, filled from that query where it
- * read them in full), the forge's login, the runtime's host-wide listings, and the forge's budget. The
+ * read them in full, the rest revalidated page by page against what an
+ * earlier tick read, `records/comment-pages.ts`), the forge's login, the runtime's host-wide listings, and the forge's budget. The
  * login and the listings are the host's, not a repository's: each is read
  * once, the first time a repository needs it, and every repository is
  * answered from that read, a failed one failing each repository's record as
@@ -32,7 +33,7 @@
  */
 import { coalesce } from "../../shared/outbound/coalesce.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
-import { listComments } from "../../shared/records/forge-claims.ts";
+import { listCommentsKept } from "../../shared/records/comment-pages.ts";
 import type { SharedBudget } from "../../shared/records/shared.ts";
 import { failed, type Outcome } from "../../shared/outcome.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
@@ -234,7 +235,7 @@ export function tickReads(
         unlessEnded(
           bound,
           `the comments of #${target.number} were listed`,
-          () => listComments(target, listingDeadline(bound)),
+          () => listCommentsKept(target, listingDeadline(bound)),
         ),
       ),
     written: (repo, pr) => forgetMergeRead(repo, pr),

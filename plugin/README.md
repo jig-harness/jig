@@ -682,9 +682,10 @@ left no report, the copy's path.
 #### Every need is a decision
 
 A pass that stops for a person frames what it asks, as a drive frames a
-park: it writes a `parked-decision/v1` record (the question, two or more
-options each with what it changes and costs, the one it recommends and
-why, the class, the steps a person must take and what it already did) and
+park: it writes a [`parked-decision/v1` record](protocol/needs-and-answers.md#the-decision-record)
+(the question, two or more options each with what it changes and costs, the
+one it recommends and why, the class, the steps a person must take and what
+it already did) and
 records `failed --decision <file>`, which checks the record as a park's is
 and keeps it with the result; a record the check refuses records nothing,
 so the pass fixes it and sends it again. The need it raises (a failed
@@ -693,7 +694,9 @@ finds itself it frames the decision from the facts that identify it, with
 options it can carry out, each set ending with **I'll handle it — hide this card**.
 Nothing is done; the work stays where it is. The answered hold stays visible
 until its facts change. Answers naming **Leave it to me** still count, including
-answers sent from an older dashboard snapshot while the facts remain the same:
+answers sent from an older dashboard snapshot while the facts remain the same.
+The keys, the options and the answer forms are listed in
+[the needs and answers chapter](protocol/needs-and-answers.md#the-dispatchers-own-framings):
 
 | Need | Key | The other options, and what the tick does |
 | --- | --- | --- |
@@ -737,7 +740,7 @@ the cause of a pickup's or a follow-up's run that left no closing report
 (above), read from the excerpt of its transcript as evidence. It can also propose one fixed resume of
 an ended dispatched pass that recommended an option outside the human-decision
 registry. The follow-up lane's own routine retry runs first. The next tick
-applies its closed records under the current holds and recovery budget;
+applies its [closed records](protocol/steward-records.md) under the current holds and recovery budget;
 the steward itself launches nothing. It never answers a registry park or
 re-arms a drive a person stopped. A pass lasts at most 15 minutes, uses the
 admitted vendor's complex-tier model, and runs at most three times an hour.
@@ -1590,7 +1593,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 

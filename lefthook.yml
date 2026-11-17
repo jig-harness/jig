@@ -34,6 +34,7 @@ pre-commit:
         - "lib/findings.ts"
         - "plugin/README.md"
         - "plugin/skills/do-item/SKILL.md"
+        - "plugin/skills/steward/SKILL.md"
         - "plugin/skills/drive-pr/SKILL.md"
         - "plugin/skills/drive-pr/scripts/drive-status.ts"
         - "plugin/skills/drive-pr/scripts/drive.ts"
@@ -53,6 +54,9 @@ pre-commit:
         - "plugin/dispatch/lib/log-ended.ts"
         - "plugin/dispatch/lib/labels.ts"
         - "plugin/dispatch/lib/contention.ts"
+        - "plugin/dispatch/lib/steward-record-shapes.ts"
+        - "plugin/dispatch/lib/steward-record-values.ts"
+        - "plugin/shared/acts.ts"
         - "plugin/ask/lib/drive.ts"
         - "plugin/shared/orca-tabs.ts"
         - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
@@ -103,6 +107,11 @@ pre-commit:
         - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
         - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
         - "plugin/skills/reflect/scripts/lib/event-shapes.ts"
+        - "plugin/shared/acts.ts"
+        - "plugin/shared/decisions/answer-normalize.ts"
+        - "plugin/shared/decisions/decision-values.ts"
+        - "plugin/shared/decisions/park-shape.ts"
+        - "plugin/shared/decisions/station.ts"
       run: bun tools/protocol/generate.ts --stage
       stage_fixed: true
 
