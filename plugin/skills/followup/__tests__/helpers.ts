@@ -93,7 +93,7 @@ export function factsOf(over: Partial<Facts> = {}): Facts {
     items: [{ key: "ENG-12", source: "branch" }],
     itemRead: true,
     epics: [],
-    outOfTree: { declared: true, saysNone: true, steps: [] },
+    outOfTree: { declared: true, steps: [] },
     labels: [],
     scaffolding: [],
     configOrigin: "working tree",

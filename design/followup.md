@@ -17,9 +17,9 @@ write one runs no post-merge stage at all. With this built, any repository
 names `/jig:followup` and gets the whole stage; a repository with
 obligations of its own adds them as arms without restating the rest.
 
-This is the design of [plan.md](plan.md) item 17's M7 bullet. These
-layers ship as the plugin's
-[followup](../plugin/skills/followup/README.md) skill.
+This is the design of the follow-up skill, whose open steps are in
+[#305](https://github.com/jig-harness/jig/issues/305). These layers ship as
+the plugin's [followup](../plugin/skills/followup/README.md) skill.
 
 ## How it works
 
@@ -139,6 +139,8 @@ consumer arms declared this way.
 - **A closure sweep of epics.** The follow-up calls `do-item`'s epic rule;
   an epic closes only on an accepted verdict or a waiver, and a sweep that
   moves an epic's tails is its own piece of work.
-- **Running a deferred pending arm again by itself.** A pending arm ends the
-  run as a wait only once the dispatcher accepts a pending wait as a result;
-  until then the run reports the pending arm and ends done.
+- **Running a pending arm again by itself on a run started by hand.** A
+  dispatched run ends a pending arm as a wait (`waits --reason pending`),
+  which the dispatcher starts again after its time; a run started by hand
+  reports the pending arm and leaves its marker open, and a person runs it
+  again with that marker once the arm can settle.

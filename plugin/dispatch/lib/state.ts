@@ -5,7 +5,7 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
+ * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pass that recorded `waits` has `result` `failed`, the time it waits until in `result_until` and what it waits for (a rate limit, or a follow-up's arm still pending) in `result_wait`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -458,6 +458,11 @@ export const MIGRATIONS: readonly Migration[] = [
     // A drive's per-round pass session ids (`round-sessions.ts`), which its driver writes on the launch record as each pass starts, so a run is found in its vendor's transcripts.
     additive: true,
     sql: "ALTER TABLE launches ADD COLUMN sessions TEXT;",
+  },
+  {
+    // What a `waits` result waits for (`launch-result.ts`), as JSON: a rate limit's reset, or a follow-up's arm still pending and which. Written with the result, by the same update; `NULL` on a wait written before it was kept, which is a rate limit's.
+    additive: true,
+    sql: "ALTER TABLE launches ADD COLUMN result_wait TEXT;",
   },
   {
     // The declared-priorities allocation records (`allocation-store.ts`): one charge per pickup claim, one row per completed week, each weighted lane's ready transitions, and each repository's newest ranking.

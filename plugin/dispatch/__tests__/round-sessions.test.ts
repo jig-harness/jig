@@ -142,12 +142,13 @@ describe("the sessions column", () => {
   it("is added to the launches of a database the release before wrote", () => {
     const root = mkdtempSync(join(tmpdir(), "dispatch-sessions-"));
     const path = statePath(root);
+    // The migrations up to, and not including, the one that adds the column.
+    const sessions = MIGRATIONS.findIndex((m) =>
+      m.sql.includes("ADD COLUMN sessions"),
+    );
     const before = openDatabase({
       path,
-      migrations: MIGRATIONS.slice(
-        0,
-        MIGRATIONS.findIndex((m) => m.sql.includes("ADD COLUMN sessions")),
-      ),
+      migrations: MIGRATIONS.slice(0, sessions),
     });
     if (!before.ok) throw new Error(before.failure.reason);
     const columns = (db: ReturnType<typeof stateDb>) =>

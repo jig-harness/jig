@@ -361,7 +361,8 @@ development and shipped as a version.
   and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).
 - **Reasoned.** None inside the tick. It starts reasoned parts: a drive's
   passes (through `drive.ts`), a pickup's `/jig:do-item` session, and the
-  repository's `dispatch.followup_command`. Its one keystroke into a
+  repository's `dispatch.followup_command` (`/jig:followup` where the
+  repository names none). Its one keystroke into a
   session is the fixed nudge after a usage limit resets; every other stuck
   state becomes a notification.
 - **Boundary.** Because it reads the `dispatch` section from the default
@@ -429,8 +430,13 @@ development and shipped as a version.
   `failed`. A follow-up pass that meets the forge's or a tracker's rate
   limit records `waits --until <time>` too: its marker stays until then,
   the tick releases it after the reset and a later tick starts the
-  follow-up again, and the third wait in a row is notified
-  (`dispatch/lib/followup-waits.ts`).
+  follow-up again, and the third rate-limit wait in a row is notified
+  (`dispatch/lib/followup-waits.ts`). A follow-up pass that finds an arm
+  still pending records `waits --until <time> --reason pending --arm <name>`
+  and is held and started again the same way; the dispatcher counts these
+  waits apart from the rate limit's and notifies the follow-up, naming the
+  arm, once `dispatch.followup_within` has passed since the first pass that
+  found it pending.
   A pickup whose claim the repository's start rules refused records
   `failed --refused <updated-at> --reason <reason>`: the tick holds the item, showing
   the reason, until its `updatedAt` moves past that time. A batch pickup adds

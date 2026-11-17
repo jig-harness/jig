@@ -592,7 +592,7 @@ never held by it.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch report <record> <token> <file>
 ```
@@ -747,10 +747,14 @@ See [steward](skills/steward/README.md) for setup and record boundaries.
 
 **Follow-ups** (the `followup` stage) start one headless pass per pull
 request merged since the stage was switched on (`followup_since`), running
-the repository's `dispatch.followup_command` on it (`/jig:followup`, the
-plugin's [followup](skills/followup/README.md) skill, or another skill or
+the repository's `dispatch.followup_command` on it (another skill or
 procedure the repository names, which the pass's prompt opens with) in the
-pull request's workspace. Follow-ups open their workspaces in a lane of
+pull request's workspace; a repository that names none runs the plugin's
+[followup](skills/followup/README.md) skill, `/jig:followup`. The stage
+stays a host's choice: nothing starts until the machine file lists
+`followup` among the repository's stages, and on a host that does not, a
+repository that names no command has none, so its merged pull requests are
+not read. Follow-ups open their workspaces in a lane of
 their own: at most `followup_opens_per_tick` a tick (2 by default), beside
 the drive launches' `opens_per_tick` and the notices workspace's reserved
 open, with at most `followup_concurrency` passes (2) running on the host at
@@ -831,8 +835,19 @@ that exits `5`) asks nothing and records `waits --until <time>`, the time
 the limit resets. Its marker stays until then, so no host starts the
 follow-up early; after the reset the tick releases it and a later tick
 starts the follow-up again as a first run, outside the recovery budget. The
-third wait in a row is notified as a failed follow-up that names the rate
-limit.
+third rate-limit wait in a row is notified as a failed follow-up that names
+the rate limit.
+
+A follow-up pass that finds an arm still pending, with nothing else left it
+may carry out (a release run still going, a deploy not started), asks
+nothing either and records
+`waits --until <time> --reason pending --arm <name>`, the time to look
+again and the arm. It is held and started again the same way, its waits
+are never reported as a rate limit, and they do not count toward the rate
+limit's three. A pass that still finds the arm pending once
+`dispatch.followup_within` has passed since the first pass that found it so
+is notified as a failed follow-up that names the arm. `--reason` absent is
+`rate-limit`.
 
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.
@@ -1015,7 +1030,8 @@ repository's manual-operations label (`issue_tracker.labels.manual_ops`,
 `## Out-of-tree follow-ups` section lists a step not yet checked off, set
 from the description at every run and kept after the merge until the
 follow-up is done (a merged pull request is read only where
-`followup_command` is set); and `automation` on a pull request a bot opened
+`followup_command` is set or the host runs the repository's `followup`
+stage); and `automation` on a pull request a bot opened
 that carries no label of the `automation:` family a repository's workflows
 apply (`automation:docs-sync`), unless the bot is one the adoption rule
 names, which is the host's own identity. The dispatcher never removes `automation`

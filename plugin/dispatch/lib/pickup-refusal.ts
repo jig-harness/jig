@@ -15,6 +15,7 @@
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { parseMs } from "../../shared/time.ts";
+import { readWaitFor, type WaitFor } from "./wait-for.ts";
 
 /** One batch member the start rules refused. */
 export interface RefusedMember {
@@ -104,11 +105,14 @@ export function refusalOf(
   return refusal.members.find((m) => m.key === item) ?? null;
 }
 
-/** When a `waits` result lets the pickup start again, as the launch row carries it. */
+/** When a `waits` result lets the pass start again, and what it waits for, as the launch row carries them. */
 export function waitsOf(row: {
   result?: string | null;
   result_until?: string | null;
-}): { waitsUntil?: string } {
+  result_wait?: string | null;
+}): { waitsUntil?: string; waitsFor?: WaitFor } {
   const until = row.result_until ?? null;
-  return row.result === "failed" && until !== null ? { waitsUntil: until } : {};
+  return row.result === "failed" && until !== null
+    ? { waitsUntil: until, waitsFor: readWaitFor(row.result_wait) }
+    : {};
 }
