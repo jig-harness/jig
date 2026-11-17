@@ -462,3 +462,48 @@ describe("disagreements", () => {
     expect(out.disagreements[0]?.ahead.epic).toBe("#110");
   });
 });
+
+describe("the disagreement search", () => {
+  test("each item reports its nearest later disagreement, skipping its own epic's children", () => {
+    const rec = record({
+      objectives: [objective("core-goal", "core", ["#110", "#120", "#130"])],
+    });
+    const items = [
+      epic("#110"),
+      epic("#120"),
+      epic("#130"),
+      item("#111", { parent: "#110", priority: 4 }),
+      item("#112", { parent: "#110", priority: 4 }),
+      item("#121", { parent: "#120", priority: 4 }),
+      item("#122", { parent: "#120", priority: 3 }),
+      item("#131", { parent: "#130", priority: 2 }),
+    ];
+    const out = rank(
+      input({ records: [rec], snapshot: { readAt: "t", items } }),
+    );
+    expect(out.disagreements.map((d) => [d.ahead.key, d.behind.key])).toEqual([
+      ["#111", "#122"],
+      ["#112", "#122"],
+      ["#122", "#131"],
+      ["#121", "#131"],
+    ]);
+  });
+
+  test("a large queue of one epic's children has no disagreements and ranks in bounded time", () => {
+    const rec = record({
+      objectives: [objective("core-goal", "core", ["#110"])],
+    });
+    const items = [
+      epic("#110"),
+      ...Array.from({ length: 5000 }, (_, i) =>
+        item(`#${1000 + i}`, { parent: "#110", priority: 3 }),
+      ),
+    ];
+    const started = performance.now();
+    const out = rank(
+      input({ records: [rec], snapshot: { readAt: "t", items } }),
+    );
+    expect(out.disagreements).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(5000);
+  });
+});

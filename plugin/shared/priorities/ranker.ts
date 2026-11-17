@@ -456,21 +456,18 @@ function pickObjective(
   record: PrioritiesRecord | undefined,
 ): { chosen: string | null; why: string } {
   const objectives = (record?.objectives ?? []).filter((o) => o.class === lane);
-  const explicit = objectives.reduce((s, o) => s + (o.share ?? 0), 0);
-  const unshared = objectives.filter((o) => o.share === undefined).length;
-  const residual = Math.max(0, 1 - explicit);
+  const shareOf = shareResolver(objectives);
   const ready = objectives.filter((o) =>
     pool.some((c) => c.placement?.objective === o.id),
   );
   let chosen: string | null = null;
   let best = Number.NEGATIVE_INFINITY;
   for (const o of ready) {
-    const share = o.share ?? (unshared > 0 ? residual / unshared : 0);
     const counted =
       record === undefined
         ? 0
         : (state.nObjective.get(refKey(record.level, record.scope, o.id)) ?? 0);
-    const d = share * (state.n[lane] + 1) - counted;
+    const d = shareOf(o) * (state.n[lane] + 1) - counted;
     if (d > EPSILON && d > best + EPSILON) {
       chosen = o.id;
       best = d;
@@ -480,6 +477,16 @@ function pickObjective(
   if (chosen === null && first !== undefined)
     return { chosen: first.id, why: `; lent to ${first.id} in record order` };
   return { chosen, why: "" };
+}
+
+/** An objective's share: its own, else an equal part of what the explicit shares leave. */
+function shareResolver(
+  objectives: PrioritiesRecord["objectives"],
+): (o: PrioritiesRecord["objectives"][number]) => number {
+  const explicit = objectives.reduce((s, o) => s + (o.share ?? 0), 0);
+  const unshared = objectives.filter((o) => o.share === undefined).length;
+  const residual = Math.max(0, 1 - explicit);
+  return (o) => o.share ?? (unshared > 0 ? residual / unshared : 0);
 }
 
 /** A lane's pool in its deterministic order. */
@@ -508,21 +515,77 @@ function prio(item: SnapshotItem): number {
   return item.priority ?? 5;
 }
 
-/** Comparable ready work whose inherited position and tracker Priority disagree: reported, never edited. */
+/** The nearest later item of one priority, and the nearest of them whose epic differs from it. */
+interface Nearest {
+  first: Indexed;
+  other: Indexed | null;
+}
+
+interface Indexed {
+  index: number;
+  entry: Classified;
+}
+
+/**
+ * Comparable ready work whose inherited position and tracker Priority disagree: reported, never edited.
+ * One backward pass keeps, per objective and Priority, the nearest later items, so each item
+ * finds its first later disagreement without rescanning the pool's suffix.
+ */
 function disagreementsOf(pools: Map<Lane, Classified[]>): Disagreement[] {
   const out: Disagreement[] = [];
   for (const lane of ["core", "tactical", "peripheral"] as const) {
     const pool = pools.get(lane) ?? [];
-    for (const [i, a] of pool.entries()) {
-      for (const b of pool.slice(i + 1)) {
-        const found = disagreement(a, b);
-        if (found === null) continue;
-        out.push(found);
-        break;
-      }
+    const later = new Map<string, Map<number, Nearest>>();
+    const found: Disagreement[] = [];
+    for (let i = pool.length - 1; i >= 0; i--) {
+      const a = pool[i] as Classified;
+      const best = nearestDisagreeing(a, later);
+      const hit = best === null ? null : disagreement(a, best);
+      if (hit !== null) found.push(hit);
+      if (a.item.priority !== null) remember(later, a, i, a.item.priority);
     }
+    out.push(...found.reverse());
   }
   return out;
+}
+
+/** The nearest later item of a lower Priority number in `a`'s objective and another epic. */
+function nearestDisagreeing(
+  a: Classified,
+  later: Map<string, Map<number, Nearest>>,
+): Classified | null {
+  const { placement, item } = a;
+  if (placement === null || item.priority === null) return null;
+  const candidates: Indexed[] = [];
+  for (const [p, near] of later.get(placement.objective) ?? []) {
+    const other = otherEpic(near, placement.epic);
+    if (p < item.priority && other !== null) candidates.push(other);
+  }
+  return candidates.sort((x, y) => x.index - y.index)[0]?.entry ?? null;
+}
+
+/** The nearest of `near` outside `epic`. */
+function otherEpic(near: Nearest, epic: string | null): Indexed | null {
+  return near.first.entry.placement?.epic === epic ? near.other : near.first;
+}
+
+function remember(
+  later: Map<string, Map<number, Nearest>>,
+  entry: Classified,
+  index: number,
+  priority: number,
+): void {
+  const placement = entry.placement;
+  if (placement === null) return;
+  const byPriority = later.get(placement.objective) ?? new Map();
+  later.set(placement.objective, byPriority);
+  const near = byPriority.get(priority);
+  const here = { index, entry };
+  if (near === undefined)
+    byPriority.set(priority, { first: here, other: null });
+  else if (near.first.entry.placement?.epic === placement.epic)
+    near.first = here;
+  else byPriority.set(priority, { first: here, other: near.first });
 }
 
 function disagreement(
