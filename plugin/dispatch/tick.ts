@@ -4,7 +4,11 @@
  * (the dispatch section from the default branch, the tracker, the forge's
  * pull requests and their drive ledgers, the runtime's sessions), each
  * repository under its observe lock and every read through one bounded pool
- * (lib/pool.ts). The act phase, under the act lock, then takes the
+ * (lib/pool.ts). Its reads of the forge and the tracker go through the
+ * tick's world view (lib/world-view.ts), which a caller of `runTick` can
+ * supply (`TickOptions.world`) and which otherwise reads them directly;
+ * this host's launch records, the machine view, are read beside it and
+ * never written into a fact it returned. The act phase, under the act lock, then takes the
  * repositories one at a time in this tick's rotated order: plan wanted minus
  * running, report, and with `--apply` launch; then the tick writes its
  * receipt. Without `--apply` a tick starts nothing: it reports what it

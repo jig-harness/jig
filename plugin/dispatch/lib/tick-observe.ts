@@ -7,10 +7,19 @@
  * fell silent, the clone's drive doctor (`sources/doctor.ts`). It hands the plan
  * one `RepoObservation`.
  *
- * Opening a repository takes its target and its configuration from the
- * tick's query of it (`forge-batch.ts`), which also lists its open pull
- * requests and their comments for the forge's read; a query that does not
- * read leaves each of these to its own read.
+ * The repository's target and configuration, the tracker's part and the
+ * forge's part (its open pull requests with their ledgers, its merges) are
+ * read through the tick's world view (`world-view.ts`), whose facts carry
+ * their freshness class. The launch claims (the shared records), Control's
+ * reads and the board read the forge directly. The forge's drives as this
+ * host's launch records and every host's claims settle them are the
+ * machine view, `RepoObservation.drives`, kept apart from the forge's read:
+ * nothing of what this host did is written into a fact the view returned.
+ *
+ * In the direct view, opening a repository takes its target and its
+ * configuration from the tick's query of it (`forge-batch.ts`), which also
+ * lists its open pull requests and their comments for the forge's read; a
+ * query that does not read leaves each of these to its own read.
  *
  * Every repository is observed at once, and within one the sources that do
  * not depend on each other are read side by side: the tracker beside the
