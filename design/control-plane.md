@@ -16,7 +16,10 @@ them. With this built, an optional service, the [hub](../GLOSSARY.md),
 is told of every change by the forge's and the tracker's
 [webhooks](../GLOSSARY.md), keeps one [world view](../GLOSSARY.md) of
 them for every host enrolled in it and is the only one of them that reads
-the forge and the tracker for the dispatcher. It also grants claims with
+the forge and the tracker for the dispatcher, bar the check each host makes
+on the forge itself just before a write. Its [change feed](../GLOSSARY.md) tells a host's
+dispatcher and drives when a target moved, so they stop polling and read
+only what changed. It also grants claims with
 leases, so a silent host's work goes to another host, offers work to
 whichever host has a free slot, tells a person when a host stops and
 serves one view of every host's work. A host that never enrolls loses
@@ -24,8 +27,9 @@ nothing, and a host whose hub is unreachable works as it does today, bar
 the owner duties that wait for the hub's lease
 ([Owner duties](#owner-duties)).
 
-This is the design of [plan.md](plan.md) item 49. Nothing of it is built.
-It answers the conditions on which
+This is the design of [plan.md](plan.md) item 49. Nothing of it is built,
+and building its first wave waits on a measurement of what hosts spend
+today ([Before the first wave](#before-the-first-wave-a-measurement)). It answers the conditions on which
 [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)
 reopens, and its decision record is
 [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md).
@@ -60,7 +64,7 @@ These rules keep each level whole:
   enrolling and naming the hub in its machine file. Since the hub holds no
   authority over a host's work, nothing moves back when a host leaves.
 - **A hub that is down returns its hosts to the level below.** Every call
-  a tick makes to the hub has a short deadline. When it fails, the tick
+  a tick makes to the hub has a deadline of 2 seconds. When one fails, the tick
   reads the forge and the tracker itself within its own budgets, claims on
   the forge as it does today, and says on its receipt since when the hub
   has not answered. Running sessions never notice. The one exception is an
@@ -71,6 +75,18 @@ These rules keep each level whole:
   still needs its tracker claim. The hub's own claim is a faster check
   before them, which stops most races before anything is written; the
   fence decides.
+
+### What it solves, and how far
+
+| Problem | What the hub does | How far, and from which wave |
+| --- | --- | --- |
+| Reads multiply across hosts | One reader for every enrolled dispatcher, fed by events | Whole, from the first wave, for the dispatcher's reads; a session's reads stay with its host |
+| A drive pass polls the forge while it waits for checks | The change feed wakes it when its pull request moves, and it reads only the kinds that moved | Whole, from the first wave, for a drive on an enrolled host; the reads themselves stay the drive's |
+| One host per person has its own dashboard | One view of every host, phone included | Whole, from the first wave |
+| Nobody learns that a host stopped | The silent-host notice | Whole from the claims wave; without a hub, a host's tick can send its own heartbeat to an external monitor ([A stopped host, noticed](#a-stopped-host-noticed)) |
+| A dead host's drive waits | Its grant lapses and the hub names the one host that takes it over | Partly: the takeover still takes the forge's own path, after the drive ledger's heartbeat has passed its lease window; the hub stops two hosts racing for it |
+| A dead host's follow-up waits | Named in the stopped-host notice | Partly: a person resumes it, since a follow-up's marker has no takeover path |
+| Pickups run from one host per repository | A claim before the session opens | Partly: best effort; the tracker claim inside `do-item` stays the fence, and the double-claim watch the backstop |
 
 ### What the hub is
 
@@ -84,15 +100,20 @@ The adapters designed so far are:
 
 - **The process adapter**, built first: `jig hub serve`, one Bun process
   with one SQLite database, part of the `jig` plugin like the dispatcher
-  and `jig gc`, and the same process shipped as a container image for a
-  team that runs containers. It runs on any machine its hosts reach over
-  HTTPS: in its smallest form on the always-on host that already
-  dispatches, or on a small server or a team's machine.
+  and `jig gc`, and the same process shipped as a container image. It runs
+  on any machine its hosts reach over HTTPS: in its smallest form on the
+  always-on host that already dispatches, in that container under an OS
+  user of its own ([Apart from the sessions](#apart-from-the-sessions-on-a-shared-machine)),
+  or on a small server or a team's machine.
 - **A serverless adapter**, built second: Cloudflare Workers, with the
-  hub's state in a Durable Object's SQLite storage or in D1 (Cloudflare's
-  SQLite database service), and its scheduled work on alarms and cron
-  triggers. It is one implementation of a serverless adapter; another
-  platform is another adapter, with no change to the core.
+  hub's state in Durable Objects' SQLite storage, one object per
+  partition ([The size it is built for](#the-size-it-is-built-for)), and
+  its scheduled work on alarms and cron triggers. It is second because a
+  team with no always-on machine of its own has nowhere else to run a hub,
+  and because the core's portability is cheapest to hold while a second
+  adapter follows the first; the claims wave comes after it. It is one
+  implementation of a serverless adapter; another platform is another
+  adapter, with no change to the core.
 
 Whatever the adapter, the hub opens no connection to a host: hosts call
 it, and it calls the forge and the tracker. A host enrolls in at most one
@@ -103,9 +124,56 @@ The hub is the only resident service the hub level adds. The dispatcher
 keeps no process running on any host
 ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)): its tick and
 its change probe run on the host's timers, and each makes request and
-answer calls to the hub while it runs. A host that keeps a waiter running
-for early wake-ups may hold one call open instead, as a long poll, but
-nothing requires it.
+answer calls to the hub while it runs. The change probe and a waiting
+drive pass hold their call to the [change feed](#the-change-feed) open as
+a long poll while they run, and nothing on the host outlives the process
+that already ran.
+
+### The size it is built for
+
+One hub is sized for this load, and every figure below is checked against
+it:
+
+| Measure | Target | Proven by |
+| --- | --- | --- |
+| Enrolled hosts | about 50 | about 5 in real use in the first wave; 50 simulated hosts in the claims wave's load test, on the process adapter, repeated on the Cloudflare adapter's partitions |
+| Repositories served | about 30 | the same load test |
+| Open pull requests and tracker items | about 500 | the same load test, and the sweep's own timings in use |
+| Webhook deliveries | about 10,000 a day, in bursts of up to 20 a second for a minute after a push to a pull request with a large check matrix | a replay of recorded deliveries at that rate |
+| Host calls | one `changes` or `renew` a minute per host and one tick's calls every few minutes: about 1 call a second at 50 hosts | the load test |
+
+At that load the hub answers a host call from its copy within 500
+milliseconds at the 95th percentile, acknowledges a webhook delivery within
+1 second at the 99th (GitHub waits 10 seconds), and serves a dashboard's
+snapshot within 300 milliseconds at the 95th.
+
+**Its state is partitioned, so no one object serializes every host.**
+Every table's key starts with its partition:
+
+- **A repository partition** per served repository holds that repository's
+  world view, its admitted deliveries, its claims and owner lease, and its
+  sweep's progress. A delivery, a sweep chunk, a read-through and a claim
+  touch one repository partition.
+- **A host partition** per enrolled host holds its enrollment, its
+  credential's hash, its acknowledgement checkpoint and the copies of the
+  records it reported. A report touches only its host's partition.
+- **One directory partition** holds what spans them: the list of
+  partitions, each host's scope, the viewer grants, the budgets and the
+  cost ledger, and the audit trail.
+
+A call that spans partitions (`changes` across a host's repositories, the
+source feed's snapshot) reads each partition's stored projection and merges
+them; no statement spans two partitions, and a change that must touch two
+is two atomic changes ordered so that either alone is safe. On the Cloudflare
+adapter each partition is one Durable Object, so about 30 repository
+objects and 50 host objects each see one repository's deliveries or one
+host's calls, and none sees them all. The process adapter keeps every
+partition in one SQLite database in write-ahead-log mode, which carries this
+load in one process: its webhook listener only verifies and admits, one
+short statement each, and the units that may run long (applying deliveries,
+the sweep, the folds behind a snapshot) run in a worker thread with a
+connection of their own, so none of them delays an acknowledgement or a
+host's answer.
 
 ### The portable core and its adapters
 
@@ -116,11 +184,11 @@ differs between platforms sits behind a port:
 
 | Port | What the core asks of it | Process adapter | Cloudflare adapter |
 | --- | --- | --- | --- |
-| Storage | Named operations on the hub's tables, each change atomic ([Storage](#storage)) | SQLite through `bun:sqlite` | A Durable Object's SQLite storage, or D1 |
+| Storage | Named operations on the hub's tables, each change atomic within one partition ([Storage](#storage)) | SQLite through `bun:sqlite` | Durable Objects' SQLite storage, one object per partition |
 | Serving | A request in, a response out, with the caller's credential or the webhook's signature headers | Bun's HTTP server | The Worker's `fetch` handler |
 | Scheduling | Run a named job at a time or on a cadence, and run one soon | Timers in the process, with each job's next run kept in storage | Durable Object alarms and cron triggers |
 | Outbound | A call to the forge or the tracker through its [governed transport](../GLOSSARY.md), over `fetch` | The shared outbound library, its budget record and cost ledger kept through the storage port | The same |
-| Observability | Typed events, metrics and spans ([Observability](#observability)) | OpenTelemetry's protocol (OTLP) to a collector the team names | The platform's own logs and metrics, or OTLP export |
+| Observability | Typed events, metrics and spans ([Observability](#observability)) | Structured logs and the metrics `health` serves; OpenTelemetry's protocol (OTLP) to a collector when the settings name one | The platform's own logs and metrics; OTLP export when the settings name a collector |
 
 These rules keep the core portable:
 
@@ -155,32 +223,30 @@ These rules keep the core portable:
 - **One schema, through Drizzle.** The hub's tables are declared once with
   [Drizzle](../GLOSSARY.md), an object-relational mapper (ORM) for
   TypeScript, in its SQLite dialect, and the storage port's operations are
-  written with Drizzle's query builder. Drizzle's drivers for `bun:sqlite`,
-  D1 and Durable Object SQLite run the same schema and the same
-  operations, so the process adapter and the Cloudflare adapter share one
-  implementation of the port. Migrations are SQL files that `drizzle-kit`
-  generates from the schema and that are checked in; each adapter applies
-  them when the hub starts, and how they reach the platform is the
-  adapter's. The process adapter reads the checked-in files with Drizzle's
-  `bun:sqlite` migrator. Drizzle's D1 migrator reads them from disk, which
-  a Worker cannot, so the Cloudflare adapter applies them as a
-  deployment-time D1 migration, or bundles the journal and the SQL as
-  strings for the Durable Object migrator. The core's bundle holds no
-  migrator that reads the filesystem.
-- **Queries both dialects can run.** The operations use what SQLite and
-  PostgreSQL both support: plain tables, primary and unique keys, `INSERT
-  … ON CONFLICT`, conditional `UPDATE … WHERE … RETURNING`, no JSON
-  operators in a query (a JSON body is stored and returned whole), no
-  dialect's own functions. Times are stored as integers of milliseconds.
-- **PostgreSQL is designed for and built on demand.** When a team needs a
-  managed database (Cloudflare's Hyperdrive, for one, reaches PostgreSQL
-  from a Worker), a PostgreSQL adapter adds a second schema module in
-  Drizzle's PostgreSQL dialect and a second implementation of the storage
-  port's operations against it, since Drizzle's query builders are typed
-  per dialect. A test reads both schema modules through Drizzle's table
-  descriptions and fails on any difference in tables, columns, types,
-  nullability or keys, and both implementations pass one contract suite
-  for the port.
+  written with Drizzle's query builder, or as SQL through its `sql`
+  template where that reads more plainly. Drizzle's drivers for
+  `bun:sqlite`, Durable Object SQLite and D1 run the same schema and the
+  same operations, so the process adapter and the Cloudflare adapter share
+  one implementation of the port. Migrations are SQL files that
+  `drizzle-kit` generates from the schema and that are checked in; each
+  adapter applies them when the hub starts, and how they reach the
+  platform is the adapter's. The process adapter reads the checked-in
+  files with Drizzle's `bun:sqlite` migrator. A Worker cannot read files,
+  so the Cloudflare adapter bundles the journal and the SQL as strings for
+  the Durable Object migrator, which each object runs when it starts. The
+  core's bundle holds no migrator that reads the filesystem.
+- **SQLite's SQL, written freely.** The operations use what SQLite, and so
+  D1 and Durable Object SQLite, offer, JSON functions included
+  (`json_extract` and `json_each` filter and index a stored body, so a
+  query reads only the rows a grant or a repository selects). Times are
+  stored as integers of milliseconds. Every named operation has an index
+  that serves it, and the contract suite asserts the query plan uses it.
+- **PostgreSQL is built on demand, and accepts rework.** When a team needs
+  a managed database, a PostgreSQL adapter adds a schema module in
+  Drizzle's PostgreSQL dialect and its own implementation of the storage
+  port's operations, rewriting what SQLite's SQL does differently; both
+  implementations then pass one contract suite for the port. Nothing is
+  constrained for it before then.
 - **Drizzle is vendored.** Code that runs from the plugin depends on Bun's
   built-ins and code vendored beside it
   ([ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)). The
@@ -220,9 +286,15 @@ and the hub read alike:
   lapsed, an acknowledgement moved only `WHERE` the revision is higher), or
   a batch of statements prepared before the first is sent and committed
   together through the storage port's atomic batch: a synchronous
-  transaction on `bun:sqlite` and Durable Object SQLite, a batch on D1, a
+  transaction on `bun:sqlite` and Durable Object SQLite, a
   transaction on PostgreSQL. The decision sits in the statement's
   condition, never in code between a read and a write.
+- **One read of a target at a time.** A unit that must read a target
+  through first takes the target's in-flight row, a conditional insert
+  with a deadline of 30 seconds. A unit that finds the row held waits for
+  the read's result in storage, polling with its own deadline, rather than
+  reading again, so hosts racing for one pull request cost the hub one
+  forge read. A row whose deadline passed is taken over.
 - **Background work runs only as scheduled jobs.** The sweep, the
   silent-host check and the trimming of old rows run through the
   scheduling port, each idempotent, resumable from progress it stores,
@@ -238,12 +310,46 @@ The hub serves several kinds of caller, and only one of them is public:
   hub runs a chat bridge, the chat tool's deliveries. It is the only path
   reachable from the internet, because those systems call from it. Every
   delivery's signature is checked before anything else is read
+  ([The world view](#the-world-view-events-first-reconciled)). The listener
+  refuses a body over 25 MiB (GitHub's own cap on a payload) and admits at
+  most 100 deliveries a second per source, answering 429 above it; a
+  GitHub delivery refused that way is redriven from the delivery log
   ([The world view](#the-world-view-events-first-reconciled)).
-- **The host protocol, `/v1/`**, is reached by enrolled hosts only, over a
-  private network or the hub's own machine, with the host's credential.
+- **The host protocol, `/v1/`**, is reached by enrolled hosts only, with
+  the host's credential. It listens on the loopback interface and on the
+  private network's interface only, never on every interface, so a hub on
+  a machine with a public address is still unreachable there.
 - **The page and the source feed** are reached through a
   [private-network front](../GLOSSARY.md) that names the viewer
-  ([One view of every host](#one-view-of-every-host)).
+  ([One view of every host](#one-view-of-every-host)). The feed listens on
+  a Unix socket that only the front's user may open, so a local process
+  cannot reach it and set the viewer's header itself; where the front can
+  reach only a network port, the feed listens on loopback and takes only
+  requests that carry a secret the front adds, held in the hub's settings.
+
+**A host pins its hub's identity at enrollment.** The hub holds an
+identity key pair (Ed25519) of its own, made when its database is first
+created. `jig hub join` prints the fingerprint of the key the hub
+presents, `jig hub approve` shows the person who approves the same
+fingerprint as the hub knows it, and the host records it only when the
+two agree. From then on every answer the hub gives carries a signature
+over the body and a nonce the host's request sent, and a host refuses an
+answer that is unsigned, signed by another key or for another nonce, as
+it refuses a hub that does not answer: it reads for itself. The
+signature does not depend on the network path or on a certificate
+authority, so it holds behind a tunnel, a private network's name service
+or a platform's edge alike. HTTPS still carries every call; the pin is what
+says the far end is the enrolled hub. A hub whose key changes (a rebuilt
+database, a recovery after compromise) is a new hub to its hosts, each of
+which enrolls again.
+
+**What the hub says is never the last word before a write.** Every fact
+that gates a write a host makes (a forge claim, a launch, a label change,
+a pull request called merge-ready) the host confirms on the forge itself
+at use ([How fresh each fact is](#how-fresh-each-fact-is)). A hub that
+lies, or an impostor that slipped past the pin, can make a host consider
+work it then declines; it cannot make a host drive a pull request in hold,
+pick up an item that was never queued or launch past another host's claim.
 
 On the process adapter, the public path is published by a
 [tunnel](../GLOSSARY.md): a connection the hub's machine opens outward to
@@ -262,7 +368,41 @@ gains no route at all
 On the Cloudflare adapter every path has a public address, so its wave
 puts an identity-checking front (Cloudflare Access, for one) in front of
 every path but `/webhooks/`, with each host's credential checked behind
-it as well.
+it as well. The Worker does not trust the front's identity header: on
+every request but a webhook it validates the front's signed token itself,
+its signature, audience and issuer, so a caller that reaches the Worker
+by another route gains nothing. The Worker's platform subdomain and
+preview addresses are turned off, leaving one route. A host passes the
+front with a service token of its own, made when its enrollment is
+approved and rotated with its credential.
+
+### Apart from the sessions on a shared machine
+
+The smallest form runs the hub on the host that already dispatches, where
+agent sessions read untrusted pull-request and issue text. A session there
+must never reach the hub's secrets or its database, so on a machine that
+also runs sessions:
+
+- **The hub runs in its container, under an OS user of its own** that no
+  session user is, and in no group a session user is in. `jig install hub`
+  installs it that way on a machine whose dispatcher is installed, and
+  refuses to install it under the dispatcher's user.
+- **Its secrets are readable by that user alone.** The GitHub App's private
+  key, the webhook secrets, the tracker application's secret and the hub's
+  identity key sit in its settings file, mode 0600, owned by the hub's
+  user and mounted read-only into the container; its database directory
+  is mode 0700. `jig doctor hub` fails when either is readable by any
+  other user.
+- **Only `/webhooks/` is public**, through the tunnel; `/v1/` and the feed
+  listen as [Reaching the hub](#reaching-the-hub-only-the-webhook-path-is-public)
+  says.
+- **A flaw in the webhook parser reaches the container**, which holds read
+  access only: the hub has no write credential on the forge or the
+  tracker unless it runs the chat bridge, and the hosts' write credentials
+  live under the session users the container cannot read.
+
+On a machine of its own the container is optional; the separate user and
+the file modes are not.
 
 ### What it keeps, and what stays with the hosts
 
@@ -272,9 +412,14 @@ it as well.
   hub keeps copies of what hosts report, to serve them, and never edits
   one.
 - **The hub keeps no phase of its own.** It derives columns, threads and
-  the state of a piece of work from records each time it is read, with the
-  same fold library as the dispatcher and `jig ask`
+  the state of a piece of work from records, with the same fold library as
+  the dispatcher and `jig ask`
   ([dispatch-dashboard.md § The source feed](dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard)).
+  The fold's result is kept per partition as a projection, recomputed for
+  the records a report changed, so a snapshot reads projections rather than
+  folding every host's history on every read; the projection is a cache of
+  the fold, never a state of its own, and is rebuilt from records when its
+  fold library changes.
   Its world view holds the forge's and the tracker's facts as they were
   last told or read, each with its version, never a state the hub decided.
 - **No server timer rewrites a host's work.** A lapsed lease releases the
@@ -292,11 +437,44 @@ it as well.
   claim, since a host may still hold an unexpired lease the hub no longer
   remembers; reads, reports and enrollment go on meanwhile. So deleting the
   hub's database costs a fresh enrollment of each host and a quarantine
-  of one lease lifetime, and nothing that the line depends on.
+  of one lease lifetime, and nothing that the line depends on. The
+  quarantine is 6 minutes: the longest lease, 5 minutes, and one drain
+  margin ([Claims and leases](#claims-and-leases)). The non-rebuildable
+  part (enrollments, leases, the audit trail) is what `jig hub backup`
+  copies, daily by default; the copies of host records and the world view
+  are never backed up, since they come back on their own.
 - **It keeps what it serves**, comment text included, on the machine or
   the platform account the organization chose, as each host's own records
-  do. Reading the text through on each request instead would spend the
-  reads the hub exists to save.
+  do, for as long as [How long it keeps things](#how-long-it-keeps-things)
+  says and no longer. Reading the text through on each request instead
+  would spend the reads the hub exists to save. An edit or a deletion on
+  the source replaces or removes the hub's copy when its delivery
+  applies; a repository removed from a host's scope, from the App's
+  installation, or an uninstalled App, purges that repository's partition
+  at the next trimming run, within an hour. At rest the database is
+  protected by the machine's disk encryption on the process adapter and by
+  the platform's encryption on the Cloudflare adapter; the hub adds none of
+  its own.
+
+### How long it keeps things
+
+| What | Kept for | Why that long |
+| --- | --- | --- |
+| The change log of target versions | 24 hours | A subscriber away longer resyncs with conditional reads ([The change feed](#the-change-feed)) |
+| Admitted delivery ids | 7 days | Longer than GitHub keeps a delivery for redelivery (3 days) and Linear retries one, so a late duplicate is still recognized |
+| A delivery's body | Until it is applied, then 24 hours | Long enough to read back when an apply is questioned |
+| Bodies and validators of conditional reads | 24 hours since last use, as the drive's read cache keeps them | A validator older than that rarely matches |
+| World-view facts of closed work | 7 days after the work closed | The dashboard's recent-closed view |
+| Copies of host records, correspondence and comment text included | 30 days after their work closed; a retired incarnation's rows 7 days after its host's next incarnation first reports | As long as a dashboard shows closed work |
+| The cost ledger (hourly totals) | 35 days | Five weekly comparisons of the hub's spend ([What it spends](#what-it-spends-and-how-that-is-checked)) |
+| Structured logs | 14 days | Long enough to read back a week's incident |
+| The audit trail (enrollment, approval, scope changes, revocation, rotations) | 1 year | Who allowed what, after the fact |
+
+At the target load this keeps each repository partition under about
+200 megabytes and each host partition under about 100, and the directory under
+50: well below a Durable Object's storage cap, and small for a SQLite
+file on any machine. The trimming job runs hourly through the scheduling
+port.
 - **No relationship store.** Links between items live in the tracker
   ([ADR-0015](../docs/adr/ADR-0015-relationships-live-in-the-tracker.md)),
   and the hub reads them there like any host.
@@ -304,11 +482,30 @@ it as well.
 ### Enrollment, and whose credential acts
 
 - **A host enrolls with a device grant.** `jig hub join <address>` on the
-  host prints a short code. A person who administers the hub approves it
-  with `jig hub approve <code>`, and the host receives a credential of its
-  own. The host keeps the credential in its state folder, readable only by
-  its user. `jig hub revoke <host>` ends it, and `jig hub leave` on the
-  host removes it and the setting together.
+  host prints a short code and the hub's identity fingerprint. The join
+  endpoint is `/v1/join` on the host protocol's listener, never on the
+  public path, and takes at most 10 join requests an hour from one
+  address. A code is 8 characters from a 32-symbol alphabet, lives 10
+  minutes, is used once, and is void after 5 failed approvals. A person who
+  administers the hub approves it with `jig hub approve <code>`, which shows
+  what the request carried before anything is granted: the host's name, its
+  OS user, its machine id, the address it called from, its Jig version, the
+  fingerprint it was shown and the repositories it asks for. On the process
+  adapter `jig hub approve` runs on the hub's machine as the hub's user, so
+  only a person who can act as that user approves; on the Cloudflare adapter
+  it is a call through the identity front by a person the hub's settings
+  name as an administrator. Each approval is recorded in the audit trail
+  with the approver and the time.
+- **A host credential lives 90 days.** The host receives a credential of
+  its own and keeps it in its state folder, readable only by its user; the
+  hub keeps only its hash. `hello` hands a host a new credential in the
+  last 14 days of the old one's life, and the old one stops working once
+  the new one is first used. `jig hub revoke <host>` ends it at once, and
+  with it the host's grants and owner leases, whose work the hub hands on
+  after one drain margin, as for a lapsed lease. `jig hub leave` on the
+  host removes it and the setting together. Enrollment, scope changes,
+  rotation and revocation are recorded in the audit trail with the person
+  who made them.
 - **Every call is bound to its host.** The hub takes the host's identity
   from the credential, never from a field the caller fills in. A host can
   write only its own reports, claims and renewals.
@@ -324,17 +521,34 @@ it as well.
   [GitHub App](../GLOSSARY.md) of the hub's own, installed on the
   repositories it serves: one App webhook covers every repository of the
   installation, and the hub's reads count against the installation's own
-  limits, not any person's. On Linear it is a credential with a signed
-  webhook, and on Jira a credential the sweep reads with. The hub writes
-  nothing on the forge or the tracker: the forge claim and the tracker
-  claim are written by the hosts, as today, so the App needs read access
-  only. A hub that is later given a write (a notice on the forge, say)
+  limits, not any person's. The App asks for these permissions and no
+  others: Metadata, Pull requests, Issues, Checks, Commit statuses and
+  Actions, each read-only. Contents is excluded, so a leaked App key
+  exposes no repository's code; what a host needs from a repository's own
+  files (its offer policy's name, say) the host reads in its clone and
+  sends in `hello`. On Linear it is an OAuth application of the hub's own,
+  authorized to act as the application rather than as a person, so it has
+  its own identity and its own rate budget, apart from every person's
+  keys; its scope is read, and write only where the hub runs the chat
+  bridge. Its webhooks are registered for the teams the hub serves, and a
+  delivery for an issue outside every served queue is dropped before it is
+  admitted, counted as filtered. On Jira it is a service account with
+  read access to the served projects only, which the change probe's small
+  question reads with. The hub writes nothing on the forge or the tracker:
+  the forge claim and the tracker claim are written by the hosts, as
+  today. A hub that is later given a write (a notice on the forge, say)
   names that write and its permission here first. The one named is the
   [chat bridge](chat.md)'s, where a hub runs one: under the bridge's own
-  forge app identity, an answer comment and the `drive`, `hold` and
-  `release` labels on a pull request (the app's Issues and Pull requests
-  write permission), and under the hub's tracker credential the assignment
-  `/jig pickup` makes, each with a record naming the person who asked.
+  forge app identity, separate from the read App, an answer comment and
+  the `drive`, `hold` and `release` labels on a pull request (that app's
+  Issues and Pull requests write permission), and under the hub's tracker
+  application the assignment `/jig pickup` makes, each with a record
+  naming the person who asked. Before each such write the bridge checks
+  that the person the chat authenticated may make it: the chat identity
+  is linked to a forge login and a tracker user once, by that person, and
+  the bridge reads that login's permission on the repository (triage or
+  higher for a label, write for anything else) and that user's membership
+  of the queue's team, refusing the write when either falls short.
 - **The hub hands out no credential for the forge or the tracker.** It
   never mints a token, short-lived or not, for a host to act with: a host
   that writes uses its own accounts, and a host whose hub is down still
@@ -346,6 +560,8 @@ it as well.
   the hub's chat bridge, posted under the bridge's identity and naming the
   person the chat authenticated
   ([ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)).
+  The hub's tracker application acts as itself, not as a person, so it is
+  no person's credential either.
 - **A host keeps its own credentials for its sessions.** A drive pushes,
   comments and reviews with its host's accounts, as today. The hub serves
   the reads the dispatcher makes, not the reads a session makes.
@@ -359,22 +575,43 @@ its own, so either side adds a capability without changing the other. An
 older host simply does not use what it does not know. Every answer is a
 value or a coded failure, as everywhere in Jig
 ([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md),
-[Concurrency and failures](#concurrency-and-failures)).
+[Concurrency and failures](#concurrency-and-failures)), signed with the
+hub's identity key ([Reaching the hub](#reaching-the-hub-only-the-webhook-path-is-public)).
+
+- **Deadlines.** Each call has a deadline of 2 seconds, and a tick spends
+  at most 10 seconds on hub calls in all. The first call that fails or
+  passes its deadline marks the hub unreachable for the rest of that tick,
+  which reads for itself from there, so a slow hub costs a tick one
+  deadline, never several. A host that found its hub unreachable waits a
+  random 0 to 60 seconds before its next call to it, so hosts returning to
+  a restarted hub arrive spread out, and the hub may answer `hello` with a
+  time to come back when its admission queue is full.
+- **Versions.** The hub answers every host whose plugin was released
+  within 60 days of its own, in either direction, and refuses one outside
+  that window with a coded failure that sends the host to the level below
+  and raises a [need](../GLOSSARY.md) on it. A change the capability flags
+  cannot carry takes `/v2/`, served beside `/v1/` for 60 days. A hub is
+  upgraded before its hosts.
 
 - **`hello`**: the host's stable id, its dispatcher's incarnation (the id
   its state database got when it was created), its Jig version, its
   capabilities and the repositories its machine file lists. The hub
   answers with its own capabilities, the repositories it serves for this
   host and, for each, the host that owns it
-  ([Owner duties](#owner-duties)). A tick calls `hello` first; a failed
-  `hello` sends the whole tick to the level below.
-- **`changes(token)`**: what changed in the world view since the host's
-  last token, as a list of repositories and tracker queues, and a new
-  token. The answer carries no content: it says where to look, and the
-  host's next tick reads there. A lost answer costs a wake-up and nothing
-  else, since the timer's tick reads everything anyway. The change probe
-  calls it in place of its own forge and tracker queries, and wakes a tick
-  for the repositories it names, as it does now.
+  ([Owner duties](#owner-duties)), and, for each budget the host shares
+  with other enrolled hosts (one tracker user's keys, say), how many
+  hosts share it, which sets the host's share while it reads for itself.
+  A tick calls `hello` first; a failed `hello` sends the whole tick to the
+  level below.
+- **`changes(cursor, subscriptions)`**: the [change feed](#the-change-feed),
+  what moved since the subscriber's cursor, as targets with their new
+  versions and the kinds that moved, and a new cursor. The answer carries
+  no content: it says where to look, and the subscriber reads there. A
+  lost answer costs a wake-up and nothing else, since the timer's tick
+  reads everything anyway. The change probe calls it with the host's
+  scope in place of its own forge and tracker queries, and wakes a tick
+  for the repositories it names, as it does now; a drive pass calls it for
+  its own pull request.
 - **`read(targets, notOlderThan)`**: the forge's and the tracker's facts
   for each target (a repository, a pull request, a queue, an item), each
   with the time it was last confirmed. The hub answers from its world view
@@ -382,16 +619,22 @@ value or a coded failure, as everywhere in Jig
   moves a fact's copy, never its confirmation time: a delivery can be lost
   before the hub admits it, so a fully processed queue does not show the
   source is current. The confirmation time is that of the last authoritative
-  read (a read-through or a reconciliation sweep), unless the source supplies
-  a verifiable completeness watermark, which confirms the target up to it.
-  Otherwise, when the bound has expired, the hub reads that target through
-  with its own identity before answering. When its own
-  budget is spent it says so with the time it resets, and the host reads
-  for itself only if its own budget allows. A target no event feed covers
-  (a tracker whose deliveries the hub cannot verify) is still read at the
-  tick's interval, and that polling is budgeted, not free. The observe phase asks with
-  the tick's interval as the bound; the check just before an act asks with
-  a bound of seconds, as `freshDriveReading` and `freshPickup` do today.
+  read (a read-through, a re-validation or a reconciliation sweep, a
+  conditional read answered "not modified" included), unless the source
+  supplies a verifiable completeness watermark, which confirms the target
+  up to it. The observe phase asks with its fact's class bound
+  ([How fresh each fact is](#how-fresh-each-fact-is)), which the hub's own
+  re-validation and sweep keep met, so it is answered from the copy. When
+  a bound has expired regardless (the hub was down, a re-validation is
+  late), the hub reads that target through once, one read at a time per
+  target, before answering. A host may cause at most 30 read-throughs a
+  minute; past that the hub answers from its copy with the copy's
+  confirmation time, and the host decides. When the hub's own budget is
+  spent it says so with the time it resets, and the host reads for itself
+  only within its share. A target no event feed covers (a tracker whose
+  deliveries the hub cannot verify) is still read at the tick's interval,
+  and that polling is budgeted, not free. The check just before an act is
+  not asked of the hub: the host makes it on the forge itself.
 - **`report(records)`**: the records the hub serves on: the line, each
   launch's start and end, outcome rows, the drive ledgers (decisions
   included), pickup progress, receipts and the correspondence the source
@@ -414,14 +657,22 @@ value or a coded failure, as everywhere in Jig
   keeps a durable checkpoint of what the hub acknowledged, per incarnation,
   and a tick resends everything after it; after `hello` shows a hub with no
   memory of the host's incarnation (a deleted database) the host backfills
-  from its records in full. The hub never asks a host for anything, so
-  what the source feed needs on demand is replicated here ahead of the
+  from its records in full, back as far as the hub keeps copies. A report
+  call carries at most 500 records or 1 MiB, whichever comes first, and the
+  hub acknowledges each page as it commits it, so a backlog drains a page
+  at a time and a failed page costs only itself; a tick sends at most 10
+  pages and leaves the rest for the next tick. A host reports only records
+  whose revision advanced, tens a tick in steady use. The hub never asks a
+  host for anything, since hosts accept no connection
+  ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+  so what the source feed needs on demand is replicated here ahead of the
   asking.
 - **`claim`, `check`, `renew`, `end`**: the shared records interface
   (`plugin/shared/records/shared.ts`) over HTTP, with a lease on each
-  claim. The host renews the claims of the sessions it still holds at each
-  tick and each probe, so a lease outlives several missed probes and
-  lapses only when the host has stopped calling.
+  claim. The host renews every claim it still holds in one `renew` call at
+  each tick and each probe, so a lease outlives several missed probes and
+  lapses only when the host has stopped calling
+  ([Claims and leases](#claims-and-leases) has the figures).
 - **`offers(slots)`**, from a later wave: work the hub suggests for the
   host's free slots ([Handing out work](#handing-out-work)).
 - **`health`**: the hub's own state, as [Observability](#observability)
@@ -436,19 +687,34 @@ hub serves the copies the hosts reported.
 
 - **The hub is the only reader for enrolled dispatchers.** While its hub
   answers, an enrolled host's tick and change probe make no forge or
-  tracker read of their own: the observe phase, the change probe and the
-  check before an act all go to the hub. Two kinds of read stay with the
-  host: the read-back that is part of a fence (the forge claim and the
-  tracker claim, which the host writes), and every read a session makes.
-  When the hub does not answer, the host reads for itself, as without a
-  hub.
+  tracker read of their own for what they observe: the observe phase and
+  the change probe go to the hub. Three kinds of read stay with the host:
+  the read-back that is part of a fence (the forge claim and the tracker
+  claim, which the host writes), the check of a fact that gates a write,
+  made at use ([How fresh each fact is](#how-fresh-each-fact-is)), and
+  every read a session makes, which a drive pass on an enrolled host makes
+  when the [change feed](#the-change-feed) says its pull request moved
+  rather than on a timer. When the hub does not answer, the host reads
+  for itself, as without a hub.
 - **Events are the main feed.** The forge and the tracker tell the hub of
-  each change by webhook: GitHub through the hub's App, Linear through a
-  signed webhook of the hub's credential. The hub turns each delivery into
-  a change to its world view and the `changes` it serves. Where a payload
-  does not carry the whole fact the tick needs (a pull request's checks
-  and threads, say), the delivery names the target and the hub reads that
-  target once, for every host.
+  each change by webhook: GitHub through the hub's App, Linear through the
+  hub's application's signed webhook. The hub turns each delivery into a
+  change to its world view and the `changes` it serves.
+- **A delivery's own facts are used when they suffice.** A label, a pull
+  request's state, head commit or draft flag, one check run's conclusion
+  and a review's verdict arrive in the payload, carry their source's
+  version, and are applied with no read. Only where a payload does not
+  carry the fact the tick needs (a pull request's unresolved threads, the
+  roll-up of its checks after a suite ends) does the delivery mark its
+  target to be read.
+- **Deliveries for one target collapse into one read.** A target marked to
+  be read is read 10 seconds after the first mark, once, whatever else
+  arrived for it meanwhile, and at most 3 times a minute; a mark that
+  arrives past the cap waits for the next minute. A push to a pull request
+  whose checks run as a matrix of tens of jobs sends tens of deliveries
+  over some minutes, and costs the hub a handful of reads of that pull
+  request, where a host polling on its own every few minutes spent one a
+  poll whether or not anything changed.
 - **Every delivery is verified, then admitted, then applied.** The hub
   checks the delivery's signature with the secret its configuration holds
   (GitHub's and Linear's both sign the body with a shared secret) and
@@ -456,13 +722,19 @@ hub serves the copies the hosts reported.
   delivery whose own timestamp is more than a minute old is refused too.
   It then admits the delivery by its delivery id, in one statement that
   ignores an id it already holds, and answers at once, since the sender
-  waits only seconds. A delivery that fails admission is not always sent
-  again: Linear retries, GitHub does not redeliver on its own. A failed
-  admission therefore waits for the next sweep, which finds the change as
-  drift, unless the hub redrives failed deliveries from the forge's
-  delivery log. Applying the delivery to the world
-  view is a unit of its own, run soon after through the scheduling port; a
-  delivery admitted and not yet applied is applied by the next run.
+  waits only seconds. Applying the delivery to the world view is a unit of
+  its own, run soon after through the scheduling port; a delivery admitted
+  and not yet applied is applied by the next run. A GitHub body replayed
+  under a fresh delivery id passes the signature, since the signature does
+  not cover the id; it changes nothing, since every fact it carries is no
+  newer than the one held, and the per-target cap bounds the reads it can
+  cause.
+- **Deliveries the sender will not resend are redriven.** Linear retries
+  a delivery that failed; GitHub does not. Every 10 minutes the hub lists
+  the App's recent deliveries from GitHub's delivery log and asks GitHub to
+  redeliver each one that failed or timed out and that it has not admitted,
+  within the 3 days GitHub keeps them. A change whose delivery is lost
+  outright waits for its target's re-validation or the sweep.
 - **Order comes from the facts, not the deliveries.** Every fact in the
   world view keeps the version its source gave it (an update time, a head
   commit, a revision). A delivery older than the fact the hub holds
@@ -471,11 +743,22 @@ hub serves the copies the hosts reported.
 - **A reconciliation sweep catches what the events missed.** A webhook can
   be lost, late, sent twice or out of order, so the
   [reconciliation sweep](../GLOSSARY.md) reads every target the hub
-  serves on a slow cadence, hourly by default, with conditional requests
-  that name the version the hub holds and cost nothing against GitHub's
-  hourly limit when nothing changed; a tracker's change probe asks its
-  small question before a full read. Each change the sweep finds that no
-  delivery brought is counted as drift
+  serves hourly. On GitHub it reads each target's REST resources (the pull
+  request, its labels, its reviews, its head commit's check runs and
+  statuses) with conditional requests that name the version the hub holds,
+  which cost nothing against GitHub's hourly limit when nothing changed;
+  GraphQL has no such request, so the sweep reads a target's GraphQL-only
+  facts (its unresolved threads) only when its REST resources show a
+  change. On Linear it asks, per served team, for the issues updated since
+  its last sweep, one paged query, since Linear has no conditional request
+  either. One sweep of 100 open targets therefore costs about 100 to 500
+  REST requests, nearly all answered "not modified" and so free, plus
+  GraphQL points for the targets that changed and a few tracker requests a
+  team. The sweep runs in resumable chunks of 50 targets, each a unit with a
+  30-second deadline, so a chunk fits a serverless platform's per-run
+  limits and a stopped sweep resumes at its next chunk; a sweep must finish
+  within 15 minutes, or its job reads stale. Each change the sweep finds
+  that no delivery brought is counted as drift
   ([Observability](#observability)). A tracker whose deliveries the hub
   cannot verify (Jira, until it can) is read by the change probe's small
   question at the dispatcher's own interval instead of by webhook.
@@ -487,20 +770,136 @@ hub serves the copies the hosts reported.
   none for days. `jig doctor hub` fails on the sweep's progress, on a
   subscription the forge reports unhealthy and on a failed delivery probe,
   never on silence alone.
+- **Hosts that fall back share what is shared.** When the hub stops, its
+  hosts read for themselves, and a budget that belongs to one person or
+  one organization (a tracker user's keys) is read by all of them at once.
+  So a host reading for itself spends at most its share of such a budget,
+  the remaining balance divided by the number of hosts `hello` last said
+  share it, and its change probe pauses for that budget; its ticks still
+  read at their interval. The App's budget is the hub's alone, so no host
+  falls back onto it.
+
+### How fresh each fact is
+
+Every fact belongs to one of three classes, and each class has a stated
+longest time a lost delivery can leave it stale:
+
+| Class | Which facts | How they are confirmed | Stale for at most |
+| --- | --- | --- | --- |
+| Gates a write | What a host's write depends on: the forge claim and its read-back, the labels a launch obeys or a write changes (`hold`, `drive`), the state that makes a pull request merge-ready (its checks, reviews and mergeability), and a pickup's item | By the host, at use, on the forge itself: a conditional read with the validator from its own last read, answered "not modified" at no cost against GitHub's hourly limit when nothing changed. A fact with no REST form (unresolved threads) is a GraphQL read, budgeted. A pickup's item is read on the tracker, beside the tracker claim the host writes and reads back | No staleness: read at use |
+| Active | Every fact of an open pull request with a drive running or armed | By the hub, every 10 minutes, with the same conditional reads; events move the copy in between | 10 minutes after a lost delivery; seconds when its delivery arrives |
+| Everything else | Other open pull requests, queues and items, and the repository's own facts | By the hub's hourly sweep; events move the copy in between | 75 minutes after a lost delivery: the hour and the sweep's own 15 |
+
+A host asks `read` with its fact's class bound, and its validators for
+the facts that gate a write are its own: GitHub's validators can differ
+between credentials, so a host keeps those it got, for 24 hours since last
+use, as the drive's read cache does.
+
+### The change feed
+
+Without a hub, a dispatcher's change probe and a drive pass waiting for its
+checks poll the forge: a drive asks about its pull request every ten
+seconds while its checks run, and each ask is a call whether or not
+anything moved. The [change feed](../GLOSSARY.md) lets them wait on the hub
+instead, and read the forge only when their target moved.
+
+- **A version per target, and the kinds that moved.** The hub keeps, for
+  each pull request and each issue it serves, a version that only grows,
+  and for each step of it the kinds of fact that changed: `head` (a push),
+  `checks` (check runs, suites and statuses), `reviews` (reviews and their
+  threads), `comments`, `labels` and `state`. An applied delivery, a
+  re-validation and a sweep that finds a change each bump it, so a change
+  whose delivery was lost still reaches the feed when the hub's own read
+  finds it. Each bump is appended to its repository partition's change
+  log under a sequence number.
+- **Signals, not data.** An answer names targets, their new versions and
+  the kinds that moved, and carries none of the facts. A subscriber that
+  is woken reads the forge itself, with its own host's credentials and
+  conditional requests, for the kinds that moved and no others; a
+  subscriber that is not woken makes no forge call. So the hub's rules
+  hold as they are: it holds no person's credential, sessions read and
+  write the forge themselves, and a fact that gates a write is still
+  confirmed on the forge at use.
+- **Two forms of subscription.** A host subscribes to its scope, every
+  repository and queue its approved scope covers; this is what the
+  dispatcher's change probe and tick use, through `changes`. A drive pass
+  subscribes to its target: "tell me when pull request T moves past
+  version V in any of these kinds". Both are one call, `changes(cursor,
+  subscriptions)`.
+- **A cursor says where the subscriber stands.** The answer carries a new
+  cursor, opaque to the subscriber, which names a sequence number in each
+  partition it covers. Calling with that cursor returns every bump after
+  it, in order, with no gap, for as long as the change log keeps them (24
+  hours). A cursor older than that, minted by a hub with another identity
+  key, or naming a partition that was purged, is answered `cursor-expired`
+  with a fresh cursor: the subscriber then treats every subscribed target
+  as moved in every kind once, reads them with its conditional requests,
+  nearly all answered "not modified" at no cost against GitHub's hourly
+  limit, and carries on from the fresh cursor. A first call names no
+  cursor, and is answered at once with the current one.
+- **A held call, then an answer.** When nothing has moved past the
+  cursor, the hub holds the call until something does, for at most 55
+  seconds, under the proxies' and tunnels' usual 60, then answers with no
+  change and the same cursor. A host holds at most one call for its scope
+  and one per running drive pass, 32 in all. A lost answer costs a
+  wake-up: the subscriber calls again with the cursor it had.
+- **Who may subscribe.** The host's enrollment identity, nothing else:
+  every call is bound to the host's credential, and a subscription outside
+  its approved scope is refused with a coded failure. A drive pass uses a
+  second credential the host receives at enrollment beside its own, which
+  can call `changes` within the host's scope and nothing else, so a
+  session that reads it can neither report, claim nor renew for its host.
+  Answers are signed like every other.
+- **Transport.** A long poll over HTTPS is the baseline, since it passes
+  every proxy, tunnel and serverless platform. Server-sent events and
+  WebSocket connections carry the same contract (each message a cursor
+  and its bumps; a reconnect resumes from the last cursor) as options a
+  capability flag announces. On the Cloudflare adapter the WebSocket
+  option uses Durable Objects' hibernatable WebSockets, so an idle
+  connection costs no object duration; a long poll there is a request the
+  partition's object holds.
+- **No hub, or no answer.** Without a hub, or when the hub does not
+  answer, the dispatcher's probe and the drive's wait poll the forge as
+  they do today, made cheaper by the drive's conditional reads
+  ([#1323](https://github.com/jig-harness/jig/issues/1323),
+  [#1432](https://github.com/jig-harness/jig/pull/1432)). A drive pass
+  waits on the feed with the deadline its poll had and polls once when the
+  call fails, so a hub that stops costs a drive one interval.
+
+**What it saves.** A drive pass that waits on its checks spends most of its
+forge calls while nothing moves. Polling every ten seconds through a day
+with about four rounds, each waiting about 20 minutes for checks, makes
+about 2,000 forge requests per pull request (once conditional reads land
+most are answered "not modified" and spend no hourly limit, yet each is a
+call with its latency). Woken by the feed, the same day makes about 100 to
+200: a handful of reads of the kinds that moved per push, per check suite
+that ends and per review. That figure is an estimate the measurement before
+the first wave turns into a baseline
+([Before the first wave](#before-the-first-wave-a-measurement)).
 
 ### Observability
 
 The hub is observed as [M11](../modules/M11-process-observability/README.md)
 says a process must be: a closed set of typed events, every metric wired
-to a source, a scheduled job that stops reads as stale, never green, and a
-signal outside the hub that notices when the hub itself goes quiet.
+to a source, and a scheduled job that stops reads as stale, never green.
+One person runs most hubs, so the first wave's minimum is what that person
+reads without running anything else: `health`, structured logs, the
+metrics `health` serves and the dashboard. An OpenTelemetry collector and
+an external heartbeat monitor are settings, off by default.
 
 - **An observability port.** The core emits typed events, metrics and
   spans, each failure named by its `Outcome` code; an adapter exports
-  them. The process adapter speaks OTLP to whatever collector the team
-  names; the Cloudflare adapter uses the platform's own logs and metrics,
-  or OTLP export. A structured log line carries the failure's `code`, and
-  nothing reads a `reason` to classify it.
+  them. The process adapter writes structured logs and keeps the metrics
+  `health` serves, and when its settings name a collector it also exports
+  over OTLP; the Cloudflare adapter uses the platform's own logs and
+  metrics, and OTLP when named. A structured log line carries the
+  failure's `code`, and nothing reads a `reason` to classify it.
+- **What telemetry may carry.** An event, span or log line carries codes,
+  ids, counts, durations, target names and versions. It never carries a
+  request's or a delivery's body, a header, a token, a URL's credentials or
+  comment text, and a failure's `cause` is exported as its class and code
+  only. A test runs the core over fixtures that hold a token and comment
+  text and fails when either reaches an exported line.
 - **One registry.** The hub's events are declared once and checked by M11's
   event-schema lint, and its metrics are declared in a metric registry
   with their source; M11's no-dark-instruments check fails the gates for a
@@ -508,35 +907,109 @@ signal outside the hub that notices when the hub itself goes quiet.
   registry and does not prove the core emits the metric, so the hub adds an
   emission-coverage check: a test that runs the core and fails on a
   declared metric no run emitted.
+- **An optional sink is wired or refused.** A setting that names a
+  collector or an external monitor is a claim that its signals arrive
+  there, and M11 counts a claimed but unwired signal as a failure. So when
+  either is set, the hub sends a test export or a heartbeat when it
+  starts and after each sweep, `health` turns degraded when the last one
+  failed, and `jig doctor hub` fails until one succeeds. The external
+  monitor, when set, receives a heartbeat after each sweep and alarms when
+  it stops, so a hub that stopped entirely is noticed by something other
+  than itself; without it, a host's receipt and dashboard show since when
+  the hub has not answered.
 - **Signals the first wave ships with:**
   - webhook intake per source: deliveries received, verified, refused,
-    and the lag from admission to applied;
-  - the reconciliation sweep: its duration, the targets it checked, the
-    share answered "unchanged", and drift, the changes it found that no
-    delivery brought, which is the measure of whether events can stay the
-    main feed;
-  - quota spent per credential and per named operation, from the cost
-    ledger of [outbound calls](outbound-calls.md), kept through the
-    storage port;
+    filtered, redriven, the acknowledgement's latency and the lag from
+    admission to applied;
+  - the reconciliation sweep and the active targets' re-validation: their
+    duration, the targets checked, the share answered "unchanged", and
+    drift, the changes found that no delivery brought, which is the
+    measure of whether events can stay the main feed;
+  - reads: the share of `read` answered from the hub's copy, read-throughs
+    per host, and coalesced deliveries per read;
+  - the change feed: subscribers held, per kind of subscriber, wake-ups,
+    cursors expired, and the polls subscribers did not make, which each
+    host counts and reports;
+  - change-to-host latency: from a delivery's admission to the first
+    host answer that names the change;
+  - quota spent per credential, per repository and per named operation,
+    from the cost ledger of [outbound calls](outbound-calls.md), kept
+    through the storage port;
   - each host's last-report age, against the host's own cadence: a host
     older than its cadence is stale, never green;
   - the host protocol's latency and coded failures per call;
   - defects caught at each kind of boundary.
-- **Health, and a dead-man's switch.** `health` answers each scheduled
-  job's class (green, degraded, red, stale or running, from M11's
+- **Health.** `health` answers each scheduled job's class (green,
+  degraded, red, stale or running, from M11's
   [heartbeat classifier](../modules/M11-process-observability/reference/heartbeat/README.md)),
-  each feed's age and each budget. The hub's jobs are declared with their
-  cadence the way the repository's scheduled jobs are. After each sweep
-  the hub sends a heartbeat to an external monitor the team names, which
-  alarms when the heartbeat stops, so a hub that stopped entirely is
-  noticed by something other than itself. The dispatch dashboard shows the
-  hub's health beside its hosts.
+  each feed's age, each budget and the thresholds below. The hub's jobs are
+  declared with their cadence the way the repository's scheduled jobs are.
+  The dispatch dashboard shows the hub's health beside its hosts.
+
+| Signal | Degraded when | Red when |
+| --- | --- | --- |
+| Apply lag, 95th percentile over 10 minutes | over 60 seconds | over 5 minutes |
+| Webhook acknowledgement, 99th percentile over 10 minutes | over 2 seconds | over 8 seconds |
+| Host protocol latency, 95th percentile over 10 minutes | over 500 milliseconds | over 2 seconds |
+| Change-to-host latency, 95th percentile over 1 hour | over 2 minutes | over 10 minutes |
+| Share of `read` answered by a read-through, over 1 hour | over 20% | over 50% |
+| Drift, share of a sweep's targets | over 2% | over 10% |
+| A budget's remaining share | under 20% | under 5% |
+| The hub's GitHub spend for a repository, against one host's baseline, trailing 24 hours | over 1.2 times | over 2 times |
+| A sweep or re-validation run | late by half its cadence | late by a whole cadence |
+
+### What it spends, and how that is checked
+
+The hub is worth running only if it spends less than its hosts did, so
+its spend is a stated test, per repository per day, which holds at any
+number of hosts:
+
+- **Must pass:** over 7 days, the hub's GitHub spend for the enrolled
+  repositories, REST requests and GraphQL points counted apart, is at most
+  1.2 times what one host spends reading those repositories alone for the
+  dispatcher, both from the cost ledger. The expected figure is 0.3 to 0.5
+  times, from webhooks replacing polls.
+- **Must pass:** enrolled hosts' own dispatcher reads that spend a forge
+  limit are about zero: what remains is the fences' read-backs and the
+  checks at use, which conditional requests answer "not modified" for
+  free when nothing changed.
+- **Tracked:** change-to-host latency, the share of reads served from the
+  hub's copy, and drive passes' forge requests per pull request per day,
+  expected to fall from about 2,000 to 100 to 200 with the change feed
+  ([The change feed](#the-change-feed)).
+
+A drive pass's reads are a session's, so the change feed's saving is
+counted on the hosts' ledgers, apart from the hub's own spend: it lowers
+what the hosts spend and adds nothing to what the hub does, since the
+versions it serves come from deliveries the hub applies anyway.
+
+**What running it costs.** On the process adapter: the machine that
+already dispatches, a container, and a tunnel provider's free tier; the
+collector and the monitor only if set. On the Cloudflare adapter: the
+platform's paid Workers plan, requests (about 10 million a month at the
+target load, most of them held change-feed calls, which hibernatable
+WebSockets turn into messages), Durable Object duration for the partitions that hold calls,
+and storage; its wave states the monthly figure from its load test before
+it is built ([Open questions](#open-questions)).
 
 ### Claims and leases
 
 The forge claim stays the fence for a drive launch, and the tracker claim
 for a pickup ([dark-factory-dispatch.md](dark-factory-dispatch.md#the-records-it-reads)).
 The hub's claims sit in front of them:
+
+- **The figures.** A lease lasts 5 minutes. A host renews every lease it
+  holds in one batched `renew` at each tick and each change-probe call,
+  about once a minute, so a lease survives four missed renewals. The drain
+  margin is 60 seconds, longer than the 30-second deadline of any owner
+  effect. A lapsed lease's work is granted again after its expiry and one
+  drain margin, 6 minutes after the last renewal, and a hub started with
+  no database waits the same 6 minutes before it grants. At 50 hosts that
+  is about 50 renew calls a minute, each one batched statement per
+  repository partition it touches.
+- **A host takes at most what it can run.** The hub grants a host at most
+  as many launches as the free slots its `hello` declared, and refuses
+  more with a coded failure.
 
 - **A grant before the fence.** A tick asks the hub for the launch before
   it writes the forge claim. The hub grants it to one host, and the others
@@ -569,7 +1042,9 @@ The hub's claims sit in front of them:
 - **A host back from an outage replays.** On its first `hello` after the
   hub was unreachable, a host sends the claims its launch records still
   hold, and the hub restores each one no other host has been granted
-  since.
+  since and that the forge's or the tracker's own claim, as the hub's world
+  view holds it, names that host; one the forge does not back is refused, so a host's
+  word alone restores nothing.
 
 Writing no forge claim at all, with the hub as the only fence, is left out
 ([Left out](#left-out)).
@@ -584,6 +1059,12 @@ names. The hub does nothing to the silent host's work; the notice lists
 its unfinished follow-ups, which no other host can resume by itself. Its
 leases lapse on their own, and its sessions, if they still run, keep
 running.
+
+A team without a hub can learn the same from each host's tick sending its
+own heartbeat to an external monitor, M11's
+[heartbeat](../modules/M11-process-observability/reference/heartbeat/README.md);
+the hub's notice adds what that cannot: the list of the silent host's
+unfinished work and the lapse of its leases.
 
 ### Owner duties
 
@@ -614,6 +1095,18 @@ as it does today": it is stated in the levels above, in ADR-0016's
 decision and in the owner-lease wave's acceptance, so an implementation
 never restores a duty during a partition. The duties stay on hosts; moving any
 of them into the hub itself waits until a duty is shown to need it.
+
+No duty comes back on its own after a timeout, because a host that cannot
+reach the hub cannot tell a hub that stopped from a partition in which the
+hub has named another owner; a timed fall-back would make two owners in
+the second case. What waits is bounded in kind: notices, label and board
+writes, the steward and reflection findings pause, while drives and
+pickups go on. So the hub is assumed available as a single machine is,
+not more: a host whose owner duties have waited 30 minutes raises a
+[need](../GLOSSARY.md) on its own receipt and dashboard, so the person who
+runs the hub is told by the hosts even when the hub cannot tell anyone,
+and that person either restores the hub or names the owner in a machine
+file.
 
 ### Handing out work
 
@@ -685,8 +1178,10 @@ strategy the built-ins lack can be added without changing them.
 - **A ranker of a team's own: `command`, on the process adapter only.** It
   runs a program the hub's settings name, hands it the host and the
   candidates with their facts as JSON on standard input, and reads back an
-  order or a value per candidate on standard output, within a 2-second
-  deadline. A command that fails, times out or answers out of shape is
+  order or a value per candidate on standard output, within a deadline of
+  500 milliseconds, under the host's 2 seconds for the call. The hub runs
+  one such program at a time and reuses its answer for a host for one
+  tick interval. A command that fails, times out or answers out of shape is
   skipped for that offer and shown on the hub's status, and the rest of
   the policy still ranks. Only the hub's own settings name a command,
   never a repository's file, since the hub runs it with its own identity.
@@ -694,8 +1189,9 @@ strategy the built-ins lack can be added without changing them.
   `command` when the policy loads.
 - **Named policies, chosen per repository.** The hub's settings define
   policies by name and a default. A repository may name one of them in its
-  `.config/jig.yaml`, read from its default branch: a choice of data,
-  never a program.
+  `.config/jig.yaml`, which a host reads from its clone of the default
+  branch and sends in `hello`, since the hub's App cannot read a
+  repository's files: a choice of data, never a program.
 - **Every offer explains itself.** An offer carries each ranker's value and
   the ranker that decided its place, and `jig hub offers --explain <host>`
   prints the order for a host's free slots without offering anything.
@@ -729,9 +1225,15 @@ to show several hosts: a person with several machines runs a hub in its
 smallest form, on the host that already dispatches.
 
 People sign in to the hub's page through that front, which names the
-viewer, and see the repositories its grants give them. A sign-in of the
-hub's own, for a team without a private network, is left out until a team
-needs it.
+viewer, and see the repositories its grants give them. A viewer's grant is
+a line in the hub's settings: the identity the front names, and the
+repositories or the word `all` it may see; editing it is recorded in the
+audit trail. A host's reported records are shown only to viewers, and
+through `jig ask` to hosts, whose grant or scope covers their repository.
+What hosts report is untrusted text, as the forge's text is: the page
+renders it as text, never as markup, and `jig ask` hands it to an agent
+fenced as quoted data, never as instructions. A sign-in of the hub's own,
+for a team without a private network, is left out until a team needs it.
 
 ### How it fits the rest of Jig
 
@@ -739,7 +1241,8 @@ needs it.
 | --- | --- | --- |
 | `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub |
 | The dispatcher's tick | Reads the forge and the tracker itself | Reads only the hub's world view, bar a fence's read-back; asks it before each claim; reports its records; falls back to reading itself |
-| The change probe | Asks the forge and the tracker once a minute | Asks the hub `changes`, which the events move |
+| The change probe | Asks the forge and the tracker once a minute | Waits on the hub's change feed, which the events move |
+| A drive pass waiting for checks | Polls its pull request every ten seconds | Waits on the change feed for its pull request, and reads only the kinds that moved |
 | `jig ask`, `jig send`, `/jig:operator` | Read this machine's records and the forge | `ask` may read another host's records from the hub; `send` still writes as the person, never through the hub |
 | The dispatch dashboard | Shows its own machine | May read the hub's feed and show every host, and the hub's health |
 | The Jig plugin for Orca | Reads this machine's line | Unchanged; reading the hub's feed is a later step of its own |
@@ -751,7 +1254,8 @@ needs it.
 
 `jig hub` is `plugin/hub/`, registered in `plugin/jig.ts` beside `dispatch`,
 `gc`, `ask` and `send`, and released with the plugin, so a host and its
-hub agree on the protocol by version. The core is `plugin/hub/core/`, the
+hub agree on the protocol by version, within the window
+[The host protocol](#the-host-protocol) states. The core is `plugin/hub/core/`, the
 one directory the portability gate covers, and each adapter is a directory
 of its own under `plugin/hub/adapters/`. `jig install hub` installs the
 process adapter's `jig hub serve` as a resident job, restarted when it
@@ -761,22 +1265,72 @@ same release. The Cloudflare adapter's source ships with the plugin too,
 so a team deploys the version its hosts run, with the platform's own
 deployment tool and its own account. The hub's own settings are in a file
 of its own where it runs (its address, its database, its forge and tracker
-identities and webhook secrets, the collector and external monitor it
-reports to, the people it notifies); a host names its hub in its machine
-file (`hub.url`), and keeps the credential `jig hub join` gave it in its
-state folder.
+identities and webhook secrets, its identity key, the viewer grants, the
+collector and external monitor it reports to when set, the people it
+notifies), readable by the hub's user alone; on the Cloudflare adapter the
+secrets are the platform's encrypted secrets instead. A host names its hub
+in its machine file (`hub.url`) with the identity fingerprint it pinned,
+and keeps the credentials `jig hub join` gave it in its state folder.
+
+### Running a hub
+
+Whoever asked for the hub runs it; for one person that is that person,
+and for a team someone who can act as the hub's OS user or administer its
+platform account. No one need be paged at night: a hub that stops returns
+its hosts to dispatching alone, and only the owner duties wait, which the
+hosts announce ([Owner duties](#owner-duties)). The routine work:
+
+- **Setting it up once**: create the GitHub App with the permissions named
+  above and install it on the served repositories; create the tracker
+  application; set up the tunnel's path rule; on a shared machine, the
+  hub's OS user and container. `jig doctor hub` checks each.
+- **Upgrades**: the hub is upgraded with the plugin, before its hosts,
+  through `jig install hub` on the process adapter and the platform's
+  deployment tool on the Cloudflare adapter.
+- **Backups**: `jig hub backup`, daily by default, of the part that cannot
+  be rebuilt.
+- **Rotation**: the webhook secrets and the App's private key once a year,
+  and at once on suspicion. The hub accepts two webhook secrets per source
+  while one replaces the other (`jig hub rotate webhook <source>`), and
+  GitHub holds two App keys at once, so neither rotation drops a delivery.
+- **Recovering from a compromise**, in this order: stop the hub; revoke
+  the App's private key on GitHub and make a new one; rotate every webhook
+  secret; revoke the tracker application's tokens and rotate its secret;
+  make a new identity key, which voids every host's pin, credential and
+  watch credential, so each host enrolls again; delete the database's
+  copies of host records and the world view, which come back on their
+  own; then start the hub and approve the hosts again, checking each
+  request's details. The audit trail says who held what before.
 
 ## Build order
 
 One pull request per step, each shippable alone. The seams come first and
 are worth building for themselves: each makes the dispatcher easier to test
-and closes a gap it has today, so building them costs nothing if the hub
-never ships. Each wave after the first is planned in detail, and built or
-not, by the person who asked for the hub, once the wave before it is in
-use. A red-team critique of this design comes before the first
-implementation pull request.
+and closes a gap it has today, and none of them adds a write or a read to
+a host that dispatches its repositories alone. Each wave after the first is
+planned in detail, and built or not, by the person who asked for the hub,
+once the wave before it is in use.
 
-**Seams, inside the dispatcher.**
+### Before the first wave: a measurement
+
+Design and planning go on now, and the seams may be built, but building
+the first wave waits on evidence that hosts spend what the hub would save:
+
+- **A week of the cost ledger**, taken after the drive's conditional reads
+  ([#1432](https://github.com/jig-harness/jig/pull/1432)) and the tick's
+  re-reads of waiting items ([#1436](https://github.com/jig-harness/jig/issues/1436))
+  have landed, so it measures what remains once each host reads as cheaply
+  as it can alone. It splits the dispatcher's reads from the sessions'
+  reads per credential and per repository, and records drive passes'
+  requests per pull request per day, the change feed's baseline.
+- **A count of real deployments** that dispatch the same repositories from
+  more than one host, and of the hosts in each.
+
+The first wave is built when that evidence shows a cost the hub removes
+([Open questions](#open-questions) has the default threshold); otherwise
+the hub waits, and the cheaper fixes the measurement names come first.
+
+### Seams, inside the dispatcher
 
 1. **One shared records implementation, chosen by setting.** The tick, the
    follow-up marker, `jig ask` and the comment listing reach claims only
@@ -784,49 +1338,81 @@ implementation pull request.
    the forge's implementation and parsing comments directly.
 2. **The world view apart from the machine view.** The tick's reads of
    the forge and the tracker go through one interface its caller can
-   supply, with `fresh(target, notOlderThan)` for the check before an act,
-   and the observe phase stops rewriting forge facts with this host's
-   launch records.
+   supply, with each fact's class bound, and the observe phase stops
+   rewriting forge facts with this host's launch records. The check of a
+   fact that gates a write stays a read of the forge at use.
 3. **A pickup claim.** The shared target gains a work key, and a pickup
    publishes a claim before its workspace opens, on the forge and tracker
-   medium that already exists.
+   medium that already exists. Only a repository that more than one host
+   dispatches writes it; a repository one host dispatches alone pays no
+   extra write.
 4. **The GraphQL budget gated.** The tick reads GitHub's GraphQL bucket
    and stops reading it before it is spent, as it already does for REST.
 
-**First wave: the portable hub, fed by events, read by every host.**
+### First wave: the portable hub, fed by events, read by every host
 
 1. The core's ports and the portability gate; the outbound library's
    portable parts split from its machine stores, with a forge transport
-   over `fetch`.
-2. The storage port through Drizzle, its schema, its migrations and the
-   vendored bundle; the scheduling port and the job helper.
+   over `fetch`; the cost ledger keyed by repository as well.
+2. The storage port through Drizzle, its partitioned schema, its migrations
+   and the vendored bundle; the scheduling port and the job helper.
 3. The process adapter, `jig hub serve`, `jig install hub` and the
-   container image.
-4. Enrollment, `hello` and `report`, and `jig hub status`.
-5. Webhook intake from the hub's GitHub App and from Linear, with
-   signatures verified, and the webhook-only listener a tunnel publishes.
-6. The world view from events, and the reconciliation sweep.
-7. The dispatcher reading through the hub: `changes` and `read` for the
-   tick and the change probe, with the fall-back to reading itself.
-8. The observability port, its signals, `health`, the external heartbeat
-   and `jig doctor hub`.
-9. The source feed served from the hosts' reports, and the dashboard
-   reading it: one dashboard across hosts, the hub's health on it.
+   container image, installed under the hub's own OS user on a machine
+   that runs sessions.
+4. Enrollment with the pinned identity, `hello` and `report` with paging,
+   the audit trail, and `jig hub status`.
+5. Webhook intake from the hub's GitHub App and from Linear's application,
+   with signatures verified, served-queue filtering, redrive from the
+   delivery log, and the webhook-only listener a tunnel publishes.
+6. The world view from events, with payload facts, per-target coalescing
+   and single reads; the active targets' re-validation; the reconciliation
+   sweep in chunks.
+7. The change feed and the dispatcher reading through the hub: `changes`
+   with the host's scope and `read` for the tick and the change probe, with
+   the fall-back to reading itself.
+8. Drive passes on the change feed: the drive's wait for its checks calls
+   `changes` for its pull request with the watch credential in place of
+   its sleep between polls, and polls as today when the call fails. It is
+   in the first wave because the wait loop already waits between polls,
+   so the change replaces one wait with one call.
+9. The observability port, its signals and thresholds, `health` and
+   `jig doctor hub`; the collector and the external heartbeat as settings,
+   each checked when set.
+10. The source feed served from the hosts' reports, and the dashboard
+    reading it: one dashboard across hosts, the hub's health on it.
 
-Done when two hosts dispatching the same repositories through one hub make
-no forge or tracker reads for the dispatcher but the fences' read-backs,
-and the hub spends about what one host spends alone; a webhook delivery
-dropped on purpose is found by the next sweep and counted as drift; a hub
-stopped mid-tick costs that tick nothing but its receipt's note; the
-portability gate passes; and one dashboard shows both hosts and the hub's
-health. In this wave `hello` names no owner and no lease exists: each
-repository's owner is the host its machine file names, as today.
+Done when, on about 5 hosts dispatching the same repositories through one
+hub:
 
-**Second wave: the Cloudflare adapter.** The core run on Workers, with a
-Durable Object's SQLite storage or D1, alarms and cron triggers, and an
-identity-checking front before every path but `/webhooks/`.
+- over 7 days, per repository per day, the hub's GitHub spend, REST
+  requests and GraphQL points apart, is at most 1.2 times what one host
+  spent reading those repositories alone for the dispatcher;
+- the enrolled hosts' own dispatcher reads that spend a forge limit are
+  about zero, the fences' read-backs and the checks at use aside;
+- change-to-host latency, the share of reads served from the hub's copy
+  and drive passes' requests per pull request per day are reported against
+  the measured baseline;
+- a webhook delivery dropped on purpose is found by the active targets'
+  re-validation or the sweep, within its class bound, and counted as drift;
+- a hub stopped mid-tick costs that tick nothing but its receipt's note,
+  and a drive waiting on the feed one poll interval;
+- the portability gate passes; and one dashboard shows every host and the
+  hub's health.
 
-**Later waves, each planned when the one before is in use:**
+In this wave `hello` names no owner and no lease exists: each repository's
+owner is the host its machine file names, as today.
+
+### Second wave: the Cloudflare adapter
+
+The core run on Workers, with one Durable Object per partition, alarms and
+cron triggers, hibernatable WebSockets for the change feed, and an
+identity-checking front before every path but `/webhooks/` whose signed
+token the Worker validates itself, with the platform's own subdomain and
+preview addresses turned off and a service token per host. Its plan states
+the hub's monthly cost at the target load from a load test before it is
+built.
+
+### Later waves, each planned when the one before is in use
 
 - **Claims and owner leases, and a silent host noticed**, once
   [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
@@ -836,16 +1422,22 @@ identity-checking front before every path but `/webhooks/`.
   claims, leases and their renewal, the replay after an outage, the owner
   named by `hello` with its lease, the restart quarantine, and the
   silent-host notice. Done when no two hosts do an owner's effects at once
-  through a partition and a restart of the hub.
+  through a partition and a restart of the hub, and when a load test of 50
+  simulated hosts, 30 repositories, 500 open targets and 10,000 deliveries
+  a day meets [The size it is built for](#the-size-it-is-built-for) on the
+  process adapter and on the Cloudflare adapter's partitions. This is the
+  wave that proves 50 hosts, since lease renewals are the load that grows
+  with hosts.
 - **The chat bridge inside the hub** ([chat.md](chat.md)), where the
   chat tool's events may come to the hub's webhook path in place of a
   connection the bridge holds open; that choice is made, and recorded in
   [ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md),
-  in that wave.
+  in that wave, with the chat source's signature scheme.
 - **Handing out work.** `offers` and the tick's plan taking them as input,
-  with the offer policy, its default rankers and `jig hub offers
-  --explain`; then the `command` ranker, a step of its own; then each
-  further built-in ranker, one at a time, when a team asks for it.
+  with the default policy alone and `jig hub offers --explain`; then the
+  policy language (named policies, `weighted`), then the `command` ranker,
+  each a step of its own; then each further built-in ranker, one at a time,
+  when a team asks for it.
 - **The PostgreSQL adapter**, when a team needs a managed database.
 
 ## Left out
@@ -862,12 +1454,13 @@ identity-checking front before every path but `/webhooks/`.
 - **Polling as the main feed.** It spends reads on every target whether or
   not it changed, and still lags a change by a polling interval; events
   with a slow sweep spend reads where something changed, plus the
-  read-throughs the freshness rule requires for a target whose confirmation
-  has expired.
+  re-validation of active targets and the read-throughs the freshness rule
+  requires for a target whose confirmation has expired.
 - **Cancelling or steering a host's session from the hub.** A session is
   the host's; the hub's notices go to people, and `jig send` stays the way
   a person steers.
-- **More than one node.** One hub per person or organization carries the
+- **More than one node.** One hub per person or organization, partitioned
+  as [The size it is built for](#the-size-it-is-built-for) says, carries the
   size Jig is built for; a hub that outgrows one is a decision of its own.
 - **A hub's own sign-in for people.** The private-network front names the
   viewer; a sign-in of the hub's own waits for a team that cannot use one.
@@ -876,4 +1469,43 @@ identity-checking front before every path but `/webhooks/`.
   to build one view across hosts, with none of the hub's single read, its
   notice of a stopped host or its view on a phone.
 - **Serving the reads a session makes.** A drive's own reads of its pull
-  request stay with its account; they are not multiplied across hosts.
+  request stay with its account and are not multiplied across hosts; the
+  change feed only tells a drive when to make them.
+
+## Open questions
+
+Each has a default that holds until a person decides otherwise.
+
+1. **What evidence starts the first wave?** Default: the week's ledger
+   shows the dispatcher's reads are at least a third of a shared
+   credential's spend in a deployment where two or more hosts dispatch the
+   same repositories, and at least one such deployment exists besides the
+   maintainers' own. Otherwise per-host fixes come first: conditional reads
+   in the tick, and each host's own heartbeat to an external monitor for
+   the stopped-host notice.
+2. **One view of several machines without a hub.** A dashboard that merges
+   the source feeds of hosts it can already reach over a private network
+   would give one person one view with no App, tunnel or webhook secret.
+   Default: left out while the hub is planned; reopened if the measurement
+   stops the first wave, as the dashboard's own design item.
+3. **A hub with no webhooks.** The smallest form could feed its world view
+   from the sweep and the active re-validation alone, with no App webhook
+   and no tunnel, at the cost of staleness up to each class's bound.
+   Default: not in the first wave; the App and the tunnel are required.
+4. **Joining on the Cloudflare adapter.** An unenrolled host has no
+   service token to pass the identity front. Default: an administrator
+   makes a single-use join invitation through the front, valid 10 minutes,
+   and the front admits `/v1/join` with it alone.
+5. **The Jira identity.** Default: a service account with browse access to
+   the served projects only; an Atlassian OAuth application if Jira's
+   webhooks become verifiable and the hub takes them.
+6. **Drizzle or plain SQL.** Default: Drizzle, for one schema and one
+   migration generator across `bun:sqlite` and Durable Object SQLite; plain
+   SQL behind the storage port if the vendored bundle's upkeep (its
+   upgrades, each waiting out the supply-chain cooldown) costs more than it
+   saves.
+7. **The Cloudflare adapter's cost.** Default: its wave is planned only
+   with a monthly figure for one person with two hosts and for 50 hosts,
+   from its load test; a figure above the process adapter's by more than
+   the platform's base plan is put to the person who asked before it is
+   built.

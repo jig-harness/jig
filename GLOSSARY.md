@@ -2579,7 +2579,7 @@ make, use the entry's term instead.
   the *hub*'s *portable core* asks for something its platform provides,
   such as storage or a timer; an adapter implements every port for one
   platform and runs the core there: a Bun process with SQLite (also a
-  container image), or Cloudflare Workers with Durable Objects or D1.
+  container image), or Cloudflare Workers with Durable Objects.
   Unrelated to a *tracker adapter*.
 - **World view** — what the *dispatcher* knows of the forge and the
   tracker (pull requests, checks, threads, queues, items), as opposed to
@@ -2597,6 +2597,13 @@ make, use the entry's term instead.
   allowance), which corrects what *webhooks* lost or
   misordered. A change it finds that no webhook brought is counted as
   drift, the measure of whether webhooks can stay the main feed.
+- **Change feed** — the *hub*'s signal that a target (a pull request, an
+  issue) moved: a version per target that only grows, with the kinds of
+  fact that changed (a push, checks, reviews, comments, labels, state). A
+  host's dispatcher or drive waits on it from a cursor instead of polling,
+  and reads the forge itself, for what moved, only when it is woken. It
+  carries no facts. Not the *source feed*, which serves records to a
+  dashboard. See [design/control-plane.md](design/control-plane.md#the-change-feed).
 - **Tunnel** — a connection a machine opens outward to a provider, which
   then forwards requests from the internet for chosen paths to a port on
   that machine, so the machine needs no open inbound port. A *hub* uses

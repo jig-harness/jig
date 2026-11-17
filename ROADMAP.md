@@ -285,7 +285,9 @@ A team or a person who runs the dispatcher on several machines can add one
 service that every host calls, the [hub](GLOSSARY.md). The forge and the
 tracker tell it of each change through their webhooks, and an hourly check
 catches anything they missed. So the hosts stop reading for themselves, and
-rate limits are spent once, where something changed or a fact has gone stale. Its claims let
+rate limits are spent once, where something changed or a fact has gone stale. A drive
+waiting on its checks is woken when its pull request moves, rather than asking every few
+seconds. Its claims let
 several hosts pick up one repository's work, and it tells a person when a
 host stops. It shows every host's work and its own health on one
 dashboard, phone included. Later it offers work to whichever host has a
