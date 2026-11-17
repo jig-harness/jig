@@ -425,9 +425,8 @@ alerts will.
 ### 17. Corrected designs for the existing modules
 
 Practices working repositories validated, added to the modules that exist.
-They are watchdogs for what is deployed (M10, M11), a skill that runs M7's
-post-merge stage in any repository, and a generator for the model roster
-(M0).
+They are watchdogs for what is deployed (M10, M11) and a generator for the
+model roster (M0).
 
 ### 10. Values the skills still assume
 

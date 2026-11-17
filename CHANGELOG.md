@@ -401,6 +401,29 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.266.0] - 2026-11-17
+
+### Added
+
+- The dispatcher reads host-local account launch weights from
+  `$JIG_HOME/weights.local.yaml` every tick. Set an account's weight to 0
+  to pause new launches, or use relative weights to divide launches among
+  eligible accounts. Receipts and the dashboard show configured and effective
+  weights; a broken accounts section closes admission with a visible reason.
+
+## [0.265.0] - 2026-11-17
+
+### Added
+
+- Pickups, scouts and issue filing record an item's predicted footprint.
+  `do-item` writes the paths its change will touch after it reads the code
+  and before it delegates; its scout form gains a footprint scout that
+  records them without claiming the item; and `file-issue` records them when
+  it files from a diff or from paths the person named, never from a
+  description alone. The new `write-footprint.ts` adds the catalog areas the
+  paths' files match and the base commit the prediction read, and a failed
+  write never stops the work.
+
 ## [0.264.0] - 2026-11-17
 
 ### Added
@@ -9306,7 +9329,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.264.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.266.0...HEAD
+[0.266.0]: https://github.com/jig-harness/jig/compare/v0.265.0...v0.266.0
+[0.265.0]: https://github.com/jig-harness/jig/compare/v0.264.0...v0.265.0
 [0.264.0]: https://github.com/jig-harness/jig/compare/v0.263.1...v0.264.0
 [0.263.1]: https://github.com/jig-harness/jig/compare/v0.263.0...v0.263.1
 [0.263.0]: https://github.com/jig-harness/jig/compare/v0.262.1...v0.263.0
