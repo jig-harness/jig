@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { platform } from "node:os";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { conn, issueNode, oneIssue } from "./github-fixtures.ts";
 import { footprintOperations } from "../scripts/lib/footprint-ops.ts";
 import { trackerFootprints } from "../scripts/lib/tracker/footprints.ts";
@@ -107,7 +107,7 @@ test("expected footprint input failures preserve their typed cause", async () =>
   });
 });
 
-test.if(platform() !== "win32")(
+test.skipIf(skipsOnWindows("file-system", "Windows has no mkfifo"))(
   "footprint refuses a FIFO input without waiting for a writer",
   async () => {
     const dir = mkdtempSync(join(tmpdir(), "jig-footprint-fifo-"));
