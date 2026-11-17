@@ -1,13 +1,13 @@
 ---
 title: "ADR-0016: An optional hub serves hosts that keep authority"
 type: adr
-status: draft
+status: approved
 description: "Jig adds an optional shared control plane, the hub: a portable core behind small ports, its state partitioned per repository and per host, run by a process adapter (Bun and SQLite, in a container under its own OS user on a machine that runs sessions) and then a Cloudflare adapter, fed by the forge's and the tracker's signed webhooks with coalesced reads, a re-validation of active targets and an hourly reconciliation sweep, the only reader of the forge and the tracker for enrolled dispatchers, and a change feed that wakes dispatchers and drives instead of their polling; hosts confirm every fact that gates a write on the forge at use and pin the hub's identity at enrollment; building it waits on a week's measurement of what hosts spend; it puts claims with leases in front of the forge and tracker claims, notices a stopped host, serves one view of every host and may offer work; no level of use requires it, hosts keep authority and their own credentials, and a hub that is down returns its hosts to dispatching alone"
 lifecycle: permanent
-version: "1.3"
+version: "1.4"
 last_updated: 2026-11-17
 owner: maintainers
-decision_date: 2026-11-11
+decision_date: 2026-11-17
 supersedes: ~
 superseded_by: ~
 tags: [adr, records, dispatcher, hub, control-plane]
@@ -15,7 +15,7 @@ tags: [adr, records, dispatcher, hub, control-plane]
 
 # ADR-0016: An optional hub serves hosts that keep authority
 
-**Status:** Draft · **Date:** 2026-11-11 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Approved · **Date:** 2026-11-17 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
@@ -75,9 +75,10 @@ once the drive's conditional reads
 cheaper re-reads ([#1436](https://github.com/jig-harness/jig/issues/1436))
 have landed, splitting the dispatcher's reads from the sessions' per
 credential and per repository, and a count of the real deployments that
-dispatch the same repositories from more than one host. If that evidence
-shows no cost the hub removes, the hub waits and the per-host fixes come
-first.
+dispatch the same repositories from more than one host. The first wave is
+built when the dispatcher's reads and drive passes' polling together are
+at least a third of a shared credential's spend; otherwise the hub waits
+and the per-host fixes come first.
 
 ### Sized for 50 hosts, partitioned
 
@@ -370,9 +371,9 @@ the sweep and the alarms, and Effect stays declined.
 
 ## When to reopen
 
-- The measurement before the first wave shows the dispatcher's reads are
-  a small share of what hosts spend, or that few deployments dispatch one
-  repository from several hosts.
+- The measurement before the first wave shows the dispatcher's reads and
+  drive passes' polling are less than a third of a shared credential's
+  spend.
 - The sweep's drift stays high enough that events cannot be the main
   feed, or low enough that the sweep's cadence can be slowed further.
 - The hub's grants and the forge's claims disagree often enough that the

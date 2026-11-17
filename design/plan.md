@@ -861,13 +861,14 @@ from the machine view, a pickup claim, the GraphQL budget gated); then,
 once a week of the cost ledger taken after
 [#1432](https://github.com/jig-harness/jig/pull/1432) and
 [#1436](https://github.com/jig-harness/jig/issues/1436) land, splitting
-dispatcher from session reads, and a count of real multi-host deployments
-show a cost the hub removes, the first wave: the portable core and its
+dispatcher from session reads and counting real multi-host deployments,
+shows the dispatcher's reads and drive passes' polling are at least a third
+of a shared credential's spend, the first wave: the portable core and its
 gate, the process adapter and container image, webhook intake with
 signatures, the world view and the sweep, enrollment and reporting, the
 change feed with the dispatchers and drive passes on it, observability,
 and one dashboard across hosts; then the Cloudflare adapter; then claims and owner leases with
-the silent host, once ADR-0016 is approved; the chat bridge inside the hub;
+the silent host; the chat bridge inside the hub;
 offers; and the PostgreSQL adapter on demand. Each wave after the first is
 planned in detail, and built or not, by the person who asked for the hub
 once the wave before it is in use.

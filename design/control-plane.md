@@ -247,8 +247,10 @@ These rules keep the core portable:
   port's operations, rewriting what SQLite's SQL does differently; both
   implementations then pass one contract suite for the port. Nothing is
   constrained for it before then.
-- **Drizzle is vendored.** Code that runs from the plugin depends on Bun's
-  built-ins and code vendored beside it
+- **Drizzle is vendored**, and plain SQL behind the storage port replaces
+  it if the bundle's upkeep (its upgrades, each waiting out the
+  supply-chain cooldown) comes to cost more than it saves. Code that runs
+  from the plugin depends on Bun's built-ins and code vendored beside it
   ([ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)). The
   hub imports Drizzle from a bundle Jig builds from the pinned package,
   unminified and compared byte for byte by a test, with its licence and
@@ -374,7 +376,10 @@ its signature, audience and issuer, so a caller that reaches the Worker
 by another route gains nothing. The Worker's platform subdomain and
 preview addresses are turned off, leaving one route. A host passes the
 front with a service token of its own, made when its enrollment is
-approved and rotated with its credential.
+approved and rotated with its credential. An unenrolled host has no
+such token yet, so an administrator makes a single-use join invitation
+through the front, valid 10 minutes, and the front admits `/v1/join`
+with that invitation alone.
 
 ### Apart from the sessions on a shared machine
 
@@ -534,7 +539,8 @@ port.
   delivery for an issue outside every served queue is dropped before it is
   admitted, counted as filtered. On Jira it is a service account with
   read access to the served projects only, which the change probe's small
-  question reads with. The hub writes nothing on the forge or the tracker:
+  question reads with; an Atlassian OAuth application replaces it if
+  Jira's webhooks become verifiable and the hub takes them. The hub writes nothing on the forge or the tracker:
   the forge claim and the tracker claim are written by the hosts, as
   today. A hub that is later given a write (a notice on the forge, say)
   names that write and its permission here first. The one named is the
@@ -990,7 +996,10 @@ platform's paid Workers plan, requests (about 10 million a month at the
 target load, most of them held change-feed calls, which hibernatable
 WebSockets turn into messages), Durable Object duration for the partitions that hold calls,
 and storage; its wave states the monthly figure from its load test before
-it is built ([Open questions](#open-questions)).
+it is built: a monthly figure for one person with two hosts and for 50
+hosts. A figure above the process adapter's by more than the platform's
+base plan is put to the person who asked for the hub before the wave is
+built.
 
 ### Claims and leases
 
@@ -1326,9 +1335,11 @@ the first wave waits on evidence that hosts spend what the hub would save:
 - **A count of real deployments** that dispatch the same repositories from
   more than one host, and of the hosts in each.
 
-The first wave is built when that evidence shows a cost the hub removes
-([Open questions](#open-questions) has the default threshold); otherwise
-the hub waits, and the cheaper fixes the measurement names come first.
+The first wave is built when the week shows the dispatcher's reads and
+drive passes' polling together are at least a third of a shared
+credential's spend. Otherwise the hub waits, and per-host fixes come
+first: conditional reads in the tick, and each host's own heartbeat to an
+external monitor for the stopped-host notice.
 
 ### Seams, inside the dispatcher
 
@@ -1414,10 +1425,11 @@ built.
 
 ### Later waves, each planned when the one before is in use
 
-- **Claims and owner leases, and a silent host noticed**, once
+- **Claims and owner leases, and a silent host noticed.** Grants and
+  owner leases coordinate hosts, which
+  [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md) declines and
   [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-  is approved, since grants and owner leases coordinate hosts, which
-  [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md) declines. The
+  decides for enrolled hosts. The
   hub's implementation of `SharedRecords` in front of the fences, pickup
   claims, leases and their renewal, the replay after an outage, the owner
   named by `hello` with its lease, the restart quarantine, and the
@@ -1465,47 +1477,16 @@ built.
 - **A hub's own sign-in for people.** The private-network front names the
   viewer; a sign-in of the hub's own waits for a team that cannot use one.
 - **Hubs talking to each other**, and a host enrolled in two hubs.
-- **A dashboard that reads each host over SSH.** It would be a second way
-  to build one view across hosts, with none of the hub's single read, its
-  notice of a stopped host or its view on a phone.
+- **A dashboard that reads each host over SSH, or merges the source feeds
+  of hosts it can reach.** Either would be a second way to build one view
+  across hosts, with none of the hub's single read, its notice of a
+  stopped host or its view on a phone. A dashboard that merges several
+  hosts' feeds over a private network is reconsidered, as the dashboard's
+  own design item, if the measurement before the first wave stops the hub.
+- **A hub with no webhooks.** Feeding the world view from the sweep and
+  the active targets' re-validation alone would spare the smallest form
+  its App webhook and tunnel, at the cost of staleness up to each class's
+  bound; the first wave requires the App and the tunnel.
 - **Serving the reads a session makes.** A drive's own reads of its pull
   request stay with its account and are not multiplied across hosts; the
   change feed only tells a drive when to make them.
-
-## Open questions
-
-Each has a default that holds until a person decides otherwise.
-
-1. **What evidence starts the first wave?** Default: the week's ledger
-   shows the dispatcher's reads are at least a third of a shared
-   credential's spend in a deployment where two or more hosts dispatch the
-   same repositories, and at least one such deployment exists besides the
-   maintainers' own. Otherwise per-host fixes come first: conditional reads
-   in the tick, and each host's own heartbeat to an external monitor for
-   the stopped-host notice.
-2. **One view of several machines without a hub.** A dashboard that merges
-   the source feeds of hosts it can already reach over a private network
-   would give one person one view with no App, tunnel or webhook secret.
-   Default: left out while the hub is planned; reopened if the measurement
-   stops the first wave, as the dashboard's own design item.
-3. **A hub with no webhooks.** The smallest form could feed its world view
-   from the sweep and the active re-validation alone, with no App webhook
-   and no tunnel, at the cost of staleness up to each class's bound.
-   Default: not in the first wave; the App and the tunnel are required.
-4. **Joining on the Cloudflare adapter.** An unenrolled host has no
-   service token to pass the identity front. Default: an administrator
-   makes a single-use join invitation through the front, valid 10 minutes,
-   and the front admits `/v1/join` with it alone.
-5. **The Jira identity.** Default: a service account with browse access to
-   the served projects only; an Atlassian OAuth application if Jira's
-   webhooks become verifiable and the hub takes them.
-6. **Drizzle or plain SQL.** Default: Drizzle, for one schema and one
-   migration generator across `bun:sqlite` and Durable Object SQLite; plain
-   SQL behind the storage port if the vendored bundle's upkeep (its
-   upgrades, each waiting out the supply-chain cooldown) costs more than it
-   saves.
-7. **The Cloudflare adapter's cost.** Default: its wave is planned only
-   with a monthly figure for one person with two hosts and for 50 hosts,
-   from its load test; a figure above the process adapter's by more than
-   the platform's base plan is put to the person who asked before it is
-   built.
