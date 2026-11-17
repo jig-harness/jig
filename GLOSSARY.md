@@ -2017,6 +2017,17 @@ make, use the entry's term instead.
   a comment only if none exists, so the claim is read back after posting and
   checked again before each act it guards
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Launch claim** — the *forge claim* a host dispatching a repository
+  posts on a pull request for one launch of its drive (a re-arm, a
+  *re-drive*, an arm or a takeover), on the attempt after the latest, so no
+  other host launches it twice; once the launch ended, the same host writes
+  how it ended onto the same comment
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)).
+- **Merge-ready announcement** — the *forge claim* a *PR drive loop* posts
+  on a pull request to say that one head is converged, green, mergeable and
+  clean, kept only while that holds and withdrawn when it stops holding; of
+  the announcements of one head the earliest stands
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)).
 - **Shared records** — what a host dispatching a repository publishes so
   that another host dispatching the same repository can read it: which host
   holds a launch, and how the launch ended. On the forge, each is a *forge

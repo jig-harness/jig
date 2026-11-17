@@ -385,9 +385,10 @@ describe("settleStationAnswers on an item of another tracker", () => {
     };
   }
 
-  /** Ports whose tracker holds `comments` on the item, and whose forge is never read. */
+  /** Ports whose tracker holds `comments` on the item, and `own` by its own user, and whose forge is never read. */
   function onTracker(
     comments: Outcome<CommentLike[], "unreadable">,
+    own: CommentLike[] = [],
   ): StationPorts & { steps: string[]; read: string[] } {
     const p = ports([]);
     const read: string[] = [];
@@ -397,7 +398,12 @@ describe("settleStationAnswers on an item of another tracker", () => {
       comments: async () => failed("unreadable", "the forge was read"),
       trackerComments: async (item) => {
         read.push(item);
-        return comments;
+        return comments.ok
+          ? ok({
+              comments: comments.value,
+              own: { name: "Jig Factory", comments: own },
+            })
+          : comments;
       },
     };
   }
@@ -517,6 +523,33 @@ describe("settleStationAnswers on an item of another tracker", () => {
       answers: [{ author: "Dana Lee" }],
       acted: { author: "Dana Lee", outcome: "done" },
     });
+    expect(report.actions[0]?.answered?.answers).toHaveLength(1);
+  });
+
+  it("reads an answer only the tracker's own user wrote as unread, says why, and takes no step", async () => {
+    const dir = root();
+    const p = onTracker(ok([onItem("thanks, looking")]), [
+      onItem(`answer pickup: approve [${digest}]`, "Jig Factory"),
+    ]);
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(p.steps).toEqual([]);
+    expect(report.actions[0]?.answered).toEqual({
+      digest,
+      answers: [],
+      unread:
+        "the only answer on ENG-12 is by Jig Factory, the user the dispatcher's own tracker credential acts as, whose comments the tick never counts as an answer; answer on the tracker as another user, or give the dispatcher a tracker user of its own",
+    });
+  });
+
+  it("acts on a person's answer beside one by the tracker's own user", async () => {
+    const dir = root();
+    const p = onTracker(ok([onItem(`answer pickup: approve [${digest}]`)]), [
+      onItem(`answer pickup: approve [${digest}]`, "Jig Factory"),
+    ]);
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(report.actions[0]?.answered?.unread).toBeUndefined();
     expect(report.actions[0]?.answered?.answers).toHaveLength(1);
   });
 

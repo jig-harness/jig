@@ -112,6 +112,11 @@ import {
   type LedgerClaimRef,
 } from "./ledger-shapes.ts";
 import { matches } from "../../../../../shared/shapes.ts";
+import {
+  TAKEOVER_GENERATION_SHAPE,
+  TAKEOVER_LEGACY_SHAPE,
+  TAKEOVER_PAYLOAD_SHAPE,
+} from "../../../../../shared/records/forge-claim-shapes.ts";
 
 export interface Ledger {
   ledgerVersion: number;
@@ -405,7 +410,6 @@ export function opensWith(body: string, marker: string): boolean {
   return body.replaceAll("\r", "").trimStart().startsWith(marker);
 }
 
-const isText = (v: unknown): v is string => typeof v === "string";
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 0;
 
@@ -531,11 +535,15 @@ export function takeoverKey(generation: number): string {
 const CLAIM_TEXT =
   "**Drive claim** · `drive-pr-takeover-claim` · a driver in another clone claims the drive of this pull request: a takeover from a driver whose ledger heartbeat is older than the lease window, or a start where no driver of that clone held it. Of the claims on one ledger generation the earliest wins; a driver that finds a newer claim than its own stops at its next round boundary.";
 
-/** Why a takeover claim's record is not one, or `null` when it is. */
+/**
+ * Why a takeover claim's record is not one, or `null` when it is: its payload
+ * fits `TAKEOVER_PAYLOAD_SHAPE`, and its key is its generation's.
+ */
 function takeoverFault(r: ClaimRecord): string | null {
-  const { actor, clone } = r.payload;
-  if (!isText(actor) || !isText(clone)) return "it names no actor and clone";
-  return isCount(r.generation) && r.key === takeoverKey(r.generation)
+  if (!matches(TAKEOVER_PAYLOAD_SHAPE, r.payload))
+    return "it names no actor and clone";
+  return matches(TAKEOVER_GENERATION_SHAPE, r.generation) &&
+    r.key === takeoverKey(r.generation)
     ? null
     : `its key ${r.key} is not its generation's`;
 }
@@ -550,15 +558,14 @@ function legacyClaim(body: string): Outcome<ClaimRecord, "unreadable"> | null {
   } catch {
     return failed("unreadable", "a takeover claim's data is not JSON");
   }
-  if (!isRecord(v) || !isCount(v.generation) || !isText(v.at)) return null;
-  const record = {
+  if (!matches(TAKEOVER_LEGACY_SHAPE, v)) return null;
+  return ok({
     key: takeoverKey(v.generation),
     generation: v.generation,
     at: v.at,
     payload: { actor: v.actor, clone: v.clone },
     legacy: true,
-  };
-  return takeoverFault(record) === null ? ok(record) : null;
+  });
 }
 
 /**
