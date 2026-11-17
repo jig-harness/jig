@@ -142,5 +142,5 @@ consumer arms declared this way.
 - **Running a pending arm again by itself on a run started by hand.** A
   dispatched run ends a pending arm as a wait (`waits --reason pending`),
   which the dispatcher starts again after its time; a run started by hand
-  reports the pending arm, marks its marker done, and a person runs it
-  again once the arm can settle.
+  reports the pending arm and leaves its marker open, and a person runs it
+  again with that marker once the arm can settle.
