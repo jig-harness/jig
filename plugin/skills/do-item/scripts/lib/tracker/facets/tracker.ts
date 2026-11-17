@@ -1,3 +1,5 @@
+import { trackerFootprints } from "../footprints.ts";
+import type { TrackerFootprints } from "../footprint-port.ts";
 import {
   addRestores,
   restoringChange,
@@ -97,6 +99,7 @@ export interface CoreFacetReport {
 export interface CoreTracker
   extends Omit<
     Tracker,
+    | keyof TrackerFootprints
     | "dispatchSource"
     | "getIssue"
     | "openIssues"
@@ -546,6 +549,7 @@ export function withFacets(
 
   return {
     ...rest,
+    ...trackerFootprints(core, core.adapter === "github"),
     ...(_native === undefined
       ? {}
       : {

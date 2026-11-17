@@ -21,6 +21,7 @@
  *     bun tracker.ts sync-plan-blocks <epic-key> [--dry-run]
  *     bun tracker.ts available-labels             # every label issues can carry
  *     bun tracker.ts facet-stores                 # where type, priority and size are kept
+ *     bun tracker.ts footprint <issue-key> [--input prediction.json]
  *     bun tracker.ts attachments <issue-key>      # the files attached to an issue
  *     bun tracker.ts attach <issue-key> --input attachment.json
  *     bun tracker.ts fetch-attachment <issue-key> <attachment-id> --out <file>
@@ -162,6 +163,7 @@ import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ATTACHMENT_OPERATIONS } from "./lib/attachment-ops.ts";
+import { footprintOperations } from "./lib/footprint-ops.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { closerSentence, parsePostMerge } from "./lib/post-merge.ts";
 import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
@@ -200,6 +202,7 @@ const USAGE = `usage:
   tracker.ts sync-plan-blocks <epic-key> [--dry-run]
   tracker.ts available-labels
   tracker.ts facet-stores
+  tracker.ts footprint <issue-key> [--input prediction.json]
   tracker.ts attachments <issue-key>
   tracker.ts attach <issue-key>    (attachment as JSON on stdin)
   tracker.ts fetch-attachment <issue-key> <attachment-id> --out <file>`;
@@ -758,6 +761,7 @@ const OPERATIONS: Record<string, Operation> = {
     run: () => openTracker().facetStores(),
   },
   ...ATTACHMENT_OPERATIONS,
+  ...footprintOperations(),
 };
 
 /** Whether an error is the caller's input rather than a failed operation. */
