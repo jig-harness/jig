@@ -15,7 +15,9 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -33,8 +35,9 @@ import {
 } from "../liveness.ts";
 import {
   ADMISSION_KIND,
+  ADMISSION_VERSION,
   admit,
-  GUARD_VERSION,
+  incarnationOf,
   guardKey,
   guardRoot,
   guardState,
@@ -43,12 +46,16 @@ import {
   LAUNCH_SETTLING_MS,
   launchVeto,
   releaseAbsent,
+  releaseSuperseded,
+  repositoryOwner,
+  supersedes,
   staleAdmissions,
   sweepLaunches,
 } from "../orca-guard.ts";
 
 const MODULE = resolve(import.meta.dir, "../orca-guard.ts");
 const PATH = "/home/someone/orca/workspaces/app/topic";
+const REPO = "/home/someone/dev/app";
 const DAY_MS = 86_400_000;
 
 const temporary: string[] = [];
@@ -100,6 +107,11 @@ function heartbeat(root: string, at: Date, over: object = {}): void {
     pluginVersion: "0.4.0",
     ...over,
   });
+}
+
+/** A record file's JSON. */
+function read(file: string) {
+  return JSON.parse(readFileSync(file, "utf8"));
 }
 
 /** A process identity whose process has exited. */
@@ -191,13 +203,13 @@ describe("the heartbeat", () => {
 });
 
 describe("the admission", () => {
-  it("writes the envelope, the path and the holder, and release deletes it", () => {
+  it("writes the envelope, the path, the repository and the holder, and release deletes it", () => {
     const root = scratch();
     const now = Temporal.Instant.from(
       "2026-11-05T12:00:00.000Z",
     ).epochMilliseconds;
     const holder = ownIdentity();
-    const admission = admit(PATH, root, now, holder);
+    const admission = admit(PATH, REPO, root, now, holder);
     if (!admission.ok) throw new Error(admission.failure.reason);
     const file = join(root, "admissions", `${guardKey(PATH)}.json`);
     expect(admission.value.file).toBe(file);
@@ -209,15 +221,17 @@ describe("the admission", () => {
       "writer",
       "at",
       "path",
+      "repository",
       "holder",
     ]);
     expect(record).toMatchObject({
       kind: ADMISSION_KIND,
-      v: GUARD_VERSION,
+      v: ADMISSION_VERSION,
       key: guardKey(PATH),
       writer: { host: holder.host, pid: holder.pid },
       at: "2026-11-05T12:00:00.000Z",
       path: PATH,
+      repository: REPO,
       holder: { ...holder },
     });
     expect(readdirSync(join(root, "admissions"))).toEqual([
@@ -229,15 +243,15 @@ describe("the admission", () => {
 
   it("refuses while a live holder's admission stands, and replaces a dead holder's", () => {
     const root = scratch();
-    const first = admit(PATH, root);
+    const first = admit(PATH, REPO, root);
     expect(first.ok).toBe(true);
-    const second = admit(PATH, root);
+    const second = admit(PATH, REPO, root);
     expect(second.ok ? null : second.failure.code).toBe("held");
     if (first.ok) first.value.release();
 
-    const stale = admit(PATH, root, undefined, deadHolder());
+    const stale = admit(PATH, REPO, root, undefined, deadHolder());
     expect(stale.ok).toBe(true);
-    const taken = admit(PATH, root);
+    const taken = admit(PATH, REPO, root);
     if (!taken.ok) throw new Error(taken.failure.reason);
     // The stale holder's release leaves the admission that replaced it.
     if (stale.ok) stale.value.release();
@@ -254,14 +268,14 @@ describe("the admission", () => {
       '{"kind":"orca-guard-adm',
       JSON.stringify({
         kind: "orca-guard-admission",
-        v: 2,
+        v: ADMISSION_VERSION + 1,
         key: guardKey(PATH),
         writer: { host: "h" },
         at: new Date().toISOString(),
       }),
     ]) {
       writeFileSync(file, text);
-      const refused = admit(PATH, root);
+      const refused = admit(PATH, REPO, root);
       expect(refused.ok ? null : refused.failure).toMatchObject({
         code: "unreadable",
         reason: expect.stringContaining("remove it after inspection"),
@@ -273,7 +287,7 @@ describe("the admission", () => {
   it("leaves a dead holder's admission whose path or key does not bind to its slot", () => {
     const root = scratch();
     const file = join(root, "admissions", `${guardKey(PATH)}.json`);
-    const dead = admit(PATH, root, undefined, deadHolder());
+    const dead = admit(PATH, REPO, root, undefined, deadHolder());
     if (!dead.ok) throw new Error(dead.failure.reason);
     const good = JSON.parse(readFileSync(file, "utf8"));
     for (const damaged of [
@@ -283,7 +297,7 @@ describe("the admission", () => {
     ]) {
       const text = JSON.stringify(damaged);
       writeFileSync(file, text);
-      const refused = admit(PATH, root);
+      const refused = admit(PATH, REPO, root);
       expect(refused.ok ? null : refused.failure.code).toBe("unreadable");
       expect(readFileSync(file, "utf8")).toBe(text);
     }
@@ -296,7 +310,7 @@ describe("the admission", () => {
     "admits exactly one of several collectors racing for %s",
     async (_name, seeded) => {
       const root = scratch();
-      if (seeded) admit(PATH, root, undefined, deadHolder());
+      if (seeded) admit(PATH, REPO, root, undefined, deadHolder());
       const signals = scratch();
       const script = join(signals, "contender.ts");
       writeFileSync(
@@ -312,7 +326,7 @@ const until = (name: string) => {
     else Bun.sleepSync(5);
 };
 until("go");
-const admission = admit(${JSON.stringify(PATH)}, root);
+const admission = admit(${JSON.stringify(PATH)}, ${JSON.stringify(REPO)}, root);
 writeFileSync(join(signals, "result-" + index + ".json"), JSON.stringify(admission.ok ? { ok: true } : { ok: false, code: admission.failure.code }));
 until("done");
 if (admission.ok) admission.value.release();
@@ -348,14 +362,12 @@ if (admission.ok) admission.value.release();
 });
 
 describe("the submitted mark", () => {
-  const read = (file: string) => JSON.parse(readFileSync(file, "utf8"));
-
   it("is written over the admission, keeping when and by whom it was written, and release still deletes it", () => {
     const root = scratch();
     const admitted = Temporal.Instant.from(
       "2026-11-05T12:00:00.000Z",
     ).epochMilliseconds;
-    const admission = admit(PATH, root, admitted);
+    const admission = admit(PATH, REPO, root, admitted);
     if (!admission.ok) throw new Error(admission.failure.reason);
     expect(admission.value.submitted).toBeNull();
     const before = read(admission.value.file);
@@ -373,7 +385,7 @@ describe("the submitted mark", () => {
 
   it("is refused, and nothing is marked, once the admission is no longer this one", () => {
     const root = scratch();
-    const admission = admit(PATH, root);
+    const admission = admit(PATH, REPO, root);
     if (!admission.ok) throw new Error(admission.failure.reason);
     const other = JSON.stringify({
       ...read(admission.value.file),
@@ -388,19 +400,19 @@ describe("the submitted mark", () => {
 
   it("is carried into the admission that takes over a dead holder's, which an unsubmitted one is not", () => {
     const root = scratch();
-    const stale = admit(PATH, root, undefined, deadHolder());
+    const stale = admit(PATH, REPO, root, undefined, deadHolder());
     if (!stale.ok) throw new Error(stale.failure.reason);
-    const taken = admit(PATH, root);
+    const taken = admit(PATH, REPO, root);
     if (!taken.ok) throw new Error(taken.failure.reason);
     expect(taken.value.submitted).toBeNull();
     expect(read(taken.value.file).submitted).toBeUndefined();
     taken.value.release();
 
-    const crashed = admit(PATH, root, undefined, deadHolder());
+    const crashed = admit(PATH, REPO, root, undefined, deadHolder());
     if (!crashed.ok) throw new Error(crashed.failure.reason);
     if (!crashed.value.submit(Date.parse("2026-11-05T12:00:00.000Z")).ok)
       throw new Error("the mark was not written");
-    const next = admit(PATH, root);
+    const next = admit(PATH, REPO, root);
     if (!next.ok) throw new Error(next.failure.reason);
     expect(next.value.submitted).toBe("2026-11-05T12:00:00.000Z");
     expect(read(next.value.file)).toMatchObject({
@@ -412,11 +424,11 @@ describe("the submitted mark", () => {
 
   it("that is not a time makes the admission one gc cannot read", () => {
     const root = scratch();
-    const dead = admit(PATH, root, undefined, deadHolder());
+    const dead = admit(PATH, REPO, root, undefined, deadHolder());
     if (!dead.ok) throw new Error(dead.failure.reason);
     const text = JSON.stringify({ ...read(dead.value.file), submitted: 7 });
     writeFileSync(dead.value.file, text);
-    const refused = admit(PATH, root);
+    const refused = admit(PATH, REPO, root);
     expect(refused.ok ? null : refused.failure.code).toBe("unreadable");
     expect(staleAdmissions(root)).toEqual([]);
     expect(readFileSync(dead.value.file, "utf8")).toBe(text);
@@ -428,14 +440,20 @@ describe("a dead holder's admission on a worktree that is gone", () => {
 
   it("is listed with its path and mark; a live holder's is not", () => {
     const root = scratch();
-    const dead = admit(PATH, root, undefined, deadHolder());
+    const dead = admit(PATH, REPO, root, undefined, deadHolder());
     if (!dead.ok) throw new Error(dead.failure.reason);
     dead.value.submit(Date.parse("2026-11-05T12:00:00.000Z"));
-    const live = admit(OTHER, root);
+    const live = admit(OTHER, REPO, root);
     if (!live.ok) throw new Error(live.failure.reason);
     live.value.submit();
     expect(staleAdmissions(root)).toEqual([
-      { path: PATH, submitted: "2026-11-05T12:00:00.000Z" },
+      {
+        file: dead.value.file,
+        path: PATH,
+        submitted: "2026-11-05T12:00:00.000Z",
+        repository: REPO,
+        incarnation: null,
+      },
     ]);
     live.value.release();
     expect(staleAdmissions(scratch())).toEqual([]);
@@ -443,26 +461,233 @@ describe("a dead holder's admission on a worktree that is gone", () => {
 
   it("is deleted only while the worktree is absent, and a live holder's never", () => {
     const root = scratch();
-    const dead = admit(PATH, root, undefined, deadHolder());
+    const dead = admit(PATH, REPO, root, undefined, deadHolder());
     if (!dead.ok) throw new Error(dead.failure.reason);
     dead.value.submit();
-    const present = releaseAbsent(PATH, () => false, root);
+    const present = releaseAbsent(PATH, REPO, () => false, root);
     expect(present.ok ? null : present.failure.code).toBe("present");
     expect(existsSync(dead.value.file)).toBe(true);
-    expect(releaseAbsent(PATH, () => true, root)).toEqual({
+    expect(releaseAbsent(PATH, REPO, () => true, root)).toEqual({
       ok: true,
       value: true,
     });
     expect(existsSync(dead.value.file)).toBe(false);
     expect(readdirSync(join(root, "admissions"))).toEqual([]);
 
-    const live = admit(PATH, root);
+    const live = admit(PATH, REPO, root);
     if (!live.ok) throw new Error(live.failure.reason);
     live.value.submit();
-    const held = releaseAbsent(PATH, () => true, root);
+    const held = releaseAbsent(PATH, REPO, () => true, root);
     expect(held.ok ? null : held.failure.code).toBe("held");
     expect(existsSync(live.value.file)).toBe(true);
     live.value.release();
+  });
+});
+
+describe("the repository an admission names", () => {
+  it("is the repository's path with its links resolved", () => {
+    const dir = scratch();
+    const link = join(dir, "link");
+    symlinkSync(dir, link);
+    expect(repositoryOwner(link)).toBe(realpathSync.native(dir));
+    expect(repositoryOwner(join(dir, "missing", "..", "gone"))).toBe(
+      join(dir, "gone"),
+    );
+  });
+
+  it("is the only one whose collection releases a dead holder's admission on a gone worktree", () => {
+    const root = scratch();
+    const dead = admit(PATH, REPO, root, undefined, deadHolder());
+    if (!dead.ok) throw new Error(dead.failure.reason);
+    dead.value.submit();
+    const other = releaseAbsent(PATH, `${REPO}-other`, () => true, root);
+    expect(other.ok ? null : other.failure).toMatchObject({
+      code: "present",
+      reason: expect.stringContaining("not"),
+    });
+    expect(existsSync(dead.value.file)).toBe(true);
+    expect(releaseAbsent(PATH, REPO, () => true, root).ok).toBe(true);
+    expect(existsSync(dead.value.file)).toBe(false);
+  });
+
+  it("is required of a version 2 admission", () => {
+    const root = scratch();
+    const dead = admit(PATH, REPO, root, undefined, deadHolder());
+    if (!dead.ok) throw new Error(dead.failure.reason);
+    const text = JSON.stringify({ ...read(dead.value.file), repository: "" });
+    writeFileSync(dead.value.file, text);
+    const refused = admit(PATH, REPO, root);
+    expect(refused.ok ? null : refused.failure.code).toBe("unreadable");
+    expect(staleAdmissions(root)).toEqual([]);
+    expect(readFileSync(dead.value.file, "utf8")).toBe(text);
+  });
+});
+
+describe("a version 1 admission, written before admissions named their repository", () => {
+  /** A dead holder's admission as an earlier release wrote it. */
+  function writeV1(root: string, submitted?: string): string {
+    const file = join(root, "admissions", `${guardKey(PATH)}.json`);
+    const holder = deadHolder();
+    pluginWrite(file, {
+      kind: ADMISSION_KIND,
+      v: 1,
+      key: guardKey(PATH),
+      writer: { host: holder.host, pid: holder.pid },
+      at: "2026-11-05T12:00:00.000Z",
+      path: PATH,
+      holder: JSON.parse(encodeIdentity(holder)),
+      ...(submitted === undefined ? {} : { submitted }),
+    });
+    return file;
+  }
+
+  it("reads, naming no repository and no incarnation, and no collection's list releases it", () => {
+    const root = scratch();
+    const file = writeV1(root, "2026-11-05T12:01:00.000Z");
+    expect(staleAdmissions(root)).toEqual([
+      {
+        file,
+        path: PATH,
+        submitted: "2026-11-05T12:01:00.000Z",
+        repository: null,
+        incarnation: null,
+      },
+    ]);
+    const kept = releaseAbsent(PATH, REPO, () => true, root);
+    expect(kept.ok ? null : kept.failure.code).toBe("present");
+    expect(existsSync(file)).toBe(true);
+  });
+
+  it("is taken over by a collection of its worktree, keeping its mark, as version 2", () => {
+    const root = scratch();
+    writeV1(root, "2026-11-05T12:01:00.000Z");
+    const taken = admit(PATH, REPO, root);
+    if (!taken.ok) throw new Error(taken.failure.reason);
+    expect(taken.value.submitted).toBe("2026-11-05T12:01:00.000Z");
+    expect(read(taken.value.file)).toMatchObject({
+      v: ADMISSION_VERSION,
+      repository: REPO,
+      submitted: "2026-11-05T12:01:00.000Z",
+    });
+    taken.value.release();
+  });
+});
+
+describe("the incarnation an admission names", () => {
+  /** A worktree directory at a path of its own, and a guard root. */
+  function worktree(): { tree: string; root: string } {
+    const dir = scratch();
+    const tree = join(dir, "topic");
+    mkdirSync(tree);
+    return { tree, root: join(dir, "guard") };
+  }
+
+  /** The worktree removed and made again at the same path. */
+  function remake(tree: string): void {
+    const before = incarnationOf(tree);
+    // A filesystem may stamp the new directory with the same birth time (or
+    // none): remake until one is born strictly later, within a deadline.
+    const deadline = performance.now() + 5000;
+    do {
+      rmSync(tree, { recursive: true });
+      mkdirSync(tree);
+      if (supersedes(incarnationOf(tree), before)) return;
+      Bun.sleepSync(5);
+    } while (performance.now() < deadline);
+    throw new Error(`no later incarnation was born at ${tree}: ${before}`);
+  }
+
+  it("is superseded only by one born strictly later, whatever the inode says", () => {
+    expect(supersedes("7:200", "7:100")).toBe(true);
+    expect(supersedes("8:200", "7:100")).toBe(true);
+    expect(supersedes("8:100", "7:100")).toBe(false);
+    expect(supersedes("8:50", "7:100")).toBe(false);
+    expect(supersedes("8:200", "7:0")).toBe(false);
+    expect(supersedes("8:0", "7:100")).toBe(false);
+    expect(supersedes(null, "7:100")).toBe(false);
+    expect(supersedes("8:200", null)).toBe(false);
+    expect(supersedes("8:200", "not an incarnation")).toBe(false);
+  });
+
+  it("is what stands at the worktree's path when gc admits it, and none where nothing does", () => {
+    const { tree, root } = worktree();
+    const admitted = admit(tree, REPO, root);
+    if (!admitted.ok) throw new Error(admitted.failure.reason);
+    expect(read(admitted.value.file).incarnation).toBe(incarnationOf(tree));
+    expect(incarnationOf(tree)).toEqual(expect.any(String));
+    expect(incarnationOf(join(tree, "missing"))).toBeNull();
+    admitted.value.release();
+  });
+
+  it("releases a dead holder's admission once another worktree is made at its path, and only then", () => {
+    const { tree, root } = worktree();
+    const dead = admit(tree, REPO, root, undefined, deadHolder());
+    if (!dead.ok) throw new Error(dead.failure.reason);
+    dead.value.submit();
+    const same = releaseSuperseded(tree, root);
+    expect(same.ok ? null : same.failure.code).toBe("present");
+    expect(existsSync(dead.value.file)).toBe(true);
+    remake(tree);
+    expect(releaseSuperseded(tree, root)).toEqual({ ok: true, value: true });
+    expect(existsSync(dead.value.file)).toBe(false);
+  });
+
+  it("keeps an admission that names no incarnation, and a live holder's", () => {
+    const { tree, root } = worktree();
+    const dead = admit(tree, REPO, root, undefined, deadHolder());
+    if (!dead.ok) throw new Error(dead.failure.reason);
+    const { incarnation: _, ...unnamed } = read(dead.value.file);
+    writeFileSync(dead.value.file, JSON.stringify(unnamed));
+    remake(tree);
+    const kept = releaseSuperseded(tree, root);
+    expect(kept.ok ? null : kept.failure.code).toBe("present");
+    expect(existsSync(dead.value.file)).toBe(true);
+    rmSync(dead.value.file);
+
+    const live = admit(tree, REPO, root);
+    if (!live.ok) throw new Error(live.failure.reason);
+    remake(tree);
+    const held = releaseSuperseded(tree, root);
+    expect(held.ok ? null : held.failure.code).toBe("held");
+    expect(existsSync(live.value.file)).toBe(true);
+    live.value.release();
+  });
+
+  it("decides whether a taken-over admission's mark still holds: not once the worktree was made again", () => {
+    const { tree, root } = worktree();
+    const crashed = admit(tree, REPO, root, undefined, deadHolder());
+    if (!crashed.ok) throw new Error(crashed.failure.reason);
+    crashed.value.submit(
+      Temporal.Instant.from("2026-11-05T12:00:00.000Z").epochMilliseconds,
+    );
+    remake(tree);
+    const next = admit(tree, REPO, root);
+    if (!next.ok) throw new Error(next.failure.reason);
+    expect(next.value.submitted).toBeNull();
+    expect(read(next.value.file)).toMatchObject({
+      incarnation: incarnationOf(tree),
+    });
+    expect(read(next.value.file).submitted).toBeUndefined();
+    next.value.release();
+  });
+});
+
+describe("a taken-over admission's carried mark", () => {
+  it("keeps the incarnation it was written for, even when the new one cannot be read", () => {
+    const dir = scratch();
+    const tree = join(dir, "topic");
+    const root = join(dir, "guard");
+    mkdirSync(tree);
+    const crashed = admit(tree, REPO, root, undefined, deadHolder());
+    if (!crashed.ok) throw new Error(crashed.failure.reason);
+    crashed.value.submit();
+    const was = incarnationOf(tree);
+    rmSync(tree, { recursive: true });
+    const next = admit(tree, REPO, root);
+    if (!next.ok) throw new Error(next.failure.reason);
+    expect(next.value.submitted).not.toBeNull();
+    expect(read(next.value.file).incarnation).toBe(was);
+    next.value.release();
   });
 });
 
@@ -478,22 +703,22 @@ describe("the reclaim lock of a stale admission", () => {
 
   it("is taken over when its collector is dead, and kept while it is live", () => {
     const root = scratch();
-    const dead = admit(PATH, root, undefined, deadHolder());
+    const dead = admit(PATH, REPO, root, undefined, deadHolder());
     if (!dead.ok) throw new Error(dead.failure.reason);
     dead.value.submit();
     const lock = lockFor(dead.value.file);
     writeFileSync(lock, lockOf(deadHolder()));
-    expect(releaseAbsent(PATH, () => true, root)).toEqual({
+    expect(releaseAbsent(PATH, REPO, () => true, root)).toEqual({
       ok: true,
       value: true,
     });
     expect(existsSync(dead.value.file)).toBe(false);
     expect(existsSync(lock)).toBe(false);
 
-    const again = admit(PATH, root, undefined, deadHolder());
+    const again = admit(PATH, REPO, root, undefined, deadHolder());
     if (!again.ok) throw new Error(again.failure.reason);
     writeFileSync(lock, lockOf(ownIdentity()));
-    const held = releaseAbsent(PATH, () => true, root);
+    const held = releaseAbsent(PATH, REPO, () => true, root);
     expect(held.ok ? null : held.failure.code).toBe("held");
     expect(existsSync(again.value.file)).toBe(true);
     expect(existsSync(lock)).toBe(true);

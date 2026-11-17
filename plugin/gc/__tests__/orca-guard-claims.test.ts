@@ -62,24 +62,27 @@ function rmCalls(f: Fixture): string[] {
  * A collector that admitted the worktree, marked its admission submitted and
  * died before calling `orca worktree rm`: its mark.
  */
-function crashAfterMark(f: Fixture): string {
+function crashAfterMark(f: Fixture, repository = f.repo): string {
   const script = join(f.root, "crash-after-mark.ts");
   writeFileSync(
     script,
     `import { admit } from ${JSON.stringify(GUARD_MODULE)};
-const [path, root] = process.argv.slice(2);
-const admitted = admit(path, root);
+const [path, repository, root] = process.argv.slice(2);
+const admitted = admit(path, repository, root);
 if (!admitted.ok) { console.error(admitted.failure.reason); process.exit(3); }
 const marked = admitted.value.submit();
 if (!marked.ok) { console.error(marked.failure.reason); process.exit(4); }
 console.log(admitted.value.submitted);
 `,
   );
-  const crashed = Bun.spawnSync([process.execPath, script, f.tree, f.guard], {
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: 30_000,
-  });
+  const crashed = Bun.spawnSync(
+    [process.execPath, script, f.tree, repository, f.guard],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
   expectSpawnExit(crashed, 0);
   return crashed.stdout.toString().trim();
 }
@@ -220,9 +223,93 @@ describe.skipIf(
     expect(admissions(f)).toHaveLength(1);
   }, 60_000);
 
+  test("a claim another repository's collection left on a gone worktree is reported, not released, by this repository", () => {
+    const f = setup();
+    const other = join(f.root, "other-repository");
+    crashAfterMark(f, other);
+    const text = readFileSync(admissionFile(f), "utf8");
+    f.command(["git", "worktree", "remove", "--force", f.tree]);
+    f.writeState({ worktrees: [] });
+    const kept = line(gc(f, ["--collect", "--json"]));
+    expect(kept).toMatchObject({
+      resource: f.tree,
+      outcome: "unverified",
+      details: { claim: "gone" },
+    });
+    expect(kept.reason).toContain(`the collection of ${other}`);
+    expect(readFileSync(admissionFile(f), "utf8")).toBe(text);
+  }, 60_000);
+
+  test("a claim written before admissions named their repository is reported for a person, never released", () => {
+    const f = setup();
+    crashAfterMark(f);
+    const { repository: _, incarnation: __, ...v1 } = admission(f);
+    writeFileSync(admissionFile(f), JSON.stringify({ ...v1, v: 1 }));
+    f.command(["git", "worktree", "remove", "--force", f.tree]);
+    f.writeState({ worktrees: [] });
+    const kept = line(gc(f, ["--collect", "--json"]));
+    expect(kept).toMatchObject({
+      resource: f.tree,
+      outcome: "unverified",
+      details: { claim: "gone" },
+    });
+    expect(kept.reason).toContain("named their repository");
+    expect(admissions(f)).toHaveLength(1);
+  }, 60_000);
+
+  test("a claim on a worktree made again at its path is released, so the new worktree takes launches", () => {
+    const f = setup();
+    crashAfterMark(f);
+    const file = admissionFile(f);
+    f.command(["git", "worktree", "remove", "--force", f.tree]);
+    f.command(["git", "worktree", "add", f.tree, "topic"]);
+    const reported = JSON.parse(gc(f, ["--json"]).stdout.toString()) as Receipt;
+    expect(
+      reported.resources.find((entry) => entry.resource === file),
+    ).toMatchObject({
+      outcome: "would-collect",
+      details: { claim: "superseded", orcaPath: f.tree },
+    });
+    const tree = reported.resources.find((entry) => entry.resource === f.tree);
+    expect(tree?.details).not.toMatchObject({ claim: "standing" });
+    expect(admissions(f)).toHaveLength(1);
+
+    const result = gc(f, ["--collect", "--json"]);
+    const released = (
+      JSON.parse(result.stdout.toString()) as Receipt
+    ).resources.find((entry) => entry.resource === file);
+    expect(released?.outcome).toBe("collected");
+    expect(released?.reason).toContain("released the launch guard claim");
+    expect(admissions(f)).toEqual([]);
+    expect(existsSync(f.tree)).toBe(true);
+    expect(rmCalls(f)).toEqual([]);
+  }, 60_000);
+
+  test("a superseded claim is released while Orca's unreadable list stays on the receipt and fails the run", () => {
+    const f = setup();
+    crashAfterMark(f);
+    const file = admissionFile(f);
+    f.command(["git", "worktree", "remove", "--force", f.tree]);
+    f.command(["git", "worktree", "add", f.tree, "topic"]);
+    f.writeState({ fail: ["list"] });
+    const result = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(result, 1);
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(
+      receipt.resources.find((entry) => entry.resource === file)?.outcome,
+    ).toBe("collected");
+    expect(
+      receipt.resources.find((entry) => entry.resource === "*"),
+    ).toMatchObject({
+      outcome: "unverified",
+      description: "inventory",
+    });
+    expect(receipt.exitStatus).toBe(1);
+  }, 60_000);
+
   test("a live collection's submitted admission is left alone, even once its worktree is gone", () => {
     const f = setup();
-    const held = admit(f.tree, f.guard);
+    const held = admit(f.tree, f.repo, f.guard);
     if (!held.ok) throw new Error(held.failure.reason);
     try {
       expect(held.value.submit().ok).toBe(true);
