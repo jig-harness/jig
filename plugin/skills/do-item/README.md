@@ -34,7 +34,10 @@ heading a pickup reads, so a later pickup reuses them while their hash matches
 or they are under 24 hours old. The text form prints its findings without
 contacting the tracker. A route without scouts is reported without an empty
 comment, and partial findings from a failed scout are reported without being
-published as reusable findings.
+published as reusable findings. The issue form also runs a footprint scout,
+whatever the route's scouts: it reads the code and records the paths the
+work would touch as the item's predicted paths (below), still without
+claiming it.
 
 Before opening, the pull-request planner warns about merge commits that bring
 in work outside the planned base, listing the foreign commits. When a
@@ -324,6 +327,18 @@ an item there. The [configuration reference](../../CONFIGURATION.md#issue_tracke
 has the rules.
 
 ## Predicted paths
+
+The dispatcher compares the paths an item is expected to touch, its
+[footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), with
+the work already in flight before it starts more. Three writers record one,
+each through `scripts/write-footprint.ts`: a pickup, once it has claimed the
+item and read the code and before it delegates (`pickup`, naming its
+session); the scout form's footprint scout (`scout`); and `file-issue`, when
+it files from a diff or from paths the person named (`filing`). The script
+takes the paths as a file of lines or as the workspace's diff, adds the
+change-area catalog's areas their files match directly and the commit of the
+base branch the prediction read, and writes nothing when no path was named.
+A failed write is reported and never stops the pickup or the filing.
 
 You can inspect an item's predicted paths with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>"`
 or append a prediction with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>" --input "<file>"`.

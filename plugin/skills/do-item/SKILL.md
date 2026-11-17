@@ -71,7 +71,8 @@ implement, open a pull request or arm a drive.
 
    Report the recommended agent and scouts. Stop on a non-zero exit. If the
    scout list is empty, say no scouts are configured for that route and
-   stop without posting an empty findings comment.
+   post no findings comment: free text stops here, and an issue key goes
+   on to item 5.
 3. Run each scout named in the result with the task or full issue, the
    repository instructions and the relevant context. Use the harness's
    subagent tool with that scout's definition; when it is unavailable, read
@@ -94,6 +95,25 @@ implement, open a pull request or arm a drive.
    `.context/scratch/`, so that `jig gc` keeps it until it is posted. For free text, the printed findings are the
    result; no tracker comment is posted. A later pickup's Step 2 selects an
    issue's comment under the existing hash and freshness rules.
+5. **The footprint scout**, for an issue key only. Read the issue and the
+   code it concerns as the base branch has it (fetch the base first), and
+   predict the paths its change would touch: the files, and a directory
+   (ending in `/`) where the change's files within it cannot be named yet.
+   Use the harness's subagent tool, briefed with this item; when it is
+   unavailable, do it in this session. Write the paths, one per line, to
+   `.context/scratch/footprint-paths.txt` with the file-writing tool, then
+   record them beside the findings without claiming the item:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/write-footprint.ts" "<KEY>" --source scout --paths .context/scratch/footprint-paths.txt
+   ```
+
+   It records the paths, the catalog areas their files match and the base
+   commit as the item's [footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+   which the dispatcher compares with the work in flight. Report the paths
+   and its result. Exit `3` (no path) writes nothing: say the scout could
+   not predict one. Any other non-zero exit is reported; the findings
+   still stand.
 
 ### How to read the step markers
 
@@ -885,6 +905,29 @@ implementation. Skip this check for issues about the repository's own code.
    attach refuses a tree it would move while they are in it), and hand the item to that pull request's drive with
    `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
    on the pull request's head, so nothing here is pushed or attached.
+
+   **Pickup footprint (exact) — after reading the code, before delegating.**
+   Once the item is claimed and you have read the code the change concerns,
+   write down the paths the change will touch: the files, and a directory
+   (ending in `/`) where the files within it cannot be named yet. Write
+   them, one per line, to `.context/scratch/footprint-paths.txt` with the
+   file-writing tool, and record them on the item:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/write-footprint.ts" "<KEY>" --source pickup --paths .context/scratch/footprint-paths.txt
+   ```
+
+   The record carries the paths, the catalog areas their files match
+   directly, the base commit (`<remote>/<base>` by default; pass
+   `--base <remote>/<branch>` for a stacked change's predecessor) and this
+   session, so the dispatcher compares the work in flight with what it
+   starts next. Write it on every pickup and resume that delegates, and
+   again when the plan's paths change materially; never when the item
+   already has an open pull request, whose changed files stand for it. A
+   non-zero exit never blocks the work: exit `2` names a path it cannot
+   carry (fix the list and run it again), exit `3` means no path was named,
+   and a tracker failure exits with its class; report it in the status
+   message and delegate.
 
    **Verification commands — when the resolved spec lists any.** Include
    every command verbatim with its source key under `## Verification commands
@@ -2006,6 +2049,7 @@ report. In such a pass:
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
 | `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, `footprint` (read; write with `--input`), the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state, body from `--body-file`, or footprint payload from `--input` | Operation result |
+| `write-footprint.ts` | Record an item's predicted footprint: the pickup's, the footprint scout's, or `file-issue`'s from a diff | Issue key, `--source <pickup\|scout\|filing>`, `--paths <file>` or `--diff`, optional `--base <ref>` and `--dry-run` | JSON summary of the written record (the payload with `--dry-run`); exit `3` when no path was named, nothing written |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts, and list its guidance and review gates | Issue JSON (path or `-`) | JSON with agent, scouts, guidance and gates |
 | `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |

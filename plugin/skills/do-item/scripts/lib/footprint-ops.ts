@@ -13,7 +13,10 @@ import { localWriter } from "../../../../shared/records/writer.ts";
 import { currentIso } from "../../../../shared/time.ts";
 import { OutboundError } from "../../../../shared/outbound/failure.ts";
 import { withOperation } from "../../../../shared/outbound/ledger.ts";
-import { loadCatalogFile } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import {
+  type ChangeAreaCatalog,
+  loadCatalogFile,
+} from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import { openTracker } from "./tracker/index.ts";
 import { TrackerRequestError, type Tracker } from "./tracker/port.ts";
 import type { AttachmentOperation } from "./attachment-ops.ts";
@@ -60,6 +63,15 @@ function inputRecord(key: string, raw: string): FootprintRecord {
   } catch (cause) {
     throw invalid("input is not JSON", cause);
   }
+  return predictionRecord(key, input);
+}
+
+/**
+ * The record a prediction becomes, with this process as its writer and now
+ * as its time: input never supplies either. Refused (`invalid`) before
+ * anything is written when the payload breaks the record's shape.
+ */
+export function predictionRecord(key: string, input: unknown): FootprintRecord {
   if (!isRecord(input)) throw invalid("input must be a JSON object");
   const allowed = new Set([
     "key",
@@ -88,15 +100,18 @@ function inputRecord(key: string, raw: string): FootprintRecord {
   }
   return record;
 }
-function ownAreaLabels(): Record<string, readonly string[]> {
+/** The repository's change-area catalog (`drive.change_areas_catalog`), `null` when it declares none. */
+export function ownCatalog(): ChangeAreaCatalog | null {
   const config = readConfig();
   const drive = isRecord(config?.drive) ? config.drive : {};
-  if (drive.change_areas_catalog === undefined) return {};
+  if (drive.change_areas_catalog === undefined) return null;
   if (typeof drive.change_areas_catalog !== "string")
     throw invalid("drive.change_areas_catalog must be a path");
-  const catalog = loadCatalogFile(
-    resolve(consumerRoot(), drive.change_areas_catalog),
-  );
+  return loadCatalogFile(resolve(consumerRoot(), drive.change_areas_catalog));
+}
+function ownAreaLabels(): Record<string, readonly string[]> {
+  const catalog = ownCatalog();
+  if (catalog === null) return {};
   return Object.fromEntries(
     [...catalog].map(([key, area]) => [key, area.labels]),
   );

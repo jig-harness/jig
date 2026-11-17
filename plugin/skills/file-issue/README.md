@@ -173,6 +173,13 @@ there.
 Without a diff or without a catalog, the labels come from the description,
 against each flag's written conditions in the taxonomy.
 
+An issue filed from a diff, or from paths the person filing named, also
+gets those paths recorded as its predicted
+[footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), so
+the dispatcher can compare it with the work in flight before starting it.
+An issue filed from a description alone gets none: its labels already carry
+the areas.
+
 ## The weekly sweep
 
 Every issue filed through the tracker scripts carries a type, a priority
