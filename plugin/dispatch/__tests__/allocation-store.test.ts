@@ -332,9 +332,15 @@ function prepared(
   items: SnapshotItem[],
 ): PreparedPriorities {
   return {
-    report: {} as RepoReport,
+    report: { unplaced: [] } as unknown as RepoReport,
     slug,
-    read: { record: null, source: "none", blocked: null, lastValid: null },
+    read: {
+      record: null,
+      source: "none",
+      blocked: null,
+      lastValid: null,
+      complete: true,
+    },
     weights: DEFAULTS,
     snapshot: { readAt: "2026-11-18T08:00:00.000Z", items },
     records: [],

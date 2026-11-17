@@ -33,6 +33,8 @@ export interface RecordRead {
   blocked: string | null;
   /** The last valid revision before a blocked one, shown with its age. */
   lastValid: { revision: number; commit: string; ageDays: number } | null;
+  /** Whether git answered: `false` when the history or the newest revision could not be read, so an absent record is no evidence of none. */
+  complete: boolean;
 }
 
 /** Read the record for the checkout at `path` from `origin/<defaultBranch>`. */
@@ -56,6 +58,7 @@ export function readRepositoryRecord(
       source: `${ref} could not be read: ${log.why}`,
       blocked: null,
       lastValid: null,
+      complete: false,
     };
   const commits = log.stdout
     .split("\n")
@@ -71,6 +74,7 @@ export function readRepositoryRecord(
       source: `no ${PRIORITIES_FILE} on ${ref}`,
       blocked: null,
       lastValid: null,
+      complete: true,
     };
   const newest = readAt(path, head.sha);
   if (newest === null)
@@ -79,6 +83,7 @@ export function readRepositoryRecord(
       source: `no ${PRIORITIES_FILE} on ${ref}`,
       blocked: null,
       lastValid: null,
+      complete: false,
     };
   if ("unread" in newest)
     return {
@@ -86,6 +91,7 @@ export function readRepositoryRecord(
       source: `${PRIORITIES_FILE} at ${ref}@${head.sha.slice(0, 12)} could not be read: ${newest.unread}`,
       blocked: null,
       lastValid: null,
+      complete: true,
     };
   if (newest.ok)
     return {
@@ -93,6 +99,7 @@ export function readRepositoryRecord(
       source: `${ref}@${head.sha.slice(0, 12)}`,
       blocked: null,
       lastValid: null,
+      complete: true,
     };
   const blocked = `the newest revision of ${PRIORITIES_FILE} (${head.sha.slice(0, 12)}) is infeasible and blocks objective allocation: ${newest.why}`;
   for (const c of commits.slice(1)) {
@@ -110,6 +117,7 @@ export function readRepositoryRecord(
             Math.floor((nowMs - parseMs(c.at)) / 86_400_000),
           ),
         },
+        complete: true,
       };
   }
   return {
@@ -117,6 +125,7 @@ export function readRepositoryRecord(
     source: `${ref}@${head.sha.slice(0, 12)}`,
     blocked,
     lastValid: null,
+    complete: true,
   };
 }
 

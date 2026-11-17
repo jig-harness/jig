@@ -51,7 +51,9 @@ const SHORTLIST_DEPTH = 10;
 
 /** The priorities part of a repository's report. */
 export interface PrioritiesReport {
-  record: Omit<RecordRead, "record"> & { revision: number | null };
+  record: Omit<RecordRead, "record" | "complete"> & {
+    revision: number | null;
+  };
   weights: { source: string; problems: string[] };
   ranking: RankerOutput;
 }
@@ -128,6 +130,7 @@ export function rankPriorities(
       const week = openWeek(db, nowMs);
       pruneCharges(db, nowMs);
       pruneEpochs(db, week.week);
+      const whole = complete && prepared.every(observedWhole);
       const ready = new Set<WeightedLane>();
       for (const p of prepared) for (const l of readyLanes(p)) ready.add(l);
       const epochs = recordEpochs(
@@ -136,7 +139,7 @@ export function rankPriorities(
         ready,
         hashOf(prepared.map((p) => [p.slug, p.snapshot.items])),
         nowMs,
-        complete,
+        whole,
       );
       for (const p of prepared)
         try {
@@ -148,6 +151,19 @@ export function rankPriorities(
   } catch (error) {
     for (const p of prepared) p.report.priorities = failedPart(error);
   }
+}
+
+/** Whether the repository's record and tracker reads both answered: a failed read is no evidence a lane has no ready work. */
+function observedWhole(p: PreparedPriorities): boolean {
+  return (
+    p.read.complete &&
+    !p.report.unplaced.some(
+      (u) =>
+        u.readFailed === true ||
+        u.failure !== undefined ||
+        u.scopeFailure !== undefined,
+    )
+  );
 }
 
 /** Rank one prepared repository against the host's week and epochs, and keep its ranking. */

@@ -116,3 +116,11 @@ describe("the repository record's read", () => {
     );
   });
 });
+
+describe("the read's completeness", () => {
+  it("is incomplete when git cannot answer, so an absent record is no evidence of none", () => {
+    const read = readRepositoryRecord(scratch(), "main", NOW);
+    expect(read.record).toBeNull();
+    expect(read.complete).toBe(false);
+  });
+});

@@ -1896,7 +1896,7 @@ objectives:
 
 | Field | Value | Meaning |
 | --- | --- | --- |
-| `level`, `scope`, `revision`, `objectives` | required | The envelope. Any other field is refused |
+| `level`, `scope`, `revision`, `objectives` | required | The envelope. Any field other than these and the optional `format` is refused |
 | `objectives[].id` | a string, unique in the record | The objective's stable name; a claim's charge records it |
 | `objectives[].class` | `core`, `tactical` or `peripheral` | The lane its work falls in |
 | `objectives[].purpose`, `endState`, `owner` | non-empty strings | Why it matters, how anyone can tell it is done, and the role that answers for it (a person only in a host's own record) |

@@ -72,6 +72,12 @@ export function parseLaneWeights(raw: string, file: string): LaneWeights {
       `${file} is not YAML: ${(error as Error).message.split("\n")[0]}`,
     );
   }
+  // A file with no content (blank or only comments) means the defaults; an explicit `null` or `~` is not a mapping.
+  const empty = raw
+    .split("\n")
+    .every((l) => l.trim() === "" || l.trim().startsWith("#"));
+  if (values === null && !empty)
+    return allOut(file, `${file} is not a mapping`);
   if (values === null || values === undefined)
     return { weights: { ...DEFAULT_WEIGHTS }, source: file, problems: [] };
   if (!isRecord(values)) return allOut(file, `${file} is not a mapping`);

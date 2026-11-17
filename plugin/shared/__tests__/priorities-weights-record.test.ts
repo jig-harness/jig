@@ -209,6 +209,15 @@ describe("review fixes", () => {
     expect(read.problems[0]).toContain("not a mapping");
   });
 
+  test("an explicit null document fails closed, while an empty one means the defaults", () => {
+    for (const text of ["null\n", "~\n"]) {
+      const read = parseLaneWeights(text, "w.yaml");
+      expect(Object.values(read.weights)).toEqual([null, null, null, null]);
+      expect(read.problems[0]).toContain("not a mapping");
+    }
+    expect(parseLaneWeights("# no weights\n", "w.yaml").problems).toEqual([]);
+  });
+
   test("a diamond of references is not a cycle", () => {
     const o = (id: string, refs: string[]) => ({
       id,
