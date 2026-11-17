@@ -148,7 +148,9 @@ export type PickupClass =
   | "claimed-idle"
   | "claimed"
   | "claimed-by-person"
-  | "claimed-pr-open";
+  | "claimed-pr-open"
+  /** Under the host's `priorities.enforce`: a pickup whose priority lane is out of rotation (`priorities-order.ts`). */
+  | "lane-paused";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";

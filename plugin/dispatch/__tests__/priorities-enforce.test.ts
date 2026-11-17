@@ -164,8 +164,12 @@ function writeWeights(h: Host, text: string): void {
   writeFileSync(join(h.home, ".jig", "weights.local.yaml"), text);
 }
 
-/** One tick's ranking over the pickups, as the tick runs it, with or without the opt-in. */
-function tick(h: Host, enforce: boolean): RepoReport {
+/** One tick's ranking over the pickups, as the tick runs it, with or without the opt-in; `over` replaces the plan's parts. */
+function tick(
+  h: Host,
+  enforce: boolean,
+  over: Partial<RepoReport> = {},
+): RepoReport {
   const r = report({
     path: h.repo,
     slug: SLUG,
@@ -173,6 +177,7 @@ function tick(h: Host, enforce: boolean): RepoReport {
       { ...pickup("PR #7"), stage: "rearm" },
       ...PICKUPS.map(([k]) => pickup(k)),
     ],
+    ...over,
   });
   const prepared = preparePriorities(r, {
     slug: SLUG,
@@ -268,6 +273,37 @@ describe("the host's priorities.enforce setting", () => {
     );
     writeWeights(h, "lanes:\n  core: 50\n  tactical: 0\n");
     expect(targets(tick(h, true))[1]).toBe("#4");
+  });
+
+  it("on, ranks only what the plan starts: a pickup a running session holds takes no start from its lane", () => {
+    const r = tick(host(), true, {
+      actions: ["#1", "#2", "#3", "#5"].map(pickup),
+      running: [
+        {
+          target: "#4",
+          stage: "pickup",
+          reason: "a session is running for it",
+          evidence: {},
+        },
+      ],
+    });
+    // #4 would hold core's first start; held, core's next item takes it.
+    expect(targets(r)).toEqual(["#5", "#3", "#2", "#1"]);
+    expect(part(r).ranking.excluded).toContainEqual({
+      key: "#4",
+      reason: "running: a session is running for it",
+    });
+  });
+
+  it("on, lists a withheld pickup as quiet, so the line still shows it", () => {
+    const h = host();
+    writeWeights(h, "lanes:\n  core: 0\n");
+    const r = tick(h, true);
+    expect(r.quiet).toContainEqual({
+      target: "#4",
+      class: "lane-paused",
+      why: expect.stringContaining("its lane core is out of rotation"),
+    });
   });
 
   it("on, a ranking that fails leaves the plan's order and says so", () => {
@@ -419,6 +455,74 @@ describe("the enforced order over the design's sample week", () => {
   });
 });
 
+describe("a batch under the enforced order", () => {
+  const items = [...objectiveWork(2, ["core", "peripheral"])];
+  const ranking = (w: Partial<Record<WeightedLane, number>>) => {
+    const base = input({
+      snapshot: { readAt: "now", items },
+      capacity: { starts: items.length },
+      weights: {
+        weights: {
+          core: 50,
+          tactical: 25,
+          peripheral: 10,
+          "bug-other": 15,
+          ...w,
+        },
+        source: "file",
+        problems: [],
+      },
+    });
+    return { ranking: rank(base), classes: classesOf(items, base.records) };
+  };
+  const batch = (lead: string, keys: string[]): Action => ({
+    ...pickup(lead),
+    evidence: {
+      batchItems: JSON.stringify(keys.map((key) => ({ key, person: "p" }))),
+    },
+  });
+
+  it("leaves a paused-lane member out of the batch and withholds it", () => {
+    const { ranking: out, classes } = ranking({ peripheral: 0 });
+    const { actions, order } = enforcePickupOrder(
+      [batch("#101", ["#101", "#301", "#102"])],
+      out,
+      classes,
+    );
+    expect(actions[0]?.evidence.batchItems).toBe(
+      JSON.stringify([
+        { key: "#101", person: "p" },
+        { key: "#102", person: "p" },
+      ]),
+    );
+    expect(order.withheld.map((w) => [w.target, w.lane])).toEqual([
+      ["#301", "peripheral"],
+    ]);
+  });
+
+  it("starts the lead alone when only it is left", () => {
+    const { ranking: out, classes } = ranking({ peripheral: 0 });
+    const { actions } = enforcePickupOrder(
+      [batch("#101", ["#101", "#301"])],
+      out,
+      classes,
+    );
+    expect(actions[0]?.evidence.batchItems).toBeUndefined();
+    expect(actions[0]?.target).toBe("#101");
+  });
+
+  it("withholds the whole batch when its lead's lane is paused", () => {
+    const { ranking: out, classes } = ranking({ peripheral: 0 });
+    const { actions, order } = enforcePickupOrder(
+      [batch("#301", ["#301", "#101"])],
+      out,
+      classes,
+    );
+    expect(actions).toEqual([]);
+    expect(order.withheld.map((w) => w.target)).toEqual(["#301", "#101"]);
+  });
+});
+
 describe("no lane keeps a start free", () => {
   it("puts every ready pickup of every lane in rotation in the order, the floor owed with no peripheral work ready", () => {
     const items = [
@@ -455,7 +559,7 @@ describe("no lane keeps a start free", () => {
     expect(order.starts.at(-1)?.why).toContain("not ranked: an epic");
   });
 
-  it("names a pickup that did not start and the start it passed to the next", () => {
+  it("names a pickup that did not start and why", () => {
     const r = report({
       priorities: {
         record: { source: "x", blocked: null, lastValid: null, revision: 1 },
@@ -495,7 +599,7 @@ describe("no lane keeps a start free", () => {
     });
     const lines = priorityLines(r, "wants");
     expect(lines).toContainEqual(
-      "  passed   #1 [core o]: waits, its start went to the next: the epic is at its width",
+      "  waits    #1 [core o]: did not start, and the next in the order may take the start: the epic is at its width",
     );
     expect(lines).toContainEqual("  started  #2 [tactical]: position 2");
   });

@@ -44,90 +44,46 @@ interface Placed {
   rank: [number, number];
 }
 
+type Ranking = Pick<
+  RankerOutput,
+  "shortlist" | "unallocated" | "excluded" | "lanes"
+>;
+
+/** Where the ranking put each item: its eligible shortlist position, its place in the unallocated work, or why it excluded it. */
+interface Places {
+  positions: Map<string, { at: number; p: RankerOutput["shortlist"][number] }>;
+  unallocated: Map<string, { at: number; reason: string }>;
+  excluded: Map<string, string>;
+}
+
 /**
  * Reorder `actions`' pickups by `ranking`, keeping every other action where
- * it stands. `classes` is each item's lane as the ranking classified it.
+ * it stands. `classes` is each item's lane as the ranking classified it. A
+ * batch member whose lane is out of rotation leaves the batch; a batch whose
+ * lead is in such a lane is withheld whole, since its launch reads its items
+ * through the lead.
  */
 export function enforcePickupOrder(
   actions: readonly Action[],
-  ranking: Pick<
-    RankerOutput,
-    "shortlist" | "unallocated" | "excluded" | "lanes"
-  >,
+  ranking: Ranking,
   classes: Readonly<Record<string, ItemClass>>,
 ): { actions: Action[]; order: EnforcedOrder } {
-  const positions = new Map(
-    ranking.shortlist
-      .filter((p) => p.eligible)
-      .map((p, i) => [p.key, { at: i, p }] as const),
-  );
-  const unallocated = new Map(
-    ranking.unallocated.map((u, i) => [u.key, { at: i, u }] as const),
-  );
-  const excluded = new Map(ranking.excluded.map((e) => [e.key, e.reason]));
-  const paused = new Set<WeightedLane>(
+  const places = placesOf(ranking);
+  const pausedLanes = new Set<WeightedLane>(
     ranking.lanes.filter((l) => !l.inRotation).map((l) => l.lane),
   );
+  const paused = (key: string): WeightedLane | null => {
+    const lane = classes[key]?.lane;
+    return lane !== undefined && isWeightedLane(lane) && pausedLanes.has(lane)
+      ? lane
+      : null;
+  };
   const placed: Placed[] = [];
   const withheld: EnforcedOrder["withheld"] = [];
   actions.forEach((action, index) => {
     if (action.stage !== "pickup") return;
-    const keys = membersOf(action);
-    const ranked = best(keys, (k) => positions.get(k)?.at);
-    const position = ranked === null ? undefined : positions.get(ranked);
-    if (position !== undefined) {
-      const { p } = position;
-      placed.push({
-        action,
-        rank: [0, position.at],
-        start: {
-          target: action.target,
-          lane: p.lane,
-          objective: p.objective,
-          why: `position ${p.position}: ${p.reason}`,
-        },
-      });
-      return;
-    }
-    const loose = best(keys, (k) => unallocated.get(k)?.at);
-    const free = loose === null ? undefined : unallocated.get(loose);
-    if (free !== undefined) {
-      placed.push({
-        action,
-        rank: [1, free.at],
-        start: {
-          target: action.target,
-          lane: "unallocated",
-          objective: null,
-          why: `after the ranked work, unallocated: ${free.u.reason}`,
-        },
-      });
-      return;
-    }
-    const lane = keys
-      .map((k) => classes[k]?.lane)
-      .find((l): l is WeightedLane => l !== undefined && isWeightedLane(l));
-    if (lane !== undefined && paused.has(lane)) {
-      withheld.push({
-        target: action.target,
-        lane,
-        why: `its lane ${lane} is out of rotation (weight 0, or a weights file that does not read): it starts nothing while the ranking orders the starts`,
-      });
-      return;
-    }
-    const reason = keys
-      .map((k) => excluded.get(k))
-      .find((r) => r !== undefined);
-    placed.push({
-      action,
-      rank: [2, index],
-      start: {
-        target: action.target,
-        lane: "unallocated",
-        objective: null,
-        why: `after the ranked and unallocated work, not ranked: ${reason ?? "the ranking did not read it"}`,
-      },
-    });
+    const kept = withoutPaused(action, paused, withheld);
+    if (kept !== null) placed.push(place(kept, index, places));
   });
   placed.sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1]);
   const queue = placed.map((p) => p.action);
@@ -144,8 +100,117 @@ export function enforcePickupOrder(
   };
 }
 
+function placesOf(ranking: Ranking): Places {
+  return {
+    positions: new Map(
+      ranking.shortlist
+        .filter((p) => p.eligible)
+        .map((p, i) => [p.key, { at: i, p }] as const),
+    ),
+    unallocated: new Map(
+      ranking.unallocated.map(
+        (u, i) => [u.key, { at: i, reason: u.reason }] as const,
+      ),
+    ),
+    excluded: new Map(ranking.excluded.map((e) => [e.key, e.reason])),
+  };
+}
+
+const PAUSED =
+  "is out of rotation (weight 0, or a weights file that does not read): it starts nothing while the ranking orders the starts";
+
+/** The pickup without its paused-lane members, each recorded withheld; `null` when its lead's lane is paused. */
+function withoutPaused(
+  action: Action,
+  paused: (key: string) => WeightedLane | null,
+  withheld: EnforcedOrder["withheld"],
+): Action | null {
+  const lead = paused(action.target);
+  const batch = batchItemsOf(action.evidence.batchItems);
+  const members = batch.ok ? (batch.value ?? []) : [];
+  if (lead !== null) {
+    withheld.push({
+      target: action.target,
+      lane: lead,
+      why: `its lane ${lead} ${PAUSED}`,
+    });
+    for (const m of members)
+      if (m.key !== action.target)
+        withheld.push({
+          target: m.key,
+          lane: paused(m.key) ?? lead,
+          why: `batched behind ${action.target}, whose lane ${lead} ${PAUSED}`,
+        });
+    return null;
+  }
+  const out = members.filter((m) => paused(m.key) !== null);
+  if (out.length === 0) return action;
+  for (const m of out) {
+    const lane = paused(m.key) as WeightedLane;
+    withheld.push({
+      target: m.key,
+      lane,
+      why: `its lane ${lane} ${PAUSED}; left out of ${action.target}'s batch`,
+    });
+  }
+  const kept = members.filter((m) => paused(m.key) === null);
+  const { batchItems: _, ...evidence } = action.evidence;
+  return {
+    ...action,
+    reason: `${action.reason}; ${out.map((m) => m.key).join(", ")} left out: a lane out of rotation`,
+    evidence:
+      kept.length < 2
+        ? evidence
+        : { ...evidence, batchItems: JSON.stringify(kept) },
+  };
+}
+
+/** Where one pickup stands in the enforced order, and the charge and reason its start carries. */
+function place(action: Action, index: number, places: Places): Placed {
+  const keys = membersOf(action);
+  const ranked = best(keys, (k) => places.positions.get(k)?.at);
+  const position = ranked === null ? undefined : places.positions.get(ranked);
+  if (position !== undefined)
+    return {
+      action,
+      rank: [0, position.at],
+      start: {
+        target: action.target,
+        lane: position.p.lane,
+        objective: position.p.objective,
+        why: `position ${position.p.position}: ${position.p.reason}`,
+      },
+    };
+  const loose = best(keys, (k) => places.unallocated.get(k)?.at);
+  const free = loose === null ? undefined : places.unallocated.get(loose);
+  if (free !== undefined)
+    return {
+      action,
+      rank: [1, free.at],
+      start: {
+        target: action.target,
+        lane: "unallocated",
+        objective: null,
+        why: `after the ranked work, unallocated: ${free.reason}`,
+      },
+    };
+  const reason = keys
+    .map((k) => places.excluded.get(k))
+    .find((r) => r !== undefined);
+  return {
+    action,
+    rank: [2, index],
+    start: {
+      target: action.target,
+      lane: "unallocated",
+      objective: null,
+      why: `after the ranked and unallocated work, not ranked: ${reason ?? "the ranking did not read it"}`,
+    },
+  };
+}
+
 /** The items a pickup starts: its target, and a batch's members. */
-function membersOf(action: Action): string[] {
+export function membersOf(action: Action): string[] {
   const batch = batchItemsOf(action.evidence.batchItems);
   const members = batch.ok ? (batch.value ?? []).map((m) => m.key) : [];
   return [action.target, ...members.filter((k) => k !== action.target)];

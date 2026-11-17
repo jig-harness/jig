@@ -8,7 +8,7 @@
  * not start names why it passed its start on, and a pickup held back names
  * its paused lane.
  */
-import type { EnforcedOrder } from "./priorities-order.ts";
+import type { EnforcedOrder, OrderedStart } from "./priorities-order.ts";
 import type { RepoReport } from "./types.ts";
 
 /** How many shortlist positions the report shows. */
@@ -86,7 +86,7 @@ function recordLines(
   return lines;
 }
 
-/** The enforced order: each start's charge and why, what passed its start on, and what a paused lane held back. */
+/** The enforced order: each start's charge and why, what did not start and why, and what a paused lane held back. */
 function enforcedLines(
   r: RepoReport,
   order: EnforcedOrder,
@@ -97,23 +97,31 @@ function enforcedLines(
     lines.push("  starts   no pickup (in the ranking's order)");
   for (const s of order.starts) {
     const charged = `[${s.lane}${s.objective === null ? "" : ` ${s.objective}`}]`;
-    const launch = applied
-      ? r.launches.find((l) => l.action === "pickup" && l.target === s.target)
-      : undefined;
-    const verb = !applied
-      ? "would   "
-      : launch?.outcome === "launched"
-        ? "started "
-        : "passed  ";
-    const why =
-      applied && launch !== undefined && launch.outcome !== "launched"
-        ? `${launch.outcome}, its start went to the next: ${launch.detail}`
-        : s.why;
+    const [verb, why] = applied ? appliedStart(r, s) : ["would   ", s.why];
     lines.push(`  ${verb} ${s.target} ${charged}: ${why}`);
   }
   for (const w of order.withheld)
     lines.push(`  withheld ${w.target} [${w.lane}]: ${w.why}`);
   return lines;
+}
+
+/** How an applied tick's launch of one ordered pickup went: started with the ranking's reason, or what kept it from starting. */
+function appliedStart(r: RepoReport, s: OrderedStart): [string, string] {
+  const launch = r.launches.find(
+    (l) => l.action === "pickup" && l.target === s.target,
+  );
+  if (launch === undefined)
+    return ["untried ", `no launch was tried this tick; ${s.why}`];
+  if (launch.outcome === "launched") return ["started ", s.why];
+  if (launch.outcome === "lost" || launch.outcome === "retried")
+    return [
+      "holds   ",
+      `${launch.outcome}, its record holds a slot: ${launch.detail}`,
+    ];
+  return [
+    `${launch.outcome.padEnd(8)}`,
+    `did not start, and the next in the order may take the start: ${launch.detail}`,
+  ];
 }
 
 /** An applied receipt names what launched; a dry run names what the plan would pick up. */
