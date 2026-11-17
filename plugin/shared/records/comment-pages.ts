@@ -104,6 +104,32 @@ function passed(): Outcome<unknown[], "unreadable"> {
   );
 }
 
+/** One page of the listing, asked within what is left of the deadline. */
+async function readPage(
+  deps: CommentPagesDeps,
+  target: { repo: string; number: number },
+  page: number,
+  deadline: Deadline,
+  began: number,
+): Promise<Outcome<unknown[], "unreadable">> {
+  const left = allowanceLeft(deadline, began);
+  if (left !== null && left <= 0) return passed();
+  const read = await deps.ghConditionalGet(
+    `repos/${target.repo}/issues/${target.number}/comments?per_page=${PER_PAGE}&page=${page}`,
+    {
+      repository: target.repo,
+      ...(left === null ? {} : { timeoutSec: left }),
+    },
+  );
+  if (!read.ok) {
+    const reason = `the comments could not be read (${read.reason})`;
+    return read.failure === undefined
+      ? failed("unreadable", reason)
+      : failedBy("unreadable", read.failure, reason);
+  }
+  return parsePage(read, page);
+}
+
 /** The comment listing over `deps`. */
 export function commentPages(
   deps: CommentPagesDeps = {
@@ -123,22 +149,7 @@ export function commentPages(
     const began = currentMs();
     const comments: unknown[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const left = allowanceLeft(deadline, began);
-      if (left !== null && left <= 0) return passed();
-      const read = await deps.ghConditionalGet(
-        `repos/${target.repo}/issues/${target.number}/comments?per_page=${PER_PAGE}&page=${page}`,
-        {
-          repository: target.repo,
-          ...(left === null ? {} : { timeoutSec: left }),
-        },
-      );
-      if (!read.ok) {
-        const reason = `the comments could not be read (${read.reason})`;
-        return read.failure === undefined
-          ? failed("unreadable", reason)
-          : failedBy("unreadable", read.failure, reason);
-      }
-      const listed = parsePage(read, page);
+      const listed = await readPage(deps, target, page, deadline, began);
       if (!listed.ok) return listed;
       comments.push(...listed.value);
       if (listed.value.length < PER_PAGE) return ok(comments);
