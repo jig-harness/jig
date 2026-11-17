@@ -267,6 +267,16 @@ export const DISPATCHER: RecordKind[] = [
     meaning:
       "For each hourly cost-ledger row, the quota owner whose record it spent and the window it spent (core, GraphQL, search, none or unknown). The reports read it to match spending to the owner's balance and its window; a row without one is read with its window inferred.",
   },
+  {
+    name: "outbound-cost-not-modified",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "outbound_cost_not_modified",
+    version: 1,
+    meaning:
+      "For each hourly cost-ledger row, how many of its requests a conditional request had answered 304 Not Modified. The reports read it to show a route's unchanged re-reads apart from its other requests; a row without one counts none.",
+  },
   plain(
     "machine",
     "dispatch-receipt",

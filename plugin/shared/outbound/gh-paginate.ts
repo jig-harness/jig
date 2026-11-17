@@ -149,6 +149,17 @@ function onApiOrigin(url: string, host: string): boolean {
   }
 }
 
+/**
+ * The next page a REST answer's `Link` header names, when it is on the API
+ * origin of the host a call in `env` sends to (`GH_HOST`, else github.com).
+ */
+export function nextPageUrl(
+  headers: Headers | null,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  return nextLink(headers, hostOf([], env));
+}
+
 /** The URL the `Link` header names as the next page, when it is on `host`'s API origin. */
 function nextLink(headers: Headers | null, host: string): string | null {
   const link = headers?.get("link") ?? "";
