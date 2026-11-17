@@ -122,6 +122,20 @@ test("a final proof that throws after a dead first proof ends the run nonzero", 
   expect(receipt.resources[0]?.outcome).toBe("unverified");
 });
 
+test("a final proof that reports a failing run ends the run nonzero", async () => {
+  const kind = fixture([dead]);
+  let calls = 0;
+  kind.prove = async () =>
+    calls++ === 0
+      ? dead
+      : { state: "unverified", reason: "late", failing: true };
+  const { receipt } = await runCollection([kind], {
+    collect: true,
+    receiptRoot: mkdtempSync(join(tmpdir(), "gc-receipt-")),
+  });
+  expect(receipt.exitStatus).toBe(1);
+});
+
 test("collection intent and proof exist on disk before removal", async () => {
   const root = mkdtempSync(join(tmpdir(), "gc-intent-"));
   const kind = fixture([dead], () => {

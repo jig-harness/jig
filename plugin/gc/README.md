@@ -399,9 +399,10 @@ Orca checkout it collects, gc:
 5. deletes its admission, unless `orca worktree rm` was called and gave no
    answer.
 
-Only the removal call's answer, success or Orca's explicit refusal, or the
-worktree's absence from Orca's list and from the disk releases a submitted
-admission. A call that timed out, exited nonzero without a refusal, printed
+Only the removal call's answer, success or Orca's explicit refusal, the
+worktree's absence from the disk and from Orca's list of the repository the
+admission names, or another worktree made at its path since releases a
+submitted admission. A call that timed out, exited nonzero without a refusal, printed
 output gc cannot read, or answered that Orca is still deleting the checkout
 in the background (it stopped waiting, or answered on accepting the
 removal) may or may not have removed the worktree, so
@@ -416,10 +417,25 @@ the admission stays until a person removes it after inspection; its receipt
 line names the claim (`details.claim: standing`, with `details.claimNote`
 saying how to inspect it) and the printed report repeats the note. A worktree that is gone from the disk and from Orca's list is
 never collected again, so each run of the worktrees kind also lists, as a
-line of its own with `details.claim: gone`, every admission a collector that
-ended left on a path under the declared roots that is gone from both, and
-collecting that line deletes the admission. While Orca's list cannot be read
-the admission stays. A live collector's admission is never touched.
+line of its own with `details.claim: gone`, every admission a collector of
+that repository that ended left on a path under the declared roots that is
+gone from both, and collecting that line deletes the admission. Only the
+repository an admission names settles it from Orca's list: two repositories
+may declare a common worktree root, and one's list cannot hold the other's
+worktree. While Orca's list cannot be read the admission stays. An admission
+another repository's collection wrote, or one written before admissions
+named their repository (version 1), is listed the same way but never
+collected: its line is unverified and says why, and the admission stays
+until a run of its own repository settles it or a person removes it after
+inspection. A worktree made again at a claimed path is another incarnation
+of it, which does not inherit the claim: each run also lists, as a line of
+its own with `details.claim: superseded` whose resource is the admission's
+file, every admission a collector that ended left on a path under the
+declared roots where a worktree born later than the one it claimed now
+stands, and collecting that line deletes the admission after reading the
+incarnation once more. The disk is that proof, so any repository whose
+roots hold the path settles it. A live collector's admission is never
+touched.
 
 The launch markers are read once right after the admission, before the hook
 runs, and again after the registry's last read. A worktree the guard keeps is
@@ -481,7 +497,8 @@ In Node, `crypto.createHash("sha256").update(path).digest("hex")`.
 
 **Format.** Each file is one JSON object carrying the
 [record envelope](../RECORDS.md#the-registry-and-the-envelope): `kind`, `v`
-(the schema version, `1` for every kind), `key`, `writer` (an object with at
+(the schema version: `2` for an admission, `1` for a launch marker and the
+heartbeat), `key`, `writer` (an object with at
 least `host`, a non-empty string, and optionally `pid`, `bootId`, `start` and
 `login`) and `at` (a UTC time as `Date.prototype.toISOString` writes
 it), then the kind's own fields. A writer may add no other envelope field
@@ -489,15 +506,25 @@ it), then the kind's own fields. A writer may add no other envelope field
 newline, with every `<` and `>` inside a string escaped as `\u003c` and
 `\u003e`; a plugin may write any valid JSON, and `JSON.parse` reads both.
 
-An admission. Its `at` is when gc wrote it, `holder` is the collecting
-process's identity (`shared/liveness.ts`), and `submitted`, present once gc
-is about to call `orca worktree rm` under it, is when it did so, in the same
-form as `at`:
+An admission. Its `at` is when gc wrote it, `repository` the path, links
+resolved, of the repository whose collection wrote it, `incarnation` what
+stood at the worktree's path when gc wrote it (its inode and its birth time
+in nanoseconds, joined by `:`; absent when gc could not read it), `holder`
+the collecting process's identity (`shared/liveness.ts`), and `submitted`,
+present once gc is about to call `orca worktree rm` under it, when it did so,
+in the same form as `at`. Orca can give a worktree made again at a path the
+id the old one had, so the id cannot tell the two apart. gc takes the
+worktree at the path as made again only when its birth time is later than
+the one `incarnation` records: an inode number can change on a remount and
+a birth time can be set back, so neither a changed inode nor an earlier
+birth time counts, and without both birth times nothing does. Version 1,
+which earlier releases wrote, has no `repository` and no `incarnation`; gc
+still reads it.
 
 ```json
 {
   "kind": "orca-guard-admission",
-  "v": 1,
+  "v": 2,
   "key": "481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca",
   "writer": {
     "host": "laptop",
@@ -507,6 +534,8 @@ form as `at`:
   },
   "at": "2026-11-05T03:00:12.345Z",
   "path": "/home/ada/orca/workspaces/app/topic",
+  "repository": "/home/ada/dev/app",
+  "incarnation": "40894477:1793847601123456789",
   "holder": {
     "hostId": "3f1c9a0e5b7d4e2a8c6f1b0d9e7a5c3b",
     "host": "laptop",
@@ -563,13 +592,21 @@ counts as absent. An admission or a
 launch marker in that state (a launch marker also when its `path`,
 `workspaceId` or `agent` is missing) counts as present: the plugin refuses the launch,
 and gc keeps the worktree and leaves the file for a person to inspect. So
-does an admission whose `submitted` is present but not a time. A reader
+does an admission whose `submitted` is present but not a time, and a version
+2 admission without its `repository` or whose `incarnation` is present but
+not a non-empty string. A reader
 ignores a kind's field it does not know, so a field added to a kind keeps
 its version: the plugin's hook, which refuses a launch into any worktree
 with an admission present, reads an admission with `submitted` as it reads
-one without. A submitted admission excludes launches whatever its holder's
-state: a reader that ever treats a dead holder's admission as abandoned may
-do so only for one without `submitted`.
+one without. The admission's `repository` and `incarnation` changed its
+version instead, because a reader that ignored them would release a claim
+from a list or a disk that cannot show its worktree gone: a release of gc
+that reads only version 1 keeps a version 2 admission as one it cannot read,
+for a person to inspect, and never releases it. A submitted admission
+excludes launches whatever its holder's state: a reader that ever treats a
+dead holder's admission as abandoned may do so only for one without
+`submitted`, except that gc releases one whose worktree a later one has
+superseded at its path, since what it claimed is then gone.
 
 **Constants.**
 
@@ -583,8 +620,11 @@ An admission is deleted by the collector that wrote it once the worktree is
 removed or kept, unless it is submitted and the removal call gave no answer.
 One left by a collector that ended stays until a later collection settles
 it, judging its holder dead by identity, never by age: the next collection
-of that worktree takes it over, or a run finds the worktree gone from Orca's
-list and from the disk and deletes it. Until then the hook refuses launches
+of that worktree takes it over (dropping its `submitted` when it was written
+for another incarnation, whose removal is then settled), or a run of the
+repository it names finds the worktree gone from Orca's list and from the
+disk and deletes it, or a run of any repository whose roots cover the path
+finds a worktree made again there, born later, and deletes it. Until then the hook refuses launches
 into that worktree.
 
 Reports and collections use the same receipt schema and human formatter.
