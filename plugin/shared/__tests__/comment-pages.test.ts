@@ -7,16 +7,18 @@
  */
 import { afterEach, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConditionalCache } from "../gh-conditional.ts";
 import { budgetGovernor, memoryBudgetStore } from "../outbound/budget.ts";
 import { setForgeGovernor } from "../outbound/github-budget.ts";
+import { outboundFailure } from "../outbound/failure.ts";
 import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import { ok } from "../outcome.ts";
 import { heldRun, type RunOptions, type RunResult } from "../proc.ts";
 import { commentPages } from "../records/comment-pages.ts";
+import { currentMs } from "../time.ts";
 import { traceGhRunner } from "../trace.ts";
 
 afterEach(() => setForgeGovernor(null));
@@ -153,4 +155,107 @@ it("reads the plain paged listing where no cache is kept", async () => {
     plain: async () => ok([{ id: 1 }]),
   });
   expect(await list(TARGET)).toEqual(ok([{ id: 1 }]));
+});
+
+it("keeps a page GitHub answered 304 through a prune that removes older entries", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "comment-pages-prune-"));
+  const bodies = new Map([
+    ["a", "[1]"],
+    ["b", "[2]"],
+    ["c", "[3]"],
+  ]);
+  const ghCall = async (args: string[]): Promise<RunResult> => {
+    const path = args.at(-1) ?? "";
+    const body = bodies.get(path) ?? "[]";
+    const tag = `W/"${path}"`;
+    const base = {
+      timedOut: false,
+      bufferExceeded: false,
+      spawnFailed: false,
+      stderrTail: "",
+    };
+    return args.includes(`If-None-Match: ${tag}`)
+      ? {
+          ...base,
+          code: 1,
+          stdout: `HTTP/2.0 304 Not Modified\r\nEtag: "${path}"\r\n\r\n`,
+          stderr: "gh: HTTP 304",
+        }
+      : {
+          ...base,
+          code: 0,
+          stdout: `HTTP/2.0 200 OK\r\nEtag: ${tag}\r\n\r\n${body}`,
+          stderr: "",
+        };
+  };
+  const cache = createConditionalCache({
+    ghCall,
+    git: async () => {
+      throw new Error("no checkout is read");
+    },
+    cacheDir: () => dir,
+    entries: { max: 2, keep: 2 },
+  });
+  const get = (path: string) =>
+    cache.ghConditionalGet(path, { repository: "acme/app" });
+  // "a" is two hours old, "b" one hour: "a" would be pruned first.
+  const age = (seen: Set<string>, hours: number) => {
+    const at = currentMs() / 1000 - hours * 3600;
+    for (const name of readdirSync(dir))
+      if (!seen.has(name)) {
+        utimesSync(join(dir, name), at, at);
+        seen.add(name);
+      }
+  };
+  const seen = new Set<string>();
+  expect(await get("a")).toMatchObject({ ok: true, changed: true });
+  age(seen, 2);
+  expect(await get("b")).toMatchObject({ ok: true, changed: true });
+  age(seen, 1);
+  // Then "a" is revalidated.
+  expect(await get("a")).toMatchObject({ ok: true, changed: false });
+  // A third entry prunes the cache to its two newest.
+  expect(await get("c")).toMatchObject({ ok: true, changed: true });
+  expect(readdirSync(dir).filter((n) => n.endsWith(".json"))).toHaveLength(2);
+  expect(await get("a")).toMatchObject({ ok: true, changed: false });
+  expect(await get("b")).toMatchObject({ ok: true, changed: true });
+});
+
+it("says a request the shared budget refused was not sent, with its class", async () => {
+  const refusal = outboundFailure(
+    "rate-limited",
+    "the forge's budget is spent",
+  );
+  const cache = createConditionalCache({
+    ghCall: async () => heldRun(refusal),
+    git: async () => {
+      throw new Error("no checkout is read");
+    },
+    cacheDir: () => mkdtempSync(join(tmpdir(), "comment-pages-held-")),
+  });
+  const read = await cache.ghConditionalGet(
+    "repos/acme/app/issues/7/comments",
+    {
+      repository: "acme/app",
+    },
+  );
+  expect(read.ok).toBe(false);
+  if (read.ok) return;
+  expect(read.reason).toContain("was not sent");
+  expect(read.reason).toContain("the forge's budget is spent");
+  expect(read.failure?.code).toBe("rate-limited");
+});
+
+it("names the page whose body is not JSON, and keeps the parse error as the cause", async () => {
+  const list = commentPages({
+    ghCacheDir: () => "/unused",
+    ghConditionalGet: async () => ({ ok: true, changed: false, body: "{" }),
+    plain: async () => ok([]),
+  });
+  const read = await list(TARGET);
+  expect(read.ok).toBe(false);
+  if (read.ok) return;
+  expect(read.failure.reason).toContain("page 1");
+  expect(read.failure.reason).toContain("kept");
+  expect(read.failure.cause).toBeInstanceOf(SyntaxError);
 });

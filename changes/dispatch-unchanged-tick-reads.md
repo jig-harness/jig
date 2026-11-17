@@ -16,4 +16,7 @@ release: patch
   are read page by page with conditional requests, each page revalidated
   against the copy an earlier tick kept: a page GitHub answers
   `304 Not Modified` costs no rate limit, and the tick report and `jig budget`
-  record it as a request that cost nothing.
+  record it as a request that cost nothing. The pages are kept in their own
+  `comment-pages/` directory under `JIG_GH_CACHE_DIR` (up to 1,024 entries),
+  and an entry a `304` reuses counts as used, so neither these pages nor
+  `drive-pr`'s cached answers push the other out.

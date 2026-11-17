@@ -1,9 +1,10 @@
 /**
  * Every comment on an issue or pull request, read page by page with
  * conditional requests: each page's `ETag` is kept with its body
- * (`gh-conditional.ts`), and a page GitHub answers `304 Not Modified` is the
- * kept body. A `304` does not count against the primary rate limit, and the
- * cost ledger records it as costing nothing (`outbound/gh-ledger.ts`).
+ * (`gh-conditional.ts`, in a directory of its own, `PAGE_ENTRIES`), and a
+ * page GitHub answers `304 Not Modified` is the kept body. A `304` does not
+ * count against the primary rate limit, and the cost ledger records it as
+ * costing nothing (`outbound/gh-ledger.ts`).
  *
  * The listing ends at the first page holding fewer than `PER_PAGE`
  * comments, which is always asked: a new comment lands on it, or opens it,
@@ -19,16 +20,38 @@
  * Costs: one request per page; a page that did not change costs no primary
  * rate limit.
  */
+import { join } from "node:path";
 import {
   type ConditionalGet,
   type CallContext,
+  createConditionalCache,
   ghCacheDir,
-  ghConditionalGet,
 } from "../gh-conditional.ts";
+import { ghCall, git } from "../proc.ts";
 import { failedBy } from "../outbound/failure.ts";
 import { failed, ok, type Outcome } from "../outcome.ts";
 import { currentMs } from "../time.ts";
 import { type Deadline, listComments } from "./forge-claims.ts";
+
+/**
+ * The pages live apart from the other cached GitHub answers, in
+ * `comment-pages/` under the cache directory, so the many pages a tick lists
+ * and drive-pr's polls do not push each other out. A tick lists a few
+ * hundred pages at most on a host serving several repositories and
+ * credentials; a page reused on a `304` counts as used, so pruning removes
+ * first the pages no tick asked for longest.
+ */
+const PAGE_ENTRIES = { max: 1024, keep: 768 };
+
+const pageCache = createConditionalCache({
+  ghCall,
+  git,
+  cacheDir: () => {
+    const base = ghCacheDir();
+    return base === null ? null : join(base, "comment-pages");
+  },
+  entries: PAGE_ENTRIES,
+});
 
 /** The comments one page holds; a shorter page is the last. */
 const PER_PAGE = 100;
@@ -48,8 +71,8 @@ export interface CommentPagesDeps {
 /** The comment listing over `deps`. */
 export function commentPages(
   deps: CommentPagesDeps = {
-    ghCacheDir,
-    ghConditionalGet,
+    ghCacheDir: pageCache.ghCacheDir,
+    ghConditionalGet: pageCache.ghConditionalGet,
     plain: listComments,
   },
 ) {
@@ -86,8 +109,15 @@ export function commentPages(
       let listed: unknown;
       try {
         listed = JSON.parse(read.body);
-      } catch {
-        return failed("unreadable", "the comment listing is not JSON");
+      } catch (error) {
+        const copy = read.changed
+          ? "as GitHub sent it"
+          : "kept from an earlier read";
+        return failed(
+          "unreadable",
+          `page ${page} of the comment listing, ${copy}, is not JSON`,
+          error,
+        );
       }
       if (!Array.isArray(listed))
         return failed("unreadable", "the comment listing is not a list");

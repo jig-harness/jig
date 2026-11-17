@@ -52,14 +52,23 @@ import { validatorCache } from "./outbound/cache.ts";
  * Cache: `$JIG_GH_CACHE_DIR`, else `~/.cache/jig/gh-cache`. One small file
  * per (repo scope, request), overwritten in place, pruned to a bound — the
  * drive-pr state-dir lesson: an unbounded directory of tiny files is a
- * cost of its own. `JIG_GH_CACHE=off` disables it. Under `NODE_ENV=test`
+ * cost of its own; an entry a `304` revalidates counts as used, so pruning
+ * removes the entries least recently written or reused first.
+ * `JIG_GH_CACHE=off` disables it. Under `NODE_ENV=test`
  * (which `bun test` sets) it is off unless a directory is given explicitly, so
  * a suite that forgets to isolate itself runs uncached rather than reading a
  * neighbour's answer.
  */
 
 import { createHash } from "node:crypto";
-import { entryFile, readJsonFile, writeJsonFile } from "./gh-cache-storage.ts";
+import {
+  DEFAULT_ENTRIES,
+  type EntryLimit,
+  entryFile,
+  readJsonFile,
+  touchFile,
+  writeJsonFile,
+} from "./gh-cache-storage.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -119,12 +128,16 @@ export function createConditionalCache({
   ghCall,
   git,
   cacheDir,
+  entries,
 }: {
   ghCall: typeof defaultGhCall;
   git: typeof defaultGit;
   /** Where entries live instead of the environment's choice (`ghCacheDir`); `null` turns the cache off. */
   cacheDir?: () => string | null;
+  /** How many entries the directory holds before pruning; `DEFAULT_ENTRIES` otherwise. */
+  entries?: EntryLimit;
 }) {
+  const limit = entries ?? DEFAULT_ENTRIES;
   /** How long a cached `gh repo view` answer is trusted. The scope key already
    * invalidates on a remote / `set-default` / `$GH_REPO` change; this only bounds
    * an upstream rename that none of those can see. */
@@ -331,7 +344,7 @@ export function createConditionalCache({
       cached = validatorCache({
         get: readJsonFile,
         set: (key, value) => {
-          if (dir !== null) writeJsonFile(dir, key, value);
+          if (dir !== null) writeJsonFile(dir, key, value, limit);
         },
       }).get(file, request);
     }
@@ -352,6 +365,14 @@ export function createConditionalCache({
         ...definedFields({ cwd: ctx.cwd, env: ctx.env, timeoutSec: left }),
       },
     );
+    // A request the shared budget held was never sent: say so, not that
+    // its (absent) answer did not parse.
+    if (r.held !== undefined)
+      return {
+        ok: false,
+        reason: `gh api ${path} was not sent: ${r.held.reason}`,
+        failure: r.held,
+      };
     const failure = ghRunFailure(r, currentMs() - startMs);
     const classed = failure === null ? {} : { failure };
     if (r.timedOut)
@@ -375,9 +396,11 @@ export function createConditionalCache({
     // exit code — is what decides. Order matters: this must precede the 2xx
     // check's `code === 0` requirement.
     if (parsed.status === 304) {
-      return cached
-        ? { ok: true, changed: false, body: cached.body }
-        : { ok: false, reason: `gh api ${path}: 304 with nothing cached` };
+      if (cached === null)
+        return { ok: false, reason: `gh api ${path}: 304 with nothing cached` };
+      // A reused entry is a used one: pruning removes the oldest first.
+      if (file !== null && keepBody) touchFile(file);
+      return { ok: true, changed: false, body: cached.body };
     }
     if (parsed.status >= 200 && parsed.status < 300 && r.code === 0) {
       if (file !== null && !keepBody) {
@@ -386,7 +409,7 @@ export function createConditionalCache({
       } else if (file !== null && dir !== null && parsed.etag !== "") {
         validatorCache({
           get: readJsonFile,
-          set: (key, value) => writeJsonFile(dir, key, value),
+          set: (key, value) => writeJsonFile(dir, key, value, limit),
         }).set(file, request, parsed.etag, parsed.body);
       }
       return { ok: true, changed: true, body: parsed.body };
