@@ -93,10 +93,26 @@ function serialHold(
 ): string | null {
   if (serial.unknown !== undefined)
     return `${serial.unknown} cannot be read, so whether a sibling of ${key} is in progress is unknown`;
+  if (
+    serial.busy.includes(key) ||
+    (starting.get(serial.epic) ?? []).includes(key)
+  )
+    return null;
   const busy = serial.busy.filter((k) => k !== key);
   const unread = serial.unread.filter((k) => k !== key);
-  const next = starting.get(serial.epic) ?? [];
+  const next = (starting.get(serial.epic) ?? []).filter((k) => k !== key);
   if (busy.length + unread.length + next.length < width) return null;
+  return widthHoldReason(serial.epic, width, busy, unread, next);
+}
+
+/** Name the occupied slots when an epic has no remaining width. */
+function widthHoldReason(
+  epic: string,
+  width: number,
+  busy: string[],
+  unread: string[],
+  next: readonly string[],
+): string {
   const taken = [
     ...(busy.length > 0 ? [`working ${busy.join(", ")}`] : []),
     ...(unread.length > 0
@@ -105,7 +121,7 @@ function serialHold(
     ...(next.length > 0 ? [`starting ${next.join(", ")}`] : []),
   ];
   const children = width === 1 ? "child" : "children";
-  return `${serial.epic} works at most ${width} ${children} at once (dispatch.epic_width): ${taken.join("; ")}`;
+  return `${epic} works at most ${width} ${children} at once (dispatch.epic_width): ${taken.join("; ")}`;
 }
 
 /**
@@ -126,8 +142,42 @@ export interface PassedChild {
  * reports it, but takes no slot: it is noted in `passed` and its next
  * sibling may start in its place.
  */
+export interface Admission {
+  serial: Serial;
+  child: string;
+}
+
+/** A legacy serial constraint is the leaf's own admission when no hierarchy was supplied. */
+function admissionsOf(
+  item: QueueItem & { serial?: Serial | undefined; admissions?: Admission[] },
+): Admission[] {
+  if (item.admissions !== undefined) return item.admissions;
+  return item.serial === undefined
+    ? []
+    : [{ serial: item.serial, child: item.issue.identifier }];
+}
+
+/** Multiple descendants of one admitted child consume just that child's existing slot. */
+function reserveAdmission(
+  admission: Admission,
+  starting: Map<string, string[]>,
+): void {
+  const { serial, child } = admission;
+  const next = starting.get(serial.epic) ?? [];
+  if (
+    next.includes(child) ||
+    serial.busy.includes(child) ||
+    serial.unread.includes(child)
+  )
+    return;
+  starting.set(serial.epic, [...next, child]);
+}
+
 export function serializeEpics<
-  T extends QueueItem & { serial?: Serial | undefined },
+  T extends QueueItem & {
+    serial?: Serial | undefined;
+    admissions?: Admission[];
+  },
 >(
   ranked: readonly T[],
   unplaced: Unplaced[],
@@ -138,24 +188,26 @@ export function serializeEpics<
   const starting = new Map<string, string[]>();
   const kept: T[] = [];
   for (const item of ranked) {
-    const serial = item.serial;
+    const admissions = admissionsOf(item);
     const key = item.issue.identifier;
     // A child the tick will not start stays planned, so its own need is
     // raised whichever siblings hold the width, and takes no slot itself.
-    const held = serial === undefined ? null : passOver(item.issue);
-    if (serial !== undefined && held !== null) {
-      passed.set(key, { epic: serial.epic, why: held });
+    const held = admissions.length === 0 ? null : passOver(item.issue);
+    const first = admissions[0];
+    if (first !== undefined && held !== null) {
+      passed.set(key, { epic: first.serial.epic, why: held });
       kept.push(item);
       continue;
     }
     const why =
-      serial === undefined ? null : serialHold(serial, key, width, starting);
+      admissions
+        .map((a) => serialHold(a.serial, a.child, width, starting))
+        .find((reason) => reason !== null) ?? null;
     if (why !== null) {
       unplaced.push({ target: key, record: "tracker", reason: why });
       continue;
     }
-    if (serial !== undefined)
-      starting.set(serial.epic, [...(starting.get(serial.epic) ?? []), key]);
+    for (const admission of admissions) reserveAdmission(admission, starting);
     kept.push(item);
   }
   return kept;

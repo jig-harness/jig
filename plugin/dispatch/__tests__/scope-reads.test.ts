@@ -166,6 +166,69 @@ it("starts no native read or projection after the tick's deadline", async () => 
   expect(calls).toBe(0);
 });
 
+it("bounds a cached fallback change probe and does not start its queue reads", async () => {
+  const saved = new Map<string, unknown>();
+  const cache = {
+    get: <T>(key: string) => (saved.get(key) as T) ?? null,
+    set: (key: string, value: unknown) => {
+      saved.set(key, value);
+    },
+  };
+  let queueReads = 0;
+  let probes = 0;
+  let probeSignal: AbortSignal | undefined;
+  let signalProbeStarted: (() => void) | undefined;
+  const probeStarted = new Promise<void>((resolve) => {
+    signalProbeStarted = resolve;
+  });
+  const tracker = {
+    adapter: "linear",
+    team: "TEAM",
+    stateName: () => null,
+    assignedIssues: async () => {
+      queueReads++;
+      return [];
+    },
+    changedSince: async (_query: unknown, signal?: AbortSignal) => {
+      probes++;
+      probeSignal = signal;
+      signalProbeStarted?.();
+      await new Promise<void>((resolve) => {
+        void resolve;
+      });
+      return { keys: [], complete: true, latest: null };
+    },
+  } as unknown as Tracker;
+  await sharedView(
+    new Map(),
+    tracker,
+    "alex",
+    { nowMs: 100_000, headroom: true },
+    cache,
+  ).then((view) => view.save());
+  expect(queueReads).toBe(2);
+
+  const controller = new AbortController();
+  const opening = sharedView(
+    new Map(),
+    tracker,
+    "alex",
+    {
+      nowMs: 100_001,
+      headroom: true,
+      bound: { deadline: Number.MAX_SAFE_INTEGER, signal: controller.signal },
+    },
+    cache,
+  );
+  await probeStarted;
+  expect(probeSignal).toBe(controller.signal);
+  controller.abort();
+  const view = await opening;
+  expect(view.unavailable).toContain("deadline");
+  expect(probes).toBe(1);
+  expect(queueReads).toBe(2);
+});
+
 it("probes one scope once for every served person and all saved dependencies", async () => {
   const saved = new Map<string, unknown>();
   const cache = {

@@ -103,6 +103,15 @@ function fakeTracker(
     async assignedBy() {
       return { id: "p", name: "maintainer", trusted: true };
     },
+    async listRelations() {
+      return [];
+    },
+    async poolIssue(key: string) {
+      return issues.find((issue) => issue.identifier === key) ?? null;
+    },
+    async getIssue(key: string) {
+      return { identifier: key, description: "", parent: null };
+    },
   } as unknown as Tracker;
   return { tracker, calls, options, assigned };
 }
@@ -136,7 +145,7 @@ describe("the tick's tracker record and the issue facets", () => {
     expect(reading.read.detail).toContain(
       "2 assigned item(s) lack a type, priority or size",
     );
-    expect(reading.wanted.map((w) => w.key)).toEqual(["#1", "#2", "#3"]);
+    expect(reading.wanted.map((w) => w.key).sort()).toEqual(["#1", "#2", "#3"]);
   });
 
   it("reads the stores first, without discovery, under the tick's signal and deadline", async () => {

@@ -156,3 +156,22 @@ export async function claimPlanBlockFromDefaultBranch(
     },
   };
 }
+
+/** Factory inheritance trusts only the repository's default-branch identity. */
+export async function claimFactoryIdentityFromDefaultBranch(
+  root: string,
+): Promise<Outcome<string, "unreadable">> {
+  const read = await defaultBranchSettings(root, "dispatch", ["identity"]);
+  if (!read.ok) return read;
+  const identity = read.value.identity;
+  return typeof identity === "string" && identity.trim() !== ""
+    ? { ok: true, value: identity.trim() }
+    : {
+        ok: false,
+        failure: {
+          code: "unreadable",
+          reason:
+            "factory inheritance requires dispatch.identity on the default branch",
+        },
+      };
+}

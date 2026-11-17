@@ -13,8 +13,8 @@
  * every runtime takes as strings (`dispatchedName`, `dispatchedMark`,
  * `tabTitle`): a workspace it creates is named for the stage and the key,
  * its comment carries the mark with the launch record's id, and the record
- * keeps the same mark. A skill may rename the workspace to what the work
- * became; the mark in its comment and on its record still says the
+ * keeps the same mark. No skill renames the workspace after that; a person
+ * may, and the mark in its comment and on its record still says the
  * dispatcher started it.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";

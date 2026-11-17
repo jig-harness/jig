@@ -179,8 +179,7 @@ is removing.
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),
   [M3](modules/M3-change-area-catalog/)
-- **On the roadmap:** a launch guard that tells repositories and recreated
-  worktrees apart, and answer picks and a merge button in the Orca panel
+- **On the roadmap:** answer picks and a merge button in the Orca panel
   (item 34)
 
 ## Review in tiers, with an arbiter for contested findings

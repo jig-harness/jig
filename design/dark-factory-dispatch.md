@@ -1538,8 +1538,8 @@ create`, which Orca shows as the workspace's name and makes its folder's
   back: the receipt says so.
 - **The tab title** of a launch: `jig dispatch · rearm #456`.
 
-The launch record keeps the same mark. A skill may rename a workspace to
-what the work became; the mark outlives the name, so the comment and the
+The launch record keeps the same mark. A person may rename a workspace;
+the mark outlives the name, so the comment and the
 record still say the dispatcher started it, and the morning report lists
 the workspaces of the night by the mark on their launch records, each with
 the name it carries now.

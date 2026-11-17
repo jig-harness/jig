@@ -778,6 +778,13 @@ implementation. Skip this check for issues about the repository's own code.
    A served-person dispatch prompt supplies the tracker identity and, for
    inherited assignment, its ancestor epic. Use the same claim command with
    `--for <identity>` and, when supplied, `--ancestor <epic-key>`.
+   A factory-inherited dispatch prompt instead supplies `--factory-ancestor <epic-key>`.
+   Pass it alone, without `--for`, `--ancestor` or `--blocking`. The claim reads
+   `dispatch.identity` from the default branch, verifies the live ancestor
+   assignment and writer authority, and assigns the empty child to the
+   credential identity. An absent or unreadable default-branch identity refuses
+   the claim; a refusal stops the pickup.
+
    Keep these as separate quoted arguments. The claim keeps that person as
    sole assignee, checks writer authority and live ancestry, and refuses
    changed holds or assignment. A refusal or stand-down requires a fresh
@@ -850,19 +857,6 @@ implementation. Skip this check for issues about the repository's own code.
 
    ```bash
    bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
-   ```
-
-   Then name the workspace for the stage. With a runtime that can rename its workspaces (Herdr or Orca), this renames it, for
-   example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
-   with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
-   while a malformed argument, an invalid `workspace_name` field or an unreadable title
-   file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
-   tracker text, so write it alone to `.context/scratch/workspace-title.md` with the
-   file editor and pass the file, never the title inside the command; quote
-   the key, since a GitHub key (`#123`) starts a shell comment unquoted:
-
-   ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/scratch/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -1490,18 +1484,11 @@ implementation. Skip this check for issues about the repository's own code.
         report it with the exit code and captured output.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
-      - Still running → armed; move on to the rename and the tracker comment
-        below. Only when the Codex host requires this session to stay alive
-        do you then keep polling the same task until the drive ends, after
-        those steps, so the outcome and handles are published first; never
+      - Still running → armed; move on to the tracker comment below. Only
+        when the Codex host requires this session to stay alive do you then
+        keep polling the same task until the drive ends, after that comment,
+        so the outcome and handles are published first; never
         launch it again, and report the drive's terminal outcome afterward.
-
-      Once armed, name the workspace for the driving stage (same rules as at
-      pickup, with `.context/scratch/workspace-title.md` still holding the title):
-
-      ```bash
-      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/scratch/workspace-title.md --pr <PR>
-      ```
 
       Post the prepared tracker comment with the arm outcome and the
       observability handles. Report the log path's verified, unavailable or

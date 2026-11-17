@@ -125,6 +125,15 @@ function fakeTracker(
       assigners.push({ key, signal });
       return assigner();
     },
+    async listRelations() {
+      return [];
+    },
+    async poolIssue(key: string) {
+      return issues.find((issue) => issue.identifier === key) ?? null;
+    },
+    async getIssue(key: string) {
+      return { identifier: key, description: "", parent: null };
+    },
   } as unknown as Tracker;
   return { tracker, assigners, claimed };
 }
@@ -228,6 +237,27 @@ describe("the tracker's reads under the tick's bound", () => {
     expect(stopped.unplaced[0]?.reason).toContain(
       "stopped at the tick's deadline",
     );
+  });
+
+  it("stops new factory metadata reads at the same tick deadline", async () => {
+    const fake = fakeTracker([item("#1")], trusted);
+    fake.tracker.listRelations = () =>
+      new Promise(() => {
+        /* The shared view must stop waiting at the deadline. */
+      });
+    const tick = endsIn(50);
+    const reading = await readPickups(() => fake.tracker, section, {
+      bound: () => facetBound(undefined),
+      tick,
+    });
+    expect(reading.wanted).toEqual([]);
+    expect(reading.claimed).toBeNull();
+    expect(
+      reading.unplaced.some((row) =>
+        row.reason.includes("stopped at the tick's deadline"),
+      ),
+    ).toBe(true);
+    expect(fake.assigners).toEqual([{ key: "#1", signal: tick.signal }]);
   });
 
   it("reads every assigner and the claimed items with no signal when the tick has no bound", async () => {
