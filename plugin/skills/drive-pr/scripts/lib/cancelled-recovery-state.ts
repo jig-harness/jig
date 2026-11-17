@@ -2,6 +2,8 @@
 import { driveDb } from "./state/db.ts";
 import { canonicalPr, resolveStateDir } from "./state/store.ts";
 import type { RecoveryRecord, RequestedRun } from "./cancelled-recovery.ts";
+import { labelRerunKey } from "./label-cancelled-runs.ts";
+import type { WorkflowRun } from "./status/workflow-runs.ts";
 import { fail } from "./cli.ts";
 import { currentMs } from "../../../../shared/time.ts";
 
@@ -176,5 +178,43 @@ export async function releasePendingGrant(
         "UPDATE cancelled_ci SET requested_at = NULL, workflow_ids = '[]', grant_pending = 0 WHERE clone = ? AND pr = ? AND head = ? AND grant_pending = 1 RETURNING head",
       )
       .get(drive.clone, canonicalPr(pr), head) !== null
+  );
+}
+
+/** When each label-caused re-run on the pull request was requested, by run and attempt. */
+export async function labelReruns(
+  pr: string,
+): Promise<ReadonlyMap<string, number>> {
+  const drive = driveDb(await resolveStateDir());
+  const rows = drive.db
+    .query(
+      "SELECT run_id, attempt, requested_at FROM cancelled_ci_label_rerun WHERE clone = ? AND pr = ?",
+    )
+    .all(drive.clone, canonicalPr(pr)) as {
+    run_id: number;
+    attempt: number;
+    requested_at: number;
+  }[];
+  return new Map(
+    rows.map((row) => [
+      labelRerunKey({ id: row.run_id, attempt: row.attempt }),
+      row.requested_at,
+    ]),
+  );
+}
+
+/** Claim the one re-run of a label-caused cancellation's attempt; atomic across callers. */
+export async function claimLabelRerun(
+  pr: string,
+  run: WorkflowRun,
+): Promise<boolean> {
+  const drive = driveDb(await resolveStateDir());
+  return (
+    drive.db
+      .query(
+        "INSERT OR IGNORE INTO cancelled_ci_label_rerun (clone, pr, run_id, attempt, requested_at) VALUES (?, ?, ?, ?, ?) RETURNING run_id",
+      )
+      .get(drive.clone, canonicalPr(pr), run.id, run.attempt, currentMs()) !==
+    null
   );
 }

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/steward-records/v1/schemas/steward-cause.json",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "const": "cause"
+    },
+    "record": {
+      "type": "string",
+      "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+      "maxLength": 4000
+    },
+    "cause": {
+      "enum": [
+        "needs-person",
+        "refused",
+        "tool-failed",
+        "environment",
+        "scope",
+        "crashed",
+        "unknown"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "pattern": "\\S",
+      "maxLength": 600
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+      "maxLength": 4000
+    }
+  },
+  "required": ["kind", "record", "cause", "summary", "reason"],
+  "additionalProperties": false
+}

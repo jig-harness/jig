@@ -11,6 +11,11 @@ import {
   type WorkflowRun,
 } from "./status/workflow-runs.ts";
 import type { PendingVerdict } from "./state/pass-handoff.ts";
+import {
+  labelCancelledRuns,
+  labelRerunKey,
+  LABEL_SETTLE_MS,
+} from "./label-cancelled-runs.ts";
 import { parseMs } from "../../../../shared/time.ts";
 
 /**
@@ -61,7 +66,15 @@ export interface RecoveryDeps {
   park(pr: string, reason: string): Promise<void>;
   /** Release a claim a pending grant waited on; false when none was pending. */
   releaseGrant?(pr: string, head: string): Promise<boolean>;
+  /** When each label was added or removed on the pull request, the CI hold's left out. */
+  labelWrites?(pr: string): Promise<number[]>;
+  /** When each label-caused re-run was requested, by {@link labelRerunKey}. */
+  labelReruns?(pr: string): Promise<ReadonlyMap<string, number>>;
+  /** Claim the one re-run of a label-caused cancellation; false when already claimed. */
+  claimLabelRerun?(pr: string, run: WorkflowRun): Promise<boolean>;
 }
+/** How long a requested re-run has to produce its replacement. */
+const LABEL_RETRY_WINDOW_MS = 60_000;
 /** The `cancelled-ci` park's option whose answer grants one more re-run. */
 export const RERUN_OPTION = "rerun";
 
@@ -118,6 +131,8 @@ export async function recoverCancelled(
   if (orphaned === "unknown") return "unknown";
   if (orphaned.length === 0) return "wait";
   const now = deps.now();
+  const caused = await recoverLabelCaused(pr, head, orphaned, runs, now, deps);
+  if (caused !== null) return caused;
   const record = await deps.observe(pr, head);
   if (record.requestedAt !== null)
     return await judgeRequest(pr, head, orphaned, runs, record, now, deps);
@@ -453,6 +468,95 @@ async function requestOnce(
   if (refused === "head-moved") return "unknown";
   if (refused !== null)
     return await parkCancelled(deps, pr, head, orphaned, record, refused);
+  return "wait";
+}
+
+/**
+ * A re-run raises its run's attempt, so a retry still inside its replacement
+ * window is found by run, whichever attempt it is on now.
+ */
+function labelRetryPending(
+  orphaned: readonly WorkflowRun[],
+  requested: ReadonlyMap<string, number>,
+  now: number,
+): boolean {
+  return orphaned.some((run) =>
+    [...requested].some(
+      ([key, at]) =>
+        key.startsWith(`${run.id}:`) && now - at < LABEL_RETRY_WINDOW_MS,
+    ),
+  );
+}
+
+/** The runs this drive may replay and won the durable claim on; `null` when none may be replayed. */
+async function claimSafeRuns(
+  pr: string,
+  fresh: readonly WorkflowRun[],
+  deps: RecoveryDeps,
+): Promise<WorkflowRun[] | null> {
+  const allowed = await deps.rerunnable(pr, fresh);
+  const safe = fresh.filter((run) => allowed.includes(run.id));
+  if (safe.length === 0) return null;
+  const claimed: WorkflowRun[] = [];
+  for (const run of safe)
+    if (await deps.claimLabelRerun?.(pr, run)) claimed.push(run);
+  return claimed;
+}
+
+/**
+ * Re-run the cancellations a label write caused, outside the head's budget:
+ * the drive's own label writes start them, so counting them would make every
+ * re-arm spend the re-run it then parks on. Each run's attempt is re-run once,
+ * claimed durably before the request. `null` hands the runs to the head's
+ * budget: none was caused by a label write, every one was already re-run
+ * longer ago than the replacement window, or none may be replayed safely.
+ */
+async function recoverLabelCaused(
+  pr: string,
+  head: string,
+  orphaned: readonly WorkflowRun[],
+  runs: readonly WorkflowRun[],
+  now: number,
+  deps: RecoveryDeps,
+): Promise<"wait" | "parked" | "unknown" | null> {
+  if (deps.labelWrites === undefined || deps.claimLabelRerun === undefined)
+    return null;
+  const writes = await deps.labelWrites(pr);
+  const requested = (await deps.labelReruns?.(pr)) ?? new Map();
+  if (labelRetryPending(orphaned, requested, now)) return "wait";
+  const caused = labelCancelledRuns(orphaned, runs, writes);
+  if (caused.length === 0) return null;
+  // The label write's other runs may still be arriving to replace these.
+  if (now - Math.max(...writes) < LABEL_SETTLE_MS) return "wait";
+  const fresh = caused.filter((run) => !requested.has(labelRerunKey(run)));
+  if (fresh.length === 0)
+    return caused.some(
+      (run) =>
+        now - (requested.get(labelRerunKey(run)) ?? 0) < LABEL_RETRY_WINDOW_MS,
+    )
+      ? "wait"
+      : null;
+  if (!(await deps.confirm(pr, head))) return "unknown";
+  const claimed = await claimSafeRuns(pr, fresh, deps);
+  if (claimed === null) return null;
+  if (claimed.length === 0) return "wait";
+  const answer = await requestRuns(
+    pr,
+    head,
+    claimed,
+    deps,
+    "the re-run of a label write's cancellation, outside the head's budget,",
+  );
+  if (answer === "head-moved") return "unknown";
+  if (answer !== null)
+    return await parkCancelled(
+      deps,
+      pr,
+      head,
+      claimed,
+      await deps.observe(pr, head),
+      answer,
+    );
   return "wait";
 }
 

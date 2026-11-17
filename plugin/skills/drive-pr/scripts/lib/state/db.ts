@@ -26,6 +26,7 @@
  * | `counters` | name: a number that only grows, such as the lease generation or a pull request's driver generation | — |
  * | `review_rounds` | clone, pull request and head: the review round that head was counted as (`review-rounds.ts`) | the review loop's counter in the working tree's Git directory |
  * | `cancelled_ci` | clone, pull request and head: grace observation, a single re-run claim with the runs it re-ran and the further re-runs a person's answer granted, retained across re-arms like review-round evidence | — |
+ * | `cancelled_ci_label_rerun` | clone, pull request, workflow run and attempt: the one re-run of a cancellation a label write caused, requested outside the head's budget | — |
  *
  * A clone's state directory written by an earlier release is read into these
  * rows once, at the first open that finds no `imports` row for the clone
@@ -204,6 +205,17 @@ const MIGRATIONS: readonly Migration[] = [
   {
     additive: true,
     sql: "ALTER TABLE cancelled_ci ADD COLUMN grant_pending INTEGER NOT NULL DEFAULT 0;",
+  },
+  {
+    additive: true,
+    sql: `CREATE TABLE cancelled_ci_label_rerun (
+      clone TEXT NOT NULL,
+      pr TEXT NOT NULL,
+      run_id INTEGER NOT NULL,
+      attempt INTEGER NOT NULL,
+      requested_at INTEGER NOT NULL,
+      PRIMARY KEY (clone, pr, run_id, attempt)
+    );`,
   },
   {
     additive: true,

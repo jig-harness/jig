@@ -63,7 +63,6 @@ SDK
 ERE
 CRLF
 EOF
-ORM
 AST
 SQL
 HTTP
@@ -87,7 +86,6 @@ ISC
 PyYAML
 MySQL
 MariaDB
-PostgreSQL
 FastAPI
 MongoDB
 CircleCI

@@ -40,7 +40,7 @@ export interface WorkflowRun {
   startedAt: string;
   /** Which attempt this is; a re-run raises it. */
   attempt: number;
-  /** When the run last changed, such as when it was cancelled. */
+  /** When the run last changed; for a completed run, about when it ended. */
   updatedAt?: string;
 }
 

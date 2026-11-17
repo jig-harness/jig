@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/steward-records/v1/schemas/steward-resume.json",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "const": "resume"
+    },
+    "record": {
+      "type": "string",
+      "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+      "maxLength": 4000
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+      "maxLength": 4000
+    }
+  },
+  "required": ["kind", "record", "reason"],
+  "additionalProperties": false
+}

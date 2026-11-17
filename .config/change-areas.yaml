@@ -385,7 +385,9 @@ areas:
     # repository supplies, the records registry, the record envelope's codec,
     # the follow-up marker's tables, the forge claims' tables and shapes, the
     # rule matcher's tables, the stations an address names, the verbs of
-    # `jig send` and the issue facets' closed lists, and its base comparison
+    # `jig send`, the issue facets' closed lists, the tables of a decision
+    # waiting for a person and its answers, and the steward records' tables
+    # and shapes, and its base comparison
     # reads change notes through the changelog skill's scripts.
     category: tooling
     paths: ["plugin/protocol/**", "tools/protocol/**"]
@@ -438,6 +440,18 @@ areas:
           - "plugin/protocol/schemas/drive-merge-ready.json"
           - "plugin/protocol/tracker-facets.md"
           - "plugin/protocol/data/tracker-facets.json"
+          - "plugin/protocol/needs-and-answers.md"
+          - "plugin/protocol/data/needs-and-answers.json"
+          - "plugin/protocol/schemas/parked-decision.json"
+          - "plugin/protocol/steward-records.md"
+          - "plugin/protocol/data/steward-records.json"
+          - "plugin/protocol/schemas/steward-rearm.json"
+          - "plugin/protocol/schemas/steward-resume.json"
+          - "plugin/protocol/schemas/steward-need.json"
+          - "plugin/protocol/schemas/steward-facet.json"
+          - "plugin/protocol/schemas/steward-order.json"
+          - "plugin/protocol/schemas/steward-cause.json"
+          - "plugin/protocol/schemas/steward-submission.json"
         source:
           - "tools/protocol/**"
           - "biome.json"
@@ -449,6 +463,7 @@ areas:
           - "lib/findings.ts"
           - "plugin/README.md"
           - "plugin/skills/do-item/SKILL.md"
+          - "plugin/skills/steward/SKILL.md"
           - "plugin/skills/drive-pr/SKILL.md"
           - "plugin/skills/drive-pr/scripts/drive-status.ts"
           - "plugin/skills/drive-pr/scripts/drive.ts"
@@ -468,6 +483,9 @@ areas:
           - "plugin/dispatch/lib/log-ended.ts"
           - "plugin/dispatch/lib/labels.ts"
           - "plugin/dispatch/lib/contention.ts"
+          - "plugin/dispatch/lib/steward-record-shapes.ts"
+          - "plugin/dispatch/lib/steward-record-values.ts"
+          - "plugin/shared/acts.ts"
           - "plugin/ask/lib/drive.ts"
           - "plugin/shared/orca-tabs.ts"
           - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
@@ -518,6 +536,11 @@ areas:
           - "plugin/skills/drive-pr/scripts/lib/state/mailbox-values.ts"
           - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
           - "plugin/skills/reflect/scripts/lib/event-shapes.ts"
+          - "plugin/shared/acts.ts"
+          - "plugin/shared/decisions/answer-normalize.ts"
+          - "plugin/shared/decisions/decision-values.ts"
+          - "plugin/shared/decisions/park-shape.ts"
+          - "plugin/shared/decisions/station.ts"
         command: "bun tools/protocol/generate.ts"
         check: "bun tools/protocol/generate.ts --check"
         notes: >-

@@ -386,6 +386,18 @@ spent. A grant re-runs only what the last re-run left without a result. An
 answer arriving while a claim younger than a minute may still be in flight
 stays pending, and pays for the next request once that re-run is judged
 without a replacement.
+A cancellation a label write caused is re-run outside that budget: a first
+attempt the forge created within 30 seconds after a label other than the CI
+hold's was added or removed on the pull request, or a run of the same workflow
+whose latest attempt was still in flight when such a run arrived, which the
+workflow's concurrency group then cancelled. The drive's own state labels start these
+runs whenever it is armed or re-armed, and a person's re-run of a parked run
+is often their casualty. The drive waits 31 seconds after the latest label
+write, claims each attempt's one re-run in SQLite, requests it after the same
+head and CI-hold checks and waits for its replacement; an attempt still
+cancelled 60 seconds after its request, or one that may not be replayed, falls
+back to the head's budget. A run's next attempt is never label-started, so one
+label write never answers for a run twice.
 A successful replacement clears that operational park. Intentional held-run
 cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
@@ -982,8 +994,8 @@ stops admit it on a mechanical state:
 
 **Structured answers.** In a pull-request comment, write
 `answer <key>: approve` for the recommended option, or
-`answer <key>: choose <option name>` for another option. A thread reply may
-contain just `approve` or `choose <option name>`. A line
+`answer <key>: choose <option>` for another option, `<option>` being its
+name. A thread reply may contain just `approve` or `choose <option>`. A line
 `note <key>: <text>` may add a condition of at most 500 characters.
 The whole comment must contain only answers and their notes, apart from
 blank lines, the `jig send` record and identifiable notification quotes.
@@ -1006,7 +1018,9 @@ Matching normalizes Unicode, case, phone quotes and dashes, bold marks,
 backticks and whitespace, and drops one final full stop or exclamation mark.
 Every person's latest structured answer must choose the same option with
 the same note. If all latest answers are free, the pass receives them all
-to interpret. `jig ask` labels answers structured, free or disputed.
+to interpret. `jig ask` labels answers structured, free or disputed. The
+forms, the normalization and the limits are listed in the Protocol's
+[needs and structured answers](../../protocol/needs-and-answers.md) chapter.
 
 **Apply a structured verdict.** The pass notice and kept answers include
 the chosen option, its framed decision and any note. Apply that option as
@@ -2655,7 +2669,8 @@ where a person can reverse it (§ 8). A park with no class is refused with
 
 Write a `ParkedDecision` JSON file with the file-writing tool, following the
 [writing rules for text that asks a human to decide](../decide/references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide).
-Its schema is `parked-decision/v1`:
+Its schema is `parked-decision/v1`
+([the decision record](../../protocol/needs-and-answers.md#the-decision-record)):
 
 ```json
 {

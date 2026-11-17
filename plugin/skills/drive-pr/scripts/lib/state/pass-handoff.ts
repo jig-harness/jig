@@ -20,6 +20,10 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
 import {
+  ANSWER_FORM_NAMES,
+  type AnswerForm,
+} from "../../../../../shared/decisions/decision-values.ts";
+import {
   isParkedDecision,
   type ParkedDecision,
 } from "../../../../../shared/decisions/park.ts";
@@ -28,7 +32,7 @@ import {
 export interface AnswerChoice {
   option: string;
   recommended: boolean;
-  form: "approve" | "choose";
+  form: AnswerForm;
   digest?: string;
   note?: string;
 }
@@ -89,7 +93,7 @@ function isChoice(v: unknown): v is AnswerChoice {
     isRecord(v) &&
     str(v.option) &&
     typeof v.recommended === "boolean" &&
-    (v.form === "approve" || v.form === "choose") &&
+    (ANSWER_FORM_NAMES as readonly unknown[]).includes(v.form) &&
     (v.digest === undefined || isDecisionDigest(v.digest)) &&
     (v.note === undefined || str(v.note))
   );

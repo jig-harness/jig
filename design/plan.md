@@ -253,6 +253,10 @@ per issue in the design's order:
   rescue branch (`rescue_unpushed`).
 - **Follow-ups.** The routine question classes as configuration
   (`dispatch.followup_routine`).
+- **The Protocol.** The causes of a need, the act each asks for and the
+  classes they group into, added to the
+  [needs and structured answers chapter](../plugin/protocol/needs-and-answers.md)
+  once their table settles.
 
 Done when each build-order issue's acceptance holds, staged in tests where
 the case is rare, and on a dispatch host over a week: a drive whose only
@@ -739,8 +743,8 @@ an entry in another lane shows no button.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, the hub for a team on several hosts, the Protocol
-that readers outside the skills can trust, the line in a team's chat, work that
+second team adopt Jig, the hub for a team on several hosts, the line in a
+team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
 measurement. Last come the developer machine and the runs a person owes.
 
@@ -810,74 +814,58 @@ one host only, nobody outside a host learns that it stopped, and a person
 with several machines has a dashboard per machine.
 [design/control-plane.md](control-plane.md) has how it works and
 [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-the decision. What it will build: the hub, `jig hub serve` in
-`plugin/hub/`, one process with one SQLite database that enrolled hosts call
-over HTTPS and that calls no host; enrollment by device grant, with a
+the decision. What it will build: the hub, a portable core that reaches
+storage, request serving, scheduling, outbound calls and observability only
+through small ports, with no subprocess, no Bun- or Node-only module and no
+local file in it, which a gate holds; a process adapter first (`jig hub
+serve` in `plugin/hub/`, Bun with SQLite, also a container image) and a
+Cloudflare adapter second (Workers with Durable Object SQLite or D1, alarms
+and cron triggers); storage through Drizzle, one SQLite-dialect schema for
+both, with a PostgreSQL adapter designed for and built when a team needs
+it; errors as `Outcome` values with a defect boundary per unit of work
+(ADR-0012 kept); an observability port with M11's typed events, wired
+metrics, a health answer and an external heartbeat. Enrolled hosts call it
+over HTTPS and it calls no host; enrollment is by device grant, with a
 credential per host; a host protocol of `hello`, `changes`, `read` with a
-`notOlderThan` bound, `report`, claims with leases and, last, `offers`,
-versioned by named capabilities; one read of the forge and the tracker for
-every enrolled host, polling first with conditional requests, webhooks as
-hints where the hub can receive them, and a budget per credential for every
-bucket it spends; claims with leases in front of the forge and tracker
-claims, which stay the fences, so a silent host's work is granted to
-another host and a pickup is claimed before its session opens; a silent
-host noticed; the owner of each repository named by the hub, under a lease
-of its own; the source feed of every host served to the dispatch
-dashboard, its only way to show several hosts; and offers to a host with
-free slots, ordered by an offer policy declared as data (an ordered list
-of named rankers, a `command` ranker for a team's own strategy, and named
-policies a repository chooses among). No level of use requires it: the skills never call it,
-and a host whose hub does not answer reads and claims by itself. Built in
-stages, one pull request per step: seams in the dispatcher first, each
-worth building alone (one shared records implementation chosen by
-`records.shared`, the world view apart from the machine view, a pickup
-claim, the GraphQL budget gated); then the hub that reads once; then claims
-with leases and the silent host; then one view of every host; then offers,
-once ADR-0016 is approved. Each stage after the seams is planned in detail,
-and built or not, by the person who asked for the hub once the stage before
-it is in use.
+`notOlderThan` bound, `report`, `health`, claims with leases and, last,
+`offers`, versioned by named capabilities. The forge's and the tracker's
+signed webhooks are its main feed (through a GitHub App of its own and
+Linear's signed webhooks), with only `/webhooks/` public, through a tunnel
+on the process adapter; an hourly reconciliation sweep with conditional
+requests corrects what deliveries lost and counts that drift; enrolled
+dispatchers read its world view and nothing else but a fence's read-back,
+and read for themselves when it does not answer; hosts keep their own
+credentials, and the hub hands out none. Then claims with leases in front of
+the forge and tracker claims, which stay the fences, so a silent host's
+work is granted to another host and a pickup is claimed before its session
+opens; a silent host noticed; the owner of each repository named by the
+hub, under a lease of its own; the source feed of every host served to the
+dispatch dashboard, its only way to show several hosts; and offers to a host
+with free slots, ordered by an offer policy declared as data (an ordered
+list of named rankers, a `command` ranker for a team's own strategy on the
+process adapter, and named policies a repository chooses among). No level
+of use requires it: the skills never call it, and a host whose hub does not
+answer reads and claims by itself. Built in waves, one pull request per
+step: seams in the dispatcher first, each worth building alone (one shared
+records implementation chosen by `records.shared`, the world view apart
+from the machine view, a pickup claim, the GraphQL budget gated); then,
+after a red-team critique of the design, the first wave: the portable core
+and its gate, the process adapter and container image, webhook intake with
+signatures, the world view and the sweep, enrollment and reporting, the
+dispatchers reading through the hub, observability, and one dashboard
+across hosts; then the Cloudflare adapter; then claims and owner leases with
+the silent host, once ADR-0016 is approved; the chat bridge inside the hub;
+offers; and the PostgreSQL adapter on demand. Each wave after the first is
+planned in detail, and built or not, by the person who asked for the hub
+once the wave before it is in use.
 
-Done when, for the first stage, two hosts dispatching the same repositories
-through one hub spend together about what one host spends alone, and
-stopping the hub during a tick costs that tick only a note on its receipt.
-From the second stage a stopped hub also suspends the owner duties a host
-cannot do without its lease, the one exception to a host working as it does
-today.
-
-### 53. The Jig Protocol: chapters generated from the code and held to it by a gate
-
-Jig's parts, and programs outside its skills (the dispatch dashboard's page,
-the Orca plugin, the planned hub, a repository's follow-up command, a second
-agent harness), agree on contracts: a drive's end states and exit codes, the
-records Jig writes, the labels and comment markers it reads, the commands a
-repository supplies. Each is defined once in code and restated by hand in
-several documents, which drift wherever no test ties them to the code.
-[design/protocol.md](protocol.md) has how it works and
-[ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md)
-the decision. What it will build: the [Jig Protocol](../GLOSSARY.md), a
-kind of document in `plugin/protocol/`, one chapter per contract, each
-stable or provisional (naming the plan item that still moves it); a
-generator, `tools/protocol/generate.ts`, that writes each chapter's values
-and their meanings from the code's own tables, with a data file per chapter
-and JSON Schemas for the shapes outside readers parse, held to the code by
-its `--check` in the generated-file inventory; the skills' restatements
-turned into links, or kept as held restatements the gate checks; and the
-chapters rendered on the site. Built in steps, one pull request each;
-built so far: the generator, its gate, the chapter on the drive's end
-states and exit codes, and the chapters on the drive mailbox, on the
-pull-request labels, on hidden comment markers, on the commands a
-repository supplies, on the follow-up claim and its result, on rule
-matchers in configuration, and the provisional chapters on addresses and the
-verbs of `jig send`, on forge claims and on tracker facets
-([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
-for the chapters at `/protocol/`.
-Open, in order: the other provisional chapters.
-
-Done when every stable and provisional chapter of the design is generated
-and gated, the site renders the chapters, and the
-documents programs outside the skills are pointed to link to the chapters
-instead of restating them, and a change that makes a chapter disagree with
-the code fails `bun run gates`.
+Done when, for the first wave, two hosts dispatching the same repositories
+through one hub make no forge or tracker reads for the dispatcher but the
+fences' read-backs, a dropped webhook delivery is found by the next sweep
+and counted as drift, and stopping the hub during a tick costs that tick
+only a note on its receipt. From the claims wave a stopped hub also
+suspends the owner duties a host cannot do without its lease, the one
+exception to a host working as it does today.
 
 ### 54. The line in a team's chat
 

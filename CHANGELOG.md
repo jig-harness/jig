@@ -401,6 +401,80 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.267.1] - 2026-11-17
+
+### Fixed
+
+- A drive no longer parks `cancelled-ci` on the cancellations its own re-arm causes. Flipping the drive's state labels starts the workflows that listen for label events, and under a concurrency group with `cancel-in-progress` those runs cancel each other, and any run in flight on the head (a person's re-run of the parked run included), within seconds. Cancelled-run recovery now re-runs a cancellation a label write caused outside the head's once-per-head re-run, once per run attempt and claimed durably before the request, and waits for its result. Such a cancellation is a first attempt created within 30 seconds after a label other than the CI hold's was added or removed, or a run of its workflow whose latest attempt was still in flight when it arrived. A label-caused re-run still cancelled a minute after its request, or one that may not be replayed under the CI hold, counts against the head's budget as before.
+
+## [0.267.0] - 2026-11-17
+
+### Added
+
+- The Jig Protocol has a provisional chapter on needs and structured
+  answers
+  ([plugin/protocol/needs-and-answers.md](plugin/protocol/needs-and-answers.md)):
+  every field of the decision record (`parked-decision/v1`) a park, a
+  dispatched session's result or the dispatcher's tick frames for a person,
+  the `answer <key>:` and `note <key>:` lines an answer is written in, the
+  forms `approve` and `choose <option>`, how an answer's text is normalized
+  before it is compared, the limits on an answer, a digest and a decision,
+  the act a need asks of a person and the act of each decision class Jig
+  knows, and the keys and options of the dispatcher's own framings. Its data
+  file, `plugin/protocol/data/needs-and-answers.json`, and the decision
+  record's JSON Schema, `plugin/protocol/schemas/parked-decision.json`,
+  carry them for a dashboard, a workspace app's panel or any program that
+  shows a decision and writes an answer. The decision record's stored
+  reader now checks a record against the same description the schema is
+  generated from, and reads every record it read before.
+  **Consumer action:** none.
+- The Jig Protocol has a provisional chapter on steward records
+  ([plugin/protocol/steward-records.md](plugin/protocol/steward-records.md)):
+  the closed records a steward pass submits for the dispatcher's next tick
+  to check and apply. It gives each kind (`rearm`, `resume`, `need`,
+  `facet`, `order` and `cause`) with what the tick does with it, every
+  field of each kind with its type, the causes a run's record may name, the
+  bounds a submission is held to, and what a reader does with a record it
+  does not know. Its data file, `plugin/protocol/data/steward-records.json`,
+  and a JSON Schema per kind and for a whole submission (`steward-rearm.json`
+  to `steward-cause.json` and `steward-submission.json` under
+  `plugin/protocol/schemas/`) carry them for a program that submits records
+  for a steward pass or reads the ones a host keeps. The steward's reader now
+  checks each record against the same description the schemas are generated
+  from, and reads every record it read before, except a `facet` record whose
+  facet is given as a list (`["type"]`) rather than its name, which the tick
+  could never apply.
+  **Consumer action:** none.
+
+### Changed
+
+- With the chapters on needs and structured answers and on steward records,
+  every chapter of the [Protocol design](design/protocol.md) is built, so
+  the Protocol leaves the roadmap. Its open follow-ups are backlog issues
+  [#1155](https://github.com/jig-harness/jig/issues/1155),
+  [#1176](https://github.com/jig-harness/jig/issues/1176) and
+  [#1250](https://github.com/jig-harness/jig/issues/1250).
+  **Consumer action:** none.
+
+### Fixed
+
+- A dispatch tick no longer reads every waiting item of a GitHub tracker again
+  when nothing about it changed. Who assigned an item is kept until the item's
+  update time moves; whether that person can write is asked once per person
+  and kept for 15 minutes, instead of once per item; an item's dependency
+  links (blocked by, blocking), an epic's description and an issue's parent
+  come with the queue read the tick already makes, instead of one issue read
+  and one comment read per item at every full reading. A launch still asks the
+  tracker again who made the assignment and whether they can write.
+- A pull request's comments that the tick lists beyond its repository query
+  are read page by page with conditional requests, each page revalidated
+  against the copy an earlier tick kept: a page GitHub answers
+  `304 Not Modified` costs no rate limit, and the tick report and `jig budget`
+  record it as a request that cost nothing. The pages are kept in their own
+  `comment-pages/` directory under `JIG_GH_CACHE_DIR` (up to 1,024 entries),
+  and an entry a `304` reuses counts as used, so neither these pages nor
+  `drive-pr`'s cached answers push the other out.
+
 ## [0.266.0] - 2026-11-17
 
 ### Added
@@ -9329,7 +9403,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.266.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.267.1...HEAD
+[0.267.1]: https://github.com/jig-harness/jig/compare/v0.267.0...v0.267.1
+[0.267.0]: https://github.com/jig-harness/jig/compare/v0.266.0...v0.267.0
 [0.266.0]: https://github.com/jig-harness/jig/compare/v0.265.0...v0.266.0
 [0.265.0]: https://github.com/jig-harness/jig/compare/v0.264.0...v0.265.0
 [0.264.0]: https://github.com/jig-harness/jig/compare/v0.263.1...v0.264.0
