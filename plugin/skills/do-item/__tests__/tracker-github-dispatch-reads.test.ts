@@ -430,3 +430,24 @@ it("reads who made an assignment apart from whether they can write", async () =>
     "TrackerCollaborator",
   ]);
 });
+
+it("leaves links and a parent whose issue number does not read to their own reads", async () => {
+  const { t } = gitHub(() => null);
+  const source = t.dispatchSource;
+  assert(source?.projectRelations && source.describe);
+  const repository = { nameWithOwner: "acme/app" };
+  for (const number of [undefined, null, 0, -3, 1.5, "7", Number.NaN]) {
+    const value = issueNode({
+      number: 5,
+      extra: {
+        subIssues: conn([]),
+        blockedBy: conn([{ number, repository }]),
+        blocking: conn([]),
+        parent: { number, title: "Parent", repository },
+      },
+    });
+    const row = { identifier: "#5", value };
+    expect(await source.projectRelations(row)).toBeNull();
+    expect(source.describe(row)).toBeNull();
+  }
+});

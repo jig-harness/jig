@@ -59,7 +59,29 @@ const DEPENDENCIES = ["blockedBy", "blocking"]
   )
   .join("\n    ");
 
-/** One dependency list of a row as relations; `null` when the row does not carry it whole. */
+/**
+ * The key of an issue a row links to (`number repository { nameWithOwner }`);
+ * `null` when its number is not a positive whole number, so the link is read
+ * on its own rather than named by a key that names no issue.
+ */
+function linkKey(value: unknown, where: string, home: Repo): string | null {
+  const link = record(value, where);
+  const number = link.number;
+  if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 1)
+    return null;
+  const repository = record(link.repository, `${where}.repository`);
+  return keyOf(
+    {
+      ...repoOf(
+        str(repository.nameWithOwner, `${where}.repository.nameWithOwner`),
+      ),
+      number,
+    },
+    home,
+  );
+}
+
+/** One dependency list of a row as relations; `null` when the row does not carry it whole and well formed. */
 function links(
   value: Record<string, unknown>,
   field: "blockedBy" | "blocking",
@@ -69,28 +91,14 @@ function links(
   if (!isRecord(list) || !Array.isArray(list.nodes)) return null;
   if (!isRecord(list.pageInfo) || list.pageInfo.hasNextPage !== false)
     return null;
-  return list.nodes.map((node) => {
-    const link = record(node, `dispatch issue.${field}`);
-    const repository = record(
-      link.repository,
-      `dispatch issue.${field}.repository`,
-    );
-    return {
-      type: field === "blockedBy" ? "blocked_by" : "blocks",
-      issue: keyOf(
-        {
-          ...repoOf(
-            str(
-              repository.nameWithOwner,
-              `dispatch issue.${field}.repository.nameWithOwner`,
-            ),
-          ),
-          number: Number(link.number),
-        },
-        home,
-      ),
-    };
-  });
+  const keys = list.nodes.map((node) =>
+    linkKey(node, `dispatch issue.${field}`, home),
+  );
+  if (!keys.every((key): key is string => key !== null)) return null;
+  return keys.map((issue) => ({
+    type: field === "blockedBy" ? "blocked_by" : "blocks",
+    issue,
+  }));
 }
 
 /**
@@ -109,7 +117,7 @@ function rowDependencies(
     : [...blockedBy, ...blocking];
 }
 
-/** A row's description and its parent's key, from the fields every row carries. */
+/** A row's description and its parent's key, from the fields every row carries; `null` when they do not read. */
 function rowDescription(
   value: Record<string, unknown>,
   home: Repo,
@@ -117,25 +125,8 @@ function rowDescription(
   if (typeof value.body !== "string" || !("parent" in value)) return null;
   if (value.parent === null) return { description: value.body, parent: null };
   if (!isRecord(value.parent)) return null;
-  const repository = record(
-    value.parent.repository,
-    "dispatch issue.parent.repository",
-  );
-  return {
-    description: value.body,
-    parent: keyOf(
-      {
-        ...repoOf(
-          str(
-            repository.nameWithOwner,
-            "dispatch issue.parent.repository.nameWithOwner",
-          ),
-        ),
-        number: Number(value.parent.number),
-      },
-      home,
-    ),
-  };
+  const parent = linkKey(value.parent, "dispatch issue.parent", home);
+  return parent === null ? null : { description: value.body, parent };
 }
 
 /** Adapt the native project fields to the ordinary issue parser's selected field. */

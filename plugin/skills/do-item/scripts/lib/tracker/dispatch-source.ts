@@ -68,7 +68,8 @@ export interface DispatchSource {
   /**
    * Interpret native links under this repository's relation configuration;
    * `null` when the row does not carry them in full, so they are read on
-   * their own.
+   * their own. GitHub's rows carry the dependency links alone (`blocked_by`,
+   * `blocks`), the only relations dispatch acts on.
    */
   projectRelations?(
     raw: DispatchRawIssue,
