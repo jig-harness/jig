@@ -17,7 +17,7 @@ write one runs no post-merge stage at all. With this built, any repository
 names `/jig:followup` and gets the whole stage; a repository with
 obligations of its own adds them as arms without restating the rest.
 
-This is the design of [plan.md](plan.md) item 17's M7 bullet. All three
+This is the design of [plan.md](plan.md) item 17's M7 bullet. These
 layers ship as the plugin's
 [followup](../plugin/skills/followup/README.md) skill.
 

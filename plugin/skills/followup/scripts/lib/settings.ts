@@ -156,6 +156,18 @@ export type ShowFile = (
 /** Where the configuration a run used came from. */
 export type ConfigOrigin = "integration branch" | "working tree";
 
+/** The variables that would set the repository's own arms: never read beside the integration branch's file. */
+const REPOSITORY_ARM_ENV = /^JIG__FOLLOWUP(?:__ARMS.*)?$/i;
+
+/** `env` without the variables that declare the repository's arms. */
+function withoutArmVariables(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(env).filter(([name]) => !REPOSITORY_ARM_ENV.test(name)),
+  );
+}
+
 /**
  * The repository's merged configuration: its layers with the repository's
  * file as `ref` holds it, when `ref` is given, no `JIG_OVERLAY` names
@@ -178,7 +190,9 @@ export async function runConfig(
       const text = await show(ref, OVERLAY_RELPATH);
       if (text !== undefined)
         return ok({
-          values: layeredConfig(root, env, text).values,
+          // The command-bearing declarations come from the reviewed file:
+          // no environment variable replaces them.
+          values: layeredConfig(root, withoutArmVariables(env), text).values,
           origin: "integration branch",
         });
     }

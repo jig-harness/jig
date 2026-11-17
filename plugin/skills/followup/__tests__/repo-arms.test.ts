@@ -356,7 +356,79 @@ describe("followup.ts with repository arms", () => {
       );
       expectSpawnExit(overruled, 2, mode);
       expect(overruled.stderr).toContain("run check ledger again");
+      const filed = record(root, "ledger", "owed", "filed for investigation");
+      expectSpawnExit(filed, 2, `${mode} owed`);
+      expect(filed.stderr).toContain("left it unread");
     }
+  });
+
+  test("what the agent files adds to the items the check named", () => {
+    const { root } = planned();
+    expectSpawnExit(runScript(root, ["check", "ledger"]), 0, "check");
+    expectSpawnExit(
+      runScript(root, [
+        "record",
+        "ledger",
+        "owed",
+        "--evidence",
+        "filed the entry",
+        "--item",
+        "ENG-99",
+      ]),
+      0,
+    );
+    for (const arm of CORE)
+      expectSpawnExit(record(root, arm, "not-owed", `${arm}: checked`), 0, arm);
+    expectSpawnExit(record(root, "docs-site", "not-owed", "no page"), 0);
+    expectSpawnExit(record(root, "verify", "not-owed", "served"), 0);
+    const rows = (
+      JSON.parse(runScript(root, ["settle", "--json"]).stdout) as {
+        rows: Row[];
+      }
+    ).rows;
+    expect(rows.find((r) => r.arm === "ledger")?.items).toEqual([
+      "the ledger's entry for the export",
+      "ENG-99",
+    ]);
+  });
+
+  test("a check command does not run where the repository tightens read-only-checks", () => {
+    const root = integrated(
+      `${threeForms()}  authority:\n    read-only-checks: person\n`,
+      { ".config/followup/docs-site.md": INSTRUCTIONS },
+    );
+    expectSpawnExit(runScript(root, ["arms"]), 0);
+    const checked = runScript(root, ["check", "ledger"]);
+    expectSpawnExit(checked, 0);
+    const verdict = JSON.parse(checked.stdout) as Row;
+    expect(verdict.verdict).toBe("unread");
+    expect(verdict.evidence).toContain("read-only-checks is person");
+  });
+
+  test("an environment variable cannot replace the reviewed arms", () => {
+    const { root } = planned();
+    const env = {
+      JIG__FOLLOWUP__ARMS: JSON.stringify([
+        { id: "ledger", check_command: check("fail") },
+      ]),
+    };
+    const checked = runScript(root, ["check", "ledger"], env);
+    expectSpawnExit(checked, 0);
+    expect((JSON.parse(checked.stdout) as Row).verdict).toBe("owed");
+  });
+
+  test("a changed declaration invalidates the verdict recorded under the old one", () => {
+    const { root } = planned();
+    expectSpawnExit(runScript(root, ["check", "ledger"]), 0, "check");
+    write(root, ".config/jig.yaml", threeForms("garbage"));
+    gitRun(root, "commit", "-qam", "the integration branch changes the check");
+    gitRun(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+    expectSpawnExit(runScript(root, ["arms"]), 0);
+    for (const arm of CORE)
+      expectSpawnExit(record(root, arm, "not-owed", `${arm}: checked`), 0, arm);
+    const early = record(root, "ledger", "owed", "filed by hand");
+    expectSpawnExit(early, 2);
+    expect(early.stderr).toContain("run check ledger first");
   });
 
   test("an arm with a check command is recorded only after its check runs", () => {

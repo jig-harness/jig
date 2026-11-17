@@ -90,6 +90,7 @@ export function factsOf(over: Partial<Facts> = {}): Facts {
     changedFiles: ["src/export.ts"],
     changeAreas: { known: false, reason: "no catalog" },
     item: { key: "ENG-12", source: "branch" },
+    items: [{ key: "ENG-12", source: "branch" }],
     itemRead: true,
     epics: [],
     outOfTree: { declared: true, saysNone: true, steps: [] },

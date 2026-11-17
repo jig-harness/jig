@@ -74,7 +74,12 @@ function reportRows(run: RunFile): ReportRow[] {
             arm,
             title: armTitle(arm, run.arms),
             source: sourceOf(run, arm),
-            verdict: v.verdict,
+            // What the arm's check left unread or pending stands until a
+            // later check answers.
+            verdict:
+              v.check === "unread" || v.check === "pending"
+                ? v.check
+                : v.verdict,
             items: v.items,
             evidence: v.evidence,
           },
@@ -136,7 +141,7 @@ export function renderSettled(s: Settled): string {
     "|---|---|---|---|",
     ...s.rows.map(
       (r) =>
-        `| ${r.title} (\`${r.arm}\`) | ${VERDICT_WORDS[r.verdict]} | ${cell(r.items.join(", ")) || "—"} | ${cell(r.evidence)} |`,
+        `| ${cell(r.title)} (\`${r.arm}\`) | ${VERDICT_WORDS[r.verdict]} | ${cell(r.items.join(", ")) || "—"} | ${cell(r.evidence)} |`,
     ),
     "",
     owed.length === 0 && s.ending === "done"

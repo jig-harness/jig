@@ -155,9 +155,9 @@ export type RecordFailure =
 /**
  * Why the agent may not record `verdict` on a repository arm with a check
  * command; null when it may. The check reads the verdict first; after it,
- * the agent may add what it carried out or filed, but never turn what the
- * check found owed, pending or unread into not owed: it runs the check
- * again instead.
+ * the agent may add what it carried out or filed to an arm the check found
+ * owed, but never turn that into not owed, and never settle an arm the check
+ * left pending or unread: it runs the check again instead.
  */
 function checkRule(
   run: RunFile,
@@ -170,6 +170,11 @@ function checkRule(
     return failed(
       "check-first",
       `${arm} has a check command, which reads its verdict: run check ${arm} first`,
+    );
+  if (checked === "unread" || checked === "pending")
+    return failed(
+      "check-overruled",
+      `${arm}: its check command left it ${checked}; run check ${arm} again, since only an answer it prints settles the arm`,
     );
   if (verdict === "not-owed" && checked !== "not-owed")
     return failed(
@@ -213,8 +218,15 @@ export function recordVerdict(
       "empty-evidence",
       `${arm}: a verdict needs its evidence, the checkable fact that settled it; "nothing found" is none`,
     );
-  const named = items.map((i) => i.trim()).filter((i) => i !== "");
-  const check = by === "check" ? verdict : run.verdicts[id]?.check;
+  const previous = run.verdicts[id];
+  const check = by === "check" ? verdict : previous?.check;
+  // What the agent carried out or filed adds to the references the check
+  // returned; it never replaces them.
+  const kept =
+    by === "agent" && check !== undefined ? (previous?.items ?? []) : [];
+  const named = [...new Set([...kept, ...items].map((i) => i.trim()))].filter(
+    (i) => i !== "",
+  );
   return ok({
     ...run,
     verdicts: {

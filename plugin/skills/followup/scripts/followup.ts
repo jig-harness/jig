@@ -56,7 +56,7 @@ import {
   siblingSkill,
 } from "../../../shared/consumer.ts";
 import { valueAt } from "../../../shared/config-layers.ts";
-import { attempt, type Outcome } from "../../../shared/outcome.ts";
+import { attempt, failed, type Outcome } from "../../../shared/outcome.ts";
 import { ghRunFailure } from "../../../shared/outbound/github.ts";
 import {
   ghCall,
@@ -65,9 +65,13 @@ import {
   run,
   tsArgv,
 } from "../../../shared/proc.ts";
-import { runRepoCommand } from "../../../shared/repo-command.ts";
+import {
+  runRepoCommand,
+  withDefaultBranchTree,
+} from "../../../shared/repo-command.ts";
 import { type ArmPlan, inOrca, planArms, repoArmOf } from "./lib/arms.ts";
 import {
+  type CheckAnswer,
   checkInstructionFiles,
   describeArm,
   type RepoArm,
@@ -75,7 +79,11 @@ import {
   runCheck,
   withRepoArms,
 } from "./lib/repo-arms.ts";
-import { authorityTable, renderAuthority } from "./lib/authority.ts";
+import {
+  authorityTable,
+  LEVEL_WORDS,
+  renderAuthority,
+} from "./lib/authority.ts";
 import {
   areasFromPlan,
   type ChangeAreas,
@@ -420,6 +428,23 @@ function armLines(run: RunFile): string[] {
   ];
 }
 
+/**
+ * The run's verdicts that still stand under the replanned `arms`: a
+ * repository arm whose declaration changed (its check command, instructions
+ * or skill) has to be settled again, and a verdict of an arm the plan no
+ * longer applies is dropped.
+ */
+function keepCurrentVerdicts(run: RunFile, arms: ArmPlan): RunFile["verdicts"] {
+  return Object.fromEntries(
+    Object.entries(run.verdicts).filter(
+      ([id]) =>
+        arms.apply.includes(id) &&
+        JSON.stringify(repoArmOf(run.arms, id) ?? null) ===
+          JSON.stringify(repoArmOf(arms, id) ?? null),
+    ),
+  );
+}
+
 async function armsCommand(args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
@@ -429,7 +454,12 @@ async function armsCommand(args: string[]): Promise<number> {
   const { dir, run: loaded } = loadRun(values.pr);
   const { facts } = loaded;
   const read = await settingsFor(dir, facts.remote, facts.integrationBranch);
-  const updated = { ...loaded, arms: planOf(read, facts) };
+  const arms = planOf(read, facts);
+  const updated = {
+    ...loaded,
+    arms,
+    verdicts: keepCurrentVerdicts(loaded, arms),
+  };
   writeRun(dir, updated);
   console.log(
     values.json
@@ -502,25 +532,67 @@ function armArgs(args: string[], name: string) {
   return { id, pr: values.pr };
 }
 
+/**
+ * What running `arm`'s check command answers. The command and the program it
+ * runs both come from the integration branch's files, copied to a directory
+ * of their own: a pull request's edit of the script never executes. It runs
+ * only where `followup.authority.read-only-checks` leaves it to the
+ * follow-up.
+ */
+async function checkAnswer(
+  dir: string,
+  loaded: RunFile,
+  arm: RepoArm,
+  command: string,
+  read: RunSettings,
+): Promise<CheckAnswer> {
+  const refusal = checkRefusal(arm, read);
+  if (refusal !== null)
+    return { verdict: "unread", evidence: refusal, items: [] };
+  const commit = await gitIn(dir)([
+    "rev-parse",
+    "--verify",
+    "-q",
+    `${read.ref}^{commit}`,
+  ]);
+  const id = commit.stdout.trim();
+  const ran =
+    commit.code === 0 && id !== ""
+      ? await withDefaultBranchTree(dir, id, (tree) =>
+          runCheck(
+            { ...arm, checkCommand: command },
+            loaded.facts,
+            tree,
+            runRepoCommand,
+          ),
+        )
+      : failed("unreadable", `${read.ref} could not be resolved to a commit`);
+  return ran.ok
+    ? ran.value
+    : {
+        verdict: "unread",
+        evidence: `${arm.id}'s check command was not run: ${ran.failure.reason}`,
+        items: [],
+      };
+}
+
+/** Why `arm`'s check command may not run under `read`; `null` when it may. */
+function checkRefusal(arm: RepoArm, read: RunSettings): string | null {
+  if (read.origin !== "integration branch")
+    return `${read.ref} could not be read, so no check command was run: the working tree's configuration is not the reviewed one`;
+  const level = read.settings.authority["read-only-checks"] ?? "own";
+  return level === "own"
+    ? null
+    : `followup.authority.read-only-checks is ${level} (${LEVEL_WORDS[level]}), so the check command of ${arm.id} was not run: a person runs it, or moves the act back to own`;
+}
+
 async function checkCommand(args: string[]): Promise<number> {
   const { id, pr } = armArgs(args, "check");
   const { dir, run: loaded } = loadRun(pr);
   const { arm, read } = await declaredArm(dir, loaded, id);
   const command =
     arm.checkCommand ?? usage(`${id} has no check_command to run`);
-  const answer =
-    read.origin === "integration branch"
-      ? await runCheck(
-          { ...arm, checkCommand: command },
-          loaded.facts,
-          dir,
-          runRepoCommand,
-        )
-      : {
-          verdict: "unread" as const,
-          evidence: `${read.ref} could not be read, so no check command was run: the working tree's configuration is not the reviewed one`,
-          items: [],
-        };
+  const answer = await checkAnswer(dir, loaded, arm, command, read);
   const recorded = must(recordCheck(loaded, id, answer), 2);
   writeRun(dir, recorded);
   console.log(JSON.stringify({ arm: id, ...recorded.verdicts[id] }, null, 2));
