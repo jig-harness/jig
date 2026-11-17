@@ -59,7 +59,7 @@ export function snapshotItem(
           (r.state === null || !DONE.has(r.state.toLowerCase())),
       )
       .map((r) => r.issue)
-      .sort();
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   let parent: string | null = null;
   if ("parent" in issue) parent = issue.parent?.issue.identifier ?? null;
   else gaps.push("parent");
@@ -89,7 +89,7 @@ export function snapshotItem(
     children,
     blockers,
     assigned,
-    labels: [...issue.labels].sort(),
+    labels: [...issue.labels].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     dueDate: null,
     project: null,
     cycle: null,

@@ -146,7 +146,9 @@ describe("validate", () => {
 
   test("refuses a file that is not YAML, and a missing option value", () => {
     expectSpawnExit(run(["validate", "--file", file("level: [")]), 1);
-    expectSpawnExit(run(["validate", "--file"]), 2);
+    const missing = run(["validate", "--file"]);
+    expectSpawnExit(missing, 2);
+    expect(missing.out).toContain("--file needs a value");
   });
 });
 
@@ -261,6 +263,8 @@ describe("batchable", () => {
   });
 
   test("needs its issues file", () => {
-    expectSpawnExit(run(["batchable"]), 2);
+    const result = run(["batchable"]);
+    expectSpawnExit(result, 2);
+    expect(result.out).toContain("batchable needs --issues");
   });
 });
