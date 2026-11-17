@@ -1094,11 +1094,40 @@ followup:
   off: [workspace-board]
   authority:
     file-items: ask
+  arms:
+    - id: docs-site
+      title: The documentation site
+      when: [docs]                                 # change areas; absent: every merge
+      instructions: .config/followup/docs-site.md  # read from the integration branch
+    - id: ops-ledger
+      check_command: bun scripts/ledger-check.ts   # read-only; prints a verdict JSON
+    - id: verify
+      skill: /team:verify                          # a skill from any source
 ```
+
+**Repository arms** (`followup.arms`) are the obligations this repository
+has after a merge and no other does. Each entry has:
+
+| Key | What it holds |
+|-----|---------------|
+| `id` | The arm's name in the report and in `record`: lowercase words joined by hyphens, not the id of a core arm |
+| `title` | What the report calls it; the id when absent |
+| `when` | The change areas it applies to; absent, it applies to every merge. A merge that touches none of them reports the arm skipped with that reason, and change areas that could not be read skip no arm |
+| `instructions` | A path from the repository root to an instructions (prompt) file the agent carries out. It is read from the integration branch alone, never the pull request's tree, so a pull request cannot rewrite the arm that follows it up; a path the integration branch does not hold is refused |
+| `check_command` | A read-only command that reads the merge facts as JSON on standard input and prints one verdict, `{"verdict": "owed"\|"not-owed"\|"pending"\|"unread", "items": [...], "evidence": "..."}`. It runs as the integration branch's configuration names it (no environment variable replaces the arms), from a copy of that branch's tracked files, so a pull request's edit of the program it names never runs; never when that branch cannot be read or `followup.authority.read-only-checks` is not `own`, without the tracker and forge tokens, within 60 seconds (`JIG_FOLLOWUP_CHECK_TIMEOUT_SEC`) and 64 KiB of output; a run past either, any other exit, or output that is not a verdict is recorded `unread` with the reason, never `not-owed` ([contract](protocol/repo-commands.md)) |
+| `skill` | A skill's slash command (`/team:verify`), from the repository, the user's home or an installed plugin, which the agent runs after the merge; a preview runs none |
+
+An arm has an `instructions` file, a `check_command`, both (the check reads
+the verdict, the instructions say what to carry out), or a `skill` alone.
+An unknown key (a form the skill does not know), an arm with nothing to
+run, an id used twice and an id of a core arm are refused. A repository arm
+acts only within the fixed authority table: what it carries out is an act of
+that table, and no arm widens it.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `followup.off` | list of core arm ids: `tracker`, `deferred-findings`, `out-of-tree`, `release`, `scaffolding`, `live-verification`, `next-step`, `workspace-board` | Every core arm that applies runs | followup | The core arms this repository does not run; each is reported as skipped, with this field as the reason. Repository-only |
+| `followup.arms` | list of repository arms, each `{id, title?, when?, instructions?, check_command?, skill?}` | No repository arms: the core arms alone | followup | The repository's own arms, settled under the same record-and-settle rules as the core arms and placed before the next step; see the table above. Repository-only |
 | `followup.authority` | map of act id (`tracker-status`, `file-items`, `read-only-checks`, `board-card`, `release-workflow`, `deploy-rerun`, `post-deploy-action`, `stop-driver`, `other-repository`, `origin-boundary`, `merge`) to a level (`own`, `ask`, `person`, `never`) | The fixed table ([the skill's README](skills/followup/README.md#authority)) | followup | Moves an act to a stricter level: `file-items: ask` makes the follow-up ask before it files. A looser level than the fixed table's is refused, so no value lets a follow-up merge, act in another repository or cross the origin-reference boundary |
 
 ## Procedure skills
@@ -1176,11 +1205,12 @@ These are set per machine or per run, not committed:
 | `JIG_HOME` | The folder holding the user layer's `jig.yaml`, instead of `~/.jig` |
 | `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
 | `JIG_FORGE_BUDGET` | `off` leaves the forge's calls out of the machine's budget record (see `outbound_share`), the `gh` client's runs and the GraphQL requests sent over HTTPS to `JIG_GITHUB_GRAPHQL_URL` alike: nothing is admitted against it, nothing it answers is recorded, and `gh api` runs without `--include`. Unset, every call is governed |
-| `JIG_GITHUB_INSTALLATION_ID` | The GitHub App installation the `gh` client's installation token (`ghs_`) belongs to, a positive integer, set by whatever issues the token. GitHub counts an installation's primary limits across all its tokens, and a token cannot name its own installation, so this declaration is what lets two tokens of one installation, a replacement after expiry included, share one record in the machine's budget record (see `outbound_share`) and its hold. Unset or unreadable, the token shares the record every credential on the host whose owner is unknown shares. Read only for an installation token |
+| `JIG_GITHUB_INSTALLATION_ID` | The GitHub App installation the `gh` client's installation token (`ghs_`) belongs to, a positive integer, set by whatever issues the token. GitHub counts an installation's primary limits across all its tokens, and a token cannot name its own installation, so this declaration is what lets two tokens of one installation, a replacement after expiry included, share one record in the machine's budget record (see `outbound_share`) and its hold. Unset or unreadable, the token shares the record every credential on the host whose owner is unknown shares. Read only for an installation token. A machine that works for several GitHub accounts needs no setting: a token or a client configuration directory per repository is its own credential, and a stored login whose client picks the account per repository has its owner asked per repository a call addresses (`-R`, a positional repository URL, a `repos/<owner>/<repo>` route, `GH_REPO`, else the working directory's `gh repo set-default` remote or `origin` remote), with `GH_REPO` set for the question |
 | `JIG_AFTER_VERSION_IN_CI` | `1` lets `changelog.after_version` run inside a CI job (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TF_BUILD` or `JENKINS_URL` set); set it only in a job that holds no secret |
 | `JIG_CODE_STATS_COMMAND_TIMEOUT_SEC` | Seconds `code_stats.classify_command` may run before it is stopped and the report fails; 300 by default |
 | `JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC` | Seconds `ci.log_command` may run for one commit status before it is stopped and the log read fails; 300 by default |
 | `JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC` | Seconds `do_item.preflight_command` may run before it is stopped and the claim is refused; 60 by default |
+| `JIG_FOLLOWUP_CHECK_TIMEOUT_SEC` | Seconds the check command of a `followup.arms` entry may run before it is stopped and its arm recorded unread; 60 by default |
 | `JIG_AFTER_VERSION_TIMEOUT_SEC` | Seconds `changelog.after_version` may run before it is stopped and the release fails; 1800 by default |
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
@@ -2193,6 +2223,12 @@ followup:
   off: [workspace-board]                 # core arms this repository does not run
   authority:
     file-items: ask                      # tighten an act; a looser level is refused
+  arms:                                  # the repository's own arms
+    - id: docs-site
+      when: [docs]
+      instructions: .config/followup/docs-site.md
+    - id: verify
+      skill: /team:verify
 specs:
   adapters: [body]                       # default: every layout present, then body
   body_section: Spec

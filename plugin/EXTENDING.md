@@ -107,6 +107,15 @@ named in configuration:
   repository keeps its standing policy.
 - **Decision rules.** `adr.rules_file` holds the machine-readable rules
   `review` checks a change against.
+- **Repository arms.** `followup.arms` adds the repository's own
+  obligations to the follow-up after a merge: an instructions file read from
+  the integration branch, a read-only check command (its contract is the
+  `followup.arms` entry of the
+  [repository commands chapter](protocol/repo-commands.md)), or a skill the
+  repository, the user's home or another plugin already holds, named by its
+  slash command. Each is settled like the follow-up's own arms and acts only
+  within its fixed authority table
+  ([CONFIGURATION.md](CONFIGURATION.md#followup)).
 
 ## Issue tracker
 

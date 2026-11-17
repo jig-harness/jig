@@ -118,6 +118,8 @@ export interface Facts {
   changeAreas: ChangeAreas;
   /** The item the merge closes: a closing keyword in the description, else the branch name's key. */
   item: { key: string; source: "description" | "branch" } | null;
+  /** Every item the merge closes: all the closing keywords of the description (a batch closes several), else the branch name's key. `item` is the first. */
+  items: { key: string; source: "description" | "branch" }[];
   /** Whether tracker linkage was read, rather than merely absent. */
   itemRead: boolean;
   /** The epics the description says it is part of. */
@@ -332,6 +334,7 @@ export function itemOf(
   branch: string,
 ): {
   item: Facts["item"];
+  items: Facts["items"];
   itemRead: boolean;
   epics: string[];
   note: string | null;
@@ -340,19 +343,26 @@ export function itemOf(
   if (keys === null)
     return {
       item: null,
+      items: [],
       itemRead: false,
       epics: [],
       note: "the tracker's key shape cannot be told from the configuration, so no item is read",
     };
-  const closing = closingKeys(body, keys)[0];
+  const closing = [...new Set(closingKeys(body, keys))];
   const fromBranch = keyFromBranch(branch, keys, branchPattern(values));
-  const item =
-    closing !== undefined
-      ? { key: closing, source: "description" as const }
+  const items: Facts["items"] =
+    closing.length > 0
+      ? closing.map((key) => ({ key, source: "description" as const }))
       : fromBranch !== null
-        ? { key: fromBranch, source: "branch" as const }
-        : null;
-  return { item, itemRead: true, epics: partOfKeys(body, keys), note: null };
+        ? [{ key: fromBranch, source: "branch" as const }]
+        : [];
+  return {
+    item: items[0] ?? null,
+    items,
+    itemRead: true,
+    epics: partOfKeys(body, keys),
+    note: null,
+  };
 }
 
 /** What `gatherFacts` needs from outside. */
@@ -579,8 +589,11 @@ function describedFacts(
   view: PrView,
   values: Record<string, unknown>,
   notes: string[],
-): Pick<Facts, "item" | "itemRead" | "epics" | "outOfTree" | "labels"> {
-  const { item, itemRead, epics, note } = itemOf(
+): Pick<
+  Facts,
+  "item" | "items" | "itemRead" | "epics" | "outOfTree" | "labels"
+> {
+  const { item, items, itemRead, epics, note } = itemOf(
     values,
     view.body,
     view.headRefName,
@@ -588,6 +601,7 @@ function describedFacts(
   if (note !== null) notes.push(note);
   return {
     item,
+    items,
     itemRead,
     epics,
     outOfTree: outOfTreeSteps(view.body),

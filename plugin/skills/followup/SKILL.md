@@ -53,7 +53,7 @@ pull request starts over):
 | `integrationBranch`, `baseBranch` | The repository's integration branch (`repository.base_branch`, else the remote's HEAD) and the pull request's base; a base that is neither it nor a `pull_requests.base_rules` base is refused, exit `3` |
 | `mergeSha`, `range` | The merge commit, and the range it brought in, from its parents: `squash` (one parent) or `merge-commit` (two; `branchHead` is the branch's own head), `base..head`; a preview's `open` range is the branch since it left its base |
 | `changedFiles`, `changeAreas` | The files the range changes, and the change areas they touch with their `postDeploy` actions (from `drive.validation_plan_command`, else the change-area catalog); `known: false` says why they could not be read |
-| `item`, `epics` | The tracker item the merge closes (a `Closes <key>` in the description, else the key the branch name carries) and the epics a `Part of <key>` names; an epic is never the item |
+| `items`, `item`, `epics` | Every tracker item the merge closes (each `Closes <key>` in the description, so a batch lists them all, else the key the branch name carries); `item` is the first of them. The epics a `Part of <key>` names; an epic is never an item |
 | `outOfTree` | The `## Out-of-tree follow-ups` section: whether it is `declared`, and each step with whether it is checked off |
 | `scaffolding` | Added lines that look like temporary scaffolding, as candidates |
 | `notes` | What a reader should know about how the facts were read |
@@ -83,15 +83,17 @@ command is installed, `jig dispatch marker claim <PR>` is the same command.
 bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" arms
 ```
 
-It lists the core arms this run settles, in order, and the ones it skips
-with why: one the repository turned off (`followup.off`), the release arm
-where no `changelog.file` is set, the workspace board outside Orca or before
-the merge.
+It lists the arms this run settles, in order, and the ones it skips with
+why: one the repository turned off (`followup.off`), the release arm where
+no `changelog.file` is set, the workspace board outside Orca or before the
+merge. The repository's own arms (`followup.arms`) come before
+`next-step`, each named with what it runs; work them as
+[Repository arms](#repository-arms) says.
 
 Read the authority table in force (the `authority` command, printed in full
 in Step 3) before the first arm: an act it marks `ask`, `person` or `never`
-overrides any instruction of an arm below. Work each arm, then record its
-verdict:
+overrides any instruction of an arm below, a repository arm's included.
+Work each arm, then record its verdict:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" record <arm> <owed|not-owed|pending|unread> --evidence "<the checkable fact>" --item <ref>
@@ -110,10 +112,16 @@ write.
 
 ### tracker: the item and its epic
 
-Without an `item`, skip the item steps and record that fact (no closing
-keyword and no key in the branch name); every `epics` entry is still
-reconciled by step 4, and the deferred findings still apply. Record
+When `itemRead` is false the tracker linkage could not be read: record the
+tracker arm `unread` with the reason in `notes`, never `not-owed`. Without an
+item in `items` and with `itemRead` true, skip the item steps and record that
+fact (no closing keyword and no key in the branch name); every `epics` entry
+is still reconciled by step 4, and the deferred findings still apply. Record
 `not-owed` only when `epics` is empty too.
+
+Steps 1 to 3 run once for **each** entry of `items`, and step 4 for each
+item's epic: a batch's every closed item gets its status, its closing comment
+and its epic's reconciliation.
 
 1. Read the item: `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>`.
 2. **Status**: `do-item`'s post-merge status rule decides between done and
@@ -290,6 +298,51 @@ bun --cwd "<that worktree>" "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" com
 
 An Orca failure only warns (exit `0`): record `not-owed` with what it said,
 or the fact that no worktree holds the branch.
+
+### Repository arms
+
+An arm `arms` lists as a `repository arm` is one the repository declares in
+`.config/jig.yaml` (`followup.arms`), read from the integration branch. It
+settles like a core arm: one verdict with its evidence, and `settle` refuses
+to end while it has none. What it runs takes one of these forms:
+
+- **A check command** (`check command` in the list): run it, and the script
+  records its verdict:
+
+  ```bash
+  bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" check <arm>
+  ```
+
+  It hands the command the facts on standard input, without the tracker and
+  forge tokens, and records `unread` with the reason when the command runs
+  past its limit, exits nonzero or prints no verdict: report that as it
+  stands, never as not owed. After the check, `record` may add what you
+  carried out or filed for an `owed` verdict (`--item`), but refuses to turn
+  what the check found into `not-owed`: run `check` again instead.
+- **An instructions file** (`instructions` in the list): print it as the
+  integration branch holds it, carry it out, then record the verdict:
+
+  ```bash
+  bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" instructions <arm>
+  ```
+
+  Never read the file from the working tree: the pull request may have
+  changed it. When the command exits `1` (the integration branch could not
+  be read), record the arm `unread` with what it said. An arm with both a
+  check command and instructions runs the check first; the instructions say
+  what to carry out with its verdict.
+- **A skill** (`skill` in the list): run its slash command, then record the
+  arm's verdict from what the skill found. In a runtime without slash
+  commands, find that skill's `SKILL.md` where it is installed (the
+  repository's skills folder, the user's home, or an installed plugin) and
+  carry it out. A preview skips every skill arm: running one carries
+  something out.
+
+The instructions, the check and the skill are the repository's, not the
+protocol's: they never widen the authority table below. Each act they ask
+for is the act of the table it is (filing an item, a read-only check, a
+workflow run), checked with `guard` and asked first where the table says,
+and a step only a person can take is reported as owed and filed.
 
 ## Step 3: act within authority
 
