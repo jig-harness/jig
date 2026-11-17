@@ -1173,15 +1173,13 @@ highest generation per repository across both stores, so an undo is a
 tombstone that a restored older disable cannot override. Only
 `jig hub release-owner --undo <repository>` writes one. It refuses until
 the person has removed the repository's owner claim from the machine file.
-That removal has an ownership generation R, the machine file's generation
-once the claim is gone, and the undo records it. The undo then waits until
-every enrolled host has sent a `hello`, after the undo was requested, that
-reports an ownership generation of at least R, and a drain margin has
-passed since it. A `hello` that reports an older generation never counts,
-even when it shows no claim: a host may have lacked the claim at an earlier
-generation, held it at a later one and lost it at R. A tick that began
-before the edit keeps the claim it started with, so a host reports R only
-once its running ticks have ended. Only
+The undo then waits until every enrolled host has sent a `hello`, after
+the undo was requested, that reports no owner claim for the repository in
+the configuration the host runs on and no running tick that began with
+one; each host answers for itself, so one host's file edits never gate
+another's. A `hello` sent before the request never counts. A host whose
+later `hello` reports a claim again cancels the undo, and a drain margin
+must also have passed since the last acknowledgement. Only
 then does the hub name an owner again, so the local owner and a hub-named
 owner never overlap. A
 machine-file edit alone never transfers an owner duty while the hub may
