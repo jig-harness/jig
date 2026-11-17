@@ -227,21 +227,32 @@ export async function pullRequestFiles(
       secondsLeft(bound),
     );
     if (!read.ok) return read;
-    const out = read.value;
-    if (!Array.isArray(out))
-      return unreadable(`PR #${pr}'s file listing is not a list`);
-    for (const f of out) {
-      const names = fileNames(f);
-      if (names === null)
-        return unreadable(`PR #${pr}'s file listing is unreadable`);
-      files.push(...names);
-    }
-    if (out.length < FILES_PAGE) return ok(files);
+    const listed = pageFileNames(read.value, pr);
+    if (!listed.ok) return listed;
+    files.push(...listed.value.names);
+    if (listed.value.count < FILES_PAGE) return ok(files);
     if (page * FILES_PAGE >= FILES_LIMIT)
       return unreadable(
         `PR #${pr} changes ${FILES_LIMIT} or more files, more than the forge lists`,
       );
   }
+}
+
+/** The names one page of a file listing holds, and how many files it listed. */
+function pageFileNames(
+  out: unknown,
+  pr: number,
+): Outcome<{ names: string[]; count: number }, "unreadable"> {
+  if (!Array.isArray(out))
+    return unreadable(`PR #${pr}'s file listing is not a list`);
+  const names: string[] = [];
+  for (const f of out) {
+    const one = fileNames(f);
+    if (one === null)
+      return unreadable(`PR #${pr}'s file listing is unreadable`);
+    names.push(...one);
+  }
+  return ok({ names, count: out.length });
 }
 
 /** One listed file's names: its path, and the path it was renamed from; `null` when it does not read. */

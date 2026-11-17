@@ -137,6 +137,18 @@ async function directFact(
   }
 }
 
+/** The merge facts of the numbered pull requests that read as merged. */
+async function mergedFacts(
+  numbers: number[],
+  states: Map<number, string>,
+  fact: (pr: number) => Promise<MergeFact | null>,
+): Promise<Array<MergeFact | null>> {
+  const merges: Array<MergeFact | null> = [];
+  for (const pr of numbers)
+    if (states.get(pr) === "MERGED") merges.push(await fact(pr));
+  return merges;
+}
+
 /** The lifetime is one tick or one fresh launch check; association answers never survive it. */
 export function planMergeReader(
   tracker: Tracker,
@@ -205,9 +217,7 @@ export function planMergeReader(
             ),
           ),
         ];
-        const merges: Array<MergeFact | null> = [];
-        for (const pr of numbers)
-          if (states.get(pr) === "MERGED") merges.push(await fact(pr));
+        const merges = await mergedFacts(numbers, states, fact);
         if (merges.some((merge) => merge === null))
           reason =
             "a linked pull request's merge facts could not be read completely";
