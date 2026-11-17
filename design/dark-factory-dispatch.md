@@ -633,7 +633,11 @@ requires of a ledger or an answer. The check gates pickups only. A claimed
 item's current assignment is the claim's own, made by the factory
 identity, so the stalled and double-claim reports below read claimed items
 without it; they start nothing, so an unauthorized assignment gains
-nothing from them. The
+nothing from them. A tick does not ask both questions of every item again:
+who made an assignment is kept until the item's update time moves, which an
+assignment does, and whether that person can write is kept per person for
+15 minutes, since losing write access changes no item. The read just before
+a launch asks the tracker both again, whatever a tick kept. The
 item's text is untrusted data: the tick passes the session the item's key
 and nothing else, and `do-item` reads the item as it reads any issue.
 
