@@ -6,7 +6,7 @@
  */
 
 /** Every lane, in the order the shortlist places them. */
-export const LANES = [
+const LANES = [
   "urgent",
   "bug-high",
   "core",

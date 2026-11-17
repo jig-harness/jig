@@ -14,9 +14,9 @@ import { isRecord } from "../guards.ts";
 import { failed, ok, type Outcome } from "../outcome.ts";
 import { OBJECTIVE_CLASSES, type ObjectiveClass } from "./lanes.ts";
 
-export const PRIORITIES_FORMAT = "priorities/v1";
+const PRIORITIES_FORMAT = "priorities/v1";
 export const PRIORITIES_FILE = ".config/priorities.yaml";
-export const LEVELS = ["site", "repository", "individual"] as const;
+const LEVELS = ["site", "repository", "individual"] as const;
 export type Level = (typeof LEVELS)[number];
 
 /** Tracker epics an objective selects: a tracker scope, and the epic keys or labels in it. */

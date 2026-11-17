@@ -128,6 +128,10 @@ describe("the outcome log's key column", () => {
     old.run("ALTER TABLE launches DROP COLUMN result_decision");
     old.run("DROP TABLE station_answers");
     old.run("ALTER TABLE launches DROP COLUMN report");
+    old.run("DROP TABLE allocation_charge");
+    old.run("DROP TABLE allocation_week");
+    old.run("DROP TABLE allocation_lane_epoch");
+    old.run("DROP TABLE allocation_ranking");
     old.run("ALTER TABLE launches DROP COLUMN sessions");
     old.run("ALTER TABLE log DROP COLUMN cause");
     old.run("ALTER TABLE log DROP COLUMN report_by");

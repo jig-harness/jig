@@ -29,7 +29,7 @@ import type { SnapshotItem, TrackerSnapshot } from "./snapshot.ts";
 import { clean, isWeighted, type WeekCharge } from "./week.ts";
 import type { LaneWeights } from "./weights.ts";
 
-export const ALGORITHM_VERSION = "priorities-ranker/1";
+const ALGORITHM_VERSION = "priorities-ranker/1";
 const EPSILON = 1e-9;
 
 /** Each weighted lane's epoch: the week's weighted-start count when it last became ready after having no ready work. */
@@ -468,7 +468,7 @@ function disagreementsOf(pools: Map<Lane, Classified[]>): Disagreement[] {
 }
 
 /** Whether an item may be proposed for a start. */
-export function isReady(item: SnapshotItem): boolean {
+function isReady(item: SnapshotItem): boolean {
   return (
     item.state === "ready" &&
     item.excluded === null &&

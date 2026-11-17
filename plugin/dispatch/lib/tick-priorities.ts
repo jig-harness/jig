@@ -17,10 +17,8 @@ import {
   type RankerOutput,
   readyLanes,
 } from "../../shared/priorities/ranker.ts";
-import {
-  snapshotItem,
-  type SnapshotItem,
-} from "../../shared/priorities/snapshot.ts";
+import type { SnapshotItem } from "../../shared/priorities/snapshot.ts";
+import { snapshotItem } from "./priorities-snapshot.ts";
 import {
   readLaneWeights,
   weightsFilePath,
@@ -38,7 +36,7 @@ import { inTransaction, stateDb } from "./state.ts";
 import type { RepoReport, Unplaced, WantedItem } from "./types.ts";
 
 /** How many prospective starts the report-only shortlist proposes. */
-export const SHORTLIST_DEPTH = 10;
+const SHORTLIST_DEPTH = 10;
 
 /** The priorities part of a repository's report. */
 export interface PrioritiesReport {
@@ -62,7 +60,7 @@ export interface PrioritiesTickInput {
 }
 
 /** Rank one repository's pickups; the report part, or why it could not be made. */
-export function rankRepository(input: PrioritiesTickInput): PrioritiesReport {
+function rankRepository(input: PrioritiesTickInput): PrioritiesReport {
   const read = readRepositoryRecord(
     input.path,
     input.defaultBranch,
@@ -119,7 +117,7 @@ export function rankRepository(input: PrioritiesTickInput): PrioritiesReport {
 }
 
 /** The tick's pickups as snapshot items, each excluded where the plan left it unplaced. */
-export function snapshotItems(
+function snapshotItems(
   input: Pick<PrioritiesTickInput, "pickups" | "unplaced" | "scope">,
 ): SnapshotItem[] {
   const reasons = new Map(input.unplaced.map((u) => [u.target, u.reason]));

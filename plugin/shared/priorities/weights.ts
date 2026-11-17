@@ -35,7 +35,7 @@ export interface LaneWeights {
   problems: string[];
 }
 
-export const WEIGHTS_FILE = "weights.local.yaml";
+const WEIGHTS_FILE = "weights.local.yaml";
 
 /** The weights file's path. */
 export function weightsFilePath(

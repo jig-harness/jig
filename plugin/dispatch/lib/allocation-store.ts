@@ -48,7 +48,7 @@ import {
 
 const WEEK_MS = 7 * 86_400_000;
 /** How long charges are kept: three weeks, above the two the design asks. */
-export const CHARGE_KEEP_MS = 3 * WEEK_MS;
+const CHARGE_KEEP_MS = 3 * WEEK_MS;
 
 /** The tables, created by the state database's migration. */
 export const ALLOCATION_TABLES_SQL = `
@@ -100,19 +100,6 @@ export interface ItemClass {
   lane: Lane | "unallocated" | "excluded";
   objective: string | null;
   owners: Record<string, string>;
-}
-
-/** What a charge records. */
-export interface Charge {
-  claimId: string;
-  repo: string;
-  item: string;
-  lane: Lane | "unallocated";
-  owners: Record<string, string>;
-  weights: LaneWeights["weights"];
-  peripheralShare: number;
-  ranking: string | null;
-  atMs: number;
 }
 
 /** The claim id of `item`'s claim under launch record `launch`. */
@@ -345,7 +332,7 @@ function continuous(
 }
 
 /** The epochs as the ranker reads them. */
-export function readEpochs(db: Database, week: string): LaneEpochs {
+function readEpochs(db: Database, week: string): LaneEpochs {
   const startN: LaneEpochs["startN"] = {};
   for (const lane of ["core", "tactical", "peripheral", "bug-other"] as const) {
     const r = db
