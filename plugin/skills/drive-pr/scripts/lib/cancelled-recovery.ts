@@ -11,7 +11,7 @@ import type { PendingVerdict } from "./state/pass-handoff.ts";
 import {
   labelCancelledRuns,
   labelRerunKey,
-  LABEL_RUN_WINDOW_MS,
+  LABEL_SETTLE_MS,
 } from "./label-cancelled-runs.ts";
 export interface RecoveryRecord {
   firstSeen: number;
@@ -235,7 +235,7 @@ async function recoverLabelCaused(
   const caused = labelCancelledRuns(orphaned, runs, writes);
   if (caused.length === 0) return null;
   // The label write's other runs may still be arriving to replace these.
-  if (now - Math.max(...writes) < LABEL_RUN_WINDOW_MS) return "wait";
+  if (now - Math.max(...writes) < LABEL_SETTLE_MS) return "wait";
   const requested = (await deps.labelReruns?.(pr)) ?? new Map();
   const fresh = caused.filter((run) => !requested.has(labelRerunKey(run)));
   if (fresh.length === 0)

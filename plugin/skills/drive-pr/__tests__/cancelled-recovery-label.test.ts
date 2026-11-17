@@ -127,6 +127,7 @@ describe("cancellations a label write caused", () => {
     const f = fixture("00:01:40", ["00:01:00"]);
     const cancelledByLabel = run(1, "00:00:30", {
       createdAt: iso("00:00:00"),
+      updatedAt: iso("00:01:04"),
       attempt: 2,
     });
     const skippedLabelRun = run(2, "00:01:02", { conclusion: "success" });
@@ -142,6 +143,27 @@ describe("cancellations a label write caused", () => {
     ).toBe("wait");
     expect(f.calls).toEqual([1]);
     expect(f.parks).toEqual([]);
+  });
+
+  test("a run cancelled before the label write counts against the budget", async () => {
+    const f = fixture("00:01:40", ["00:01:00"]);
+    const cancelledEarlier = run(1, "00:00:30", {
+      createdAt: iso("00:00:00"),
+      updatedAt: iso("00:00:40"),
+      attempt: 2,
+    });
+    const skippedLabelRun = run(2, "00:01:02", { conclusion: "success" });
+    const jobs = [gate(1, "cancelled"), gate(2, "skipped")];
+    expect(
+      await recoverCancelled(
+        "5",
+        "head",
+        jobs,
+        [cancelledEarlier, skippedLabelRun],
+        f.deps,
+      ),
+    ).toBe("parked");
+    expect(f.calls).toEqual([]);
   });
 
   test("a label-caused re-run that did not take falls back to the head's budget", async () => {

@@ -1609,9 +1609,9 @@ false "green":
   which the drive requests after the same checks; a park after it says the
   granted re-run was spent. A cancellation a label write caused (a first
   attempt created within 30 seconds after a label other than the CI hold's
-  was added or removed, or a run of its workflow whose latest attempt began
-  before it arrived) is re-run outside that budget, once per run attempt
-  (`cancelled_ci_label_rerun`), 30 seconds after the latest label write; an
+  was added or removed, or a run of its workflow whose latest attempt was in
+  flight when it arrived) is re-run outside that budget, once per run attempt
+  (`cancelled_ci_label_rerun`), 31 seconds after the latest label write; an
   attempt still cancelled 60 seconds after its request, or one that may not
   be replayed, falls back to the head's budget
   (`lib/label-cancelled-runs.ts`). Observing recovery clears that operational park. A

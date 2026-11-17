@@ -380,10 +380,10 @@ until it ages out with no replacement.
 A cancellation a label write caused is re-run outside that budget: a first
 attempt the forge created within 30 seconds after a label other than the CI
 hold's was added or removed on the pull request, or a run of the same workflow
-whose latest attempt began before such a run arrived, which the workflow's
-concurrency group then cancelled. The drive's own state labels start these
+whose latest attempt was still in flight when such a run arrived, which the
+workflow's concurrency group then cancelled. The drive's own state labels start these
 runs whenever it is armed or re-armed, and a person's re-run of a parked run
-is often their casualty. The drive waits 30 seconds after the latest label
+is often their casualty. The drive waits 31 seconds after the latest label
 write, claims each attempt's one re-run in SQLite, requests it after the same
 head and CI-hold checks and waits for its replacement; an attempt still
 cancelled 60 seconds after its request, or one that may not be replayed, falls

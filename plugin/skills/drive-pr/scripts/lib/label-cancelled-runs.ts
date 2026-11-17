@@ -21,6 +21,13 @@ import type { WorkflowRun } from "./status/workflow-runs.ts";
 export const LABEL_RUN_WINDOW_MS = 30_000;
 
 /**
+ * How long recovery waits after the latest label write: past the window and
+ * the second the forge's times are rounded to, so a re-run it then requests
+ * starts after every run that write could have started.
+ */
+export const LABEL_SETTLE_MS = LABEL_RUN_WINDOW_MS + 1_000;
+
+/**
  * When each label was added or removed on the timeline, in milliseconds,
  * leaving out the CI hold's label: its runs are the hold's to settle. Events
  * that are not label transitions, or that carry no readable time or name, are
@@ -56,10 +63,12 @@ function labelStarted(run: WorkflowRun, writes: readonly number[]): boolean {
 
 /**
  * The orphaned runs a label write cancelled: a label-started run itself, on its
- * first attempt, and any run of the same workflow whose latest attempt began
- * no later than a label-started run was created, which that run's arrival
- * cancelled under the workflow's concurrency group. A re-run of either starts
- * a new attempt, so the same label write never answers for it twice.
+ * first attempt, and any run of the same workflow whose latest attempt was in
+ * flight when a label-started run was created (it began no later and ended no
+ * earlier), which that run's arrival cancelled under the workflow's
+ * concurrency group. A run that names no end time is never read as in flight.
+ * A re-run of either starts a new attempt, so the same label write never
+ * answers for it twice.
  */
 export function labelCancelledRuns(
   orphaned: readonly WorkflowRun[],
@@ -71,9 +80,16 @@ export function labelCancelledRuns(
     started.some(
       (label) =>
         label.workflowId === run.workflowId &&
-        (label.id === run.id ||
-          parseMs(label.createdAt) >= parseMs(run.startedAt)),
+        (label.id === run.id || inFlightAt(run, parseMs(label.createdAt))),
     ),
+  );
+}
+
+function inFlightAt(run: WorkflowRun, at: number): boolean {
+  return (
+    run.updatedAt !== undefined &&
+    at >= parseMs(run.startedAt) &&
+    parseMs(run.updatedAt) >= at
   );
 }
 

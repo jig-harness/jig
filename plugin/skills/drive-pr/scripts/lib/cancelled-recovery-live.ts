@@ -8,7 +8,7 @@ import {
   claimLabelRerun,
 } from "./cancelled-recovery-state.ts";
 import { labelWriteTimes } from "./label-cancelled-runs.ts";
-import { timelineEvents } from "./pr-timeline.ts";
+import { readTimeline } from "./pr-timeline.ts";
 import {
   recoverCancelled,
   RERUN_OPTION,
@@ -43,19 +43,23 @@ const live: RecoveryDeps = {
   labelReruns,
   claimLabelRerun,
   async labelWrites(pr) {
-    const events = await timelineEvents(pr);
-    if (events === null) {
+    const events = await readTimeline(pr);
+    if (!events.ok) {
       console.error(
-        "cancelled CI recovery: the label history is unreadable; every cancellation counts against the head's re-run",
+        `cancelled CI recovery: the label history is unreadable (${events.failure.code}: ${events.failure.reason}); every cancellation counts against the head's re-run`,
       );
       return [];
     }
+    let holdLabel: string | null;
     try {
-      return labelWriteTimes(events, holdLabelPolicy());
+      holdLabel = holdLabelPolicy();
     } catch (err) {
-      swallow(err, "the CI hold label is unreadable: no label write is read");
+      console.error(
+        `cancelled CI recovery: the CI hold label is unreadable (${err instanceof Error ? err.message : String(err)}); every cancellation counts against the head's re-run`,
+      );
       return [];
     }
+    return labelWriteTimes(events.value, holdLabel);
   },
   async confirm(pr, head) {
     const read = await ghCall([
