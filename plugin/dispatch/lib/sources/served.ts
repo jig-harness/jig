@@ -296,6 +296,23 @@ export async function readServedPickups(
   return out;
 }
 
+/** The parent hold of a pulled item, read with no cache of the tick's own. */
+function freshParentHold(
+  tracker: Tracker,
+  issue: PoolIssue,
+  policy: ServedPolicy,
+): Promise<string | null> {
+  const none = { get: () => null, set: () => undefined };
+  return servedParentHold(
+    tracker,
+    issue,
+    none,
+    policy.executionPlanBlock,
+    undefined,
+    policy.mergeEvidence,
+  );
+}
+
 /** Launch-time revalidation; do-item's serialized claim repeats the ancestry and writer checks at the write. */
 export async function freshServedPickup(
   tracker: Tracker,
@@ -325,14 +342,7 @@ export async function freshServedPickup(
     if (unlabeled === "hold") return NEEDS_REPOSITORY_LABEL;
     if (unlabeled === "leave")
       return "no repository label places it, and this repository is not its team's default";
-    const parentHold = await servedParentHold(
-      tracker,
-      issue,
-      { get: () => null, set: () => undefined },
-      policy.executionPlanBlock,
-      undefined,
-      policy.mergeEvidence,
-    );
+    const parentHold = await freshParentHold(tracker, issue, policy);
     if (parentHold !== null) return parentHold;
     const held = queueHold(
       {
@@ -965,14 +975,7 @@ async function freshPulledAuthority(
     return `${blockingFor}, which it blocks, is no longer open and not started`;
   if (queueHold({ issue: origin, blockers: [], unblocks: 0 }, policy) !== null)
     return `${blockingFor}, which it blocks, needs a person to start`;
-  const originHold = await servedParentHold(
-    tracker,
-    origin,
-    { get: () => null, set: () => undefined },
-    policy.executionPlanBlock,
-    undefined,
-    policy.mergeEvidence,
-  );
+  const originHold = await freshParentHold(tracker, origin, policy);
   if (originHold !== null) return `${blockingFor}: ${originHold}`;
   const authority = await freshAuthority(tracker, origin, identity, ancestor);
   if (authority !== null) return `${blockingFor}: ${authority}`;
@@ -986,14 +989,7 @@ async function freshPulledAuthority(
         blockedState: (item) =>
           tracker.stateName("blocked", item.nativeType ?? null),
       }) === null &&
-      (await servedParentHold(
-        tracker,
-        item as PoolIssue,
-        { get: () => null, set: () => undefined },
-        policy.executionPlanBlock,
-        undefined,
-        policy.mergeEvidence,
-      )) === null
+      (await freshParentHold(tracker, item as PoolIssue, policy)) === null
     );
   };
   return (await blocksWithin(tracker, blockingFor, issue.identifier, through))
