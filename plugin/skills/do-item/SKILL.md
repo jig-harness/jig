@@ -110,7 +110,8 @@ implement, open a pull request or arm a drive.
 
    It records the paths, the catalog areas their files match and the base
    commit as the item's [footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
-   which the dispatcher compares with the work in flight. Report the paths
+   the input planned dispatcher admission will compare with the work in
+   flight. Report the paths
    and its result. Exit `3` (no path) writes nothing: say the scout could
    not predict one. Any other non-zero exit is reported; the findings
    still stand.
@@ -920,10 +921,12 @@ implementation. Skip this check for issues about the repository's own code.
    The record carries the paths, the catalog areas their files match
    directly, the base commit (`<remote>/<base>` by default; pass
    `--base <remote>/<branch>` for a stacked change's predecessor) and this
-   session, so the dispatcher compares the work in flight with what it
-   starts next. Write it on every pickup and resume that delegates, and
-   again when the plan's paths change materially; never when the item
-   already has an open pull request, whose changed files stand for it. A
+   session, as input for planned dispatcher admission. Write it on a pickup
+   that claimed the item in this session, and again from that session when
+   the plan's paths change materially; a resumed session leaves the record
+   the claiming session wrote, since a reader prefers the claiming
+   session's record over a newer one from another. Never write it when the
+   item already has an open pull request, whose changed files stand for it. A
    non-zero exit never blocks the work: exit `2` names a path it cannot
    carry (fix the list and run it again), exit `3` means no path was named,
    and a tracker failure exits with its class; report it in the status

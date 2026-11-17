@@ -213,6 +213,23 @@ describe("normalizePaths", () => {
     expect(carriedPath("[top].ts")).toBeNull();
   });
 
+  test("a directory written with its slash is checked through its existing components", () => {
+    const root = scratch();
+    writeFileSync(join(root, "file.ts"), "x\n");
+    expect(() => normalizePaths(["file.ts/"], root)).toThrow(
+      /not a directory in the working tree: "file.ts"/,
+    );
+    expect(() => normalizePaths(["file.ts/inner/"], root)).toThrow(
+      /not a directory in the working tree: "file.ts"/,
+    );
+    expect(normalizePaths(["missing/new/"], root)).toEqual(["missing/new/"]);
+  });
+
+  test("a path line with whitespace at an end is refused, not trimmed", () => {
+    expect(() => pathLines("src/file.ts \n")).toThrow(/ambiguous/);
+    expect(() => pathLines(" src/file.ts\n")).toThrow(/ambiguous/);
+  });
+
   test("path lines drop blanks, comments and a leading ./", () => {
     expect(pathLines("a\r\n./b\n  # c\n\n./././d/\n")).toEqual([
       "a",
@@ -450,6 +467,87 @@ describe("the command in a repository", () => {
       paths: ["src/api/"],
       areas: ["api"],
     });
+  });
+
+  test("a changed top-level file a footprint cannot name is refused, not dropped", () => {
+    const dir = repository();
+    writeFileSync(join(dir, "[top].ts"), "new\n");
+    writeFileSync(join(dir, "src", "api", "a.ts"), "changed\n");
+    const r = run(
+      dir,
+      "#12",
+      "--source",
+      "filing",
+      "--diff",
+      "--base",
+      "origin/main",
+      "--dry-run",
+    );
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("[top].ts");
+  });
+
+  test("a new untracked file behind a glob-named directory still reaches its area", () => {
+    const dir = repository();
+    writeFileSync(
+      join(dir, "areas.yaml"),
+      "areas:\n  pages:\n    paths: ['src/**/*.ts']\n",
+    );
+    mkdirSync(join(dir, "src", "[id]"));
+    writeFileSync(join(dir, "src", "[id]", "page.ts"), "new\n");
+    const r = run(
+      dir,
+      "#12",
+      "--source",
+      "filing",
+      "--diff",
+      "--base",
+      "origin/main",
+      "--dry-run",
+    );
+    expectSpawnExit(r, 0);
+    const payload = JSON.parse(r.stdout);
+    expect(payload.paths).toContain("src/");
+    expect(payload.areas).toEqual(["pages"]);
+  });
+
+  test("a dry run refuses a payload a write would refuse", () => {
+    const dir = repository();
+    writeFileSync(
+      join(dir, "areas.yaml"),
+      "areas:\n  api.v2:\n    paths: ['src/api/**']\n",
+    );
+    writeFileSync(join(dir, "paths.txt"), "src/api/a.ts\n");
+    const r = run(
+      dir,
+      "#12",
+      "--source",
+      "filing",
+      "--paths",
+      join(dir, "paths.txt"),
+      "--base",
+      "origin/main",
+      "--dry-run",
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("invalid prediction payload");
+  });
+
+  test("a paths file that is not a regular file is refused without blocking", () => {
+    const dir = repository();
+    const r = run(
+      dir,
+      "#12",
+      "--source",
+      "scout",
+      "--paths",
+      dir,
+      "--base",
+      "origin/main",
+      "--dry-run",
+    );
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("paths file cannot be read");
   });
 
   test("a clean workspace has no diff to record and exits 3", () => {

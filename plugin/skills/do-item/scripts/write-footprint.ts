@@ -24,7 +24,6 @@
  * failure; 5 to 11 a failed call to the tracker, by its failure class, as
  * `tracker.ts` exits.
  */
-import { readFile } from "node:fs/promises";
 import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
 import { recordKind } from "../../../shared/records/registry.ts";
 import {
@@ -34,7 +33,11 @@ import {
 import { defaultGitRunner } from "../../change-areas/scripts/lib/resolve.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { claimSession } from "./lib/claim-marker.ts";
-import { ownCatalog, predictionRecord } from "./lib/footprint-ops.ts";
+import {
+  boundedInput,
+  ownCatalog,
+  predictionRecord,
+} from "./lib/footprint-ops.ts";
 import {
   type Prediction,
   PredictionError,
@@ -48,7 +51,6 @@ import { failureExit } from "./tracker.ts";
 
 const USAGE =
   "usage: write-footprint.ts <issue-key> --source <pickup|scout|filing> (--paths <file> | --diff) [--base <ref>] [--dry-run]";
-const PATHS_LIMIT = 2_000_000;
 
 export interface WriteDeps {
   tracker: () => Pick<Tracker, "writeFootprint">;
@@ -59,13 +61,15 @@ export interface WriteDeps {
 }
 
 async function readPathsFile(path: string): Promise<string> {
-  const text = await readFile(path, "utf8");
-  if (Buffer.byteLength(text) > PATHS_LIMIT)
+  try {
+    return await boundedInput(path);
+  } catch (cause) {
     throw new PredictionError(
       "input",
-      "the paths file exceeds 2,000,000 bytes",
+      `the paths file cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
     );
-  return text;
+  }
 }
 
 async function defaultBaseRef(): Promise<string> {
@@ -136,12 +140,12 @@ export async function main(
     console.error(error.message);
     return error.code === "nothing" ? 3 : 2;
   }
-  if (flags.has("dry-run")) {
-    console.log(JSON.stringify(prediction, null, 2));
-    return 0;
-  }
   try {
     const record = predictionRecord(key, prediction);
+    if (flags.has("dry-run")) {
+      console.log(JSON.stringify(prediction, null, 2));
+      return 0;
+    }
     await deps.tracker().writeFootprint(record);
   } catch (error) {
     const { code, line } = failureExit(error);

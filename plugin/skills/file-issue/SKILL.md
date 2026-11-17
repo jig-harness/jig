@@ -412,12 +412,13 @@ issues were created (with their keys) and which were not, and do not retry
 blindly, which could file a copy.
 
 **The filing footprint** (**exact**), only when the issue follows a diff
-(the change step 6 resolved, or one under review) or the person filing
+in this workspace (the change step 6 resolved from it) or the person filing
 named the paths the work will touch. It records those paths on the new
 issue as its predicted
 [footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
-which the dispatcher compares with the work in flight before starting it.
-From a diff:
+as input for planned dispatcher admission. `--diff` reads this workspace's
+change only: for a change under review, name the paths its pull request
+changed instead. From this workspace's diff:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/write-footprint.ts" "<KEY>" --source filing --diff --base origin/main
@@ -427,8 +428,8 @@ bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/write-footprint.ts" "<KEY>" --source
 paths, write them one per line (a directory ending in `/`) to
 `.context/scratch/file-issue/footprint-<n>.txt` and pass
 `--paths <that file>` instead of `--diff`. Filed from a description alone,
-write nothing: the labels already carry the areas, and the dispatcher
-derives a coarse footprint from them. With sub-issues, write each child's
+write nothing: the labels already carry the areas, which a coarse
+footprint can be derived from. With sub-issues, write each child's
 own paths on that child, and none on an issue whose paths are not known:
 never copy one diff onto every child. Exit `3` (no change, no path) wrote
 nothing; any other non-zero exit is reported in step 12 and filing goes

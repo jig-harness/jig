@@ -28,7 +28,7 @@ function invalid(message: string, cause?: unknown): TrackerRequestError {
   return error;
 }
 
-async function boundedInput(path: string): Promise<string> {
+export async function boundedInput(path: string): Promise<string> {
   const flags =
     process.platform === "win32"
       ? constants.O_RDONLY

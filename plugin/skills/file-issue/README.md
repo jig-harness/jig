@@ -175,8 +175,8 @@ against each flag's written conditions in the taxonomy.
 
 An issue filed from a diff, or from paths the person filing named, also
 gets those paths recorded as its predicted
-[footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), so
-the dispatcher can compare it with the work in flight before starting it.
+[footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as
+input for planned dispatcher admission to compare with the work in flight.
 An issue filed from a description alone gets none: its labels already carry
 the areas.
 

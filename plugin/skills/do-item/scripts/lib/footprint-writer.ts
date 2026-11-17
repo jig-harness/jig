@@ -72,13 +72,23 @@ function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-/** The lines of a paths file: blank lines and `#` comments skipped, `./` dropped. */
+/**
+ * The lines of a paths file: blank lines and `#` comments skipped, `./`
+ * dropped. A path line is kept as written; one with whitespace at either
+ * end could name another file than the one meant, so it is refused.
+ */
 export function pathLines(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"))
-    .map((line) => line.replace(/^(?:\.\/)+/, ""));
+  const out: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
+    if (line !== line.trim())
+      throw new PredictionError(
+        "input",
+        `a path with leading or trailing whitespace is ambiguous: ${JSON.stringify(line)}`,
+      );
+    out.push(line.replace(/^(?:\.\/)+/, ""));
+  }
+  return out;
 }
 
 /** Whether `path` is a directory in the working tree; a path not there yet is a file to come. */
@@ -97,6 +107,34 @@ function isDirectory(root: string, path: string): boolean {
   }
 }
 
+/**
+ * A directory a footprint names, with a trailing slash the caller may have
+ * written: no component of it that exists may be a file, though the
+ * directory itself may be one the change will create.
+ */
+function assertUsableDirectory(root: string, directory: string): void {
+  const parts = directory.split("/").filter((part) => part !== "");
+  for (let depth = 1; depth <= parts.length; depth++) {
+    const prefix = parts.slice(0, depth).join("/");
+    let stat: ReturnType<typeof statSync>;
+    try {
+      stat = statSync(join(root, prefix), { throwIfNoEntry: false });
+    } catch (cause) {
+      throw new PredictionError(
+        "input",
+        `not a path in the working tree: ${JSON.stringify(directory)} (${messageOf(cause)})`,
+        { cause },
+      );
+    }
+    if (stat === undefined) return;
+    if (!stat.isDirectory())
+      throw new PredictionError(
+        "input",
+        `not a directory in the working tree: ${JSON.stringify(prefix)}`,
+      );
+  }
+}
+
 /** Each path once, sorted; a directory that exists ends in `/`, and each is checked against the record's path shape. */
 export function normalizePaths(raw: readonly string[], root: string): string[] {
   const out = new Set<string>();
@@ -107,9 +145,13 @@ export function normalizePaths(raw: readonly string[], root: string): string[] {
     );
   for (const path of raw) {
     if (!matches(FOOTPRINT_PATH, path)) throw refuse(path);
-    const named =
-      path.endsWith("/") || !isDirectory(root, path) ? path : `${path}/`;
+    const named = path.endsWith("/")
+      ? path
+      : isDirectory(root, path)
+        ? `${path}/`
+        : path;
     if (!matches(FOOTPRINT_PATH, named)) throw refuse(path);
+    if (named.endsWith("/")) assertUsableDirectory(root, named);
     out.add(named);
   }
   if (out.size > FOOTPRINT_MAX_PATHS)
@@ -123,7 +165,8 @@ export function normalizePaths(raw: readonly string[], root: string): string[] {
 /**
  * A changed file whose name a footprint cannot carry (a glob character, a
  * colon) stands as its nearest parent directory that it can, so one such
- * name does not cost the whole footprint; one at the top level is left out.
+ * name does not cost the whole footprint; one at the top level has no such
+ * directory, so it is `null` and the caller refuses it.
  */
 export function carriedPath(path: string): string | null {
   const carries = (p: string): boolean => matches(FOOTPRINT_PATH, p);
@@ -143,21 +186,39 @@ function splitNul(out: string): string[] {
 
 /**
  * The areas the paths match directly, in catalog order. A directory
- * reaches the areas whose globs match it and those of its tracked files, so
- * a directory the change will create counts too.
+ * reaches the areas whose globs match it and those of the files under it,
+ * tracked or not yet added, and `changed` names the files a diff changed
+ * before any was stood for by its directory.
  */
 export function seedAreas(
   paths: readonly string[],
   catalog: ChangeAreaCatalog | null,
   git: GitRunner,
+  changed: readonly string[] = [],
 ): string[] {
   if (catalog === null) return [];
   const reached = new Set<string>();
-  const files = paths.flatMap((path) =>
-    path.endsWith("/")
-      ? [path, ...splitNul(git(["ls-files", "-z", "--", path]))]
-      : [path],
-  );
+  const files = [
+    ...changed,
+    ...paths.flatMap((path) =>
+      path.endsWith("/")
+        ? [
+            path,
+            ...splitNul(
+              git([
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "--",
+                path,
+              ]),
+            ),
+          ]
+        : [path],
+    ),
+  ];
   for (const file of files)
     for (const area of areasOf(file, catalog)) reached.add(area);
   return [...catalog.keys()].filter((key) => reached.has(key));
@@ -195,11 +256,20 @@ export function predictFootprint(
   deps: PredictionDeps,
 ): Prediction {
   const base = baseCommit(options.baseRef, deps.git);
+  const changed =
+    options.paths === "diff"
+      ? changedFilesFromWorktree(options.baseRef, deps.git)
+      : [];
   const raw =
     options.paths === "diff"
-      ? changedFilesFromWorktree(options.baseRef, deps.git).flatMap((file) => {
+      ? changed.map((file) => {
           const carried = carriedPath(file);
-          return carried === null ? [] : [carried];
+          if (carried === null)
+            throw new PredictionError(
+              "input",
+              `a changed top-level file a footprint cannot name: ${JSON.stringify(file)}`,
+            );
+          return carried;
         })
       : pathLines(options.paths.list);
   const paths = normalizePaths(raw, deps.root);
@@ -216,7 +286,7 @@ export function predictFootprint(
     source: options.source,
     base,
     paths,
-    areas: seedAreas(paths, deps.catalog(), deps.git),
+    areas: seedAreas(paths, deps.catalog(), deps.git, changed),
     ...(session === "unknown" || session === "" ? {} : { pickup: session }),
   };
 }

@@ -328,10 +328,11 @@ has the rules.
 
 ## Predicted paths
 
-The dispatcher compares the paths an item is expected to touch, its
-[footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), with
-the work already in flight before it starts more. Three writers record one,
-each through `scripts/write-footprint.ts`: a pickup, once it has claimed the
+The paths an item is expected to touch, its
+[footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), are
+recorded as input for planned dispatcher admission, which will compare them
+with the work already in flight before it starts more. These writers record
+one, each through `scripts/write-footprint.ts`: a pickup, once it has claimed the
 item and read the code and before it delegates (`pickup`, naming its
 session); the scout form's footprint scout (`scout`); and `file-issue`, when
 it files from a diff or from paths the person named (`filing`). The script
