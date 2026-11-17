@@ -1,13 +1,8 @@
 /** The owner-local steward's closed records, digest and durable once-only decisions. */
 import { createHash } from "node:crypto";
 import { isMapping } from "../../shared/config-layers.ts";
-import { NEED_ACTS, type NeedAct } from "../../shared/acts.ts";
-import {
-  CONCLUDED_MAX,
-  STEWARD_CAUSES,
-  type StewardCause,
-} from "../../shared/closing-report.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { matches } from "../../shared/shapes.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { stateRoot } from "../receipts.ts";
 import { stateDb } from "./state.ts";
@@ -18,38 +13,22 @@ import type { StewardTargetEvidence } from "./steward-evidence.ts";
 import type { UnreportedRun } from "./steward-causes.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
 import { inTransaction } from "../../shared/records/db.ts";
+import {
+  STEWARD_LIST_SHAPE,
+  STEWARD_REASONED_SHAPE,
+  STEWARD_RECORD_SHAPE,
+  type StewardRecord,
+} from "./steward-record-shapes.ts";
+import {
+  STEWARD_COMMON_FIELDS,
+  STEWARD_RECORD_KINDS,
+} from "./steward-record-values.ts";
+
+export type { StewardRecord };
 
 export const STEWARD_DEADLINE_SEC = 900;
 export const STEWARD_RESUME =
   "Take the option you recommended and record it as a decision taken unattended";
-export type StewardRecord =
-  | {
-      kind: "rearm";
-      target: string;
-      facts: string;
-      class: string;
-      reason: string;
-    }
-  | { kind: "resume"; record: string; reason: string }
-  | { kind: "need"; target: string; act: NeedAct; ask: string; reason: string }
-  | {
-      kind: "facet";
-      target: string;
-      facet: "priority" | "type" | "size";
-      value: string | number;
-      reason: string;
-    }
-  | { kind: "order"; targets: string[]; reason: string }
-  | {
-      kind: "cause";
-      /** The launch record of a run the digest lists in `unreported`. */
-      record: string;
-      cause: StewardCause;
-      /** What the run had got to, at most `CONCLUDED_MAX` characters. */
-      summary: string;
-      reason: string;
-    };
-
 /** What kind of judgment a member of the judgment backlog waits on. */
 export type BacklogKind =
   | "stalled"
@@ -177,102 +156,45 @@ export function backlogHash(members: readonly BacklogMember[]): string {
     .digest("hex");
 }
 
-function nonempty(v: unknown): v is string {
-  return typeof v === "string" && v.trim() !== "" && v.length <= 4000;
+/** The fields a record of `kind` may carry, or none for a kind the steward has not. */
+function fieldsOf(kind: string): readonly string[] | undefined {
+  if (!Object.hasOwn(STEWARD_RECORD_KINDS, kind)) return undefined;
+  const own = STEWARD_RECORD_KINDS[kind as keyof typeof STEWARD_RECORD_KINDS];
+  return [...Object.keys(STEWARD_COMMON_FIELDS), ...Object.keys(own.fields)];
 }
+
+/** Whether an order names no issue twice, which its shape cannot say. */
+function distinctTargets(r: StewardRecord): boolean {
+  return r.kind !== "order" || new Set(r.targets).size === r.targets.length;
+}
+
+/**
+ * The records of a submission, or why it is refused: the first record that
+ * does not read refuses the whole submission. Each record is checked for its
+ * reason, then for its kind and the names of its fields, then against its
+ * kind's shape (`steward-record-shapes.ts`).
+ */
 export function checkedRecords(
   value: unknown,
 ): Outcome<StewardRecord[], "invalid"> {
-  if (!Array.isArray(value) || value.length > 100)
+  if (!matches(STEWARD_LIST_SHAPE, value))
     return failed(
       "invalid",
       "the steward submits at most 100 records as a JSON array",
     );
   for (const r of value) {
-    if (!isMapping(r) || !nonempty(r.reason))
+    if (!matches(STEWARD_REASONED_SHAPE, r))
       return failed("invalid", "each steward record needs a reason");
-    const shapes: Record<string, string[]> = {
-      rearm: ["kind", "target", "facts", "class", "reason"],
-      resume: ["kind", "record", "reason"],
-      need: ["kind", "target", "act", "ask", "reason"],
-      facet: ["kind", "target", "facet", "value", "reason"],
-      order: ["kind", "targets", "reason"],
-      cause: ["kind", "record", "cause", "summary", "reason"],
-    };
-    const keys = Object.hasOwn(shapes, String(r.kind))
-      ? shapes[String(r.kind)]
-      : undefined;
+    const keys = fieldsOf(String((r as { kind?: unknown }).kind));
     if (!keys || Object.keys(r).some((k) => !keys.includes(k)))
       return failed(
         "invalid",
         "the steward record kind or fields are not allowed",
       );
-    const valid = recordValues(r);
-    if (!valid) return failed("invalid", "a steward record has invalid values");
+    if (!matches(STEWARD_RECORD_SHAPE, r) || !distinctTargets(r))
+      return failed("invalid", "a steward record has invalid values");
   }
   return ok(value as StewardRecord[]);
-}
-
-function recordValues(r: Record<string, unknown>): boolean {
-  switch (r.kind) {
-    case "rearm":
-      return rearmValues(r);
-    case "resume":
-      return nonempty(r.record);
-    case "need":
-      return needValues(r);
-    case "facet":
-      return facetValues(r);
-    case "order":
-      return orderValues(r);
-    case "cause":
-      return causeValues(r);
-    default:
-      return false;
-  }
-}
-function rearmValues(r: Record<string, unknown>): boolean {
-  return (
-    nonempty(r.target) &&
-    /^PR #[1-9]\d*$/.test(r.target) &&
-    nonempty(r.facts) &&
-    nonempty(r.class)
-  );
-}
-function needValues(r: Record<string, unknown>): boolean {
-  return (
-    nonempty(r.target) &&
-    nonempty(r.ask) &&
-    (NEED_ACTS as readonly unknown[]).includes(r.act)
-  );
-}
-function facetValues(r: Record<string, unknown>): boolean {
-  if (!nonempty(r.target)) return false;
-  if (r.facet === "priority")
-    return (
-      Number.isInteger(r.value) && Number(r.value) >= 1 && Number(r.value) <= 4
-    );
-  return (
-    ["size", "type"].includes(String(r.facet)) &&
-    nonempty(r.value) &&
-    r.value.length <= 100
-  );
-}
-function causeValues(r: Record<string, unknown>): boolean {
-  return (
-    nonempty(r.record) &&
-    (STEWARD_CAUSES as readonly unknown[]).includes(r.cause) &&
-    nonempty(r.summary) &&
-    [...r.summary].length <= CONCLUDED_MAX
-  );
-}
-function orderValues(r: Record<string, unknown>): boolean {
-  return (
-    Array.isArray(r.targets) &&
-    r.targets.length <= 100 &&
-    r.targets.every(nonempty) &&
-    new Set(r.targets).size === r.targets.length
-  );
 }
 
 /** A human stop or a registry park never becomes a steward retry. */

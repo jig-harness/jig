@@ -136,7 +136,7 @@ it does not make the shipped skills themselves Orca-only.
 | What it is built from | Context, verification and knowledge supplied by instructions, glossary, decisions, change areas and task records | Shipped: M0, M3, M4, M5, M6, M7, M8, M9 and M10; [scaffolding](../FACTORY.md#what-it-stands-on) |
 | What it is built from | Configuration read in layers, extension interfaces and a skill finder | Shipped: [configuration](../plugin/CONFIGURATION.md), [extensions](../plugin/EXTENDING.md), `jig`; remaining assumed values planned: item 10; `init` planned: item 26 |
 | What it is built from | Tracker adapters for GitHub Issues, Linear and Jira | Shipped: [tracker interface](../plugin/EXTENDING.md#issue-tracker); more adapters planned: item 12 |
-| What it is built from | An installed, readable account of the factory's operating rules: the Jig Protocol | Planned: [Protocol design issue](https://github.com/jig-harness/jig/issues/1016) |
+| What it is built from | An installed, readable account of the factory's operating rules: the Jig Protocol | Shipped: [the Jig Protocol](../plugin/protocol/README.md), rendered at `/protocol/` |
 
 The first rows explain the work-item outcome; the features page links to
 them instead of retelling pickup and unattended operation as separate

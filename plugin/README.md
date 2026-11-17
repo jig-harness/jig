@@ -739,7 +739,7 @@ the cause of a pickup's or a follow-up's run that left no closing report
 (above), read from the excerpt of its transcript as evidence. It can also propose one fixed resume of
 an ended dispatched pass that recommended an option outside the human-decision
 registry. The follow-up lane's own routine retry runs first. The next tick
-applies its closed records under the current holds and recovery budget;
+applies its [closed records](protocol/steward-records.md) under the current holds and recovery budget;
 the steward itself launches nothing. It never answers a registry park or
 re-arms a drive a person stopped. A pass lasts at most 15 minutes, uses the
 admitted vendor's complex-tier model, and runs at most three times an hour.

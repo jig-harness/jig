@@ -2879,6 +2879,12 @@ make, use the entry's term instead.
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
+- **Steward record** — one of the closed records a *steward* pass submits
+  for the *tick* to apply: its kind (a re-arm, a resume, a need's framing,
+  a missing facet, a queue order or a run's cause), the kind's own fields,
+  and a reason in the steward's words. The tick checks each against what it
+  reads itself before acting on it, and refuses one whose facts no longer
+  hold ([plugin/protocol/steward-records.md](plugin/protocol/steward-records.md)).
 - **Priorities record** — the proposed versioned declaration of objectives,
   their purposes, end states, owners, classes and shares at site, repository
   or individual level. A mechanical ranker reads it with a tracker snapshot

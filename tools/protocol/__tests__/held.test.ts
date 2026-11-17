@@ -6,6 +6,7 @@ import { MAILBOX } from "../chapters/mailbox.ts";
 import { PR_LABELS } from "../chapters/pr-labels.ts";
 import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { NEEDS_AND_ANSWERS } from "../chapters/needs-and-answers.ts";
+import { STEWARD_RECORDS_CHAPTER } from "../chapters/steward-records.ts";
 import { checkHeldPhrases } from "../held.ts";
 import { cleanUp, put, tempDir } from "./fixture.ts";
 
@@ -247,6 +248,40 @@ test("the stable chapters reject changed operational mailbox, label and associat
     pickup.replaceAll("do-item-pr: <PR URL>", "wrong-pr: <PR URL>"),
   );
   expect(COMMENT_MARKERS.check?.(root)?.length).toBeGreaterThan(0);
+});
+
+test("the steward records chapter rejects a changed kind, field, cause or bound in the skill's decision step", () => {
+  const root = tempDir("held-steward");
+  const file = "plugin/skills/steward/SKILL.md";
+  const skill = readFileSync(resolve(repo, file), "utf8");
+  put(root, file, skill);
+  expect(STEWARD_RECORDS_CHAPTER.check?.(root)).toEqual([]);
+  for (const [before, after] of [
+    [
+      "| `rearm` | `target`, `facts`, `class` |",
+      "| `rearm` | `target`, `facts` |",
+    ],
+    ["| `order` | `targets` |", "| `order` | `targets`, `limit` |"],
+    ["| `need` |", "| `frame` |"],
+    ["`scope`, `crashed`\nor `unknown`", "`scope`, `deadline`\nor `unknown`"],
+    ["in at most 600 characters", "in at most 800 characters"],
+    ["Submit at most 100 records.", "Submit at most 50 records."],
+  ]) {
+    const changed = skill.replace(before ?? "", after ?? "");
+    expect(changed).not.toBe(skill);
+    put(root, file, changed);
+    expect(STEWARD_RECORDS_CHAPTER.check?.(root)?.length).toBeGreaterThan(0);
+  }
+  // A copy of the phrase in a hidden comment does not stand in for the step's own.
+  put(
+    root,
+    file,
+    skill.replace(
+      "Submit at most 100 records.",
+      "Submit at most 50 records. <!-- Submit at most 100 records. -->",
+    ),
+  );
+  expect(STEWARD_RECORDS_CHAPTER.check?.(root)?.length).toBeGreaterThan(0);
 });
 
 test("the drive exit gate checks immediate arm, finish-round, tree lease and push refusal branches", () => {

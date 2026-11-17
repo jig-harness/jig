@@ -22,6 +22,7 @@ import { NEEDS_AND_ANSWERS } from "./chapters/needs-and-answers.ts";
 import { PR_LABELS } from "./chapters/pr-labels.ts";
 import { REPO_COMMANDS_CHAPTER } from "./chapters/repo-commands.ts";
 import { RULE_MATCHERS_CHAPTER } from "./chapters/rule-matchers.ts";
+import { STEWARD_RECORDS_CHAPTER } from "./chapters/steward-records.ts";
 import { TRACKER_FACETS } from "./chapters/tracker-facets.ts";
 
 export const CHAPTERS: readonly Chapter[] = [
@@ -36,6 +37,7 @@ export const CHAPTERS: readonly Chapter[] = [
   FORGE_CLAIMS_CHAPTER,
   TRACKER_FACETS,
   NEEDS_AND_ANSWERS,
+  STEWARD_RECORDS_CHAPTER,
 ];
 
 export const WITHDRAWN: readonly Withdrawn[] = [];

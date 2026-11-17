@@ -26,6 +26,12 @@ import {
   RECORD_KINDS,
 } from "../../../plugin/shared/records/registry.ts";
 import { SEND_VERBS } from "../../../plugin/send/lib/verb-values.ts";
+import {
+  STEWARD_CAUSE_VALUES,
+  STEWARD_COMMON_FIELDS,
+  STEWARD_RECORD_KINDS,
+  STEWARD_RECORD_LIMITS,
+} from "../../../plugin/dispatch/lib/steward-record-values.ts";
 import { STATIONS } from "../../../plugin/shared/address.ts";
 import {
   ADAPTER_FACET_STORES,
@@ -42,6 +48,7 @@ import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
 import { FORGE_CLAIMS_CHAPTER } from "../chapters/forge-claims.ts";
+import { STEWARD_RECORDS_CHAPTER } from "../chapters/steward-records.ts";
 import { TRACKER_FACETS } from "../chapters/tracker-facets.ts";
 import { NEEDS_AND_ANSWERS } from "../chapters/needs-and-answers.ts";
 import { CLASS_ACTS, NEED_ACT_VALUES } from "../../../plugin/shared/acts.ts";
@@ -679,5 +686,106 @@ describe("needs and structured answers", () => {
         missing: [],
       });
     });
+  });
+});
+
+describe("steward records", () => {
+  // Enumerated from the registry and the tables on their own, not through the chapter.
+  const kept = RECORD_KINDS.find((k) => k.name === "dispatch-steward-record");
+  const kinds = Object.keys(STEWARD_RECORD_KINDS);
+  const common = Object.keys(STEWARD_COMMON_FIELDS);
+  const own = Object.entries(STEWARD_RECORD_KINDS).flatMap(([kind, k]) =>
+    Object.entries(k.fields as Record<string, { type: string }>).map(
+      ([field, f]) => ({ kind, field, type: f.type }),
+    ),
+  );
+  const causes = Object.keys(STEWARD_CAUSE_VALUES);
+  const limits = Object.entries(STEWARD_RECORD_LIMITS);
+  const values = STEWARD_RECORDS_CHAPTER.values();
+  const of = (kind: string) =>
+    values.filter((v) => v.kind === kind).map((v) => String(v.name));
+
+  test("renders the registry's kind, each record kind, every field, cause and bound, in the tables' order, and nothing else", () => {
+    expect(kept?.medium).toBe("machine");
+    expect(of("registry")).toEqual(["dispatch-steward-record"]);
+    expect(of("record")).toEqual(kinds);
+    expect(of("field")).toEqual([
+      ...common,
+      ...own.map((f) => `${f.kind}.${f.field}`),
+    ]);
+    expect(of("cause")).toEqual(causes);
+    expect(of("limit")).toEqual(limits.map(([name]) => name));
+    expect(values).toHaveLength(
+      1 +
+        kinds.length +
+        common.length +
+        own.length +
+        causes.length +
+        limits.length,
+    );
+    expect(STEWARD_RECORDS_CHAPTER.excluded).toEqual([]);
+  });
+
+  test("identifies each value by its kind and name alone", () => {
+    const identities = values.map((v) => JSON.stringify([v.kind, v.name]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("carries the registry's meaning and version, each field's kind and type, and each bound's value", () => {
+    expect(values.find((v) => v.kind === "registry")).toMatchObject({
+      meaning: kept?.meaning,
+      version: kept?.version,
+    });
+    for (const f of own)
+      expect(
+        values.find(
+          (v) => v.kind === "field" && v.name === `${f.kind}.${f.field}`,
+        ),
+      ).toMatchObject({ record: f.kind, type: f.type });
+    for (const [name, limit] of limits)
+      expect(
+        values.find((v) => v.kind === "limit" && v.name === name)?.limit,
+      ).toBe(limit.value);
+  });
+
+  test("shows each table's entries in its own section", () => {
+    const [registry, kindSection, fieldSection, causeSection, limitSection] =
+      STEWARD_RECORDS_CHAPTER.sections.map((s) => s.render());
+    const missing = (text: string | undefined, rows: readonly string[]) =>
+      rows.filter((r) => !(text ?? "").includes(`\n${r}`));
+    expect(missing(registry, ["| `dispatch-steward-record` |"])).toEqual([]);
+    expect(
+      missing(
+        kindSection,
+        kinds.map((k) => `| \`${k}\` |`),
+      ),
+    ).toEqual([]);
+    expect(
+      missing(fieldSection, [
+        ...common.map((f) => `| every kind | \`${f}\` |`),
+        ...own.map((f) => `| \`${f.kind}\` | \`${f.field}\` |`),
+      ]),
+    ).toEqual([]);
+    expect(
+      missing(
+        causeSection,
+        causes.map((c) => `| \`${c}\` |`),
+      ),
+    ).toEqual([]);
+    expect(
+      missing(
+        limitSection,
+        limits.map(([name, l]) => `| \`${name}\` | ${l.value} |`),
+      ),
+    ).toEqual([]);
+  });
+
+  test("takes the steward's registry kind, which no other chapter takes", () => {
+    const entry =
+      "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-steward-record";
+    expect(STEWARD_RECORDS_CHAPTER.takes()).toContain(entry);
+    for (const chapter of CHAPTERS)
+      if (chapter.id !== STEWARD_RECORDS_CHAPTER.id)
+        expect(chapter.takes()).not.toContain(entry);
   });
 });

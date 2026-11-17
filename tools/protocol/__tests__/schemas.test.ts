@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { checkedRecords } from "../../../plugin/dispatch/lib/steward.ts";
 import { parseRule } from "../../../plugin/shared/rule-matcher.ts";
 import { s } from "../../../plugin/shared/shapes.ts";
 import {
@@ -153,7 +154,7 @@ describe("schema generation", () => {
       for (const { name, shape } of chapter.schemas ?? [])
         expect(schemaValidator(schemaOf(chapter, name, shape))).toBeFunction();
   });
-  test("accounts for every stable marker kind, and publishes the forge claims from their own chapter alone", () => {
+  test("accounts for every stable marker kind, and publishes the forge claims and the steward's records from their own chapters alone", () => {
     const kinds = [
       ...new Set(
         COMMENT_MARKERS.values()
@@ -168,9 +169,13 @@ describe("schema generation", () => {
       expect(reason.trim()).not.toBe("");
     for (const chapter of CHAPTERS)
       for (const schema of chapter.schemas ?? []) {
-        expect(schema.name).not.toMatch(/facet/);
+        // A facet store's answer gets a schema only once the command store is built.
+        if (/facet/.test(schema.name))
+          expect(schema.name).toBe("steward-facet");
         if (/takeover|launch-claim|merge-ready/.test(schema.name))
           expect(chapter.id).toBe("forge-claims");
+        if (/^steward-/.test(schema.name))
+          expect(chapter.id).toBe("steward-records");
       }
     expect(
       (CHAPTERS.find((c) => c.id === "forge-claims")?.schemas ?? []).map(
@@ -634,5 +639,85 @@ describe("the decision record's writers", () => {
       if (isParkedDecision(value))
         expectSchemaAccepts(published("parked-decision"), value);
       else expectSchemaRejects(published("parked-decision"), value);
+  });
+});
+
+describe("the steward's records", () => {
+  const launch = "20261101T000000Z-0123abcd";
+  const reason = "the evidence shows it";
+  const records = [
+    {
+      kind: "rearm",
+      target: "PR #12",
+      facts: "recovery: generation 3, exit 16",
+      class: "network timeout",
+      reason,
+    },
+    { kind: "resume", record: launch, reason },
+    {
+      kind: "need",
+      target: "PR #12",
+      act: "Decide",
+      ask: "Choose the endpoint.",
+      reason,
+    },
+    {
+      kind: "facet",
+      target: "#34",
+      facet: "priority",
+      value: 2,
+      reason,
+    },
+    { kind: "facet", target: "#34", facet: "size", value: "S", reason },
+    { kind: "order", targets: ["#34", "#35"], reason },
+    {
+      kind: "cause",
+      record: launch,
+      cause: "crashed",
+      summary: "Wrote the migration; the transcript stops mid-test.",
+      reason,
+    },
+  ] as const;
+
+  /** A record fits its kind's schema, and a submission of it the submission's, exactly when the reader reads it. */
+  function agree(record: Record<string, unknown>, reads: boolean) {
+    expect(checkedRecords([record]).ok).toBe(reads);
+    const schema = published(`steward-${String(record.kind)}`);
+    if (reads) {
+      expectSchemaAccepts(schema, record);
+      expectSchemaAccepts(published("steward-submission"), [record]);
+    } else {
+      expectSchemaRejects(published("steward-submission"), [record]);
+      expectSchemaRejects(schema, record);
+    }
+  }
+
+  test("every record the reader reads fits its kind's schema and the submission's", () => {
+    for (const record of records) agree(record, true);
+    expectSchemaAccepts(published("steward-submission"), [...records]);
+    expectSchemaAccepts(published("steward-submission"), []);
+  });
+
+  test("a record the reader refuses for its shape fits neither", () => {
+    const [rearm, resume, need, priority, size, order, cause] = records;
+    for (const record of [
+      { ...rearm, target: "PR #0" },
+      { ...rearm, model: "a model" },
+      { ...rearm, reason: " " },
+      { ...resume, record: "" },
+      { ...need, act: "Approve" },
+      { ...priority, value: 5 },
+      { ...priority, value: "2" },
+      { ...size, value: "v".repeat(101) },
+      { ...size, facet: "estimate" },
+      { ...order, targets: "#34" },
+      { ...cause, cause: "deadline" },
+      { ...cause, summary: "s".repeat(601) },
+    ])
+      agree(record, false);
+    expectSchemaRejects(
+      published("steward-submission"),
+      Array.from({ length: 101 }, () => resume),
+    );
   });
 });
