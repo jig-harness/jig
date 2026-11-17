@@ -1,9 +1,10 @@
 /**
  * How each recent tick ran, for the dashboard's tick strip (`LineTick`): its
  * duration, its time per phase and per repository, the forge budget it read,
- * and its busy, low-budget and defect counts, all from its receipt. The line
- * carries the list from tick to tick, as it does the durations, so a server on
- * a copy of the state database has it with no receipt file to read.
+ * its busy, low-budget and defect counts, and the repositories it could not
+ * read, all from its receipt. The line carries the list from tick to tick, as
+ * it does the durations, so a server on a copy of the state database has it
+ * with no receipt file to read.
  */
 import type { TickReceipt } from "../receipts.ts";
 import type { LineTick, LineTickRepo } from "./dashboard-contract.ts";
@@ -26,8 +27,15 @@ export type HealthReceipt = Pick<
   repos: ReadonlyArray<
     Pick<
       TickReceipt["repos"][number],
-      "path" | "slug" | "phasesMs" | "defect" | "stageDefects" | "shared"
-    >
+      | "path"
+      | "slug"
+      | "refused"
+      | "phasesMs"
+      | "defect"
+      | "stageDefects"
+      | "shared"
+    > &
+      Partial<Pick<TickReceipt["repos"][number], "section">>
   >;
   busy?: ReadonlyArray<{ path: string }>;
   lowBudget?: {
@@ -113,6 +121,12 @@ export function tickHealthOf(receipt: HealthReceipt, sweep: boolean): LineTick {
       (receipt.defect === undefined ? 0 : 1) +
       repos.filter((r) => r.defect !== null).length +
       receipt.repos.reduce((n, r) => n + (r.stageDefects?.length ?? 0), 0),
+    // A report that has a section was opened: a defect after that kept what its earlier phases read.
+    refused: receipt.repos.flatMap((r) =>
+      r.refused === null || (r.section ?? null) !== null
+        ? []
+        : [r.slug ?? r.path],
+    ),
   };
 }
 

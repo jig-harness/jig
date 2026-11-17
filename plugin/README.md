@@ -1649,7 +1649,14 @@ stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
 An entry whose notice did not reach a person at that tick (held for room in
 the notices comment, lost, or its destination out of reach) says why in
-`notice`, and as a `notice not delivered:` line in text.
+`notice`, and as a `notice not delivered:` line in text. When the newest
+tick could not read a repository (the forge refused it, or its configuration
+did not read), the line keeps what the tick that last read it found, and the
+answer lists the repository in `incomplete` (`repo`, `refused` and `readAt`,
+the start of the tick its entries are from, `null` when no tick has read it),
+and in text as a `the line is incomplete:` block. Its entries are then as of
+that reading, and an empty `waiting` with a non-empty `incomplete` does not
+mean nothing waits.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this

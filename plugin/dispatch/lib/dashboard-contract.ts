@@ -289,14 +289,14 @@ export interface LineQueued {
 export interface LineRepo {
   /** `null` when the forge could not say which repository the path is. */
   slug: string | null;
-  /** The slug this path last had, kept while reports find none, so a repeated failure still recovers it. */
+  /** The slug this path last had, kept while reports find none, so a repeated failure still recovers it. On an entry that read nothing and kept an earlier part, the slug that part is under, whatever slug the newest attempt found. */
   lastSlug?: string;
   path: string;
   /** The stages the machine file enables for it. */
   stages: string[];
   /** Its configured tracker (`issue_tracker.adapter`: `github`, `linear`, `jira`, …; GitHub when the configuration names none); `null` when its tracker configuration does not read; absent from a line written before it was kept, and when the tick could not open the repository. */
   tracker?: { adapter: string; repository?: string } | null;
-  /** Why nothing could be dispatched for it; `null` when it was read. */
+  /** Why nothing could be dispatched for it at the newest tick that tried; `null` when it was read. Beside an earlier tick's `runId` when that tick's part of the line was kept because this one could not identify the repository. */
   refused: string | null;
   /** The records that did not read at the newest tick. */
   failedReads: Array<{ record: string; source: string; detail: string }>;
@@ -308,8 +308,12 @@ export interface LineRepo {
   readyOmitted?: number;
   /** The tick that last read it: this line's own, or an earlier one whose part of the line (its needs, queue, sessions and Ready cards) the ticks since kept because they did not read it. Absent from a line written before parts were kept. */
   runId?: string;
-  /** When that tick started. Absent from a line written before parts were kept. */
+  /** When that tick started. Absent from a line written before parts were kept, and from an entry that no tick has read. */
   readAt?: string;
+  /** Set when the newest tick that tried got no further than opening the repository (`refused` says why), so it brought no part of the line, even with a slug. */
+  unobserved?: true;
+  /** When the newest tick that tried started, read or refused: what ticks that write out of order are ordered by, apart from `readAt`. Set only on an entry that kept an earlier tick's part. */
+  triedAt?: string;
 }
 
 /**
@@ -385,6 +389,8 @@ export interface LineTick {
   lowBudget: string[] | null;
   /** The defects it recorded: its own, its repositories' and their stages'. */
   defects: number;
+  /** The repositories it reported on and got no further than opening, as `repos` names them; a repository a defect stopped later read what its earlier phases did. Absent from an entry written before refusals were kept. */
+  refused?: string[];
 }
 
 /** The host's gauges the load factor reads (`load.ts`). */

@@ -166,7 +166,11 @@ lists) and refused elsewhere as a usage error naming why.
 waits on a person, with the act each waits for, across the repositories the
 machine dispatches. It reads the newest tick's line, which the dispatcher
 already keeps for its dashboard, so it costs no forge or tracker call and
-is as fresh as the last tick; it says when that tick ran. `--person
+is as fresh as the last tick; it says when that tick ran. A repository
+whose newest read was refused keeps what an earlier reading found, so the
+answer names each such repository, why it was refused and when its part
+was read (`incomplete`), and an empty list from an incomplete line is not
+"nothing waits". `--person
 <login>` keeps the entries that name that person. On a machine that
 dispatches nothing it says there is no line to read.
 
