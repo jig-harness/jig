@@ -53,6 +53,7 @@ import {
   readPrLiveness,
   resetProbeBaselines,
 } from "../gh-conditional.ts";
+import { CACHE_RETENTION_MS } from "../gh-cache-storage.ts";
 
 function runScratch(
   command: string,
@@ -400,6 +401,20 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     for (const f of entryFiles()) {
       expect(statSync(join(cacheDir, f)).mode & 0o077).toBe(0);
     }
+  });
+
+  it("expires cached GitHub responses instead of retaining discussion bodies indefinitely", async () => {
+    serve(PULL, pull("open", false, SHA));
+    await ghConditionalGet(PULL);
+    const [entry = ""] = entryFiles();
+    expect(entry).not.toBe("");
+    const expired = new Date(Date.now() - CACHE_RETENTION_MS - 1_000);
+    utimesSync(join(cacheDir, entry), expired, expired);
+
+    await ghConditionalGet(PULL);
+    // An expired entry is removed before the request, so it cannot supply an
+    // ETag or response body to the new read.
+    expect(conditionalCalls()).toHaveLength(0);
   });
 
   it("prunes the oldest entries once the directory outgrows its bound", async () => {

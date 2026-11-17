@@ -11,10 +11,17 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { renameWithRetry } from "./rename-with-retry.ts";
+import { currentMs } from "./time.ts";
 
 /** Entries kept before pruning, and what pruning trims down to. */
 const MAX_ENTRIES = 256;
 const KEEP_ENTRIES = 128;
+const CACHE_ENTRY_NAME = /^[0-9a-f]{40}\.json$/;
+/**
+ * GitHub responses can contain pull-request discussions. Keep their local
+ * cache only briefly: an entry is unusable and removed after this age.
+ */
+export const CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function entryFile(dir: string, scope: string, request: string): string {
   const key = createHash("sha256")
@@ -26,6 +33,10 @@ export function entryFile(dir: string, scope: string, request: string): string {
 
 export function readJsonFile(file: string): Record<string, unknown> | null {
   try {
+    if (currentMs() - statSync(file).mtimeMs >= CACHE_RETENTION_MS) {
+      rmSync(file, { force: true });
+      return null;
+    }
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     return parsed !== null && typeof parsed === "object"
       ? (parsed as Record<string, unknown>)
@@ -51,8 +62,21 @@ export function writeJsonFile(dir: string, file: string, value: unknown): void {
 
 function prune(dir: string): void {
   const names = readdirSync(dir).filter((n) => n.endsWith(".json"));
-  if (names.length <= MAX_ENTRIES) return;
-  const aged = names
+  const now = currentMs();
+  for (const n of names) {
+    if (!CACHE_ENTRY_NAME.test(n)) continue;
+    const file = join(dir, n);
+    try {
+      if (now - statSync(file).mtimeMs >= CACHE_RETENTION_MS)
+        rmSync(file, { force: true });
+    } catch {
+      // A concurrently removed entry is already gone; any other failure is
+      // best-effort cache housekeeping and must not break its caller.
+    }
+  }
+  const retained = readdirSync(dir).filter((n) => n.endsWith(".json"));
+  if (retained.length <= MAX_ENTRIES) return;
+  const aged = retained
     .map((n) => {
       try {
         return { n, t: statSync(join(dir, n)).mtimeMs };
@@ -61,7 +85,7 @@ function prune(dir: string): void {
       }
     })
     .sort((a, b) => a.t - b.t);
-  for (const { n } of aged.slice(0, names.length - KEEP_ENTRIES)) {
+  for (const { n } of aged.slice(0, retained.length - KEEP_ENTRIES)) {
     rmSync(join(dir, n), { force: true });
   }
 }

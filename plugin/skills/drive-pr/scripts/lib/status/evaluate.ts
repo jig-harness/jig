@@ -64,6 +64,7 @@ import {
 } from "../overlay.ts";
 import { ghCall } from "../proc.ts";
 import { withObservedEvaluation } from "../gh-conditional.ts";
+import { summaryReport } from "../../summary-findings.ts";
 import {
   type CiReport,
   checkRunsFor,
@@ -72,7 +73,6 @@ import {
   reviewerRun,
   reviewerStickyMarkers,
   SHA_MARKER,
-  summaryFindings,
   type UnresolvedThread,
   unresolvedThreads,
 } from "./evidence.ts";
@@ -1033,10 +1033,10 @@ async function evaluateFresh(
   report.openThreadKeys = threads.map((t) => String(t.threadId)).sort();
   report.openThreadVersions = openThreadVersions(threads);
 
-  const summary = await summaryFindings(
-    ctx.summaryScript,
-    ctx.pr,
-    ctx.helperTimeoutSec,
+  const summary = await summaryReport(
+    Number(ctx.pr),
+    `${ctx.owner}/${ctx.repo}`,
+    true,
   );
   if (summary === null) {
     return terminal(

@@ -1398,27 +1398,80 @@ function reviewBodyFormat(): ReviewBodyFormat | undefined {
  * (`lib/review-body.ts`), each dated against the newest review that carries
  * it. Exits 1 when its reviews cannot be read.
  */
-async function printReviewBodyReport(
+async function reviewBodyReportFor(
   pr: number,
   repo: string,
   comments: IssueComment[],
   format: ReviewBodyFormat,
-): Promise<number> {
+): Promise<SummaryReport | null> {
   const login = `${reviewerApp()}[bot]`;
   const [owner = "", name = ""] = repo.split("/");
   const reviews = await reviewsBy(owner, name, String(pr), login);
-  if (reviews === null) {
-    console.error(`summary-findings: cannot read ${login}'s reviews of #${pr}`);
-    return 1;
-  }
+  if (reviews === null) return null;
   const sources = markerSourcesOf(comments);
   const addressedAt = (commit: string) =>
     collectAddressed(sources, {
       reviewerPosition: (sha) => reviewerPosition(sha, commit),
     });
   const report = { pr, login, format, reviews, addressedAt };
-  console.log(JSON.stringify(reviewBodyReport(report)));
-  return 0;
+  return reviewBodyReport(report);
+}
+
+/**
+ * Read the normal summary-only finding report in this process. Callers inside
+ * a status evaluation share its observed issue-comment and review reads with
+ * the other evidence gathered for that evaluation.
+ */
+export async function summaryReport(
+  prNumber: number,
+  repo: string,
+  configuredReviewerOnly: boolean,
+  comments?: IssueComment[],
+): Promise<SummaryReport | null> {
+  if (readsNoComments(configuredReviewerOnly, undefined))
+    return emptyReport(prNumber);
+
+  const issueComments =
+    comments ?? (await issueCommentsFor(repo, prNumber, undefined));
+  const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
+  const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
+  const winddownDeferred = sticky
+    ? winddownFingerprintsOf(sticky.body)
+    : new Set<string>();
+  const bodyFormat = reviewBodyFormat();
+  if (bodyFormat !== undefined)
+    return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
+  if (!sticky) return emptyReport(prNumber);
+
+  const reviewComments: ReviewComment[] = JSON.parse(
+    await slurp(
+      `repos/${repo}/pulls/${prNumber}/comments?per_page=100`,
+      "observed",
+    ),
+  ).flat();
+  const anchoredKeys =
+    stickyRound === null
+      ? []
+      : reviewComments
+          .filter((c) => isReviewerLogin(c.user?.login ?? ""))
+          .filter((c) => parseReviewRound(c.body ?? "") === stickyRound)
+          .map((c) => anchorKey(c.path, c.line ?? null));
+  const reviewedSha = reviewedShaFrom(sticky.body);
+  const addressed = collectAddressed(markerSourcesOf(issueComments), {
+    reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
+    backlogFingerprints: backlogFingerprintsOf(sticky.body),
+    winddownDeferred,
+    currentRound: stickyRound,
+  });
+  return classify({
+    pr: prNumber,
+    stickyCommentId: sticky.id,
+    stickyBody: sticky.body,
+    stickyAuthor: sticky.user.login,
+    anchoredKeys,
+    addressedFingerprints: addressed,
+    ...definedFields({ reviewedSha }),
+  });
 }
 
 async function main(): Promise<number> {
@@ -1560,77 +1613,19 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const bodyFormat = reviewBodyFormat();
-  if (bodyFormat !== undefined)
-    return printReviewBodyReport(prNumber, repo, issueComments, bodyFormat);
-
-  // No sticky comment means the reviewer has posted no summary — there are no
-  // summary-only findings to answer. That is a real zero, not an unknown: the
-  // caller has separately verified the reviewer's check-run completed on head,
-  // or, under `--configured-reviewer-only`, no reviewer is configured and so
-  // none was expected.
-  if (!sticky) {
-    console.log(JSON.stringify(emptyReport(prNumber)));
-    return 0;
-  }
-
-  const reviewComments: ReviewComment[] = JSON.parse(
-    await slurp(
-      `repos/${repo}/pulls/${prNumber}/comments?per_page=100`,
-      "observed",
-    ),
-  ).flat();
-  // Scope anchoring to the round this sticky describes. The reviewer stamps
-  // `ai-review-round` into its inline comments too, so "did THIS finding get a
-  // thread" is answerable without falling back to "has this path ever had one",
-  // which hides every later summary-only finding on a path that was anchored
-  // once.
-  //
-  // A sticky carrying NO round marker leaves nothing to scope by, and the
-  // historical set is not an acceptable substitute: an anchor SUPPRESSES a
-  // bullet, so admitting every inline comment the reviewer ever posted lets a
-  // long-resolved comment at the same `path:line` consume a current bullet, and
-  // the live finding disappears from `unaddressed` while thread count reads
-  // zero — the header's zero-thread false convergence, reached through the one
-  // input nobody controls. Fail closed instead: with no round to scope by,
-  // nothing anchors, so every bullet stays open work. That costs an answer on a
-  // finding that may already have a thread; the other direction costs a live
-  // finding, silently. (`stickyRound` itself is read above, where the
-  // `--check-addressed` mode also needs it.)
-  //
-  // NOT a Set: duplicates are the signal. Two inline comments on one line means
-  // two bullets there are anchored; one comment means one is.
-  const anchoredKeys =
-    stickyRound === null
-      ? []
-      : reviewComments
-          .filter((c) => isReviewerLogin(c.user?.login ?? ""))
-          .filter((c) => parseReviewRound(c.body ?? "") === stickyRound)
-          .map((c) => anchorKey(c.path, c.line ?? null));
-
-  const reviewedSha = reviewedShaFrom(sticky.body);
-  // `winddownDeferred` is computed above, before the `--check-addressed`
-  // branch, and reused here as-is.
-  const addressed = collectAddressed(markerSourcesOf(issueComments), {
-    reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
-    backlogFingerprints: backlogFingerprintsOf(sticky.body),
-    winddownDeferred,
-    currentRound: stickyRound,
-  });
-
-  console.log(
-    JSON.stringify(
-      classify({
-        pr: prNumber,
-        stickyCommentId: sticky.id,
-        stickyBody: sticky.body,
-        stickyAuthor: sticky.user.login,
-        anchoredKeys,
-        addressedFingerprints: addressed,
-        ...definedFields({ reviewedSha }),
-      }),
-    ),
+  const report = await summaryReport(
+    prNumber,
+    repo,
+    configuredReviewerOnly,
+    issueComments,
   );
+  if (report === null) {
+    console.error(
+      `summary-findings: cannot read ${reviewerApp()}[bot]'s reviews of #${prNumber}`,
+    );
+    return 1;
+  }
+  console.log(JSON.stringify(report));
   return 0;
 }
 
