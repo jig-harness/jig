@@ -33,10 +33,16 @@ export function weightedTurn<T extends { account: MachineAccount }>(
     records,
     eligible.map((entry) => entry.account),
   );
-  const total = eligible.reduce((sum, entry) => sum + weight(entry), 0);
+  // Scaling by the largest weight preserves every interval's share while
+  // keeping the sum away from subnormal precision loss.
+  const largest = Math.max(...eligible.map(weight));
+  const total = eligible.reduce(
+    (sum, entry) => sum + weight(entry) / largest,
+    0,
+  );
   let cursor = phase(position + 1) * total;
   for (const entry of eligible) {
-    cursor -= weight(entry);
+    cursor -= weight(entry) / largest;
     if (cursor < 0) return entry;
   }
   return eligible[eligible.length - 1] as T;

@@ -188,6 +188,17 @@ describe("host-local account weights", () => {
         ),
       ).toBeLessThan(0.002);
   });
+  it("keeps proportional shares for subnormal weights", () => {
+    const selected = sequence("accounts: {a: 5e-324, b: 1e-323}", 4096);
+    expect(selected.filter((name) => name === "a").length).toBeGreaterThan(
+      1364,
+    );
+    expect(selected.filter((name) => name === "a").length).toBeLessThan(1367);
+    expect(selected.filter((name) => name === "b").length).toBeGreaterThan(
+      2729,
+    );
+    expect(selected.filter((name) => name === "b").length).toBeLessThan(2733);
+  });
   it("redistributes a full account's share without reserving slots or catching up on return", () => {
     const configured = weights("accounts: {a: 75, b: 25}");
     const table = slotTable(

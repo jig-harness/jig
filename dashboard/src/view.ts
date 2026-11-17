@@ -457,7 +457,12 @@ function accountWeightText(
   const configured = a.weight === undefined ? 100 : a.weight.configured;
   const closed = walled || a.wallUnrecorded || a.notAdmitted !== null || atCap;
   const effective = closed ? 0 : (configured ?? 0);
-  const reason = a.weight === undefined ? "default 100" : a.weight.reason;
+  const reason =
+    a.weight === undefined
+      ? "default 100"
+      : !walled && a.weight.reason.startsWith("walled until ")
+        ? a.weight.reason.split("; ").slice(1).join("; ") || a.weight.reason
+        : a.weight.reason;
   return `weight ${configured ?? "unreadable"}, effective ${effective}; ${reason}`;
 }
 

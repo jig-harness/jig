@@ -435,7 +435,11 @@ describe("an account", () => {
   it("restores the configured weight when a snapshot's wall has expired", () => {
     const account = {
       ...ACCOUNT,
-      weight: { configured: 25, effective: 0, reason: "local file" },
+      weight: {
+        configured: 25,
+        effective: 0,
+        reason: "walled until 2026-11-03T16:10:00.000Z; local file",
+      },
     };
     expect(
       accountView(
@@ -448,7 +452,7 @@ describe("an account", () => {
         { ...account, wall: { resetAt: iso(16, 10), source: "test" } },
         CLOCK,
       ).weightText,
-    ).toContain("weight 25, effective 25");
+    ).toBe("weight 25, effective 25; local file");
   });
   it("shows how full it is", () => {
     const view = accountView({ ...ACCOUNT, held: 1 }, CLOCK);
