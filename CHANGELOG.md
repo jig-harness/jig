@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.267.1] - 2026-11-17
+
+### Fixed
+
+- A drive no longer parks `cancelled-ci` on the cancellations its own re-arm causes. Flipping the drive's state labels starts the workflows that listen for label events, and under a concurrency group with `cancel-in-progress` those runs cancel each other, and any run in flight on the head (a person's re-run of the parked run included), within seconds. Cancelled-run recovery now re-runs a cancellation a label write caused outside the head's once-per-head re-run, once per run attempt and claimed durably before the request, and waits for its result. Such a cancellation is a first attempt created within 30 seconds after a label other than the CI hold's was added or removed, or a run of its workflow whose latest attempt was still in flight when it arrived. A label-caused re-run still cancelled a minute after its request, or one that may not be replayed under the CI hold, counts against the head's budget as before.
+
 ## [0.267.0] - 2026-11-17
 
 ### Added
@@ -9397,7 +9403,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.267.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.267.1...HEAD
+[0.267.1]: https://github.com/jig-harness/jig/compare/v0.267.0...v0.267.1
 [0.267.0]: https://github.com/jig-harness/jig/compare/v0.266.0...v0.267.0
 [0.266.0]: https://github.com/jig-harness/jig/compare/v0.265.0...v0.266.0
 [0.265.0]: https://github.com/jig-harness/jig/compare/v0.264.0...v0.265.0
