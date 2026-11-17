@@ -75,6 +75,10 @@ export async function threadComments(
   }));
 }
 
+/**
+ * The pull request's conversation, read fresh (`paged-read.ts`): what it
+ * says re-arms a drive on a person's answer or reverses a provisional ruling.
+ */
 export async function prComments(
   pr: string,
   repo = "{owner}/{repo}",

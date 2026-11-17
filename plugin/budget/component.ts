@@ -53,6 +53,7 @@ function budgetGroups(
       continue;
     }
     known.requests += row.requests;
+    known.notModified = (known.notModified ?? 0) + (row.notModified ?? 0);
     known.cost += row.cost;
     known.unknownCost += row.unknownCost;
     known.estimated += row.estimated;
@@ -69,6 +70,7 @@ function budgetGroups(
       unit: row.unit,
       [group]: row[group],
       requests: row.requests,
+      notModified: row.notModified ?? 0,
       cost: row.cost,
       unknownCost: row.unknownCost,
       estimated: row.estimated,
@@ -93,7 +95,10 @@ function costLine(
     return `  ${row.system} ${row.credential} unattributed: ${row.cost} ${row.unit} the reported balance shows spent that no counted call explains`;
   const estimated = row.estimated ? " (includes estimates)" : "";
   const unknown = row.unknownCost ? `, ${row.unknownCost} unknown cost` : "";
-  return `  ${row.system} ${row.credential} ${row[group]}: ${row.requests} requests, ${row.cost} ${row.unit}${estimated}${unknown}, ${row.durationMs} ms`;
+  const notModified = row.notModified
+    ? ` (${row.notModified} answered 304 Not Modified)`
+    : "";
+  return `  ${row.system} ${row.credential} ${row[group]}: ${row.requests} requests${notModified}, ${row.cost} ${row.unit}${estimated}${unknown}, ${row.durationMs} ms`;
 }
 
 function printGroup(

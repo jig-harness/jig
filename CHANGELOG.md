@@ -401,6 +401,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.269.0] - 2026-11-17
+
+### Added
+
+- The cost ledger counts, per operation and caller, how many requests GitHub answered `304 Not Modified`, and `jig budget` shows the count beside each total, so a route's unchanged re-reads show apart from its other requests ([configuration reference](plugin/CONFIGURATION.md#outbound-cost-reports)). **Consumer action:** none.
+
+### Changed
+
+- A drive pass re-reads a pull request's REST resources (its issue comments, reviews, review comments, check runs, commit statuses and workflow runs) only when they changed. Within one evaluation, every part of the pass that asks for the same resource shares one reading; across evaluations, each page is asked again with the ETag of its last reading, so an unchanged pull request is answered `304 Not Modified`, which GitHub's primary REST limit does not count. Cached responses are owner-only and expire after 7 days. A page added after the last one is still seen, and a failed or unreadable answer falls back to reading the resource whole. Reads that authorize a write, a thread resolve, a CI-green proof or an announcement still read GitHub whole each time. **Consumer action:** none.
+
 ## [0.268.0] - 2026-11-17
 
 ### Added
@@ -9438,7 +9448,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.268.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.269.0...HEAD
+[0.269.0]: https://github.com/jig-harness/jig/compare/v0.268.0...v0.269.0
 [0.268.0]: https://github.com/jig-harness/jig/compare/v0.267.1...v0.268.0
 [0.267.1]: https://github.com/jig-harness/jig/compare/v0.267.0...v0.267.1
 [0.267.0]: https://github.com/jig-harness/jig/compare/v0.266.0...v0.267.0

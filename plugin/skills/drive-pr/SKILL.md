@@ -3940,6 +3940,13 @@ replication-lag guards compare reads against each other. `await-round.ts`
 (the `resolve-review-comments` skill) documents the conditional-REST polling of
 PR state and checks; `JIG_GH_CACHE` / `JIG_GH_CACHE_DIR` control the
 cache, and it is off under `NODE_ENV=test` unless a directory is given.
+The paged REST reads an evaluation only observes (issue comments, reviews,
+review comments, check runs, commit statuses, workflow runs) go through
+`lib/paged-read.ts`: within one `evaluate()` every reader shares one reading
+per resource, and across evaluations each page is asked again with its ETag,
+so an unchanged pull request costs `304`s; any failure reads the resource
+whole. A read that guards a write, a resolve, a ledger write, a CI-green
+proof or an announcement reads it whole with its own call (`fresh`).
 
 **The pass itself is bounded too.** Every other stop in this loop fires only
 *between* rounds (`--max-rounds`, the stall streak — [`STALLED`](../../protocol/drive-exits.md), which counts

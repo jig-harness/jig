@@ -866,22 +866,21 @@ async function main(): Promise<number> {
         );
       });
     } else {
-      // Reached ONLY for the narrow DEFERRED case now: this
-      // tree's own per-PR lease already belongs to a live identified
-      // session, so `claimLease`'s tier-3 branch claimed neither lease of
-      // its own — see its own comment. `assertNoForeignDrive` ran once
-      // already, as a preflight OUTSIDE any mutex, before that decision —
-      // an identified resolver, in another tree or elsewhere in THIS tree
-      // on a different PR, could take the state mutex and write its lease
-      // immediately after the check passed, and this command would then
-      // take the same mutex and mutate beside it — the serialisation the
-      // gate claims, defeated by a check that is not part of the admission
-      // protocol it guards. Every OTHER
-      // tier-3 admission now claims a genuine `TreeLease` of its own
-      // (`claimSessionlessTreeLease`) and is fenced by the branch above
-      // instead, via `assertLeaseUnchanged`/`assertTreeLeaseUnchanged` —
-      // this branch fences the one case that still holds no admitted lease
-      // to compare against by construction.
+      // Reached ONLY for the narrow DEFERRED case now: this tree's own per-PR
+      // lease already belongs to a live identified session, so `claimLease`'s
+      // tier-3 branch claimed neither lease of its own — see its own comment.
+      // `assertNoForeignDrive` ran once already, as a preflight OUTSIDE any
+      // mutex, before that decision — an identified resolver, in another tree
+      // or elsewhere in THIS tree on a different PR, could take the state mutex
+      // and write its lease immediately after the check passed, and this
+      // command would then take the same mutex and mutate beside it — the
+      // serialisation the gate claims, defeated by a check that is not part of
+      // the admission protocol it guards. Every OTHER tier-3 admission now
+      // claims a genuine `TreeLease` of its own (`claimSessionlessTreeLease`)
+      // and is fenced by the branch above instead, via
+      // `assertLeaseUnchanged`/`assertTreeLeaseUnchanged` — this branch fences
+      // the one case that still holds no admitted lease to compare against by
+      // construction.
       //
       // Re-running the PR-wide check here closes ITS half the identical way
       // `assertNoForeignDriveNow`'s own comment describes: the fence fires
@@ -1251,25 +1250,23 @@ async function main(): Promise<number> {
       // was raised on and nothing else — a (3,4) pair is fresh evidence that
       // the acknowledgment did not settle the class, and says so.
       //
-      // `--invariant "<one sentence>"`: what THIS round
-      // believes it closed, persisted so the round that finds the next pair
-      // on this file can read the prior claim back instead of re-deriving it
-      // from the GitHub thread and diff by hand — see
-      // `structuralEscalationInvariant`'s own doc for when it is echoed.
-      // ALWAYS overwrites, never merges with a prior value: an acknowledgment
-      // that states no invariant this time means nothing survives to be
-      // echoed, not "whatever the last round said still holds" — the caller
-      // that stated it is the only one who can vouch for it.
+      // `--invariant "<one sentence>"`: what THIS round believes it closed,
+      // persisted so the round that finds the next pair on this file can read
+      // the prior claim back instead of re-deriving it from the GitHub thread
+      // and diff by hand — see `structuralEscalationInvariant`'s own doc for
+      // when it is echoed. ALWAYS overwrites, never merges with a prior value:
+      // an acknowledgment that states no invariant this time means nothing
+      // survives to be echoed, not "whatever the last round said still holds" —
+      // the caller that stated it is the only one who can vouch for it.
       //
       // Length-checked BEFORE the update, and refused rather than silently
       // truncated — `ESCALATION_INVARIANT_MAX_LENGTH`'s own doc gives the
       // reason a truncated claim is worse than an outright refusal here.
-      // Validated on the RAW `a.invariant`, never a normalized copy —
-      // trimming first would accept newline-padded text ("\nclaim\n")
-      // instead of refusing it, let an over-cap value that is mostly
-      // surrounding whitespace slip under the cap, and silently drop
-      // leading/trailing spaces the verbatim-echo contract above promises to
-      // preserve.
+      // Validated on the RAW `a.invariant`, never a normalized copy — trimming
+      // first would accept newline-padded text ("\nclaim\n") instead of
+      // refusing it, let an over-cap value that is mostly surrounding
+      // whitespace slip under the cap, and silently drop leading/trailing
+      // spaces the verbatim-echo contract above promises to preserve.
       //
       // Newline-free too, like every other short free-text field this schema
       // treats as single-line (`hold.actor`) — "one sentence" is the
@@ -1456,20 +1453,19 @@ async function main(): Promise<number> {
     //
     // Advances every held item's stamp to this push EXCEPT one narrow case: a
     // `finding` that ALREADY carries a stamp AND has a currently outstanding
-    // claim. `claim-held --kind finding` locks a key with a SEPARATE
-    // claim row rather than removing it from `held` (unlike a thread,
-    // whose claim atomically removes the entry) — so a finding can sit in
-    // `held`, still bearing its OLD stamp, for the whole window between a
-    // successful `claim-held` and an eventual `release-held`. If
+    // claim. `claim-held --kind finding` locks a key with a SEPARATE claim row
+    // rather than removing it from `held` (unlike a thread, whose claim
+    // atomically removes the entry) — so a finding can sit in `held`, still
+    // bearing its OLD stamp, for the whole window between a successful
+    // `claim-held` and an eventual `release-held`. If
     // `answer-summary-finding.ts` POSTed successfully in that window and the
-    // process then died before `release-held`, the claim is still there
-    // — live or gone stale, it does not matter, nothing removed it — and it
-    // is exactly the signal that this item's stamp may already have been
-    // dispatched under. Blindly advancing it to a later, unrelated push would
-    // let `claim-held` accept that new SHA, dispatch again, and
-    // `--check-addressed --marker-sha` miss the marker actually sitting at
-    // the old SHA — a silent duplicate (the interrupted-dispatch scenario
-    // this case exists to close).
+    // process then died before `release-held`, the claim is still there — live
+    // or gone stale, it does not matter, nothing removed it — and it is exactly
+    // the signal that this item's stamp may already have been dispatched under.
+    // Blindly advancing it to a later, unrelated push would let `claim-held`
+    // accept that new SHA, dispatch again, and `--check-addressed --marker-sha`
+    // miss the marker actually sitting at the old SHA — a silent duplicate (the
+    // interrupted-dispatch scenario this case exists to close).
     //
     // The `h.verifiedSha !== undefined` guard is the freeze's actual
     // boundary, not an extra condition bolted onto it: freeze exactly when a
@@ -1630,6 +1626,7 @@ async function main(): Promise<number> {
         // skipped run for a required check could supersede the successful
         // post-unlabel run, even though `completedRequiredCi` rejects it.
         // Sharing one implementation makes that class of drift impossible.
+        // Every read in it is fresh (`lib/paged-read.ts`): it proves CI green.
         async function proveCiGreen(): Promise<
           { ok: true } | { ok: false; reason: string }
         > {
@@ -1759,22 +1756,20 @@ async function main(): Promise<number> {
         // drift impossible rather than merely unlikely. Delegates CI freshness
         // to `proveCiGreen()` above for the same reason.
         //
-        // CI proof FIRST, PR/timeline snapshot LAST — the opposite order
-        // this function used before, matching the reorder `ci-hold.ts`'s
+        // CI proof FIRST, PR/timeline snapshot LAST — the opposite order this
+        // function used before, matching the reorder `ci-hold.ts`'s
         // `stillCurrentForFinalReady()` already applies for the identical
-        // reason. Narrower
-        // benefit here than there, and worth stating precisely rather than
-        // overclaiming: the POST-write call already has nothing checking
-        // it, so for THAT call this only avoids a doomed extra network
-        // round trip. The PRE-write call is where the reorder earns its
-        // keep — it stops `store.update()` below from ever writing a
-        // certificate this same function's own compensating post-write
-        // check would immediately have to clear again; a black-box CLI
-        // test cannot observe that difference (the FINAL exitCode/
-        // verifiedSha end up identical either way, since the post-write
-        // check catches whatever the pre-write check misses), but a reader
-        // of `verified` in the narrow window between the write and that
-        // clear genuinely could.
+        // reason. Narrower benefit here than there, and worth stating precisely
+        // rather than overclaiming: the POST-write call already has nothing
+        // checking it, so for THAT call this only avoids a doomed extra network
+        // round trip. The PRE-write call is where the reorder earns its keep —
+        // it stops `store.update()` below from ever writing a certificate this
+        // same function's own compensating post-write check would immediately
+        // have to clear again; a black-box CLI test cannot observe that
+        // difference (the FINAL exitCode/verifiedSha end up identical either
+        // way, since the post-write check catches whatever the pre-write check
+        // misses), but a reader of `verified` in the narrow window between the
+        // write and that clear genuinely could.
         async function stillFullyCurrent(): Promise<
           { ok: true } | { ok: false; reason: string }
         > {
@@ -1957,17 +1952,16 @@ async function main(): Promise<number> {
           `claim-ready-mark: broke an abandoned ready-mark claim (>${claimStaleMin()}m old) on PR #${pr} — its driver died before 'gh pr ready' landed.`,
         );
       }
-      // RE-CHECK after winning the lease.
-      // The read above and `claimCreate` are not one atomic step: a caller can
-      // read `readyMarkedRound === 0`, be pre-empted for arbitrarily long, and
-      // only resume after some OTHER caller has fully committed AND removed
-      // its lease — at which point THIS caller's `claimCreate` succeeds
-      // against the now-vacant path even though the transition already
-      // happened. The commit that made it happen strictly happens-before the
-      // remove that freed the path (same process, program order), which
-      // strictly happens-before this `claimCreate` could ever succeed, so a
-      // plain re-read of `readyMarkedRound` here is guaranteed to observe it —
-      // no lock required for THAT half.
+      // RE-CHECK after winning the lease. The read above and `claimCreate` are
+      // not one atomic step: a caller can read `readyMarkedRound === 0`, be
+      // pre-empted for arbitrarily long, and only resume after some OTHER
+      // caller has fully committed AND removed its lease — at which point THIS
+      // caller's `claimCreate` succeeds against the now-vacant path even though
+      // the transition already happened. The commit that made it happen
+      // strictly happens-before the remove that freed the path (same process,
+      // program order), which strictly happens-before this `claimCreate` could
+      // ever succeed, so a plain re-read of `readyMarkedRound` here is
+      // guaranteed to observe it — no lock required for THAT half.
       //
       // The cleanup that follows is a second half, and IS lock-protected: this
       // caller can itself be suspended between winning the lease above and
@@ -2348,23 +2342,21 @@ async function main(): Promise<number> {
       // run inside ONE hold of the per-PR lock (`store.locked`, not
       // `tryBreakStaleClaim` + a separate `store.update`) — every sibling
       // coordination command (`claim-held` both kinds, `unclaim-held`,
-      // `release-held`, `stamp-held`'s own claim-file check) already folds
-      // its decision and its state mutation into a single lock hold; `hold`
-      // was the last one that did not. Splitting them left a window: a
-      // `claim-held --kind finding` could create its own fresh claim and
-      // take the lock BETWEEN this decision and the later `store.update`,
-      // validate against the OLD (pre-replacement) record, and let its
-      // caller's external dispatch proceed to POST an answer for a promise
-      // this command was about to overwrite — leaving `held` holding a fresh,
-      // unstamped record nothing would ever re-surface (`summary-
-      // findings.ts`'s `unaddressed` already excludes the now-answered
-      // fingerprint), a permanently orphaned entry silently blocking
-      // convergence. Use
-      // `breakStaleClaimLocked`, not `tryBreakStaleClaim`, inside this hold:
-      // the per-PR lock is not reentrant (`lock.ts`'s `acquire` retries its
-      // own `mkdir` until it wins or times out), so the acquiring variant
-      // would spin to `$DRIVE_PR_LOCK_TIMEOUT` and exit 1 rather than
-      // deadlocking visibly.
+      // `release-held`, `stamp-held`'s own claim-file check) already folds its
+      // decision and its state mutation into a single lock hold; `hold` was the
+      // last one that did not. Splitting them left a window: a `claim-held
+      // --kind finding` could create its own fresh claim and take the lock
+      // BETWEEN this decision and the later `store.update`, validate against
+      // the OLD (pre-replacement) record, and let its caller's external
+      // dispatch proceed to POST an answer for a promise this command was about
+      // to overwrite — leaving `held` holding a fresh, unstamped record nothing
+      // would ever re-surface (`summary-findings.ts`'s `unaddressed` already
+      // excludes the now-answered fingerprint), a permanently orphaned entry
+      // silently blocking convergence. Use `breakStaleClaimLocked`, not
+      // `tryBreakStaleClaim`, inside this hold: the per-PR lock is not
+      // reentrant (`lock.ts`'s `acquire` retries its own `mkdir` until it wins
+      // or times out), so the acquiring variant would spin to
+      // `$DRIVE_PR_LOCK_TIMEOUT` and exit 1 rather than deadlocking visibly.
       await store.locked(async () => {
         if (kind === "finding") {
           const claimPath = claimRefFor(store.stateDir, pr, a.key);

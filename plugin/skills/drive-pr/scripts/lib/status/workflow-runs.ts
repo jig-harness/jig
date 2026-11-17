@@ -11,7 +11,7 @@
  */
 
 import { swallow } from "../../../../../shared/errors.ts";
-import { ghCall } from "../proc.ts";
+import { type PagedRead, slurpPages } from "../paged-read.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 
 export const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
@@ -103,18 +103,21 @@ function parseWorkflowRun(raw: unknown): WorkflowRun | null {
   };
 }
 
-/** Every workflow run on `sha`, or `null` when they cannot be read. */
+/**
+ * Every workflow run on `sha`, or `null` when they cannot be read. `fresh`
+ * unless the caller only observes (`paged-read.ts`): a CI-green proof, a hold
+ * release and a re-run of cancelled jobs act on what GitHub says now.
+ */
 export async function workflowRunsFor(
   owner: string,
   repo: string,
   sha: string,
+  read: PagedRead = "fresh",
 ): Promise<WorkflowRun[] | null> {
-  const r = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
+  const r = await slurpPages(
     `repos/${owner}/${repo}/actions/runs?head_sha=${sha}&per_page=100`,
-  ]);
+    read,
+  );
   if (r.code !== 0) return null;
   try {
     const pages: unknown = JSON.parse(r.stdout);
@@ -148,6 +151,7 @@ export async function workflowRunsBehind(
   repo: string,
   sha: string,
   jobs: readonly JobEvidence[],
+  read: PagedRead = "fresh",
 ): Promise<WorkflowRun[] | null> {
   const toExplain = jobs.some(
     (job) =>
@@ -155,7 +159,7 @@ export async function workflowRunsBehind(
       job.conclusion !== null &&
       !PASSING_CONCLUSIONS.has(job.conclusion),
   );
-  return toExplain ? workflowRunsFor(owner, repo, sha) : [];
+  return toExplain ? workflowRunsFor(owner, repo, sha, read) : [];
 }
 
 function hasResult(run: WorkflowRun, jobs: readonly JobEvidence[]): boolean {
