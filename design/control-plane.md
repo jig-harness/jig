@@ -80,7 +80,7 @@ kind of platform. The core reaches the world only through a few small
 [ports](../GLOSSARY.md) (storage, serving requests, scheduling, outbound
 calls and observability), and each adapter implements them for its
 platform ([The portable core and its adapters](#the-portable-core-and-its-adapters)).
-Two adapters are designed:
+The adapters designed so far are:
 
 - **The process adapter**, built first: `jig hub serve`, one Bun process
   with one SQLite database, part of the `jig` plugin like the dispatcher
@@ -131,7 +131,11 @@ These rules keep the core portable:
   imports no `bun:` module and no `node:` module, and reads and writes no
   file; what it keeps, it keeps through the storage port. A gate reads
   the core's imports and fails on any of these, and on an import from
-  outside the core that brings one in.
+  outside the core that brings one in. An import scan cannot see a
+  runtime global such as `Bun.file` or `Bun.spawn`, which needs no import,
+  so the gate also fails on a reference to a runtime global (`Bun`,
+  `process`, `Deno`), and its negative fixtures include those
+  import-free violations.
 - **What the core shares with the plugin is portable too.** The core uses
   `Outcome` from `plugin/shared/outcome.ts`, which imports nothing and runs
   anywhere. The outbound library's portable parts (the failure classes,
@@ -156,7 +160,13 @@ These rules keep the core portable:
   operations, so the process adapter and the Cloudflare adapter share one
   implementation of the port. Migrations are SQL files that `drizzle-kit`
   generates from the schema and that are checked in; each adapter applies
-  them with its driver's migrator when the hub starts.
+  them when the hub starts, and how they reach the platform is the
+  adapter's. The process adapter reads the checked-in files with Drizzle's
+  `bun:sqlite` migrator. Drizzle's D1 migrator reads them from disk, which
+  a Worker cannot, so the Cloudflare adapter applies them as a
+  deployment-time D1 migration, or bundles the journal and the SQL as
+  strings for the Durable Object migrator. The core's bundle holds no
+  migrator that reads the filesystem.
 - **Queries both dialects can run.** The operations use what SQLite and
   PostgreSQL both support: plain tables, primary and unique keys, `INSERT
   … ON CONFLICT`, conditional `UPDATE … WHERE … RETURNING`, no JSON
@@ -202,8 +212,9 @@ and the hub read alike:
   request answers with a coded failure, a delivery is left for the sweep,
   and a job's next run starts from its stored progress.
 - **No state shared in memory between units.** What a later unit needs is
-  kept through the storage port; a serverless platform keeps no memory
-  between requests anyway.
+  kept through the storage port, so no unit depends on memory outliving
+  its request. A platform may keep memory between requests (a Durable
+  Object can stay active), and the core never relies on it.
 - **A change never spans an await.** Every change is either one
   conditional statement (a lease granted only `WHERE` it is free or
   lapsed, an acknowledgement moved only `WHERE` the revision is higher), or
@@ -221,7 +232,7 @@ and the hub read alike:
 
 ### Reaching the hub: only the webhook path is public
 
-The hub serves three kinds of caller, and only one of them is public:
+The hub serves several kinds of caller, and only one of them is public:
 
 - **`/webhooks/<source>`** takes the forge's, the tracker's and, where the
   hub runs a chat bridge, the chat tool's deliveries. It is the only path
@@ -367,10 +378,14 @@ value or a coded failure, as everywhere in Jig
 - **`read(targets, notOlderThan)`**: the forge's and the tracker's facts
   for each target (a repository, a pull request, a queue, an item), each
   with the time it was last confirmed. The hub answers from its world view
-  when its copy is at least as new as `notOlderThan`, and otherwise reads
+  when its copy is at least as new as `notOlderThan`, or when events keep
+  that target current: a target whose deliveries are verified and
+  applied up to now counts as confirmed now, without a read. Otherwise it reads
   that target through with its own identity before answering. When its own
   budget is spent it says so with the time it resets, and the host reads
-  for itself only if its own budget allows. The observe phase asks with
+  for itself only if its own budget allows. A target no event feed covers
+  (a tracker whose deliveries the hub cannot verify) is still read at the
+  tick's interval, and that polling is budgeted, not free. The observe phase asks with
   the tick's interval as the bound; the check just before an act asks with
   a bound of seconds, as `freshDriveReading` and `freshPickup` do today.
 - **`report(records)`**: the records the hub serves on: the line, each
@@ -437,7 +452,11 @@ hub serves the copies the hosts reported.
   delivery whose own timestamp is more than a minute old is refused too.
   It then admits the delivery by its delivery id, in one statement that
   ignores an id it already holds, and answers at once, since the sender
-  waits only seconds and sends again. Applying the delivery to the world
+  waits only seconds. A delivery that fails admission is not always sent
+  again: Linear retries, GitHub does not redeliver on its own. A failed
+  admission therefore waits for the next sweep, which finds the change as
+  drift, unless the hub redrives failed deliveries from the forge's
+  delivery log. Applying the delivery to the world
   view is a unit of its own, run soon after through the scheduling port; a
   delivery admitted and not yet applied is applied by the next run.
 - **Order comes from the facts, not the deliveries.** Every fact in the
@@ -459,9 +478,11 @@ hub serves the copies the hosts reported.
 - **Every budget is watched.** The hub keeps a budget per credential for
   every bucket it spends, GitHub's GraphQL points included, and stops
   reading a bucket before it is spent. Its status shows each bucket, the
-  age of its newest event and of its newest sweep per repository. A feed
-  that has quietly stopped shows as a growing age, and `jig doctor hub`
-  fails on it.
+  age of its newest event and of its newest sweep per repository. The age
+  of the newest event is information only, since a quiet repository sends
+  none for days. `jig doctor hub` fails on the sweep's progress, on a
+  subscription the forge reports unhealthy and on a failed delivery probe,
+  never on silence alone.
 
 ### Observability
 
@@ -479,7 +500,10 @@ signal outside the hub that notices when the hub itself goes quiet.
 - **One registry.** The hub's events are declared once and checked by M11's
   event-schema lint, and its metrics are declared in a metric registry
   with their source; M11's no-dark-instruments check fails the gates for a
-  declared metric that nothing in the core emits.
+  declared metric whose registry entry has no source. That check reads the
+  registry and does not prove the core emits the metric, so the hub adds an
+  emission-coverage check: a test that runs the core and fails on a
+  declared metric no run emitted.
 - **Signals the first wave ships with:**
   - webhook intake per source: deliveries received, verified, refused,
     and the lag from admission to applied;

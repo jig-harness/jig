@@ -145,10 +145,11 @@ offer work to a host with free slots. Its design is
   ([ADR-0022](ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)).
 - **It is observed as M11 says.** The core emits a closed set of typed
   events, metrics and spans through an observability port, each failure
-  by its `Outcome` code; the process adapter exports them as OpenTelemetry
-  (OTLP), the Cloudflare adapter through the platform's own observability
+  by its `Outcome` code; the process adapter exports them with the
+  OpenTelemetry Protocol (OTLP), the Cloudflare adapter through the platform's own observability
   or OTLP. Every declared metric has a wired source, which M11's
-  no-dark-instruments check holds; each scheduled job and each host's
+  no-dark-instruments check holds, and an emission-coverage check on the
+  hub fails a declared metric no run emits; each scheduled job and each host's
   report is stale, never green, past its cadence; and the hub sends a
   heartbeat to an external monitor, a dead-man's switch for the hub
   itself.

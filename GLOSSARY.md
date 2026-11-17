@@ -2585,8 +2585,10 @@ make, use the entry's term instead.
   can be lost, late, repeated or out of order, so a receiver that relies
   on webhooks also runs a *reconciliation sweep*.
 - **Reconciliation sweep** — the *hub*'s slow, scheduled read of every
-  target it serves (hourly by default, with conditional requests that cost
-  nothing when nothing changed), which corrects what *webhooks* lost or
+  target it serves (hourly by default, using conditional requests where the
+  source honours them, which GitHub does not charge against its primary
+  limit when the answer is "unchanged"; a tracker's query still spends its
+  allowance), which corrects what *webhooks* lost or
   misordered. A change it finds that no webhook brought is counted as
   drift, the measure of whether webhooks can stay the main feed.
 - **Tunnel** — a connection a machine opens outward to a provider, which
@@ -2599,9 +2601,9 @@ make, use the entry's term instead.
   against them, with drivers for SQLite, PostgreSQL and serverless
   databases, and `drizzle-kit`, its tool that writes migrations. The *hub*
   keeps its tables through it.
-- **OpenTelemetry (OTLP)** — an open standard for a program's telemetry
-  (logs, metrics and spans) and the protocol, OTLP, that sends it to any
-  collector that speaks it. The *hub*'s process adapter exports its
+- **OpenTelemetry and OTLP** — OpenTelemetry is an open standard for a
+  program's telemetry (logs, metrics and spans); OTLP, the OpenTelemetry
+  Protocol, is the protocol that sends it to any collector that speaks it. The *hub*'s process adapter exports its
   signals this way.
 - **Notification channel** — one way the *dispatcher*'s notices reach a
   person: a workspace card in Orca, a team's chat. The tick sends each
