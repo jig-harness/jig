@@ -10,6 +10,8 @@
  * rule for who may answer (`shared/trusted-authors.ts`). A comment by the
  * dispatcher's own forge login, or by the user its tracker credential acts
  * as, never answers: a dispatcher does not answer on a person's behalf.
+ * A need whose only answers on its tracker item are that user's reads as
+ * unread, with why, so whoever wrote them learns the tick will not act.
  * An answer counts only when it names the decision's current digest, so a
  * word typed for earlier facts never acts on new ones; each person's latest
  * answer is theirs, and two that differ leave the need disputed. A free
@@ -32,7 +34,7 @@ import {
   stationOptionId,
   type StationOptionId,
 } from "../../shared/decisions/station.ts";
-import { failed, type Outcome } from "../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
   type CommentLike,
   disputedAnswers,
@@ -43,6 +45,7 @@ import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-fr
 import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { type StationContext, stationDecision } from "./line-station.ts";
+import type { TrackerConversation } from "./tracker-answers.ts";
 import {
   claimedAt,
   type ActedAnswer,
@@ -135,10 +138,12 @@ export interface StationPorts {
   ): Promise<Outcome<CommentLike[], "unreadable">>;
   /**
    * The comments of item `item` on a tracker other than the forge, each
-   * author named by the tracker and the tracker's own user's left out; why
+   * author named by the tracker and the tracker's own user's kept apart; why
    * not, for a tracker that cannot name who wrote a comment.
    */
-  trackerComments(item: string): Promise<Outcome<CommentLike[], "unreadable">>;
+  trackerComments(
+    item: string,
+  ): Promise<Outcome<TrackerConversation, "unreadable">>;
   /** The dispatcher's own forge login, whose comments never answer. */
   self: string | null;
   /** Where the items are the forge's issues, the repository they are in; `null` otherwise. */
@@ -451,6 +456,34 @@ async function actedOn(
     : actedAnswer(row, root);
 }
 
+/** The comments at `where`, with the tracker's own user's kept apart (`null` on the forge, whose reader leaves out its login itself). */
+async function conversationAt(
+  where: Where,
+  ports: StationPorts,
+): Promise<
+  Outcome<
+    { comments: CommentLike[]; own: TrackerConversation["own"] | null },
+    "unreadable"
+  >
+> {
+  if (where.on === "tracker") return ports.trackerComments(where.item);
+  const listed = await ports.comments(where.repo, where.number);
+  return listed.ok ? ok({ comments: listed.value, own: null }) : listed;
+}
+
+/** Why a need's answers are not read when the only ones on its tracker item are by the user the tick's tracker credential acts as; `null` otherwise. */
+function ownOnly(
+  decision: LineDecision,
+  read: AnswerReading,
+  own: TrackerConversation["own"],
+  item: string,
+): string | null {
+  if (read.answers.length > 0) return null;
+  if (readStationAnswers(decision, own.comments, null).answers.length === 0)
+    return null;
+  return `the only answer on ${item} is by ${own.name}, the user the dispatcher's own tracker credential acts as, whose comments the tick never counts as an answer; answer on the tracker as another user, or give the dispatcher a tracker user of its own`;
+}
+
 /** Read one need's answers onto its action and act on the one that counts; whether it was answered I'll handle it — hide this card. */
 async function settleOne(
   framed: Framed,
@@ -459,17 +492,23 @@ async function settleOne(
   root: string | undefined,
 ): Promise<boolean> {
   const { action, decision, digest, where } = framed;
-  const listed =
-    where.on === "forge"
-      ? await ports.comments(where.repo, where.number)
-      : await ports.trackerComments(where.item);
+  const listed = await conversationAt(where, ports);
   if (!listed.ok) {
     action.answered = { digest, answers: [], unread: listed.failure.reason };
     return false;
   }
-  // The tracker's own user's comments are already left out, by its id.
+  const { comments, own } = listed.value;
+  // The tracker's own user's comments are already kept apart, by its id.
   const self = where.on === "forge" ? ports.self : null;
-  const read = readStationAnswers(decision, listed.value, self);
+  const read = readStationAnswers(decision, comments, self);
+  const unread =
+    own === null || where.on !== "tracker"
+      ? null
+      : ownOnly(decision, read, own, where.item);
+  if (unread !== null) {
+    action.answered = { digest, answers: [], unread };
+    return false;
+  }
   const answered: StationAnswered = {
     digest,
     answers: read.answers.map(answerView),
