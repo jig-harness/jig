@@ -13,10 +13,13 @@ claims an item before a session opens. Nobody outside a host learns that
 it stopped, so its work waits until a person notices. A person with several machines has one
 [dispatch dashboard](../GLOSSARY.md) per machine and no view of all of
 them. With this built, an optional service, the [hub](../GLOSSARY.md),
-reads the forge and the tracker once for every host enrolled in it. It
-also grants claims with leases, so a silent host's work goes to another
-host, offers work to whichever host has a free slot, tells a person when a
-host stops and serves one view of every host's work. A host that never enrolls loses
+is told of every change by the forge's and the tracker's
+[webhooks](../GLOSSARY.md), keeps one [world view](../GLOSSARY.md) of
+them for every host enrolled in it and is the only one of them that reads
+the forge and the tracker for the dispatcher. It also grants claims with
+leases, so a silent host's work goes to another host, offers work to
+whichever host has a free slot, tells a person when a host stops and
+serves one view of every host's work. A host that never enrolls loses
 nothing, and a host whose hub is unreachable works as it does today, bar
 the owner duties that wait for the hub's lease
 ([Owner duties](#owner-duties)).
@@ -30,8 +33,9 @@ It builds on the dispatcher ([dark-factory-dispatch.md](dark-factory-dispatch.md
 item 33), its shared records ([plugin/RECORDS.md](../plugin/RECORDS.md)),
 the dispatch dashboard's source feed
 ([dispatch-dashboard.md § The source feed](dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard),
-item 42), and the addresses that `jig ask` and `jig send` derive
-([addresses.md](addresses.md), item 39).
+item 42), the addresses that `jig ask` and `jig send` derive
+([addresses.md](addresses.md), item 39), and the governed transports for
+outbound calls ([outbound-calls.md](outbound-calls.md), item 55).
 
 ## How it works
 
@@ -43,7 +47,7 @@ Jig is used at the levels below, and a team stops at whichever suits it:
 | --- | --- | --- |
 | Skills | A person's session runs `do-item`, `drive-pr` and the other skills by hand | Each piece of work driven to merge-ready, with its own fences: the drive's lock and ledger claim, the tracker claim |
 | Dispatcher | A timer on each host runs the tick | Work started and kept moving with nobody watching, one host's dashboard |
-| Hub | One more process that enrolled hosts call | One read of the forge and tracker for every host, claims with leases, offers, a stopped host noticed, one view across hosts |
+| Hub | One more service that enrolled hosts call | One world view of the forge and tracker for every host, fed by their events; claims with leases, offers, a stopped host noticed, one view across hosts |
 
 These rules keep each level whole:
 
@@ -70,22 +74,184 @@ These rules keep each level whole:
 
 ### What the hub is
 
-The hub is one process, `jig hub serve`, with one SQLite database, part of
-the `jig` plugin like the dispatcher and `jig gc`. It runs on any machine
-that its hosts reach over HTTPS: in its smallest form on the always-on host
-that already dispatches, on a small server, or on a team's machine. It
-needs no cloud service, and it opens no connection to a host: hosts call
+The hub is one service: a [portable core](../GLOSSARY.md) that holds all
+of its logic, and an [adapter](../GLOSSARY.md) that runs the core on one
+kind of platform. The core reaches the world only through a few small
+[ports](../GLOSSARY.md) (storage, serving requests, scheduling, outbound
+calls and observability), and each adapter implements them for its
+platform ([The portable core and its adapters](#the-portable-core-and-its-adapters)).
+Two adapters are designed:
+
+- **The process adapter**, built first: `jig hub serve`, one Bun process
+  with one SQLite database, part of the `jig` plugin like the dispatcher
+  and `jig gc`, and the same process shipped as a container image for a
+  team that runs containers. It runs on any machine its hosts reach over
+  HTTPS: in its smallest form on the always-on host that already
+  dispatches, or on a small server or a team's machine.
+- **A serverless adapter**, built second: Cloudflare Workers, with the
+  hub's state in a Durable Object's SQLite storage or in D1 (Cloudflare's
+  SQLite database service), and its scheduled work on alarms and cron
+  triggers. It is one implementation of a serverless adapter; another
+  platform is another adapter, with no change to the core.
+
+Whatever the adapter, the hub opens no connection to a host: hosts call
 it, and it calls the forge and the tracker. A host enrolls in at most one
 hub. One hub serves one person or one organization; hubs do not talk to
 each other.
 
-The hub is the only resident process the hub level adds. The dispatcher
+The hub is the only resident service the hub level adds. The dispatcher
 keeps no process running on any host
 ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)): its tick and
 its change probe run on the host's timers, and each makes request and
 answer calls to the hub while it runs. A host that keeps a waiter running
 for early wake-ups may hold one call open instead, as a long poll, but
 nothing requires it.
+
+### The portable core and its adapters
+
+The core is plain TypeScript that runs on every adapter unchanged. It
+holds the host protocol, webhook intake, the world view, the
+reconciliation sweep, claims and leases, offers and the source feed. What
+differs between platforms sits behind a port:
+
+| Port | What the core asks of it | Process adapter | Cloudflare adapter |
+| --- | --- | --- | --- |
+| Storage | Named operations on the hub's tables, each change atomic ([Storage](#storage)) | SQLite through `bun:sqlite` | A Durable Object's SQLite storage, or D1 |
+| Serving | A request in, a response out, with the caller's credential or the webhook's signature headers | Bun's HTTP server | The Worker's `fetch` handler |
+| Scheduling | Run a named job at a time or on a cadence, and run one soon | Timers in the process, with each job's next run kept in storage | Durable Object alarms and cron triggers |
+| Outbound | A call to the forge or the tracker through its [governed transport](../GLOSSARY.md), over `fetch` | The shared outbound library, its budget record and cost ledger kept through the storage port | The same |
+| Observability | Typed events, metrics and spans ([Observability](#observability)) | OpenTelemetry's protocol (OTLP) to a collector the team names | The platform's own logs and metrics, or OTLP export |
+
+These rules keep the core portable:
+
+- **No subprocess, no runtime-bound module, no local file.** The core
+  never runs `gh` or any other program: its forge and tracker calls are
+  `fetch` requests through the shared outbound library
+  ([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)). It
+  imports no `bun:` module and no `node:` module, and reads and writes no
+  file; what it keeps, it keeps through the storage port. A gate reads
+  the core's imports and fails on any of these, and on an import from
+  outside the core that brings one in.
+- **What the core shares with the plugin is portable too.** The core uses
+  `Outcome` from `plugin/shared/outcome.ts`, which imports nothing and runs
+  anywhere. The outbound library's portable parts (the failure classes,
+  retry, paging, the conditional request, the budget's arithmetic) are
+  split from the parts that open the machine's budget database or run
+  `gh`, so the core imports the first and an adapter supplies the second's
+  storage. The same gate holds the split: a shared module the core imports
+  is held to the core's rules.
+- **A ranker that runs a program is the process adapter's alone.** The
+  `command` ranker ([How offers are ranked](#how-offers-are-ranked)) runs
+  a program, which a serverless platform cannot; a policy that names it is
+  refused when it loads on any other adapter, by name. Every built-in
+  ranker runs on every adapter.
+
+### Storage
+
+- **One schema, through Drizzle.** The hub's tables are declared once with
+  [Drizzle](../GLOSSARY.md), an object-relational mapper (ORM) for
+  TypeScript, in its SQLite dialect, and the storage port's operations are
+  written with Drizzle's query builder. Drizzle's drivers for `bun:sqlite`,
+  D1 and Durable Object SQLite run the same schema and the same
+  operations, so the process adapter and the Cloudflare adapter share one
+  implementation of the port. Migrations are SQL files that `drizzle-kit`
+  generates from the schema and that are checked in; each adapter applies
+  them with its driver's migrator when the hub starts.
+- **Queries both dialects can run.** The operations use what SQLite and
+  PostgreSQL both support: plain tables, primary and unique keys, `INSERT
+  … ON CONFLICT`, conditional `UPDATE … WHERE … RETURNING`, no JSON
+  operators in a query (a JSON body is stored and returned whole), no
+  dialect's own functions. Times are stored as integers of milliseconds.
+- **PostgreSQL is designed for and built on demand.** When a team needs a
+  managed database (Cloudflare's Hyperdrive, for one, reaches PostgreSQL
+  from a Worker), a PostgreSQL adapter adds a second schema module in
+  Drizzle's PostgreSQL dialect and a second implementation of the storage
+  port's operations against it, since Drizzle's query builders are typed
+  per dialect. A test reads both schema modules through Drizzle's table
+  descriptions and fails on any difference in tables, columns, types,
+  nullability or keys, and both implementations pass one contract suite
+  for the port.
+- **Drizzle is vendored.** Code that runs from the plugin depends on Bun's
+  built-ins and code vendored beside it
+  ([ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)). The
+  hub imports Drizzle from a bundle Jig builds from the pinned package,
+  unminified and compared byte for byte by a test, with its licence and
+  its line in NOTICE, as Optique is. The container image and the
+  Cloudflare adapter's build import that same bundle, so every adapter
+  runs one copy at one version. `drizzle-kit` is a development dependency
+  only: it writes the migrations and never ships. Both packages are pinned
+  exactly and wait out the supply-chain cooldown like every other.
+
+### Concurrency and failures
+
+The hub handles webhook deliveries, host calls, the sweep and lease
+renewals at once. Its programming model is still
+[ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)'s, so the plugin
+and the hub read alike:
+
+- **Failures are values.** The core and every adapter return an `Outcome`:
+  the value, or a failure with a stable `code`, a plain `reason` and the
+  `cause` that was thrown. An I/O edge (a port's implementation) turns
+  what its platform throws into one. Anything else that throws is a
+  `Defect`, caught once at a defect boundary and reported with its stack.
+- **Each unit of work is a defect boundary with a deadline.** A unit is
+  one webhook delivery, one host call or other request, one run of the
+  reconciliation sweep, and one alarm or lease turn. It carries one
+  cancellation signal (the standard `AbortSignal`, in both runtimes) with
+  its deadline into every port call, and a defect ends that unit only: a
+  request answers with a coded failure, a delivery is left for the sweep,
+  and a job's next run starts from its stored progress.
+- **No state shared in memory between units.** What a later unit needs is
+  kept through the storage port; a serverless platform keeps no memory
+  between requests anyway.
+- **A change never spans an await.** Every change is either one
+  conditional statement (a lease granted only `WHERE` it is free or
+  lapsed, an acknowledgement moved only `WHERE` the revision is higher), or
+  a batch of statements prepared before the first is sent and committed
+  together through the storage port's atomic batch: a synchronous
+  transaction on `bun:sqlite` and Durable Object SQLite, a batch on D1, a
+  transaction on PostgreSQL. The decision sits in the statement's
+  condition, never in code between a read and a write.
+- **Background work runs only as scheduled jobs.** The sweep, the
+  silent-host check and the trimming of old rows run through the
+  scheduling port, each idempotent, resumable from progress it stores,
+  and held by a job lease row so two runs of one job never overlap. One
+  small helper runs a job's steps under its deadline and its lease; no
+  library of structured concurrency is needed beyond it.
+
+### Reaching the hub: only the webhook path is public
+
+The hub serves three kinds of caller, and only one of them is public:
+
+- **`/webhooks/<source>`** takes the forge's, the tracker's and, where the
+  hub runs a chat bridge, the chat tool's deliveries. It is the only path
+  reachable from the internet, because those systems call from it. Every
+  delivery's signature is checked before anything else is read
+  ([The world view](#the-world-view-events-first-reconciled)).
+- **The host protocol, `/v1/`**, is reached by enrolled hosts only, over a
+  private network or the hub's own machine, with the host's credential.
+- **The page and the source feed** are reached through a
+  [private-network front](../GLOSSARY.md) that names the viewer
+  ([One view of every host](#one-view-of-every-host)).
+
+On the process adapter, the public path is published by a
+[tunnel](../GLOSSARY.md): a connection the hub's machine opens outward to
+a tunnel provider, which forwards requests for `/webhooks/` and nothing
+else to the hub's webhook listener. Cloudflare Tunnel and Tailscale Funnel
+are two implementations; the tunnel's own path rule and a listener of the
+hub's that serves only `/webhooks/` both hold the boundary, so a mistake in
+one still exposes nothing else. The dashboard and the host protocol are
+never published through it: the dispatch dashboard is published to a
+private network only
+([dispatch-dashboard.md § Left out](dispatch-dashboard.md#left-out)), and
+that holds for the hub's page too. The dispatcher on the same machine
+gains no route at all
+([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
+
+On the Cloudflare adapter every path has a public address, so its wave
+puts an identity-checking front (Cloudflare Access, for one) in front of
+every path but `/webhooks/`, with each host's credential checked behind
+it as well.
 
 ### What it keeps, and what stays with the hosts
 
@@ -98,14 +264,16 @@ nothing requires it.
   the state of a piece of work from records each time it is read, with the
   same fold library as the dispatcher and `jig ask`
   ([dispatch-dashboard.md § The source feed](dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard)).
-  A stored copy of a pull request's state drifts from the pull request.
+  Its world view holds the forge's and the tracker's facts as they were
+  last told or read, each with its version, never a state the hub decided.
 - **No server timer rewrites a host's work.** A lapsed lease releases the
   claim it held and nothing else: the hub never marks a host's session
   failed, never cancels one and never counts it against the host. What
-  happened to the session is the host's to report.
+  happened to the session is the host's to report. A lease lapses by its
+  expiry time, compared when the lease is read; no job moves it.
 - **What the hub stores is rebuildable**, except its enrollments and the
-  leases it granted. Its read cache comes back from the forge and
-  the tracker, and its copies of host records come back when each host
+  leases it granted. Its world view comes back from a full reconciliation
+  sweep, and its copies of host records come back when each host
   backfills after its next `hello`
   ([`report`](#the-host-protocol)). A lost lease lapses on its own, and the fence behind it still
   holds. A hub started with no database waits out a quarantine as long as
@@ -114,10 +282,10 @@ nothing requires it.
   remembers; reads, reports and enrollment go on meanwhile. So deleting the
   hub's database costs a fresh enrollment of each host and a quarantine
   of one lease lifetime, and nothing that the line depends on.
-- **It keeps what it serves**, comment text included, on the machine the
-  organization chose, as each host's own records do. Reading the text
-  through on each request instead would spend the reads the hub exists to
-  save.
+- **It keeps what it serves**, comment text included, on the machine or
+  the platform account the organization chose, as each host's own records
+  do. Reading the text through on each request instead would spend the
+  reads the hub exists to save.
 - **No relationship store.** Links between items live in the tracker
   ([ADR-0015](../docs/adr/ADR-0015-relationships-live-in-the-tracker.md)),
   and the hub reads them there like any host.
@@ -141,18 +309,25 @@ nothing requires it.
   A host cannot reach a repository by asking for it; widening a scope is
   another approval.
 - **The hub reads with an identity of its own**, which the organization
-  creates and the hub's configuration names: a GitHub App installation, or
-  for the smallest form a read-only token; a Linear or Jira credential
-  for the tracker. The hub writes nothing on the forge or the tracker: the
-  forge claim and the tracker claim are written by the hosts, as today, so
-  the read-only form is whole. A hub that is later given a write (a notice
-  on the forge, say) names that write and its permission here first. The
-  one named is the [chat bridge](chat.md)'s, where a hub runs one: under
-  the bridge's own forge app identity, an answer comment and the `drive`,
-  `hold` and `release` labels on a pull request (the app's Issues and Pull
-  requests write permission), and under the hub's tracker credential the
-  assignment `/jig pickup` makes, each with a record naming the person who
-  asked.
+  creates and the hub's configuration names. On GitHub that is a
+  [GitHub App](../GLOSSARY.md) of the hub's own, installed on the
+  repositories it serves: one App webhook covers every repository of the
+  installation, and the hub's reads count against the installation's own
+  limits, not any person's. On Linear it is a credential with a signed
+  webhook, and on Jira a credential the sweep reads with. The hub writes
+  nothing on the forge or the tracker: the forge claim and the tracker
+  claim are written by the hosts, as today, so the App needs read access
+  only. A hub that is later given a write (a notice on the forge, say)
+  names that write and its permission here first. The one named is the
+  [chat bridge](chat.md)'s, where a hub runs one: under the bridge's own
+  forge app identity, an answer comment and the `drive`, `hold` and
+  `release` labels on a pull request (the app's Issues and Pull requests
+  write permission), and under the hub's tracker credential the assignment
+  `/jig pickup` makes, each with a record naming the person who asked.
+- **The hub hands out no credential for the forge or the tracker.** It
+  never mints a token, short-lived or not, for a host to act with: a host
+  that writes uses its own accounts, and a host whose hub is down still
+  holds everything it needs.
 - **A person's act is made with that person's credential.** Merging,
   answering a park and every write a dashboard makes for a person go from
   the person's own machine or browser, as the person, never through the hub. The hub
@@ -172,11 +347,8 @@ A call states its capabilities as named flags, and the hub answers with
 its own, so either side adds a capability without changing the other. An
 older host simply does not use what it does not know. Every answer is a
 value or a coded failure, as everywhere in Jig
-([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)). The hub is a
-resident process with concurrent reads, webhook intake and renewals, which
-is the case ADR-0012 reserves for reconsidering its programming model:
-[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-records that reconsideration, and it is settled before stage 1 starts.
+([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md),
+[Concurrency and failures](#concurrency-and-failures)).
 
 - **`hello`**: the host's stable id, its dispatcher's incarnation (the id
   its state database got when it was created), its Jig version, its
@@ -185,22 +357,22 @@ records that reconsideration, and it is settled before stage 1 starts.
   host and, for each, the host that owns it
   ([Owner duties](#owner-duties)). A tick calls `hello` first; a failed
   `hello` sends the whole tick to the level below.
-- **`changes(token)`**: what changed since the host's last token, as a
-  list of repositories and tracker queues, and a new token. The answer
-  carries no content: it says where to look, and the host's next tick
-  reads there. A lost answer costs a wake-up and nothing else, since the
-  timer's tick reads everything anyway. The change probe calls it in place
-  of its own forge and tracker queries, and wakes a tick for the
-  repositories it names, as it does now.
+- **`changes(token)`**: what changed in the world view since the host's
+  last token, as a list of repositories and tracker queues, and a new
+  token. The answer carries no content: it says where to look, and the
+  host's next tick reads there. A lost answer costs a wake-up and nothing
+  else, since the timer's tick reads everything anyway. The change probe
+  calls it in place of its own forge and tracker queries, and wakes a tick
+  for the repositories it names, as it does now.
 - **`read(targets, notOlderThan)`**: the forge's and the tracker's facts
   for each target (a repository, a pull request, a queue, an item), each
-  with the time it was read. The hub answers from its cache when its copy
-  is at least as new as `notOlderThan`, and otherwise reads through with
-  its own identity before answering. When its own budget is spent it says
-  so with the time it resets, and the host reads for itself only if its
-  own budget allows. The observe phase asks with the tick's interval as the
-  bound; the check just before an act asks with a bound of seconds, as
-  `freshDriveReading` and `freshPickup` do today.
+  with the time it was last confirmed. The hub answers from its world view
+  when its copy is at least as new as `notOlderThan`, and otherwise reads
+  that target through with its own identity before answering. When its own
+  budget is spent it says so with the time it resets, and the host reads
+  for itself only if its own budget allows. The observe phase asks with
+  the tick's interval as the bound; the check just before an act asks with
+  a bound of seconds, as `freshDriveReading` and `freshPickup` do today.
 - **`report(records)`**: the records the hub serves on: the line, each
   launch's start and end, outcome rows, the drive ledgers (decisions
   included), pickup progress, receipts and the correspondence the source
@@ -231,40 +403,106 @@ records that reconsideration, and it is settled before stage 1 starts.
   claim. The host renews the claims of the sessions it still holds at each
   tick and each probe, so a lease outlives several missed probes and
   lapses only when the host has stopped calling.
-- **`offers(slots)`**, from the last stage: work the hub suggests for the
+- **`offers(slots)`**, from a later wave: work the hub suggests for the
   host's free slots ([Handing out work](#handing-out-work)).
+- **`health`**: the hub's own state, as [Observability](#observability)
+  describes, for `jig doctor hub`, the dashboard and a host's receipt.
 
 A dashboard reads the hub through the source feed, `snapshot()` and
 `changes(since)`, which the dashboard's design defines, with every fact
 stamped with the host it came from. No host is asked anything for it; the
 hub serves the copies the hosts reported.
 
-### Reading the forge and the tracker once
+### The world view: events first, reconciled
 
-- **The same reads, made once.** The hub runs the reads the tick runs today
-  (each repository's query of open pull requests with their checks, threads
-  and comments; merged pull requests and their follow-up markers; the
-  board; each tracker's queues) once for all the hosts that dispatch a
-  repository, and serves the result to each of them. It uses the same
-  adapters as the dispatcher, so a tracker Jig supports is supported by the
-  hub with no code of its own.
-- **Polling first, with the cheap reads.** The hub asks the forge with
-  conditional requests, which name the version it already holds and cost
-  nothing against GitHub's hourly limit when nothing changed, and asks the
-  tracker the change probe's small question before a full read. A hub
-  behind a home router works this way with no inbound route.
-- **Webhooks when the hub can receive them.** A hub with an address the
-  forge and the tracker can reach may take their webhooks: the payload
-  read and authenticated, each delivery kept once by its delivery id, and
-  then treated only as a hint to read that target again. A webhook can be
-  late, missed or sent twice, so the periodic read stays the truth, and the
-  hub counts each delivery before it stores anything, so a failed store
-  still shows.
+- **The hub is the only reader for enrolled dispatchers.** While its hub
+  answers, an enrolled host's tick and change probe make no forge or
+  tracker read of their own: the observe phase, the change probe and the
+  check before an act all go to the hub. Two kinds of read stay with the
+  host: the read-back that is part of a fence (the forge claim and the
+  tracker claim, which the host writes), and every read a session makes.
+  When the hub does not answer, the host reads for itself, as without a
+  hub.
+- **Events are the main feed.** The forge and the tracker tell the hub of
+  each change by webhook: GitHub through the hub's App, Linear through a
+  signed webhook of the hub's credential. The hub turns each delivery into
+  a change to its world view and the `changes` it serves. Where a payload
+  does not carry the whole fact the tick needs (a pull request's checks
+  and threads, say), the delivery names the target and the hub reads that
+  target once, for every host.
+- **Every delivery is verified, then admitted, then applied.** The hub
+  checks the delivery's signature with the secret its configuration holds
+  (GitHub's and Linear's both sign the body with a shared secret) and
+  refuses one that fails, before it parses anything else; a Linear
+  delivery whose own timestamp is more than a minute old is refused too.
+  It then admits the delivery by its delivery id, in one statement that
+  ignores an id it already holds, and answers at once, since the sender
+  waits only seconds and sends again. Applying the delivery to the world
+  view is a unit of its own, run soon after through the scheduling port; a
+  delivery admitted and not yet applied is applied by the next run.
+- **Order comes from the facts, not the deliveries.** Every fact in the
+  world view keeps the version its source gave it (an update time, a head
+  commit, a revision). A delivery older than the fact the hub holds
+  changes nothing, and a delivery the hub cannot place reads its target
+  instead.
+- **A reconciliation sweep catches what the events missed.** A webhook can
+  be lost, late, sent twice or out of order, so the
+  [reconciliation sweep](../GLOSSARY.md) reads every target the hub
+  serves on a slow cadence, hourly by default, with conditional requests
+  that name the version the hub holds and cost nothing against GitHub's
+  hourly limit when nothing changed; a tracker's change probe asks its
+  small question before a full read. Each change the sweep finds that no
+  delivery brought is counted as drift
+  ([Observability](#observability)). A tracker whose deliveries the hub
+  cannot verify (Jira, until it can) is read by the change probe's small
+  question at the dispatcher's own interval instead of by webhook.
 - **Every budget is watched.** The hub keeps a budget per credential for
   every bucket it spends, GitHub's GraphQL points included, and stops
-  reading a bucket before it is spent. Its status shows each bucket and the
-  age of its newest read per repository. A reader that has quietly stopped
-  shows as a growing age, and `jig doctor hub` fails on it.
+  reading a bucket before it is spent. Its status shows each bucket, the
+  age of its newest event and of its newest sweep per repository. A feed
+  that has quietly stopped shows as a growing age, and `jig doctor hub`
+  fails on it.
+
+### Observability
+
+The hub is observed as [M11](../modules/M11-process-observability/README.md)
+says a process must be: a closed set of typed events, every metric wired
+to a source, a scheduled job that stops reads as stale, never green, and a
+signal outside the hub that notices when the hub itself goes quiet.
+
+- **An observability port.** The core emits typed events, metrics and
+  spans, each failure named by its `Outcome` code; an adapter exports
+  them. The process adapter speaks OTLP to whatever collector the team
+  names; the Cloudflare adapter uses the platform's own logs and metrics,
+  or OTLP export. A structured log line carries the failure's `code`, and
+  nothing reads a `reason` to classify it.
+- **One registry.** The hub's events are declared once and checked by M11's
+  event-schema lint, and its metrics are declared in a metric registry
+  with their source; M11's no-dark-instruments check fails the gates for a
+  declared metric that nothing in the core emits.
+- **Signals the first wave ships with:**
+  - webhook intake per source: deliveries received, verified, refused,
+    and the lag from admission to applied;
+  - the reconciliation sweep: its duration, the targets it checked, the
+    share answered "unchanged", and drift, the changes it found that no
+    delivery brought, which is the measure of whether events can stay the
+    main feed;
+  - quota spent per credential and per named operation, from the cost
+    ledger of [outbound calls](outbound-calls.md), kept through the
+    storage port;
+  - each host's last-report age, against the host's own cadence: a host
+    older than its cadence is stale, never green;
+  - the host protocol's latency and coded failures per call;
+  - defects caught at each kind of boundary.
+- **Health, and a dead-man's switch.** `health` answers each scheduled
+  job's class (green, degraded, red, stale or running, from M11's
+  [heartbeat classifier](../modules/M11-process-observability/reference/heartbeat/README.md)),
+  each feed's age and each budget. The hub's jobs are declared with their
+  cadence the way the repository's scheduled jobs are. After each sweep
+  the hub sends a heartbeat to an external monitor the team names, which
+  alarms when the heartbeat stops, so a hub that stopped entirely is
+  noticed by something other than itself. The dispatch dashboard shows the
+  hub's health beside its hosts.
 
 ### Claims and leases
 
@@ -311,11 +549,12 @@ Writing no forge claim at all, with the hub as the only fence, is left out
 ### A stopped host, noticed
 
 A host that has not called the hub for three of its own tick intervals is
-reported silent: on the hub's page, through the source feed as a card on
-every dashboard that reads the hub, and once as a notice to the people the
-hub's configuration names. The hub does nothing to the silent host's work;
-the notice lists its unfinished follow-ups, which no other host can resume
-by itself. Its leases lapse on their own, and its sessions, if they still run, keep
+reported silent, by the hub's silent-host job on the scheduling port: on
+the hub's page, through the source feed as a card on every dashboard that
+reads the hub, and once as a notice to the people the hub's configuration
+names. The hub does nothing to the silent host's work; the notice lists
+its unfinished follow-ups, which no other host can resume by itself. Its
+leases lapse on their own, and its sessions, if they still run, keep
 running.
 
 ### Owner duties
@@ -323,9 +562,9 @@ running.
 Today each host's machine file says whether it owns a repository's
 notices, labels, board, serialization holds, steward and reflection
 findings, and two hosts that both claim a repository are only reported.
-From stage 2, `hello` names the owner of each repository: the host that
-claimed it first, until that host goes silent, then the next. Until then the
-machine file decides, as today. Two hosts
+From the wave that brings owner leases, `hello` names the owner of each
+repository: the host that claimed it first, until that host goes silent,
+then the next. Until then the machine file decides, as today. Two hosts
 must never hold a duty at once, since a host cut off from the hub alone
 would otherwise keep its duty while the hub names another. So the owner
 holds its duty under a lease of its own, renewed with each call, and a
@@ -344,13 +583,13 @@ to repeat, such as reading, and does none of the rest until it reaches
 the hub again, or until a person's machine file says the host owns the
 repository without a hub, as today. This is the one exception to "works
 as it does today": it is stated in the levels above, in ADR-0016's
-decision and in stage 1's and stage 2's acceptance, so an implementation
+decision and in the owner-lease wave's acceptance, so an implementation
 never restores a duty during a partition. The duties stay on hosts; moving any
 of them into the hub itself waits until a duty is shown to need it.
 
 ### Handing out work
 
-The last stage lets the hub suggest which host takes which work. A tick
+A later wave lets the hub suggest which host takes which work. A tick
 with free slots asks `offers` with its slots, the accounts and agent kinds
 it can run, and the repositories it has clones of. The hub answers with
 items and pull requests in the order its policy gives
@@ -415,14 +654,16 @@ strategy the built-ins lack can be added without changing them.
   - `host-preference`, hosts a repository or an item asks for (a host
     ranker);
   - `load`, the host whose load factor is lowest (a host ranker).
-- **A ranker of a team's own: `command`.** It runs a program the hub's
-  settings name, hands it the host and the candidates with their facts as
-  JSON on standard input, and reads back an order or a value per candidate
-  on standard output, within a 2-second deadline. A command that fails,
-  times out or answers out of shape is skipped for that offer and shown on
-  the hub's status, and the rest of the policy still ranks. Only the hub's
-  own settings name a command, never a repository's file, since the hub
-  runs it with its own identity.
+- **A ranker of a team's own: `command`, on the process adapter only.** It
+  runs a program the hub's settings name, hands it the host and the
+  candidates with their facts as JSON on standard input, and reads back an
+  order or a value per candidate on standard output, within a 2-second
+  deadline. A command that fails, times out or answers out of shape is
+  skipped for that offer and shown on the hub's status, and the rest of
+  the policy still ranks. Only the hub's own settings name a command,
+  never a repository's file, since the hub runs it with its own identity.
+  A serverless adapter runs no program, so it refuses a policy that names
+  `command` when the policy loads.
 - **Named policies, chosen per repository.** The hub's settings define
   policies by name and a default. A repository may name one of them in its
   `.config/jig.yaml`, read from its default branch: a choice of data,
@@ -439,7 +680,8 @@ strategy the built-ins lack can be added without changing them.
 
 The hub serves the source feed, so a dashboard that names the hub as its
 source shows every enrolled host's work, each fact stamped with its host,
-and its Needs you covers them all. The hub's machine runs a dashboard server of its own that names the
+and its Needs you covers them all, with the hub's own health beside them.
+The hub's machine runs a dashboard server of its own that names the
 hub as its source and serves the page; the hub's front routes the page to
 that server, never to the hub's host-facing protocol port, so the page
 still talks only to its own dashboard server. The front also routes one
@@ -452,10 +694,11 @@ by that grant; the endpoint takes no host calls, which stay on the
 protocol port. A phone reaches that page through
 a private-network front, as it reaches a host's page today
 ([dispatch-dashboard.md § A front on a private network](dispatch-dashboard.md#a-front-on-a-private-network)),
-and sees every host at once. The views API between a page and its own
-server does not change. This is the dispatch dashboard's only way to show
-several hosts: a person with several machines runs a hub in its smallest
-form, on the host that already dispatches.
+and sees every host at once. Neither the page nor `/feed` is ever
+published through the webhook tunnel. The views API between a page and
+its own server does not change. This is the dispatch dashboard's only way
+to show several hosts: a person with several machines runs a hub in its
+smallest form, on the host that already dispatches.
 
 People sign in to the hub's page through that front, which names the
 viewer, and see the repositories its grants give them. A sign-in of the
@@ -467,34 +710,43 @@ needs it.
 | Part of Jig | Without a hub | With a hub |
 | --- | --- | --- |
 | `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub |
-| The dispatcher's tick | Reads the forge and the tracker itself | Reads through the hub, asks it before each claim, reports its records; falls back to reading itself |
-| The change probe | Asks the forge and the tracker once a minute | Asks the hub `changes` |
+| The dispatcher's tick | Reads the forge and the tracker itself | Reads only the hub's world view, bar a fence's read-back; asks it before each claim; reports its records; falls back to reading itself |
+| The change probe | Asks the forge and the tracker once a minute | Asks the hub `changes`, which the events move |
 | `jig ask`, `jig send`, `/jig:operator` | Read this machine's records and the forge | `ask` may read another host's records from the hub; `send` still writes as the person, never through the hub |
-| The dispatch dashboard | Shows its own machine | May read the hub's feed and show every host |
+| The dispatch dashboard | Shows its own machine | May read the hub's feed and show every host, and the hub's health |
 | The Jig plugin for Orca | Reads this machine's line | Unchanged; reading the hub's feed is a later step of its own |
 | The steward, notices, labels, reflection | On the host whose machine file owns the repository | On the host the hub names owner |
-| `jig gc` | Cleans the host | Also trims the hub's database where it runs |
-| The records registry | The machine, the working tree, the forge and tracker | One more medium, the hub, for its enrollments, leases and copies |
+| `jig gc` | Cleans the host | Also trims the hub's database where the process adapter runs |
+| The records registry | The machine, the working tree, the forge and tracker | One more medium, the hub, for its enrollments, leases, world view and copies |
 
 ### Where it lives
 
 `jig hub` is `plugin/hub/`, registered in `plugin/jig.ts` beside `dispatch`,
 `gc`, `ask` and `send`, and released with the plugin, so a host and its
-hub agree on the protocol by version. `jig install hub` installs
-`jig hub serve` as a resident job, restarted when it fails and when the
-installed copy changes, the way the dispatch dashboard's reader is
-installed. The hub's own settings are in a file of its own on the machine
-it runs on (its address, database path, forge and tracker identities, the
-people it notifies); a host names its hub in its machine file (`hub.url`),
-and keeps the credential `jig hub join` gave it in its state folder.
+hub agree on the protocol by version. The core is `plugin/hub/core/`, the
+one directory the portability gate covers, and each adapter is a directory
+of its own under `plugin/hub/adapters/`. `jig install hub` installs the
+process adapter's `jig hub serve` as a resident job, restarted when it
+fails and when the installed copy changes, the way the dispatch
+dashboard's reader is installed; the container image is built from the
+same release. The Cloudflare adapter's source ships with the plugin too,
+so a team deploys the version its hosts run, with the platform's own
+deployment tool and its own account. The hub's own settings are in a file
+of its own where it runs (its address, its database, its forge and tracker
+identities and webhook secrets, the collector and external monitor it
+reports to, the people it notifies); a host names its hub in its machine
+file (`hub.url`), and keeps the credential `jig hub join` gave it in its
+state folder.
 
 ## Build order
 
 One pull request per step, each shippable alone. The seams come first and
 are worth building for themselves: each makes the dispatcher easier to test
 and closes a gap it has today, so building them costs nothing if the hub
-never ships. Each later stage is planned in detail, and built or not, by
-the person who asked for the hub, once the stage before it is in use.
+never ships. Each wave after the first is planned in detail, and built or
+not, by the person who asked for the hub, once the wave before it is in
+use. A red-team critique of this design comes before the first
+implementation pull request.
 
 **Seams, inside the dispatcher.**
 
@@ -513,50 +765,80 @@ the person who asked for the hub, once the stage before it is in use.
 4. **The GraphQL budget gated.** The tick reads GitHub's GraphQL bucket
    and stops reading it before it is spent, as it already does for REST.
 
-**Stage 1: the hub reads once.** `jig hub serve`, enrollment, `hello`,
-`changes` and `read`, the hub's read cache with conditional requests and
-its budgets, `jig install hub`, `jig hub status` and `jig doctor hub`; the
-tick and the change probe use the hub when the machine file names one, and
-fall back when it does not answer. Done when two hosts dispatching the same
-repositories through one hub spend, together, about what one host spends
-alone, and a hub stopped mid-tick costs that tick nothing but its
-receipt's note. In this stage `hello` names no owner and no lease exists:
-each repository's owner is the host its machine file names, as today, so
-nothing about owner duties changes until stage 2.
+**First wave: the portable hub, fed by events, read by every host.**
 
-**Stage 2: claims with leases, and a silent host noticed**, once
-[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-is approved, since grants and owner leases coordinate hosts, which
-[ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md) declines. The hub's
-implementation of `SharedRecords` in front of the fences, pickup claims,
-leases and their renewal, the replay after an outage, the owner named by
-`hello` with its lease, the restart quarantine, and the silent-host notice.
-Done when no two hosts do an owner's effects at once through a partition
-and a restart of the hub.
+1. The core's ports and the portability gate; the outbound library's
+   portable parts split from its machine stores, with a forge transport
+   over `fetch`.
+2. The storage port through Drizzle, its schema, its migrations and the
+   vendored bundle; the scheduling port and the job helper.
+3. The process adapter, `jig hub serve`, `jig install hub` and the
+   container image.
+4. Enrollment, `hello` and `report`, and `jig hub status`.
+5. Webhook intake from the hub's GitHub App and from Linear, with
+   signatures verified, and the webhook-only listener a tunnel publishes.
+6. The world view from events, and the reconciliation sweep.
+7. The dispatcher reading through the hub: `changes` and `read` for the
+   tick and the change probe, with the fall-back to reading itself.
+8. The observability port, its signals, `health`, the external heartbeat
+   and `jig doctor hub`.
+9. The source feed served from the hosts' reports, and the dashboard
+   reading it: one dashboard across hosts, the hub's health on it.
 
-**Stage 3: one view of every host.** `report`, the hub's copies of host
-records, the source feed served from them, and the dashboard reading it,
-through a front for a phone.
+Done when two hosts dispatching the same repositories through one hub make
+no forge or tracker reads for the dispatcher but the fences' read-backs,
+and the hub spends about what one host spends alone; a webhook delivery
+dropped on purpose is found by the next sweep and counted as drift; a hub
+stopped mid-tick costs that tick nothing but its receipt's note; the
+portability gate passes; and one dashboard shows both hosts and the hub's
+health. In this wave `hello` names no owner and no lease exists: each
+repository's owner is the host its machine file names, as today.
 
-**Stage 4: handing out work**, once
-[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-is approved. `offers` and the tick's plan taking them as input, with the
-offer policy, its default rankers and `jig hub offers --explain`; then the
-`command` ranker, a step of its own; then each further built-in ranker,
-one at a time, when a team asks for it.
+**Second wave: the Cloudflare adapter.** The core run on Workers, with a
+Durable Object's SQLite storage or D1, alarms and cron triggers, and an
+identity-checking front before every path but `/webhooks/`.
+
+**Later waves, each planned when the one before is in use:**
+
+- **Claims and owner leases, and a silent host noticed**, once
+  [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+  is approved, since grants and owner leases coordinate hosts, which
+  [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md) declines. The
+  hub's implementation of `SharedRecords` in front of the fences, pickup
+  claims, leases and their renewal, the replay after an outage, the owner
+  named by `hello` with its lease, the restart quarantine, and the
+  silent-host notice. Done when no two hosts do an owner's effects at once
+  through a partition and a restart of the hub.
+- **The chat bridge inside the hub** ([chat.md](chat.md)), where the
+  chat tool's events may come to the hub's webhook path in place of a
+  connection the bridge holds open; that choice is made, and recorded in
+  [ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md),
+  in that wave.
+- **Handing out work.** `offers` and the tick's plan taking them as input,
+  with the offer policy, its default rankers and `jig hub offers
+  --explain`; then the `command` ranker, a step of its own; then each
+  further built-in ranker, one at a time, when a team asks for it.
+- **The PostgreSQL adapter**, when a team needs a managed database.
 
 ## Left out
 
 - **The hub as the only fence.** Dropping the forge claim once every host
   is enrolled would save its writes, but the forge claim is what a host
   outside the hub, or one cut off from it, reads. It is reconsidered once
-  stage 2's grants have shown how often the forge disagrees with them.
+  the claims wave's grants have shown how often the forge disagrees with
+  them.
+- **Credentials handed to hosts.** A hub that minted short-lived forge or
+  tracker tokens for its hosts would make every host's writes depend on
+  it, so a hub outage would stop work instead of returning hosts to the
+  level below.
+- **Polling as the main feed.** It spends reads on every target whether or
+  not it changed, and still lags a change by a polling interval; events
+  with a slow sweep spend reads only where something changed.
 - **Cancelling or steering a host's session from the hub.** A session is
   the host's; the hub's notices go to people, and `jig send` stays the way
   a person steers.
-- **More than one node, or a database server.** One process with SQLite
-  carries the size Jig is built for; a hub that outgrows it is a decision
-  of its own.
+- **More than one node.** One hub per person or organization carries the
+  size Jig is built for; a hub that outgrows one is a decision of its own.
 - **A hub's own sign-in for people.** The private-network front names the
   viewer; a sign-in of the hub's own waits for a team that cannot use one.
 - **Hubs talking to each other**, and a host enrolled in two hubs.
