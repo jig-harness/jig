@@ -23,8 +23,8 @@ and carries out the ones it may carry out on its own.
 
 This is Jig's own post-merge pass, for this repository. The general stage for
 [consumer repositories](../../../GLOSSARY.md) is stated in
-[M7](../../../modules/M7-pr-lifecycle-review/README.md#core-pieces) and not
-built as a skill yet (FACTORY.md, station 7). The pass orchestrates the procedures that already exist and does
+[M7](../../../modules/M7-pr-lifecycle-review/README.md#core-pieces) and runs
+as the plugin's [`followup`](../../../plugin/skills/followup/SKILL.md) skill. The pass orchestrates the procedures that already exist and does
 not restate them: [`do-item`](../../../plugin/skills/do-item/SKILL.md) owns
 tracker statuses,
 [the deferral protocol](../../../plugin/skills/resolve-review-comments/references/deferral-protocol.md)
