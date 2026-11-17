@@ -94,10 +94,16 @@ function usage(message: string): number {
   return 2;
 }
 
-export async function main(
-  argv: string[],
-  deps: WriteDeps = defaultDeps,
-): Promise<number> {
+interface WriteRequest {
+  key: string;
+  source: WriterSource;
+  pathsFile: string | undefined;
+  baseFlag: string | undefined;
+  diff: boolean;
+  dryRun: boolean;
+}
+
+function parseRequest(argv: string[]): WriteRequest | number {
   const parsed = parseArgs(argv, {
     flags: ["diff", "dry-run"],
     values: ["source", "paths", "base"],
@@ -113,23 +119,46 @@ export async function main(
   const pathsFile = values.get("paths");
   if ((pathsFile === undefined) === !flags.has("diff"))
     return usage("give exactly one of --paths <file> and --diff");
+  return {
+    key,
+    source: source as WriterSource,
+    pathsFile,
+    baseFlag: values.get("base"),
+    diff: flags.has("diff"),
+    dryRun: flags.has("dry-run"),
+  };
+}
+
+async function predictRequest(
+  request: WriteRequest,
+  deps: WriteDeps,
+): Promise<Prediction> {
+  const baseRef = request.baseFlag ?? (await deps.defaultBase());
+  const paths =
+    request.pathsFile === undefined
+      ? ("diff" as const)
+      : { list: await deps.readPaths(request.pathsFile) };
+  return deps.predict(
+    { key: request.key, source: request.source, baseRef, paths },
+    {
+      git: defaultGitRunner,
+      catalog: ownCatalog,
+      session: () => claimSession(),
+      root: deps.root(),
+    },
+  );
+}
+
+export async function main(
+  argv: string[],
+  deps: WriteDeps = defaultDeps,
+): Promise<number> {
+  const request = parseRequest(argv);
+  if (typeof request === "number") return request;
+  const { key } = request;
   let prediction: Prediction;
   try {
-    const baseRef = values.get("base") ?? (await deps.defaultBase());
-    const paths =
-      pathsFile === undefined
-        ? ("diff" as const)
-        : { list: await deps.readPaths(pathsFile) };
-    const root = deps.root();
-    prediction = deps.predict(
-      { key, source: source as WriterSource, baseRef, paths },
-      {
-        git: defaultGitRunner,
-        catalog: ownCatalog,
-        session: () => claimSession(),
-        root,
-      },
-    );
+    prediction = await predictRequest(request, deps);
   } catch (error) {
     if (!(error instanceof PredictionError)) {
       console.error(
@@ -142,7 +171,7 @@ export async function main(
   }
   try {
     const record = predictionRecord(key, prediction);
-    if (flags.has("dry-run")) {
+    if (request.dryRun) {
       console.log(JSON.stringify(prediction, null, 2));
       return 0;
     }
