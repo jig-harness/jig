@@ -12,6 +12,7 @@ import {
   withoutLeakyGitEnv,
 } from "../../shared/guarded-git-spawn.ts";
 import {
+  isOwnReferenceProblem,
   parsePrioritiesRecord,
   type PrioritiesRecord,
   PRIORITIES_FILE,
@@ -49,14 +50,14 @@ export function readRepositoryRecord(
     "--",
     PRIORITIES_FILE,
   ]);
-  if (log === null)
+  if (!log.ok)
     return {
       record: null,
-      source: `${ref} could not be read`,
+      source: `${ref} could not be read: ${log.why}`,
       blocked: null,
       lastValid: null,
     };
-  const commits = log
+  const commits = log.stdout
     .split("\n")
     .filter((l) => l.trim() !== "")
     .map((l) => {
@@ -79,6 +80,13 @@ export function readRepositoryRecord(
       blocked: null,
       lastValid: null,
     };
+  if ("unread" in newest)
+    return {
+      record: null,
+      source: `${PRIORITIES_FILE} at ${ref}@${head.sha.slice(0, 12)} could not be read: ${newest.unread}`,
+      blocked: null,
+      lastValid: null,
+    };
   if (newest.ok)
     return {
       record: newest.record,
@@ -89,7 +97,7 @@ export function readRepositoryRecord(
   const blocked = `the newest revision of ${PRIORITIES_FILE} (${head.sha.slice(0, 12)}) is infeasible and blocks objective allocation: ${newest.why}`;
   for (const c of commits.slice(1)) {
     const earlier = readAt(path, c.sha);
-    if (earlier?.ok === true)
+    if (earlier !== null && "ok" in earlier && earlier.ok)
       return {
         record: null,
         source: `${ref}@${head.sha.slice(0, 12)}`,
@@ -112,34 +120,69 @@ export function readRepositoryRecord(
   };
 }
 
+/**
+ * The record at `sha`: parsed, invalid with why, `null` when the commit holds
+ * no such file (it removed it), or `unread` with git's failure.
+ */
 function readAt(
   path: string,
   sha: string,
-): { ok: true; record: PrioritiesRecord } | { ok: false; why: string } | null {
-  const text = git(path, ["show", `${sha}:${PRIORITIES_FILE}`]);
-  if (text === null) return null;
-  const parsed = parsePrioritiesRecord(text);
+):
+  | { ok: true; record: PrioritiesRecord }
+  | { ok: false; why: string }
+  | { unread: string }
+  | null {
+  const shown = git(path, ["show", `${sha}:${PRIORITIES_FILE}`]);
+  if (!shown.ok) {
+    const listed = git(path, [
+      "ls-tree",
+      "--name-only",
+      sha,
+      "--",
+      PRIORITIES_FILE,
+    ]);
+    return listed.ok && listed.stdout.trim() === ""
+      ? null
+      : { unread: shown.why };
+  }
+  const parsed = parsePrioritiesRecord(shown.stdout);
   if (!parsed.ok) return { ok: false, why: parsed.failure.reason };
   if (parsed.value.level !== "repository")
     return {
       ok: false,
       why: `its level is ${parsed.value.level}, not repository`,
     };
-  // A repository record's references to other levels resolve only when those
-  // records are read; the host reads none, so they are reported, not required.
+  // A repository record's references to other levels or scopes resolve only
+  // when those records are read; the host reads none, so they are not required.
   const own = referenceProblems([parsed.value]).filter((p) =>
-    p.includes("repository:"),
+    isOwnReferenceProblem(p, parsed.value),
   );
   return own.length > 0
-    ? { ok: false, why: own.join("; ") }
+    ? { ok: false, why: own.map((p) => p.text).join("; ") }
     : { ok: true, record: parsed.value };
 }
 
-function git(cwd: string, args: string[]): string | null {
+/** A git command's output, or why it failed: its last line of error output, or that it timed out. */
+function git(
+  cwd: string,
+  args: string[],
+): { ok: true; stdout: string } | { ok: false; why: string } {
   const r = spawnSync("git", args, {
     cwd,
     timeout: GIT_TIMEOUT_MS,
     env: withoutLeakyGitEnv(process.env),
   });
-  return r.status === 0 ? r.stdout : null;
+  if (r.status === 0) return { ok: true, stdout: r.stdout };
+  if (r.error !== undefined)
+    return { ok: false, why: `git ${args[0]}: ${r.error.message}` };
+  if (r.signal !== null)
+    return {
+      ok: false,
+      why: `git ${args[0]} did not finish within ${GIT_TIMEOUT_MS / 1000}s (${r.signal})`,
+    };
+  const last = (r.stderr ?? "").trim().split("\n").at(-1)?.trim();
+  return {
+    ok: false,
+    why: `git ${args[0]} exited ${r.status}${last ? `: ${last}` : ""}`,
+  };
 }

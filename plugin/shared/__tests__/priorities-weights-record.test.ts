@@ -184,7 +184,13 @@ describe("the priorities record", () => {
         },
       ],
     };
-    expect(referenceProblems([record(), individual])[0]).toContain(
+    const [problem] = referenceProblems([record(), individual]);
+    expect(problem).toMatchObject({
+      kind: "missing",
+      from: { level: "individual", scope: "host", id: "mine" },
+      target: { level: "repository", scope: "acme/widgets", id: "nope" },
+    });
+    expect(problem?.text).toContain(
       "references repository:acme/widgets:nope, which no record read holds",
     );
   });

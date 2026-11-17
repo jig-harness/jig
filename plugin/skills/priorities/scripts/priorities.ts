@@ -29,6 +29,7 @@ import {
   parsePrioritiesRecord,
   PRIORITIES_FILE,
   type PrioritiesRecord,
+  isOwnReferenceProblem,
   referenceProblems,
 } from "../../../shared/priorities/record.ts";
 import { rank, type RankerOutput } from "../../../shared/priorities/ranker.ts";
@@ -94,16 +95,11 @@ function readRecord(
   const parsed = parsePrioritiesRecord(text, file);
   if (!parsed.ok) return { problems: [parsed.failure.reason] };
   const record = parsed.value;
-  const own = `${record.level}:${record.scope}:`;
   const problems: string[] = [];
   const notes: string[] = [];
   for (const p of referenceProblems([record]))
-    if (
-      p.includes("which no record read holds") &&
-      !p.includes(` references ${own}`)
-    )
-      notes.push(p);
-    else problems.push(p);
+    if (isOwnReferenceProblem(p, record)) problems.push(p.text);
+    else notes.push(p.text);
   return problems.length > 0 ? { problems } : { record, notes };
 }
 
@@ -200,6 +196,8 @@ function shortlist(args: string[]): number {
     input.weights = readLaneWeights(resolve(weightsFile));
   const proposed = rank(input);
   const diff = shortlistDiff(ranking.output, proposed);
+  // A proposed weights file that does not read fails the run, as `weights` does.
+  const problems = weightsFile === undefined ? [] : input.weights.problems;
   if (opts.has("json")) {
     console.log(
       JSON.stringify(
@@ -209,15 +207,16 @@ function shortlist(args: string[]): number {
           current: ranking.output.inputHash,
           proposed: proposed.inputHash,
           diff,
+          problems,
         },
         null,
         2,
       ),
     );
-    return 0;
+    return problems.length > 0 ? 1 : 0;
   }
   printDiff(repo, ranking.output, proposed, diff);
-  return 0;
+  return problems.length > 0 ? 1 : 0;
 }
 
 function printDiff(

@@ -155,6 +155,17 @@ export function validatePrioritiesRecord(value: unknown): string[] {
   return problems;
 }
 
+/** A reference that does not resolve: a cycle, or a target no record read holds. */
+export interface ReferenceProblem {
+  kind: "cycle" | "missing";
+  /** The objective whose reference it is. */
+  from: ObjectiveRef;
+  /** The objective it references. */
+  target: ObjectiveRef;
+  /** The problem as a person reads it. */
+  text: string;
+}
+
 /**
  * Whether a set of records, one per level, can be used for allocation: each
  * reference names an objective of a record in the set, with no cycle. Every
@@ -162,37 +173,65 @@ export function validatePrioritiesRecord(value: unknown): string[] {
  */
 export function referenceProblems(
   records: readonly PrioritiesRecord[],
-): string[] {
-  const problems: string[] = [];
+): ReferenceProblem[] {
+  const problems = new Map<string, ReferenceProblem>();
   const byRef = new Map<string, Objective>();
   for (const r of records)
     for (const o of r.objectives) byRef.set(refKey(r.level, r.scope, o.id), o);
   for (const r of records)
     for (const o of r.objectives) {
+      const from = { level: r.level, scope: r.scope, id: o.id };
       const seen = new Set<string>([refKey(r.level, r.scope, o.id)]);
+      const add = (problem: ReferenceProblem): void => {
+        if (!problems.has(problem.text)) problems.set(problem.text, problem);
+      };
       const walk = (refs: ObjectiveRef[] | undefined): void => {
         for (const ref of refs ?? []) {
           const key = refKey(ref.level, ref.scope, ref.id);
+          const target = { level: ref.level, scope: ref.scope, id: ref.id };
           if (seen.has(key)) {
-            problems.push(
-              `${r.level} objective ${o.id} references a cycle through ${key}`,
-            );
+            add({
+              kind: "cycle",
+              from,
+              target,
+              text: `${r.level} objective ${o.id} references a cycle through ${key}`,
+            });
             continue;
           }
-          const target = byRef.get(key);
-          if (target === undefined) {
-            problems.push(
-              `${r.level} objective ${o.id} references ${key}, which no record read holds`,
-            );
+          const objective = byRef.get(key);
+          if (objective === undefined) {
+            add({
+              kind: "missing",
+              from,
+              target,
+              text: `${r.level} objective ${o.id} references ${key}, which no record read holds`,
+            });
             continue;
           }
           seen.add(key);
-          walk(target.refs);
+          walk(objective.refs);
         }
       };
       walk(o.refs);
     }
-  return [...new Set(problems)];
+  return [...problems.values()];
+}
+
+/**
+ * Whether a reference problem is `record`'s own: a cycle, or a reference to
+ * an objective of its own level and scope. A reference to another level or
+ * scope resolves only where that record is read with it (the site's on the
+ * hub), so a reader of one record reports it and never requires it.
+ */
+export function isOwnReferenceProblem(
+  problem: ReferenceProblem,
+  record: Pick<PrioritiesRecord, "level" | "scope">,
+): boolean {
+  return (
+    problem.kind === "cycle" ||
+    (problem.target.level === record.level &&
+      problem.target.scope === record.scope)
+  );
 }
 
 /** The tracker selectors an objective resolves to, through its references. */

@@ -232,6 +232,22 @@ describe("shortlist", () => {
     expect(
       diff.shares.find((s: { lane: string }) => s.lane === "core"),
     ).toMatchObject({ from: 0.5, to: 0 });
+    expect(JSON.parse(changed.stdout.toString()).problems).toEqual([]);
+    const broken = file("lanes: [core: 1\n");
+    const refused = run(
+      ["shortlist", "--repo", "acme/widgets", "--weights", broken, "--json"],
+      home,
+    );
+    expectSpawnExit(refused, 1);
+    expect(JSON.parse(refused.stdout.toString()).problems[0]).toContain(
+      "is not YAML",
+    );
+    const printed = run(
+      ["shortlist", "--repo", "acme/widgets", "--weights", broken],
+      home,
+    );
+    expectSpawnExit(printed, 1);
+    expect(printed.out).toContain("problem:");
   });
 });
 
