@@ -5,6 +5,8 @@ import { checkDriveExitPhrases } from "../chapters/drive-exits.ts";
 import { MAILBOX } from "../chapters/mailbox.ts";
 import { PR_LABELS } from "../chapters/pr-labels.ts";
 import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
+import { NEEDS_AND_ANSWERS } from "../chapters/needs-and-answers.ts";
+import { STEWARD_RECORDS_CHAPTER } from "../chapters/steward-records.ts";
 import { checkHeldPhrases } from "../held.ts";
 import { cleanUp, put, tempDir } from "./fixture.ts";
 
@@ -248,6 +250,40 @@ test("the stable chapters reject changed operational mailbox, label and associat
   expect(COMMENT_MARKERS.check?.(root)?.length).toBeGreaterThan(0);
 });
 
+test("the steward records chapter rejects a changed kind, field, cause or bound in the skill's decision step", () => {
+  const root = tempDir("held-steward");
+  const file = "plugin/skills/steward/SKILL.md";
+  const skill = readFileSync(resolve(repo, file), "utf8");
+  put(root, file, skill);
+  expect(STEWARD_RECORDS_CHAPTER.check?.(root)).toEqual([]);
+  for (const [before, after] of [
+    [
+      "| `rearm` | `target`, `facts`, `class` |",
+      "| `rearm` | `target`, `facts` |",
+    ],
+    ["| `order` | `targets` |", "| `order` | `targets`, `limit` |"],
+    ["| `need` |", "| `frame` |"],
+    ["`scope`, `crashed`\nor `unknown`", "`scope`, `deadline`\nor `unknown`"],
+    ["in at most 600 characters", "in at most 800 characters"],
+    ["Submit at most 100 records.", "Submit at most 50 records."],
+  ]) {
+    const changed = skill.replace(before ?? "", after ?? "");
+    expect(changed).not.toBe(skill);
+    put(root, file, changed);
+    expect(STEWARD_RECORDS_CHAPTER.check?.(root)?.length).toBeGreaterThan(0);
+  }
+  // A copy of the phrase in a hidden comment does not stand in for the step's own.
+  put(
+    root,
+    file,
+    skill.replace(
+      "Submit at most 100 records.",
+      "Submit at most 50 records. <!-- Submit at most 100 records. -->",
+    ),
+  );
+  expect(STEWARD_RECORDS_CHAPTER.check?.(root)?.length).toBeGreaterThan(0);
+});
+
 test("the drive exit gate checks immediate arm, finish-round, tree lease and push refusal branches", () => {
   const root = tempDir("held-drive-exits");
   const driveFile = "plugin/skills/drive-pr/SKILL.md";
@@ -330,4 +366,35 @@ test("held phrases follow CommonMark paragraph interruption for code spans and H
     exitPhrase,
     "mailbox",
   );
+});
+
+test("the needs and answers chapter rejects a changed answer form, limit or dispatcher option", () => {
+  const root = tempDir("held-needs-and-answers");
+  const driveFile = "plugin/skills/drive-pr/SKILL.md";
+  const readme = "plugin/README.md";
+  const drive = readFileSync(resolve(repo, driveFile), "utf8");
+  const page = readFileSync(resolve(repo, readme), "utf8");
+  put(root, driveFile, drive);
+  put(root, readme, page);
+  expect(NEEDS_AND_ANSWERS.check?.(root)).toEqual([]);
+  for (const [before, after] of [
+    ["`answer <key>: approve` for", "`answer <key>: accept` for"],
+    [
+      "`answer <key>: choose <option>` for",
+      "`answer <key>: pick <option>` for",
+    ],
+    ["of at most 500 characters", "of at most 400 characters"],
+    ["the first 12 hexadecimal", "the first 16 hexadecimal"],
+  ]) {
+    put(root, driveFile, drive.replaceAll(before ?? "", after ?? ""));
+    expect(NEEDS_AND_ANSWERS.check?.(root)?.length).toBeGreaterThan(0);
+  }
+  put(root, driveFile, drive);
+  for (const [before, after] of [
+    ["| `launch` | **Clear the record**", "| `launch` | **Drop the record**"],
+    ["**I'll handle it — hide this card**", "**Leave it to me**"],
+  ]) {
+    put(root, readme, page.replaceAll(before ?? "", after ?? ""));
+    expect(NEEDS_AND_ANSWERS.check?.(root)?.length).toBeGreaterThan(0);
+  }
 });

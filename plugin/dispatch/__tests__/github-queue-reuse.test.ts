@@ -9,7 +9,10 @@ import { GitHubApiError } from "../../skills/do-item/scripts/lib/tracker/github/
 import { sharedView } from "../lib/sources/served-reads.ts";
 import { freshServedPickup } from "../lib/sources/served.ts";
 import { metadata } from "../lib/sources/served-metadata.ts";
-import { servedParentHold } from "../lib/sources/served-parents.ts";
+import {
+  servedParentHold,
+  servedParentSteps,
+} from "../lib/sources/served-parents.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import { isRecord } from "../../shared/guards.ts";
 
@@ -21,6 +24,21 @@ const node = (number: number, assignee: string | null = "dana", extra = {}) =>
     labels: ["Todo"],
     extra: { subIssues: conn([]), ...extra },
   });
+
+/** The tracker with its assignment reads answered by `actor`, write access always granted. */
+function assignedBy<T extends { dispatchSource?: object }>(
+  tracker: T,
+  actor: () => { id: string; name: string },
+): T {
+  return {
+    ...tracker,
+    dispatchSource: {
+      ...tracker.dispatchSource,
+      assignmentActor: async () => actor(),
+      writeAccess: async () => true,
+    },
+  };
+}
 
 function fixture(legacy = false) {
   const values = new Map<string, unknown>();
@@ -185,11 +203,10 @@ it("bounds cached child membership and relations even when GitHub does not updat
     },
   ]);
   let relations = [{ type: "blocked_by" as const, issue: "#9" }];
-  const tracker = {
-    ...f.tracker,
-    assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
-    listRelations: async () => relations,
-  };
+  const tracker = assignedBy(
+    { ...f.tracker, listRelations: async () => relations },
+    () => ({ id: "writer", name: "writer" }),
+  );
   const first = await f.open(0);
   const initial = first.open()[0]?.issue;
   assert(initial);
@@ -256,12 +273,18 @@ it("rechecks cached GitHub ancestry on a full reading with the same issue timest
   expect(
     await servedParentHold(f.tracker, current, f.cache, undefined, next),
   ).toBeNull();
+  // The full reading's own row names the new parent: no issue read is sent for it.
+  expect(
+    (await servedParentSteps(f.tracker, current, f.cache, next))?.map(
+      (step) => step.parent.identifier,
+    ),
+  ).toEqual(["#9"]);
   expect(
     f.calls.filter(
       (call) => call.op === "TrackerIssue" && call.variables.number === 1,
     ),
-  ).toHaveLength(2);
-  // Another person's older queue may reuse the newer scope fact.
+  ).toHaveLength(1);
+  // Reads that hold no native row keep their own reading of the ancestry.
   expect(
     await servedParentHold(f.tracker, initial, f.cache, undefined, older),
   ).toBeNull();
@@ -269,21 +292,20 @@ it("rechecks cached GitHub ancestry on a full reading with the same issue timest
     f.calls.filter(
       (call) => call.op === "TrackerIssue" && call.variables.number === 1,
     ),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
 });
 
 it("refreshes metadata only for changed keys between full readings and keeps those versions on unchanged ticks", async () => {
   const f = fixture();
   f.setRows([node(1), node(2)]);
   let histories = 0;
-  const tracker = {
-    ...f.tracker,
-    assignedBy: async () => {
+  const tracker = assignedBy(
+    { ...f.tracker, listRelations: async () => [] },
+    () => {
       histories++;
-      return { id: "writer", name: "writer", trusted: true };
+      return { id: "writer", name: "writer" };
     },
-    listRelations: async () => [],
-  };
+  );
   const read = async (minute: number) => {
     const view = await f.open(minute);
     for (const held of view.open())
@@ -293,6 +315,10 @@ it("refreshes metadata only for changed keys between full readings and keeps tho
   };
   await read(0);
   expect(histories).toBe(2);
+  f.setRows([
+    node(1, "dana", { updatedAt: isoFromMs(START + 60_000) }),
+    node(2),
+  ]);
   f.setChanges(
     conn([
       {
@@ -307,8 +333,10 @@ it("refreshes metadata only for changed keys between full readings and keeps tho
   expect(histories).toBe(3);
   expect((await read(2)).source).toBe("unchanged");
   expect(histories).toBe(3);
+  // A full reading re-reads what GitHub does not timestamp; who made an
+  // assignment is not among it, since an assignment changes the update time.
   expect((await read(15)).source).toBe("full");
-  expect(histories).toBe(5);
+  expect(histories).toBe(3);
 });
 
 it("refreshes an incomplete empty probe and a timestamp-invisible membership edit by the full-refresh deadline", async () => {
@@ -423,14 +451,13 @@ it("refreshes former-parent membership after a child moves without rereading unr
     },
   ]);
   let histories = 0;
-  const tracker = {
-    ...f.tracker,
-    listRelations: async () => [],
-    assignedBy: async () => {
+  const tracker = assignedBy(
+    { ...f.tracker, listRelations: async () => [] },
+    () => {
       histories++;
-      return { id: "writer", name: "writer", trusted: true };
+      return { id: "writer", name: "writer" };
     },
-  };
+  );
   const first = await f.open(0);
   const parent = first.open()[0]?.issue;
   assert(parent);

@@ -57,14 +57,23 @@ import { validatorCache } from "./outbound/cache.ts";
  * Cache: `$JIG_GH_CACHE_DIR`, else `~/.cache/jig/gh-cache`. One small file
  * per (repo scope, request), overwritten in place, pruned to a bound — the
  * drive-pr state-dir lesson: an unbounded directory of tiny files is a
- * cost of its own. `JIG_GH_CACHE=off` disables it. Under `NODE_ENV=test`
+ * cost of its own; an entry a `304` revalidates counts as used, so pruning
+ * removes the entries least recently written or reused first.
+ * `JIG_GH_CACHE=off` disables it. Under `NODE_ENV=test`
  * (which `bun test` sets) it is off unless a directory is given explicitly, so
  * a suite that forgets to isolate itself runs uncached rather than reading a
  * neighbour's answer.
  */
 
 import { createHash } from "node:crypto";
-import { entryFile, readJsonFile, writeJsonFile } from "./gh-cache-storage.ts";
+import {
+  DEFAULT_ENTRIES,
+  type EntryLimit,
+  entryFile,
+  readJsonFile,
+  touchFile,
+  writeJsonFile,
+} from "./gh-cache-storage.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -74,6 +83,8 @@ import {
   type RunResult,
 } from "./proc.ts";
 import { githubCredential } from "./outbound/github-credential.ts";
+import type { OutboundFailure } from "./outbound/failure.ts";
+import { ghRunFailure } from "./outbound/github.ts";
 import { createObservedPages } from "./outbound/observed-pages.ts";
 import { currentMs } from "./time.ts";
 
@@ -99,11 +110,23 @@ export interface CallContext {
    * leaves no trace of which read came next). Not part of the cache identity.
    */
   caller?: string;
+  /**
+   * The repository a path names itself (`repos/<owner>/<name>/…`, no
+   * `{owner}/{repo}`): the cache is then scoped to the host, that repository
+   * and the credential alone, with no local `git` read, so a caller outside
+   * any checkout still revalidates what it read.
+   */
+  repository?: string;
 }
 
 export type ConditionalGet =
   | { ok: true; changed: boolean; body: string }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      reason: string;
+      /** The failure's class, where the request was sent and answered as one (`outbound/github.ts`). */
+      failure?: OutboundFailure;
+    };
 
 export type PrLiveness =
   | { ok: true; state: "OPEN" | "CLOSED" | "MERGED"; head: string }
@@ -113,10 +136,17 @@ export type PrLiveness =
 export function createConditionalCache({
   ghCall,
   git,
+  cacheDir,
+  entries,
 }: {
   ghCall: typeof defaultGhCall;
   git: typeof defaultGit;
+  /** Where entries live instead of the environment's choice (`ghCacheDir`); `null` turns the cache off. */
+  cacheDir?: () => string | null;
+  /** How many entries the directory holds before pruning; `DEFAULT_ENTRIES` otherwise. */
+  entries?: EntryLimit;
 }) {
+  const limit = entries ?? DEFAULT_ENTRIES;
   /** How long a cached `gh repo view` answer is trusted. The scope key already
    * invalidates on a remote / `set-default` / `$GH_REPO` change; this only bounds
    * an upstream rename that none of those can see. */
@@ -128,6 +158,7 @@ export function createConditionalCache({
 
   /** The cache directory, or null when caching is off. */
   function ghCacheDir(): string | null {
+    if (cacheDir !== undefined) return cacheDir();
     if ((process.env.JIG_GH_CACHE ?? "") === "off") return null;
     const explicit = process.env.JIG_GH_CACHE_DIR ?? "";
     if (explicit !== "") return explicit;
@@ -219,6 +250,20 @@ export function createConditionalCache({
     })();
   }
 
+  /** The scope of a path that names its repository: the host, the repository and the credential. */
+  function namedScope(ctx: CallContext, repository: string): string {
+    const env = ctx.env ?? process.env;
+    return createHash("sha256")
+      .update(
+        [
+          env.GH_HOST ?? "",
+          `named ${repository.toLowerCase()}`,
+          githubCredential(env),
+        ].join("\n--\n"),
+      )
+      .digest("hex");
+  }
+
   interface ParsedResponse {
     status: number;
     etag: string;
@@ -291,7 +336,12 @@ export function createConditionalCache({
     // Distinct request identity per mode: the entry key AND the in-entry guard.
     const request = keepBody ? path : `etag-only ${path}`;
     const dir = ghCacheDir();
-    const scope = dir === null ? null : await repoScope(ctx);
+    const scope =
+      dir === null
+        ? null
+        : ctx.repository !== undefined
+          ? namedScope(ctx, ctx.repository)
+          : await repoScope(ctx);
     const file =
       dir !== null && scope !== null ? entryFile(dir, scope, request) : null;
 
@@ -303,7 +353,7 @@ export function createConditionalCache({
       cached = validatorCache({
         get: readJsonFile,
         set: (key, value) => {
-          if (dir !== null) writeJsonFile(dir, key, value);
+          if (dir !== null) writeJsonFile(dir, key, value, limit);
         },
       }).get(file, request);
     }
@@ -324,24 +374,42 @@ export function createConditionalCache({
         ...definedFields({ cwd: ctx.cwd, env: ctx.env, timeoutSec: left }),
       },
     );
-    if (r.timedOut) return { ok: false, reason: `gh api ${path} timed out` };
+    // A request the shared budget held was never sent: say so, not that
+    // its (absent) answer did not parse.
+    if (r.held !== undefined)
+      return {
+        ok: false,
+        reason: `gh api ${path} was not sent: ${r.held.reason}`,
+        failure: r.held,
+      };
+    const failure = ghRunFailure(r, currentMs() - startMs);
+    const classed = failure === null ? {} : { failure };
+    if (r.timedOut)
+      return { ok: false, reason: `gh api ${path} timed out`, ...classed };
     if (r.bufferExceeded) {
-      return { ok: false, reason: `gh api ${path} output exceeded the buffer` };
+      return {
+        ok: false,
+        reason: `gh api ${path} output exceeded the buffer`,
+        ...classed,
+      };
     }
     const parsed = parseResponse(r.stdout);
     if (parsed === null) {
       return {
         ok: false,
         reason: `gh api ${path}: unparseable response (exit ${r.code})`,
+        ...classed,
       };
     }
     // `gh api` exits 1 on a 304 ("gh: HTTP 304"), so the status line — not the
     // exit code — is what decides. Order matters: this must precede the 2xx
     // check's `code === 0` requirement.
     if (parsed.status === 304) {
-      return cached
-        ? { ok: true, changed: false, body: cached.body }
-        : { ok: false, reason: `gh api ${path}: 304 with nothing cached` };
+      if (cached === null)
+        return { ok: false, reason: `gh api ${path}: 304 with nothing cached` };
+      // A reused entry is a used one: pruning removes the oldest first.
+      if (file !== null && keepBody) touchFile(file);
+      return { ok: true, changed: false, body: cached.body };
     }
     if (parsed.status >= 200 && parsed.status < 300 && r.code === 0) {
       if (file !== null && !keepBody) {
@@ -350,7 +418,7 @@ export function createConditionalCache({
       } else if (file !== null && dir !== null && parsed.etag !== "") {
         validatorCache({
           get: readJsonFile,
-          set: (key, value) => writeJsonFile(dir, key, value),
+          set: (key, value) => writeJsonFile(dir, key, value, limit),
         }).set(file, request, parsed.etag, parsed.body);
       }
       return { ok: true, changed: true, body: parsed.body };
@@ -358,6 +426,7 @@ export function createConditionalCache({
     return {
       ok: false,
       reason: `gh api ${path}: HTTP ${parsed.status} (exit ${r.code})`,
+      ...classed,
     };
   }
 
@@ -469,6 +538,7 @@ export function createConditionalCache({
           spawnFailed: false,
           stderrTail: "",
         };
+        touchFile(file);
         return hit;
       }
     }
@@ -499,12 +569,17 @@ export function createConditionalCache({
       !r.timedOut &&
       r.stdout.trim() !== ""
     ) {
-      writeJsonFile(dir, file, {
-        v: ENTRY_VERSION,
-        request,
-        stdout: r.stdout,
-        at: currentMs(),
-      });
+      writeJsonFile(
+        dir,
+        file,
+        {
+          v: ENTRY_VERSION,
+          request,
+          stdout: r.stdout,
+          at: currentMs(),
+        },
+        limit,
+      );
     }
     return r;
   }

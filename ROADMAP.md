@@ -292,17 +292,6 @@ runs on a machine the team chooses and needs no cloud service. Nothing
 requires it: a host that does not enroll, or whose hub is down, dispatches
 on its own as it does today.
 
-### 53. The Jig Protocol: one trusted statement of each contract
-
-A program that reads what Jig writes (an exit code, a label, a record, a
-comment marker) gets one chapter per contract to read it from: the
-[Jig Protocol](GLOSSARY.md). Each chapter's values are generated from Jig's
-own code and checked against it on every change, so a chapter cannot fall
-out of date. Each says whether its contract is stable or still moving.
-The shapes a program parses come with JSON Schemas, so a dashboard, a
-workspace app or another agent harness can read Jig's records without
-reading its code.
-
 ### 54. The line in a team's chat
 
 The dispatcher posts to the team's chat. Slack comes first, and other chat

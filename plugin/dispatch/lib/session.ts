@@ -28,6 +28,7 @@ import type { LaunchRecord, LaunchState, SessionResult } from "./launches.ts";
 import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 import { STEWARD_RESUME } from "./steward.ts";
 import { NEED_ACTS } from "../../shared/acts.ts";
+import { PARKED_DECISION_SCHEMA } from "../../shared/decisions/decision-values.ts";
 import {
   CLOSING_REPORT_SCHEMA,
   CONCLUDED_MAX,
@@ -101,8 +102,7 @@ function reportLines(
 }
 
 /** The shape of a framed decision, as a pass's prompt gives it in one line. */
-const DECISION_SHAPE =
-  '{"schema":"parked-decision/v1","class":"<the registry class it falls in: scope, human-decision, release, destructive, …>","call":{"id":"a","question":"<one line ending with ?>","options":[{"id":"a","name":"<a name on one line>","summary":"<what choosing it changes>","pay":["<what it costs>"]},{"id":"b","name":"<another name>","summary":"<what it changes>","pay":["<what it costs>"]}],"recommended":"<an option id>","why":"<why you recommend it>"},"steps":["<what a person must do whichever option is chosen; none: []>"],"alreadyDone":"<what you did about it so far>"}';
+const DECISION_SHAPE = `{"schema":"${PARKED_DECISION_SCHEMA}","class":"<the registry class it falls in: scope, human-decision, release, destructive, …>","call":{"id":"a","question":"<one line ending with ?>","options":[{"id":"a","name":"<a name on one line>","summary":"<what choosing it changes>","pay":["<what it costs>"]},{"id":"b","name":"<another name>","summary":"<what it changes>","pay":["<what it costs>"]}],"recommended":"<an option id>","why":"<why you recommend it>"},"steps":["<what a person must do whichever option is chosen; none: []>"],"alreadyDone":"<what you did about it so far>"}`;
 
 /**
  * How a pass that stops for a person frames the decision it asks for and

@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/steward-records/v1/schemas/steward-submission.json",
+  "type": "array",
+  "items": {
+    "anyOf": [
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "rearm"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^PR #[1-9]\\d{0,3995}$",
+            "maxLength": 4000
+          },
+          "facts": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          },
+          "class": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          },
+          "reason": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          }
+        },
+        "required": ["kind", "target", "facts", "class", "reason"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "resume"
+          },
+          "record": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          },
+          "reason": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          }
+        },
+        "required": ["kind", "record", "reason"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "need"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          },
+          "act": {
+            "enum": [
+              "Merge",
+              "Decide",
+              "Authorize",
+              "Reply",
+              "Do",
+              "Investigate"
+            ]
+          },
+          "ask": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          },
+          "reason": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          }
+        },
+        "required": ["kind", "target", "act", "ask", "reason"],
+        "additionalProperties": false
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "facet"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "facet": {
+                "const": "priority"
+              },
+              "value": {
+                "enum": [1, 2, 3, 4]
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              }
+            },
+            "required": ["kind", "target", "facet", "value", "reason"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "facet"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "facet": {
+                "enum": ["type", "size"]
+              },
+              "value": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,100}$",
+                "maxLength": 100
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              }
+            },
+            "required": ["kind", "target", "facet", "value", "reason"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "order"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+              "maxLength": 4000
+            },
+            "maxItems": 100,
+            "uniqueItems": true
+          },
+          "reason": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          }
+        },
+        "required": ["kind", "targets", "reason"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "cause"
+          },
+          "record": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          },
+          "cause": {
+            "enum": [
+              "needs-person",
+              "refused",
+              "tool-failed",
+              "environment",
+              "scope",
+              "crashed",
+              "unknown"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "pattern": "\\S",
+            "maxLength": 600
+          },
+          "reason": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          }
+        },
+        "required": ["kind", "record", "cause", "summary", "reason"],
+        "additionalProperties": false
+      }
+    ]
+  },
+  "maxItems": 100
+}
