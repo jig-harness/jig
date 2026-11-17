@@ -378,6 +378,22 @@ describe("a cancelled check never reads as passing", () => {
     expect(verdict(legs("success"), runs)).toBe("green");
   });
 
+  it("ignores expression terminators inside quoted strings", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    for (const template of [
+      `suite (${"$"}{{ matrix.os || '}} )' }} (unit))`,
+      `suite (${"$"}{{ matrix.os || 'it''s }} )' }} (unit))`,
+    ]) {
+      const legs = (conclusion: string) => [
+        job(template, "cancelled", 40),
+        job("suite (linux (unit))", conclusion, 41),
+        job("lint", "success", 41),
+      ];
+      expect(verdict(legs("skipped"), runs)).toBe(`cancelled: ${template}`);
+      expect(verdict(legs("success"), runs)).toBe("green");
+    }
+  });
+
   it("stays unknown when the workflow runs cannot be read, or there is none", () => {
     const runs = [job("gates", "cancelled", 40), job("gates", "success", 41)];
     // Unreadable: nothing is dropped, and the check runs read on their own.

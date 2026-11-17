@@ -276,7 +276,7 @@ function lastLegStart(name: string): number {
   let depth = 0;
   for (let i = 0; i < name.length; i++) {
     if (name.startsWith("${{", i)) {
-      const end = name.indexOf("}}", i + 3);
+      const end = expressionEnd(name, i + 3);
       if (end === -1) break;
       i = end + 1;
     } else if (name[i] === "(") {
@@ -285,6 +285,23 @@ function lastLegStart(name: string): number {
     } else if (name[i] === ")") depth = Math.max(0, depth - 1);
   }
   return last;
+}
+
+/** The first expression terminator outside a GitHub-expression string literal. */
+function expressionEnd(name: string, from: number): number {
+  let quoted = false;
+  for (let i = from; i < name.length; i++) {
+    if (name[i] === "'") {
+      if (quoted && name[i + 1] === "'") {
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (!quoted && name.startsWith("}}", i)) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 /**

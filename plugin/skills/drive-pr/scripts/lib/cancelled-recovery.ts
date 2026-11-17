@@ -70,7 +70,7 @@ export function answeredHead(verdict: PendingVerdict): string | null {
 export function grantKey(verdict: PendingVerdict): string {
   return verdict.answers
     .map((a) => `${a.url} ${a.at}`)
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .join("\n");
 }
 
