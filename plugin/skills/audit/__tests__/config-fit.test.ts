@@ -2393,4 +2393,21 @@ describe("followup.arms derivations", () => {
       "derivation:followup.arms[0].instructions",
     );
   });
+
+  test("instructions are read as repository-relative paths, as the follow-up reads them", () => {
+    const { report } = fit({
+      ".config/jig.yaml": `followup:
+  arms:
+    - id: docs-site
+      instructions: '.config\\followup\\docs-site.md'
+    - id: tilde
+      instructions: '~missing.md'
+`,
+      ".config/followup/docs-site.md": "Rebuild the site.\n",
+      "package.json": "{}",
+    });
+    const errors = ids(report, "error");
+    expect(errors).not.toContain("derivation:followup.arms[0].instructions");
+    expect(errors).toContain("derivation:followup.arms[1].instructions");
+  });
 });

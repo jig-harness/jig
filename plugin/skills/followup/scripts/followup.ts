@@ -453,6 +453,17 @@ function keepCurrentVerdicts(run: RunFile, arms: ArmPlan): RunFile["verdicts"] {
 async function refreshedRun(dir: string, loaded: RunFile): Promise<RunFile> {
   const { facts } = loaded;
   const read = await settingsFor(dir, facts.remote, facts.integrationBranch);
+  // A plan made from the integration branch is replaced only by one read from
+  // it: the fallback working-tree settings could omit an arm, and with it the
+  // obligation and its verdict.
+  if (
+    loaded.facts.configOrigin === "integration branch" &&
+    read.origin !== "integration branch"
+  )
+    stop(
+      1,
+      `the configuration at ${read.ref} cannot be read, so the saved plan stays as it is: its arms are still owed`,
+    );
   const arms = planOf(read, facts);
   const updated = {
     ...loaded,

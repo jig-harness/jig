@@ -71,7 +71,7 @@ import {
 } from "../../../shared/config-layers.ts";
 import { machineLayers } from "./lib/machine-layers.ts";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, normalize, relative } from "node:path";
+import { isAbsolute, join, normalize, posix, relative } from "node:path";
 import {
   consumerRoot,
   layeredConfig,
@@ -477,11 +477,20 @@ function commandFindings(
 }
 
 /** A configured path that does not exist, when the field expects it to. */
-function pathFindings(field: Field, value: unknown, root: string): Finding[] {
+function pathFindings(
+  field: Field,
+  value: unknown,
+  root: string,
+  fromRoot = false,
+): Finding[] {
   if (!field.exists || field.exists === "machine") return [];
   if (typeof value !== "string" || value.trim() === "") return [];
-  if (value.startsWith("~")) return [];
-  if (existsSync(configuredAt(root, value))) return [];
+  if (!fromRoot && value.startsWith("~")) return [];
+  const where = fromRoot
+    ? posix.normalize(value.trim().replace(/\\/g, "/")).replace(/^\.\//, "")
+    : value;
+  if (existsSync(fromRoot ? join(root, where) : configuredAt(root, value)))
+    return [];
   const required = field.exists === "required";
   return [
     {
@@ -525,6 +534,7 @@ function listEntryFindings(
           { ...field, path: at, exists: "required" },
           entry[key],
           root,
+          true,
         );
       return [];
     });
