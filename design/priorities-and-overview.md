@@ -329,7 +329,8 @@ The ranker reports a disagreement when an epic's inherited position and the
 tracker Priority imply different ordering of comparable ready work. It names
 both references, the field values and the rule, and never edits either.
 Urgent issues are listed even when blocked, unassigned or outside all goals;
-visibility does not grant eligibility. A person picks from the shortlist.
+visibility does not grant eligibility. A person picks from the shortlist, or
+opts the host in to start work in its order.
 Existing dispatch selection remains within the person's assigned or explicitly
 admitted ready pool; this design grants no power to pick a different item.
 The proposed planner and a progress review consume this output; neither

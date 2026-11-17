@@ -33,6 +33,8 @@ import {
 import type { ItemClass } from "../lib/allocation-store.ts";
 import { parseMachineConfigText } from "../lib/machine-config.ts";
 import { priorityLines } from "../lib/priorities-lines.ts";
+import type { ApplyState } from "../lib/actions/launch.ts";
+import { pickupSequence } from "../lib/actions/pickup.ts";
 import { enforcePickupOrder } from "../lib/priorities-order.ts";
 import {
   preparePriorities,
@@ -389,12 +391,13 @@ describe("the enforced order over the design's sample week", () => {
       ),
     ];
     const charges: WeekCharge[] = [];
+    const taken: string[] = [];
     const startN: Partial<Record<WeightedLane, number>> = {};
     let ready = new Set<WeightedLane>();
     let revision = 0;
     for (const [launch, lane] of WEEK) {
+      if (launch === 9) pools.push(...objectiveWork(5, ["peripheral"]));
       const items = [...pools];
-      if (launch >= 9) items.push(...objectiveWork(5, ["peripheral"]));
       if (launch === 3) items.push(item("#500", { priority: 1 }));
       if (launch === 8) items.push(item("#600", { type: "bug", priority: 2 }));
       const base = input({
@@ -435,6 +438,7 @@ describe("the enforced order over the design's sample week", () => {
         throw new Error(`launch ${launch} started nothing`);
       expect(`${launch} ${first.lane}`).toBe(`${launch} ${lane}`);
       expect(actions[0]?.target).toBe(first.target);
+      taken.push(first.target);
       charges.push({
         claimId: `claim-${launch}`,
         lane: first.lane as WeekCharge["lane"],
@@ -445,6 +449,7 @@ describe("the enforced order over the design's sample week", () => {
       const at = pools.findIndex((i) => i.key === first.target);
       if (at >= 0) pools.splice(at, 1);
     }
+    expect(new Set(taken).size).toBe(taken.length);
     const count = (l: string) => charges.filter((c) => c.lane === l).length;
     expect([
       count("core"),
@@ -567,9 +572,16 @@ describe("no lane keeps a start free", () => {
         ranking: rank(input()),
         enforced: {
           starts: [
-            { target: "#1", lane: "core", objective: "o", why: "position 1" },
+            {
+              target: "#1",
+              orderedBy: "#1",
+              lane: "core",
+              objective: "o",
+              why: "position 1",
+            },
             {
               target: "#2",
+              orderedBy: "#2",
               lane: "tactical",
               objective: null,
               why: "position 2",
@@ -602,5 +614,23 @@ describe("no lane keeps a start free", () => {
       "  waits    #1 [core o]: did not start, and the next in the order may take the start: the epic is at its width",
     );
     expect(lines).toContainEqual("  started  #2 [tactical]: position 2");
+  });
+});
+
+describe("the launch sequence of an applied tick", () => {
+  const wanted = ["#4", "#3", "#5", "#2"].map(pickup);
+  const state = { tick: 12, repos: 1 } as ApplyState;
+  const enforced = {
+    enforced: { starts: [], withheld: [] },
+  } as unknown as NonNullable<RepoReport["priorities"]>;
+
+  it("keeps the ranking's order under a nonzero rotation cursor when the host opted in", () => {
+    const seq = pickupSequence(state, { priorities: enforced }, wanted);
+    expect(seq.map((a) => a.target)).toEqual(["#4", "#3", "#5", "#2"]);
+  });
+
+  it("rotates the unranked factory pickups when the host did not opt in", () => {
+    const seq = pickupSequence(state, {}, wanted);
+    expect(seq.map((a) => a.target)).toEqual(["#2", "#4", "#3", "#5"]);
   });
 });

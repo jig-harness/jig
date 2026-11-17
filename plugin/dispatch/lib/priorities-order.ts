@@ -23,9 +23,15 @@ import type { ItemClass } from "./allocation-store.ts";
 import { batchItemsOf } from "./queue-batch.ts";
 import type { Action } from "./types.ts";
 
-/** One pickup in the enforced order: the lane and objective its start is charged to, and why it stands there. */
+/**
+ * One pickup in the enforced order: the lane and objective of the member that
+ * placed it (`orderedBy`, the target unless a batch member stands earlier in
+ * the ranking), and why it stands there. A batch's claims each persist their
+ * own member's charge; `why` lists the lanes the other members carry.
+ */
 export interface OrderedStart {
   target: string;
+  orderedBy: string;
   lane: Lane | "unallocated";
   objective: string | null;
   why: string;
@@ -83,7 +89,7 @@ export function enforcePickupOrder(
   actions.forEach((action, index) => {
     if (action.stage !== "pickup") return;
     const kept = withoutPaused(action, paused, withheld);
-    if (kept !== null) placed.push(place(kept, index, places));
+    if (kept !== null) placed.push(place(kept, index, places, classes));
   });
   placed.sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1]);
   const queue = placed.map((p) => p.action);
@@ -166,8 +172,17 @@ function withoutPaused(
 }
 
 /** Where one pickup stands in the enforced order, and the charge and reason its start carries. */
-function place(action: Action, index: number, places: Places): Placed {
+function place(
+  action: Action,
+  index: number,
+  places: Places,
+  classes: Readonly<Record<string, ItemClass>>,
+): Placed {
   const keys = membersOf(action);
+  const lanes = (by: string): string =>
+    keys.length < 2
+      ? ""
+      : `; batch ordered by ${by}, members' lanes ${keys.map((k) => `${k} ${classes[k]?.lane ?? "unclassified"}`).join(", ")}`;
   const ranked = best(keys, (k) => places.positions.get(k)?.at);
   const position = ranked === null ? undefined : places.positions.get(ranked);
   if (position !== undefined)
@@ -176,9 +191,10 @@ function place(action: Action, index: number, places: Places): Placed {
       rank: [0, position.at],
       start: {
         target: action.target,
+        orderedBy: ranked as string,
         lane: position.p.lane,
         objective: position.p.objective,
-        why: `position ${position.p.position}: ${position.p.reason}`,
+        why: `position ${position.p.position}: ${position.p.reason}${lanes(ranked as string)}`,
       },
     };
   const loose = best(keys, (k) => places.unallocated.get(k)?.at);
@@ -189,9 +205,10 @@ function place(action: Action, index: number, places: Places): Placed {
       rank: [1, free.at],
       start: {
         target: action.target,
+        orderedBy: loose as string,
         lane: "unallocated",
         objective: null,
-        why: `after the ranked work, unallocated: ${free.reason}`,
+        why: `after the ranked work, unallocated: ${free.reason}${lanes(loose as string)}`,
       },
     };
   const reason = keys
@@ -202,6 +219,7 @@ function place(action: Action, index: number, places: Places): Placed {
     rank: [2, index],
     start: {
       target: action.target,
+      orderedBy: action.target,
       lane: "unallocated",
       objective: null,
       why: `after the ranked and unallocated work, not ranked: ${reason ?? "the ranking did not read it"}`,

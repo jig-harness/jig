@@ -52,7 +52,8 @@ honest.
 > itself. **Every copy of the taxonomy's key sets is checked** for
 > exact equality with its source. **Prioritization is computed**: the ranked
 > shortlist is reproducible from a tracker snapshot and a committed weights
-> file, and a person picks from it.
+> file. A person picks from it, or opts the host in to have the dispatcher
+> start work in its order.
 
 Everything below is that one tool-independent statement made mechanical;
 concrete per-tracker, per-runtime wiring lives in [mappings.md](mappings.md).
@@ -222,7 +223,10 @@ The ranked shortlist of what to work on next is reproducible: the same
 tracker snapshot and the same committed weights file give the same ranking. A
 judgment layer may reorder it only with a stated reason per deviation; a
 deviation that recurs is a weight to retune. A person picks from the
-shortlist.
+shortlist, or authorizes the host to start work in its order: that opt-in
+(`priorities.enforce`) is the person's decision, it grants no power beyond the
+ready pool dispatch already selects from, and weights of 0 take a lane out of
+rotation.
 
 ## Maturity levels
 
