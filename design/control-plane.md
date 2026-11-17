@@ -378,10 +378,14 @@ value or a coded failure, as everywhere in Jig
 - **`read(targets, notOlderThan)`**: the forge's and the tracker's facts
   for each target (a repository, a pull request, a queue, an item), each
   with the time it was last confirmed. The hub answers from its world view
-  when its copy is at least as new as `notOlderThan`, or when events keep
-  that target current: a target whose deliveries are verified and
-  applied up to now counts as confirmed now, without a read. Otherwise it reads
-  that target through with its own identity before answering. When its own
+  when its copy is at least as new as `notOlderThan`. An applied delivery
+  moves a fact's copy, never its confirmation time: a delivery can be lost
+  before the hub admits it, so a fully processed queue does not show the
+  source is current. The confirmation time is that of the last authoritative
+  read (a read-through or a reconciliation sweep), unless the source supplies
+  a verifiable completeness watermark, which confirms the target up to it.
+  Otherwise, when the bound has expired, the hub reads that target through
+  with its own identity before answering. When its own
   budget is spent it says so with the time it resets, and the host reads
   for itself only if its own budget allows. A target no event feed covers
   (a tracker whose deliveries the hub cannot verify) is still read at the
