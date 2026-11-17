@@ -87,10 +87,12 @@ export function labelCancelledRuns(
     started.some(
       (label) =>
         label.workflowId === run.workflowId &&
-        // Only the attempt the write started can have been cancelled by it; a
-        // later attempt, started after the write settled, was not.
-        ((label.id === run.id && afterWrite(parseMs(run.startedAt), writes)) ||
-          inFlightAt(run, parseMs(label.createdAt))),
+        // Only the first attempt is the one the write started; a later attempt
+        // was requested afterwards. Any other run is a victim only when the
+        // label-started run arrived while it was in flight.
+        (label.id === run.id
+          ? run.attempt === 1
+          : inFlightAt(run, parseMs(label.createdAt))),
     ),
   );
 }

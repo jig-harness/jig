@@ -114,6 +114,24 @@ describe("cancellations a label write caused", () => {
     expect(f.calls).toEqual([3]);
   });
 
+  test("a label run's first attempt is recovered however late it started", async () => {
+    // Created inside the window, queued until 00:01:40: its creation, not its
+    // start, says what started it.
+    const late = run(4, "00:01:40", { createdAt: iso("00:01:02") });
+    const f = fixture("00:02:20", ["00:01:00"]);
+    expect(
+      await recoverCancelled(
+        "5",
+        "head",
+        [gate(4, "cancelled")],
+        [late],
+        f.deps,
+      ),
+    ).toBe("wait");
+    expect(f.calls).toEqual([4]);
+    expect(f.parks).toEqual([]);
+  });
+
   test("wait while the label write's runs may still be arriving", async () => {
     const f = fixture("00:01:20", rearm);
     const runs = [rerunByHand, ...labelRuns];
