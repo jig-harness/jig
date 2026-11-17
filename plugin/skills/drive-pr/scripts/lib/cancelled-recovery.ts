@@ -105,37 +105,7 @@ export async function recoverCancelled(
   }
   if (now - record.firstSeen < 30_000) return "wait";
   if (!(await deps.confirm(pr, head))) return "unknown";
-  const allowed = await deps.rerunnable(pr, orphaned);
-  if (orphaned.some((run) => !allowed.includes(run.id)))
-    return await parkCancelled(
-      deps,
-      pr,
-      head,
-      orphaned,
-      record,
-      "the run was created under the CI hold or its label history could not be verified; re-running it may replay the hold",
-    );
-  // Claim BEFORE the API mutation: an ambiguous response or a process death
-  // can never grant another invocation permission to replay the request.
-  if (
-    !(await deps.claim(
-      pr,
-      head,
-      orphaned.map((run) => run.workflowId),
-    ))
-  )
-    return "wait";
-  const requested = await requestRuns(
-    pr,
-    head,
-    orphaned,
-    deps,
-    granted ? "the re-run a person's answer granted" : "re-run 1/1",
-  );
-  if (requested === "head-moved") return "unknown";
-  if (requested !== null)
-    return await parkCancelled(deps, pr, head, orphaned, record, requested);
-  return "wait";
+  return await requestOnce(pr, head, orphaned, record, deps);
 }
 
 async function parkCancelled(
@@ -185,6 +155,49 @@ function orphanedRuns(
         (other) => other.workflowId === run.workflowId && other.id > run.id,
       ),
   );
+}
+
+/** Claim, then request the one re-run, parking when it cannot be made safely. */
+async function requestOnce(
+  pr: string,
+  head: string,
+  orphaned: readonly WorkflowRun[],
+  record: RecoveryRecord,
+  deps: RecoveryDeps,
+): Promise<"none" | "wait" | "parked" | "unknown"> {
+  const allowed = await deps.rerunnable(pr, orphaned);
+  if (orphaned.some((run) => !allowed.includes(run.id)))
+    return await parkCancelled(
+      deps,
+      pr,
+      head,
+      orphaned,
+      record,
+      "the run was created under the CI hold or its label history could not be verified; re-running it may replay the hold",
+    );
+  // Claim BEFORE the API mutation: an ambiguous response or a process death
+  // can never grant another invocation permission to replay the request.
+  if (
+    !(await deps.claim(
+      pr,
+      head,
+      orphaned.map((run) => run.workflowId),
+    ))
+  )
+    return "wait";
+  const requested = await requestRuns(
+    pr,
+    head,
+    orphaned,
+    deps,
+    (record.grants ?? 0) > 0
+      ? "the re-run a person's answer granted"
+      : "re-run 1/1",
+  );
+  if (requested === "head-moved") return "unknown";
+  if (requested !== null)
+    return await parkCancelled(deps, pr, head, orphaned, record, requested);
+  return "wait";
 }
 
 /** The head's record, its claim released first when a pending grant waited on it. */
