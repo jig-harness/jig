@@ -22,19 +22,9 @@ export function priorityLines(r: RepoReport, verb: string): string[] {
   for (const problem of p.weights.problems)
     lines.push(`  priorities weights: ${problem}`);
   const { ranking } = p;
-  lines.push(...laneLines(ranking));
-  for (const s of ranking.shortlist.slice(0, SHOWN))
-    lines.push(
-      `  proposes ${String(s.position).padStart(2)}. ${s.key} [${s.lane}${s.objective === null ? "" : ` ${s.objective}`}]: ${s.reason}${s.gaps.length > 0 ? `; gaps: ${s.gaps.join(", ")}` : ""}`,
-    );
-  if (ranking.shortlist.length === 0)
-    lines.push("  proposes nothing: no ranked work is ready");
-  if (p.enforced === undefined) {
-    const started = startedTargets(r, verb === "wants");
-    lines.push(
-      `  ${verb === "wants" ? "started " : "would   "} ${started.length === 0 ? "no pickup" : [...new Set(started)].join(", ")} (dispatch's own selection)`,
-    );
-  } else lines.push(...enforcedLines(r, p.enforced, verb === "wants"));
+  lines.push(...laneLines(ranking), ...shortlistLines(ranking));
+  if (p.enforced === undefined) lines.push(dispatchSelectionLine(r, verb));
+  else lines.push(...enforcedLines(r, p.enforced, verb === "wants"));
   for (const d of ranking.disagreements)
     lines.push(
       `  disagree ${d.objective}: ${d.ahead.key} (epic ${d.ahead.epic ?? "-"}, priority ${d.ahead.priority}) ranks ahead of ${d.behind.key} (epic ${d.behind.epic ?? "-"}, priority ${d.behind.priority}): ${d.rule}`,
@@ -48,6 +38,24 @@ type Ranking =
       ? R
       : never
     : never;
+
+function shortlistLines(ranking: Ranking): string[] {
+  if (ranking.shortlist.length === 0)
+    return ["  proposes nothing: no ranked work is ready"];
+  return ranking.shortlist.slice(0, SHOWN).map((s) => {
+    const charged = s.objective === null ? "" : ` ${s.objective}`;
+    const gaps = s.gaps.length > 0 ? `; gaps: ${s.gaps.join(", ")}` : "";
+    return `  proposes ${String(s.position).padStart(2)}. ${s.key} [${s.lane}${charged}]: ${s.reason}${gaps}`;
+  });
+}
+
+/** The line for a tick that ordered nothing: dispatch's own selection. */
+function dispatchSelectionLine(r: RepoReport, verb: string): string {
+  const started = startedTargets(r, verb === "wants");
+  const names =
+    started.length === 0 ? "no pickup" : [...new Set(started)].join(", ");
+  return `  ${verb === "wants" ? "started " : "would   "} ${names} (dispatch's own selection)`;
+}
 
 function laneLines(ranking: Ranking): string[] {
   const { floor } = ranking;
