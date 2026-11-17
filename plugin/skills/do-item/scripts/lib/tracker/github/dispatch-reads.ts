@@ -29,10 +29,11 @@ export function issueBatch(
     const signal = readSignal(options);
     refuseStopped(signal);
     const selection = fields();
-    // 400 covers the issue, labels, assignee, children, native values and project items;
-    // each selected board value adds at most one object per project item (first: 20).
+    // 450 covers the issue, labels, assignee, children, dependency links, native values
+    // and project items; each selected board value adds at most one object per
+    // project item (first: 20).
     const objects =
-      400 + 20 * (selection.match(/\bdispatchStatus[0-9a-f]+:/g)?.length ?? 0);
+      450 + 20 * (selection.match(/\bdispatchStatus[0-9a-f]+:/g)?.length ?? 0);
     if (objects > OBJECT_CEILING)
       throw new GitHubApiError(
         "dispatch batch selectors exceed the object ceiling",

@@ -8,6 +8,7 @@ import type { ServedView } from "./served-reads.ts";
 import type { FacetBound } from "./tracker-facets.ts";
 import { ended, within } from "./bounded.ts";
 import { OutboundError } from "../../../shared/outbound/failure.ts";
+import { ok } from "../../../shared/outcome.ts";
 import { currentMs } from "../../../shared/time.ts";
 
 export function factoryWalkView(
@@ -32,7 +33,8 @@ export function factoryWalkView(
     if (by !== undefined)
       pending.set(
         `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
-        Promise.resolve(by),
+        // The answer `assigner-reads.ts` gives for this key.
+        Promise.resolve(ok(by)),
       );
   }
   const once = <T>(key: string, read: () => Promise<T>): Promise<T> => {

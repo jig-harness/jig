@@ -65,11 +65,36 @@ export interface DispatchRawIssue {
 export interface DispatchSource {
   /** False when authentication cannot be fingerprinted across processes: no durable issue readings. */
   readonly persistent?: boolean;
-  /** Interpret native links under this repository's relation configuration. */
+  /**
+   * Interpret native links under this repository's relation configuration;
+   * `null` when the row does not carry them in full, so they are read on
+   * their own.
+   */
   projectRelations?(
     raw: DispatchRawIssue,
     options?: FacetReadOptions,
-  ): Promise<IssueRelation[]>;
+  ): Promise<IssueRelation[] | null>;
+  /**
+   * The row's description and its parent's key (`null` for none), when the
+   * row carries both; `null` when it does not, so they are read on their own.
+   */
+  describe?(
+    raw: DispatchRawIssue,
+  ): { description: string; parent: string | null } | null;
+  /**
+   * Who made the current assignment of `assignee` to `key`, without whether
+   * that person may start work: `Tracker.assignedBy` in two parts, so a
+   * reader keeps the assignment by the item's update time and asks each
+   * person's standing once (`writeAccess`). Throws as `assignedBy` does.
+   * Present together with `writeAccess`.
+   */
+  assignmentActor?(
+    key: string,
+    assignee: string | undefined,
+    options?: FacetReadOptions,
+  ): Promise<{ id: string; name: string }>;
+  /** Whether `person`, an `assignmentActor` id, may start work: `Assigner.trusted`. */
+  writeAccess?(person: string, options?: FacetReadOptions): Promise<boolean>;
   readonly requirements?: readonly string[];
   configure?(requirements: readonly string[]): void;
   /** Reuse only native read answers within this credential scope and tick. */

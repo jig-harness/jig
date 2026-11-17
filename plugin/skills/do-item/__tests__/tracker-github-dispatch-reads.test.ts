@@ -333,3 +333,100 @@ it.each(["assignment", "state", "labels", "parent"] as const)(
     expect(reverted.keys).toEqual(["#1"]);
   },
 );
+
+it("carries each row's dependency links, description and parent, so they are not read per issue", async () => {
+  const link = (number: number, repo = "acme/app") => ({
+    number,
+    repository: { nameWithOwner: repo },
+  });
+  const { t, calls } = gitHub(() => ({
+    repository: {
+      issue: issueNode({
+        number: 5,
+        body: "the plan",
+        parent: 2,
+        extra: {
+          subIssues: conn([]),
+          blockedBy: conn([link(3), link(4, "acme/other")]),
+          blocking: conn([link(6)]),
+        },
+      }),
+    },
+  }));
+  const source = t.dispatchSource;
+  assert(source?.projectRelations && source.describe);
+  const row = await source.issue("#5");
+  assert(row);
+  expect(calls[0]?.query).toContain("blockedBy(first: 25)");
+  expect(calls[0]?.query).toContain("blocking(first: 25)");
+  expect(await source.projectRelations(row)).toEqual([
+    { type: "blocked_by", issue: "#3" },
+    { type: "blocked_by", issue: "acme/other#4" },
+    { type: "blocks", issue: "#6" },
+  ]);
+  expect(source.describe(row)).toEqual({
+    description: "the plan",
+    parent: "#2",
+  });
+  expect(calls).toHaveLength(1);
+});
+
+it("leaves the dependency links to their own read when a row does not carry them whole", async () => {
+  const { t } = gitHub(() => null);
+  const source = t.dispatchSource;
+  assert(source?.projectRelations);
+  const bare = issueNode({ number: 5, extra: { subIssues: conn([]) } });
+  const long = {
+    ...bare,
+    blockedBy: conn([], "next"),
+    blocking: conn([]),
+  };
+  expect(
+    await source.projectRelations({ identifier: "#5", value: bare }),
+  ).toBeNull();
+  expect(
+    await source.projectRelations({ identifier: "#5", value: long }),
+  ).toBeNull();
+});
+
+it("reads who made an assignment apart from whether they can write", async () => {
+  const { t, calls } = gitHub((call) =>
+    call.op === "TrackerAssignedBy"
+      ? {
+          repository: {
+            issue: {
+              assignees: { nodes: [{ login: "factory" }] },
+              timelineItems: {
+                pageInfo: { hasPreviousPage: false },
+                nodes: [
+                  {
+                    createdAt: "2026-10-02T00:00:00Z",
+                    actor: { login: "dana" },
+                    assignee: { login: "factory" },
+                  },
+                ],
+              },
+            },
+          },
+        }
+      : {
+          repository: {
+            collaborators: {
+              edges: [{ permission: "READ", node: { login: "dana" } }],
+            },
+          },
+        },
+  );
+  const source = t.dispatchSource;
+  assert(source?.assignmentActor && source.writeAccess);
+  expect(await source.assignmentActor("#5", "factory")).toEqual({
+    id: "dana",
+    name: "dana",
+  });
+  expect(calls.map((call) => call.op)).toEqual(["TrackerAssignedBy"]);
+  expect(await source.writeAccess("dana")).toBe(false);
+  expect(calls.map((call) => call.op)).toEqual([
+    "TrackerAssignedBy",
+    "TrackerCollaborator",
+  ]);
+});
