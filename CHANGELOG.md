@@ -396,6 +396,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.260.1] - 2026-11-17
+
+### Fixed
+
+- A machine whose `gh` picks the GitHub account per repository from the
+  stored logins (a wrapper that chooses the account by the repository a
+  command addresses) no longer refuses every repository's GitHub calls when
+  one account's rate limit is spent. The stored login's quota owner is now
+  asked and kept per repository a call addresses (`-R`, a
+  positional repository URL, `repos/<owner>/<repo>` route, `GH_REPO`, else
+  the working directory's `gh repo set-default` or `origin` remote), with `GH_REPO` set for the question: one `GET /user` a
+  day for each repository. A rate-limit refusal that names another user
+  than the cached owner holds that user's allowance and makes the owner be
+  asked again, and a call refused before sending names the account whose
+  allowance is spent, as in `(the allowance of GitHub account alice)`.
+
 ## [0.260.0] - 2026-11-17
 
 ### Added
@@ -9173,7 +9189,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.260.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.260.1...HEAD
+[0.260.1]: https://github.com/jig-harness/jig/compare/v0.260.0...v0.260.1
 [0.260.0]: https://github.com/jig-harness/jig/compare/v0.259.0...v0.260.0
 [0.259.0]: https://github.com/jig-harness/jig/compare/v0.258.0...v0.259.0
 [0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0
