@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { claimBody } from "../../shared/records/forge-claims.ts";
 import {
   LAUNCH_CLAIM,
@@ -393,16 +394,17 @@ describe("launch claim observations outside the open and merged listings", () =>
 
   function ended(w: World, pr: number) {
     const id = `20261106T120000Z-${String(pr).padStart(8, "0")}`;
+    const now = currentMs();
     earlierRecord(w, {
       id,
       account: "a",
       pr,
-      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+      createdAt: isoFromMs(now - 3_600_000),
     });
     recordExit(
       id,
       {
-        at: new Date(Date.now() - 1_800_000).toISOString(),
+        at: isoFromMs(now - 1_800_000),
         code: 0,
         signal: null,
       },
@@ -476,6 +478,23 @@ describe("launch claim observations outside the open and merged listings", () =>
     writeFileSync(
       join(w.dir, "batch-comments-72.json"),
       JSON.stringify([{ ...marker, body: null }]),
+    );
+    const partial = await report(w);
+    expect(commentBatches(w)).toHaveLength(1);
+    expect(listings(w, 71)).toBe(0);
+    expect(listings(w, 72)).toBe(1);
+    expect(partial.repos[0]?.shared?.owners).toEqual([host]);
+  });
+
+  it("reads the REST listing when the batch repeats a comment ID", async () => {
+    const w = fixture();
+    ended(w, 71);
+    ended(w, 72);
+    const regular = forgeComment(7201, "A regular comment");
+    w.setComments(72, [regular, claim(72, 7202)]);
+    writeFileSync(
+      join(w.dir, "batch-comments-72.json"),
+      JSON.stringify([regular, regular]),
     );
     const partial = await report(w);
     expect(commentBatches(w)).toHaveLength(1);

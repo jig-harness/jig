@@ -530,7 +530,8 @@ function addComments(
     Array.isArray(all) &&
     field(connection, "totalCount") === all.length &&
     all.length <= ITEMS &&
-    mapped.every((c) => c !== null);
+    mapped.every((c) => c !== null) &&
+    new Set(mapped.map((c) => c?.id)).size === all.length;
   if (whole) read.comments.set(number, mapped as Record<string, unknown>[]);
   else read.overflow.push(number);
 }
