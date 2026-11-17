@@ -711,6 +711,61 @@ function proofPoolOf(tickPool: Pool): Pool {
   return proofs;
 }
 
+/** The merge-proof reader for one repository, collecting its failures in `failures`. */
+function mergeReaderOf(
+  tracker: Tracker,
+  from: {
+    values: Record<string, unknown>;
+    repo: RepoTarget;
+    config: ReturnType<typeof trackerConfigOf>;
+    keySource: string | undefined;
+    bound: TickBound | undefined;
+  },
+  pool: Pool,
+  failures: unknown[],
+): ReturnType<typeof planMergeReader> {
+  const { values, repo, config } = from;
+  const base = (values.repository as { base_branch?: unknown } | undefined)
+    ?.base_branch;
+  return planMergeReader(tracker, {
+    root: repo.path,
+    repository: repo.slug,
+    trunk: typeof base === "string" ? base : repo.defaultBranch,
+    keySource: from.keySource ?? "(?!)",
+    trackerRepository:
+      config.adapter === "github"
+        ? (config.github.repository ?? repo.slug)
+        : undefined,
+    bodyLinkRequired:
+      (values.pull_requests as { issue_link?: unknown } | undefined)
+        ?.issue_link !== "none",
+    bound: from.bound,
+    pool,
+    onFailure: (error) => failures.push(error),
+  });
+}
+
+/** The pickup read, failed with what the merge proofs could not read. */
+function withMergeFailures<R extends { ok: boolean; detail: string }>(
+  read: R,
+  mergeFailures: readonly unknown[],
+): R {
+  if (mergeFailures.length === 0) return read;
+  const failure = combinedFailure([
+    ...("failure" in read && !read.ok ? [read.failure as never] : []),
+    ...mergeFailures.map(readFailureOfError),
+  ]);
+  const { failure: _previousFailure, ...rest } = read as R & {
+    failure?: unknown;
+  };
+  return {
+    ...rest,
+    ok: false,
+    detail: `${read.detail}; merge proof could not be read: ${failureText(mergeFailures[0])}`,
+    ...(failure === undefined ? {} : { failure }),
+  } as R;
+}
+
 /** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
 async function readTracker(
   values: Record<string, unknown>,
@@ -747,26 +802,12 @@ async function readTracker(
     const scope = scopeOf(values);
     preparedTracker ??= openTracker(config, repo.path);
     const mergeFailures: unknown[] = [];
-    const mergeReader = planMergeReader(preparedTracker, {
-      root: repo.path,
-      repository: repo.slug,
-      trunk:
-        typeof (values.repository as { base_branch?: unknown } | undefined)
-          ?.base_branch === "string"
-          ? (values.repository as { base_branch: string }).base_branch
-          : repo.defaultBranch,
-      keySource: tracked.keys?.source ?? "(?!)",
-      trackerRepository:
-        config.adapter === "github"
-          ? (config.github.repository ?? repo.slug)
-          : undefined,
-      bodyLinkRequired:
-        (values.pull_requests as { issue_link?: unknown } | undefined)
-          ?.issue_link !== "none",
-      bound,
-      pool: proofPoolOf(reads.pool),
-      onFailure: (error) => mergeFailures.push(error),
-    });
+    const mergeReader = mergeReaderOf(
+      preparedTracker,
+      { values, repo, config, keySource: tracked.keys?.source, bound },
+      proofPoolOf(reads.pool),
+      mergeFailures,
+    );
     tracked.servedPolicy = {
       mergeEvidence: mergeReader,
       hitl: config.labels.hitl,
@@ -807,19 +848,7 @@ async function readTracker(
           : { views: reads.servedViews }),
       },
     );
-    if (mergeFailures.length > 0) {
-      const failure = combinedFailure([
-        ...(reading.read.ok ? [] : [reading.read.failure]),
-        ...mergeFailures.map(readFailureOfError),
-      ]);
-      const { failure: _previousFailure, ...read } = reading.read;
-      reading.read = {
-        ...read,
-        ok: false,
-        detail: `${reading.read.detail}; merge proof could not be read: ${failureText(mergeFailures[0])}`,
-        ...(failure === undefined ? {} : { failure }),
-      };
-    }
+    reading.read = withMergeFailures(reading.read, mergeFailures);
     report.records.push(reading.read);
     report.unplaced.push(...reading.unplaced);
     tracked.pickups = await batchSafePickups(
