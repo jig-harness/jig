@@ -1744,7 +1744,7 @@ rejects any other form.
 | `opens_per_tick` | `4`; positive whole number of workspace opens allowed in one tick, limited further by the accounts' free slots. One open is kept for the notices workspace when the machine file enables `notify` for any repository; the budget must then be at least `2`, so launches can still proceed. A launch that needs another open waits for the next tick, with its receipt naming the budget or account constraint. A value whose workspace opens and runtime calls exceed the timer range is refused, naming `opens_per_tick`. Follow-ups never draw on it: they open from `followup_opens_per_tick` |
 | `followup_opens_per_tick` | `2`; positive whole number of workspace opens the follow-ups' own lane may make in one tick, beside `opens_per_tick`: a follow-up never spends the launches' allowance or the notices workspace's reserved open, and a follow-up whose pull request already has a workspace joined to it opens none. A follow-up that needs another open waits for the next tick, its receipt entry and the dashboard's queue naming the lane's budget (`waitsOn: lane-budget`). Two allows at most two follow-up workspace opens a tick (24 an hour at the default `interval`), an upper bound reached only while `followup_concurrency` and the accounts' slots leave room, and adds only two opens to the tick's budget (`workspace_timeout`). The lane's opens count in the tick's budget, so the installed tick deadline grows with them: at the defaults it is about 8h50m (six opens of the default `workspace_timeout` and eight runtime calls) rather than the six-hour minimum. A value whose opens take that budget past the timer range (2,147,483,647 milliseconds) is refused, naming `followup_opens_per_tick` |
 | `followup_concurrency` | `2`; positive whole number of follow-up passes that may run on this host at once, counted from the launch records still holding (pending, alive or unknown). A pending record the tick reports stuck (notified to a person, held until `jig dispatch clear`) keeps its account's slot but is not counted while the runtime shows no session running on its target, so a launch that never started does not hold the lane; one whose target has a session running, or whose sessions cannot be read, is counted, since that wrapper may be running its stage without having claimed the record; a record whose state is unknown (claimed on another host, or an unreadable process table) is counted until it resolves or a person clears it. A follow-up past it waits for the next tick, named as waiting on the lane's cap (`waitsOn: lane-cap`). It is the lane's own cap: a follow-up still needs an admitted account with a free slot (`accounts[].max_per_account`), and one that finds none is named as waiting on the accounts (`waitsOn: accounts`). Two matches the lane's per-tick budget, so every follow-up one tick opens a workspace for can start; on a host whose accounts have few slots, lower it to leave slots for drives |
-| `receipts_days` | 30; days receipts, ended launch records and the transcript copies of runs that left no closing report are kept (a copy goes seven days after the steward records its run's cause, if that is sooner). The outcome log is never removed |
+| `receipts_days` | 30; days receipts, ended launch records and the transcript copies of runs that left no closing report are kept (a copy goes seven days after the steward records its run's cause, if that is sooner). One record carrying the greatest cumulative launch count per stable account identity is retained beyond this window so weighted allocation cannot restart. The outcome log is never removed |
 | `unclaimed_after` | `15m`; how long after the session runtime answered a launch as started its launch record may stay pending, with no wrapper's claim, before the tick reports it stuck: notified to a person as needing them (once, then on `dispatch.renotify_after`) and shown on the dashboard as needing a person, holding its stage and slot until `jig dispatch clear <record>`. A record claimed within it is never flagged. The wrapper claims its record as its first act, seconds after its terminal starts, and the workspace is opened before the launch, so fifteen minutes is many times a slow start and three ticks at the default `interval`. While the runtime cannot say which sessions run, the tick waits; a session it joins to the record's target is named in the notice, since that wrapper may have started its stage without claiming the record |
 | `failures.backoff` | `2m`; how long the tick waits before trying again an action that failed twice in a row, doubled with each failure in a row after that, up to `failures.backoff_max`. A first failure is tried again at the next tick. The actions it paces are the ones a tick tries again on its own, with no record of their own that counts attempts: each pull request's dispatch label write, each notification's delivery, each nudge the runtime refused, and the end of this host's launch claim or the follow-up's answer on its marker. Launches are not among them: a launch record counts its own attempts, one lost twice is stuck (`unclaimed_after` and the records it names), and a refusal that did not change is not tried again. While an action waits, the receipt reports it waiting, with its failures in a row and its next try. The count is this host's, kept in its state database (the `failures` table), and only a tick with `--apply` keeps it. Two minutes is one tick at the interval a sweep is meant to run at; doubling reaches the hour after seven failures in a row |
 | `failures.backoff_max` | `1h`; the longest wait between two tries of an action that keeps failing. It may not be shorter than `failures.backoff` |
@@ -1811,6 +1811,51 @@ check (claimed on another host, or while the process table cannot be read)
 holds its account's slot until a person clears it with
 `jig dispatch clear <record>`; one claimed on this host before it last
 restarted has died and frees its slot.
+
+### The host-local account launch weights file
+
+The dispatcher reads `$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml`
+by default) once at the start of every tick. This optional file belongs to the
+host, beside `dispatch.yaml`; it is not repository configuration and requires
+no restart, install or commit. If `JIG_HOME` is inside a Git repository, add
+`weights.local.yaml` to that repository's `.gitignore` or local
+`.git/info/exclude` before creating it. Keep the file out of version control.
+
+```yaml
+accounts:
+  work: 75
+  spare: 25
+  reserve: 0
+```
+
+`accounts` maps names from the machine file's `accounts` list to finite weights
+from 0 to 100, including fractions. An absent file or an account not named in
+it means weight 100. A weight of 0 pauses new launches on that account,
+including re-arms, pickups, follow-ups, steward passes and takeovers, without
+stopping sessions already running there. It composes with the dispatcher's
+existing quota walls: while a wall holds, the effective weight is 0; after
+its reset, the configured weight applies again. Quota walls represent the
+usage limits the dispatcher currently knows.
+
+Weights divide new launches among accounts able to take one now. They reserve
+no concurrent slots. `accounts[].max_per_account` remains the safety ceiling
+on concurrent sessions, while walls and vendor requirements also constrain
+admission. An account unavailable for any of those reasons leaves its share
+to the others, with no launches owed when it returns. The sequence is derived
+from launch records, so it survives ticks without a separate allocation
+counter. Each new launch record keeps its account's cumulative launch count; retention
+keeps the greatest count's record per account, so deleting older records
+cannot reset the weighted sequence. Records from an older plugin without
+this count fall back to the retained launch count. Equal weights retain the existing account turn order.
+
+The receipt, terminal report and dashboard account view show each configured
+and effective weight with its reason. An unreadable or malformed file, an
+unknown section, an invalid `accounts` mapping, an unknown account name or a weight outside the
+range closes every account for new launches, and reports why. This prevents
+a broken file from resuming an account the host paused. Fix or remove the
+file to resume admission on the next tick. The shared document can also hold
+`lanes`; each reader validates only its own section, so an invalid `lanes`
+section does not change the account weights.
 
 ### When an outside system refuses or does not answer
 

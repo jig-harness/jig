@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import {
+  type ReadRecord,
   pruneLaunches,
   readLaunches,
   readRecord,
@@ -35,6 +36,33 @@ afterEach(() => {
   current?.close();
   current = null;
 });
+
+/** A later launch advances the same account so retention no longer needs the old count anchor. */
+function withLaterAccountLaunch(
+  records: ReadRecord[],
+  id: string,
+): ReadRecord[] {
+  const previous = records.find((entry) => entry.record.id === id);
+  if (previous === undefined) throw new Error(`missing startup record ${id}`);
+  return [
+    ...records,
+    {
+      record: {
+        ...previous.record,
+        id: "20270101T000000Z-eeeeeeee",
+        createdAt: "2027-01-01T00:00:00.000Z",
+        accountLaunchOrdinal: (previous.record.accountLaunchOrdinal ?? 0) + 1,
+        action: "rearm",
+        pr: 99,
+        item: null,
+        marker: null,
+        attempts: [],
+      },
+      state: { kind: "pending" },
+      result: null,
+    },
+  ];
+}
 
 function fixture() {
   const w = world();
@@ -222,7 +250,7 @@ await settleAtExit(r);
   const records = await readLaunches(dispatchState(w));
   expect(
     pruneLaunches(
-      records.records,
+      withLaterAccountLaunch(records.records, id),
       Date.now() + 32 * 86_400_000,
       30,
       dispatchState(w),
@@ -255,6 +283,17 @@ await settleAtExit(r);
   expect(
     pruneLaunches(
       (await readLaunches(dispatchState(w))).records,
+      Date.now() + 32 * 86_400_000,
+      30,
+      dispatchState(w),
+    ),
+  ).not.toContain(id);
+  expect(
+    pruneLaunches(
+      withLaterAccountLaunch(
+        (await readLaunches(dispatchState(w))).records,
+        id,
+      ),
       Date.now() + 32 * 86_400_000,
       30,
       dispatchState(w),
@@ -296,6 +335,17 @@ it("settles an interrupted startup release from its record when the marker is al
   expect(
     pruneLaunches(
       (await readLaunches(dispatchState(w))).records,
+      Date.now() + 32 * 86_400_000,
+      30,
+      dispatchState(w),
+    ),
+  ).not.toContain(id);
+  expect(
+    pruneLaunches(
+      withLaterAccountLaunch(
+        (await readLaunches(dispatchState(w))).records,
+        id,
+      ),
       Date.now() + 32 * 86_400_000,
       30,
       dispatchState(w),

@@ -269,7 +269,8 @@ const LAUNCHED =
   'orca terminal create: {"terminal":{"handle":"term-1"}}; the tab stays open after its run, since it is not recorded: Orca\'s answer names no terminal handle and shell PID';
 const unopened = (n: number) =>
   `the workspace could not be opened: PR #${n}: cannot verify origin's head (exit 2): the branch is absent`;
-const FULL = "no account has a free slot: a 2/2, b 1/1";
+const FULL =
+  "no account has a free slot: a weight 100 (effective 0), 2/2, b weight 100 (effective 0), 1/1";
 
 /**
  * What the tick that read and acted on each repository before reading the

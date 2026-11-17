@@ -299,6 +299,8 @@ function settleRecords(
       context.apply.machine.accounts,
       context.apply.records,
       nowMs,
+      undefined,
+      context.weights,
     );
   return all.filter((r) => r.record.repo === repo);
 }

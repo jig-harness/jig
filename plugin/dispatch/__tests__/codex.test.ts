@@ -265,7 +265,7 @@ describe("jig dispatch --apply on Codex accounts", () => {
     const [waiting] = launches(receipt);
     expect(waiting?.outcome).toBe("waits");
     expect(waiting?.detail).toContain(
-      "g (the drive documents no pass command for its vendor another-agent",
+      "g weight 100 (effective 0) (the drive documents no pass command for its vendor another-agent",
     );
     expect(formatReceipt(receipt, "receipt.json")).toContain(
       "account g (vendor another-agent) accepted, not admitted",

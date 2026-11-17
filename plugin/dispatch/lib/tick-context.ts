@@ -46,6 +46,7 @@ export interface TickContext {
   /** The tick's one bound, made the first time it is asked for (`tickBound`); absent for a tick no launcher bounds. */
   bound?: TickBound;
   launches: ReadRecord[];
+  weights?: import("./local-weights.ts").AccountWeights | undefined;
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
   lineInputs: Map<string, RepoLineInput>;

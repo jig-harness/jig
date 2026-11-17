@@ -81,9 +81,11 @@ import {
 } from "../shared/outbound/budget.ts";
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
 import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
+import { accountsReport } from "./lib/account-report.ts";
+import { readAccountWeights } from "./lib/local-weights.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
-import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
+import { timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
 import { prepareTrackers } from "./lib/tick-trackers.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
@@ -241,6 +243,7 @@ async function startTick(
     startedMs,
     ...(bound === undefined ? {} : { bound }),
     launches: read.records,
+    weights: readAccountWeights(options.machine?.accounts ?? []),
     apply: null,
     lineInputs: new Map(),
     reflections: [],
@@ -380,6 +383,7 @@ async function startAct(started: StartedTick): Promise<void> {
     context.nowMs,
     read.unreadable,
     context.startedMs,
+    context.weights,
   );
   // `--apply` with a machine file that was then withheld says why.
   started.withheld =
@@ -389,7 +393,15 @@ async function startAct(started: StartedTick): Promise<void> {
   context.apply = apply;
   receipt.apply = apply !== null;
   if (started.withheld !== undefined) receipt.applyWithheld = started.withheld;
-  Object.assign(receipt, accountsReport(options.machine ?? null, apply));
+  Object.assign(
+    receipt,
+    accountsReport(options.machine ?? null, {
+      records: read.records,
+      nowMs: context.nowMs,
+      weights: context.weights,
+      ...(apply ?? {}),
+    }),
+  );
   receipt.unreadableLaunches = read.unreadable;
   await readLoadUnderAct(started, read.records);
 }
@@ -415,6 +427,7 @@ async function readLoadUnderAct(
     codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     nowMs: context.nowMs,
     sample: apply !== null,
+    weights: context.weights,
   });
   if (!load.ok) {
     receipt.loadUnread = load.failure.reason;
@@ -596,6 +609,7 @@ async function closeTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
+    weights: context.weights,
   });
   // Writing the line can set the exit to 1: the tick's failure row follows it.
   finalizeTickFailure(receipt, context);
@@ -654,6 +668,7 @@ function lineOfHeldTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
+    weights: context.weights,
   });
 }
 

@@ -79,6 +79,7 @@ export function readTickLoad(input: {
   codexOptIn: CodexOptIn;
   nowMs: number;
   sample: boolean;
+  weights?: import("./local-weights.ts").AccountWeights | undefined;
 }): Outcome<LoadState, "load-unread"> {
   return attempt("load-unread", "the host's load was not read", () => {
     const { machine, records, nowMs } = input;
@@ -97,7 +98,9 @@ export function readTickLoad(input: {
       });
       recordSamples(samples, nowMs);
     }
-    const table = input.table ?? slotTable(machine.accounts, records, nowMs);
+    const table =
+      input.table ??
+      slotTable(machine.accounts, records, nowMs, undefined, input.weights);
     const refused = notAdmitted(
       machine.accounts,
       passTimeoutSeconds(),
