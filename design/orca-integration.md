@@ -14,7 +14,8 @@ Of the rest of the execution line, the board, collection through Orca and
 a plugin that wakes the dispatcher are built, as are the plugin's launch
 guard, status bar item and inbox. What remains is the launch guard's
 admission, which names only a worktree path, the dispatcher's reading of an
-account's usage from Orca's command line, and the panel's picking of a parked decision's structured option
+account's usage from Orca's command line, and the panel's picking of a
+parked decision's structured option
 (its free-text answer is built) and its merge button.
 With this built, Orca is
 the runtime and Jig is the process: Orca owns workspaces, sessions,
@@ -331,19 +332,21 @@ through, and gc, seeing a stale heartbeat, collects unguarded and says so.
 interactive pickup through Orca, since an Orca agent launch cannot pick
 the subscription account it runs on
 ([dark-factory-dispatch.md](dark-factory-dispatch.md#admission-by-account)).
-The launch hook cannot pick it either. It may add environment variables
-to a launch, and on Orca 1.4.259 they reach the agent's process, but Orca
-prepares the selected managed account after the hook and writes that
-account's configuration directory over the hook's value:
-`CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for Codex. A launch
-whose hook names another account's directory therefore runs on the account
-Orca has selected, for both agents. Rewriting the launch's command to set
-the variable inline would get past Orca and is not used: Orca's own
-variables for the session (`ORCA_CLAUDE_CONFIG_DIR`, `ORCA_CODEX_HOME`)
-would still name the selected account, so what Orca knows of the session
-and the account it bills would disagree. Pickups run as headless passes
-until Orca lets a launch name its account
-([the asks](#what-jig-asks-of-orca)).
+The launch hook cannot pick it either while Orca has a managed account
+selected. The hook may add environment variables to a launch, and on Orca
+1.4.259 they reach the agent's process, but Orca prepares the selected
+managed account after the hook and writes that account's configuration
+directory over the hook's value: `CLAUDE_CONFIG_DIR` for Claude Code,
+`CODEX_HOME` for Codex. A launch whose hook names another account's
+directory therefore runs on the account Orca has selected, for both
+agents. With the system's own login selected instead, Orca writes no
+directory and the hook's value would stand; that is untried, and it
+takes a host-wide selection, which moves every other launch too.
+Rewriting the launch's command to set the variable inline is untried as
+well, and is not used: Orca's own variables for the session
+(`ORCA_CLAUDE_CONFIG_DIR`, `ORCA_CODEX_HOME`) would still name the
+selected account. Pickups run as headless passes until Orca lets a launch
+name its account ([the asks](#what-jig-asks-of-orca)).
 
 **The status bar.** A status bar item shows the newest tick's counts of
 pull requests ready to merge and of needs waiting on a person, and flags
@@ -430,8 +433,8 @@ the page, a phone reaches the dashboard through a front only.
 ## Build order
 
 One pull request each; each is usable on its own. Steps 1 to 6 and the
-first parts of 8 and 9 are built, and step 7 is answered. The steps still open run in parallel where
-nothing orders them: the admission's repository and worktree incarnation
+first parts of 8 and 9 are built, and step 7 is answered. The steps still
+open run in parallel where nothing orders them: the admission's repository and worktree incarnation
 (step 6), the dispatcher's usage reading
 (step 4's ask, once Orca offers it) and the panel's option picking and merge button
 (step 9).

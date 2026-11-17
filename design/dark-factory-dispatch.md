@@ -1450,10 +1450,10 @@ create` does not do) live in the plugin, in
   the launch can carry it: `orca agent launch` takes no session id, so the
   interactive launch the pickup step built (the wrapper in a terminal tab,
   starting Claude Code itself) passes it as Claude Code's `--session-id`;
-  that `orca agent launch` can bind its agent to
-  an account so is checked when the pickup stage is built, and until it
-  does, interactive sessions are not launched. A pickup is launched as a
-  headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
+  `orca agent launch` cannot bind its agent to an account
+  ([orca-integration.md](orca-integration.md#what-jig-asks-of-orca) asks
+  Orca for it), and until it can, interactive sessions are not launched.
+  A pickup is launched as a headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
   and takes the headless form above, with the wrapper running
   `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
@@ -1644,8 +1644,8 @@ Switching Orca's active account before a launch is not used: it is
 host-wide and would move every other session's next pass too. An Orca agent
 launch cannot bind its agent to an account either: that selection
 overrides a variable the launch hook adds
-([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)), so a pickup does not
-start as an interactive session: it runs as a headless pass, as a
+([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)), so
+a pickup does not start as an interactive session: it runs as a headless pass, as a
 follow-up does
 ([headless pickups](../plugin/README.md#the-dispatcher)).
 
