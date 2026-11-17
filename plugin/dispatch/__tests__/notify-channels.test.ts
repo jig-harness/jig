@@ -282,6 +282,7 @@ describe("the `channel` column", () => {
       m.sql.includes("ADD COLUMN channel"),
     );
     const old = new Database(statePath(root));
+    old.run("DROP TABLE merge_facts");
     old.run("DROP TABLE allocation_charge");
     old.run("DROP TABLE allocation_week");
     old.run("DROP TABLE allocation_lane_epoch");

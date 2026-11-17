@@ -38,6 +38,8 @@
  * tick still plans on what it read, writes its receipt and lets its locks
  * go in time; the next tick reads the rest.
  */
+import { type Pool, pool as proofPool } from "./pool.ts";
+import { planMergeReader } from "./sources/plan-merges.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import {
   type IssueKeys,
@@ -123,6 +125,7 @@ import {
 } from "../../shared/outcome.ts";
 import { clearsByWaiting } from "../../shared/outbound/failure.ts";
 import {
+  combinedFailure,
   lastForgeReading,
   readFailureOf,
   readFailureOfError,
@@ -690,6 +693,116 @@ function trackerFailure(
   };
 }
 
+/**
+ * The pool merge proofs run through, one per tick and shared by every
+ * repository: the enclosing tracker read holds a slot of the tick's pool,
+ * which never lends a second one to the same read, so proof chains take a
+ * pool of their own, as wide as the tick's configured `poolSize`, rather
+ * than waiting on it. Proof chains and ordinary reads each stay within that
+ * width, so the tick's reads in flight never exceed twice it.
+ */
+const proofPools = new WeakMap<Pool, Pool>();
+function proofPoolOf(tickPool: Pool): Pool {
+  let proofs = proofPools.get(tickPool);
+  if (proofs === undefined) {
+    proofs = proofPool(tickPool.size);
+    proofPools.set(tickPool, proofs);
+  }
+  return proofs;
+}
+
+/** The merge-proof reader for one repository, collecting its failures in `failures`. */
+function mergeReaderOf(
+  tracker: Tracker,
+  from: {
+    values: Record<string, unknown>;
+    repo: RepoTarget;
+    config: ReturnType<typeof trackerConfigOf>;
+    keySource: string | undefined;
+    bound: TickBound | undefined;
+  },
+  pool: Pool,
+  failures: unknown[],
+): ReturnType<typeof planMergeReader> {
+  const { values, repo, config } = from;
+  const base = (values.repository as { base_branch?: unknown } | undefined)
+    ?.base_branch;
+  return planMergeReader(tracker, {
+    root: repo.path,
+    repository: repo.slug,
+    trunk: typeof base === "string" ? base : repo.defaultBranch,
+    keySource: from.keySource ?? "(?!)",
+    trackerRepository:
+      config.adapter === "github"
+        ? (config.github.repository ?? repo.slug)
+        : undefined,
+    bodyLinkRequired:
+      (values.pull_requests as { issue_link?: unknown } | undefined)
+        ?.issue_link !== "none",
+    bound: from.bound,
+    pool,
+    onFailure: (error) => failures.push(error),
+  });
+}
+
+/** The pickup read, failed with what the merge proofs could not read. */
+function withMergeFailures<R extends { ok: boolean; detail: string }>(
+  read: R,
+  mergeFailures: readonly unknown[],
+): R {
+  if (mergeFailures.length === 0) return read;
+  const failure = combinedFailure([
+    ...(read.ok ? [] : [(read as { failure?: unknown }).failure as never]),
+    ...mergeFailures.map(readFailureOfError),
+  ]);
+  const { failure: _previousFailure, ...rest } = read as R & {
+    failure?: unknown;
+  };
+  return {
+    ...rest,
+    ok: false,
+    detail: `${read.detail}; merge proof could not be read: ${failureText(mergeFailures[0])}`,
+    ...(failure === undefined ? {} : { failure }),
+  } as R;
+}
+
+/** The served policy one repository's pickup read runs under. */
+function servedPolicyOf(
+  from: {
+    values: Record<string, unknown>;
+    repo: RepoTarget;
+    config: ReturnType<typeof trackerConfigOf>;
+    serveDefaults: Readonly<Record<string, string>> | undefined;
+  },
+  mergeEvidence: ReturnType<typeof planMergeReader>,
+): NonNullable<Tracked["servedPolicy"]> {
+  const { values, repo, config } = from;
+  const item = values.do_item as { execution_plan_block?: unknown } | undefined;
+  const scope = scopeOf(values);
+  return {
+    mergeEvidence,
+    hitl: config.labels.hitl,
+    manualOps: config.labels.manualOps,
+    ...(typeof item?.execution_plan_block === "string"
+      ? { executionPlanBlock: item.execution_plan_block }
+      : {}),
+    ...(scope === undefined ? {} : { repoScope: scope }),
+    unlabeled: unlabeledModeOf({
+      scope,
+      adapter: config.adapter,
+      team: config.team ?? "",
+      site: config.jira.site,
+      defaults: from.serveDefaults,
+      repoPath: repo.path,
+    }),
+    trackerNamespace: trackerDefaultKey(
+      config.adapter,
+      config.team ?? "",
+      config.jira.site,
+    ),
+  };
+}
+
 /** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
 async function readTracker(
   values: Record<string, unknown>,
@@ -702,7 +815,7 @@ async function readTracker(
   serveDefaults: Readonly<Record<string, string>> | undefined,
   nowMs: number,
   headroom: boolean,
-  reads: Pick<TickReads, "budget" | "servedViews">,
+  reads: Pick<TickReads, "budget" | "servedViews" | "pool">,
   records: readonly ReadRecord[],
   preparedTracker?: Tracker,
 ): Promise<Tracked> {
@@ -720,35 +833,21 @@ async function readTracker(
     tracked.adapter = config.adapter;
     tracked.issueRepository =
       config.adapter === "github" ? config.github.repository : null;
-    const item = values.do_item as
-      | { execution_plan_block?: unknown }
-      | undefined;
-    const scope = scopeOf(values);
-    tracked.servedPolicy = {
-      hitl: config.labels.hitl,
-      manualOps: config.labels.manualOps,
-      ...(typeof item?.execution_plan_block === "string"
-        ? { executionPlanBlock: item.execution_plan_block }
-        : {}),
-      ...(scope === undefined ? {} : { repoScope: scope }),
-      unlabeled: unlabeledModeOf({
-        scope,
-        adapter: config.adapter,
-        team: config.team ?? "",
-        site: config.jira.site,
-        defaults: serveDefaults,
-        repoPath: repo.path,
-      }),
-      trackerNamespace: trackerDefaultKey(
-        config.adapter,
-        config.team ?? "",
-        config.jira.site,
+    const tracker = preparedTracker ?? openTracker(config, repo.path);
+    const mergeFailures: unknown[] = [];
+    tracked.servedPolicy = servedPolicyOf(
+      { values, repo, config, serveDefaults },
+      mergeReaderOf(
+        tracker,
+        { values, repo, config, keySource: tracked.keys?.source, bound },
+        proofPoolOf(reads.pool),
+        mergeFailures,
       ),
-    };
+    );
     const reading = await readPickups(
       () => {
-        tracked.tracker = preparedTracker ?? openTracker(config, repo.path);
-        return tracked.tracker;
+        tracked.tracker = tracker;
+        return tracker;
       },
       section,
       { bound: () => facetBound(bound?.deadline), tick: bound },
@@ -763,6 +862,7 @@ async function readTracker(
           : { views: reads.servedViews }),
       },
     );
+    reading.read = withMergeFailures(reading.read, mergeFailures);
     report.records.push(reading.read);
     report.unplaced.push(...reading.unplaced);
     tracked.pickups = await batchSafePickups(
