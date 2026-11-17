@@ -5,10 +5,8 @@
  * record the tick applies (`stewardRecords`), against the shape descriptions
  * the Protocol's schemas are generated from (`lib/steward-record-shapes.ts`).
  * These cases pin every form a record may take and each way a field can
- * break, with the reason each refusal gives. Before the reader read through
- * the descriptions it accepted a facet named by a list (`["type"]`), which
- * the tick could never apply; it now refuses one, and reads every other
- * record as it did.
+ * break, with the reason each refusal gives. A facet named by a list
+ * (`["type"]`) is refused: the tick could never apply one.
  */
 import { describe, expect, test } from "bun:test";
 import { checkedRecords } from "../lib/steward.ts";
