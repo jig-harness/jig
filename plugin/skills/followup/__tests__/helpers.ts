@@ -90,6 +90,7 @@ export function factsOf(over: Partial<Facts> = {}): Facts {
     changedFiles: ["src/export.ts"],
     changeAreas: { known: false, reason: "no catalog" },
     item: { key: "ENG-12", source: "branch" },
+    items: [{ key: "ENG-12", source: "branch" }],
     itemRead: true,
     epics: [],
     outOfTree: { declared: true, saysNone: true, steps: [] },
@@ -101,11 +102,15 @@ export function factsOf(over: Partial<Facts> = {}): Facts {
   };
 }
 
-/** Run the script with `root` as its working directory. */
-export function runScript(root: string, args: string[]) {
+/** Run the script with `root` as its working directory, `env` laid over the clean environment. */
+export function runScript(
+  root: string,
+  args: string[],
+  env: Record<string, string> = {},
+) {
   const result = spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd: root,
-    env: cleanEnv(),
+    env: { ...cleanEnv(), ...env },
     encoding: "utf8",
   });
   return {
