@@ -98,7 +98,7 @@ function links(
  * relations dispatch acts on; `null` for a row read without them, or with
  * more than one page of either.
  */
-export function rowDependencies(
+function rowDependencies(
   value: Record<string, unknown>,
   home: Repo,
 ): IssueRelation[] | null {
