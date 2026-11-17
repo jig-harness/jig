@@ -282,6 +282,7 @@ describe("the `channel` column", () => {
       m.sql.includes("ADD COLUMN channel"),
     );
     const old = new Database(statePath(root));
+    old.run("DROP TABLE merge_facts");
     old.run("ALTER TABLE launches DROP COLUMN sessions");
     old.run("ALTER TABLE launches DROP COLUMN result_wait");
     old.run("DROP INDEX steward_records_run_effect");
