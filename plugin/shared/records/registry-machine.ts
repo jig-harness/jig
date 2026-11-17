@@ -20,7 +20,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 36;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 7;
+const DRIVE_DB = 8;
 const REFLECT = "skills/reflect/scripts/";
 
 /** A file in a drive's per-clone state directory, of one state family. */
