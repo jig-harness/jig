@@ -396,6 +396,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.259.0] - 2026-11-16
+
+### Added
+
+- The [followup](plugin/skills/followup/README.md) skill (`/jig:followup`) runs the post-merge stage in any repository: after a merge it settles each class of obligation the merge can leave (the tracker item and epic, deferred review findings, out-of-tree steps, the release and its tags, temporary scaffolding and live drivers, live verification, the next step, and the workspace card in Orca) with one verdict and its evidence, carries out what its fixed authority table allows and files the rest; on an open pull request it previews what the merge will owe. Its script keeps the protocol the dispatcher expects: the claim checked before every outside write, and no run ended while an arm has no verdict. Name it in `dispatch.followup_command` to have the dispatcher start it after each merge.
+- The configuration fields `followup.off` (core arms a repository does not run) and `followup.authority` (acts moved to a stricter level; a looser one is refused), documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#followup).
+
+### Fixed
+
+- Native dispatcher queue preloading no longer lends its expired facet-read deadline to later issue reads in the same tick. Shared lazy reads keep the tick's deadline, while each caller retains its own cancellation and incomplete readings remain nonauthoritative.
+
+## [0.258.0] - 2026-11-16
+
+### Added
+
+- A pickup's or a follow-up's run that ends without a closing report, and whose end its wrapper cannot explain, now has the end of its transcript copied to `~/.local/state/jig/dispatch/runs/<record>/` (at most 2 MiB, credentials redacted, readable only by you), found by the session id Claude Code was given or the one a Codex pass printed. The dashboard's run line and `jig ask`'s `last.run` name the copy's path. The copy is removed seven days after the steward records the run's cause, and at the latest after `receipts_days`; Jig keeps no copy of a reported run's transcript and never deletes the vendor's files. See [plugin/README.md](plugin/README.md#the-closing-report).
+- The steward's digest lists those runs with an excerpt of each copy (the run's last assistant turns and the tool errors after its last success, as evidence), and the steward submits a new `cause` record for each: a cause from its closed list and a summary of what the run had got to. The next tick writes it onto the run's outcome row as its closing report, `by: steward`, redacted as a pass's report is. It writes no tracker state and starts no pass. See [the steward](plugin/skills/steward/README.md).
+- When a pass leaves no report, its wrapper records what it saw as the report, `by: wrapper`: a pass that could not start (`startup`, or `usage-limit` on the vendor's notice), one it stopped at its deadline (`deadline`), and every steward pass, with the cause it saw, else `unknown`.
+
 ## [0.257.0] - 2026-11-16
 
 The dispatch dashboard shows how many pull requests are ready to merge outside its own window.
@@ -9118,7 +9137,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.257.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.259.0...HEAD
+[0.259.0]: https://github.com/jig-harness/jig/compare/v0.258.0...v0.259.0
+[0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0
 [0.257.0]: https://github.com/jig-harness/jig/compare/v0.256.7...v0.257.0
 [0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7
 [0.256.6]: https://github.com/jig-harness/jig/compare/v0.256.5...v0.256.6

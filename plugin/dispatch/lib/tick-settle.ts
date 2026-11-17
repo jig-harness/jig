@@ -41,6 +41,7 @@ import { logEnded } from "./log-ended.ts";
 import { aboutTargets } from "./line.ts";
 import { hasEnded } from "./log.ts";
 import { eraseStewardOutput } from "./steward.ts";
+import { pruneTranscriptCopies } from "./transcript-copy.ts";
 import { pruneLaunches, type ReadRecord } from "./launches.ts";
 import type { readDrives } from "./sources/ledgers.ts";
 import { allRecords, type TickContext } from "./tick-context.ts";
@@ -197,6 +198,7 @@ export async function settleOutcomes(
   );
   const waits = waitsOutOf(context);
   eraseStewardOutput(context.nowMs, days ?? 30, context.apply?.root);
+  pruneTranscriptCopies(context.nowMs, days ?? 30, context.apply?.root);
   return (
     unlogged.length > 0 ||
     receipt.repos.some(

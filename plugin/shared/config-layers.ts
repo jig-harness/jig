@@ -136,6 +136,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "code_stats.kinds",
   "code_stats.modules",
   "code_stats.classify_command",
+  // Which arms a repository's follow-up runs describes that repository.
+  "followup.off",
   // Where a repository keeps its docs tree, its schema and its index preamble.
   "docs.root",
   "docs.index.preamble",

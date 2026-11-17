@@ -4,7 +4,12 @@
  * manual-operations label read from its configuration.
  */
 import { describe, expect, it } from "bun:test";
-import { manualOpsLabel, owedSteps, owesSteps } from "../lib/owed-steps.ts";
+import {
+  manualOpsLabel,
+  outOfTreeSteps,
+  owedSteps,
+  owesSteps,
+} from "../lib/owed-steps.ts";
 
 const body = (...lines: string[]) => lines.join("\n");
 
@@ -430,5 +435,61 @@ describe("blocks end what they hold", () => {
     const started = performance.now();
     owedSteps(`## Out-of-tree follow-ups\n${"a\n".repeat(24000)}`);
     expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
+describe("a step's detail", () => {
+  it("joins continuation lines and deeper plain items to their step", () => {
+    const body = [
+      "## Out-of-tree follow-ups",
+      "",
+      "- Enable the flag",
+      "  only in staging",
+      "  - then run the migration",
+      "- Rotate the key",
+    ].join("\n");
+    const { steps } = outOfTreeSteps(body);
+    expect(steps.map((s) => s.text)).toEqual([
+      "Enable the flag only in staging then run the migration",
+      "Rotate the key",
+    ]);
+  });
+});
+
+describe("a declaration's completeness", () => {
+  it("tells an explicit none from an unfilled heading", () => {
+    const none = outOfTreeSteps("## Out-of-tree follow-ups\n\nNone\n");
+    const bulleted = outOfTreeSteps("## Out-of-tree follow-ups\n- N/A\n");
+    const empty = outOfTreeSteps("## Out-of-tree follow-ups\n\n");
+    expect([none.saysNone, bulleted.saysNone, empty.saysNone]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(empty.declared).toBe(true);
+  });
+
+  it("does not read a step beginning with the word as none", () => {
+    const section = outOfTreeSteps(
+      "## Out-of-tree follow-ups\n- None of the hosts restart themselves\n",
+    );
+    expect(section.saysNone).toBe(false);
+    expect(section.steps).toHaveLength(1);
+  });
+});
+
+describe("a nested step's detail", () => {
+  it("keeps a parent's detail with the parent, not the nested step above it", () => {
+    const body = [
+      "## Out-of-tree follow-ups",
+      "",
+      "- [ ] Enable the flag",
+      "  - [x] Confirm approval",
+      "  - only in staging",
+    ].join("\n");
+    expect(outOfTreeSteps(body).steps).toEqual([
+      { text: "Enable the flag only in staging", done: false },
+      { text: "Confirm approval", done: true },
+    ]);
   });
 });
