@@ -177,6 +177,16 @@ describe("shortlist", () => {
     expect(result.out).toContain("no dispatcher ranking for acme/widgets");
   });
 
+  test("with no dispatcher ranking a proposal that does not read still fails", () => {
+    const broken = file("lanes: [core: 1\n");
+    const result = run(
+      ["shortlist", "--repo", "acme/widgets", "--weights", broken],
+      join(scratch, "empty-home"),
+    );
+    expectSpawnExit(result, 1);
+    expect(result.out).toContain("is not YAML");
+  });
+
   test("shows how a proposed weights file changes the dispatcher's newest shortlist", () => {
     const home = join(scratch, "ranked-home");
     const root = join(home, ".local", "state", "jig", "dispatch");

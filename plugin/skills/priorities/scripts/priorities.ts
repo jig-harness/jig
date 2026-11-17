@@ -155,6 +155,14 @@ function originRepo(): string | null {
   return match?.[1] ?? null;
 }
 
+/** The report for a repository the dispatcher has not ranked: nothing to compare, but the proposals still have to read. */
+function noRanking(repo: string, opts: ReturnType<typeof options>): number {
+  console.log(
+    `no dispatcher ranking for ${repo} on this host: the dispatcher has not ranked it yet, so there is no shortlist to compare against`,
+  );
+  return proposalsRead(opts) ? 0 : 1;
+}
+
 function shortlist(args: string[]): number {
   const opts = options(args, ["repo", "record", "weights"], ["json"]);
   const repo = opts.get("repo") ?? originRepo();
@@ -162,12 +170,7 @@ function shortlist(args: string[]): number {
     usage("no --repo given and no origin remote to derive it from");
   const ranking = readRanking(repo);
   if (ranking === "failed") return 1;
-  if (ranking === null) {
-    console.log(
-      `no dispatcher ranking for ${repo} on this host: the dispatcher has not ranked it yet, so there is no shortlist to compare against`,
-    );
-    return 0;
-  }
+  if (ranking === null) return noRanking(repo, opts);
   const input = structuredClone(ranking.input);
   const proposing = applyProposals(input, opts);
   if (proposing === "failed") return 1;
@@ -216,21 +219,42 @@ function readRanking(
 }
 
 /** Replace the ranking input's record and weights with the proposed files; `"failed"` (already reported) when the record is invalid. */
+/** The proposed record in `file`, or `null` after reporting why it is not a valid one. */
+function readProposedRecord(
+  file: string,
+):
+  | Extract<ReturnType<typeof readRecord>, { record: unknown }>["record"]
+  | null {
+  const read = readRecord(resolve(file));
+  if (!("problems" in read)) return read.record;
+  console.log(`${file} is not a valid priorities/v1 record:`);
+  for (const p of read.problems) console.log(`  - ${p}`);
+  return null;
+}
+
+/** Whether the supplied `--record` and `--weights` files read; reports what does not. */
+function proposalsRead(opts: ReturnType<typeof options>): boolean {
+  const recordFile = opts.get("record");
+  const recordOk =
+    recordFile === undefined || readProposedRecord(recordFile) !== null;
+  const weightsFile = opts.get("weights");
+  const weights =
+    weightsFile === undefined ? null : readLaneWeights(resolve(weightsFile));
+  for (const p of weights?.problems ?? []) console.log(`  problem: ${p}`);
+  return recordOk && (weights?.problems.length ?? 0) === 0;
+}
+
 function applyProposals(
   input: RankerInput,
   opts: ReturnType<typeof options>,
 ): { weightsProposed: boolean } | "failed" {
   const recordFile = opts.get("record");
   if (recordFile !== undefined) {
-    const read = readRecord(resolve(recordFile));
-    if ("problems" in read) {
-      console.log(`${recordFile} is not a valid priorities/v1 record:`);
-      for (const p of read.problems) console.log(`  - ${p}`);
-      return "failed";
-    }
+    const record = readProposedRecord(recordFile);
+    if (record === null) return "failed";
     input.records = [
-      read.record,
-      ...input.records.filter((r) => r.level !== read.record.level),
+      record,
+      ...input.records.filter((r) => r.level !== record.level),
     ];
     input.allocationBlocked = null;
   }

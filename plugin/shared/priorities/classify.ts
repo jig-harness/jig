@@ -248,26 +248,46 @@ function findPosition(
   selectors: ReturnType<typeof resolvedSelectors>,
 ): Found | null {
   let position = 0;
-  let found: Found | null = null;
+  let named: Found | null = null;
+  let byLabel: Found | null = null;
   for (const selector of selectors) {
-    const inScope = selector.scope === item.scope;
-    for (const key of selector.keys ?? []) {
-      const depth = keyDepth(item, ancestorKeys, key);
-      if (inScope && closer(depth, found))
-        found = { position, epic: key, depth };
-      position++;
+    const keys = selector.keys ?? [];
+    const labels = selector.labels ?? [];
+    if (selector.scope === item.scope) {
+      named = nearestKey(keys, position, named, item, ancestorKeys);
+      const at = position + keys.length;
+      byLabel ??= firstLabel(labels, at, item, ancestorLabels);
     }
-    for (const label of selector.labels ?? []) {
-      if (
-        inScope &&
-        found === null &&
-        carriesLabel(item, ancestorLabels, label)
-      )
-        found = { position, epic: null, depth: 0 };
-      position++;
-    }
+    position += keys.length + labels.length;
   }
-  return found;
+  return named ?? byLabel;
+}
+
+/** `found`, or the selector's key that sits closer above `item` than it, whose positions start at `from`. */
+function nearestKey(
+  keys: readonly string[],
+  from: number,
+  found: Found | null,
+  item: SnapshotItem,
+  ancestorKeys: readonly string[],
+): Found | null {
+  let best = found;
+  keys.forEach((key, i) => {
+    const depth = keyDepth(item, ancestorKeys, key);
+    if (closer(depth, best)) best = { position: from + i, epic: key, depth };
+  });
+  return best;
+}
+
+/** The first of a selector's labels that `item` or an ancestor carries, whose positions start at `from`. */
+function firstLabel(
+  labels: readonly string[],
+  from: number,
+  item: SnapshotItem,
+  ancestorLabels: readonly string[],
+): Found | null {
+  const i = labels.findIndex((l) => carriesLabel(item, ancestorLabels, l));
+  return i < 0 ? null : { position: from + i, epic: null, depth: 0 };
 }
 
 function carriesLabel(

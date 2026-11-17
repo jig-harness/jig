@@ -514,8 +514,12 @@ function disagreementsOf(pools: Map<Lane, Classified[]>): Disagreement[] {
   for (const lane of ["core", "tactical", "peripheral"] as const) {
     const pool = pools.get(lane) ?? [];
     for (const [i, a] of pool.entries()) {
-      const found = disagreement(a, pool[i + 1]);
-      if (found !== null) out.push(found);
+      for (const b of pool.slice(i + 1)) {
+        const found = disagreement(a, b);
+        if (found === null) continue;
+        out.push(found);
+        break;
+      }
     }
   }
   return out;

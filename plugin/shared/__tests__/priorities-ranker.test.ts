@@ -416,4 +416,49 @@ describe("disagreements", () => {
     ]);
     expect(items[3]?.priority).toBe(2);
   });
+
+  test("an unknown Priority between two epics does not hide a disagreement across it", () => {
+    const rec = record({
+      objectives: [objective("core-goal", "core", ["#110", "#120", "#130"])],
+    });
+    const items = [
+      epic("#110"),
+      epic("#120"),
+      epic("#130"),
+      item("#111", { parent: "#110", priority: 4 }),
+      item("#121", { parent: "#120", priority: null }),
+      item("#131", { parent: "#130", priority: 2 }),
+    ];
+    const out = rank(
+      input({ records: [rec], snapshot: { readAt: "t", items } }),
+    );
+    expect(out.disagreements.map((d) => [d.ahead.key, d.behind.key])).toEqual([
+      ["#111", "#131"],
+    ]);
+  });
+
+  test("a label match does not displace a named ancestor that a later selector gives", () => {
+    const base = objective("core-goal", "core", ["#110", "#120"]);
+    const rec = record({
+      objectives: [
+        {
+          ...base,
+          epics: [
+            { scope: item("x").scope, labels: ["x"] },
+            ...(base.epics ?? []),
+          ],
+        },
+      ],
+    });
+    const items = [
+      epic("#110"),
+      epic("#120"),
+      item("#111", { parent: "#110", priority: 4, labels: ["x"] }),
+      item("#121", { parent: "#120", priority: 2 }),
+    ];
+    const out = rank(
+      input({ records: [rec], snapshot: { readAt: "t", items } }),
+    );
+    expect(out.disagreements[0]?.ahead.epic).toBe("#110");
+  });
 });
