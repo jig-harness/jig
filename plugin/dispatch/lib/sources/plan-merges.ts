@@ -25,7 +25,6 @@ import {
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { pullRequestFiles } from "../forge.ts";
 import { ended, secondsLeft, type TickBound } from "./bounded.ts";
-import type { Pool } from "../pool.ts";
 import {
   isMergeFact,
   readMergeFact,
@@ -50,8 +49,6 @@ export interface MergeContext {
   bodyLinkRequired: boolean;
   /** The observe tick's deadline, when this reader runs as part of a tick. */
   bound?: TickBound | undefined;
-  /** The tick-wide outbound-read pool; launch checks deliberately leave it absent. */
-  pool?: Pool;
   /** A merge proof's transport failure, retained by a tick's tracker record. */
   onFailure?(error: OutboundError): void;
 }
@@ -65,6 +62,9 @@ function associationOptions(context: MergeContext) {
   return {
     ...(context.bound === undefined ? {} : { signal: context.bound.signal }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
+    ...(context.onFailure === undefined
+      ? {}
+      : { onFailure: context.onFailure }),
   };
 }
 
@@ -140,10 +140,7 @@ export function planMergeReader(
   const fact = (pr: number) => {
     let value = facts.get(pr);
     if (value === undefined) {
-      value =
-        context.pool === undefined
-          ? reads.fact(pr)
-          : context.pool.run(() => reads.fact(pr));
+      value = reads.fact(pr);
       facts.set(pr, value);
     }
     return value;
@@ -156,8 +153,12 @@ export function planMergeReader(
       return pulls;
     };
     const currentLinks: LinkedPrReads = {
-      comments: (key) => reads.links.comments(key, associationOptions(context)),
+      comments: (key) =>
+        ended(context.bound)
+          ? Promise.resolve(null)
+          : reads.links.comments(key, associationOptions(context)),
       search: async (term) => {
+        if (ended(context.bound)) return null;
         const found = await reads.links.search(
           term,
           associationOptions(context),
@@ -165,6 +166,7 @@ export function planMergeReader(
         return found === null ? null : note(found);
       },
       view: async (pr) => {
+        if (ended(context.bound)) return null;
         const found = await reads.links.view(pr, associationOptions(context));
         if (found !== null) note([found]);
         return found;
@@ -196,9 +198,9 @@ export function planMergeReader(
             ),
           ),
         ];
-        const merges = await Promise.all(
-          numbers.filter((pr) => states.get(pr) === "MERGED").map(fact),
-        );
+        const merges: Array<MergeFact | null> = [];
+        for (const pr of numbers)
+          if (states.get(pr) === "MERGED") merges.push(await fact(pr));
         if (merges.some((merge) => merge === null))
           reason =
             "a linked pull request's merge facts could not be read completely";

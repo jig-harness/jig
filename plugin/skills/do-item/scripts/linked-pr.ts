@@ -22,6 +22,8 @@ import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { baseBranch } from "../../drive-pr/scripts/lib/overlay.ts";
 import { prPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, type RunResult } from "../../drive-pr/scripts/lib/proc.ts";
+import { ghRunFailure } from "../../../shared/outbound/github.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { runEntry } from "./lib/cli.ts";
 import {
@@ -98,6 +100,7 @@ export function forgeReads(
       try {
         return (await tracker.issueComments(key, options?.signal)).comments;
       } catch (err) {
+        options?.onFailure?.(err);
         console.error(
           `linked-pr.ts: the comments of ${key} could not be read: ${err instanceof Error ? err.message : String(err)}`,
         );
@@ -127,6 +130,9 @@ export function forgeReads(
             : { timeoutSec: options.timeoutSec }),
         },
       );
+      const failure = ghRunFailure(r);
+      if (failure !== null)
+        options?.onFailure?.(new OutboundError(failure.code, failure.reason));
       const list = ghJson(r, `the search for pull requests naming ${term}`);
       if (!Array.isArray(list)) return null;
       if (list.length >= SEARCH_LIMIT) {
@@ -162,6 +168,9 @@ export function forgeReads(
             : { timeoutSec: options.timeoutSec }),
         },
       );
+      const failure = ghRunFailure(r);
+      if (failure !== null)
+        options?.onFailure?.(new OutboundError(failure.code, failure.reason));
       const json = ghJson(r, `reading pull request #${number}`);
       const fact = pullFact(json, repository);
       const body = (json as Record<string, unknown> | null)?.body;

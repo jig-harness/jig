@@ -744,7 +744,6 @@ async function readTracker(
         (values.pull_requests as { issue_link?: unknown } | undefined)
           ?.issue_link !== "none",
       bound,
-      pool: reads.pool,
       onFailure: (error) => (mergeFailure ??= error),
     });
     tracked.servedPolicy = {

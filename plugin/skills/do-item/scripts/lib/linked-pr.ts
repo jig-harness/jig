@@ -63,6 +63,7 @@ export interface LinkedPrComment {
 export interface LinkedPrReadOptions {
   signal?: AbortSignal;
   timeoutSec?: number;
+  onFailure?(error: unknown): void;
 }
 
 /** The forge reads the lookup makes; each answers `null` when it cannot read. */
