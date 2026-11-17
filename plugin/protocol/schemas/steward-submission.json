@@ -17,17 +17,17 @@
           },
           "facts": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           },
           "class": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           },
           "reason": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           }
         },
@@ -42,12 +42,12 @@
           },
           "record": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           },
           "reason": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           }
         },
@@ -62,7 +62,7 @@
           },
           "target": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           },
           "act": {
@@ -77,12 +77,12 @@
           },
           "ask": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           },
           "reason": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           }
         },
@@ -99,7 +99,7 @@
               },
               "target": {
                 "type": "string",
-                "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
                 "maxLength": 4000
               },
               "facet": {
@@ -110,7 +110,7 @@
               },
               "reason": {
                 "type": "string",
-                "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
                 "maxLength": 4000
               }
             },
@@ -125,7 +125,7 @@
               },
               "target": {
                 "type": "string",
-                "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
                 "maxLength": 4000
               },
               "facet": {
@@ -133,12 +133,12 @@
               },
               "value": {
                 "type": "string",
-                "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,100}$",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,100}$",
                 "maxLength": 100
               },
               "reason": {
                 "type": "string",
-                "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
                 "maxLength": 4000
               }
             },
@@ -157,7 +157,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+              "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
               "maxLength": 4000
             },
             "maxItems": 100,
@@ -165,7 +165,7 @@
           },
           "reason": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           }
         },
@@ -180,7 +180,7 @@
           },
           "record": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           },
           "cause": {
@@ -201,7 +201,7 @@
           },
           "reason": {
             "type": "string",
-            "pattern": "^(?=[\\s\\S]*\\S)(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF]){1,4000}$",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
             "maxLength": 4000
           }
         },

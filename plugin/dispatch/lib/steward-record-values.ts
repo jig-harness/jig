@@ -201,8 +201,9 @@ export interface StewardLimit extends StewardValue {
 
 /**
  * The bounds the reader holds a submission to. A string is also never empty
- * or only white space. Every bound on a string is counted in
- * characters.
+ * or only white space. A string bound by `text` or `facet-value` is counted
+ * in UTF-16 code units, as JavaScript counts a string's length, and a
+ * summary in characters.
  */
 export const STEWARD_RECORD_LIMITS = {
   records: {
@@ -216,12 +217,12 @@ export const STEWARD_RECORD_LIMITS = {
   text: {
     value: 4000,
     meaning:
-      "The longest string a record carries, in characters: its reason, and each field other than the bounds below.",
+      "The longest string a record carries, in UTF-16 code units: its reason, and each field other than the bounds below.",
   },
   "facet-value": {
     value: 100,
     meaning:
-      "The longest type or size a `facet` record proposes, in characters.",
+      "The longest type or size a `facet` record proposes, in UTF-16 code units.",
   },
   summary: {
     value: 600 satisfies typeof CONCLUDED_MAX,

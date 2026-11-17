@@ -40,4 +40,26 @@ describe("shared shape descriptions", () => {
     expect(matches(s.unknown(), null)).toBe(true);
     expect(matches(s.integer(), Number.MAX_SAFE_INTEGER + 1)).toBe(false);
   });
+
+  test("unique items compare objects whatever their key order", () => {
+    const unique = s.array(s.unknown(), { uniqueItems: true });
+    expect(
+      matches(unique, [
+        { a: 1, b: [{ c: 2, d: 3 }] },
+        { a: 1, b: [{ d: 4, c: 2 }] },
+      ]),
+    ).toBe(true);
+    expect(
+      matches(unique, [
+        { a: 1, b: 2 },
+        { b: 2, a: 1 },
+      ]),
+    ).toBe(false);
+    expect(
+      matches(unique, [
+        { a: 1, b: [{ c: 2, d: 3 }] },
+        { b: [{ d: 3, c: 2 }], a: 1 },
+      ]),
+    ).toBe(false);
+  });
 });

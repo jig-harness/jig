@@ -110,6 +110,17 @@ function numberFits(schema: Constraints, value: unknown): boolean {
   );
 }
 
+/** JSON text with object keys in sorted order, so equal values read alike. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
+
 function arrayFits(schema: Constraints, value: unknown): boolean {
   return (
     Array.isArray(value) &&
@@ -118,7 +129,7 @@ function arrayFits(schema: Constraints, value: unknown): boolean {
     (schema.maxItems === undefined ||
       value.length <= Number(schema.maxItems)) &&
     (schema.uniqueItems !== true ||
-      new Set(value.map((item) => JSON.stringify(item))).size ===
+      new Set(value.map((item) => canonicalJson(item))).size ===
         value.length) &&
     value.every((item) => fits(schema.items as JsonSchema, item))
   );

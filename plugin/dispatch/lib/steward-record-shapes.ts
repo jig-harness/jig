@@ -8,8 +8,11 @@
  * (`steward-record-values.ts`); a need's acts from `shared/acts.ts`, and the
  * priorities from the tracker facets' table.
  *
- * A string's bound counts characters, by a pattern that reads alike with or
- * without Unicode mode; an order's targets are distinct by `uniqueItems`.
+ * A string's bound in UTF-16 code units is a pattern, which Jig's validator
+ * reads without Unicode mode, as the facet apply guard counts; a validator
+ * that reads it in Unicode mode counts characters, as `maxLength` does, and
+ * so accepts some strings of characters outside the Basic Multilingual Plane
+ * the reader refuses. An order's targets are distinct by `uniqueItems`.
  */
 import { NEED_ACTS } from "../../shared/acts.ts";
 import { type Infer, s, type Shape } from "../../shared/shapes.ts";
@@ -27,18 +30,10 @@ type Cause = keyof typeof STEWARD_CAUSE_VALUES;
 
 const TEXT_MAX = STEWARD_RECORD_LIMITS.text.value;
 
-/**
- * One character: a code point outside the surrogate range, a surrogate pair
- * (read without Unicode mode) or a character beyond the Basic Multilingual
- * Plane (read with it). Counted alike in both modes.
- */
-const CHARACTER =
-  "(?:[\\u0000-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^\\u0000-\\uFFFF])";
-
-/** A string with some character other than white space, at most `max` characters long. */
+/** A string with some character other than white space, at most `max` UTF-16 code units long. */
 function text(max: number) {
   return s.string({
-    pattern: `^(?=[\\s\\S]*\\S)${CHARACTER}{1,${max}}$`,
+    pattern: `^(?=[\\s\\S]*\\S)[\\s\\S]{1,${max}}$`,
     maxLength: max,
   });
 }

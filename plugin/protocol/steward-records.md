@@ -143,8 +143,8 @@ them, every one required, and no other.
 | --- | --- | --- |
 | `records` | 100 | The most records one submission holds. |
 | `targets` | 100 | The most issue keys one `order` record names. |
-| `text` | 4000 | The longest string a record carries, in characters: its reason, and each field other than the bounds below. |
-| `facet-value` | 100 | The longest type or size a `facet` record proposes, in characters. |
+| `text` | 4000 | The longest string a record carries, in UTF-16 code units: its reason, and each field other than the bounds below. |
+| `facet-value` | 100 | The longest type or size a `facet` record proposes, in UTF-16 code units. |
 | `summary` | 600 | The longest summary a `cause` record carries, in characters: the closing report's bound on what a run concluded. |
 
 <!-- /protocol:generated -->
@@ -160,8 +160,11 @@ records a pass submits, has [its own](schemas/steward-submission.json). What
 a schema cannot say, the tick still checks: that a record's target is in the
 pass's own digest.
 
-A string's bound is written as a pattern that counts characters alike with or
-without Unicode mode, beside `maxLength`.
+A string's bound in UTF-16 code units is written as a pattern. Jig's reader
+reads the pattern without Unicode mode, so it counts code units, and accepts a
+string with an unpaired surrogate; a validator that reads it in Unicode mode
+counts characters, and accepts a string of characters outside the Basic
+Multilingual Plane, such as emoji, that Jig's reader refuses at the bound.
 
 The records' kinds, fields, causes and bounds, for a program in any
 language: [data/steward-records.json](data/steward-records.json).
