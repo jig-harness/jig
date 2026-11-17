@@ -401,6 +401,23 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.262.1] - 2026-11-17
+
+### Fixed
+
+- `jig gc`'s launch guard admission now names the repository whose
+  collection took it and the worktree incarnation it was taken on (version 2
+  of the `orca-guard-admission` record; version 1 still reads). Another
+  repository that declares a common worktree root no longer releases a claim
+  from a list of Orca's worktrees that cannot hold the worktree, and a
+  worktree made again at a claimed path no longer inherits the old claim's
+  block on agent launches: each run lists such a claim with
+  `details.claim: superseded` and collecting it releases the claim. A gone
+  claim another repository wrote, or one written by an earlier release,
+  which names no repository, is reported unverified instead of being
+  released. An earlier release of `jig gc` running on the same machine
+  keeps a version 2 admission as one it cannot read.
+
 ## [0.262.0] - 2026-11-17
 
 ### Added
@@ -9232,7 +9249,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.262.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.262.1...HEAD
+[0.262.1]: https://github.com/jig-harness/jig/compare/v0.262.0...v0.262.1
 [0.262.0]: https://github.com/jig-harness/jig/compare/v0.261.1...v0.262.0
 [0.261.1]: https://github.com/jig-harness/jig/compare/v0.261.0...v0.261.1
 [0.261.0]: https://github.com/jig-harness/jig/compare/v0.260.1...v0.261.0
