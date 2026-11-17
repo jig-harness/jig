@@ -19,6 +19,11 @@
  * than a YAML library, and a file that cannot be read leaves the account out
  * of the key. An account switch therefore makes a new credential key, which
  * inherits nothing the previous account's key learnt.
+ *
+ * The stored login's key cannot say which account a client that picks its
+ * account per repository sends as: one key then spends several accounts'
+ * allowances, one per repository. The key stays the credential's, and its
+ * owner is kept per repository the run addresses (`github-scope.ts`).
  */
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";

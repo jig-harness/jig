@@ -396,6 +396,58 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.260.1] - 2026-11-17
+
+### Fixed
+
+- A machine whose `gh` picks the GitHub account per repository from the
+  stored logins (a wrapper that chooses the account by the repository a
+  command addresses) no longer refuses every repository's GitHub calls when
+  one account's rate limit is spent. The stored login's quota owner is now
+  asked and kept per repository a call addresses (`-R`, a
+  positional repository URL, `repos/<owner>/<repo>` route, `GH_REPO`, else
+  the working directory's `gh repo set-default` or `origin` remote), with `GH_REPO` set for the question: one `GET /user` a
+  day for each repository. A rate-limit refusal that names another user
+  than the cached owner holds that user's allowance and makes the owner be
+  asked again, and a call refused before sending names the account whose
+  allowance is spent, as in `(the allowance of GitHub account alice)`.
+
+## [0.260.0] - 2026-11-17
+
+### Added
+
+- The Jig Protocol has a provisional chapter on forge claims
+  ([plugin/protocol/forge-claims.md](plugin/protocol/forge-claims.md)):
+  the takeover claim a driver posts to take a drive over from another
+  clone, the launch claim a dispatching host posts for each launch of a
+  drive and writes its end onto, and the announcement that a head is safe
+  to merge. It gives each claim's markers, version and key, every field of
+  its record with its type and which claims carry it, the actions a launch
+  takes and the states its end is in, and what a reader does with a claim
+  that does not read. Its data file, `plugin/protocol/data/forge-claims.json`,
+  and a JSON Schema per claim (`drive-takeover-claim.json`,
+  `dispatch-launch-claim.json`, `drive-merge-ready.json` under
+  `plugin/protocol/schemas/`) carry them for a program that reads who
+  launched a drive, how the launch ended, or whether a head was announced.
+  The three readers now check a claim against the same description the
+  schemas are generated from, and read every claim they read before, except a takeover claim whose generation is above 9007199254740991, which no ledger reaches.
+  **Consumer action:** none.
+
+### Fixed
+
+- `jig send <address> answer <key>` to a pickup's decision on a Linear or
+  Jira item no longer posts an answer the dispatcher will never read. A
+  send from the host that owns the repository is refused: its tick reads
+  the item with the same tracker credential and never counts that user's
+  comments. The refusal says to answer as another tracker user or give the
+  dispatcher a tracker user of its own. From another host the writer is
+  still checked against the factory identity (`dispatch.identity`); where
+  the repository names none, or the machine cannot tell whether it owns the
+  repository, the answer posts with a notice that the tick may not read it.
+- When the only answers on such an item are by the dispatcher's own tracker
+  user, the tick now reads the decision as unread and says why, and
+  `jig ask pickup@…` shows that reason instead of a plain wait.
+
 ## [0.259.0] - 2026-11-16
 
 ### Added
@@ -9137,7 +9189,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.259.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.260.1...HEAD
+[0.260.1]: https://github.com/jig-harness/jig/compare/v0.260.0...v0.260.1
+[0.260.0]: https://github.com/jig-harness/jig/compare/v0.259.0...v0.260.0
 [0.259.0]: https://github.com/jig-harness/jig/compare/v0.258.0...v0.259.0
 [0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0
 [0.257.0]: https://github.com/jig-harness/jig/compare/v0.256.7...v0.257.0
