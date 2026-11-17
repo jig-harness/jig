@@ -34,7 +34,7 @@ records stay in the owner host's state database (`steward_records` in
 `state.sqlite`), never on the forge or the tracker.
 
 The reader checks the whole list before it keeps any record, and refuses all
-of it at the first record that does not read, for one of four reasons: the
+of it at the first record that does not read, for a reason: the
 submission is not a list within the `records` bound below; a record has no
 reason; its kind is not listed below, or it carries a field its kind does not
 have; or a field does not hold a value its kind allows. Every field of a kind
@@ -143,8 +143,8 @@ them, every one required, and no other.
 | --- | --- | --- |
 | `records` | 100 | The most records one submission holds. |
 | `targets` | 100 | The most issue keys one `order` record names. |
-| `text` | 4000 | The longest string a record carries, in UTF-16 code units: its reason, and each field other than the bounds below. |
-| `facet-value` | 100 | The longest type or size a `facet` record proposes, in UTF-16 code units. |
+| `text` | 4000 | The longest string a record carries, in characters: its reason, and each field other than the bounds below. |
+| `facet-value` | 100 | The longest type or size a `facet` record proposes, in characters. |
 | `summary` | 600 | The longest summary a `cause` record carries, in characters: the closing report's bound on what a run concluded. |
 
 <!-- /protocol:generated -->
@@ -157,14 +157,11 @@ validates against: [`rearm`](schemas/steward-rearm.json),
 [`facet`](schemas/steward-facet.json), [`order`](schemas/steward-order.json)
 and [`cause`](schemas/steward-cause.json); and a submission, the list of
 records a pass submits, has [its own](schemas/steward-submission.json). What
-a schema cannot say, the reader and the tick still check: that an order names
-no issue twice, and that a record's target is in the pass's own digest.
+a schema cannot say, the tick still checks: that a record's target is in the
+pass's own digest.
 
-A string's bound in UTF-16 code units is written as a pattern. Jig's reader
-reads the pattern without Unicode mode, so it counts code units; a validator
-that reads it in Unicode mode counts characters, and accepts a string of
-characters outside the Basic Multilingual Plane, such as emoji, that Jig's
-reader refuses at the bound.
+A string's bound is written as a pattern that counts characters alike with or
+without Unicode mode, beside `maxLength`.
 
 The records' kinds, fields, causes and bounds, for a program in any
 language: [data/steward-records.json](data/steward-records.json).

@@ -123,10 +123,10 @@ describe("the steward records reader accepts", () => {
     expect(one({ ...REARM, target: `PR #${"9".repeat(3996)}` })).toBe("reads");
     expect(one({ ...TYPE, value: "v".repeat(100) })).toBe("reads");
     expect(one({ ...CAUSE, summary: "s".repeat(600) })).toBe("reads");
-    // The summary is counted in characters, the other strings in UTF-16 code units.
+    // Every string is counted in characters.
     expect(one({ ...CAUSE, summary: ASTRAL.repeat(600) })).toBe("reads");
-    expect(one({ ...REARM, reason: ASTRAL.repeat(2000) })).toBe("reads");
-    expect(one({ ...TYPE, value: ASTRAL.repeat(50) })).toBe("reads");
+    expect(one({ ...REARM, reason: ASTRAL.repeat(4000) })).toBe("reads");
+    expect(one({ ...TYPE, value: ASTRAL.repeat(100) })).toBe("reads");
   });
 
   test("an order of no targets, and of a hundred", () => {
@@ -158,7 +158,7 @@ describe("the steward records reader refuses", () => {
       { ...REARM, reason: " \n\t" },
       { ...REARM, reason: 7 },
       { ...REARM, reason: "r".repeat(4001) },
-      { ...REARM, reason: ASTRAL.repeat(2001) },
+      { ...REARM, reason: ASTRAL.repeat(4001) },
       { kind: "constructor" },
     ])
       expect(one(record)).toBe(REASON);
@@ -179,7 +179,8 @@ describe("the steward records reader refuses", () => {
   });
 
   test("a kind named by a value other than its name", () => {
-    expect(one({ ...REARM, kind: ["rearm"] })).toBe(VALUES);
+    expect(one({ ...REARM, kind: ["rearm"] })).toBe(FIELDS);
+    expect(one({ ...REARM, kind: { toString: null } })).toBe(FIELDS);
   });
 
   test("a missing field, or a field without its kind's value", () => {
@@ -211,7 +212,7 @@ describe("the steward records reader refuses", () => {
       { ...TYPE, value: "" },
       { ...TYPE, value: 3 },
       { ...TYPE, value: "v".repeat(101) },
-      { ...TYPE, value: ASTRAL.repeat(51) },
+      { ...TYPE, value: ASTRAL.repeat(101) },
       { ...TYPE, facet: "estimate" },
       { ...TYPE, facet: "Priority" },
       { ...ORDER, targets: "#34" },

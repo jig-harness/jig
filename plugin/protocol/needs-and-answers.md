@@ -19,7 +19,7 @@ This chapter lists:
 
 - **The decision record** (`parked-decision/v1`), and its JSON Schema,
   [schemas/parked-decision.json](schemas/parked-decision.json).
-- **The answer**: the lines it is written in, its two forms, how its text
+- **The answer**: the lines it is written in, its forms, how its text
   is normalized before it is compared, and the limits on it.
 - **What a need asks of a person**: the
   [act](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) of each

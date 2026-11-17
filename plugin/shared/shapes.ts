@@ -47,7 +47,11 @@ export const s = {
   ) => shape<T[number]>({ enum: [...values] }),
   array: <S extends Shape>(
     item: S,
-    options: { minItems?: number; maxItems?: number } = {},
+    options: {
+      minItems?: number;
+      maxItems?: number;
+      uniqueItems?: boolean;
+    } = {},
   ) => shape<Value<S>[]>({ type: "array", items: item.schema, ...options }),
   object: <const P extends Fields>(
     properties: P,
@@ -113,6 +117,9 @@ function arrayFits(schema: Constraints, value: unknown): boolean {
       value.length >= Number(schema.minItems)) &&
     (schema.maxItems === undefined ||
       value.length <= Number(schema.maxItems)) &&
+    (schema.uniqueItems !== true ||
+      new Set(value.map((item) => JSON.stringify(item))).size ===
+        value.length) &&
     value.every((item) => fits(schema.items as JsonSchema, item))
   );
 }

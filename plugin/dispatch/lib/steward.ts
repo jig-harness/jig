@@ -163,11 +163,6 @@ function fieldsOf(kind: string): readonly string[] | undefined {
   return [...Object.keys(STEWARD_COMMON_FIELDS), ...Object.keys(own.fields)];
 }
 
-/** Whether an order names no issue twice, which its shape cannot say. */
-function distinctTargets(r: StewardRecord): boolean {
-  return r.kind !== "order" || new Set(r.targets).size === r.targets.length;
-}
-
 /**
  * The records of a submission, or why it is refused: the first record that
  * does not read refuses the whole submission. Each record is checked for its
@@ -185,13 +180,14 @@ export function checkedRecords(
   for (const r of value) {
     if (!matches(STEWARD_REASONED_SHAPE, r))
       return failed("invalid", "each steward record needs a reason");
-    const keys = fieldsOf(String((r as { kind?: unknown }).kind));
+    const kind = (r as { kind?: unknown }).kind;
+    const keys = typeof kind === "string" ? fieldsOf(kind) : undefined;
     if (!keys || Object.keys(r).some((k) => !keys.includes(k)))
       return failed(
         "invalid",
         "the steward record kind or fields are not allowed",
       );
-    if (!matches(STEWARD_RECORD_SHAPE, r) || !distinctTargets(r))
+    if (!matches(STEWARD_RECORD_SHAPE, r))
       return failed("invalid", "a steward record has invalid values");
   }
   return ok(value as StewardRecord[]);
