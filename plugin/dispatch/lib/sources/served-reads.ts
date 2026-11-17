@@ -197,6 +197,10 @@ async function readQueue(
         options,
       ),
     );
+    if (ended(bound))
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
     const progress = await bounded(
       tracker.assignedIssues(identity, workingStates(tracker), options),
     );
@@ -386,6 +390,32 @@ interface Plan {
   unavailableCause?: unknown;
 }
 
+/** Read the change probe only while the tick can still use its result. */
+async function changedSince(
+  probe: NonNullable<Tracker["changedSince"]>,
+  identity: string,
+  kept: Snapshot,
+  bound?: FacetBound,
+) {
+  if (ended(bound))
+    return Promise.reject(
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
+  const reading = probe(
+    {
+      since: kept.since,
+      ...(kept.watermarks === undefined ? {} : { watermarks: kept.watermarks }),
+      ...(kept.boundaryRows === undefined
+        ? {}
+        : { boundaryRows: kept.boundaryRows }),
+      identity,
+      keys: watched(kept),
+    },
+    bound?.signal,
+  );
+  return bound === undefined ? await reading : await within(reading, bound);
+}
+
 /** Whether the kept reading serves, needs part re-read, or must be taken whole. */
 async function plan(
   tracker: Tracker,
@@ -393,6 +423,7 @@ async function plan(
   kept: Snapshot | null,
   nowMs: number,
   headroom: boolean,
+  bound?: FacetBound,
 ): Promise<Plan> {
   const full: Plan = {
     source: "full",
@@ -411,15 +442,12 @@ async function plan(
       since: kept.since,
     };
   if (tracker.changedSince === undefined) return full;
-  const answer = await tracker.changedSince({
-    since: kept.since,
-    ...(kept.watermarks === undefined ? {} : { watermarks: kept.watermarks }),
-    ...(kept.boundaryRows === undefined
-      ? {}
-      : { boundaryRows: kept.boundaryRows }),
+  const answer = await changedSince(
+    tracker.changedSince,
     identity,
-    keys: watched(kept),
-  });
+    kept,
+    bound,
+  );
   if (!answer.complete) return full;
   if (answer.keys.length === 0)
     return {
@@ -680,20 +708,33 @@ async function openView(
   const save = (s: Snapshot) =>
     cache.set(key, { ...s, ...(shape === undefined ? {} : { shape }) });
   let p: Plan;
+  if (ended(options.bound))
+    return failedView(
+      tracker,
+      kept,
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
   try {
-    p = await plan(tracker, identity, kept, options.nowMs, options.headroom);
+    p = await plan(
+      tracker,
+      identity,
+      kept,
+      options.nowMs,
+      options.headroom,
+      options.bound,
+    );
     if (options.bound !== undefined) p.bound = options.bound;
   } catch (error) {
     return failedView(tracker, kept, error);
   }
-  if (p.source === "kept" || p.source === "unchanged")
-    return assemble(tracker, p, undefined, save, options.nowMs);
   if (ended(p.bound))
     return failedView(
       tracker,
       kept,
       new OutboundError("unreachable", "stopped at the tick’s deadline"),
     );
+  if (p.source === "kept" || p.source === "unchanged")
+    return assemble(tracker, p, undefined, save, options.nowMs);
   try {
     const queue = await readQueue(tracker, identity, p.bound);
     return assemble(tracker, p, queue, save, options.nowMs);
