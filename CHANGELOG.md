@@ -396,6 +396,28 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.261.1] - 2026-11-17
+
+### Fixed
+
+- drive-pr: answering the `cancelled-ci` park with "Re-run safely" (or
+  approving it) now does what the option says. Once the head's automatic
+  re-run is spent, the re-arm that consumes the answer grants that head one
+  more re-run: the drive repeats the head and CI-hold checks, requests
+  the re-run and waits for its replacement, instead of parking the same
+  question again within a minute. The grant is for the head the park names,
+  waits for a claim still inside the replacement window, is also made when
+  the unpark's own write landed before an error, and an answer carrying a
+  note is left to the pass. A park after a granted re-run says that
+  re-run was spent. **Consumer action:** none.
+- drive-pr: a cancelled check is no longer passed over when a later run of
+  the same workflow reported it only under its matrix's expanded names
+  (`tests (1/2)` for `tests`) and any of them has no result (skipped, say), judged within each
+  replacing run.
+  Such a run has not run the job, so the cancelled check stays unknown and the cancelled-run
+  recovery re-runs it or parks; a later run whose every leg ran to a result
+  still replaces it. **Consumer action:** none.
+
 ## [0.261.0] - 2026-11-17
 
 ### Added
@@ -9195,7 +9217,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.261.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.261.1...HEAD
+[0.261.1]: https://github.com/jig-harness/jig/compare/v0.261.0...v0.261.1
 [0.261.0]: https://github.com/jig-harness/jig/compare/v0.260.1...v0.261.0
 [0.260.1]: https://github.com/jig-harness/jig/compare/v0.260.0...v0.260.1
 [0.260.0]: https://github.com/jig-harness/jig/compare/v0.259.0...v0.260.0
