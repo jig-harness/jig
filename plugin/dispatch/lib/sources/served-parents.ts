@@ -8,6 +8,7 @@ import type {
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { PickupReads } from "../pickup-reads.ts";
 import { trackerScope, type HeldIssue } from "./served-reads.ts";
+import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
 import { planKeys, servedPlan } from "./served-plan.ts";
 
 /**
@@ -170,13 +171,14 @@ async function parentOf(
   return full === null ? null : { parent: full.parent };
 }
 
-/** No merge evidence is inferred from tracker completion; such edges stay held. */
+/** Tracker completion never substitutes for directly verified delivering merges. */
 export async function servedParentHold(
   tracker: Tracker,
   issue: PoolIssue,
   cache: PickupReads,
   block?: string,
   reads: ParentReads = directReads(tracker),
+  merges?: PlanMergeReader,
 ): Promise<string | null> {
   const seen = new Set<string>();
   let child = issue;
@@ -198,6 +200,11 @@ export async function servedParentHold(
       parent.identifier,
       parentBody.description,
       block,
+      async (description, block) =>
+        (await planMergeEvidence(tracker, description, block, merges)) ?? {
+          merged: [],
+          held: {},
+        },
     );
     if (held !== null) return held;
     child = parent;
@@ -228,12 +235,14 @@ async function parentStepHold(
   parent: string,
   description: string,
   block?: string,
+  merges?: PlanMergeReader,
 ): Promise<string | null> {
   const selected = servedPlan(
     description,
     parent,
     await planLive(reads, description, block),
     block,
+    await merges?.(description, block),
   );
   if (selected.error) return selected.error;
   if (!selected.present) return null;

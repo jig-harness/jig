@@ -22,6 +22,8 @@ import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { baseBranch } from "../../drive-pr/scripts/lib/overlay.ts";
 import { prPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, type RunResult } from "../../drive-pr/scripts/lib/proc.ts";
+import { ghRunFailure } from "../../../shared/outbound/github.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { runEntry } from "./lib/cli.ts";
 import {
@@ -87,41 +89,59 @@ function ghJson(r: RunResult, what: string): unknown {
   }
 }
 
+/** One `gh` read from `root`, reporting a failure to the caller's hook. */
+async function readGh(
+  root: string,
+  options:
+    | { timeoutSec?: number; onFailure?: (err: unknown) => void }
+    | undefined,
+  args: string[],
+): Promise<Awaited<ReturnType<typeof ghCall>>> {
+  const r = await ghCall(args, {
+    cwd: root,
+    ...(options?.timeoutSec === undefined
+      ? {}
+      : { timeoutSec: options.timeoutSec }),
+  });
+  const failure = ghRunFailure(r);
+  if (failure !== null)
+    options?.onFailure?.(new OutboundError(failure.code, failure.reason));
+  return r;
+}
+
 /** The reads through the tracker and the `gh` command, from `root`. */
-function forgeReads(
+export function forgeReads(
   tracker: Tracker,
   root: string,
   repository: string,
 ): LinkedPrReads {
   return {
-    async comments(key) {
+    async comments(key, options) {
       try {
-        return (await tracker.issueComments(key)).comments;
+        return (await tracker.issueComments(key, options?.signal)).comments;
       } catch (err) {
+        options?.onFailure?.(err);
         console.error(
           `linked-pr.ts: the comments of ${key} could not be read: ${err instanceof Error ? err.message : String(err)}`,
         );
         return null;
       }
     },
-    async search(term) {
-      const r = await ghCall(
-        [
-          "pr",
-          "list",
-          "--repo",
-          repository,
-          "--state",
-          "all",
-          "--search",
-          `"${term}" in:body`,
-          "--limit",
-          String(SEARCH_LIMIT),
-          "--json",
-          `${PULL_FIELDS},body`,
-        ],
-        { cwd: root },
-      );
+    async search(term, options) {
+      const r = await readGh(root, options, [
+        "pr",
+        "list",
+        "--repo",
+        repository,
+        "--state",
+        "all",
+        "--search",
+        `"${term}" in:body`,
+        "--limit",
+        String(SEARCH_LIMIT),
+        "--json",
+        `${PULL_FIELDS},body`,
+      ]);
       const list = ghJson(r, `the search for pull requests naming ${term}`);
       if (!Array.isArray(list)) return null;
       if (list.length >= SEARCH_LIMIT) {
@@ -139,19 +159,16 @@ function forgeReads(
       });
       return pulls.every((p) => p !== null) ? pulls : null;
     },
-    async view(number) {
-      const r = await ghCall(
-        [
-          "pr",
-          "view",
-          String(number),
-          "--repo",
-          repository,
-          "--json",
-          `${PULL_FIELDS},body`,
-        ],
-        { cwd: root },
-      );
+    async view(number, options) {
+      const r = await readGh(root, options, [
+        "pr",
+        "view",
+        String(number),
+        "--repo",
+        repository,
+        "--json",
+        `${PULL_FIELDS},body`,
+      ]);
       const json = ghJson(r, `reading pull request #${number}`);
       const fact = pullFact(json, repository);
       const body = (json as Record<string, unknown> | null)?.body;
