@@ -18,7 +18,10 @@
  * | `active` | An open pull request whose drive runs or is armed: its ledger says its driver runs (`driven`, `silent`), or another instance holds its drive (`refused`) | 10 minutes |
  * | `background` | Every other pull request, the repository's own facts, the tracker's queues and items | 75 minutes: an hourly sweep and its own 15 |
  *
- * `FRESHNESS_BOUND_MS` holds each bound.
+ * `FRESHNESS_BOUND_MS` holds each bound. A drive that stopped and waits
+ * for this dispatcher to arm it again (`re-armable`) neither runs nor is
+ * armed, so its pull request is `background`; the launch that re-arms it
+ * reads the pull request on the forge at use.
  *
  * A third class, a fact that gates a write, is never served here: it is
  * read on the forge or the tracker at use. That is a launch's fresh read of
@@ -32,6 +35,10 @@
  * is the machine view, read beside it (`launches.ts`) and never written
  * into a fact the view returned: the observe phase settles the forge's
  * drives by those records into a list of its own (`RepoObservation.drives`).
+ * The tracker's read still takes two inputs from this host, as it always
+ * has: whether an account has room for a pickup, which lets a young kept
+ * reading serve without a probe, and the items whose ended pass this host
+ * holds over, which it leaves out of the pickups it returns.
  */
 import type { SharedRecords } from "../../shared/records/shared.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";

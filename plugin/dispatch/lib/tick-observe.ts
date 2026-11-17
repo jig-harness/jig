@@ -87,7 +87,7 @@ import {
 import { observeContention } from "./sources/contention.ts";
 import { type HolderReadings, readHolders } from "./sources/doctor.ts";
 import type { readDrives } from "./sources/ledgers.ts";
-import { slotTable } from "./accounts.ts";
+import { pickupHeadroom } from "./tick-trackers.ts";
 import {
   CUT_AT_BOUND,
   cutRead,
@@ -364,7 +364,7 @@ export async function observeRepo(
             : [],
           serveDefaults: context.options.machine?.serveDefaults,
           nowMs,
-          headroom: pickupHeadroom(context),
+          headroom: pickupHeadroom(context, records),
           records,
           preparedTracker: opened.tracker,
         });
@@ -634,29 +634,6 @@ async function observeRunning(
       reason,
       ...(failure === undefined ? {} : { readFailed: true as const, failure }),
     });
-}
-
-/** Whether some account has room for a pickup this tick: always without a machine file. */
-function pickupHeadroom(
-  context: Pick<ObserveContext, "options" | "records" | "nowMs" | "weights">,
-): boolean {
-  const machine = context.options.machine;
-  return (
-    machine == null ||
-    slotTable(
-      machine.accounts,
-      context.records,
-      context.nowMs,
-      undefined,
-      context.weights,
-    ).some(
-      (s) =>
-        s.held < s.account.maxPerAccount &&
-        s.wall === null &&
-        !s.wallUnrecorded &&
-        (s.weight.configured ?? 0) > 0,
-    )
-  );
 }
 
 /**

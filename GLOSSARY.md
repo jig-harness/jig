@@ -2596,10 +2596,11 @@ make, use the entry's term instead.
 - **Freshness class** — how stale a fact of the *world view* may be when
   it is served from a copy rather than read at the source: at most 10
   minutes for an open pull request whose drive runs or is armed (active),
-  at most 75 minutes for everything else. A fact a write depends on (a
-  *forge claim* and its read-back, the `hold` and `drive` labels, whether a
-  pull request is ready to merge, a pickup's item) has no class: it is
-  never served from a copy, and is read at the source when it is used.
+  at most 75 minutes for everything else. The third class, *gates a
+  write*, holds the facts a write depends on (a *forge claim* and its
+  read-back, the `hold` and `drive` labels, whether a pull request is ready
+  to merge, a pickup's item): they are never served from a copy, and are
+  read at the source when they are used.
 - **Webhook** — a request a forge, tracker or chat tool sends to an
   address it was given, to say that something changed. It is signed with
   a secret both sides hold, so the receiver can check who sent it, and it
