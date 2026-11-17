@@ -6,13 +6,8 @@
  * start back while ready work in another lane could take it.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  spawnSync,
-  withoutLeakyGitEnv,
-} from "../../shared/guarded-git-spawn.ts";
 import { classify } from "../../shared/priorities/classify.ts";
 import type { WeightedLane } from "../../shared/priorities/lanes.ts";
 import { PRIORITIES_FILE } from "../../shared/priorities/record.ts";
@@ -42,6 +37,7 @@ import {
   rankPriorities,
 } from "../lib/tick-priorities.ts";
 import type { Action, RepoReport, WantedItem } from "../lib/types.ts";
+import { git, scratchDir } from "./git-fixtures.ts";
 import { report } from "./line-fixtures.ts";
 
 const SLUG = "example-org/web";
@@ -53,18 +49,7 @@ afterEach(() => {
 });
 
 function scratch(): string {
-  const dir = mkdtempSync(join(tmpdir(), "jig-priorities-enforce-"));
-  dirs.push(dir);
-  return dir;
-}
-
-function git(cwd: string, ...args: string[]): void {
-  const r = spawnSync(
-    "git",
-    ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args],
-    { cwd, env: withoutLeakyGitEnv(process.env) },
-  );
-  if (r.status !== 0) throw new Error(`git ${args[0]}: ${r.stderr}`);
+  return scratchDir("jig-priorities-enforce-", dirs);
 }
 
 /** A checkout whose `origin/main` holds a record with one objective per class, each selecting a label. */
