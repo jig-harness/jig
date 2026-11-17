@@ -842,7 +842,9 @@ conditional requests, which counts drift; enrolled dispatchers read its
 world view and nothing else but a fence's read-back and the forge check,
 at use, of a fact that gates a write, and read for themselves when it does
 not answer; a change feed (a version per target and the kinds that moved)
-that dispatchers and drive passes wait on instead of polling; hosts pin
+that dispatchers wait on instead of polling, and drive passes too if the
+measurement shows drive polling at 15% or more of the busiest shared
+credential's spend; hosts pin
 the hub's identity at enrollment, keep their own credentials, and the hub
 hands out none. Then claims with leases in front of
 the forge and tracker claims, which stay the fences, so a silent host's
@@ -866,7 +868,8 @@ shows the dispatcher's reads and drive passes' polling are at least a third
 of a shared credential's spend, the first wave: the portable core and its
 gate, the process adapter and container image, webhook intake with
 signatures, the world view and the sweep, enrollment and reporting, the
-change feed with the dispatchers and drive passes on it, observability,
+change feed with the dispatchers on it (and the drive passes, on that
+condition), observability,
 and one dashboard across hosts; then the Cloudflare adapter; then claims and owner leases with
 the silent host; the chat bridge inside the hub;
 offers; and the PostgreSQL adapter on demand. Each wave after the first is

@@ -2604,6 +2604,14 @@ make, use the entry's term instead.
   and reads the forge itself, for what moved, only when it is woken. It
   carries no facts. Not the *source feed*, which serves records to a
   dashboard. See [design/control-plane.md](design/control-plane.md#the-change-feed).
+- **Ed25519** — a public-key signature system. The hub signs its replies with
+  its private key and hosts pin and verify its public-key fingerprint at
+  enrollment.
+- **Server-sent events** — a one-way stream of messages from a server to a
+  client over one held web request. The hub may offer it as one transport for
+  the *change feed*.
+- **WebSocket** — a long-lived two-way connection between a client and a
+  server. The hub may offer it as another transport for the *change feed*.
 - **Tunnel** — a connection a machine opens outward to a provider, which
   then forwards requests from the internet for chosen paths to a port on
   that machine, so the machine needs no open inbound port. A *hub* uses

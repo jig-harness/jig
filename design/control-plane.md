@@ -18,8 +18,8 @@ is told of every change by the forge's and the tracker's
 them for every host enrolled in it and is the only one of them that reads
 the forge and the tracker for the dispatcher, bar the check each host makes
 on the forge itself just before a write. Its [change feed](../GLOSSARY.md) tells a host's
-dispatcher and drives when a target moved, so they stop polling and read
-only what changed. It also grants claims with
+dispatcher when a target moved, so it stops polling and reads only what
+changed. It also grants claims with
 leases, so a silent host's work goes to another host, offers work to
 whichever host has a free slot, tells a person when a host stops and
 serves one view of every host's work. A host that never enrolls loses
@@ -81,7 +81,7 @@ These rules keep each level whole:
 | Problem | What the hub does | How far, and from which wave |
 | --- | --- | --- |
 | Reads multiply across hosts | One reader for every enrolled dispatcher, fed by events | Whole, from the first wave, for the dispatcher's reads; a session's reads stay with its host |
-| A drive pass polls the forge while it waits for checks | The change feed wakes it when its pull request moves, and it reads only the kinds that moved | Whole, from the first wave, for a drive on an enrolled host; the reads themselves stay the drive's |
+| A drive pass polls the forge while it waits for checks | The change feed wakes it when its pull request moves, and it reads only the kinds that moved | Only if the measurement before the first wave shows drive polling matters ([The change feed](#the-change-feed)); the reads themselves stay the drive's |
 | One host per person has its own dashboard | One view of every host, phone included | Whole, from the first wave |
 | Nobody learns that a host stopped | The silent-host notice | Whole from the claims wave; without a hub, a host's tick can send its own heartbeat to an external monitor ([A stopped host, noticed](#a-stopped-host-noticed)) |
 | A dead host's drive waits | Its grant lapses and the hub names the one host that takes it over | Partly: the takeover still takes the forge's own path, after the drive ledger's heartbeat has passed its lease window; the hub stops two hosts racing for it |
@@ -446,7 +446,9 @@ the file modes are not.
   quarantine is 6 minutes: the longest lease, 5 minutes, and one drain
   margin ([Claims and leases](#claims-and-leases)). The non-rebuildable
   part (enrollments, leases, the audit trail) is what `jig hub backup`
-  copies, daily by default; the copies of host records and the world view
+  copies, daily by default; restoring that copy also enters the same
+  quarantine, because its leases may predate still-valid grants from the
+  discarded history. The copies of host records and the world view
   are never backed up, since they come back on their own.
 - **It keeps what it serves**, comment text included, on the machine or
   the platform account the organization chose, as each host's own records
@@ -454,9 +456,10 @@ the file modes are not.
   says and no longer. Reading the text through on each request instead
   would spend the reads the hub exists to save. An edit or a deletion on
   the source replaces or removes the hub's copy when its delivery
-  applies; a repository removed from a host's scope, from the App's
-  installation, or an uninstalled App, purges that repository's partition
-  at the next trimming run, within an hour. At rest the database is
+  applies; a repository removed from one host's scope does not purge its
+  shared partition. The trimming run purges a partition only after no
+  enrolled host serves it and the App installation no longer serves it (or
+  the App is uninstalled), within an hour. At rest the database is
   protected by the machine's disk encryption on the process adapter and by
   the platform's encryption on the Cloudflare adapter; the hub adds none of
   its own.
@@ -467,7 +470,7 @@ the file modes are not.
 | --- | --- | --- |
 | The change log of target versions | 24 hours | A subscriber away longer resyncs with conditional reads ([The change feed](#the-change-feed)) |
 | Admitted delivery ids | 7 days | Longer than GitHub keeps a delivery for redelivery (3 days) and Linear retries one, so a late duplicate is still recognized |
-| A delivery's body | Until it is applied, then 24 hours | Long enough to read back when an apply is questioned |
+| A delivery's body | Until it is applied, then 24 hours, subject to a 100 MiB per-repository body budget | Long enough to read back when an apply is questioned without letting one repository exhaust its partition; a new body that would exceed the budget is admitted by id but not retained and is marked for authoritative re-read |
 | Bodies and validators of conditional reads | 24 hours since last use, as the drive's read cache keeps them | A validator older than that rarely matches |
 | World-view facts of closed work | 7 days after the work closed | The dashboard's recent-closed view |
 | Copies of host records, correspondence and comment text included | 30 days after their work closed; a retired incarnation's rows 7 days after its host's next incarnation first reports | As long as a dashboard shows closed work |
@@ -475,8 +478,9 @@ the file modes are not.
 | Structured logs | 14 days | Long enough to read back a week's incident |
 | The audit trail (enrollment, approval, scope changes, revocation, rotations) | 1 year | Who allowed what, after the fact |
 
-At the target load this keeps each repository partition under about
-200 megabytes and each host partition under about 100, and the directory under
+At the target load the per-repository body budget, together with the other
+retention rows, bounds each repository partition under about 200 megabytes and
+each host partition under about 100, and the directory under
 50: well below a Durable Object's storage cap, and small for a SQLite
 file on any machine. The trimming job runs hourly through the scheduling
 port.
@@ -528,8 +532,11 @@ port.
   installation, and the hub's reads count against the installation's own
   limits, not any person's. The App asks for these permissions and no
   others: Metadata, Pull requests, Issues, Checks, Commit statuses and
-  Actions, each read-only. Contents is excluded, so a leaked App key
-  exposes no repository's code; what a host needs from a repository's own
+  Actions, each read-only. Contents is excluded, so the App cannot read
+  repository files through Contents endpoints. Pull requests read can still
+  expose changed code through a pull request's diff or patch, so a leaked App
+  key exposes the metadata and changed code those endpoints permit, but not
+  general repository-file access. What a host needs from a repository's own
   files (its offer policy's name, say) the host reads in its clone and
   sends in `hello`. On Linear it is an OAuth application of the hub's own,
   authorized to act as the application rather than as a person, so it has
@@ -552,8 +559,7 @@ port.
   naming the person who asked. Before each such write the bridge checks
   that the person the chat authenticated may make it: the chat identity
   is linked to a forge login and a tracker user once, by that person, and
-  the bridge reads that login's permission on the repository (triage or
-  higher for a label, write for anything else) and that user's membership
+  the bridge reads that login's write permission on the repository and that user's membership
   of the queue's team, refusing the write when either falls short.
 - **The hub hands out no credential for the forge or the tracker.** It
   never mints a token, short-lived or not, for a host to act with: a host
@@ -584,8 +590,10 @@ value or a coded failure, as everywhere in Jig
 [Concurrency and failures](#concurrency-and-failures)), signed with the
 hub's identity key ([Reaching the hub](#reaching-the-hub-only-the-webhook-path-is-public)).
 
-- **Deadlines.** Each call has a deadline of 2 seconds, and a tick spends
-  at most 10 seconds on hub calls in all. The first call that fails or
+- **Deadlines.** An ordinary call has a deadline of 2 seconds, and a tick spends
+  at most 10 seconds on ordinary hub calls in all. A `changes` long poll has
+  its own 60-second deadline, including its 55-second hold, and does not
+  consume that tick budget. The first ordinary call that fails or
   passes its deadline marks the hub unreachable for the rest of that tick,
   which reads for itself from there, so a slow hub costs a tick one
   deadline, never several. A host that found its hub unreachable waits a
@@ -752,19 +760,27 @@ hub serves the copies the hosts reported.
   serves hourly. On GitHub it reads each target's REST resources (the pull
   request, its labels, its reviews, its head commit's check runs and
   statuses) with conditional requests that name the version the hub holds,
-  which cost nothing against GitHub's hourly limit when nothing changed;
-  GraphQL has no such request, so the sweep reads a target's GraphQL-only
-  facts (its unresolved threads) only when its REST resources show a
-  change. On Linear it asks, per served team, for the issues updated since
-  its last sweep, one paged query, since Linear has no conditional request
-  either. One sweep of 100 open targets therefore costs about 100 to 500
-  REST requests, nearly all answered "not modified" and so free, plus
-  GraphQL points for the targets that changed and a few tracker requests a
-  team. The sweep runs in resumable chunks of 50 targets, each a unit with a
-  30-second deadline, so a chunk fits a serverless platform's per-run
-  limits and a stopped sweep resumes at its next chunk; a sweep must finish
-  within 15 minutes, or its job reads stale. Each change the sweep finds
-  that no delivery brought is counted as drift
+  which cost nothing against GitHub's hourly limit when nothing changed.
+  GraphQL has no such request, and a review thread's state (resolved or
+  not) is a GraphQL-only fact, so the sweep reads thread state only for
+  active targets, the open pull requests with a drive; every other
+  target's thread state rests on its webhooks (review, review comment and
+  review thread deliveries) and on the conditional REST part of the sweep,
+  which sees the pull request change when a review or comment lands. On
+  Linear, which has no conditional request either, it reads a paged
+  inventory of every served queue, not only the issues updated since its
+  last sweep, so an issue that has gone is seen as a deletion and its copy
+  removed. One sweep of 100 open targets therefore costs about 100 to 500
+  REST requests, nearly all answered "not modified" and so free; GraphQL
+  points for the thread state of the active targets alone, a few points
+  each; and a tracker inventory of a few paged requests per served queue,
+  which spends the tracker application's own budget every hour whether or
+  not anything changed. The sweep runs in resumable chunks of 50 targets,
+  each a unit with a 30-second deadline, so a chunk fits a serverless
+  platform's per-run limits and a stopped sweep resumes at its next chunk;
+  a sweep must finish within 15 minutes, or its job reads stale. Each
+  change, thread-state transition or deletion the sweep finds that no
+  delivery brought is counted as drift
   ([Observability](#observability)). A tracker whose deliveries the hub
   cannot verify (Jira, until it can) is read by the change probe's small
   question at the dispatcher's own interval instead of by webhook.
@@ -793,8 +809,9 @@ longest time a lost delivery can leave it stale:
 | Class | Which facts | How they are confirmed | Stale for at most |
 | --- | --- | --- | --- |
 | Gates a write | What a host's write depends on: the forge claim and its read-back, the labels a launch obeys or a write changes (`hold`, `drive`), the state that makes a pull request merge-ready (its checks, reviews and mergeability), and a pickup's item | By the host, at use, on the forge itself: a conditional read with the validator from its own last read, answered "not modified" at no cost against GitHub's hourly limit when nothing changed. A fact with no REST form (unresolved threads) is a GraphQL read, budgeted. A pickup's item is read on the tracker, beside the tracker claim the host writes and reads back | No staleness: read at use |
-| Active | Every fact of an open pull request with a drive running or armed | By the hub, every 10 minutes, with the same conditional reads; events move the copy in between | 10 minutes after a lost delivery; seconds when its delivery arrives |
-| Everything else | Other open pull requests, queues and items, and the repository's own facts | By the hub's hourly sweep; events move the copy in between | 75 minutes after a lost delivery: the hour and the sweep's own 15 |
+| Active | Every fact of an open pull request with a drive running or armed, its review threads' state included | By the hub, every 10 minutes, with the same conditional reads, and a GraphQL read of its thread state; events move the copy in between | 10 minutes after a lost delivery; seconds when its delivery arrives |
+| Everything else | Other open pull requests, queues and items, and the repository's own facts | By the hub's hourly sweep, with conditional REST reads and the tracker's inventory; events move the copy in between | 75 minutes after a lost delivery: the hour and the sweep's own 15 |
+| Thread state of a target with no drive | Whether each review thread of a pull request no drive holds is resolved | By its webhooks alone; the sweep reads it once the pull request becomes active, or when its REST resources show a review or comment changed | Until its next delivery, its next review or comment, or its first drive: no bound of its own. Nothing gates a write on it unread: a drive that starts reads its threads at use |
 
 A host asks `read` with its fact's class bound, and its validators for
 the facts that gate a write are its own: GitHub's validators can differ
@@ -804,7 +821,7 @@ use, as the drive's read cache does.
 ### The change feed
 
 Without a hub, a dispatcher's change probe and a drive pass waiting for its
-checks poll the forge: a drive asks about its pull request every ten
+checks poll the forge: a drive asks about its pull request every 30
 seconds while its checks run, and each ask is a call whether or not
 anything moved. The [change feed](../GLOSSARY.md) lets them wait on the hub
 instead, and read the forge only when their target moved.
@@ -848,7 +865,12 @@ instead, and read the forge only when their target moved.
   seconds, under the proxies' and tunnels' usual 60, then answers with no
   change and the same cursor. A host holds at most one call for its scope
   and one per running drive pass, 32 in all. A lost answer costs a
-  wake-up: the subscriber calls again with the cursor it had.
+  wake-up: the subscriber calls again with the cursor it had. The watch
+  credential is a deliberately narrow capability, not an OS-user boundary:
+  a session that can read the dispatcher's state directory can use the host
+  credential too. The separate hub user protects the hub's privileged
+  credentials; isolating untrusted sessions from a dispatcher's host
+  credential requires a separate session user or host.
 - **Who may subscribe.** The host's enrollment identity, nothing else:
   every call is bound to the host's credential, and a subscription outside
   its approved scope is refused with a coded failure. A drive pass uses a
@@ -872,16 +894,21 @@ instead, and read the forge only when their target moved.
   waits on the feed with the deadline its poll had and polls once when the
   call fails, so a hub that stops costs a drive one interval.
 
-**What it saves.** A drive pass that waits on its checks spends most of its
-forge calls while nothing moves. Polling every ten seconds through a day
-with about four rounds, each waiting about 20 minutes for checks, makes
-about 2,000 forge requests per pull request (once conditional reads land
-most are answered "not modified" and spend no hourly limit, yet each is a
-call with its latency). Woken by the feed, the same day makes about 100 to
-200: a handful of reads of the kinds that moved per push, per check suite
-that ends and per review. That figure is an estimate the measurement before
-the first wave turns into a baseline
-([Before the first wave](#before-the-first-wave-a-measurement)).
+**What it saves.** Its value is mainly the dispatchers'. Each host's
+change probe asks the forge and the tracker about every repository and
+queue it serves once a minute, and every host asks again; on the feed, a
+host holds one call for its whole scope and reads only where a target
+moved. A drive pass gains less: polling every 30 seconds while it waits,
+the default the drive's status loop uses, it makes about 160 forge
+requests per pull request per day while active (once conditional reads
+land most are answered "not modified" and spend no hourly limit, yet each
+is a call with its latency); woken by the feed it would make a few dozen,
+the reads of the kinds that moved per push, per check suite that ends and
+per review. So drive passes wait on the feed only when the measurement
+before the first wave shows that drive polling is at least 15% of the
+busiest shared credential's spend
+([Before the first wave](#before-the-first-wave-a-measurement)); below
+that, drives keep polling and the feed serves dispatchers alone.
 
 ### Observability
 
@@ -956,7 +983,8 @@ an external heartbeat monitor are settings, off by default.
 | --- | --- | --- |
 | Apply lag, 95th percentile over 10 minutes | over 60 seconds | over 5 minutes |
 | Webhook acknowledgement, 99th percentile over 10 minutes | over 2 seconds | over 8 seconds |
-| Host protocol latency, 95th percentile over 10 minutes | over 500 milliseconds | over 2 seconds |
+| Ordinary host-protocol latency, 95th percentile over 10 minutes | over 500 milliseconds | over 2 seconds |
+| Change-feed wake latency, excluding the intentional hold, 95th percentile over 10 minutes | over 500 milliseconds | over 2 seconds |
 | Change-to-host latency, 95th percentile over 1 hour | over 2 minutes | over 10 minutes |
 | Share of `read` answered by a read-through, over 1 hour | over 20% | over 50% |
 | Drift, share of a sweep's targets | over 2% | over 10% |
@@ -981,13 +1009,13 @@ number of hosts:
   free when nothing changed.
 - **Tracked:** change-to-host latency, the share of reads served from the
   hub's copy, and drive passes' forge requests per pull request per day,
-  expected to fall from about 2,000 to 100 to 200 with the change feed
-  ([The change feed](#the-change-feed)).
+  about 160 while active when they poll and a few dozen if they wait on
+  the change feed ([The change feed](#the-change-feed)).
 
-A drive pass's reads are a session's, so the change feed's saving is
-counted on the hosts' ledgers, apart from the hub's own spend: it lowers
-what the hosts spend and adds nothing to what the hub does, since the
-versions it serves come from deliveries the hub applies anyway.
+The change feed's saving is counted on the hosts' ledgers, apart from the
+hub's own spend: it lowers what the hosts spend, mostly the dispatchers'
+probes, and adds nothing to what the hub does, since the versions it
+serves come from deliveries the hub applies anyway.
 
 **What running it costs.** On the process adapter: the machine that
 already dispatches, a container, and a tunnel provider's free tier; the
@@ -1098,8 +1126,14 @@ such writes of one notice or label are repeats the forge shows, not
 damage, and a notice carries a key so a second is dropped.
 While the hub is unreachable a host does only the effects that are safe
 to repeat, such as reading, and does none of the rest until it reaches
-the hub again, or until a person's machine file says the host owns the
-repository without a hub, as today. This is the one exception to "works
+the hub again, or until a person takes the repository off the hub:
+`jig hub release-owner <repository>`, run where the hub runs, revokes the
+owner lease and refuses to name another owner for that repository, and
+only then does the person name the owner in a machine file. Run with the
+hub down, the person waits out one lease and its drain margin (6 minutes)
+since the hub last answered before editing the machine file. A
+machine-file edit alone never transfers an owner duty while the hub may
+still name an owner. This is the one exception to "works
 as it does today": it is stated in the levels above, in ADR-0016's
 decision and in the owner-lease wave's acceptance, so an implementation
 never restores a duty during a partition. The duties stay on hosts; moving any
@@ -1114,8 +1148,8 @@ pickups go on. So the hub is assumed available as a single machine is,
 not more: a host whose owner duties have waited 30 minutes raises a
 [need](../GLOSSARY.md) on its own receipt and dashboard, so the person who
 runs the hub is told by the hosts even when the hub cannot tell anyone,
-and that person either restores the hub or names the owner in a machine
-file.
+and that person either restores the hub or takes the repository off it
+as above.
 
 ### Handing out work
 
@@ -1251,7 +1285,7 @@ for a team without a private network, is left out until a team needs it.
 | `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub |
 | The dispatcher's tick | Reads the forge and the tracker itself | Reads only the hub's world view, bar a fence's read-back; asks it before each claim; reports its records; falls back to reading itself |
 | The change probe | Asks the forge and the tracker once a minute | Waits on the hub's change feed, which the events move |
-| A drive pass waiting for checks | Polls its pull request every ten seconds | Waits on the change feed for its pull request, and reads only the kinds that moved |
+| A drive pass waiting for checks | Polls its pull request every 30 seconds | Polls as without a hub, or, where the measurement showed drive polling matters, waits on the change feed and reads only the kinds that moved |
 | `jig ask`, `jig send`, `/jig:operator` | Read this machine's records and the forge | `ask` may read another host's records from the hub; `send` still writes as the person, never through the hub |
 | The dispatch dashboard | Shows its own machine | May read the hub's feed and show every host, and the hub's health |
 | The Jig plugin for Orca | Reads this machine's line | Unchanged; reading the hub's feed is a later step of its own |
@@ -1331,7 +1365,9 @@ the first wave waits on evidence that hosts spend what the hub would save:
   have landed, so it measures what remains once each host reads as cheaply
   as it can alone. It splits the dispatcher's reads from the sessions'
   reads per credential and per repository, and records drive passes'
-  requests per pull request per day, the change feed's baseline.
+  polling, its requests per pull request per day and its share of each
+  shared credential's spend, which decides whether drives join the change
+  feed.
 - **A count of real deployments** that dispatch the same repositories from
   more than one host, and of the hosts in each.
 
@@ -1381,11 +1417,12 @@ external monitor for the stopped-host notice.
 7. The change feed and the dispatcher reading through the hub: `changes`
    with the host's scope and `read` for the tick and the change probe, with
    the fall-back to reading itself.
-8. Drive passes on the change feed: the drive's wait for its checks calls
-   `changes` for its pull request with the watch credential in place of
-   its sleep between polls, and polls as today when the call fails. It is
-   in the first wave because the wait loop already waits between polls,
-   so the change replaces one wait with one call.
+8. Drive passes on the change feed, only if the measurement before the
+   first wave showed drive polling at 15% or more of the busiest shared
+   credential's spend: the drive's wait for its checks calls `changes` for
+   its pull request with the watch credential in place of its sleep
+   between polls, and polls as today when the call fails. Below that
+   share the step is not built and drives keep polling.
 9. The observability port, its signals and thresholds, `health` and
    `jig doctor hub`; the collector and the external heartbeat as settings,
    each checked when set.
@@ -1406,7 +1443,7 @@ hub:
 - a webhook delivery dropped on purpose is found by the active targets'
   re-validation or the sweep, within its class bound, and counted as drift;
 - a hub stopped mid-tick costs that tick nothing but its receipt's note,
-  and a drive waiting on the feed one poll interval;
+  and, where drives wait on the feed, a drive one poll interval;
 - the portability gate passes; and one dashboard shows every host and the
   hub's health.
 

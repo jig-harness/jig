@@ -2,7 +2,7 @@
 title: "ADR-0016: An optional hub serves hosts that keep authority"
 type: adr
 status: approved
-description: "Jig adds an optional shared control plane, the hub: a portable core behind small ports, its state partitioned per repository and per host, run by a process adapter (Bun and SQLite, in a container under its own OS user on a machine that runs sessions) and then a Cloudflare adapter, fed by the forge's and the tracker's signed webhooks with coalesced reads, a re-validation of active targets and an hourly reconciliation sweep, the only reader of the forge and the tracker for enrolled dispatchers, and a change feed that wakes dispatchers and drives instead of their polling; hosts confirm every fact that gates a write on the forge at use and pin the hub's identity at enrollment; building it waits on a week's measurement of what hosts spend; it puts claims with leases in front of the forge and tracker claims, notices a stopped host, serves one view of every host and may offer work; no level of use requires it, hosts keep authority and their own credentials, and a hub that is down returns its hosts to dispatching alone"
+description: "Jig adds an optional shared control plane, the hub: a portable core behind small ports, its state partitioned per repository and per host, run by a process adapter (Bun and SQLite, in a container under its own OS user on a machine that runs sessions) and then a Cloudflare adapter, fed by the forge's and the tracker's signed webhooks with coalesced reads, a re-validation of active targets and an hourly reconciliation sweep, the only reader of the forge and the tracker for enrolled dispatchers, and a change feed that wakes dispatchers instead of their polling, and drives too where their polling proves to matter; hosts confirm every fact that gates a write on the forge at use and pin the hub's identity at enrollment; building it waits on a week's measurement of what hosts spend; it puts claims with leases in front of the forge and tracker claims, notices a stopped host, serves one view of every host and may offer work; no level of use requires it, hosts keep authority and their own credentials, and a hub that is down returns its hosts to dispatching alone"
 lifecycle: permanent
 version: "1.4"
 last_updated: 2026-11-17
@@ -44,8 +44,9 @@ person meet these forces:
 - **A person with several machines has no single view** of the work they
   run.
 - **Drives poll while they wait.** A drive pass waiting for its checks asks
-  the forge about its pull request every few seconds, whether or not
-  anything moved.
+  the forge about its pull request every 30 seconds, whether or not
+  anything moved: about 160 requests per pull request per day while
+  active.
 - **Teams run services in different places**: on a machine they keep, in
   a container, or on a serverless platform, where no process, subprocess
   or local file exists.
@@ -126,7 +127,8 @@ units off the webhook listener's event loop.
 
 - The forge's and the tracker's [webhooks](../../GLOSSARY.md) are the
   hub's main feed: GitHub through a [GitHub App](../../GLOSSARY.md) of the
-  hub's own, read-only and without Contents, whose one webhook covers every
+  hub's own, read-only and without Contents (though Pull requests read can
+  expose changed code through diffs), whose one webhook covers every
   repository of its installation and whose reads count against the
   installation's own limits; Linear through an OAuth application of the
   hub's own that acts as the application, with its own identity and rate
@@ -141,10 +143,14 @@ units off the webhook listener's event loop.
 - Facts have stated freshness. A fact that gates a write (a claim, a
   launch's labels, merge-ready, a label change) is confirmed by the host
   on the forge at use with a conditional request; an open pull request
-  with a drive is re-validated by the hub every 10 minutes the same way;
-  everything else waits for the hourly
-  [reconciliation sweep](../../GLOSSARY.md), at most 75 minutes stale after
-  a lost delivery. Each change the sweep finds that no delivery brought is
+  with a drive is re-validated by the hub every 10 minutes the same way,
+  its review threads' state included; everything else waits for the
+  hourly [reconciliation sweep](../../GLOSSARY.md), at most 75 minutes
+  stale after a lost delivery. GraphQL and Linear have no conditional
+  request, so the sweep reads review-thread state only for active targets
+  (other pull requests' thread state rests on their webhooks and the
+  sweep's conditional REST reads), and reads each served Linear queue's
+  inventory, at a cost every hour. Each change the sweep finds that no delivery brought is
   counted as drift. A tracker whose deliveries the hub cannot verify is
   read by the change probe's question at the dispatcher's interval.
 - A [change feed](../../GLOSSARY.md) keeps a growing version per target and
@@ -153,8 +159,11 @@ units off the webhook listener's event loop.
   with server-sent events and WebSocket connections as options, and read
   the forge themselves, with their own credentials and conditional
   requests, only for the kinds that moved. It passes signals, not data;
-  without a hub they poll as they do today. Dispatchers and drive passes
-  both use it from the first wave.
+  without a hub they poll as they do today. Its value is mainly the
+  dispatchers', which use it from the first wave. Drive passes join it
+  only if the measurement before the first wave shows drive polling is at
+  least 15% of the busiest shared credential's spend; below that they keep
+  polling.
 - While its hub answers, an enrolled dispatcher reads the hub's world view
   and makes no forge or tracker read of its own but a fence's read-back
   and the check, at use, of a fact that gates a write.
@@ -186,7 +195,9 @@ units off the webhook listener's event loop.
 
 ### The rules it keeps
 
-- **No level of use requires it.** The skills never call it, the
+- **No level of use requires it.** The skills run without it; an enrolled
+  drive may optionally use its watch-only change-feed call while it waits,
+  and falls back to polling when that call fails. The
   dispatcher runs without it, and a host whose hub does not answer reads
   and claims by itself, as it does without one. The one exception is an
   owner's duties (notices, labels, board writes, steward, reflection
@@ -337,7 +348,7 @@ the sweep and the alarms, and Effect stays declined.
   change, and where a fact's confirmation has expired and no completeness
   watermark confirms it.
 - A change reaches every host's next probe within seconds of its event,
-  and a drive waiting on its checks is woken by it instead of polling.
+  and dispatchers stop polling every repository and queue.
 - A stopped host is noticed: a person is told, and its leases lapse, so
   the hub grants its work to another host, which takes a drive over by the
   forge's own path; a silent host's follow-up is named for a person.
