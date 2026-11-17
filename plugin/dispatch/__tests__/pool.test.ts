@@ -3,6 +3,12 @@ import { describe, expect, it } from "bun:test";
 import { pool } from "../lib/pool.ts";
 
 describe("pool", () => {
+  it("names its size, the default when none or no bound is given", () => {
+    expect(pool(3).size).toBe(3);
+    expect(pool(0).size).toBe(1);
+    expect(pool(Number.NaN).size).toBe(pool().size);
+  });
+
   it("runs at most its size at once, and every read to the end", async () => {
     const reads = pool(3);
     let active = 0;

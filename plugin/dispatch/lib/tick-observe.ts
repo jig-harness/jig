@@ -697,13 +697,15 @@ function trackerFailure(
  * The pool merge proofs run through, one per tick and shared by every
  * repository: the enclosing tracker read holds a slot of the tick's pool,
  * which never lends a second one to the same read, so proof chains take a
- * pool of their own, sized as the tick's, rather than waiting on it.
+ * pool of their own, as wide as the tick's configured `poolSize`, rather
+ * than waiting on it. Proof chains and ordinary reads each stay within that
+ * width, so the tick's reads in flight never exceed twice it.
  */
 const proofPools = new WeakMap<Pool, Pool>();
 function proofPoolOf(tickPool: Pool): Pool {
   let proofs = proofPools.get(tickPool);
   if (proofs === undefined) {
-    proofs = proofPool();
+    proofs = proofPool(tickPool.size);
     proofPools.set(tickPool, proofs);
   }
   return proofs;

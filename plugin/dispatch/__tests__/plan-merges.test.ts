@@ -131,6 +131,7 @@ test("a tick merge reader runs each proof chain through its shared pool", async 
     {
       ...context,
       pool: {
+        size: 6,
         run: async <T>(operation: () => Promise<T>) => {
           runs++;
           return operation();
