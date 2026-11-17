@@ -15,8 +15,19 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 
 const PLUGIN = join(import.meta.dir, "..", "..", "..");
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
-const HERDR_RENAME =
-  /workspace["'`,\s]+(?:(?:\/\*[\s\S]*?\*\/|\/\/[^\n]*\n)[\s,]*)*["'`]?rename\b/;
+// Comments and shell line continuations are dropped first, so what is left is
+// the command's own tokens: `workspace`, then punctuation only (quotes,
+// commas, brackets, a spread), then `rename`. Every quantifier is a single
+// bounded class, so no input backtracks exponentially.
+const HERDR_RENAME = {
+  test: (text: string): boolean =>
+    /\bworkspace\b\W{1,24}\brename\b/.test(
+      text
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/\/\/[^\n]*/g, " ")
+        .replace(/\\\r?\n/g, " "),
+    ),
+};
 const RENAMES = [/--display-name/, HERDR_RENAME];
 
 const dirs: string[] = [];
@@ -32,6 +43,8 @@ test("the Herdr recognizer sees quoting and comment variants", () => {
     "run(['workspace', // operation\n'rename', id, name])",
     'run(["workspace", `rename`, id, name])',
     "herdr workspace rename w1 name",
+    "herdr workspace \\\nrename w1 name",
+    'run(["workspace", ...["rename", id, name]])',
   ])
     expect(HERDR_RENAME.test(text)).toBe(true);
   for (const text of ['run(["workspace", "list"])', "workspace renamed"])
@@ -40,8 +53,9 @@ test("the Herdr recognizer sees quoting and comment variants", () => {
 
 test("no shipped plugin file renames a workspace", () => {
   const glob = new Bun.Glob("**/*");
+  // dot: shipped hidden directories (.claude-plugin, .codex-plugin) count.
   const offenders: string[] = [];
-  for (const path of glob.scanSync({ cwd: PLUGIN })) {
+  for (const path of glob.scanSync({ cwd: PLUGIN, dot: true })) {
     if (path.split(/[\\/]/).includes("node_modules")) continue;
     if (!isShipped(`plugin/${path.replaceAll("\\", "/")}`)) continue;
     const bytes = readFileSync(join(PLUGIN, path));
