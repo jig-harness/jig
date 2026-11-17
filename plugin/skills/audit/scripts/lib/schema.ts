@@ -299,6 +299,24 @@ function sectionMessages(value: unknown, name: string): Record<string, string> {
   return value as Record<string, string>;
 }
 
+/** Refuse a `retired` section the schema also declares as live. */
+function checkRetired(
+  schema: Schema,
+  index: ReturnType<typeof indexSchema>,
+): void {
+  for (const section of Object.keys(schema.retired)) {
+    if (
+      index.byPath.has(section) ||
+      index.prefixes.has(section) ||
+      schema.strict.includes(section) ||
+      Object.hasOwn(schema.refused, section)
+    )
+      throw new SchemaRetiredError(
+        `config schema: retired names ${section}, which the schema also declares`,
+      );
+  }
+}
+
 /** Parse and check the schema; throws naming the first malformed entry. */
 export function parseSchema(raw: unknown): Schema {
   if (!isRecord(raw) || raw.version !== 1)
@@ -324,17 +342,7 @@ export function parseSchema(raw: unknown): Schema {
     ),
   };
   const index = indexSchema(schema);
-  for (const section of Object.keys(retired)) {
-    if (
-      index.byPath.has(section) ||
-      index.prefixes.has(section) ||
-      schema.strict.includes(section) ||
-      Object.hasOwn(refused, section)
-    )
-      throw new SchemaRetiredError(
-        `config schema: retired names ${section}, which the schema also declares`,
-      );
-  }
+  checkRetired(schema, index);
   for (const path of schema.null_refused) {
     const field = index.byPath.get(path);
     if (!field && !index.prefixes.has(path))
