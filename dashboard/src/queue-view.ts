@@ -109,8 +109,8 @@ export function queueGroups(
     "Starts when a tick finds a free slot",
     inGroup("starts"),
     next === null
-      ? "No account has a free slot and no wall; these wait."
-      : `Next free account: ${next}.`,
+      ? "No account can take a new launch; these wait."
+      : `Available account: ${next}. Launch weights determine the next choice.`,
   );
   add(
     "held",

@@ -454,6 +454,7 @@ for (const legacy of [false, true]) {
             maxPerAccount: 1,
           },
           held: 0,
+          weight: { configured: 100, reason: "default" },
           wall: null,
           wallUnrecorded: false,
         };
