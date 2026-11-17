@@ -353,7 +353,9 @@ check concluded `cancelled`; another failed job in the same cancelled run
 still counts as failing. Once a run of the same workflow on this head, started no
 earlier, has completed with a result, the cancelled run's checks no longer
 count, under whatever name they carry, except that an unsuccessful check stays
-when the replacing runs report its name only as skipped. The event that started
+when the replacing runs report its name only as skipped, or report it only
+under its matrix's expanded names (`tests (1/2)` for `tests`) and any of them
+has no result. The event that started
 either run does not matter. A failure beside a cancelled check is still a failure, and
 reads `failing: …`. When every failing check is a job of a run that concluded
 `cancelled` (an always-run aggregator fails when a job it needs was cancelled),
@@ -369,6 +371,12 @@ workflows do not hide a cancellation. It never replays an event created under
 the CI hold. A refused or unconfirmed request, or cancellation still unreplaced
 60 seconds after the request with no active replacement, parks `cancelled-ci`
 with a framed decision and stops with [`HITL_PARKED`](../../protocol/drive-exits.md). The doctor names the run and recovery.
+A person's answer choosing "Re-run safely" (or approving it), with no note
+conditioning it, grants the head its park names one more re-run when the
+re-arm consumes it: the drive repeats the same checks, requests the re-run
+and waits for its replacement, and a later park says the granted re-run was
+spent. A claim still inside the replacement window keeps the grant pending
+until it ages out with no replacement.
 A successful replacement clears that operational park. Intentional held-run
 cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
