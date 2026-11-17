@@ -439,7 +439,14 @@ export async function observeRepo(
   const join = joinTargets(tracked.keys, values, forge);
   const [claims, sessions] = await settled(
     timer.time("claims", () =>
-      readDriveClaims(ctx, forge, records, shared.records(forge.login), nowMs),
+      readDriveClaims(
+        ctx,
+        forge,
+        records,
+        shared.records(forge.login),
+        nowMs,
+        reads,
+      ),
     ),
     timer.time("runtime", async () => {
       const read = await pool.run(() =>

@@ -117,6 +117,9 @@ const listings = (w: World, pr: number) =>
   ghCalls(w).filter((c) => c.includes(`/issues/${pr}/comments?per_page=100`))
     .length;
 
+const commentBatches = (w: World) =>
+  ghCalls(w).filter((c) => c.includes("query DispatchComments"));
+
 /** PR #9 merged, its `updatedAt` as given, carrying a person's follow-up marked done. */
 function settledMerge(w: World, updatedAt: string): void {
   w.setPrs("merged", [
@@ -381,6 +384,133 @@ describe("a merge whose drive launches on this host all ended", () => {
     resetCalls(w);
     await report(w);
     expect(listings(w, 9)).toBe(1);
+  });
+});
+
+describe("launch claim observations outside the open and merged listings", () => {
+  const prs = [71, 72, 73, 74, 75, 76, 77, 78, 79];
+  const host = "sha256:cccccccccccccccc";
+
+  function ended(w: World, pr: number) {
+    const id = `20261106T120000Z-${String(pr).padStart(8, "0")}`;
+    earlierRecord(w, {
+      id,
+      account: "a",
+      pr,
+      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+    });
+    recordExit(
+      id,
+      {
+        at: new Date(Date.now() - 1_800_000).toISOString(),
+        code: 0,
+        signal: null,
+      },
+      dispatchState(w),
+    );
+  }
+
+  function claim(pr: number, id: number) {
+    return forgeComment(
+      id,
+      claimBody(
+        LAUNCH_CLAIM,
+        launchClaim(
+          {
+            stage: "drive",
+            pr,
+            run: "tick",
+            action: "rearm",
+            record: "20261106T120000Z-cccccccc",
+            host,
+            owner: true,
+            facts: "",
+            writer: { host },
+          },
+          1,
+        ),
+      ),
+    );
+  }
+
+  it("replaces nine REST listings with one batch on each tick and sees edited or deleted claims", async () => {
+    const w = fixture();
+    for (const pr of prs) {
+      ended(w, pr);
+      w.setComments(pr, []);
+    }
+    ended(w, 0);
+    const first = await report(w);
+    expect({
+      batches: commentBatches(w).length,
+      listings: prs.reduce((total, pr) => total + listings(w, pr), 0),
+      invalidTarget: listings(w, 0),
+    }).toEqual({ batches: 1, listings: 0, invalidTarget: 0 });
+    expect(first.repos[0]?.shared?.ops).toEqual(
+      prs.map((pr) => ({ op: "list", target: `PR #${pr}`, ok: true })),
+    );
+
+    resetCalls(w);
+    w.setComments(71, [claim(71, 7101)]);
+    w.setComments(72, [claim(72, 7201)]);
+    const second = await report(w);
+    expect(second.repos[0]?.shared?.owners).toEqual([host]);
+    expect(commentBatches(w)).toHaveLength(1);
+    expect(prs.map((pr) => listings(w, pr))).toEqual(prs.map(() => 0));
+
+    resetCalls(w);
+    w.setComments(71, [forgeComment(7101, "A regular comment")]);
+    w.setComments(72, []);
+    const third = await report(w);
+    expect(third.repos[0]?.shared?.owners).toEqual([]);
+    expect(commentBatches(w)).toHaveLength(1);
+    expect(prs.map((pr) => listings(w, pr))).toEqual(prs.map(() => 0));
+  });
+
+  it("reads the REST listing when a batch comment lacks its body", async () => {
+    const w = fixture();
+    ended(w, 71);
+    ended(w, 72);
+    const marker = claim(72, 7201);
+    w.setComments(72, [marker]);
+    writeFileSync(
+      join(w.dir, "batch-comments-72.json"),
+      JSON.stringify([{ ...marker, body: null }]),
+    );
+    const partial = await report(w);
+    expect(commentBatches(w)).toHaveLength(1);
+    expect(listings(w, 71)).toBe(0);
+    expect(listings(w, 72)).toBe(1);
+    expect(partial.repos[0]?.shared?.owners).toEqual([host]);
+  });
+
+  it("falls back for the one incomplete listing and for a refused batch", async () => {
+    const w = fixture();
+    ended(w, 71);
+    ended(w, 72);
+    w.setComments(71, []);
+    w.setComments(72, [
+      ...Array.from({ length: 100 }, (_, i) =>
+        forgeComment(7300 + i, "A regular comment"),
+      ),
+      claim(72, 7400),
+    ]);
+    const partial = await report(w);
+    expect(commentBatches(w)).toHaveLength(1);
+    expect(listings(w, 71)).toBe(0);
+    expect(listings(w, 72)).toBe(1);
+    expect(partial.repos[0]?.shared?.owners).toEqual([host]);
+
+    for (const failure of ["comments-query-partial", "comments-query-fail"]) {
+      resetCalls(w);
+      writeFileSync(join(w.dir, failure), "");
+      const refused = await report(w);
+      expect(commentBatches(w)).toHaveLength(1);
+      expect(listings(w, 71)).toBe(1);
+      expect(listings(w, 72)).toBe(1);
+      expect(refused.repos[0]?.shared?.owners).toEqual([host]);
+      rmSync(join(w.dir, failure));
+    }
   });
 });
 
