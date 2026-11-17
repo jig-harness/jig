@@ -5,8 +5,9 @@ can make. Without a steward, someone must read every log to tell a passing
 failure from a decision and order assigned work whose fields leave ties.
 
 The steward is a dispatcher-launched agent pass. It reads a digest and writes
-records; the next tick checks and applies them using the dispatcher's launch
-guards. It can propose another attempt for a transient stop, one fixed
+records from a closed list
+([the steward records chapter](../../protocol/steward-records.md)); the next
+tick checks and applies them using the dispatcher's launch guards. It can propose another attempt for a transient stop, one fixed
 resume for a routine question with a recommended option, a missing priority,
 type or size, and the order of items tied under the queue's rules. Each
 missing-facet proposal records the steward and its reason on the issue.

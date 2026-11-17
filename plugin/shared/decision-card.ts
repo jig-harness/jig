@@ -15,6 +15,10 @@
  */
 import { listedActOfClass } from "./acts.ts";
 import { splitAnswerDigest } from "./decisions/answer-digest.ts";
+import type {
+  AnswerForm,
+  AnswerLineWord,
+} from "./decisions/decision-values.ts";
 import {
   normalizeAnswerText,
   optionNameMatches,
@@ -66,7 +70,7 @@ export function isGuardedPick(
 /** The option a structured answer chooses, and the form that chose it. */
 export interface WrittenChoice {
   option: string;
-  form: "approve" | "choose";
+  form: AnswerForm;
 }
 
 /** A structured answer's text: its form, and the framing's digest when there is one. */
@@ -75,18 +79,20 @@ export function structuredAnswerText(
   digest: string | undefined,
 ): string {
   const form =
-    choice.form === "approve" ? "approve" : `choose ${choice.option}`;
+    choice.form === "approve"
+      ? ("approve" satisfies AnswerForm)
+      : `${"choose" satisfies AnswerForm} ${choice.option}`;
   return digest === undefined ? form : `${form} [${digest}]`;
 }
 
 /** The line the re-arm reads. */
 export function answerLine(key: string, text: string): string {
-  return `answer ${key}: ${text.trim()}`;
+  return `${"answer" satisfies AnswerLineWord} ${key}: ${text.trim()}`;
 }
 
 /** The line that narrows a structured answer with the person's own words. */
 export function noteLine(key: string, note: string): string {
-  return `note ${key}: ${note.trim()}`;
+  return `${"note" satisfies AnswerLineWord} ${key}: ${note.trim()}`;
 }
 
 /** What a person's answer to one decision is, as the card commits it. */
@@ -163,10 +169,10 @@ export function choiceInText<O extends { id?: string; name: string }>(
   allowRetiredHoldAlias = false,
 ): { option: O; form: WrittenChoice["form"] } | null {
   const normalized = normalizeAnswerText(text);
-  const form =
+  const form: AnswerForm | null =
     normalized === "approve"
       ? "approve"
-      : normalized.startsWith("choose ")
+      : normalized.startsWith(`${"choose" satisfies AnswerForm} `)
         ? "choose"
         : null;
   if (form === null) return null;
@@ -217,7 +223,7 @@ export interface ReadAnswer {
   choice?: {
     option: string;
     recommended: boolean;
-    form: "approve" | "choose";
+    form: AnswerForm;
     note?: string;
   };
 }
@@ -230,7 +236,7 @@ export interface ShownAnswer {
   choice?: {
     option: string;
     recommended: boolean;
-    form: "approve" | "choose";
+    form: AnswerForm;
   };
   note?: string;
   free?: true;
