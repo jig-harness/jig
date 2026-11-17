@@ -2,9 +2,13 @@
  * The priorities part of a repository's report as a person reads it: the
  * record the ranking used, the weights file's problems, each weighted lane's
  * share beside its starts this week, the floor owed, the shortlist, and what
- * dispatch actually started this tick beside it. Report only: dispatch's
- * selection does not read the shortlist.
+ * dispatch actually started this tick beside it. Under the host's
+ * `priorities.enforce` the ranking set the pickups' order: each start then
+ * names the lane and objective it is charged to and why, a pickup that did
+ * not start names why it passed its start on, and a pickup held back names
+ * its paused lane.
  */
+import type { EnforcedOrder } from "./priorities-order.ts";
 import type { RepoReport } from "./types.ts";
 
 /** How many shortlist positions the report shows. */
@@ -25,10 +29,12 @@ export function priorityLines(r: RepoReport, verb: string): string[] {
     );
   if (ranking.shortlist.length === 0)
     lines.push("  proposes nothing: no ranked work is ready");
-  const started = startedTargets(r, verb === "wants");
-  lines.push(
-    `  ${verb === "wants" ? "started " : "would   "} ${started.length === 0 ? "no pickup" : [...new Set(started)].join(", ")} (dispatch's own selection)`,
-  );
+  if (p.enforced === undefined) {
+    const started = startedTargets(r, verb === "wants");
+    lines.push(
+      `  ${verb === "wants" ? "started " : "would   "} ${started.length === 0 ? "no pickup" : [...new Set(started)].join(", ")} (dispatch's own selection)`,
+    );
+  } else lines.push(...enforcedLines(r, p.enforced, verb === "wants"));
   for (const d of ranking.disagreements)
     lines.push(
       `  disagree ${d.objective}: ${d.ahead.key} (epic ${d.ahead.epic ?? "-"}, priority ${d.ahead.priority}) ranks ahead of ${d.behind.key} (epic ${d.behind.epic ?? "-"}, priority ${d.behind.priority}): ${d.rule}`,
@@ -77,6 +83,36 @@ function recordLines(
     lines.push(
       `  priorities last valid revision ${record.lastValid.revision} (${record.lastValid.commit}), ${record.lastValid.ageDays} day(s) old`,
     );
+  return lines;
+}
+
+/** The enforced order: each start's charge and why, what passed its start on, and what a paused lane held back. */
+function enforcedLines(
+  r: RepoReport,
+  order: EnforcedOrder,
+  applied: boolean,
+): string[] {
+  const lines: string[] = [];
+  if (order.starts.length === 0)
+    lines.push("  starts   no pickup (in the ranking's order)");
+  for (const s of order.starts) {
+    const charged = `[${s.lane}${s.objective === null ? "" : ` ${s.objective}`}]`;
+    const launch = applied
+      ? r.launches.find((l) => l.action === "pickup" && l.target === s.target)
+      : undefined;
+    const verb = !applied
+      ? "would   "
+      : launch?.outcome === "launched"
+        ? "started "
+        : "passed  ";
+    const why =
+      applied && launch !== undefined && launch.outcome !== "launched"
+        ? `${launch.outcome}, its start went to the next: ${launch.detail}`
+        : s.why;
+    lines.push(`  ${verb} ${s.target} ${charged}: ${why}`);
+  }
+  for (const w of order.withheld)
+    lines.push(`  withheld ${w.target} [${w.lane}]: ${w.why}`);
   return lines;
 }
 

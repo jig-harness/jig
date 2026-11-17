@@ -740,7 +740,7 @@ export interface RepoReport {
   board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
   shared?: SharedReport;
-  /** The report-only ranking of declared priorities on the owner host (`tick-priorities.ts`), or why it could not be made; dispatch's selection does not read it. */
+  /** The ranking of declared priorities on the owner host (`tick-priorities.ts`), or why it could not be made; dispatch's selection reads it only under the host's `priorities.enforce`, which orders the pickups by it. */
   priorities?:
     | import("./tick-priorities.ts").PrioritiesReport
     | { failed: string };

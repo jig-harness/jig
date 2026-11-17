@@ -157,8 +157,9 @@ each waited.
 
 A repository can also write down what matters most in a
 [priorities record](GLOSSARY.md). The dispatcher ranks a shortlist from it
-and the host's lane weights. For now it reports that shortlist beside what it
-started, and it changes nothing it starts.
+and the host's lane weights, and reports that shortlist beside what it
+started. A host that opts in has its pickups start in the shortlist's order;
+how many start is still the host's to say.
 
 Nothing needs restarting after a night: the timer ran every few minutes. In
 the morning a person reads one report of what the drives and the dispatcher

@@ -367,11 +367,11 @@ build, which rejects a repeated key.
 - **The epic acceptance review and the tail sweep** as runnable skills. The
   rules above are stated now; the tools that run them (a review that writes
   the accepting verdict, and a sweep that extracts tails and closes the epic)
-  are planned to move into the plugin. The prioritization ranker runs in the
-  dispatcher over a tracker snapshot, the repository's priorities record and
-  the host's weights file, and reports its shortlist without changing what
-  the dispatcher starts; the
+  are planned to move into the plugin. Until then `do-item` asks for the
+  verdict or waiver and stops without one. The prioritization ranker runs in
+  the dispatcher over a tracker snapshot, the repository's priorities record
+  and the host's weights file, and reports its shortlist beside what the
+  dispatcher starts; a host that opts in (`priorities.enforce`) has its
+  pickups start in the shortlist's order. The
   [`priorities` skill](../../plugin/skills/priorities/README.md) validates the
-  record and shows how a change moves the shortlist. Using the shortlist to
-  choose starts is future. Until then `do-item`
-  asks for the verdict or waiver and stops without one.
+  record and shows how a change moves the shortlist.

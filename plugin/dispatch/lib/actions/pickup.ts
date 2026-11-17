@@ -402,9 +402,16 @@ export async function applyPickups(
   const wanted = report.actions.filter((a) => a.stage === "pickup");
   await retryPending(state, repo, report, ctx);
   // A served or pooled queue is ranked (assigned before pool, then the
-  // queue's own order), so it launches in that order; only the unranked
-  // factory pickups rotate.
-  for (const action of wanted.some(
+  // queue's own order), and under the host's `priorities.enforce` the
+  // priorities ranking set the order, so each launches in that order; only
+  // the unranked factory pickups rotate. A pickup that waits passes its start
+  // to the next.
+  const ordered =
+    report.priorities !== undefined &&
+    "enforced" in report.priorities &&
+    report.priorities.enforced !== undefined;
+  for (const action of ordered ||
+  wanted.some(
     (a) => a.evidence.servedPerson !== undefined || a.evidence.pooled === true,
   )
     ? wanted

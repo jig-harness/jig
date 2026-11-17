@@ -48,6 +48,8 @@
  * preflight: [tracker]   # the checks run on each account before a tracker stage: preflight-config.ts
  * load:
  *   enforce: false          # the gauges' lines and reservations: load-config.ts
+ * priorities:
+ *   enforce: false          # pickups start in the ranking's order: priorities-config.ts
  * ```
  *
  * An unknown key anywhere is refused, so a misspelt dial never reads as its
@@ -72,6 +74,13 @@ import { type LoadSettings, loadSettings } from "./load-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
+import { duration } from "./duration.ts";
+import {
+  type PrioritiesSettings,
+  prioritiesSettings,
+} from "./priorities-config.ts";
+
+export { duration };
 
 /** The stages a machine file can enable. */
 const MACHINE_STAGES = [
@@ -163,6 +172,8 @@ export interface MachineConfig {
   changeProbe: boolean;
   /** The host's gauges' lines, the kinds' default reservations and whether the load factor holds launches (`load`). */
   load: LoadSettings;
+  /** Whether pickups start in the declared-priorities ranking's order (`priorities`); off when absent. */
+  priorities?: PrioritiesSettings;
   /** The share of each rate-limit window, a tracker's or the forge's, the tick's own calls may use (`outbound_share`, or its older name `tracker_share`); `DEFAULT_DISPATCHER_SHARE` when absent. */
   outboundShare?: number;
   /** The checks the tick runs on each account before a stage that needs them (`preflight`); `[tracker]` when absent. */
@@ -203,6 +214,7 @@ const TOP_KEYS = [
   "send",
   "change_probe",
   "load",
+  "priorities",
   "outbound_share",
   "tracker_share",
   "preflight",
@@ -274,22 +286,6 @@ function path(value: unknown, where: string): Checked<string> {
   if (!isAbsolute(expanded))
     return invalid(`${where} must be an absolute path: ${raw.value}`);
   return ok(resolve(expanded));
-}
-
-const UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000 };
-/** The longest duration any setting takes: inside the 2,147,483,647 ms a timer holds, which the deadlines of child processes are armed with. */
-const MAX_DURATION_MS = 24 * 86_400_000;
-
-/** A duration such as `90s`, `5m` or `1h`, in milliseconds; `invalid` names `where` when it is not one. */
-export function duration(value: unknown, where: string): Checked<number> {
-  const match =
-    typeof value === "string" ? /^(\d+)\s*([smh])$/.exec(value.trim()) : null;
-  const ms = match ? Number(match[1]) * (UNITS[match[2] as string] ?? 0) : 0;
-  if (!match || ms <= 0 || ms > MAX_DURATION_MS)
-    return invalid(
-      `${where} must be a positive duration such as 90s, 5m or 1h, at most 24d`,
-    );
-  return ok(ms);
 }
 
 function optionalDuration(
@@ -621,6 +617,8 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!host.ok) return host;
   const steward = stewardSettings(top.steward);
   if (!steward.ok) return steward;
+  const priorities = prioritiesSettings(top.priorities);
+  if (!priorities.ok) return priorities;
   const tracker = trackerSettings(top);
   if (!tracker.ok) return tracker;
   return ok({
@@ -634,6 +632,7 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     ...shared.value,
     load: host.value,
     steward: steward.value,
+    priorities: priorities.value,
   });
 }
 

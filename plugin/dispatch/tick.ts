@@ -486,7 +486,12 @@ async function actAll(
     options.machine != null &&
     owned.every((r) => asked.has(r.path) && preparedPaths.has(r.path)) &&
     [...asked].every((path) => notOwned.has(path) || preparedPaths.has(path));
-  rankPriorities(context.priorities ?? [], context.nowMs, complete);
+  rankPriorities(
+    context.priorities ?? [],
+    context.nowMs,
+    complete,
+    options.machine?.priorities?.enforce === true,
+  );
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
   // A repository's observe lock is kept until its launches and close are done.

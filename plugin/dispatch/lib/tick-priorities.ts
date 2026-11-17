@@ -9,8 +9,11 @@
  * completed week's row once), records the lanes' ready transitions once for
  * the host, from the union of every prepared repository's ready lanes, then
  * ranks each repository, keeps its newest ranking for the claim path's charge
- * and puts the shortlist on its report. Dispatch's selection does not read
- * any of it.
+ * and puts the shortlist on its report. Dispatch's selection reads none of it
+ * unless the host opts in (`priorities.enforce` in the machine file): then the
+ * ranking places every pickup the tick read, and the repository's pickups are
+ * reordered to start in its order, a lane out of rotation starting nothing
+ * (`priorities-order.ts`). A ranking that fails leaves the plan's own order.
  */
 import type { Database } from "bun:sqlite";
 import { currentIso } from "../../shared/time.ts";
@@ -46,6 +49,7 @@ import {
   type PrioritiesRecordRead,
 } from "./priorities-read.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import { type EnforcedOrder, enforcePickupOrder } from "./priorities-order.ts";
 import { failureText } from "./text.ts";
 import type { RepoReport, Unplaced, WantedItem } from "./types.ts";
 
@@ -59,6 +63,8 @@ export interface PrioritiesReport {
   };
   weights: { source: string; problems: string[] };
   ranking: RankerOutput;
+  /** Under the host's `priorities.enforce`: the order the pickups start in, and the pickups the ranking held back. */
+  enforced?: EnforcedOrder;
 }
 
 /** What the ranking reads from the tick. */
@@ -77,6 +83,8 @@ export interface PrioritiesTickInput {
   deadlineMs?: number;
   env?: Record<string, string | undefined>;
   stateRoot?: string;
+  /** Whether the host's `priorities.enforce` orders the pickups by the ranking. */
+  enforce?: boolean;
 }
 
 /** One repository's inputs to the tick's ranking, read after its plan. */
@@ -116,7 +124,7 @@ export function preparePriorities(
       ...(input.stateRoot === undefined ? {} : { stateRoot: input.stateRoot }),
     };
   } catch (error) {
-    report.priorities = failedPart(error);
+    report.priorities = failedPart(error, input.enforce === true);
     return null;
   }
 }
@@ -131,6 +139,7 @@ export function rankPriorities(
   prepared: readonly PreparedPriorities[],
   nowMs: number,
   complete: boolean,
+  enforce = false,
 ): void {
   const first = prepared[0];
   if (first === undefined) return;
@@ -153,13 +162,19 @@ export function rankPriorities(
       );
       for (const p of prepared)
         try {
-          p.report.priorities = rankOne(db, p, { epochs, week }, nowMs);
+          p.report.priorities = rankOne(
+            db,
+            p,
+            { epochs, week },
+            nowMs,
+            enforce,
+          );
         } catch (error) {
-          p.report.priorities = failedPart(error);
+          p.report.priorities = failedPart(error, enforce);
         }
     });
   } catch (error) {
-    for (const p of prepared) p.report.priorities = failedPart(error);
+    for (const p of prepared) p.report.priorities = failedPart(error, enforce);
   }
 }
 
@@ -183,6 +198,7 @@ function rankOne(
   p: PreparedPriorities,
   host: Pick<RankerInput, "epochs" | "week">,
   nowMs: number,
+  enforce: boolean,
 ): PrioritiesReport {
   const rankerInput: RankerInput = {
     asOf: p.snapshot.readAt,
@@ -190,19 +206,23 @@ function rankOne(
     records: p.records,
     allocationBlocked: p.allocationBlocked,
     weights: p.weights,
-    capacity: { starts: SHORTLIST_DEPTH },
+    // Enforced, the ranking places every pickup the tick read, so none waits behind the report's depth.
+    capacity: {
+      starts: enforce
+        ? Math.max(SHORTLIST_DEPTH, p.snapshot.items.length)
+        : SHORTLIST_DEPTH,
+    },
     ...host,
   };
   const output = rank(rankerInput);
-  saveRanking(
-    db,
-    p.slug,
-    rankerInput,
-    output,
-    classesOf(p.snapshot.items, p.records, p.allocationBlocked),
-    nowMs,
-  );
+  const classes = classesOf(p.snapshot.items, p.records, p.allocationBlocked);
+  saveRanking(db, p.slug, rankerInput, output, classes, nowMs);
+  const enforced = enforce
+    ? enforcePickupOrder(p.report.actions, output, classes)
+    : null;
+  if (enforced !== null) p.report.actions = enforced.actions;
   return {
+    ...(enforced === null ? {} : { enforced: enforced.order }),
     record: {
       source: p.read.source,
       blocked: p.read.blocked,
@@ -214,9 +234,11 @@ function rankOne(
   };
 }
 
-function failedPart(error: unknown): { failed: string } {
+function failedPart(error: unknown, enforce = false): { failed: string } {
   return {
-    failed: `the report-only priorities ranking failed: ${failureText(error)}`,
+    failed: enforce
+      ? `the priorities ranking failed, so pickups start in dispatch's own order this tick: ${failureText(error)}`
+      : `the report-only priorities ranking failed: ${failureText(error)}`,
   };
 }
 
