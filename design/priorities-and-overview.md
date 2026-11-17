@@ -169,8 +169,8 @@ A missing file or a missing entry means the built-in default. An unreadable
 or invalid file, a weight outside 0 to 100 or an unknown lane name is
 reported in the tick report and fails closed for what it cannot read: an
 invalid entry for a recognized lane takes that lane out of rotation, while an
-unknown lane name or a file that cannot be parsed takes every weighted lane
-out. A broken file therefore never resumes a lane the person paused. The
+unknown lane name or a file that cannot be parsed takes every configurable
+lane out. A broken file therefore never resumes a lane the person paused. The
 shortlist still lists every Urgent issue. The weights read for a start are
 recorded with its charge, so a changed weight never rewrites past starts.
 
@@ -193,7 +193,9 @@ the peripheral floor. Other objective memberships
 are reporting relations only. Ownership is derived before ranking and pinned
 to the input revision of each claim (the marker a pickup writes when it
 takes an item, [glossary](../GLOSSARY.md)); an overlapping core-owned item cannot be
-selected through a peripheral objective or repay its floor. Cycles, ambiguous
+selected through a peripheral objective or repay its floor. Owners at
+different levels must name the same lane class; otherwise the item is an
+allocation conflict and is excluded. Cycles, ambiguous
 tracker scopes and unreadable
 parentage are reported as incomplete evidence and excluded from allocation.
 An epic's effective rank reaches its children: a child's own ordinary Priority
@@ -216,7 +218,9 @@ The shortlist is computed in this order:
      in the current UTC week plus tentative starts in this computation. For
      ordinary fair allocation, let `N[l]` and `n[l]` count only the weighted
      starts since lane `l` last had no ready work: `N[l]` is every such
-     opportunity and `n[l]` is the starts assigned to `l`. A lane that
+     opportunity and `n[l]` is the starts assigned to `l`. The ranker records
+     each empty-pool transition and its epoch with the tracker snapshot hash,
+     so the epoch remains a ranking input after a restart. A lane that
      becomes ready therefore starts with no catch-up entitlement. A lane's
      share `share[l]` is its weight over the sum of the weights in rotation;
      `fNext` is the `peripheral` lane's share for the prospective start.
@@ -227,9 +231,10 @@ The shortlist is computed in this order:
      start is `owed = D0 + E + fNext - P`. A peripheral start repays the opening
      debt first, so outstanding debt is `max(0, D0 - P)` and credit toward
      this week's floor is `max(0, P - D0)`.
-   - When `owed` is at least one whole start, restrict the choice to the
-     ready pools of peripheral allocation owners. If no peripheral work is
-     ready, lend the start and report the unmet floor. Below that threshold,
+   - When `owed` is at least one whole start and peripheral is in rotation,
+     restrict the choice to the ready pools of peripheral allocation owners. If
+     no peripheral work is ready, or peripheral is out of rotation, lend the
+     start and report the unmet floor. Below that threshold,
      peripheral remains an ordinary ready lane and may win fair allocation.
    - Otherwise choose the ready lane with the largest deficit
      `share[l] * (N[l] + 1) - n[l]`; ties go to `core`, `tactical`,
@@ -238,7 +243,8 @@ The shortlist is computed in this order:
      none), then tracker scope and canonical key. Within an objective lane,
      choose the ready objective with the largest deficit
      `share[o] * (n[l] + 1) - n[o]`, where `n[o]` counts the starts
-     allocated to objective `o`; tie by record order then id. At coincident
+     allocated to objective `o` in the same lane epoch as `n[l]`; tie by
+     record order then id. At coincident
      levels charge once; at distinct levels each level chooses
      independently and the start goes to their intersection. If it is
      empty, report an allocation conflict rather than guessing which level
@@ -370,7 +376,8 @@ class; timeout or no-result is handled by the existing stage recovery rule.
 There is no new resident process.
 
 Proposed registered tables are `progress_review_run`,
-`progress_review_finding`, `file_draft` and `allocation_charge` (below), with the same owner, retention,
+`progress_review_finding`, `file_draft`, `allocation_charge`, `allocation_week`
+and `allocation_lane_epoch`, with the same owner, retention,
 export and schema registration discipline as [the records registry](../plugin/RECORDS.md).
 Findings have a stable fingerprint (kind, scope and targets), input revision,
 observed interval, structured facts and evidence references. Repeated runs

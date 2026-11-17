@@ -158,9 +158,10 @@ that a person answered.
 A person can see each failure on its own, but not whether the team's goals
 are moving. With this item, a team writes its goals down once, and Jig
 ranks the open work against them. Urgent issues always come first, and
-high-priority bugs come next. All other work shares the remaining starts by
-weight: the team's core goals, its tactical goals, its peripheral goals and
-its other bugs. A small weekly floor keeps the peripheral goals moving. The
+high-priority bugs come next. The team's core goals, tactical goals,
+peripheral goals and other bugs share the remaining starts by weight; work
+outside those lanes stays visible but unallocated. A small weekly floor keeps
+the peripheral goals moving. The
 same inputs always give the same ranked list. A person picks from that
 list, and Jig reports the list before it lets the list decide what starts.
 
@@ -168,8 +169,8 @@ A scheduled review reads what the dispatcher and its sessions did, and
 proposes fixes for problems that repeat. It never acts on its own. One
 overview in Jig's dashboard shows the goals, each group of issues beside
 its pull requests, what is running and what waits for a person. A person
-confirms each action from the overview in their own browser. A phone can
-do every action except a merge, behind a fingerprint or face unlock.
+confirms each action from the overview in their own browser. A phone can do
+every action except a merge; its optional local unlock is on by default.
 
 [The design](design/priorities-and-overview.md) says how it works. The goals file and the ranking
 come first, as a report. Then a host can opt in to let the ranking decide
