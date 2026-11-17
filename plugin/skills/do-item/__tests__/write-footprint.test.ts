@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { footprintBody, readFootprint } from "../../../shared/footprint.ts";
 import { predictionRecord } from "../scripts/lib/footprint-ops.ts";
 import { OutboundError } from "../../../shared/outbound/failure.ts";
@@ -174,6 +175,20 @@ describe("normalizePaths", () => {
       expect(() => normalizePaths([bad], scratch())).toThrow(
         JSON.stringify(bad),
       );
+  });
+
+  test.skipIf(
+    skipsOnWindows("file-system", "Windows refuses a directory path this long"),
+  )("a directory too long to carry with its slash is refused", () => {
+    const root = scratch();
+    const name = "d".repeat(200);
+    const long = [name, name, name, name, "e".repeat(216)].join("/");
+    expect(long).toHaveLength(1020);
+    mkdirSync(join(root, long), { recursive: true });
+    const full = `${long}/abc`;
+    mkdirSync(join(root, full));
+    expect(full).toHaveLength(1024);
+    expect(() => normalizePaths([full], root)).toThrow(/at most 1,024/);
   });
 
   test("more paths than a record carries are refused", () => {

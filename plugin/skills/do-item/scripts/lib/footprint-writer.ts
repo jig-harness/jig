@@ -100,13 +100,17 @@ function isDirectory(root: string, path: string): boolean {
 /** Each path once, sorted; a directory that exists ends in `/`, and each is checked against the record's path shape. */
 export function normalizePaths(raw: readonly string[], root: string): string[] {
   const out = new Set<string>();
+  const refuse = (path: string) =>
+    new PredictionError(
+      "input",
+      `not a repository path a footprint can carry: ${JSON.stringify(path)} (relative, no '..', no glob characters, at most 1,024 characters)`,
+    );
   for (const path of raw) {
-    if (!matches(FOOTPRINT_PATH, path))
-      throw new PredictionError(
-        "input",
-        `not a repository path a footprint can carry: ${JSON.stringify(path)} (relative, no '..', no glob characters)`,
-      );
-    out.add(path.endsWith("/") || !isDirectory(root, path) ? path : `${path}/`);
+    if (!matches(FOOTPRINT_PATH, path)) throw refuse(path);
+    const named =
+      path.endsWith("/") || !isDirectory(root, path) ? path : `${path}/`;
+    if (!matches(FOOTPRINT_PATH, named)) throw refuse(path);
+    out.add(named);
   }
   if (out.size > FOOTPRINT_MAX_PATHS)
     throw new PredictionError(
