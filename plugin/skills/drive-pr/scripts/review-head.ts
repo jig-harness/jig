@@ -41,7 +41,7 @@ async function main(): Promise<number> {
   if (reviewerEvidence() === "review_object")
     return byReviewObject(owner, name, pr, head);
   const [runs, sticky] = await Promise.all([
-    checkRunsFor(owner, name, head),
+    checkRunsFor(owner, name, head, "observed"),
     reviewerStickyMarkers(owner, name, pr),
   ]);
   if (runs === null || sticky === null) return 1;
@@ -65,7 +65,7 @@ async function byReviewObject(
   head: string,
 ): Promise<number> {
   const [runs, draft] = await Promise.all([
-    checkRunsFor(owner, name, head),
+    checkRunsFor(owner, name, head, "observed"),
     ghCall(["pr", "view", pr, "--json", "state,isDraft", "-q", ".isDraft"]),
   ]);
   if (runs === null || draft.code !== 0) return 1;

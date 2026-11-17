@@ -126,7 +126,11 @@ export async function writeCiState(
   await store.update((current) => ({ ...current, ciHold: state }));
 }
 
-/** The check runs on `head`, or why the forge's answer could not be read. */
+/**
+ * The check runs on `head`, or why the forge's answer could not be read.
+ * Read fresh (`paged-read.ts`): they guard a hold release, a watermark
+ * recorded before a label change and a re-run of cancelled jobs.
+ */
 export async function readCheckRuns(
   head: string,
 ): Promise<Outcome<CheckRunLite[], HoldReadFailure["code"]>> {

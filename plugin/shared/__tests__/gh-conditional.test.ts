@@ -53,6 +53,8 @@ import {
   readPrLiveness,
   resetProbeBaselines,
 } from "../gh-conditional.ts";
+import { CACHE_RETENTION_MS } from "../gh-cache-storage.ts";
+import { currentMs } from "../time.ts";
 
 function runScratch(
   command: string,
@@ -400,6 +402,41 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     for (const f of entryFiles()) {
       expect(statSync(join(cacheDir, f)).mode & 0o077).toBe(0);
     }
+  });
+
+  it("does not reuse cached GitHub responses after their retention age", async () => {
+    serve(PULL, pull("open", false, SHA));
+    await ghConditionalGet(PULL);
+    const [entry = ""] = entryFiles();
+    expect(entry).not.toBe("");
+    const file = join(cacheDir, entry);
+    const retainedAt = statSync(file).mtimeMs;
+
+    // Revalidation updates recency for eviction, but response retention is
+    // measured from when the response was written, not its last reuse.
+    await ghConditionalGet(PULL);
+    expect(Math.floor(statSync(file).mtimeMs)).toBe(Math.floor(retainedAt));
+
+    const expired = new Date(currentMs() - CACHE_RETENTION_MS - 1_000);
+    utimesSync(file, expired, expired);
+
+    await ghConditionalGet(PULL);
+    // An expired entry is removed before the request, so it cannot supply an
+    // ETag or response body to the new read.
+    expect(conditionalCalls()).toHaveLength(1);
+  });
+
+  it("expires quiet cache entries while another entry is read", async () => {
+    serve(PULL, pull("open", false, SHA));
+    await ghConditionalGet(PULL);
+    const quiet = join(cacheDir, `${"f".repeat(40)}.json`);
+    writeFileSync(quiet, JSON.stringify({ path: "quiet" }));
+    const expired = new Date(currentMs() - CACHE_RETENTION_MS - 1_000);
+    utimesSync(quiet, expired, expired);
+
+    await ghConditionalGet(PULL);
+
+    expect(existsSync(quiet)).toBe(false);
   });
 
   it("prunes the oldest entries once the directory outgrows its bound", async () => {
