@@ -5,6 +5,7 @@ import {
   setForgeGovernor,
 } from "../outbound/github-budget.ts";
 import type { GhRun } from "../outbound/github.ts";
+import { restOperation } from "../outbound/gh-ledger.ts";
 import { currentMs } from "../time.ts";
 import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import { traceGhRunner } from "../trace.ts";
@@ -63,6 +64,7 @@ test.each([false, true])(
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       requests: 1,
+      notModified: 1,
       cost: 0,
       estimated: false,
       failure: null,
@@ -96,6 +98,7 @@ test("a conditional 200 costs one primary request", async () => {
   );
   expect(events[0]).toMatchObject({
     requests: 1,
+    notModified: 0,
     cost: 1,
     estimated: false,
     failure: null,
@@ -204,3 +207,9 @@ test.each([
     });
   },
 );
+
+test("a later page's route, named by the repository's id, keeps its shape", () => {
+  expect(
+    restOperation("GET", "repositories/212613049/commits/abc/check-runs"),
+  ).toBe("GET /repositories/{}/commits/{}/check-runs");
+});

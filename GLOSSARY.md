@@ -2938,18 +2938,20 @@ make, use the entry's term instead.
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
+- **Priorities record** — a versioned declaration (`priorities/v1`) of
+  objectives, their purposes, end states, owners, classes and shares at site,
+  repository or individual level; a repository's is `.config/priorities.yaml`,
+  checked by the `priorities` skill. A mechanical ranker reads it with a
+  tracker snapshot and the host's *lane* weights to propose a reproducible
+  shortlist; a person picks from it.
+  See [the design](design/priorities-and-overview.md) and
+  [the fields](plugin/CONFIGURATION.md#the-priorities-record).
 - **Steward record** — one of the closed records a *steward* pass submits
   for the *tick* to apply: its kind (a re-arm, a resume, a need's framing,
   a missing facet, a queue order or a run's cause), the kind's own fields,
   and a reason in the steward's words. The tick checks each against what it
   reads itself before acting on it, and refuses one whose facts no longer
   hold ([plugin/protocol/steward-records.md](plugin/protocol/steward-records.md)).
-- **Priorities record** — the proposed versioned declaration of objectives,
-  their purposes, end states, owners, classes and shares at site, repository
-  or individual level. A mechanical ranker reads it with a tracker snapshot
-  and the host's *lane* weights to propose a reproducible shortlist; a person
-  picks from it.
-  See [the design](design/priorities-and-overview.md).
 - **Priority lane** (lane, in the priorities design) — one kind of work that
   competes for starts: Urgent issues first, then High-priority bugs, then the
   weighted lanes (other bugs and the core, tactical and peripheral objectives)
@@ -2984,6 +2986,12 @@ make, use the entry's term instead.
 - **Allocation owner** — the first objective matching an item at a priorities
   level. That objective alone counts the item's start toward its share and the
   *peripheral floor*; other matching objectives show it for reporting only.
+  See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
+- **Allocation charge** — the one record a successful pickup claim leaves of
+  its start, keyed by the claim: its *priority lane*, its *allocation owner*
+  at each level and the lane weights read for it. The week's counters, and so
+  the *peripheral floor*, are derived from the charges; a replayed claim
+  charges nothing more.
   See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
 - **Progress review** — the proposed scheduled or on-demand pass that reads
   declared objectives, tracker progress and the line's records, and proposes
@@ -3107,6 +3115,13 @@ make, use the entry's term instead.
   on the next request lets the service answer "not modified" at no quota cost,
   which is how Jig's polling loops watch an idle pull request cheaply
   ([conditional reads](plugin/skills/drive-pr/scripts/lib/gh-conditional.ts)).
+- **Observed read** — a drive pass's read of a pull-request resource that only
+  informs what the pass reports, as opposed to a read that authorizes a write,
+  which always asks the service afresh. Within one evaluation every part of the
+  pass that asks for the resource shares one reading; across evaluations each
+  page is asked again with its *ETag*, and the page after the last one is asked
+  too (the **tail probe**), so a page added at the end is not missed
+  ([observed paged reads](plugin/shared/outbound/observed-pages.ts)).
 - **NDJSON (newline-delimited JSON)** — structured JSON records written one per
   line, so a command can consume them as a stream.
 - **Trace span** — a timed record of one operation, such as a command or a

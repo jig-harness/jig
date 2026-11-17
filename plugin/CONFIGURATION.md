@@ -1120,7 +1120,7 @@ that table, and no arm widens it.
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`, `operator`, `orchestrate`) detect
+`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`, `operator`, `orchestrate`, `priorities`) detect
 what they need from the repository; set a field only when detection picks
 the wrong thing. `programmatic-execution`, `red-team`, `audit`, `jig` and
 `operator` read no field of their own (`operator` runs `jig ask` and
@@ -1140,6 +1140,12 @@ dispatcher host uses [`dispatch.identity`](#dispatch) and the host's configured
 start procedure. Missing start configuration is a question for the person,
 not an identity or command the session invents. Its
 [procedure](skills/orchestrate/SKILL.md) names the runtime fallbacks.
+
+`priorities` reads no field of `.config/jig.yaml`. It reads the
+repository's `.config/priorities.yaml`, the host's weights file and the
+dispatcher's newest ranking ([Priorities](#priorities)), and asks
+`work-batch`'s eligibility mode, under that skill's own settings, which
+issues may be batched.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
@@ -1213,7 +1219,7 @@ These are set per machine or per run, not committed:
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
 | `JIG_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
-| `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept, which conditional requests revalidate; default `~/.cache/jig/gh-cache`. `drive-pr`'s polls keep up to 256 entries there; the comment pages a dispatch tick lists keep up to 1,024 in its `comment-pages/` directory. Each prunes the entries least recently written or reused first (a repository-view answer reused within its time to live counts as used, as does a page or answer revalidated by a `304`) |
+| `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept, which conditional requests revalidate; default `~/.cache/jig/gh-cache`. `drive-pr`'s polls keep up to 256 entries there and stop reusing them after 7 days; a later cache read or write deletes expired entries. The comment pages a dispatch tick lists keep up to 1,024 in its `comment-pages/` directory. Each prunes the entries least recently written or reused first (a repository-view answer reused within its time to live counts as used, as does a page or answer revalidated by a `304`) |
 | `JIG_GH_CACHE` | `off` disables that cache: those reads are then sent whole every time |
 | <a id="gh-call-timeout"></a>`GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30. Must be a positive whole number no greater than 2147483 |
 | `JIG_MARKETPLACE` | The marketplace `jig upgrade` (and `tools/plugin/setup.ts`) installs the plugin from in an agent tool that lacks it, instead of Jig's repository; a tool registered from another source is then refused |
@@ -1890,6 +1896,93 @@ exit `5` and its `RATE-LIMITED until <time>` line keep their meaning, and
 a failure that exited `1` before now exits `6` to `11` when a call to the
 tracker caused it.
 
+## Priorities
+
+Two files declare priorities, neither of them in `.config/jig.yaml`: a
+repository's [priorities record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+and the host's [weights file](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
+The dispatcher reads both on every tick and reports the shortlist they give
+beside what it started; in this release they change nothing it starts. The
+[`priorities`](skills/priorities/README.md) skill validates and prepares a
+change to either; the design, with the ranking rules, is
+[design/priorities-and-overview.md](https://github.com/jig-harness/jig/blob/main/design/priorities-and-overview.md).
+
+### The priorities record
+
+`.config/priorities.yaml`, format `priorities/v1`, read from the
+repository's default branch by the owner host's dispatcher. A repository
+needs no other level's record: the site level is the optional hub's and a
+host never requires it.
+
+```yaml
+format: priorities/v1      # optional; when present it must say priorities/v1
+level: repository          # site, repository or individual
+scope: acme/widgets        # what the level covers: the repository's owner/name here
+revision: 3                # a whole number from 1; raise it with every change
+objectives:
+  - id: checkout-flow
+    class: core            # core, tactical or peripheral: the lane its work falls in
+    purpose: Customers can pay without leaving the page
+    endState: The new checkout is the only checkout in production
+    owner: payments maintainers
+    epics:                 # tracker scope plus epic keys or labels
+      - scope: acme/widgets
+        keys: ["#120", "#131"]
+    share: 0.6             # optional: a fraction of the core lane's starts
+  - id: docs-refresh
+    class: peripheral
+    purpose: The guides match the product
+    endState: Every guide was checked against the current release
+    owner: docs maintainers
+    epics:
+      - scope: acme/widgets
+        labels: [docs]
+```
+
+| Field | Value | Meaning |
+| --- | --- | --- |
+| `level`, `scope`, `revision`, `objectives` | required | The envelope. Any field other than these and the optional `format` is refused |
+| `objectives[].id` | a string, unique in the record | The objective's stable name; a claim's charge records it |
+| `objectives[].class` | `core`, `tactical` or `peripheral` | The lane its work falls in |
+| `objectives[].purpose`, `endState`, `owner` | non-empty strings | Why it matters, how anyone can tell it is done, and the role that answers for it (a person only in a host's own record) |
+| `objectives[].epics` | a non-empty list of `{scope, keys, labels}`, each with at least one key or label | The tracker work it covers: those epics and their children, or the issues carrying those labels |
+| `objectives[].refs` | a non-empty list of `{level, scope, id}` | Instead of `epics`: objectives of another level it follows. Exactly one of `epics` and `refs` |
+| `objectives[].share` | a number from 0 to 1 | Optional: its fraction of its lane's starts. Without one it takes an equal part of what the explicit shares leave. A lane's shares above one are refused |
+
+An item's allocation owner is the first objective, in record order, that
+covers it; its other memberships are shown, never counted. A record that
+does not validate blocks objective allocation, and the report shows the
+problem with the last valid revision and its age. There is no slot count:
+`capacityLimit`, `limits` and `peripheralFloor` are refused as unknown
+fields.
+
+### The weights file
+
+`$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml` by default), the
+host's own and never committed. The dispatcher reads it again on every tick,
+so a change takes effect on the next tick with no pull request or restart.
+
+```yaml
+lanes:
+  bug-other: 15
+  core: 50
+  tactical: 25
+  peripheral: 10
+```
+
+| Field | Value | Default | Meaning |
+| --- | --- | --- | --- |
+| `lanes.core`, `lanes.tactical`, `lanes.peripheral`, `lanes.bug-other` | a number from 0 to 100 | 50, 25, 10, 15 | The lane's weight; its share of the weighted starts is its weight over the sum of the weights in rotation. 0 takes the lane out of rotation. The peripheral weight is also a floor owed across the week |
+| `accounts` | | | Each account's weight for its share of new launches (issue #1402). Accepted and not yet read |
+
+`urgent` (Urgent issues) and `bug-high` (assigned High bugs) have no
+weight: they come first and next and count toward no share. A report ranks the
+pickups the tick read (an Urgent issue outside that pool is not in it) and lists
+the first 10 positions of the shortlist. A missing file or entry means the default.
+The file fails closed: an entry outside 0 to 100 takes that lane out of
+rotation, and an unknown lane or section, or a file that is not YAML, takes
+every weighted lane out. The tick report names each problem.
+
 ## Complete example
 
 The example shows custom reviewer marker overrides; the
@@ -2279,10 +2372,14 @@ from a table of the subcommands Jig runs (`gh pr view` spends GraphQL
 points, `gh run list` core requests); a subcommand the table does not know
 is `unknown`, never guessed. A row written before owners were kept names
 neither, and the reports infer its window from its unit and operation.
-The ledger holds 7 days; an unavailable database never stops an outbound call.
+A row whose requests include conditional reads GitHub answered
+`304 Not Modified` counts those answers in `outbound_cost_not_modified`
+beside it, so a route's unchanged re-reads show apart from its other
+requests. The ledger holds 7 days; an unavailable database never stops an outbound call.
 
 `jig budget [--hours <1..168>] [--json]` reads the last 24 hours by default,
-with per-operation and per-caller totals and the latest known balances.
+with per-operation and per-caller totals (requests, how many of them were
+answered `304 Not Modified`, cost) and the latest known balances.
 The dispatch receipt's outbound section shows the tick's own spending and
 costliest operations per system. Linear reports measured complexity points;
 GitHub reports points when the query includes its cost, with unknown or

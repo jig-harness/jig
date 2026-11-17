@@ -19,7 +19,9 @@ far: the shared budget record for the tracker adapters and the forge
 (`plugin/shared/outbound/budget.ts`, with GitHub's profile and the forge
 client's admission in `github-budget.ts`, documented under `outbound_share`
 in the [configuration reference](../plugin/CONFIGURATION.md)), conditional requests
-for some forge reads (`plugin/shared/gh-conditional.ts`), a deadline on
+for some forge reads (`plugin/shared/gh-conditional.ts`), among them the paged
+REST reads a drive pass observes, revalidated page by page and shared within
+an evaluation (`plugin/shared/outbound/observed-pages.ts`), a deadline on
 every call, the page that shrinks (`paging`), and the ledger with its command, tick reports and low-quota need, and the failure classes with
 one retry for a read (`failure`, `retry`, `hold`): the tracker transports
 and the forge client's `ghCall` wrappers fail as the classes, and the tick
@@ -61,7 +63,7 @@ module leaves its old path in the same pull request.
 | `budget` | Admits and reserves per credential and limit, with a share for the dispatcher | `shared/outbound/budget.ts` |
 | `ledger` | Totals of requests, cost and time per operation and caller | New |
 | `failure`, `retry` | The closed classes; jittered backoff inside the call's deadline that honours `Retry-After`, for reads only | `tracker/read-retry.ts` and each transport's own classification |
-| `cache` | Answers kept by update time or by the system's validator, stable absences included | `shared/gh-conditional.ts`, the served queue's kept readings |
+| `cache` | Answers kept by update time or by the system's validator, stable absences included | `shared/gh-conditional.ts` (with its paged reads, `shared/outbound/observed-pages.ts`), the served queue's kept readings |
 | `coalesce`, `batch` | One request for identical reads in a run; reads by key in chunks | `dispatch/lib/tick-reads.ts`, the Linear read by key |
 | `paging` | Page caps, and a page that shrinks when the system runs out of time | `shared/outbound/paging.ts` |
 | `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | `shared/outbound/hold.ts`; the hold moves into `budget` once GitHub joins it |
