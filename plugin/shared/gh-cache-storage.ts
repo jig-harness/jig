@@ -25,8 +25,9 @@ export interface EntryLimit {
 export const DEFAULT_ENTRIES: EntryLimit = { max: 256, keep: 128 };
 const CACHE_ENTRY_NAME = /^[0-9a-f]{40}\.json$/;
 /**
- * GitHub responses can contain pull-request discussions. Keep their local
- * cache only briefly: an entry is unusable and removed after this age.
+ * GitHub responses can contain pull-request discussions. An entry is never
+ * reused after this age. Expired entries are deleted when a cache operation
+ * visits the directory; an inactive cache can retain them until then.
  */
 export const CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 

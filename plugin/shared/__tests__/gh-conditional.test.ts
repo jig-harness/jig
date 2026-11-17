@@ -404,7 +404,7 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     }
   });
 
-  it("expires cached GitHub responses instead of retaining discussion bodies indefinitely", async () => {
+  it("does not reuse cached GitHub responses after their retention age", async () => {
     serve(PULL, pull("open", false, SHA));
     await ghConditionalGet(PULL);
     const [entry = ""] = entryFiles();

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { definedFields } from "../../../shared/defined-fields.ts";
+import { swallow } from "../../../shared/errors.ts";
 import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
 /**
  * Enumerate the review findings that exist ONLY in the reviewer's summary
@@ -1473,9 +1474,10 @@ export async function summaryReport(
       addressedFingerprints: addressed,
       ...definedFields({ reviewedSha }),
     });
-  } catch {
+  } catch (error) {
     // This boundary is evidence only: an unreadable response or reviewer
     // payload must reach evaluate() as INDETERMINATE, not reject its promise.
+    swallow(error, "summary finding evidence is indeterminate");
     return null;
   }
 }
