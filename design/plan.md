@@ -815,25 +815,36 @@ with several machines has a dashboard per machine.
 the decision. What it will build: the hub, a portable core that reaches
 storage, request serving, scheduling, outbound calls and observability only
 through small ports, with no subprocess, no Bun- or Node-only module and no
-local file in it, which a gate holds; a process adapter first (`jig hub
-serve` in `plugin/hub/`, Bun with SQLite, also a container image) and a
-Cloudflare adapter second (Workers with Durable Object SQLite or D1, alarms
-and cron triggers); storage through Drizzle, one SQLite-dialect schema for
-both, with a PostgreSQL adapter designed for and built when a team needs
-it; errors as `Outcome` values with a defect boundary per unit of work
-(ADR-0012 kept); an observability port with M11's typed events, wired
-metrics, a health answer and an external heartbeat. Enrolled hosts call it
+local file in it, which a gate holds; its state partitioned per repository
+and per host, sized for about 50 hosts, 30 repositories, 500 open items
+and 10,000 deliveries a day; a process adapter first (`jig hub serve` in
+`plugin/hub/`, Bun with SQLite, in a container under its own OS user on a
+machine that runs sessions) and a Cloudflare adapter second (Workers with
+one Durable Object per partition, alarms and cron triggers); storage
+through Drizzle in SQLite's SQL, JSON functions included, with a
+PostgreSQL adapter built, with rework, when a team needs it; errors as
+`Outcome` values with a defect boundary per unit of work (ADR-0012 kept);
+an observability port with M11's typed events, wired metrics, a health
+answer and the dashboard, an OTLP collector and an external heartbeat as
+optional settings checked when set (an exception to M11's external-monitor invariant that the hosts' own need on an unreachable hub stands in for). Enrolled hosts call it
 over HTTPS and it calls no host; enrollment is by device grant, with a
 credential per host; a host protocol of `hello`, `changes`, `read` with a
 `notOlderThan` bound, `report`, `health`, claims with leases and, last,
 `offers`, versioned by named capabilities. The forge's and the tracker's
 signed webhooks are its main feed (through a GitHub App of its own and
-Linear's signed webhooks), with only `/webhooks/` public, through a tunnel
-on the process adapter; an hourly reconciliation sweep with conditional
-requests corrects what deliveries lost and counts that drift; enrolled
-dispatchers read its world view and nothing else but a fence's read-back,
-and read for themselves when it does not answer; hosts keep their own
-credentials, and the hub hands out none. Then claims with leases in front of
+a Linear OAuth application acting as itself), with only `/webhooks/`
+public, through a tunnel on the process adapter; deliveries for one target
+coalesced into one read; open pull requests with a drive re-validated
+every 10 minutes and the rest by an hourly reconciliation sweep with
+conditional requests, which counts drift; enrolled dispatchers read its
+world view and nothing else but a fence's read-back and the forge check,
+at use, of a fact that gates a write, and read for themselves when it does
+not answer; a change feed (a version per target and the kinds that moved)
+that dispatchers wait on instead of polling, and drive passes too if the
+measurement shows drive polling at 15% or more of the busiest shared
+credential's spend; hosts pin
+the hub's identity at enrollment, keep their own credentials, and the hub
+hands out none. Then claims with leases in front of
 the forge and tracker claims, which stay the fences, so a silent host's
 work is granted to another host and a pickup is claimed before its session
 opens; a silent host noticed; the owner of each repository named by the
@@ -842,26 +853,35 @@ dispatch dashboard, its only way to show several hosts; and offers to a host
 with free slots, ordered by an offer policy declared as data (an ordered
 list of named rankers, a `command` ranker for a team's own strategy on the
 process adapter, and named policies a repository chooses among). No level
-of use requires it: the skills never call it, and a host whose hub does not
+of use requires it: the skills never call it (bar an enrolled drive's optional watch call), and a host whose hub does not
 answer reads and claims by itself. Built in waves, one pull request per
 step: seams in the dispatcher first, each worth building alone (one shared
 records implementation chosen by `records.shared`, the world view apart
 from the machine view, a pickup claim, the GraphQL budget gated); then,
-after a red-team critique of the design, the first wave: the portable core
-and its gate, the process adapter and container image, webhook intake with
+once a week of the cost ledger taken after
+[#1432](https://github.com/jig-harness/jig/pull/1432) and
+[#1436](https://github.com/jig-harness/jig/issues/1436) land, splitting
+dispatcher from session reads and counting real multi-host deployments,
+shows the dispatcher's reads and drive passes' polling are at least a third
+of a shared credential's spend, the first wave: the portable core and its
+gate, the process adapter and container image, webhook intake with
 signatures, the world view and the sweep, enrollment and reporting, the
-dispatchers reading through the hub, observability, and one dashboard
-across hosts; then the Cloudflare adapter; then claims and owner leases with
-the silent host, once ADR-0016 is approved; the chat bridge inside the hub;
+change feed with the dispatchers on it (and the drive passes, on that
+condition), observability,
+and one dashboard across hosts; then the Cloudflare adapter; then claims and owner leases with
+the silent host; the chat bridge inside the hub;
 offers; and the PostgreSQL adapter on demand. Each wave after the first is
 planned in detail, and built or not, by the person who asked for the hub
 once the wave before it is in use.
 
-Done when, for the first wave, two hosts dispatching the same repositories
-through one hub make no forge or tracker reads for the dispatcher but the
-fences' read-backs, a dropped webhook delivery is found by the next sweep
-and counted as drift, and stopping the hub during a tick costs that tick
-only a note on its receipt. From the claims wave a stopped hub also
+Done when, for the first wave, on about 5 hosts dispatching the same
+repositories through one hub, the hub's GitHub spend over 7 days, per
+repository per day and REST and GraphQL apart, is at most 1.2 times what
+one host spends reading them alone (0.3 to 0.5 expected), the hosts' own
+dispatcher reads that spend a forge limit are about zero, a dropped
+webhook delivery is found within its freshness bound and counted as
+drift, and stopping the hub during a tick costs that tick only a note on
+its receipt. The claims wave's load test proves 50 hosts. From the claims wave a stopped hub also
 suspends the owner duties a host cannot do without its lease, the one
 exception to a host working as it does today.
 
