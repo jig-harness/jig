@@ -38,7 +38,7 @@
  * tick still plans on what it read, writes its receipt and lets its locks
  * go in time; the next tick reads the rest.
  */
-import { pool as proofPool } from "./pool.ts";
+import { type Pool, pool as proofPool } from "./pool.ts";
 import { planMergeReader } from "./sources/plan-merges.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import {
@@ -693,6 +693,22 @@ function trackerFailure(
   };
 }
 
+/**
+ * The pool merge proofs run through, one per tick and shared by every
+ * repository: the enclosing tracker read holds a slot of the tick's pool,
+ * which never lends a second one to the same read, so proof chains take a
+ * pool of their own, sized as the tick's, rather than waiting on it.
+ */
+const proofPools = new WeakMap<Pool, Pool>();
+function proofPoolOf(tickPool: Pool): Pool {
+  let proofs = proofPools.get(tickPool);
+  if (proofs === undefined) {
+    proofs = proofPool();
+    proofPools.set(tickPool, proofs);
+  }
+  return proofs;
+}
+
 /** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
 async function readTracker(
   values: Record<string, unknown>,
@@ -746,10 +762,7 @@ async function readTracker(
         (values.pull_requests as { issue_link?: unknown } | undefined)
           ?.issue_link !== "none",
       bound,
-      // The enclosing tracker read holds a slot of the tick's pool, which
-      // never lends a second one to the same read: proof chains run through
-      // a pool of their own so they stay bounded without waiting on it.
-      pool: proofPool(),
+      pool: proofPoolOf(reads.pool),
       onFailure: (error) => mergeFailures.push(error),
     });
     tracked.servedPolicy = {
