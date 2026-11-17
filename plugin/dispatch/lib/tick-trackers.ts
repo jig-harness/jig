@@ -29,11 +29,18 @@ function trackerHeadroom(context: TickContext): boolean {
   const machine = context.options.machine;
   return (
     machine == null ||
-    slotTable(machine.accounts, allRecords(context), context.nowMs).some(
+    slotTable(
+      machine.accounts,
+      allRecords(context),
+      context.nowMs,
+      undefined,
+      context.weights,
+    ).some(
       (slot) =>
         slot.held < slot.account.maxPerAccount &&
         slot.wall === null &&
-        !slot.wallUnrecorded,
+        !slot.wallUnrecorded &&
+        (slot.weight.configured ?? 0) > 0,
     )
   );
 }
