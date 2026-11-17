@@ -92,11 +92,10 @@ import {
   titlePatternFindings,
 } from "./lib/trunk-fit.ts";
 import { policyFindings } from "./lib/pr-policy-fit.ts";
+import { pathFindings } from "./lib/path-fit.ts";
 import { ciPolicyFindings } from "./lib/ci-policy-fit.ts";
 import { reviewerEvidenceRule, reviewerFindings } from "./lib/reviewer-fit.ts";
 import {
-  configuredAt,
-  repoRelativeAt,
   trackedNeeds,
   newerInstalledVersion,
   onDisk,
@@ -475,30 +474,6 @@ function commandFindings(
     severity: p.severity,
     message: `${path}: \`${value}\` ${p.message}`,
   }));
-}
-
-/** A configured path that does not exist, when the field expects it to. */
-function pathFindings(
-  field: Field,
-  value: unknown,
-  root: string,
-  fromRoot = false,
-): Finding[] {
-  if (!field.exists || field.exists === "machine") return [];
-  if (typeof value !== "string" || value.trim() === "") return [];
-  if (!fromRoot && value.startsWith("~")) return [];
-  const at = fromRoot ? repoRelativeAt : configuredAt;
-  if (existsSync(at(root, value))) return [];
-  const required = field.exists === "required";
-  return [
-    {
-      id: `derivation:${field.path}`,
-      severity: required ? "error" : "warning",
-      message: `${field.path}: ${value} does not exist${
-        required ? `; ${field.read_by.join(", ")} refuse(s) to run` : ""
-      }`,
-    },
-  ];
 }
 
 /** The derivation findings of one entry of a list field. */
