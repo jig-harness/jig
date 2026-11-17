@@ -33,6 +33,7 @@
  *   the walk reports the limit once (`served.ts`).
  */
 import { coalesce } from "../../../shared/outbound/coalesce.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
 import { ended, within } from "./bounded.ts";
 import type { FacetBound } from "./tracker-facets.ts";
@@ -180,15 +181,24 @@ const blockedStates = (tracker: Tracker): CanonicalState[] =>
 async function readQueue(
   tracker: Tracker,
   identity: string,
+  bound?: FacetBound,
 ): Promise<{ open: HeldIssue[]; progress: PoolIssue[] }> {
+  const options =
+    bound === undefined
+      ? undefined
+      : { signal: bound.signal, deadline: bound.deadline };
+  const bounded = <T>(read: Promise<T>): Promise<T> =>
+    bound === undefined ? read : within(read, bound);
   if (tracker.queueIssues === undefined) {
-    const open = await tracker.assignedIssues(identity, [
-      ...OPEN,
-      ...blockedStates(tracker),
-    ]);
-    const progress = await tracker.assignedIssues(
-      identity,
-      workingStates(tracker),
+    const open = await bounded(
+      tracker.assignedIssues(
+        identity,
+        [...OPEN, ...blockedStates(tracker)],
+        options,
+      ),
+    );
+    const progress = await bounded(
+      tracker.assignedIssues(identity, workingStates(tracker), options),
     );
     return {
       open: open.map((issue) => ({
@@ -203,11 +213,13 @@ async function readQueue(
     };
   }
   const working = workingStates(tracker);
-  const read = await tracker.queueIssues(identity, [
-    ...OPEN,
-    ...blockedStates(tracker),
-    ...working,
-  ]);
+  const read = await bounded(
+    tracker.queueIssues(
+      identity,
+      [...OPEN, ...blockedStates(tracker), ...working],
+      options,
+    ),
+  );
   const open: HeldIssue[] = [];
   const progress: PoolIssue[] = [];
   for (const { relations, parent, ...issue } of read)
@@ -676,8 +688,14 @@ async function openView(
   }
   if (p.source === "kept" || p.source === "unchanged")
     return assemble(tracker, p, undefined, save, options.nowMs);
+  if (ended(p.bound))
+    return failedView(
+      tracker,
+      kept,
+      new OutboundError("unreachable", "stopped at the tick’s deadline"),
+    );
   try {
-    const queue = await readQueue(tracker, identity);
+    const queue = await readQueue(tracker, identity, p.bound);
     return assemble(tracker, p, queue, save, options.nowMs);
   } catch (error) {
     return failedView(tracker, kept, error);
