@@ -396,6 +396,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.259.0] - 2026-11-16
+
+### Added
+
+- The [followup](plugin/skills/followup/README.md) skill (`/jig:followup`) runs the post-merge stage in any repository: after a merge it settles each class of obligation the merge can leave (the tracker item and epic, deferred review findings, out-of-tree steps, the release and its tags, temporary scaffolding and live drivers, live verification, the next step, and the workspace card in Orca) with one verdict and its evidence, carries out what its fixed authority table allows and files the rest; on an open pull request it previews what the merge will owe. Its script keeps the protocol the dispatcher expects: the claim checked before every outside write, and no run ended while an arm has no verdict. Name it in `dispatch.followup_command` to have the dispatcher start it after each merge.
+- The configuration fields `followup.off` (core arms a repository does not run) and `followup.authority` (acts moved to a stricter level; a looser one is refused), documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#followup).
+
+### Fixed
+
+- Native dispatcher queue preloading no longer lends its expired facet-read deadline to later issue reads in the same tick. Shared lazy reads keep the tick's deadline, while each caller retains its own cancellation and incomplete readings remain nonauthoritative.
+
 ## [0.258.0] - 2026-11-16
 
 ### Added
@@ -9126,7 +9137,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.258.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.259.0...HEAD
+[0.259.0]: https://github.com/jig-harness/jig/compare/v0.258.0...v0.259.0
 [0.258.0]: https://github.com/jig-harness/jig/compare/v0.257.0...v0.258.0
 [0.257.0]: https://github.com/jig-harness/jig/compare/v0.256.7...v0.257.0
 [0.256.7]: https://github.com/jig-harness/jig/compare/v0.256.6...v0.256.7
