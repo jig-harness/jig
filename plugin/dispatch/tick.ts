@@ -461,9 +461,12 @@ async function actAll(
   const preparedPaths = new Set(
     (context.priorities ?? []).map((p) => p.report.path),
   );
+  // Without a machine file there is no inventory of what the host owns, so no tick can vouch for host-wide coverage.
   const complete =
     observe.busy.size === 0 &&
-    owned.every((r) => asked.has(r.path) && preparedPaths.has(r.path));
+    options.machine != null &&
+    owned.every((r) => asked.has(r.path) && preparedPaths.has(r.path)) &&
+    [...asked].every((path) => preparedPaths.has(path));
   rankPriorities(context.priorities ?? [], context.nowMs, complete);
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
