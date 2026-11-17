@@ -1441,4 +1441,4 @@ fields:
     nullable: true
     read_by: [followup]
     repository_only: true
-    since: next
+    since: 0.261.0
