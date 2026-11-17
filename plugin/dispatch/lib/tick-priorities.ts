@@ -70,6 +70,8 @@ export interface PrioritiesTickInput {
   /** Whether the tracker reading was whole: `false` when a queue or item read failed or was cut short, which no unplaced row need say. */
   trackerComplete: boolean;
   nowMs: number;
+  /** The tick's deadline (epoch milliseconds); the record read stops there. */
+  deadlineMs?: number;
   env?: Record<string, string | undefined>;
   stateRoot?: string;
 }
@@ -97,6 +99,7 @@ export function preparePriorities(
       input.path,
       input.defaultBranch,
       input.nowMs,
+      input.deadlineMs,
     );
     return {
       report,

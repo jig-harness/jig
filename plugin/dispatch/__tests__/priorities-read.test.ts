@@ -14,6 +14,7 @@ import {
 } from "../../shared/guarded-git-spawn.ts";
 import { PRIORITIES_FILE } from "../../shared/priorities/record.ts";
 import { dump } from "../../shared/yaml.ts";
+import { currentMs } from "../../shared/time.ts";
 import { readRepositoryRecord } from "../lib/priorities-read.ts";
 
 const NOW = Date.parse("2026-11-18T08:00:00Z");
@@ -118,6 +119,18 @@ describe("the repository record's read", () => {
 });
 
 describe("the read's completeness", () => {
+  it("runs no git once the tick's deadline has passed, and says the read is incomplete", () => {
+    const read = readRepositoryRecord(
+      checkout([record([{ level: "site", scope: "acme", id: "goal" }])]),
+      "main",
+      NOW,
+      currentMs() - 1,
+    );
+    expect(read.record).toBeNull();
+    expect(read.complete).toBe(false);
+    expect(read.source).toContain("the tick's time is spent");
+  });
+
   it("is incomplete when git cannot answer, so an absent record is no evidence of none", () => {
     const read = readRepositoryRecord(scratch(), "main", NOW);
     expect(read.record).toBeNull();

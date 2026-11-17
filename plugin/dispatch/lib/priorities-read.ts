@@ -18,7 +18,7 @@ import {
   PRIORITIES_FILE,
   referenceProblems,
 } from "../../shared/priorities/record.ts";
-import { parseMs } from "../../shared/time.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 /** How many earlier revisions of the file are tried for the last valid one. */
 const HISTORY = 20;
@@ -37,12 +37,20 @@ export interface RecordRead {
   complete: boolean;
 }
 
-/** Read the record for the checkout at `path` from `origin/<defaultBranch>`. */
+/**
+ * Read the record for the checkout at `path` from `origin/<defaultBranch>`.
+ * The whole read stops at `deadlineMs` (epoch milliseconds, the tick's own):
+ * each git call is bounded by what is left, and a read that runs out says it
+ * is incomplete rather than that there is no record.
+ */
 export function readRepositoryRecord(
   path: string,
   defaultBranch: string,
   nowMs: number,
+  deadlineMs?: number,
 ): RecordRead {
+  const git = (cwd: string, args: string[]) => run(cwd, args, deadlineMs);
+  const readAt = (p: string, sha: string) => readAtWith(git, p, sha);
   const ref = `origin/${defaultBranch}`;
   const log = git(path, [
     "log",
@@ -102,8 +110,10 @@ export function readRepositoryRecord(
       complete: true,
     };
   const blocked = `the newest revision of ${PRIORITIES_FILE} (${head.sha.slice(0, 12)}) is infeasible and blocks objective allocation: ${newest.why}`;
+  let history = true;
   for (const c of commits.slice(1)) {
     const earlier = readAt(path, c.sha);
+    if (earlier !== null && "unread" in earlier) history = false;
     if (earlier !== null && "ok" in earlier && earlier.ok)
       return {
         record: null,
@@ -125,7 +135,7 @@ export function readRepositoryRecord(
     source: `${ref}@${head.sha.slice(0, 12)}`,
     blocked,
     lastValid: null,
-    complete: true,
+    complete: history,
   };
 }
 
@@ -133,7 +143,8 @@ export function readRepositoryRecord(
  * The record at `sha`: parsed, invalid with why, `null` when the commit holds
  * no such file (it removed it), or `unread` with git's failure.
  */
-function readAt(
+function readAtWith(
+  git: GitRun,
   path: string,
   sha: string,
 ):
@@ -171,14 +182,26 @@ function readAt(
     : { ok: true, record: parsed.value };
 }
 
-/** A git command's output, or why it failed: its last line of error output, or that it timed out. */
-function git(
+type GitRun = (
   cwd: string,
   args: string[],
+) => { ok: true; stdout: string } | { ok: false; why: string };
+
+/** A git command's output, or why it failed: its last line of error output, or that it timed out or the tick's time was spent. */
+function run(
+  cwd: string,
+  args: string[],
+  deadlineMs: number | undefined,
 ): { ok: true; stdout: string } | { ok: false; why: string } {
+  const left = deadlineMs === undefined ? Infinity : deadlineMs - currentMs();
+  if (left < 1)
+    return {
+      ok: false,
+      why: `git ${args[0]} not run: the tick's time is spent`,
+    };
   const r = spawnSync("git", args, {
     cwd,
-    timeout: GIT_TIMEOUT_MS,
+    timeout: Math.min(GIT_TIMEOUT_MS, Math.floor(left)),
     env: withoutLeakyGitEnv(process.env),
   });
   if (r.status === 0) return { ok: true, stdout: r.stdout };

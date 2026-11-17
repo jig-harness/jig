@@ -454,11 +454,14 @@ async function actAll(
   }
   // The host's lane epochs read every owned repository's ready lanes at once.
   // A tick that did not see every owned repository cannot say a lane has no ready work.
+  // Only a repository this host owns is prepared, so only those are counted.
   const asked = new Set(order);
+  const owned = (options.machine?.repositories ?? []).filter((r) => r.owner);
   const complete =
     observe.busy.size === 0 &&
-    (context.priorities?.length ?? 0) === asked.size &&
-    (options.machine?.repositories ?? []).every((r) => asked.has(r.path));
+    owned.every((r) => asked.has(r.path)) &&
+    (context.priorities?.length ?? 0) ===
+      new Set(owned.map((r) => r.path)).size;
   rankPriorities(context.priorities ?? [], context.nowMs, complete);
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);

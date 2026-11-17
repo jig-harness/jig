@@ -29,7 +29,7 @@ import { readIdle, updateIdle } from "./idle.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
 import { holdBack, type PlanInput, planTick } from "./plan.ts";
 import type { SessionsReport } from "./runtime/port.ts";
-import type { TickContext } from "./tick-context.ts";
+import { deadlineOf, type TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
 import {
@@ -100,6 +100,7 @@ export function planObserved(
       unplaced: report.unplaced,
       trackerComplete: tracked.claimed !== null,
       nowMs: context.nowMs,
+      ...deadlineField(context),
     });
     if (prepared !== null) {
       context.priorities ??= [];
@@ -300,4 +301,10 @@ function settleRecords(
       nowMs,
     );
   return all.filter((r) => r.record.repo === repo);
+}
+
+/** The tick's deadline for the record read, when the tick has one. */
+function deadlineField(context: TickContext): { deadlineMs?: number } {
+  const at = deadlineOf(context.options.machine, context.startedMs);
+  return at === undefined ? {} : { deadlineMs: at };
 }
