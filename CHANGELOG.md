@@ -401,6 +401,31 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.263.1] - 2026-11-17
+
+### Fixed
+
+- A dispatcher tick that could not identify a repository, or read its
+  dispatch section (the forge read was refused, for example while a rate
+  limit held it), no longer drops that
+  repository's needs, queue, sessions and Ready cards from the line. The
+  line keeps what the tick that last read the repository found, and its
+  entry names that tick beside the newest refusal; before, a tick that
+  refused every repository wrote a line with no needs at all. Ticks that
+  write out of order leave the newest attempt's refusal in place.
+- `jig ask --waiting` says when the line it answers from is incomplete: the
+  text lists each repository whose newest read was refused, why, and when
+  its part was read (or that it never was), and `--json` carries the same
+  list as `incomplete`, so an empty `waiting` from an incomplete line no
+  longer reads as "nothing waits on a person". The operator skill's waiting
+  card relays it as a **Not read** line.
+- The dashboard's answer says "Nothing needs a person in what was read" and
+  names the repositories not read, rather than "Nothing needs a person",
+  when a repository's newest read was refused; its banner for an old part
+  gives the refusal as the reason. The tick strip marks a tick that could
+  read none of the repositories it reported on as **read nothing**, and one
+  that could not read some with how many were refused.
+
 ## [0.263.0] - 2026-11-17
 
 ### Removed
@@ -9259,7 +9284,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.263.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.263.1...HEAD
+[0.263.1]: https://github.com/jig-harness/jig/compare/v0.263.0...v0.263.1
 [0.263.0]: https://github.com/jig-harness/jig/compare/v0.262.1...v0.263.0
 [0.262.1]: https://github.com/jig-harness/jig/compare/v0.262.0...v0.262.1
 [0.262.0]: https://github.com/jig-harness/jig/compare/v0.261.1...v0.262.0
