@@ -13,6 +13,20 @@
  *   process: a week for a token, whose user never changes, a day for a
  *   stored login. The request is admitted against the unverified record and
  *   counted in the ledger as `GET /user`.
+ * - **The stored login is asked per repository.** A client may pick its
+ *   account by the repository a command addresses, so the stored login's
+ *   mapping is kept per repository a run addresses (its scope,
+ *   `github-scope.ts`): under a hash of the credential's key and the
+ *   repository, and the question is asked with `GH_REPO` set to that
+ *   repository, from the run's working directory, so the client picks the
+ *   account it picks for the run. That is one `GET /user` a day for each
+ *   repository a stored login addresses. A run that addresses no repository
+ *   keeps the credential's own key. A token names its own user whatever the
+ *   repository: its mapping has no scope.
+ * - **A refusal names whose allowance is spent.** GitHub's "rate limit
+ *   exceeded for user ID N" is held on user N's record when the run was
+ *   admitted against another (`github-budget.ts`), and the mapping is taken
+ *   to be user N's until it is asked again, which the next run does.
  * - **An installation token** (`ghs_`) cannot name its installation: GitHub
  *   answers no request for it with the installation's id. Its owner is the
  *   installation the token's issuer declares beside it
@@ -62,6 +76,7 @@ import {
   unverifiedOwner,
   userOwner,
 } from "./github-credential.ts";
+import { scopedCredential } from "./github-scope.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { BUDGET_MIGRATIONS } from "./schema.ts";
 import { currentMs } from "../time.ts";
@@ -191,10 +206,11 @@ export interface GithubUser {
   login: string;
 }
 
-/** Ask who the credential `env` names is, within `deadlineMs`. */
+/** Ask who the credential `env` names is, within `deadlineMs`, from the working directory `cwd` (the process's when left out). */
 export type DiscoverUser = (
   env: Env,
   deadlineMs: number,
+  cwd?: string,
 ) => Promise<{ user: GithubUser } | { failure: OutboundFailure }>;
 
 /** The user an answer to `GET /user` names; `null` when it names none. */
@@ -216,11 +232,12 @@ export function userOf(body: string): GithubUser | null {
   }
 }
 
-/** Runs `gh` with `args` as the forge client does: bounded, admitted and recorded. */
+/** Runs `gh` with `args` as the forge client does: bounded, admitted and recorded; in `cwd` when given. */
 export type GhRunner = (
   args: string[],
   env: Env,
   timeoutSec: number,
+  cwd?: string,
 ) => Promise<GhRun & { stdout?: unknown }>;
 
 let runner: GhRunner | null = null;
@@ -236,7 +253,7 @@ export function setDiscoveryRunner(run: GhRunner): void {
  * it; a plain `gh api user` is governed against the owner already known, or
  * the host's unverified record, never against the owner it is finding.
  */
-const ghUser: DiscoverUser = async (env, deadlineMs) => {
+const ghUser: DiscoverUser = async (env, deadlineMs, cwd) => {
   if (runner === null)
     return {
       failure: outboundFailure("unauthorized", "no gh runner to ask with"),
@@ -246,6 +263,7 @@ const ghUser: DiscoverUser = async (env, deadlineMs) => {
     ["api", "user"],
     env,
     Math.max(1, Math.ceil(deadlineMs / 1000)),
+    cwd,
   );
   const failure = ghRunFailure(result, currentMs() - began);
   if (failure !== null) return { failure };
@@ -267,14 +285,38 @@ export interface OwnerResolution {
   verified: boolean;
   /** The login the discovery answered with, when one did. */
   login: string | null;
+  /** Whose allowance the owner's record keeps, for a person: `GitHub account <login>`, `installation <id>`, `user ID <id>`, or the host's shared record. */
+  account: string;
 }
 
-/** Finds and remembers credentials' owners. */
+/**
+ * Finds and remembers credentials' owners. `scope` is the repository a run
+ * of the stored login addresses (`github-scope.ts`): its owner is asked and
+ * kept for that repository, with `GH_REPO` set to it for the question and
+ * from the run's working directory `cwd`. A token's owner has no scope.
+ */
 export interface GithubOwnerResolver {
   /** The owner, asking GitHub at most once a check period. */
-  resolve(env: Env, deadlineMs?: number): Promise<OwnerResolution>;
+  resolve(
+    env: Env,
+    deadlineMs?: number,
+    scope?: string | null,
+    cwd?: string,
+  ): Promise<OwnerResolution>;
   /** The owner the machine already knows, sending nothing; `null` for a credential never asked. */
-  known(env: Env): OwnerResolution | null;
+  known(env: Env, scope?: string | null): OwnerResolution | null;
+  /**
+   * GitHub refused a run of this credential and scope for the allowance of
+   * user `userId`, not the owner it was admitted against: the mapping is
+   * taken to be that user's until it is asked again, which the next run
+   * does.
+   */
+  misattributed(env: Env, scope: string | null, userId: number): void;
+}
+
+/** The phrase for the host's shared record, which holds no one account's allowance. */
+export function unverifiedAccount(host: string): string {
+  return `the shared record of the credentials whose account is not established on ${host}`;
 }
 
 /** The ledger row of a discovery the wrapper did not record. */
@@ -322,11 +364,15 @@ export function githubOwnerResolver(deps: {
   /** Discovery windows not yet carried to their owner, by owner, until the lock is free. */
   const unsettled = new Map<string, BudgetRecord>();
 
+  /** `user ID <id>` for each user record a refusal named, by its key: the record's key cannot be read back. */
+  const named = new Map<string, string>();
+
   const unverified = (env: Env, credential: string): OwnerResolution => ({
     credential,
     owner: unverifiedOwner(githubHost(env)),
     verified: false,
     login: null,
+    account: unverifiedAccount(githubHost(env)),
   });
 
   /** An installation token's owner, which only its declaration names. */
@@ -339,15 +385,30 @@ export function githubOwnerResolver(deps: {
           owner: installationOwner(githubHost(env), id),
           verified: true,
           login: null,
+          account: `installation ${id}`,
         };
   };
 
-  const fromEntry = (credential: string, e: OwnerEntry): OwnerResolution => ({
+  const fromEntry = (
+    env: Env,
+    credential: string,
+    e: OwnerEntry,
+  ): OwnerResolution => ({
     credential,
     owner: e.owner,
     verified: e.verified,
     login: e.login,
+    account: !e.verified
+      ? unverifiedAccount(githubHost(env))
+      : e.login !== null
+        ? `GitHub account ${e.login}`
+        : (named.get(e.owner) ??
+          "the GitHub account a rate-limit refusal named"),
   });
+
+  /** The key the owner of `credential` is kept under for `scope`; a token's owner has no scope. */
+  const slotOf = (env: Env, credential: string, scope?: string | null) =>
+    scopedCredential(credential, githubToken(env) === null ? scope : null);
 
   /** Carry the credential's earlier record into its owner's, once a process; `false` while the lock refuses it. */
   const seed = (env: Env, owner: string): boolean => {
@@ -407,6 +468,7 @@ export function githubOwnerResolver(deps: {
   const ask = async (
     env: Env,
     credential: string,
+    asked: Question,
     entry: OwnerEntry | null,
     until: number,
   ): Promise<OwnerResolution> => {
@@ -428,10 +490,12 @@ export function githubOwnerResolver(deps: {
     } catch (error) {
       // A busy store sends nothing either: discovery waits for a later check.
       if (!isRateLimited(error)) busyOrThrow(error);
-      return entry?.verified === true ? fromEntry(credential, entry) : fallback;
+      return entry?.verified === true
+        ? fromEntry(env, credential, entry)
+        : fallback;
     }
     const began = currentMs();
-    const answer = await discover(env, deadlineMs);
+    const answer = await discover(asked.env, deadlineMs, asked.cwd);
     const user = "user" in answer ? answer.user : null;
     const owner =
       user !== null
@@ -455,20 +519,50 @@ export function githubOwnerResolver(deps: {
     if (deps.discover !== undefined)
       ledgerLookup(credential, owner, answer, currentMs() - began);
     const next = nextEntry(user, owner, entry, now, githubToken(env) !== null);
-    deps.owners.write(credential, githubHost(env), next);
-    return fromEntry(credential, next);
+    deps.owners.write(asked.slot, githubHost(env), next);
+    return fromEntry(env, credential, next);
   };
 
-  const known = (env: Env): OwnerResolution | null => {
+  const known = (env: Env, scope?: string | null): OwnerResolution | null => {
     const credential = githubCredential(env);
     if (installationToken(env)) return installation(env, credential);
-    const entry = deps.owners.read(credential, githubHost(env));
-    return entry === null ? null : fromEntry(credential, entry);
+    const entry = deps.owners.read(
+      slotOf(env, credential, scope),
+      githubHost(env),
+    );
+    return entry === null ? null : fromEntry(env, credential, entry);
+  };
+
+  const misattributed = (
+    env: Env,
+    scope: string | null,
+    userId: number,
+  ): void => {
+    const credential = githubCredential(env);
+    if (installationToken(env)) return;
+    const host = githubHost(env);
+    const key = slotOf(env, credential, scope);
+    const owner = userOwner(host, userId);
+    named.set(owner, `user ID ${userId}`);
+    memo.delete(`${key}@${host}`);
+    // Kept as the named user's until the next run asks again: a run that
+    // cannot ask (the shared record held, a busy store) is admitted
+    // against the allowance GitHub named.
+    const now = clock();
+    deps.owners.write(key, host, {
+      owner,
+      verified: true,
+      login: null,
+      checkedAt: now,
+      retryAt: now,
+    });
   };
 
   const resolve = async (
     env: Env,
     deadlineMs: number = DISCOVERY_DEADLINE_MS,
+    scope: string | null = null,
+    cwd?: string,
   ): Promise<OwnerResolution> => {
     const credential = githubCredential(env);
     // One deadline for the whole resolution, however many settlements and
@@ -481,7 +575,8 @@ export function githubOwnerResolver(deps: {
     }
     const now = clock();
     const host = githubHost(env);
-    const slot = `${credential}@${host}`;
+    const key = slotOf(env, credential, scope);
+    const slot = `${key}@${host}`;
     const held = memo.get(slot);
     if (held !== undefined && held.until > now) {
       await settle(env, held.resolution.owner, until);
@@ -489,18 +584,24 @@ export function githubOwnerResolver(deps: {
     }
     const pending = inflight.get(slot);
     if (pending !== undefined) return within(pending, env, deadlineMs, until);
-    const entry = deps.owners.read(credential, host);
+    const entry = deps.owners.read(key, host);
     if (entry !== null && entry.retryAt > now) {
-      const found = fromEntry(credential, entry);
+      const found = fromEntry(env, credential, entry);
       memo.set(slot, { resolution: found, until: entry.retryAt });
       await settle(env, found.owner, until);
       return found;
     }
-    const asked = ask(env, credential, entry, until)
+    const asked = ask(
+      env,
+      credential,
+      question(env, key, scope, cwd),
+      entry,
+      until,
+    )
       .then(async (found) => {
         // A refused admission stores nothing: the process waits out the
         // backoff before it asks again.
-        const retryAt = deps.owners.read(credential, host)?.retryAt ?? 0;
+        const retryAt = deps.owners.read(key, host)?.retryAt ?? 0;
         memo.set(slot, {
           resolution: found,
           until: retryAt > clock() ? retryAt : clock() + DISCOVERY_BACKOFF_MS,
@@ -540,7 +641,37 @@ export function githubOwnerResolver(deps: {
     return found;
   };
 
-  return { resolve, known };
+  return { resolve, known, misattributed };
+}
+
+/** Where a discovery's answer is kept, and how the question is asked. */
+interface Question {
+  /** The key the owner is kept under. */
+  slot: string;
+  /** The environment the question is asked with. */
+  env: Env;
+  /** The working directory it is asked from; the process's when left out. */
+  cwd?: string;
+}
+
+/**
+ * The question for the owner kept under `slot`: a stored login whose run
+ * addresses the repository `scope` is asked with `GH_REPO` set to it and
+ * from the run's directory, so a client that picks its account per
+ * repository picks it for the question as it does for the run.
+ */
+function question(
+  env: Env,
+  slot: string,
+  scope: string | null,
+  cwd: string | undefined,
+): Question {
+  const scoped = scope !== null && githubToken(env) === null;
+  return {
+    slot,
+    env: scoped ? { ...env, GH_REPO: scope } : env,
+    ...(cwd === undefined ? {} : { cwd }),
+  };
 }
 
 /** Rethrow `error` unless it is a store's contention. */
