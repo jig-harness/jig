@@ -28,7 +28,7 @@ import {
 import { type OpenPort, orcaAnswer } from "../../shared/orca-workspace/port.ts";
 import { localContext, withLimit } from "../../shared/orca-workspace/runner.ts";
 import { supervisedHook } from "../../shared/orca-workspace/supervised-hook.ts";
-import { listComments } from "../../shared/records/forge-claims.ts";
+import { listCommentsKept } from "../../shared/records/comment-pages.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { stateRoot } from "../receipts.ts";
 import { readMarkers } from "./followup-marker.ts";
@@ -414,7 +414,10 @@ export function stationPorts(inputs: StationInputs): StationPorts {
     self: inputs.login,
     issueRepository: inputs.issueRepository,
     async comments(repo, number) {
-      const listed = await listComments({ repo, number }, { timeoutSec: 60 });
+      const listed = await listCommentsKept(
+        { repo, number },
+        { timeoutSec: 60 },
+      );
       return listed.ok ? ok(conversationOf(listed.value)) : listed;
     },
     trackerComments: (item) => readTrackerAnswers(inputs.tracker, item, self),

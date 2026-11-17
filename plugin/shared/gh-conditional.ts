@@ -68,6 +68,8 @@ import {
   type RunResult,
 } from "./proc.ts";
 import { githubCredential } from "./outbound/github-credential.ts";
+import type { OutboundFailure } from "./outbound/failure.ts";
+import { ghRunFailure } from "./outbound/github.ts";
 import { currentMs } from "./time.ts";
 
 export interface CallContext {
@@ -90,11 +92,23 @@ export interface CallContext {
    * leaves no trace of which read came next). Not part of the cache identity.
    */
   caller?: string;
+  /**
+   * The repository a path names itself (`repos/<owner>/<name>/…`, no
+   * `{owner}/{repo}`): the cache is then scoped to the host, that repository
+   * and the credential alone, with no local `git` read, so a caller outside
+   * any checkout still revalidates what it read.
+   */
+  repository?: string;
 }
 
 export type ConditionalGet =
   | { ok: true; changed: boolean; body: string }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      reason: string;
+      /** The failure's class, where the request was sent and answered as one (`outbound/github.ts`). */
+      failure?: OutboundFailure;
+    };
 
 export type PrLiveness =
   | { ok: true; state: "OPEN" | "CLOSED" | "MERGED"; head: string }
@@ -104,9 +118,12 @@ export type PrLiveness =
 export function createConditionalCache({
   ghCall,
   git,
+  cacheDir,
 }: {
   ghCall: typeof defaultGhCall;
   git: typeof defaultGit;
+  /** Where entries live instead of the environment's choice (`ghCacheDir`); `null` turns the cache off. */
+  cacheDir?: () => string | null;
 }) {
   /** How long a cached `gh repo view` answer is trusted. The scope key already
    * invalidates on a remote / `set-default` / `$GH_REPO` change; this only bounds
@@ -119,6 +136,7 @@ export function createConditionalCache({
 
   /** The cache directory, or null when caching is off. */
   function ghCacheDir(): string | null {
+    if (cacheDir !== undefined) return cacheDir();
     if ((process.env.JIG_GH_CACHE ?? "") === "off") return null;
     const explicit = process.env.JIG_GH_CACHE_DIR ?? "";
     if (explicit !== "") return explicit;
@@ -210,6 +228,20 @@ export function createConditionalCache({
     })();
   }
 
+  /** The scope of a path that names its repository: the host, the repository and the credential. */
+  function namedScope(ctx: CallContext, repository: string): string {
+    const env = ctx.env ?? process.env;
+    return createHash("sha256")
+      .update(
+        [
+          env.GH_HOST ?? "",
+          `named ${repository.toLowerCase()}`,
+          githubCredential(env),
+        ].join("\n--\n"),
+      )
+      .digest("hex");
+  }
+
   interface ParsedResponse {
     status: number;
     etag: string;
@@ -282,7 +314,12 @@ export function createConditionalCache({
     // Distinct request identity per mode: the entry key AND the in-entry guard.
     const request = keepBody ? path : `etag-only ${path}`;
     const dir = ghCacheDir();
-    const scope = dir === null ? null : await repoScope(ctx);
+    const scope =
+      dir === null
+        ? null
+        : ctx.repository !== undefined
+          ? namedScope(ctx, ctx.repository)
+          : await repoScope(ctx);
     const file =
       dir !== null && scope !== null ? entryFile(dir, scope, request) : null;
 
@@ -315,15 +352,23 @@ export function createConditionalCache({
         ...definedFields({ cwd: ctx.cwd, env: ctx.env, timeoutSec: left }),
       },
     );
-    if (r.timedOut) return { ok: false, reason: `gh api ${path} timed out` };
+    const failure = ghRunFailure(r, currentMs() - startMs);
+    const classed = failure === null ? {} : { failure };
+    if (r.timedOut)
+      return { ok: false, reason: `gh api ${path} timed out`, ...classed };
     if (r.bufferExceeded) {
-      return { ok: false, reason: `gh api ${path} output exceeded the buffer` };
+      return {
+        ok: false,
+        reason: `gh api ${path} output exceeded the buffer`,
+        ...classed,
+      };
     }
     const parsed = parseResponse(r.stdout);
     if (parsed === null) {
       return {
         ok: false,
         reason: `gh api ${path}: unparseable response (exit ${r.code})`,
+        ...classed,
       };
     }
     // `gh api` exits 1 on a 304 ("gh: HTTP 304"), so the status line — not the
@@ -349,6 +394,7 @@ export function createConditionalCache({
     return {
       ok: false,
       reason: `gh api ${path}: HTTP ${parsed.status} (exit ${r.code})`,
+      ...classed,
     };
   }
 
