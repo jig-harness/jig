@@ -331,7 +331,7 @@ export function parseSchema(raw: unknown): Schema {
       schema.strict.includes(section) ||
       Object.hasOwn(refused, section)
     )
-      throw new Error(
+      throw new SchemaRetiredError(
         `config schema: retired names ${section}, which the schema also declares`,
       );
   }
@@ -352,6 +352,11 @@ export function parseSchema(raw: unknown): Schema {
 /** A `null_refused` list that does not name the schema's own refusable paths. */
 class SchemaNullRefusedError extends Error {
   override readonly name = "SchemaNullRefusedError";
+}
+
+/** A `retired` section the schema also declares as live. */
+class SchemaRetiredError extends Error {
+  override readonly name = "SchemaRetiredError";
 }
 
 export const SCHEMA_PATH = join(skillDir(), "config-schema.yaml");
