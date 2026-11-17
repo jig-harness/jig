@@ -205,8 +205,9 @@ the sweep and the alarms, and Effect stays declined.
   pickups and the stopped host open.
 - **A hub that polls, with webhooks as hints.** Rejected: it spends reads
   on every target whether or not it changed, and lags every change by an
-  interval. Events with a slow sweep spend reads where something changed,
-  and the sweep's drift shows whether the events can be trusted.
+  interval. Events with a slow sweep spend reads where something changed
+  or where a fact's confirmation has expired, and the sweep's drift shows
+  whether the events can be trusted.
 - **A hub bound to one runtime**, a Bun process only. Rejected: a team on
   a serverless platform could not run it, and moving later would mean
   rewriting the logic rather than adding an adapter.
@@ -241,8 +242,9 @@ the sweep and the alarms, and Effect stays declined.
 ### Benefits
 
 - Hosts dispatching the same repositories spend no reads of their own for
-  the dispatcher; the hub spends reads only where an event or the sweep
-  finds a change.
+  the dispatcher; the hub spends reads where an event or the sweep finds a
+  change, and where a fact's confirmation has expired and no completeness
+  watermark confirms it.
 - A change reaches every host's next probe within seconds of its event.
 - A stopped host is noticed: a person is told, and its leases lapse, so
   the hub grants its work to another host, which takes a drive over by the

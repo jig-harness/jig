@@ -861,7 +861,9 @@ identity-checking front before every path but `/webhooks/`.
   level below.
 - **Polling as the main feed.** It spends reads on every target whether or
   not it changed, and still lags a change by a polling interval; events
-  with a slow sweep spend reads only where something changed.
+  with a slow sweep spend reads where something changed, plus the
+  read-throughs the freshness rule requires for a target whose confirmation
+  has expired.
 - **Cancelling or steering a host's session from the hub.** A session is
   the host's; the hub's notices go to people, and `jig send` stays the way
   a person steers.
