@@ -1,3 +1,4 @@
+import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
 import { anyWorking } from "./served-occupancy.ts";
 import {
   attachAdmissions,
@@ -83,6 +84,7 @@ export interface ServedReading {
   failures?: unknown[];
 }
 export interface ServedPolicy {
+  mergeEvidence?: PlanMergeReader | undefined;
   hitl?: string;
   manualOps?: string;
   executionPlanBlock?: string;
@@ -323,6 +325,8 @@ export async function freshServedPickup(
       issue,
       { get: () => null, set: () => undefined },
       policy.executionPlanBlock,
+      undefined,
+      policy.mergeEvidence,
     );
     if (parentHold !== null) return parentHold;
     const held = queueHold(
@@ -492,6 +496,16 @@ async function readChildren(
   return { children, unread };
 }
 
+/** Resolve merge proof separately from the child walk's occupancy and selection. */
+function childMergeEvidence(ctx: WalkContext, meta: Metadata) {
+  return planMergeEvidence(
+    ctx.tracker,
+    meta.description ?? "",
+    ctx.options.executionPlanBlock,
+    ctx.options.mergeEvidence,
+  );
+}
+
 async function enqueueChildren(
   ctx: WalkContext,
   issue: PoolIssue,
@@ -523,6 +537,7 @@ async function enqueueChildren(
       issue.identifier,
       live,
       options.executionPlanBlock,
+      await childMergeEvidence(ctx, meta),
     );
     const parked = selection.present
       ? []
@@ -752,6 +767,7 @@ async function placeLeaf(
     cache,
     options.executionPlanBlock,
     view,
+    options.mergeEvidence,
   );
   if (parentHold !== null) return void unplace(parentHold);
   const admissionHold = await attachAdmissions(
@@ -912,6 +928,7 @@ async function heldReason(
     cache,
     options.executionPlanBlock,
     view,
+    options.mergeEvidence,
   );
   if (parentHold !== null) return parentHold;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
@@ -955,6 +972,8 @@ async function freshPulledAuthority(
     origin,
     { get: () => null, set: () => undefined },
     policy.executionPlanBlock,
+    undefined,
+    policy.mergeEvidence,
   );
   if (originHold !== null) return `${blockingFor}: ${originHold}`;
   const authority = await freshAuthority(tracker, origin, identity, ancestor);
@@ -974,6 +993,8 @@ async function freshPulledAuthority(
         item as PoolIssue,
         { get: () => null, set: () => undefined },
         policy.executionPlanBlock,
+        undefined,
+        policy.mergeEvidence,
       )) === null
     );
   };

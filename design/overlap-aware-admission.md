@@ -325,9 +325,7 @@ before either:
 ### Merge evidence for a plan's conflict edges
 
 An execution plan's conflict edge holds the later step until the earlier
-one's change has merged (`completion: merged`). The dispatcher reads no
-merge evidence today, so such a step is held until a person moves it
-(#725). The tick verifies the evidence as `do-item`'s Step 4b does: the
+one's change has merged (`completion: merged`). The tick verifies the evidence as `do-item`'s Step 4b does: the
 earlier step's linked pull request (`linked-pr.ts`: the do-item comment
 marker, or a `Closes`/`Refs` line), merged (`mergedAt` set), into the
 integration branch, and changing at least one of the edge's
@@ -336,7 +334,9 @@ directly, through the forge's transport, rather than from its listing of
 recent merges, which reaches back only to the day the follow-up stage was
 turned on and is absent where it is off. A verified merge does not change,
 so the pull request's merged state and files are kept once read, in the
-state database's merge reads (`dispatch-merge-read`). Whether that merge
+state database's immutable merge reads (`dispatch-conflict-merge-read`,
+`merge_facts`), independent of the mutable follow-up marker reads
+(`dispatch-merge-read`, `merge_reads`). Whether that merge
 releases the edge is not kept: each tick it checks the predecessor's
 current linked pull requests again, so a pull request opened for the
 predecessor after the merge holds the edge. Evidence that does not read, or is ambiguous (two

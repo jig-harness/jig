@@ -88,7 +88,7 @@ function ghJson(r: RunResult, what: string): unknown {
 }
 
 /** The reads through the tracker and the `gh` command, from `root`. */
-function forgeReads(
+export function forgeReads(
   tracker: Tracker,
   root: string,
   repository: string,

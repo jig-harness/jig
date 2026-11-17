@@ -317,14 +317,12 @@ every open pull request's changed files read through the forge's governed
 transport, an overlap cost in expected conflict-resolution rounds that
 orders colliding work behind work that does not collide without ever
 leaving a slot idle, an overlap bound per file that replaces the per-epic
-width and, like the cost, only orders, merge evidence that releases a plan's conflict edges (#725),
+width and, like the cost, only orders,
 validation capacity as a gauge of the load factor, and the reason shown for
 each item that waits. What it will build, one pull request per step, is the
-design's build order: the record, its writers, conflict-edge evidence, the
-changed-files read, conflict rates from `history.ts`, overlap reported,
+design's remaining build order: the changed-files read, conflict rates from `history.ts`, overlap reported,
 serialized areas holding pickups, validation capacity, then overlap
-admission. The steps are filed once the
-design merges.
+admission. The planner's footprint writer is part of #1180.
 
 Done when, on a dispatch host over a week with `load.enforce` on: no pass
 times out waiting for the test lock; every item that waits names its reason: overlap, the overlap

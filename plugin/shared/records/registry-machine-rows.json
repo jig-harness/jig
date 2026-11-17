@@ -109,6 +109,12 @@
       "The follow-up markers a merged pull request carried when a tick last read them, beside its `updatedAt`, so the tick reuses them rather than listing the comments again while nothing changed."
     ],
     [
+      "dispatch-conflict-merge-read",
+      "dispatch/lib/merge-facts.ts",
+      "merge_facts",
+      "Immutable directly verified merge times, integration bases and complete changed files for execution-plan conflict edges, kept independently of the mutable follow-up marker cache. Current pull-request associations are read again each tick and never kept here."
+    ],
+    [
       "dispatch-pickup-read",
       "dispatch/lib/pickup-reads.ts",
       "pickup_reads",

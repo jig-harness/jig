@@ -6,6 +6,7 @@ import {
   planContradictions,
   readExecutionPlan,
   type LiveIssue,
+  type ExecutionPlan,
 } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import { failureText } from "../text.ts";
 import { PERSON_HOLD } from "../queue-rank.ts";
@@ -37,6 +38,10 @@ export function servedPlan(
   epic: string,
   live: Record<string, LiveIssue>,
   block?: string,
+  evidence: { merged: string[]; held: Record<string, string> } = {
+    merged: [],
+    held: {},
+  },
 ): ServedPlan {
   try {
     const plan = readExecutionPlan(description, block);
@@ -77,14 +82,27 @@ export function servedPlan(
             )
           : item.blockedBy,
       };
-    const order = eligibleIssues(plan, inPlan, []);
+    const order = eligibleIssues(plan, inPlan, evidence.merged);
     const holds: Record<string, string> = {};
     for (const step of plan.steps)
       if (!order.includes(step.issue))
         holds[step.issue] = "waiting on the epic execution plan";
+    mergeHolds(plan, evidence.held, holds);
     for (const gate of humanGates(plan)) holds[gate.issue] = PERSON_HOLD;
     return { present: true, order, holds };
   } catch (error) {
     return { present: true, order: [], holds: {}, error: failureText(error) };
+  }
+}
+
+/** A failed merge proof explains the conflict hold without overriding other plan gates. */
+function mergeHolds(
+  plan: ExecutionPlan,
+  reasons: Record<string, string>,
+  holds: Record<string, string>,
+): void {
+  for (const edge of plan.edges) {
+    const reason = reasons[`${edge.from}>${edge.to}`];
+    if (reason && holds[edge.to]) holds[edge.to] = reason;
   }
 }

@@ -780,6 +780,7 @@ export async function readPickups(
     hitl?: string;
     manualOps?: string;
     executionPlanBlock?: string;
+    mergeEvidence?: import("./plan-merges.ts").PlanMergeReader | undefined;
     repoScope?: import("./served-repo.ts").RepoScope;
     views?: import("./served-reads.ts").ServedViews;
     unlabeled?: import("./served-repo.ts").UnlabeledMode;

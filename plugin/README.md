@@ -457,6 +457,14 @@ An epic none of whose open children can start reports one reason,
 naming a child waiting on a person when it has one. An execution plan keeps
 its own ordering rules.
 
+A conflict edge with `completion: merged` releases only when a linked pull
+request has merged into the integration branch and changes at least one of
+the edge's `conflictFiles`, when specified. The dispatcher reads the pull
+request directly, including merges older than follow-up activation, and keeps
+its immutable merge facts. Each tick rechecks the predecessor's current
+linked pull requests: a later open pull request or unreadable evidence keeps
+the edge held, with a reason.
+
 The Queue view names holds: an open blocker reads "waiting on #N" (with
 "picked up first" or why it was left);
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".

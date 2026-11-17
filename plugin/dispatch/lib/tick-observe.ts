@@ -38,6 +38,7 @@
  * tick still plans on what it read, writes its receipt and lets its locks
  * go in time; the next tick reads the rest.
  */
+import { planMergeReader } from "./sources/plan-merges.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import {
   type IssueKeys,
@@ -716,7 +717,26 @@ async function readTracker(
       | { execution_plan_block?: unknown }
       | undefined;
     const scope = scopeOf(values);
+    preparedTracker ??= openTracker(config, repo.path);
+    const mergeReader = planMergeReader(preparedTracker, {
+      root: repo.path,
+      repository: repo.slug,
+      trunk:
+        typeof (values.repository as { base_branch?: unknown } | undefined)
+          ?.base_branch === "string"
+          ? (values.repository as { base_branch: string }).base_branch
+          : repo.defaultBranch,
+      keySource: tracked.keys?.source ?? "(?!)",
+      trackerRepository:
+        config.adapter === "github"
+          ? (config.github.repository ?? repo.slug)
+          : undefined,
+      bodyLinkRequired:
+        (values.pull_requests as { issue_link?: unknown } | undefined)
+          ?.issue_link !== "none",
+    });
     tracked.servedPolicy = {
+      mergeEvidence: mergeReader,
       hitl: config.labels.hitl,
       manualOps: config.labels.manualOps,
       ...(typeof item?.execution_plan_block === "string"
