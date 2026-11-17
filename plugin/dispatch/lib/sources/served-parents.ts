@@ -1,5 +1,6 @@
 /** Direct assignments obey the same ancestor execution plans as inherited work. */
 import type {
+  DispatchRawIssue,
   PoolIssue,
   QueueParent,
   Tracker,
@@ -21,6 +22,8 @@ export interface ParentReads {
   pool(key: string): Promise<PoolIssue | null>;
   /** One read per key in the tick, where the reads are shared. */
   once?<T>(key: string, read: () => Promise<T>): Promise<T>;
+  /** An issue's native row, where the reads hold native rows. */
+  raw?(key: string): Promise<DispatchRawIssue | null>;
   held?(key: string): HeldIssue | undefined;
   parentBody?(key: string): QueueParent | undefined;
 }
@@ -88,12 +91,33 @@ function remember<T>(
   return value;
 }
 
+/**
+ * What the issue's native row in this reading carries of its description and
+ * parent, as current as the row: `null` where the reads hold no native row
+ * or the row does not carry them.
+ */
+async function rowBody(
+  tracker: Tracker,
+  issue: PoolIssue,
+  reads: ParentReads,
+): Promise<Body | null> {
+  const describe = tracker.dispatchSource?.describe;
+  if (describe === undefined || reads.raw === undefined) return null;
+  const row = await reads.raw(issue.identifier);
+  const carried = row === null ? null : describe(row);
+  return carried === null
+    ? null
+    : { updatedAt: issue.updatedAt ?? "", ...carried };
+}
+
 async function body(
   tracker: Tracker,
   issue: PoolIssue,
   cache: PickupReads,
   reads: ParentReads,
 ): Promise<Body | null> {
+  const native = await rowBody(tracker, issue, reads);
+  if (native !== null) return native;
   const key = `${trackerScope(tracker)}:parent-plan:${issue.identifier}`;
   const readAt = readingAt(tracker, reads, issue);
   const kept = current(cache.get<Body>(key), issue, readAt);

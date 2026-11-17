@@ -367,8 +367,9 @@ need. A cause is settled once, and its targets leave the line with it.
 The steward reads a digest and proposes records; the next tick checks and
 applies them under its own guards
 ([ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)).
-Its default remit stays `rearm`, `resume`, `need`, `facet`, `order` and
-`cause`. A host may widen it with three record kinds. Each guard is read by
+Its default remit stays the record kinds
+[the steward records chapter](../plugin/protocol/steward-records.md) lists:
+`rearm`, `resume`, `need`, `facet`, `order` and `cause`. A host may widen it with three record kinds. Each guard is read by
 the tick from the forge, the tracker and its own records, never from the
 steward's digest or its words:
 

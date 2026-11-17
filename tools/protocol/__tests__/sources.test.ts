@@ -26,6 +26,12 @@ import {
   RECORD_KINDS,
 } from "../../../plugin/shared/records/registry.ts";
 import { SEND_VERBS } from "../../../plugin/send/lib/verb-values.ts";
+import {
+  STEWARD_CAUSE_VALUES,
+  STEWARD_COMMON_FIELDS,
+  STEWARD_RECORD_KINDS,
+  STEWARD_RECORD_LIMITS,
+} from "../../../plugin/dispatch/lib/steward-record-values.ts";
 import { STATIONS } from "../../../plugin/shared/address.ts";
 import {
   ADAPTER_FACET_STORES,
@@ -42,7 +48,21 @@ import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
 import { FORGE_CLAIMS_CHAPTER } from "../chapters/forge-claims.ts";
+import { STEWARD_RECORDS_CHAPTER } from "../chapters/steward-records.ts";
 import { TRACKER_FACETS } from "../chapters/tracker-facets.ts";
+import { NEEDS_AND_ANSWERS } from "../chapters/needs-and-answers.ts";
+import { CLASS_ACTS, NEED_ACT_VALUES } from "../../../plugin/shared/acts.ts";
+import { ANSWER_NORMALIZATION } from "../../../plugin/shared/decisions/answer-normalize.ts";
+import {
+  ANSWER_FORMS,
+  ANSWER_LINES,
+  DECISION_LIMITS,
+  PARKED_DECISION_FIELDS,
+} from "../../../plugin/shared/decisions/decision-values.ts";
+import {
+  STATION_KEYS,
+  STATION_OPTIONS,
+} from "../../../plugin/shared/decisions/station.ts";
 
 const root = join(import.meta.dir, "..", "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -573,5 +593,199 @@ describe("tracker facets", () => {
           expect(text).toContain((hold?.meaning ?? "").replaceAll("<", "&lt;"));
         });
       }
+  });
+});
+
+describe("needs and structured answers", () => {
+  // Enumerated from the tables on their own, not through the chapter.
+  const tables = {
+    field: Object.keys(PARKED_DECISION_FIELDS),
+    line: Object.keys(ANSWER_LINES),
+    form: Object.keys(ANSWER_FORMS),
+    normalization: Object.keys(ANSWER_NORMALIZATION),
+    limit: Object.keys(DECISION_LIMITS),
+    act: Object.keys(NEED_ACT_VALUES),
+    class: Object.keys(CLASS_ACTS),
+    "station-key": Object.keys(STATION_KEYS),
+    "station-option": Object.keys(STATION_OPTIONS),
+  };
+  const values = NEEDS_AND_ANSWERS.values();
+  const of = (kind: string) =>
+    values.filter((v) => v.kind === kind).map((v) => String(v.name));
+
+  test("renders every entry of each table, in the tables' order, and nothing else", () => {
+    for (const [kind, names] of Object.entries(tables))
+      expect({ kind, names: of(kind) }).toEqual({ kind, names });
+    expect(values).toHaveLength(
+      Object.values(tables).reduce((n, names) => n + names.length, 0),
+    );
+    expect(NEEDS_AND_ANSWERS.excluded).toEqual([]);
+  });
+
+  test("identifies a value by its kind and name, which no two values share", () => {
+    expect(NEEDS_AND_ANSWERS.fields.kind?.identifies).toBe(true);
+    const identities = values.map((v) => JSON.stringify([v.kind, v.name]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("carries each value's own fields as its table holds them", () => {
+    const find = (kind: string, name: string) =>
+      values.find((v) => v.kind === kind && v.name === name);
+    for (const [name, f] of Object.entries(PARKED_DECISION_FIELDS))
+      expect(find("field", name)).toMatchObject({
+        type: f.type,
+        carried: f.carried,
+        meaning: f.meaning,
+      });
+    for (const [name, l] of Object.entries(DECISION_LIMITS))
+      expect(find("limit", name)).toMatchObject({
+        value: l.value,
+        unit: l.unit,
+      });
+    Object.keys(ANSWER_NORMALIZATION).forEach((name, i) => {
+      expect(find("normalization", name)?.step).toBe(i + 1);
+    });
+    for (const [name, c] of Object.entries(CLASS_ACTS))
+      expect(find("class", name)).toMatchObject({ act: c.act });
+    for (const [name, k] of Object.entries(STATION_KEYS))
+      expect(find("station-key", name)).toMatchObject({
+        class: k.class,
+        options: k.options.join(", "),
+      });
+    for (const [name, o] of Object.entries(STATION_OPTIONS))
+      expect(find("station-option", name)).toMatchObject({
+        option: o.name,
+        reversible: o.reversible ?? null,
+        meaning: o.summary,
+      });
+  });
+
+  test("shows each table's entries in its own section", () => {
+    const sections = NEEDS_AND_ANSWERS.sections.map((s) => s.render());
+    const order = [
+      "field",
+      "line",
+      "form",
+      "normalization",
+      "limit",
+      "act",
+      "class",
+      "station-key",
+      "station-option",
+    ] as const;
+    expect(sections).toHaveLength(order.length);
+    order.forEach((kind, i) => {
+      const text = sections[i] ?? "";
+      // A normalization step's row opens with its number, then its name.
+      const rows =
+        kind === "normalization"
+          ? tables[kind].map((n, j) => `\n| ${j + 1} | \`${n}\` |`)
+          : tables[kind].map((n) => `\n| \`${n}\` |`);
+      expect({ kind, missing: rows.filter((r) => !text.includes(r)) }).toEqual({
+        kind,
+        missing: [],
+      });
+    });
+  });
+});
+
+describe("steward records", () => {
+  // Enumerated from the registry and the tables on their own, not through the chapter.
+  const kept = RECORD_KINDS.find((k) => k.name === "dispatch-steward-record");
+  const kinds = Object.keys(STEWARD_RECORD_KINDS);
+  const common = Object.keys(STEWARD_COMMON_FIELDS);
+  const own = Object.entries(STEWARD_RECORD_KINDS).flatMap(([kind, k]) =>
+    Object.entries(k.fields as Record<string, { type: string }>).map(
+      ([field, f]) => ({ kind, field, type: f.type }),
+    ),
+  );
+  const causes = Object.keys(STEWARD_CAUSE_VALUES);
+  const limits = Object.entries(STEWARD_RECORD_LIMITS);
+  const values = STEWARD_RECORDS_CHAPTER.values();
+  const of = (kind: string) =>
+    values.filter((v) => v.kind === kind).map((v) => String(v.name));
+
+  test("renders the registry's kind, each record kind, every field, cause and bound, in the tables' order, and nothing else", () => {
+    expect(kept?.medium).toBe("machine");
+    expect(of("registry")).toEqual(["dispatch-steward-record"]);
+    expect(of("record")).toEqual(kinds);
+    expect(of("field")).toEqual([
+      ...common,
+      ...own.map((f) => `${f.kind}.${f.field}`),
+    ]);
+    expect(of("cause")).toEqual(causes);
+    expect(of("limit")).toEqual(limits.map(([name]) => name));
+    expect(values).toHaveLength(
+      1 +
+        kinds.length +
+        common.length +
+        own.length +
+        causes.length +
+        limits.length,
+    );
+    expect(STEWARD_RECORDS_CHAPTER.excluded).toEqual([]);
+  });
+
+  test("identifies each value by its kind and name alone", () => {
+    const identities = values.map((v) => JSON.stringify([v.kind, v.name]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("carries the registry's meaning and version, each field's kind and type, and each bound's value", () => {
+    expect(values.find((v) => v.kind === "registry")).toMatchObject({
+      meaning: kept?.meaning,
+      version: kept?.version,
+    });
+    for (const f of own)
+      expect(
+        values.find(
+          (v) => v.kind === "field" && v.name === `${f.kind}.${f.field}`,
+        ),
+      ).toMatchObject({ record: f.kind, type: f.type });
+    for (const [name, limit] of limits)
+      expect(
+        values.find((v) => v.kind === "limit" && v.name === name)?.limit,
+      ).toBe(limit.value);
+  });
+
+  test("shows each table's entries in its own section", () => {
+    const [registry, kindSection, fieldSection, causeSection, limitSection] =
+      STEWARD_RECORDS_CHAPTER.sections.map((s) => s.render());
+    const missing = (text: string | undefined, rows: readonly string[]) =>
+      rows.filter((r) => !(text ?? "").includes(`\n${r}`));
+    expect(missing(registry, ["| `dispatch-steward-record` |"])).toEqual([]);
+    expect(
+      missing(
+        kindSection,
+        kinds.map((k) => `| \`${k}\` |`),
+      ),
+    ).toEqual([]);
+    expect(
+      missing(fieldSection, [
+        ...common.map((f) => `| every kind | \`${f}\` |`),
+        ...own.map((f) => `| \`${f.kind}\` | \`${f.field}\` |`),
+      ]),
+    ).toEqual([]);
+    expect(
+      missing(
+        causeSection,
+        causes.map((c) => `| \`${c}\` |`),
+      ),
+    ).toEqual([]);
+    expect(
+      missing(
+        limitSection,
+        limits.map(([name, l]) => `| \`${name}\` | ${l.value} |`),
+      ),
+    ).toEqual([]);
+  });
+
+  test("takes the steward's registry kind, which no other chapter takes", () => {
+    const entry =
+      "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-steward-record";
+    expect(STEWARD_RECORDS_CHAPTER.takes()).toContain(entry);
+    for (const chapter of CHAPTERS)
+      if (chapter.id !== STEWARD_RECORDS_CHAPTER.id)
+        expect(chapter.takes()).not.toContain(entry);
   });
 });

@@ -1,6 +1,7 @@
 /** The ledger's JSON fields, shared by its reader and the stable marker schema. */
 import { type Infer, s } from "../../../../../shared/shapes.ts";
 import { AUTONOMY_LEVELS } from "../../../../../shared/autonomy-values.ts";
+import { ANSWER_FORM_NAMES } from "../../../../../shared/decisions/decision-values.ts";
 
 import {
   TAKEOVER_VERDICTS,
@@ -170,7 +171,7 @@ const ruling = s.union([
 const choice = s.object({
   option: text,
   recommended: s.boolean(),
-  form: s.enum(["approve", "choose"]),
+  form: s.enum(ANSWER_FORM_NAMES),
   digest: s.optional(digest),
   note: s.optional(text),
 });

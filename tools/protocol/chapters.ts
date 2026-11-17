@@ -18,9 +18,11 @@ import { DRIVE_EXITS } from "./chapters/drive-exits.ts";
 import { FOLLOWUP_CLAIM_CHAPTER } from "./chapters/followup-claim.ts";
 import { FORGE_CLAIMS_CHAPTER } from "./chapters/forge-claims.ts";
 import { MAILBOX } from "./chapters/mailbox.ts";
+import { NEEDS_AND_ANSWERS } from "./chapters/needs-and-answers.ts";
 import { PR_LABELS } from "./chapters/pr-labels.ts";
 import { REPO_COMMANDS_CHAPTER } from "./chapters/repo-commands.ts";
 import { RULE_MATCHERS_CHAPTER } from "./chapters/rule-matchers.ts";
+import { STEWARD_RECORDS_CHAPTER } from "./chapters/steward-records.ts";
 import { TRACKER_FACETS } from "./chapters/tracker-facets.ts";
 
 export const CHAPTERS: readonly Chapter[] = [
@@ -34,6 +36,8 @@ export const CHAPTERS: readonly Chapter[] = [
   ADDRESSES,
   FORGE_CLAIMS_CHAPTER,
   TRACKER_FACETS,
+  NEEDS_AND_ANSWERS,
+  STEWARD_RECORDS_CHAPTER,
 ];
 
 export const WITHDRAWN: readonly Withdrawn[] = [];

@@ -1,16 +1,26 @@
 /** The portable JSON contract for a decision waiting for a person. */
 import { type Call, type Option, optionDetails } from "./model.ts";
-import { Checker, type Json, type SourcedClaim } from "./source.ts";
+import { Checker, type SourcedClaim } from "./source.ts";
 import { normalizeAnswerText } from "./answer-normalize.ts";
 import { redact } from "../redact.ts";
 import { ANSWER_TEXT_MAX } from "./answer-limits.ts";
 import { answerTextFault } from "./answer-text.ts";
+import { DECISION_LIMITS, PARKED_DECISION_SCHEMA } from "./decision-values.ts";
+import {
+  fieldLists,
+  PARKED_CALL_FIELDS,
+  PARKED_DECISION_FIELD_SHAPES,
+  PARKED_DECISION_SHAPE,
+  PARKED_INTERPLAY_FIELDS,
+  PARKED_OPTION_FIELDS,
+} from "./park-shape.ts";
+import { matches } from "../shapes.ts";
 
 export interface ParkedOption extends Option {
   reversible?: boolean;
 }
 export interface ParkedDecision {
-  schema: "parked-decision/v1";
+  schema: typeof PARKED_DECISION_SCHEMA;
   class: string;
   call: Call<ParkedOption> & {
     question: string;
@@ -24,7 +34,14 @@ export interface ParkedDecision {
   sheet?: string;
 }
 
-export const DECISION_BYTE_LIMIT = 8192;
+export const DECISION_BYTE_LIMIT = DECISION_LIMITS["decision-bytes"].value;
+
+const [DECISION_REQUIRED, DECISION_OPTIONAL] = fieldLists(
+  PARKED_DECISION_FIELD_SHAPES,
+);
+const [CALL_REQUIRED, CALL_OPTIONAL] = fieldLists(PARKED_CALL_FIELDS);
+const [OPTION_REQUIRED, OPTION_OPTIONAL] = fieldLists(PARKED_OPTION_FIELDS);
+const [INTERPLAY_FIELDS] = fieldLists(PARKED_INTERPLAY_FIELDS);
 
 /** Strict authoring check; stored readers deliberately tolerate added fields. */
 export function checkParkedDecision(
@@ -32,17 +49,10 @@ export function checkParkedDecision(
   parkClass: string,
 ): string[] {
   const c = new Checker();
-  if (
-    !c.object(
-      value,
-      "$",
-      ["schema", "class", "call", "steps", "alreadyDone"],
-      ["facts", "interplay", "sheet"],
-    )
-  )
+  if (!c.object(value, "$", DECISION_REQUIRED, DECISION_OPTIONAL))
     return c.problems;
-  if (value.schema !== "parked-decision/v1")
-    c.fail("$.schema", "must be parked-decision/v1");
+  if (value.schema !== PARKED_DECISION_SCHEMA)
+    c.fail("$.schema", `must be ${PARKED_DECISION_SCHEMA}`);
   if (value.class !== parkClass) c.fail("$.class", "must match --class");
   c.text(value.alreadyDone, "$.alreadyDone");
   c.texts(value.steps, "$.steps", 0);
@@ -51,9 +61,8 @@ export function checkParkedDecision(
   if ("interplay" in value && c.array(value.interplay, "$.interplay", 0))
     value.interplay.forEach((entry, i) => {
       const p = `$.interplay[${i}]`;
-      if (c.object(entry, p, ["from", "to", "text"], []))
-        for (const key of ["from", "to", "text"])
-          c.text(entry[key], `${p}.${key}`);
+      if (c.object(entry, p, INTERPLAY_FIELDS, []))
+        for (const key of INTERPLAY_FIELDS) c.text(entry[key], `${p}.${key}`);
     });
   checkCall(c, value.call);
   return c.problems;
@@ -61,15 +70,7 @@ export function checkParkedDecision(
 
 /** The call carries the rules shared by every author of a park. */
 function checkCall(c: Checker, call: unknown): void {
-  if (
-    !c.object(
-      call,
-      "$.call",
-      ["id", "question", "options", "recommended", "why"],
-      [],
-    )
-  )
-    return;
+  if (!c.object(call, "$.call", CALL_REQUIRED, CALL_OPTIONAL)) return;
   c.uniqueIds([call], "$.call");
   if (
     c.text(call.question, "$.call.question") &&
@@ -126,15 +127,7 @@ function checkOption(
   names: string[],
 ): void {
   const p = `$.call.options[${i}]`;
-  if (
-    !c.object(
-      option,
-      p,
-      ["id", "name", "summary", "pay"],
-      ["tag", "keep", "rightWhen", "obligation", "reversible"],
-    )
-  )
-    return;
+  if (!c.object(option, p, OPTION_REQUIRED, OPTION_OPTIONAL)) return;
   if (c.text(option.name, `${p}.name`)) {
     names.push(option.name);
     checkOptionName(c, p, option.name);
@@ -148,59 +141,13 @@ function checkOption(
     c.fail(`${p}.reversible`, "must be a boolean");
 }
 
-/** Known stored fields are checked without rejecting fields added later. */
-function object(value: unknown): value is Json {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function textFields(value: unknown, keys: string[]): value is Json {
-  return object(value) && keys.every((key) => typeof value[key] === "string");
-}
-function texts(value: unknown): boolean {
-  return Array.isArray(value) && value.every((v) => typeof v === "string");
-}
-function optionalTexts(value: Json, keys: string[]): boolean {
-  return keys.every(
-    (key) => value[key] === undefined || typeof value[key] === "string",
-  );
-}
-function optionalArray(
-  value: unknown,
-  accepts: (entry: unknown) => boolean,
-): boolean {
-  return value === undefined || (Array.isArray(value) && value.every(accepts));
-}
-function storedOption(value: unknown): boolean {
-  if (!textFields(value, ["id", "name", "summary"])) return false;
-  return (
-    texts(value.pay) &&
-    (value.keep === undefined || texts(value.keep)) &&
-    optionalTexts(value, ["tag", "rightWhen", "obligation"]) &&
-    (value.reversible === undefined || typeof value.reversible === "boolean")
-  );
-}
-function storedCall(value: unknown): boolean {
-  return (
-    textFields(value, ["id", "question", "recommended", "why"]) &&
-    Array.isArray(value.options) &&
-    value.options.every(storedOption)
-  );
-}
-
-/** Structural read check permits unknown fields and redacted identifiers. */
+/**
+ * The stored reader: whether `value` fits the decision record's shape
+ * (`park-shape.ts`). It tolerates fields added later and checks no text's
+ * content, since a stored record may be redacted.
+ */
 export function isParkedDecision(value: unknown): value is ParkedDecision {
-  if (!textFields(value, ["class", "alreadyDone"])) return false;
-  return (
-    value.schema === "parked-decision/v1" &&
-    storedCall(value.call) &&
-    texts(value.steps) &&
-    optionalTexts(value, ["sheet"]) &&
-    optionalArray(value.facts, (entry) =>
-      textFields(entry, ["text", "source"]),
-    ) &&
-    optionalArray(value.interplay, (entry) =>
-      textFields(entry, ["from", "to", "text"]),
-    )
-  );
+  return matches(PARKED_DECISION_SHAPE, value);
 }
 
 /** Human-readable rendering from fields, never a parser's interpretation of prose. */

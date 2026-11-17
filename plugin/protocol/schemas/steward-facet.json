@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/steward-records/v1/schemas/steward-facet.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "facet"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "facet": {
+          "const": "priority"
+        },
+        "value": {
+          "enum": [1, 2, 3, 4]
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        }
+      },
+      "required": ["kind", "target", "facet", "value", "reason"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "facet"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "facet": {
+          "enum": ["type", "size"]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,100}$",
+          "maxLength": 100
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        }
+      },
+      "required": ["kind", "target", "facet", "value", "reason"],
+      "additionalProperties": false
+    }
+  ]
+}

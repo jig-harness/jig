@@ -253,6 +253,10 @@ per issue in the design's order:
   rescue branch (`rescue_unpushed`).
 - **Follow-ups.** The routine question classes as configuration
   (`dispatch.followup_routine`).
+- **The Protocol.** The causes of a need, the act each asks for and the
+  classes they group into, added to the
+  [needs and structured answers chapter](../plugin/protocol/needs-and-answers.md)
+  once their table settles.
 
 Done when each build-order issue's acceptance holds, staged in tests where
 the case is rare, and on a dispatch host over a week: a drive whose only
@@ -737,8 +741,8 @@ an entry in another lane shows no button.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, the hub for a team on several hosts, the Protocol
-that readers outside the skills can trust, the line in a team's chat, work that
+second team adopt Jig, the hub for a team on several hosts, the line in a
+team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
 measurement. Last come the developer machine and the runs a person owes.
 
@@ -841,41 +845,6 @@ stopping the hub during a tick costs that tick only a note on its receipt.
 From the second stage a stopped hub also suspends the owner duties a host
 cannot do without its lease, the one exception to a host working as it does
 today.
-
-### 53. The Jig Protocol: chapters generated from the code and held to it by a gate
-
-Jig's parts, and programs outside its skills (the dispatch dashboard's page,
-the Orca plugin, the planned hub, a repository's follow-up command, a second
-agent harness), agree on contracts: a drive's end states and exit codes, the
-records Jig writes, the labels and comment markers it reads, the commands a
-repository supplies. Each is defined once in code and restated by hand in
-several documents, which drift wherever no test ties them to the code.
-[design/protocol.md](protocol.md) has how it works and
-[ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md)
-the decision. What it will build: the [Jig Protocol](../GLOSSARY.md), a
-kind of document in `plugin/protocol/`, one chapter per contract, each
-stable or provisional (naming the plan item that still moves it); a
-generator, `tools/protocol/generate.ts`, that writes each chapter's values
-and their meanings from the code's own tables, with a data file per chapter
-and JSON Schemas for the shapes outside readers parse, held to the code by
-its `--check` in the generated-file inventory; the skills' restatements
-turned into links, or kept as held restatements the gate checks; and the
-chapters rendered on the site. Built in steps, one pull request each;
-built so far: the generator, its gate, the chapter on the drive's end
-states and exit codes, and the chapters on the drive mailbox, on the
-pull-request labels, on hidden comment markers, on the commands a
-repository supplies, on the follow-up claim and its result, on rule
-matchers in configuration, and the provisional chapters on addresses and the
-verbs of `jig send`, on forge claims and on tracker facets
-([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
-for the chapters at `/protocol/`.
-Open, in order: the other provisional chapters.
-
-Done when every stable and provisional chapter of the design is generated
-and gated, the site renders the chapters, and the
-documents programs outside the skills are pointed to link to the chapters
-instead of restating them, and a change that makes a chapter disagree with
-the code fails `bun run gates`.
 
 ### 54. The line in a team's chat
 
