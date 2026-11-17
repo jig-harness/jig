@@ -219,7 +219,7 @@ describe("a tick over a world view its caller supplies", () => {
 });
 
 describe("the machine view apart from the world view", () => {
-  it("settles a drive by this host's launch record without writing into the forge's facts", async () => {
+  it("settles a drive by this host's launch record without writing into the forge's or the tracker's facts", async () => {
     const w = world();
     current = w;
     w.setConfig(CONFIG);

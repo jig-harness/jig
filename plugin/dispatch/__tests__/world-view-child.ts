@@ -10,9 +10,10 @@
  *   become what `gate-comments-8.json` holds, where one exists; a second
  *   tick with `--apply` over the replayed facts, whose launch reads the
  *   forge at use.
- * - `frozen`: one tick over the direct view whose forge facts are frozen
- *   when returned, so a write into one is a defect of its repository's
- *   turn; the facts as returned and as they stood after the tick.
+ * - `frozen`: one tick over the direct view whose forge facts and tracker
+ *   fact are frozen when returned, so a write into one is a defect of its
+ *   repository's turn; the forge facts as returned and as they stood after
+ *   the tick.
  */
 import {
   appendFileSync,
@@ -241,6 +242,13 @@ async function main(mode: string | undefined): Promise<ChildResult> {
     let frozen: ForgeRead | null = null;
     const receipt = await tick(false, (direct) => ({
       ...direct,
+      async tracker(request) {
+        const fact = await direct.tracker(request);
+        Object.freeze(fact.value.pickups);
+        if (fact.value.claimed !== null) Object.freeze(fact.value.claimed);
+        Object.freeze(fact.value);
+        return fact;
+      },
       async forge(request) {
         const facts = await direct.forge(request);
         returned = copy(facts.value);

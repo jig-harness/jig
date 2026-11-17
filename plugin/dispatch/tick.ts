@@ -109,7 +109,7 @@ import {
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
-import { boundAt } from "./lib/sources/bounded.ts";
+import { boundAt, heldTo } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
@@ -326,10 +326,19 @@ async function observeAll(
       }
     }),
   );
-  await worldOf(context).gatherQueues(
-    prepared.map(({ opened }) => opened),
-    context,
-  );
+  try {
+    await heldTo(
+      () =>
+        worldOf(context).gatherQueues(
+          prepared.map(({ opened }) => opened),
+          context,
+        ),
+      context.bound,
+    );
+  } catch (error) {
+    // A view that never answered at the tick's deadline leaves each repository to read its own queues.
+    if (context.bound?.signal.aborted !== true) throw error;
+  }
   await Promise.all(
     prepared.map(async (opened) => {
       try {

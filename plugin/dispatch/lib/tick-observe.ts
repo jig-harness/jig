@@ -218,7 +218,7 @@ export async function openRepo(
   const world = worldOf(context);
   let target: TargetOutcome;
   try {
-    target = await world.target(path);
+    target = await heldTo(() => world.target(path), context.bound);
   } catch (error) {
     target = failed("unreadable", failureText(error), error);
   }
@@ -243,7 +243,7 @@ export async function openRepo(
     slug: repo.slug,
   });
   try {
-    config = await world.configuration(path, repo);
+    config = await heldTo(() => world.configuration(path, repo), context.bound);
   } catch (error) {
     return unread(failureText(error));
   }
@@ -353,32 +353,45 @@ export async function observeRepo(
   try {
     [tracked, forge] = await settled(
       timer.time("tracker", async () => {
-        const fact = await world.tracker({
-          values,
-          repo,
-          section,
-          report: trackerReport,
-          where,
-          people: opened.stages.has("pickup")
-            ? (context.options.machine?.serve ?? [])
-            : [],
-          serveDefaults: context.options.machine?.serveDefaults,
-          nowMs,
-          headroom: pickupHeadroom(context, records),
-          records,
-          preparedTracker: opened.tracker,
-        });
-        return fact.value;
+        const fact = await heldTo(
+          () =>
+            world.tracker({
+              values,
+              repo,
+              section,
+              report: trackerReport,
+              where,
+              people: opened.stages.has("pickup")
+                ? (context.options.machine?.serve ?? [])
+                : [],
+              serveDefaults: context.options.machine?.serveDefaults,
+              nowMs,
+              headroom: pickupHeadroom(context, records),
+              records,
+              preparedTracker: opened.tracker,
+            }),
+          context.bound,
+        );
+        // Planning orders the pickups for this host: it gets its own copy, never the view's fact.
+        return {
+          ...fact.value,
+          pickups: [...fact.value.pickups],
+          claimed: fact.value.claimed && [...fact.value.claimed],
+        };
       }),
       timer.time("forge", async () => {
-        const facts = await world.forge({
-          repo,
-          report: forgeReport,
-          section,
-          labels,
-          nowMs,
-          shared: shared.records,
-        });
+        const facts = await heldTo(
+          () =>
+            world.forge({
+              repo,
+              report: forgeReport,
+              section,
+              labels,
+              nowMs,
+              shared: shared.records,
+            }),
+          context.bound,
+        );
         return facts.value;
       }),
     );
