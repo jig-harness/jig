@@ -118,7 +118,7 @@ objective shows it for reporting only. Work in no lane (outside every
 objective and not a bug) stays visible as
 unallocated work after the lanes, and a person may still choose it.
 
-The last four are the **weighted lanes**. Each takes a weight from 0 to 100,
+`bug-other`, `core`, `tactical` and `peripheral` are the **weighted lanes**. Each takes a weight from 0 to 100,
 and a weighted lane's share of the weighted starts is its weight divided by
 the sum of the weights of the weighted lanes in rotation. `bug-other`
 competes with the objective lanes by weight and never jumps ahead of them:
@@ -168,11 +168,11 @@ accounts:
 A missing file or a missing entry means the built-in default. An unreadable
 or invalid file, a weight outside 0 to 100 or an unknown lane name is
 reported in the tick report and fails closed for what it cannot read: an
-invalid lane entry takes that lane out of rotation, and a file that cannot
-be parsed takes every lane out, so a broken file never resumes a lane the
-person paused. The shortlist still lists every Urgent issue. The weights
-read for a start are recorded with its charge, so a changed weight never
-rewrites past starts.
+invalid entry for a recognized lane takes that lane out of rotation, while an
+unknown lane name or a file that cannot be parsed takes every weighted lane
+out. A broken file therefore never resumes a lane the person paused. The
+shortlist still lists every Urgent issue. The weights read for a start are
+recorded with its charge, so a changed weight never rewrites past starts.
 
 ### Computed ranking proposes a shortlist
 
@@ -213,23 +213,26 @@ The shortlist is computed in this order:
 3. Allocate the remaining prospective starts to the weighted lanes, then
    within a lane to its objectives, by weighted fair allocation:
    - For the next start let `N` be the weighted-lane starts already charged
-     in the current UTC week plus tentative starts in this computation, and
-     `n[l]` the same count for lane `l`. A lane's share `share[l]` is its
-     weight over the sum of the weights in rotation; `f` is the
-     `peripheral` lane's share.
-   - Let `D0` be the immutable debt at this week's opening and `P` all
-     peripheral starts this week, tentative ones included. What the
-     peripheral lane is owed for the next start is
-     `owed = D0 + f * (N + 1) - P`. A peripheral start repays the opening
+     in the current UTC week plus tentative starts in this computation. For
+     ordinary fair allocation, let `N[l]` and `n[l]` count only the weighted
+     starts since lane `l` last had no ready work: `N[l]` is every such
+     opportunity and `n[l]` is the starts assigned to `l`. A lane that
+     becomes ready therefore starts with no catch-up entitlement. A lane's
+     share `share[l]` is its weight over the sum of the weights in rotation;
+     `fNext` is the `peripheral` lane's share for the prospective start.
+   - Let `D0` be the immutable debt at this week's opening, `E` the sum of
+     the recorded peripheral shares for this week's earlier weighted charges
+     (including tentative charges), and `P` all peripheral starts this week,
+     tentative ones included. What the peripheral lane is owed for the next
+     start is `owed = D0 + E + fNext - P`. A peripheral start repays the opening
      debt first, so outstanding debt is `max(0, D0 - P)` and credit toward
      this week's floor is `max(0, P - D0)`.
    - When `owed` is at least one whole start, restrict the choice to the
-     ready pools of peripheral allocation owners. The week therefore opens
-     with the lane of the largest deficit (with the default weights, `core`),
-     and peripheral work leads only once it is owed a whole start. If no
-     peripheral work is ready, lend the start and report the unmet floor.
+     ready pools of peripheral allocation owners. If no peripheral work is
+     ready, lend the start and report the unmet floor. Below that threshold,
+     peripheral remains an ordinary ready lane and may win fair allocation.
    - Otherwise choose the ready lane with the largest deficit
-     `share[l] * (N + 1) - n[l]`; ties go to `core`, `tactical`,
+     `share[l] * (N[l] + 1) - n[l]`; ties go to `core`, `tactical`,
      `peripheral`, then `bug-other`.
    - Within `bug-other`, order by tracker Priority (Medium, then Low, then
      none), then tracker scope and canonical key. Within an objective lane,
@@ -264,7 +267,8 @@ historical charges.
 
 At a week boundary, the next week's opening debt is
 `max(0, F - max(0, P - D0))`, where `F` is the completed week's floor
-entitlement (`f * N`) and so also its cap. The first tick of a week writes it once
+entitlement (the sum of each weighted charge's recorded peripheral share) and
+so also its cap. The first tick of a week writes it once
 into the registered `allocation_week` table, keyed by week, with the
 completed week's `N`, `P`, `D0` and `F`; the row is never rewritten. The
 charges are kept for at least two weeks so a tick that missed the boundary
@@ -434,7 +438,7 @@ status, count, action target or relation.
 | Goals as stated | Effective priorities record and lane weights: purpose, end state, owner role, lane, share, the floor owed and rank explanation |
 | Urgent, always tracked | Full normalized Urgent tracker set, start exclusions, claims and last stage event |
 | Epic progress | Tracker child set, approved plan revision, acceptance and stage events; canceled children shown separately |
-| Assigned bugs, by priority | Assigned normalized bug set with tracker Priority, lane (`bug-high` or `bug-other`), and claim and pull-request counterparts |
+| Assigned bugs, by priority | Assigned normalized bug set with tracker Priority, lane (`urgent`, `bug-high` or `bug-other`), and claim and pull-request counterparts |
 | Current activity | Launches, session presence, [drive ledger](../GLOSSARY.md) (the state a pull request's review loop keeps on it), holds, dependency edges and outcome log |
 | Insights | Validated progress-review findings, the epics-in-flight measure and source ages |
 | Follow-up debt | From the tracker snapshot, in weekly buckets over the trailing 8 weeks, each dated: the rate follow-up issues are minted, the share of each week's follow-ups closed, epics closed and follow-up age |
@@ -489,9 +493,10 @@ from the browser, and its decision record,
 These acts take the same path, and
 [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)
 records what they keep from that record and what they amend. Each action is
-one existing write the line reads, sent directly from the browser to the
-[forge](../GLOSSARY.md) (the code host) or tracker as the person, with no
-request to a host. Before sending, a confirmation shows target, action, selected option,
+either an existing write the line reads or a newly registered record with a
+named reader, sent directly from the browser to the [forge](../GLOSSARY.md)
+(the code host) or tracker as the person, with no request to a host. Before
+sending, a confirmation shows target, action, selected option,
 exact payload and expected effect. Refresh the target revision and permission
 before confirming; a changed decision or head invalidates the confirmation.
 A lost response is unknown, not failure: re-read for the request id before

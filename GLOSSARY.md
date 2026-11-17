@@ -2861,9 +2861,9 @@ make, use the entry's term instead.
   picks from it.
   See [the design](design/priorities-and-overview.md).
 - **Priority lane** (lane, in the priorities design) — one kind of work that
-  competes for starts: Urgent issues first, then High-priority bugs, then
-  four weighted lanes (other bugs and the core, tactical and peripheral
-  objectives) that share the remaining starts in proportion to their
+  competes for starts: Urgent issues first, then High-priority bugs, then the
+  weighted lanes (other bugs and the core, tactical and peripheral objectives)
+  that share the remaining starts in proportion to their
   weights. A weight of 0 takes a lane out of rotation. A weight divides
   starts over time and never reserves a slot; how many sessions run at once
   follows the host's load and its accounts' remaining quota. Not the *lane*

@@ -32,10 +32,10 @@ on a phone as on a desktop, over HTTPS or from loopback.
 The [overview design](../../design/priorities-and-overview.md) asks for more
 acts on that path: answers to pickup and follow-up questions, release, hold,
 re-arm (restart a drive) and assign, filing a prepared issue, approving a
-[steward](../../GLOSSARY.md) proposal, and a merge. ADR-0019 says to reopen it
-when a [station](../../GLOSSARY.md) (a stage of the line, such as a pickup or
-a follow-up) other than the drive reads an answer from a comment, which
-these acts do. The dashboard's phone contract
+[steward](../../GLOSSARY.md) proposal, and a merge. ADR-0019 already covers
+answers that a [station](../../GLOSSARY.md) (a stage of the line, such as a
+pickup, follow-up or recovery) reads from a comment. This record extends that
+browser path to the remaining acts and to the new records they need. The dashboard's phone contract
 ([Phone scope and access](../../design/dispatch-dashboard.md#phone-scope-and-access))
 allowed no phone write beyond that answer until a separate phone design
 and proof of presence existed; this record and the overview design are
