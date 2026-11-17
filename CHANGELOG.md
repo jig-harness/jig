@@ -401,6 +401,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.263.0] - 2026-11-17
+
+### Removed
+
+- **Breaking:** `do-item` and `drive-pr` no longer rename the Orca or Herdr workspace they run in as the work moves from implementing to driving to ready. A workspace keeps the name it was created with, or the one a person gives it; where the work stands shows on the Orca board card, the workspace's comment, the pull request and the dispatch dashboard. The `workspace_name` section (`template`, `statuses`) has no effect: a file that still sets it loads as before, and the audit's configuration check notes it once. The `workspace-name.ts` script is gone. **Consumer action:** advised at configuration, instructions. Remove `workspace_name` from `.config/jig.yaml`, and any runbook step that expects a renamed workspace. **Detect:** `config:workspace_name`, `text:workspace-name.ts`.
+
+### Fixed
+
+- Dispatcher epic width limits now cover factory assignments and every parent of nested work. Factory epics start eligible children through an explicit inherited claim, while directly assigned children share the same width reservations as inherited work.
+
 ## [0.262.1] - 2026-11-17
 
 ### Fixed
@@ -9249,7 +9259,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.262.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.263.0...HEAD
+[0.263.0]: https://github.com/jig-harness/jig/compare/v0.262.1...v0.263.0
 [0.262.1]: https://github.com/jig-harness/jig/compare/v0.262.0...v0.262.1
 [0.262.0]: https://github.com/jig-harness/jig/compare/v0.261.1...v0.262.0
 [0.261.1]: https://github.com/jig-harness/jig/compare/v0.261.0...v0.261.1
