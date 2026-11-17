@@ -528,6 +528,24 @@ describe("a batch under the enforced order", () => {
     // A member keeps its own lane; the paused lead's lane is only the reason.
     expect(order.withheld.map((w) => w.lane)).toEqual(["peripheral", "core"]);
   });
+
+  it("reports a withheld member's own classification, a High bug or unallocated work included", () => {
+    const { ranking: out, classes } = ranking({ peripheral: 0 });
+    const { order } = enforcePickupOrder(
+      [batch("#301", ["#301", "#101", "#102"])],
+      out,
+      {
+        ...classes,
+        "#101": { lane: "bug-high", objective: null, owners: {} },
+        "#102": { lane: "unallocated", objective: null, owners: {} },
+      },
+    );
+    expect(order.withheld.map((w) => [w.target, w.lane])).toEqual([
+      ["#301", "peripheral"],
+      ["#101", "bug-high"],
+      ["#102", "unallocated"],
+    ]);
+  });
 });
 
 describe("no lane keeps a start free", () => {

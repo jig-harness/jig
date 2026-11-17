@@ -40,7 +40,11 @@ export interface OrderedStart {
 /** The pickups' start order the ranking set this tick, and the pickups it held back. */
 export interface EnforcedOrder {
   starts: OrderedStart[];
-  withheld: Array<{ target: string; lane: WeightedLane; why: string }>;
+  withheld: Array<{
+    target: string;
+    lane: Lane | "unallocated";
+    why: string;
+  }>;
 }
 
 interface Placed {
@@ -84,9 +88,9 @@ export function enforcePickupOrder(
       ? lane
       : null;
   };
-  const own = (key: string): WeightedLane | null => {
+  const own = (key: string): Lane | "unallocated" | null => {
     const lane = classes[key]?.lane;
-    return lane !== undefined && isWeightedLane(lane) ? lane : null;
+    return lane === undefined || lane === "excluded" ? null : lane;
   };
   const placed: Placed[] = [];
   const withheld: EnforcedOrder["withheld"] = [];
@@ -134,7 +138,7 @@ function withoutPaused(
   action: Action,
   paused: (key: string) => WeightedLane | null,
   withheld: EnforcedOrder["withheld"],
-  own: (key: string) => WeightedLane | null,
+  own: (key: string) => Lane | "unallocated" | null,
 ): Action | null {
   const lead = paused(action.target);
   const batch = batchItemsOf(action.evidence.batchItems);
