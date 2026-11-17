@@ -43,9 +43,11 @@ describe("the queue", () => {
     ]);
   });
 
-  it("names the next free account, rotating from the last launch's", () => {
+  it("names an available account without predicting the weighted choice", () => {
     const [starts] = queueGroups(lineOf("queue"), CLOCK);
-    expect(starts?.note).toBe("Next free account: codex-b.");
+    expect(starts?.note).toBe(
+      "Available account: codex-b. Launch weights determine the next choice.",
+    );
   });
 
   it("says when no account is free", () => {
@@ -57,9 +59,23 @@ describe("the queue", () => {
       },
       CLOCK,
     );
-    expect(starts?.note).toBe(
-      "No account has a free slot and no wall; these wait.",
+    expect(starts?.note).toBe("No account can take a new launch; these wait.");
+  });
+
+  it("reports a wait when every account is paused even with free slots", () => {
+    const line = lineOf("queue");
+    const [starts] = queueGroups(
+      {
+        ...line,
+        accounts: line.accounts.map((account) => ({
+          ...account,
+          held: 0,
+          weight: { configured: 0, effective: 0, reason: "host-local pause" },
+        })),
+      },
+      CLOCK,
     );
+    expect(starts?.note).toBe("No account can take a new launch; these wait.");
   });
 
   it("lists holds longest wait first, with leader, area and wait", () => {

@@ -181,6 +181,13 @@ const ENTRY_FIELDS = {
     samples: listOf(SAMPLE_FIELDS),
   },
   accounts: {
+    weight: (value) =>
+      value === undefined ||
+      hasFields(value, {
+        configured: nullOr(isNumber),
+        effective: isNumber,
+        reason: isString,
+      }),
     name: isString,
     vendor: isString,
     cap: isNumber,

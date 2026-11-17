@@ -2579,7 +2579,8 @@ session runs. Its values are split as configuration always is:
   documented in [CONFIGURATION.md](../plugin/CONFIGURATION.md): the factory
   identity per tracker (`identity`), the states that mean "ready to pick
   up" (`states`), the follow-up command (`followup_command`, `/followup` in
-  Jig; a consumer repository names its own post-merge command),
+  Jig; elsewhere the plugin's `/jig:followup` unless the repository names
+  its own),
   `stalled_after`, `blocked_after`, the expectations
   `drive_rounds_flat`, `pickup_within` and `followup_within`, and the
   dispatch labels (`labels`: `enabled`, `prefix`, `only_labeled`).
@@ -2697,7 +2698,7 @@ One pull request each, in this order; each is usable on its own.
    notification carries its framed decision, or its stored reason
    when it has no decision record, and
    the receipts join its morning report; a consumer repository's
-   follow-up waits on its own post-merge command (item 17).
+   follow-up runs the plugin's `/jig:followup` unless it names its own.
 6. **Control.** The outcome log and its classifier, the expectations and
    stage drift, `jig dispatch dashboard`, the interactive wall record and
    waiting episodes, and the `steer` stage with its one nudge. Usable alone: every stage the dispatcher
