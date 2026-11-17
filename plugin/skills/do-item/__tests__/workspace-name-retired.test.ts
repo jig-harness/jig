@@ -15,17 +15,41 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 
 const PLUGIN = join(import.meta.dir, "..", "..", "..");
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
-// Comments and shell line continuations are dropped first, so what is left is
-// the command's own tokens: `workspace`, then punctuation only (quotes,
-// commas, brackets, a spread), then `rename`. Every quantifier is a single
-// bounded class, so no input backtracks exponentially.
+// Comments are dropped by a scan that keeps string literals whole (a `//` in
+// a URL string is not a comment), and shell line continuations are joined, so
+// what is left is the command's own tokens: `workspace`, then any run of
+// whitespace and punctuation (quotes, commas, brackets, a spread), then
+// `rename`. A quote that never closes only keeps more text, which can add a
+// detection and never hides one.
+function withoutComments(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (c === "/" && next === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      out += " ";
+    } else if (c === "/" && next === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 2;
+      out += " ";
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== c) j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
 const HERDR_RENAME = {
   test: (text: string): boolean =>
-    /\bworkspace\b\W{1,24}\brename\b/.test(
-      text
-        .replace(/\/\*[\s\S]*?\*\//g, " ")
-        .replace(/\/\/[^\n]*/g, " ")
-        .replace(/\\\r?\n/g, " "),
+    /\bworkspace\b\W+rename\b/.test(
+      withoutComments(text).replace(/\\\r?\n/g, " "),
     ),
 };
 const RENAMES = [/--display-name/, HERDR_RENAME];
@@ -45,9 +69,16 @@ test("the Herdr recognizer sees quoting and comment variants", () => {
     "herdr workspace rename w1 name",
     "herdr workspace \\\nrename w1 name",
     'run(["workspace", ...["rename", id, name]])',
+    'const url = "https://example.invalid"; run(["herdr", "workspace", "rename", id, name]);',
+    `run([\n  "workspace",\n${" ".repeat(60)}"rename", id, name])`,
   ])
     expect(HERDR_RENAME.test(text)).toBe(true);
-  for (const text of ['run(["workspace", "list"])', "workspace renamed"])
+  for (const text of [
+    'run(["workspace", "list"])',
+    "workspace renamed",
+    'run(["workspace", /* rename */ "list"])',
+    'run(["workspace", // rename\n"list"])',
+  ])
     expect(HERDR_RENAME.test(text)).toBe(false);
 });
 
