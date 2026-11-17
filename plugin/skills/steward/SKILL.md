@@ -33,24 +33,26 @@ If the digest cannot be read, report its error and end the pass.
 ## Decide what the next tick should do
 
 Write a JSON array of records to a local file. Each record needs a `reason`.
-The allowed shapes are:
+The allowed shapes are below; every field is required and no other is
+allowed. Each kind's fields, values and bounds, and what the tick does with
+it, are in [the steward records chapter](../../protocol/steward-records.md).
 
 | `kind` | Fields beside `kind` and `reason` | Use when |
 | --- | --- | --- |
-| `rearm` | `target` (`PR #N`), `facts`, `class` | The stopped drive's handoff and logs show a transient cause. Copy its digest `evidence.stewardFacts` exactly, and name the recurring cause as `class` |
-| `resume` | `record` (the ended launch id) | A dispatched pickup or follow-up ended on a question outside the repository's human-decision classes and explicitly recommended an option |
+| `rearm` | `target`, `facts`, `class` | The stopped drive's handoff and logs show a transient cause. Name the drive as `target`, `PR #N`; copy its digest `evidence.stewardFacts` exactly as `facts`, and name the recurring cause as `class` |
+| `resume` | `record` | A dispatched pickup or follow-up ended on a question outside the repository's human-decision classes and explicitly recommended an option. `record` is the ended launch id |
 | `need` | `target`, `act`, `ask` | A need in the digest's `needs` (one with no framing) stays a person's: frame one sentence asking for the action. A target in `framed` already carries its decision; leave it, a record for it is refused |
-| `facet` | `target` (issue key), `facet`, `value` | An assigned issue lacks `priority`, `type` or `size`; explain the proposed value from the work's evidence |
-| `order` | `targets` (issue keys, in desired order) | The queue's priority, unblocking, epic order, size and age rules leave these items tied |
-| `cause` | `record` (the launch id of a run in `unreported`), `cause`, `summary` | A run ended without a closing report: say why it fell short and what it had got to, from its excerpt and output |
+| `facet` | `target`, `facet`, `value` | An assigned issue, its key the `target`, lacks `priority`, `type` or `size`; explain the proposed value from the work's evidence |
+| `order` | `targets` | The queue's priority, unblocking, epic order, size and age rules leave these items tied; `targets` lists their issue keys in the desired order |
+| `cause` | `record`, `cause`, `summary` | A run ended without a closing report: `record` is its launch id in `unreported`; say why it fell short and what it had got to, from its excerpt and output |
 
 Submit one `cause` for each run in `unreported`. Its `cause` is one of
 `needs-person`, `refused`, `tool-failed`, `environment`, `scope`, `crashed`
-(the transcript stops mid-work with no error that explains it) or `unknown`
-(the excerpt does not show why, or there is none); its `summary` says, in at
-most 600 characters, what the run had done and where it stopped, with no
-secret, personal data or quoted output. The tick records it as the run's
-closing report, `by: steward`.
+or `unknown`: `crashed` when the transcript stops mid-work with no error
+that explains it, `unknown` when the excerpt does not show why, or there is
+none. Its `summary` says, in at most 600 characters, what the run had done
+and where it stopped, with no secret, personal data or quoted output. The
+tick records it as the run's closing report, `by: steward`.
 
 `act` is one of `Merge`, `Decide`, `Authorize`, `Reply`, `Do` or
 `Investigate`. Preserve the registry-class park's act. Use `Investigate`
