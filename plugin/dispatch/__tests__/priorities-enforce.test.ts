@@ -295,7 +295,7 @@ describe("the host's priorities.enforce setting", () => {
     });
   });
 
-  it("on, lists a withheld pickup as quiet, so the line still shows it", () => {
+  it("on, lists a withheld pickup as quiet in the report", () => {
     const h = host();
     writeWeights(h, "lanes:\n  core: 0\n");
     const r = tick(h, true);
