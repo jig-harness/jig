@@ -44,6 +44,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "noReplay",
       "servedPerson",
       "ancestorEpic",
+      "factoryAncestor",
       "blockingFor",
       "stewardResume",
       "stewardContext",

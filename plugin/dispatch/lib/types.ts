@@ -126,6 +126,8 @@ export interface WantedItem {
   pooled?: true;
   servedPerson?: string;
   ancestorEpic?: string;
+  /** Factory-assigned epic whose authority an unassigned child inherits. */
+  factoryAncestor?: string;
   /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
   blockingFor?: string;
   batchAllowed?: boolean;

@@ -809,7 +809,7 @@ dispatcher launched into, found by the dispatched mark on their launch
 records rather than by their names and listed by the night the launch was
 recorded, each with the name it carries now, whether its comment still
 carries the mark, and how its launch went when it did not start, so a
-workspace a session renamed is still there. Last come the plugin upgrades
+workspace a person renamed is still there. Last come the plugin upgrades
 the machine's timers ran over the same time, from the jobs' receipts: each
 that moved the plugin (`0.114.0 -> 0.115.0`) and each that failed, with the
 agent tool's error ([automatic updates](../../README.md#automatic-updates)).
@@ -905,13 +905,7 @@ Where the repository turned on the [`changelog`](../changelog/README.md) skill
 changes what the pull request's change note says updates the note in the same
 round. A repository that did not is never asked for one.
 
-Where the agent runs in Herdr or Orca, the workspace is renamed at the following points: when a session
-arms the drive (the driving stage, `[D]` by default) and after the
-merge-ready announcement (the ready stage, `[R]`). With
-[`workspace_name.template`](../../CONFIGURATION.md#workspace_name) set to
-`""`, or outside Herdr and Orca, nothing is renamed, and a rename that fails only warns.
-
-Where the agent runs in Orca, the workspace is also linked to the pull request
+Where the agent runs in Orca, the workspace is linked to the pull request
 it drove, before the merge-ready announcement: `bun "<skill-dir>/scripts/workspace-pr-link.ts" <PR>`
 reads the workspace's linked pull request and sets it only when it is missing or
 names another one. Run it only in the worktree that drove the pull request. Outside Orca
