@@ -41,7 +41,10 @@ import {
   recordEpochs,
   saveRanking,
 } from "./allocation-store.ts";
-import { readRepositoryRecord, type RecordRead } from "./priorities-read.ts";
+import {
+  readRepositoryRecord,
+  type PrioritiesRecordRead,
+} from "./priorities-read.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { failureText } from "./text.ts";
 import type { RepoReport, Unplaced, WantedItem } from "./types.ts";
@@ -51,7 +54,7 @@ const SHORTLIST_DEPTH = 10;
 
 /** The priorities part of a repository's report. */
 export interface PrioritiesReport {
-  record: Omit<RecordRead, "record" | "complete"> & {
+  record: Omit<PrioritiesRecordRead, "record" | "complete"> & {
     revision: number | null;
   };
   weights: { source: string; problems: string[] };
@@ -80,7 +83,7 @@ export interface PrioritiesTickInput {
 export interface PreparedPriorities {
   report: RepoReport;
   slug: string;
-  read: RecordRead;
+  read: PrioritiesRecordRead;
   trackerComplete: boolean;
   weights: LaneWeights;
   snapshot: TrackerSnapshot;

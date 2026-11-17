@@ -24,7 +24,7 @@ import { currentMs, parseMs } from "../../shared/time.ts";
 const HISTORY = 20;
 const GIT_TIMEOUT_MS = 10_000;
 
-export interface RecordRead {
+export interface PrioritiesRecordRead {
   /** The record allocation uses; `null` when there is none or the newest is blocked. */
   record: PrioritiesRecord | null;
   /** Where it was read from (`origin/main@<sha>`), or that there is none. */
@@ -48,7 +48,7 @@ export function readRepositoryRecord(
   defaultBranch: string,
   nowMs: number,
   deadlineMs?: number,
-): RecordRead {
+): PrioritiesRecordRead {
   const git = (cwd: string, args: string[]) => run(cwd, args, deadlineMs);
   const readAt = (p: string, sha: string) => readAtWith(git, p, sha);
   const ref = `origin/${defaultBranch}`;
