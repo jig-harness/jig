@@ -52,7 +52,7 @@ export interface MergeContext {
   bound?: TickBound | undefined;
   /** A merge proof's transport failure, retained by a tick's tracker record. */
   onFailure?(error: OutboundError): void;
-  /** The observe phase's shared read limit, when merge proofs run in a tick. */
+  /** The limit on merge proofs in flight, when they run in a tick. */
   pool?: Pool | undefined;
 }
 export interface MergeReads {

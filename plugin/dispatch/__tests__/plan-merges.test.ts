@@ -123,6 +123,28 @@ test("direct merge proof predating follow-up activation releases while each laun
   expect(f.counts).toEqual({ search: 2, fact: 1, comments: 2 });
 });
 
+test("a tick merge reader runs each proof chain through its shared pool", async () => {
+  const f = fixture();
+  let runs = 0;
+  const read = planMergeReader(
+    {} as Tracker,
+    {
+      ...context,
+      pool: {
+        run: async <T>(operation: () => Promise<T>) => {
+          runs++;
+          return operation();
+        },
+      },
+    },
+    f.reads,
+  );
+
+  await read(description);
+
+  expect(runs).toBe(1);
+});
+
 test("a later open predecessor pull request holds the next tick despite its earlier merge", async () => {
   const f = fixture();
   expect((await f.reader()(description)).merged).toEqual(["#2>#3"]);

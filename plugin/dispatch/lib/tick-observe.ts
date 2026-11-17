@@ -38,6 +38,7 @@
  * tick still plans on what it read, writes its receipt and lets its locks
  * go in time; the next tick reads the rest.
  */
+import { pool as proofPool } from "./pool.ts";
 import { planMergeReader } from "./sources/plan-merges.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import {
@@ -745,6 +746,10 @@ async function readTracker(
         (values.pull_requests as { issue_link?: unknown } | undefined)
           ?.issue_link !== "none",
       bound,
+      // The enclosing tracker read holds a slot of the tick's pool, which
+      // never lends a second one to the same read: proof chains run through
+      // a pool of their own so they stay bounded without waiting on it.
+      pool: proofPool(),
       onFailure: (error) => mergeFailures.push(error),
     });
     tracked.servedPolicy = {
