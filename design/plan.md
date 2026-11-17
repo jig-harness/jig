@@ -814,39 +814,58 @@ one host only, nobody outside a host learns that it stopped, and a person
 with several machines has a dashboard per machine.
 [design/control-plane.md](control-plane.md) has how it works and
 [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-the decision. What it will build: the hub, `jig hub serve` in
-`plugin/hub/`, one process with one SQLite database that enrolled hosts call
-over HTTPS and that calls no host; enrollment by device grant, with a
+the decision. What it will build: the hub, a portable core that reaches
+storage, request serving, scheduling, outbound calls and observability only
+through small ports, with no subprocess, no Bun- or Node-only module and no
+local file in it, which a gate holds; a process adapter first (`jig hub
+serve` in `plugin/hub/`, Bun with SQLite, also a container image) and a
+Cloudflare adapter second (Workers with Durable Object SQLite or D1, alarms
+and cron triggers); storage through Drizzle, one SQLite-dialect schema for
+both, with a PostgreSQL adapter designed for and built when a team needs
+it; errors as `Outcome` values with a defect boundary per unit of work
+(ADR-0012 kept); an observability port with M11's typed events, wired
+metrics, a health answer and an external heartbeat. Enrolled hosts call it
+over HTTPS and it calls no host; enrollment is by device grant, with a
 credential per host; a host protocol of `hello`, `changes`, `read` with a
-`notOlderThan` bound, `report`, claims with leases and, last, `offers`,
-versioned by named capabilities; one read of the forge and the tracker for
-every enrolled host, polling first with conditional requests, webhooks as
-hints where the hub can receive them, and a budget per credential for every
-bucket it spends; claims with leases in front of the forge and tracker
-claims, which stay the fences, so a silent host's work is granted to
-another host and a pickup is claimed before its session opens; a silent
-host noticed; the owner of each repository named by the hub, under a lease
-of its own; the source feed of every host served to the dispatch
-dashboard, its only way to show several hosts; and offers to a host with
-free slots, ordered by an offer policy declared as data (an ordered list
-of named rankers, a `command` ranker for a team's own strategy, and named
-policies a repository chooses among). No level of use requires it: the skills never call it,
-and a host whose hub does not answer reads and claims by itself. Built in
-stages, one pull request per step: seams in the dispatcher first, each
-worth building alone (one shared records implementation chosen by
-`records.shared`, the world view apart from the machine view, a pickup
-claim, the GraphQL budget gated); then the hub that reads once; then claims
-with leases and the silent host; then one view of every host; then offers,
-once ADR-0016 is approved. Each stage after the seams is planned in detail,
-and built or not, by the person who asked for the hub once the stage before
-it is in use.
+`notOlderThan` bound, `report`, `health`, claims with leases and, last,
+`offers`, versioned by named capabilities. The forge's and the tracker's
+signed webhooks are its main feed (through a GitHub App of its own and
+Linear's signed webhooks), with only `/webhooks/` public, through a tunnel
+on the process adapter; an hourly reconciliation sweep with conditional
+requests corrects what deliveries lost and counts that drift; enrolled
+dispatchers read its world view and nothing else but a fence's read-back,
+and read for themselves when it does not answer; hosts keep their own
+credentials, and the hub hands out none. Then claims with leases in front of
+the forge and tracker claims, which stay the fences, so a silent host's
+work is granted to another host and a pickup is claimed before its session
+opens; a silent host noticed; the owner of each repository named by the
+hub, under a lease of its own; the source feed of every host served to the
+dispatch dashboard, its only way to show several hosts; and offers to a host
+with free slots, ordered by an offer policy declared as data (an ordered
+list of named rankers, a `command` ranker for a team's own strategy on the
+process adapter, and named policies a repository chooses among). No level
+of use requires it: the skills never call it, and a host whose hub does not
+answer reads and claims by itself. Built in waves, one pull request per
+step: seams in the dispatcher first, each worth building alone (one shared
+records implementation chosen by `records.shared`, the world view apart
+from the machine view, a pickup claim, the GraphQL budget gated); then,
+after a red-team critique of the design, the first wave: the portable core
+and its gate, the process adapter and container image, webhook intake with
+signatures, the world view and the sweep, enrollment and reporting, the
+dispatchers reading through the hub, observability, and one dashboard
+across hosts; then the Cloudflare adapter; then claims and owner leases with
+the silent host, once ADR-0016 is approved; the chat bridge inside the hub;
+offers; and the PostgreSQL adapter on demand. Each wave after the first is
+planned in detail, and built or not, by the person who asked for the hub
+once the wave before it is in use.
 
-Done when, for the first stage, two hosts dispatching the same repositories
-through one hub spend together about what one host spends alone, and
-stopping the hub during a tick costs that tick only a note on its receipt.
-From the second stage a stopped hub also suspends the owner duties a host
-cannot do without its lease, the one exception to a host working as it does
-today.
+Done when, for the first wave, two hosts dispatching the same repositories
+through one hub make no forge or tracker reads for the dispatcher but the
+fences' read-backs, a dropped webhook delivery is found by the next sweep
+and counted as drift, and stopping the hub during a tick costs that tick
+only a note on its receipt. From the claims wave a stopped hub also
+suspends the owner duties a host cannot do without its lease, the one
+exception to a host working as it does today.
 
 ### 54. The line in a team's chat
 
