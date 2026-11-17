@@ -1138,7 +1138,7 @@ that table, and no arm widens it.
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`, `operator`, `orchestrate`) detect
+`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`, `operator`, `orchestrate`, `priorities`) detect
 what they need from the repository; set a field only when detection picks
 the wrong thing. `programmatic-execution`, `red-team`, `audit`, `jig` and
 `operator` read no field of their own (`operator` runs `jig ask` and
@@ -1158,6 +1158,12 @@ dispatcher host uses [`dispatch.identity`](#dispatch) and the host's configured
 start procedure. Missing start configuration is a question for the person,
 not an identity or command the session invents. Its
 [procedure](skills/orchestrate/SKILL.md) names the runtime fallbacks.
+
+`priorities` reads no field of `.config/jig.yaml`. It reads the
+repository's `.config/priorities.yaml`, the host's weights file and the
+dispatcher's newest ranking ([Priorities](#priorities)), and asks
+`work-batch`'s eligibility mode, under that skill's own settings, which
+issues may be batched.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
@@ -1861,6 +1867,92 @@ longer sent again within the call, and fails `rate-limited` until its
 exit `5` and its `RATE-LIMITED until <time>` line keep their meaning, and
 a failure that exited `1` before now exits `6` to `11` when a call to the
 tracker caused it.
+
+## Priorities
+
+Two files declare priorities, neither of them in `.config/jig.yaml`: a
+repository's [priorities record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+and the host's [weights file](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
+The dispatcher reads both on every tick and reports the shortlist they give
+beside what it started; in this release they change nothing it starts. The
+[`priorities`](skills/priorities/README.md) skill validates and prepares a
+change to either; the design, with the ranking rules, is
+[design/priorities-and-overview.md](https://github.com/jig-harness/jig/blob/main/design/priorities-and-overview.md).
+
+### The priorities record
+
+`.config/priorities.yaml`, format `priorities/v1`, read from the
+repository's default branch by the owner host's dispatcher. A repository
+needs no other level's record: the site level is the optional hub's and a
+host never requires it.
+
+```yaml
+format: priorities/v1      # optional; when present it must say priorities/v1
+level: repository          # site, repository or individual
+scope: acme/widgets        # what the level covers: the repository's owner/name here
+revision: 3                # a whole number from 1; raise it with every change
+objectives:
+  - id: checkout-flow
+    class: core            # core, tactical or peripheral: the lane its work falls in
+    purpose: Customers can pay without leaving the page
+    endState: The new checkout is the only checkout in production
+    owner: payments maintainers
+    epics:                 # tracker scope plus epic keys or labels
+      - scope: acme/widgets
+        keys: ["#120", "#131"]
+    share: 0.6             # optional: a fraction of the core lane's starts
+  - id: docs-refresh
+    class: peripheral
+    purpose: The guides match the product
+    endState: Every guide was checked against the current release
+    owner: docs maintainers
+    epics:
+      - scope: acme/widgets
+        labels: [docs]
+```
+
+| Field | Value | Meaning |
+| --- | --- | --- |
+| `level`, `scope`, `revision`, `objectives` | required | The envelope. Any other field is refused |
+| `objectives[].id` | a string, unique in the record | The objective's stable name; a claim's charge records it |
+| `objectives[].class` | `core`, `tactical` or `peripheral` | The lane its work falls in |
+| `objectives[].purpose`, `endState`, `owner` | non-empty strings | Why it matters, how anyone can tell it is done, and the role that answers for it (a person only in a host's own record) |
+| `objectives[].epics` | a non-empty list of `{scope, keys, labels}`, each with at least one key or label | The tracker work it covers: those epics and their children, or the issues carrying those labels |
+| `objectives[].refs` | a non-empty list of `{level, scope, id}` | Instead of `epics`: objectives of another level it follows. Exactly one of `epics` and `refs` |
+| `objectives[].share` | a number from 0 to 1 | Optional: its fraction of its lane's starts. Without one it takes an equal part of what the explicit shares leave. A lane's shares above one are refused |
+
+An item's allocation owner is the first objective, in record order, that
+covers it; its other memberships are shown, never counted. A record that
+does not validate blocks objective allocation, and the report shows the
+problem with the last valid revision and its age. There is no slot count:
+`capacityLimit`, `limits` and `peripheralFloor` are refused as unknown
+fields.
+
+### The weights file
+
+`$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml` by default), the
+host's own and never committed. The dispatcher reads it again on every tick,
+so a change takes effect on the next tick with no pull request or restart.
+
+```yaml
+lanes:
+  bug-other: 15
+  core: 50
+  tactical: 25
+  peripheral: 10
+```
+
+| Field | Value | Default | Meaning |
+| --- | --- | --- | --- |
+| `lanes.core`, `lanes.tactical`, `lanes.peripheral`, `lanes.bug-other` | a number from 0 to 100 | 50, 25, 10, 15 | The lane's weight; its share of the weighted starts is its weight over the sum of the weights in rotation. 0 takes the lane out of rotation. The peripheral weight is also a floor owed across the week |
+| `accounts` | | | Each account's weight for its share of new launches (issue #1402). Accepted and not yet read |
+
+`urgent` (every Urgent issue) and `bug-high` (assigned High bugs) have no
+weight: they come first and next and count toward no share, and every Urgent
+issue is listed in every report. A missing file or entry means the default.
+The file fails closed: an entry outside 0 to 100 takes that lane out of
+rotation, and an unknown lane or section, or a file that is not YAML, takes
+every weighted lane out. The tick report names each problem.
 
 ## Complete example
 

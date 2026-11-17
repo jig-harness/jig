@@ -738,6 +738,10 @@ export interface RepoReport {
   board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
   shared?: SharedReport;
+  /** The report-only ranking of declared priorities on the owner host (`tick-priorities.ts`), or why it could not be made; dispatch's selection does not read it. */
+  priorities?:
+    | import("./tick-priorities.ts").PrioritiesReport
+    | { failed: string };
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;

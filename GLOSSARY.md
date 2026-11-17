@@ -2874,12 +2874,14 @@ make, use the entry's term instead.
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
-- **Priorities record** — the proposed versioned declaration of objectives,
-  their purposes, end states, owners, classes and shares at site, repository
-  or individual level. A mechanical ranker reads it with a tracker snapshot
-  and the host's *lane* weights to propose a reproducible shortlist; a person
-  picks from it.
-  See [the design](design/priorities-and-overview.md).
+- **Priorities record** — a versioned declaration (`priorities/v1`) of
+  objectives, their purposes, end states, owners, classes and shares at site,
+  repository or individual level; a repository's is `.config/priorities.yaml`,
+  checked by the `priorities` skill. A mechanical ranker reads it with a
+  tracker snapshot and the host's *lane* weights to propose a reproducible
+  shortlist; a person picks from it.
+  See [the design](design/priorities-and-overview.md) and
+  [the fields](plugin/CONFIGURATION.md#the-priorities-record).
 - **Priority lane** (lane, in the priorities design) — one kind of work that
   competes for starts: Urgent issues first, then High-priority bugs, then the
   weighted lanes (other bugs and the core, tactical and peripheral objectives)
@@ -2914,6 +2916,12 @@ make, use the entry's term instead.
 - **Allocation owner** — the first objective matching an item at a priorities
   level. That objective alone counts the item's start toward its share and the
   *peripheral floor*; other matching objectives show it for reporting only.
+  See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
+- **Allocation charge** — the one record a successful pickup claim leaves of
+  its start, keyed by the claim: its *priority lane*, its *allocation owner*
+  at each level and the lane weights read for it. The week's counters, and so
+  the *peripheral floor*, are derived from the charges; a replayed claim
+  charges nothing more.
   See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).
 - **Progress review** — the proposed scheduled or on-demand pass that reads
   declared objectives, tracker progress and the line's records, and proposes

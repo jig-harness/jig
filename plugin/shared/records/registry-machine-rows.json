@@ -143,6 +143,30 @@
       "dispatch/lib/steward.ts",
       "steward_records",
       "The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply."
+    ],
+    [
+      "dispatch-allocation-charge",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_charge",
+      "One immutable charge per successful pickup claim, keyed by claim id and written in the claim's transaction: its priority lane, its allocation owner at each level, the lane weights read and the peripheral share recorded. A replayed claim counts once. The ranker derives the week's counters from these rows."
+    ],
+    [
+      "dispatch-allocation-week",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_week",
+      "A completed week's allocation counters (N, P, the opening debt D0, the floor entitlement F) and the next week's opening debt, written once by the first tick of the next week and never rewritten."
+    ],
+    [
+      "dispatch-allocation-lane-epoch",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_lane_epoch",
+      "Each weighted lane's transition between having ready work and having none, with the snapshot hash; a lane's latest ready transition this week is its epoch, and the newest row's sequence is the revision the ranker's input hash carries."
+    ],
+    [
+      "dispatch-allocation-ranking",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_ranking",
+      "A repository's newest report-only ranking: the ranker's input and output and each item's lane and owners, replaced by each tick. The claim path charges a claimed item with the lane it read here, and the priorities skill re-ranks its input to show a shortlist diff."
     ]
   ],
   "plainMachine": [

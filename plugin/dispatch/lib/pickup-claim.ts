@@ -7,13 +7,24 @@
  * the item in progress while the pass ran: a served person's item in progress
  * counts as a pickup's only with that evidence (`plan-pickups.ts`).
  *
+ * The same transaction writes the claim's allocation charge
+ * (`allocation-store.ts`), keyed by claim id so a replay counts once, with
+ * the lane the repository's newest ranking gave the item and the lane
+ * weights the host's weights file holds now.
+ *
  * Outside a dispatched pickup it notes nothing: a person's own claim, a
  * drive's pass, a follow-up. The record and the acknowledgement have separate
  * writers, so a tick writing a stale record cannot erase a claim.
  */
 import { launchOf } from "../../shared/launched-session.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  readLaneWeights,
+  weightsFilePath,
+} from "../../shared/priorities/weights.ts";
+import { currentMs } from "../../shared/time.ts";
 import { stateRoot } from "../receipts.ts";
+import { claimId, writeCharge } from "./allocation-store.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { isLaunchRecord, isRecordId, type LaunchRecord } from "./launches.ts";
 import { inTransaction, stateDb } from "./state.ts";
@@ -53,6 +64,16 @@ export function notePickupClaim(
         db.query(
           "INSERT OR IGNORE INTO pickup_claims (launch, item) VALUES (?, ?)",
         ).run(id, key);
+        writeCharge(
+          db,
+          {
+            claimId: claimId(id, key),
+            repo: record.repo,
+            item: key,
+            atMs: currentMs(),
+          },
+          readLaneWeights(weightsFilePath(env)),
+        );
         return null;
       });
     },
