@@ -855,7 +855,7 @@ dispatch dashboard, its only way to show several hosts; and offers to a host
 with free slots, ordered by an offer policy declared as data (an ordered
 list of named rankers, a `command` ranker for a team's own strategy on the
 process adapter, and named policies a repository chooses among). No level
-of use requires it: the skills never call it, and a host whose hub does not
+of use requires it: the skills never call it (bar an enrolled drive's optional watch call), and a host whose hub does not
 answer reads and claims by itself. Built in waves, one pull request per
 step: seams in the dispatcher first, each worth building alone (one shared
 records implementation chosen by `records.shared`, the world view apart

@@ -2600,8 +2600,9 @@ make, use the entry's term instead.
 - **Change feed** — the *hub*'s signal that a target (a pull request, an
   issue) moved: a version per target that only grows, with the kinds of
   fact that changed (a push, checks, reviews, comments, labels, state). A
-  host's dispatcher or drive waits on it from a cursor instead of polling,
-  and reads the forge itself, for what moved, only when it is woken. It
+  host's dispatcher or drive waits on it from a cursor instead of polling;
+  a woken dispatcher reads what moved through the hub, a woken drive from
+  the forge. It
   carries no facts. Not the *source feed*, which serves records to a
   dashboard. See [design/control-plane.md](design/control-plane.md#the-change-feed).
 - **Ed25519** — a public-key signature system. The hub signs its replies with

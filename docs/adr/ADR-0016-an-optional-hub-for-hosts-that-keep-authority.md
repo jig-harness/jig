@@ -45,8 +45,7 @@ person meet these forces:
   run.
 - **Drives poll while they wait.** A drive pass waiting for its checks asks
   the forge about its pull request every 30 seconds, whether or not
-  anything moved: about 160 requests per pull request per day while
-  active.
+  anything moved: about 120 requests per pull request per active hour.
 - **Teams run services in different places**: on a machine they keep, in
   a container, or on a serverless platform, where no process, subprocess
   or local file exists.
@@ -146,7 +145,8 @@ units off the webhook listener's event loop.
   with a drive is re-validated by the hub every 10 minutes the same way,
   its review threads' state included; everything else waits for the
   hourly [reconciliation sweep](../../GLOSSARY.md), at most 75 minutes
-  stale after a lost delivery. GraphQL and Linear have no conditional
+  stale after a lost delivery, except the review-thread state of a pull
+  request no drive holds, which has no bound of its own. GraphQL and Linear have no conditional
   request, so the sweep reads review-thread state only for active targets
   (other pull requests' thread state rests on their webhooks and the
   sweep's conditional REST reads), and reads each served Linear queue's
@@ -157,8 +157,9 @@ units off the webhook listener's event loop.
   the kinds of fact that moved. Dispatchers, and drive passes on an
   enrolled host, wait on it from a cursor, a long poll as the baseline
   with server-sent events and WebSocket connections as options, and read
-  the forge themselves, with their own credentials and conditional
-  requests, only for the kinds that moved. It passes signals, not data;
+  only for the kinds that moved: a dispatcher through the hub's read, a
+  drive pass from the forge with its host's credentials and conditional
+  requests. It passes signals, not data;
   without a hub they poll as they do today. Its value is mainly the
   dispatchers', which use it from the first wave. Drive passes join it
   only if the measurement before the first wave shows drive polling is at
@@ -364,7 +365,8 @@ the sweep and the alarms, and Effect stays declined.
 - One public path, a tunnel or a platform route to keep, and webhook
   secrets to hold and rotate.
 - One organization identity (a GitHub App) with read access to every
-  enrolled repository, its code excluded, and one tracker application,
+  enrolled repository, with no repository contents but the changed code that
+  pull-request diffs and patches expose, and one tracker application,
   kept in one place under an OS user of the hub's own.
 - A person runs the hub: its setup, upgrades before its hosts, daily
   backups of what cannot be rebuilt, yearly rotation of its secrets, and a

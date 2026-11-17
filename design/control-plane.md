@@ -55,8 +55,9 @@ Jig is used at the levels below, and a team stops at whichever suits it:
 
 These rules keep each level whole:
 
-- **No level needs the next.** The skills never talk to the dispatcher or
-  the hub, and the dispatcher never needs the hub. Nothing at the lower
+- **No level needs the next.** The skills never talk to the dispatcher, and
+  never to the hub unless a drive pass on an enrolled host opts into the
+  change feed's watch call; the dispatcher never needs the hub. Nothing at the lower
   levels carries a field, a record or a setting that exists for the hub
   alone; the seams it needs are built for reasons of their own first
   ([Build order](#build-order)).
@@ -803,8 +804,9 @@ hub serves the copies the hosts reported.
 
 ### How fresh each fact is
 
-Every fact belongs to one of three classes, and each class has a stated
-longest time a lost delivery can leave it stale:
+Every fact belongs to one of the classes below. Each has a stated longest
+time a lost delivery can leave it stale, except the last, the review-thread
+state of a pull request no drive holds, which has no bound of its own:
 
 | Class | Which facts | How they are confirmed | Stale for at most |
 | --- | --- | --- | --- |
@@ -836,13 +838,16 @@ instead, and read the forge only when their target moved.
   finds it. Each bump is appended to its repository partition's change
   log under a sequence number.
 - **Signals, not data.** An answer names targets, their new versions and
-  the kinds that moved, and carries none of the facts. A subscriber that
-  is woken reads the forge itself, with its own host's credentials and
-  conditional requests, for the kinds that moved and no others; a
-  subscriber that is not woken makes no forge call. So the hub's rules
-  hold as they are: it holds no person's credential, sessions read and
-  write the forge themselves, and a fact that gates a write is still
-  confirmed on the forge at use.
+  the kinds that moved, and carries none of the facts. A woken dispatcher
+  reads the changed facts through the hub's `read`, as its tick does, and
+  reads the forge only for a fence's read-back and a check at use. A woken
+  drive pass reads its own pull request's facts from the forge, with its
+  host's credentials and conditional requests, for the kinds that moved and
+  no others, as a session's facts never pass through the hub. A subscriber
+  that is not woken makes no forge call. So the hub's rules hold as they
+  are: it holds no person's credential, sessions read and write the forge
+  themselves, the hub stays the enrolled dispatchers' one reader, and a
+  fact that gates a write is still confirmed on the forge at use.
 - **Two forms of subscription.** A host subscribes to its scope, every
   repository and queue its approved scope covers; this is what the
   dispatcher's change probe and tick use, through `changes`. A drive pass
@@ -856,14 +861,18 @@ instead, and read the forge only when their target moved.
   hours). A cursor older than that, minted by a hub with another identity
   key, or naming a partition that was purged, is answered `cursor-expired`
   with a fresh cursor: the subscriber then treats every subscribed target
-  as moved in every kind once, reads them with its conditional requests,
-  nearly all answered "not modified" at no cost against GitHub's hourly
-  limit, and carries on from the fresh cursor. A first call names no
+  as moved in every kind once, reads them (a dispatcher through the hub's
+  `read`, a drive pass from the forge with its conditional requests, nearly
+  all answered "not modified" at no cost against GitHub's hourly limit),
+  and carries on from the fresh cursor. A first call names no
   cursor, and is answered at once with the current one.
 - **A held call, then an answer.** When nothing has moved past the
-  cursor, the hub holds the call until something does, for at most 55
-  seconds, under the proxies' and tunnels' usual 60, then answers with no
-  change and the same cursor. A host holds at most one call for its scope
+  cursor, the hub holds the call until something does, for the hold the
+  call asks (at most 55 seconds, under the proxies' and tunnels' usual 60),
+  then answers with no change and the same cursor. A scope subscription
+  asks 55 seconds and has a 60-second deadline of its own, outside the
+  tick's total budget. A drive pass's subscription asks 20 seconds and has
+  a 25-second deadline, inside its 30-second poll interval. A host holds at most one call for its scope
   and one per running drive pass, 32 in all. A lost answer costs a
   wake-up: the subscriber calls again with the cursor it had. The watch
   credential is a deliberately narrow capability, not an OS-user boundary:
@@ -891,16 +900,17 @@ instead, and read the forge only when their target moved.
   they do today, made cheaper by the drive's conditional reads
   ([#1323](https://github.com/jig-harness/jig/issues/1323),
   [#1432](https://github.com/jig-harness/jig/pull/1432)). A drive pass
-  waits on the feed with the deadline its poll had and polls once when the
-  call fails, so a hub that stops costs a drive one interval.
+  waits on the feed with its own 25-second deadline and polls the forge once
+  when the call fails, so a hub that stops costs a drive less than one poll
+  interval.
 
 **What it saves.** Its value is mainly the dispatchers'. Each host's
 change probe asks the forge and the tracker about every repository and
 queue it serves once a minute, and every host asks again; on the feed, a
 host holds one call for its whole scope and reads only where a target
 moved. A drive pass gains less: polling every 30 seconds while it waits,
-the default the drive's status loop uses, it makes about 160 forge
-requests per pull request per day while active (once conditional reads
+the default the drive's status loop uses, it makes about 120 forge
+requests per pull request per active hour (once conditional reads
 land most are answered "not modified" and spend no hourly limit, yet each
 is a call with its latency); woken by the feed it would make a few dozen,
 the reads of the kinds that moved per push, per check suite that ends and
@@ -1008,8 +1018,8 @@ number of hosts:
   checks at use, which conditional requests answer "not modified" for
   free when nothing changed.
 - **Tracked:** change-to-host latency, the share of reads served from the
-  hub's copy, and drive passes' forge requests per pull request per day,
-  about 160 while active when they poll and a few dozen if they wait on
+  hub's copy, and drive passes' forge requests per pull request per active hour,
+  about 120 per active hour when they poll and a few dozen if they wait on
   the change feed ([The change feed](#the-change-feed)).
 
 The change feed's saving is counted on the hosts' ledgers, apart from the
@@ -1127,11 +1137,16 @@ damage, and a notice carries a key so a second is dropped.
 While the hub is unreachable a host does only the effects that are safe
 to repeat, such as reading, and does none of the rest until it reaches
 the hub again, or until a person takes the repository off the hub:
-`jig hub release-owner <repository>`, run where the hub runs, revokes the
-owner lease and refuses to name another owner for that repository, and
-only then does the person name the owner in a machine file. Run with the
-hub down, the person waits out one lease and its drain margin (6 minutes)
-since the hub last answered before editing the machine file. A
+`jig hub release-owner <repository>`, run where the hub runs, first
+records a durable disable in the hub's store (the hub then names no owner
+for that repository, now or after a restart, and refuses to), then revokes
+the lease and waits one drain margin, so an effect begun under the lease
+has finished; it reports done only after that. Only then does the person
+name the owner in a machine file. With the hub down, the person stops it
+first if it still runs, runs the command against its store, which records
+the disable the same way, waits out one lease and its drain margin (6
+minutes) since the hub last answered, and only then edits the machine
+file; the hub is not started again until the disable is recorded. A
 machine-file edit alone never transfers an owner duty while the hub may
 still name an owner. This is the one exception to "works
 as it does today": it is stated in the levels above, in ADR-0016's
@@ -1282,7 +1297,7 @@ for a team without a private network, is left out until a team needs it.
 
 | Part of Jig | Without a hub | With a hub |
 | --- | --- | --- |
-| `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub |
+| `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub, except an enrolled host's drive pass making the optional watch call below |
 | The dispatcher's tick | Reads the forge and the tracker itself | Reads only the hub's world view, bar a fence's read-back; asks it before each claim; reports its records; falls back to reading itself |
 | The change probe | Asks the forge and the tracker once a minute | Waits on the hub's change feed, which the events move |
 | A drive pass waiting for checks | Polls its pull request every 30 seconds | Polls as without a hub, or, where the measurement showed drive polling matters, waits on the change feed and reads only the kinds that moved |
