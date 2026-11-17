@@ -1002,8 +1002,8 @@ session's terminal tab reads `jig dispatch · <stage> <key>`, and closes
 when its run ends with nothing for a person: a drive's exit that is not a
 park or a failure, a session that recorded `done`. A run that needs a
 person keeps its tab, and the next launch for the same pull request or item
-closes an earlier one of its own that is idle. A session may
-rename its workspace to what the work became; the mark outlives the name,
+closes an earlier one of its own that is idle. No skill renames the
+workspace after that, though a person may; the mark outlives the name,
 since the launch record keeps it too and a notification that rewrites the
 comment keeps it, and the morning report (`drives.ts --report`) lists the
 workspaces the dispatcher launched into by the mark on their launch records,

@@ -231,9 +231,9 @@ is best-effort: a restored session, a hook that fails and a plugin that
 is down are not covered. Orca's status bar shows how many questions wait on a
 person, and how many pull requests are ready to merge once the plugin's
 line carries them. A panel lists
-what waits on that person, who answers a parked question there. Next,
-the guard will tell apart repositories that share a worktree folder, and
-a worktree recreated at the same path. A person will pick a parked
+what waits on that person, who answers a parked question there. The guard
+tells apart repositories that share a worktree folder, and worktrees
+recreated at the same path. Next, a person will pick a parked
 decision's answer in the panel as on the dashboard, and merge a pull
 request that is ready to merge with one click. A command will open the
 dashboard in Orca's own browser for the board and each piece of work.

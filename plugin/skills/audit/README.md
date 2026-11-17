@@ -21,7 +21,7 @@ added since, and it does not repeat a recommendation the team declined.
 1. **Configuration fit** (a script). Checks the repository's
    `.config/jig.yaml` against the plugin's
    [configuration schema](config-schema.yaml) and against the repository:
-   unknown, refused or deprecated fields, wrong types, commands and paths that
+   unknown, refused, retired or deprecated fields, wrong types, commands and paths that
    do not exist, required checks that never run, a tracker that cannot be
    reached, configured GitHub, Jira or Linear facet stores that cannot be used
    (on Jira, a facet's field missing from the create screen of an issue type

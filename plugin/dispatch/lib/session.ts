@@ -168,6 +168,7 @@ function pickupPrompt(
     | "vendor"
     | "servedPerson"
     | "ancestorEpic"
+    | "factoryAncestor"
     | "blockingFor"
     | "batchItems"
   >,
@@ -214,6 +215,7 @@ function pickupPassPrompt(
     | "vendor"
     | "servedPerson"
     | "ancestorEpic"
+    | "factoryAncestor"
     | "blockingFor"
     | "batchItems"
     | "stewardResume"
@@ -247,6 +249,12 @@ function pickupPassPrompt(
             : []),
         ]),
     ROUTE_RULES_LINE,
+    ...(record.factoryAncestor === undefined ||
+    record.stewardResume !== undefined
+      ? []
+      : [
+          `Claim this factory-inherited assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --factory-ancestor ${shellQuote(record.factoryAncestor)}; validate the factory ancestor and assign the child to the credential identity. A refusal stops the pickup.`,
+        ]),
     ...(record.servedPerson === undefined || record.stewardResume !== undefined
       ? []
       : [

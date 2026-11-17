@@ -94,6 +94,7 @@ export async function changed(
     pooled?: boolean;
     servedPerson?: string;
     ancestorEpic?: string;
+    factoryAncestor?: string;
     blockingFor?: string;
   },
 ): Promise<{ issue: PoolIssue } | { why: string }> {
@@ -105,6 +106,7 @@ export async function changed(
           key,
           ctx.servedPolicy,
           served?.pooled,
+          served?.factoryAncestor,
         )
       : await freshServedPickup(
           ctx.tracker,
@@ -282,13 +284,16 @@ function servedEvidence(action: Action): {
   pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
+  factoryAncestor?: string;
   blockingFor?: string;
 } {
-  const { ancestorEpic, blockingFor, servedPerson, pooled } = action.evidence;
+  const { ancestorEpic, factoryAncestor, blockingFor, servedPerson, pooled } =
+    action.evidence;
   return {
     ...(pooled === true ? { pooled: true } : {}),
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
     ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
+    ...(typeof factoryAncestor === "string" ? { factoryAncestor } : {}),
     ...(typeof blockingFor === "string" ? { blockingFor } : {}),
   };
 }
@@ -362,6 +367,7 @@ async function retryPending(
             item,
             ctx.servedPolicy,
             record.pooled,
+            record.factoryAncestor,
           )
         : await freshServedPickup(
             ctx.tracker,

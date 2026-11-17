@@ -1321,29 +1321,9 @@ could forge or forget.
    - still running → armed. Go on to step 6 and report; poll only after
      that report, and only if keeping a Codex host session alive is
      required for the command to continue (below).
-6. **Name the workspace, report and stop.** When step 4 found the drive
-   `armed`, or step 5 found it still running (not refused, failed or already
-   finished), name the workspace for the driving stage, in `<tree>`, with the
-   item the PR serves as in
-   [§ Announcing merge-readiness](#announcing-merge-readiness) (a PR that
-   serves none or several leaves out `--id` and `--title-file`). Run it
-   without the variables step 2's `env.unset` names, as the arm command is,
-   so it reads the destination repository's template. It does
-   nothing when `workspace_name.template` is `""` or outside Herdr and Orca, and a failed
-   rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
-   file exits `2`, and a configuration file that cannot be parsed exits `1`:
-
-   ```bash
-   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file "<tree git dir>/workspace-title.md" --pr <PR>
-   ```
-
-   A drive armed on an existing PR has no title file yet, so before the
-   command read the served item's title with step 3's `get_issue.ts` and
-   write it alone to `workspace-title.md` in `<tree git dir>`, the output of
-   `bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, with the file editor; the
-   file lives outside the worktree so it cannot leave untracked state in a
-   repository that does not ignore `.context/`. The command exits `2` on a
-   missing file. Then report. State: armed, the
+6. **Report and stop.** When step 4 found the drive `armed`, or step 5
+   found it still running (not refused, failed or already finished), report.
+   State: armed, the
    PR, the tree it drives from, where it runs (the tab's title, or the
    background task's handle), the pass model (`model`), the permission mode (`permissionMode`), the verified
    driver-log path (`drive.log` when the script found the drive listed, else
@@ -3890,21 +3870,6 @@ or `1` when the forge's facts did not read). And it waits (exit `4`) until
 each reviewer `review.draft_skipping_reviewers` names has a check run on the
 head that started after the pull request was last marked Ready, so it never
 vouches for a head such a reviewer has not looked at since.
-
-**judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
-announcement or found one already posted, name the workspace for the ready stage
-(it does nothing when `workspace_name.template` is `""` or outside Herdr and Orca, and a failed rename only warns and exits `0`, while a
-malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
-the PR serves (run [Arm](#arm) step 3's `get_issue.ts` lookup in this pass, since a driver pass is headless and one-shot); write its title alone to
-`workspace-title.md` in the worktree's git directory (the output of
-`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, outside the worktree, so the clean-tree
-check above is not tripped) with the file editor and pass the file, never
-the title inside the command, and quote the key. For a PR that serves no item,
-or more than one, leave out `--id` and `--title-file`:
-
-```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file "<git dir>/workspace-title.md" --pr <PR>
-```
 
 ## Deadlines
 

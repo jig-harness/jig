@@ -657,6 +657,18 @@ describe("Jira adapter: assignments", () => {
     assignee = FACTORY,
   ) =>
     routes({
+      "GET issueLinkType": {
+        issueLinkTypes: [
+          { name: "Blocks", inward: "is blocked by", outward: "blocks" },
+          { name: "Relates", inward: "relates to", outward: "relates to" },
+          {
+            name: "Duplicate",
+            inward: "is duplicated by",
+            outward: "duplicates",
+          },
+          { name: "Cloners", inward: "is cloned by", outward: "clones" },
+        ],
+      },
       "GET user/search": [
         {
           accountId: FACTORY.accountId,
@@ -674,7 +686,7 @@ describe("Jira adapter: assignments", () => {
           ? FACTORY
           : new JiraApiError("404", { status: 404 }),
       "POST search/jql": byJql(
-        [/parent in/, page()],
+        [/parent (?:in|=)/, page()],
         [
           /assignee = /,
           page(

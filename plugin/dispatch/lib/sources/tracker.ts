@@ -1,3 +1,4 @@
+import { factoryWalkView } from "./factory-walk-view.ts";
 /**
  * The pickups the tracker wants: the items assigned to the repository's
  * factory identity (`dispatch.identity`) in a dispatch state
@@ -40,6 +41,7 @@ import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
 import { limitedRow } from "./served-failures.ts";
 import {
   readServedPickups,
+  freshServedPickup,
   type ServedPolicy,
   type ServedOptions,
 } from "./served.ts";
@@ -87,6 +89,9 @@ import type {
 import { currentMs } from "../../../shared/time.ts";
 
 export interface TrackerReading {
+  /** Full started epic rows retained from the existing claimed read. */
+  epicRoots?: PoolIssue[];
+  factoryView?: ServedView;
   read: RecordRead;
   wanted: WantedItem[];
   unplaced: Unplaced[];
@@ -106,7 +111,7 @@ async function readClaimed(
   tracker: Tracker,
   identity: string,
   tick?: FacetBound,
-): Promise<ClaimedItem[] | Unplaced> {
+): Promise<Array<ClaimedItem & { queueIssue: PoolIssue }> | Unplaced> {
   const unread = (why: string, cut?: ReadFailure): Unplaced => ({
     target: `items in ${workingNames(tracker)}`,
     record: "tracker",
@@ -133,6 +138,7 @@ async function readClaimed(
       )
       .map((i) => ({
         key: i.identifier,
+        queueIssue: i,
         title: i.title,
         url: i.url,
         state: i.state.name,
@@ -184,8 +190,10 @@ async function byTrustedAssigner(
   wanted: WantedItem[];
   unplaced: Unplaced[];
   limited?: TrackerRateLimited;
+  assigners: Map<string, AssignedBy>;
 }> {
   const wanted: WantedItem[] = [];
+  const assigners = new Map<string, AssignedBy>();
   const unplaced: Unplaced[] = [];
   for (const issue of issues) {
     if (view === undefined && ended(tick)) {
@@ -202,14 +210,15 @@ async function byTrustedAssigner(
     }
     const read = await readAssigner(tracker, issue, identity, view, tick);
     if ("limited" in read)
-      return { wanted: [], unplaced, limited: read.limited };
+      return { wanted: [], unplaced, limited: read.limited, assigners };
     if ("unplaced" in read) {
       unplaced.push(read.unplaced);
       continue;
     }
+    assigners.set(issue.identifier, read.by);
     wanted.push(read.wanted);
   }
-  return { wanted, unplaced };
+  return { wanted, unplaced, assigners };
 }
 
 type AssignedBy = Awaited<ReturnType<Tracker["assignedBy"]>>;
@@ -268,7 +277,7 @@ async function readAssigner(
   view?: ServedView,
   tick?: FacetBound,
 ): Promise<
-  | { wanted: WantedItem }
+  | { wanted: WantedItem; by: AssignedBy }
   | { unplaced: Unplaced }
   | { limited: TrackerRateLimited }
 > {
@@ -288,6 +297,7 @@ async function readAssigner(
     };
   }
   return {
+    by,
     wanted: {
       key: issue.identifier,
       title: issue.title,
@@ -295,6 +305,7 @@ async function readAssigner(
       state: issue.state.name,
       assignee: issue.assignee?.name ?? identity,
       assignedBy: by.name,
+      queueIssue: issue,
       ...(issue.updatedAt === undefined ? {} : { updatedAt: issue.updatedAt }),
     },
   };
@@ -317,9 +328,10 @@ async function trustedAndClaimed(
       wanted: WantedItem[];
       unplaced: Unplaced[];
       claimed: Awaited<ReturnType<typeof readClaimed>>;
+      assigners: Map<string, AssignedBy>;
     }
 > {
-  const { wanted, unplaced, limited } = await byTrustedAssigner(
+  const { wanted, unplaced, limited, assigners } = await byTrustedAssigner(
     tracker,
     issues,
     identity,
@@ -331,11 +343,13 @@ async function trustedAndClaimed(
     return {
       wanted,
       unplaced,
+      assigners,
       claimed:
         view === undefined
           ? await readClaimed(tracker, identity, tick)
           : view.progress().map((i) => ({
               key: i.identifier,
+              queueIssue: i,
               title: i.title,
               url: i.url,
               state: i.state.name,
@@ -598,10 +612,7 @@ async function readFactoryPickups(
     tick,
   );
   unplaced.push(...claimed.unplaced);
-  const record =
-    stores === undefined || facets === undefined
-      ? undefined
-      : withGaps(stores, issues);
+  const record = factoryFacetRecord(stores, facets, issues);
   return {
     read: {
       record: "tracker",
@@ -612,8 +623,46 @@ async function readFactoryPickups(
     },
     wanted,
     unplaced,
+    epicRoots: epicRootsOf(read.claimed),
+    factoryView:
+      view ??
+      factoryWalkView(
+        tracker,
+        identity,
+        issues,
+        progressRows(read.claimed),
+        read.assigners,
+        tick ?? bound,
+      ),
     claimed: claimed.items,
   };
+}
+
+/** Facet gaps belong to a report only when that read was requested. */
+function factoryFacetRecord(
+  stores: FacetRecord | undefined,
+  facets: PickupBounds | undefined,
+  issues: PoolIssue[],
+): FacetRecord | undefined {
+  return stores === undefined || facets === undefined
+    ? undefined
+    : withGaps(stores, issues);
+}
+
+function progressRows(
+  claimed: Array<ClaimedItem & { queueIssue: PoolIssue }> | Unplaced,
+): PoolIssue[] {
+  return Array.isArray(claimed) ? claimed.map((row) => row.queueIssue) : [];
+}
+
+/** Full epic rows already paid for by the claimed-item read. */
+function epicRootsOf(
+  claimed: Array<ClaimedItem & { queueIssue: PoolIssue }> | Unplaced,
+): PoolIssue[] {
+  if (!Array.isArray(claimed)) return [];
+  return claimed
+    .map((c) => c.queueIssue)
+    .filter((i) => i.isEpic && i.hasOpenChildren);
 }
 
 /**
@@ -648,8 +697,17 @@ export async function freshPickup(
   key: string,
   policy?: ServedPolicy,
   pooled?: boolean,
+  factoryAncestor?: string,
 ): Promise<PoolIssue | string> {
   if (section.identity === null) return "dispatch.identity is no longer set";
+  if (factoryAncestor !== undefined)
+    return freshServedPickup(
+      tracker,
+      key,
+      section.identity,
+      factoryAncestor,
+      policy,
+    );
   // A pool pickup stays one: an assignment since the plan read it must not
   // move it to the assigned lane, whose checks are the assigner's alone.
   if (pooled === true) return freshPoolPickup(tracker, section, key, policy);
@@ -751,17 +809,46 @@ export async function readPickups(
       : await readPool(once, section, served, facets?.bound()),
     once,
   );
-  if (served === undefined || served.people.length === 0) return factory;
-  const extra = await readServedPickups(once(), served.people, {
-    ...servedReadOptions(served),
+  // A failed shared native scope is a wall for every lane. A factory-only
+  // claim failure is not: served identities can still be read independently.
+  if (
+    factory.claimed === null &&
+    once().dispatchSource !== undefined &&
+    factoryReading.factoryView === undefined
+  )
+    return factory;
+  const roots = [
+    ...(factoryReading.epicRoots ?? []),
+    ...factoryReading.wanted.flatMap((i) =>
+      i.queueIssue === undefined ? [] : [i.queueIssue],
+    ),
+  ];
+  if ((served?.people.length ?? 0) === 0 && roots.length === 0) return factory;
+  const extra = await readServedPickups(once(), served?.people ?? [], {
+    ...(served === undefined
+      ? { nowMs: currentMs(), headroom: true }
+      : servedReadOptions(served)),
     epicWidth: section.epicWidth,
+    ...(section.identity === null
+      ? {}
+      : {
+          factory: {
+            identity: section.identity,
+            roots,
+            view: factoryReading.factoryView,
+            eligible: new Set(factoryReading.wanted.map((item) => item.key)),
+          },
+        }),
   });
   const keys = new Set(extra.wanted.map((i) => i.key));
+  const rejected = new Set(extra.unplaced.map((i) => i.target));
   return {
     read: servedRead(factory.read, extra),
     wanted: [
       ...extra.wanted,
-      ...factory.wanted.filter((i) => !keys.has(i.key)),
+      ...factory.wanted.filter(
+        (i) => i.pooled === true && !keys.has(i.key) && !rejected.has(i.key),
+      ),
     ],
     unplaced: onceEach([...factory.unplaced, ...extra.unplaced]),
     // A queue the rate limit stopped part way, or one that failed to read,
