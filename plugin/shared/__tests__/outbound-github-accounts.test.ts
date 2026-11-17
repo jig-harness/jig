@@ -410,6 +410,9 @@ describe("the repository a run addresses", () => {
     expect(
       repoFlag(["api", "https://api.github.com/repos/other-org/two/issues"]),
     ).toBeNull();
+    expect(
+      repoFlag(["gist", "view", "https://gist.github.com/alice/abcdef"]),
+    ).toBeNull();
     expect(repoFlag(["issue", "view", "-w", url])).toBe("other-org/two");
     // A repository-root URL selects the repository too; an owner alone does not.
     expect(repoFlag(["repo", "view", "https://github.com/other-org/two"])).toBe(

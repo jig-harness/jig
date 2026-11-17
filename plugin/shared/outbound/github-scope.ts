@@ -116,7 +116,7 @@ export function repoOfRemote(url: string): string | null {
  * The repository a command line's `-R`/`--repo` names, else the one a
  * positional `https://HOST/OWNER/REPO` (or a page under it, such as
  * `…/pull/N`) argument names;
- * `null` when it names none. The positional arguments are those left when
+ * `null` when it names none (a gist URL is a gist, not a repository). The positional arguments are those left when
  * the flags and their values are skipped, so a URL inside `--body` is
  * content, and a `gh api` URL is a route, never a repository page.
  */
@@ -130,7 +130,9 @@ export function repoFlag(args: readonly string[]): string | null {
       return repoOfName(repoFlagValue(arg, args[i + 1]));
     else if (!arg.startsWith("-")) positional.push(arg);
   }
-  return args[0] === "api" ? null : positionalUrlRepo(positional);
+  return args[0] === "api" || args[0] === "gist"
+    ? null
+    : positionalUrlRepo(positional);
 }
 
 /** Whether `arg` is `-R`, `--repo`, or either with its value attached. */
