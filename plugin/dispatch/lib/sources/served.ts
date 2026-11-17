@@ -1,4 +1,4 @@
-import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
+import type { PlanMergeReader } from "./plan-merges.ts";
 import { anyWorking } from "./served-occupancy.ts";
 import {
   attachAdmissions,
@@ -62,7 +62,12 @@ import {
   unlabeledOutcome,
 } from "./served-repo.ts";
 import { freshAuthority } from "./served-authority.ts";
-import { planKeys, servedPlan, type ServedPlan } from "./served-plan.ts";
+import {
+  childMergeEvidence,
+  planKeys,
+  servedPlan,
+  type ServedPlan,
+} from "./served-plan.ts";
 import type { ServedView, ServedViews } from "./served-reads.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
@@ -496,16 +501,6 @@ async function readChildren(
   return { children, unread };
 }
 
-/** Resolve merge proof separately from the child walk's occupancy and selection. */
-function childMergeEvidence(ctx: WalkContext, meta: Metadata) {
-  return planMergeEvidence(
-    ctx.tracker,
-    meta.description ?? "",
-    ctx.options.executionPlanBlock,
-    ctx.options.mergeEvidence,
-  );
-}
-
 async function enqueueChildren(
   ctx: WalkContext,
   issue: PoolIssue,
@@ -537,7 +532,7 @@ async function enqueueChildren(
       issue.identifier,
       live,
       options.executionPlanBlock,
-      await childMergeEvidence(ctx, meta),
+      await childMergeEvidence(ctx.tracker, meta.description, options),
     );
     const parked = selection.present
       ? []

@@ -1,3 +1,5 @@
+import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
 /** Execution-plan eligibility is shared with interactive pickup; absent merge proof holds a conflict. */
 import {
   eligibleIssues,
@@ -105,4 +107,21 @@ function mergeHolds(
     const reason = reasons[`${edge.from}>${edge.to}`];
     if (reason && holds[edge.to]) holds[edge.to] = reason;
   }
+}
+
+/** Resolve merge proof separately from the child walk's occupancy and selection. */
+export function childMergeEvidence(
+  tracker: Tracker,
+  description: string | null,
+  policy: {
+    executionPlanBlock?: string;
+    mergeEvidence?: PlanMergeReader | undefined;
+  },
+) {
+  return planMergeEvidence(
+    tracker,
+    description ?? "",
+    policy.executionPlanBlock,
+    policy.mergeEvidence,
+  );
 }
