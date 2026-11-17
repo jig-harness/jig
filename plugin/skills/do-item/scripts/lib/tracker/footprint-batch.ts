@@ -52,7 +52,7 @@ function aliasRequest(p: Pending, i: number) {
   };
 }
 function batchDocument(pending: Pending[]) {
-  const aliased = pending.map(aliasRequest);
+  const aliased = pending.map((request, index) => aliasRequest(request, index));
   return {
     definitions: aliased.map((p) => p.definition),
     fields: aliased.map((p) => p.field),

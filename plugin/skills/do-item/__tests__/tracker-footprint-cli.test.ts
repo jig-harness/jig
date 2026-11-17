@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { platform } from "node:os";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -105,6 +106,49 @@ test("expected footprint input failures preserve their typed cause", async () =>
     cause: expect.any(OutboundError),
   });
 });
+
+test.if(platform() !== "win32")(
+  "footprint refuses a FIFO input without waiting for a writer",
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-footprint-fifo-"));
+    const input = join(dir, "prediction.json");
+    try {
+      const fifo = Bun.spawn(["mkfifo", input], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [fifoExitCode, fifoStdout, fifoStderr] = await Promise.all([
+        fifo.exited,
+        new Response(fifo.stdout).text(),
+        new Response(fifo.stderr).text(),
+      ]);
+      expectSpawnExit(
+        { exitCode: fifoExitCode, stdout: fifoStdout, stderr: fifoStderr },
+        0,
+      );
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, "../scripts/tracker.ts"),
+          "footprint",
+          "#42",
+          "--input",
+          input,
+        ],
+        { stdout: "pipe", stderr: "pipe", timeout: 5_000 },
+      );
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expectSpawnExit({ exitCode, stdout, stderr }, 2);
+      expect(stderr).toContain("input must be a regular file");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test("tracker.ts wires footprint read and --input through its operation registry", async () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-footprint-cli-"));

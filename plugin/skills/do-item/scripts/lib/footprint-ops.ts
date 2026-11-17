@@ -1,4 +1,5 @@
 /** Read or append an item's predicted paths through the tracker's footprint port. */
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
@@ -25,7 +26,11 @@ function invalid(message: string, cause?: unknown): TrackerRequestError {
 }
 
 async function boundedInput(path: string): Promise<string> {
-  const handle = await open(path, "r");
+  const flags =
+    process.platform === "win32"
+      ? constants.O_RDONLY
+      : constants.O_RDONLY | constants.O_NONBLOCK;
+  const handle = await open(path, flags);
   try {
     if (!(await handle.stat()).isFile())
       throw invalid("input must be a regular file");
@@ -128,12 +133,14 @@ async function readPrediction(key: string, deps: Dependencies) {
 }
 
 /** Dependency injection keeps command validation testable without a tracker credential. */
+const defaultDependencies: Dependencies = {
+  tracker: openTracker,
+  readInput: boundedInput,
+  areaLabels: ownAreaLabels,
+};
+
 export function footprintOperations(
-  deps: Dependencies = {
-    tracker: openTracker,
-    readInput: boundedInput,
-    areaLabels: ownAreaLabels,
-  },
+  deps: Dependencies = defaultDependencies,
 ): Record<string, AttachmentOperation> {
   return {
     footprint: {
