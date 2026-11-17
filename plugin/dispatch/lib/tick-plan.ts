@@ -98,6 +98,7 @@ export function planObserved(
       scope: tracked.issueRepository ?? repo.slug,
       pickups: tracked.pickups,
       unplaced: report.unplaced,
+      trackerComplete: tracked.claimed !== null,
       nowMs: context.nowMs,
     });
     if (prepared !== null) {

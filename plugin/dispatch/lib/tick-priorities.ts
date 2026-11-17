@@ -67,6 +67,8 @@ export interface PrioritiesTickInput {
   scope: string;
   pickups: readonly WantedItem[];
   unplaced: readonly Unplaced[];
+  /** Whether the tracker reading was whole: `false` when a queue or item read failed or was cut short, which no unplaced row need say. */
+  trackerComplete: boolean;
   nowMs: number;
   env?: Record<string, string | undefined>;
   stateRoot?: string;
@@ -77,6 +79,7 @@ export interface PreparedPriorities {
   report: RepoReport;
   slug: string;
   read: RecordRead;
+  trackerComplete: boolean;
   weights: LaneWeights;
   snapshot: TrackerSnapshot;
   records: RankerInput["records"];
@@ -99,6 +102,7 @@ export function preparePriorities(
       report,
       slug: input.slug,
       read,
+      trackerComplete: input.trackerComplete,
       weights: readLaneWeights(weightsFilePath(input.env)),
       snapshot: { readAt: currentIso(), items: snapshotItems(input) },
       records: read.record === null ? [] : [read.record],
@@ -157,6 +161,7 @@ export function rankPriorities(
 function observedWhole(p: PreparedPriorities): boolean {
   return (
     p.read.complete &&
+    p.trackerComplete &&
     !p.report.unplaced.some(
       (u) =>
         u.readFailed === true ||

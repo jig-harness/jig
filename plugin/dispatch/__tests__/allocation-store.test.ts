@@ -341,6 +341,7 @@ function prepared(
       lastValid: null,
       complete: true,
     },
+    trackerComplete: true,
     weights: DEFAULTS,
     snapshot: { readAt: "2026-11-18T08:00:00.000Z", items },
     records: [],
@@ -377,6 +378,19 @@ describe("the host's lane epochs across repositories", () => {
     expect(ready.report.priorities).toMatchObject({
       ranking: { algorithm: "priorities-ranker/1" },
     });
+  });
+
+  it("record no empty transition from a tracker reading that was not whole", () => {
+    const dir = root();
+    const bug = [item("#1", { type: "bug", priority: 3 })];
+    rankPriorities([prepared(dir, "o/b", bug)], NOW, true);
+    const rows = epochRows(dir);
+    const partial = prepared(dir, "o/b", []);
+    partial.trackerComplete = false;
+    rankPriorities([partial], NOW + 1000, true);
+    expect(epochRows(dir)).toBe(rows);
+    rankPriorities([prepared(dir, "o/b", [])], NOW + 2000, true);
+    expect(epochRows(dir)).toBeGreaterThan(rows);
   });
 
   it("keep each lane's newest row and the rows of the current and previous week", () => {

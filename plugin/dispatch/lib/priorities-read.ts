@@ -83,7 +83,7 @@ export function readRepositoryRecord(
       source: `no ${PRIORITIES_FILE} on ${ref}`,
       blocked: null,
       lastValid: null,
-      complete: false,
+      complete: true,
     };
   if ("unread" in newest)
     return {
@@ -91,7 +91,7 @@ export function readRepositoryRecord(
       source: `${PRIORITIES_FILE} at ${ref}@${head.sha.slice(0, 12)} could not be read: ${newest.unread}`,
       blocked: null,
       lastValid: null,
-      complete: true,
+      complete: false,
     };
   if (newest.ok)
     return {
