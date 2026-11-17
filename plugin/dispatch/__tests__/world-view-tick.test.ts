@@ -1,18 +1,28 @@
 /**
- * dispatch: the world view's direct implementation reads what the tick
- * read before it. A tick over a world with a drive running, a drive
- * stopped, a merge and an assigned item makes the same forge calls and the
- * same tracker requests, no more and no fewer. Each tick runs in a child
- * with its own home (fixtures.ts).
+ * dispatch: the world view (`lib/world-view.ts`). Its direct implementation
+ * reads what the tick read before it: a tick over a world with a drive
+ * running, a drive stopped, a merge and an assigned item makes the same
+ * forge calls and the same tracker requests, no more and no fewer. A tick
+ * over a view that replays those facts, reading nothing, plans the same
+ * work; each fact carries its freshness class; a launch still reads the
+ * forge at use, whatever the view said; and the observe phase writes
+ * nothing of this host's launch records into a fact the view returned.
+ * Each tick runs in a child with its own home (fixtures.ts,
+ * world-view-child.ts).
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { currentIso } from "../../shared/time.ts";
 import type { TickReceipt } from "../receipts.ts";
+import type { ForgeRead } from "../lib/tick-forge.ts";
+import type { DrivenPr, LedgerClass } from "../lib/types.ts";
+import { forgeFacts } from "../lib/world-view.ts";
 import {
   assignedIssue,
+  BASE_SHA,
+  HEAD_SHA,
   ledgerComment,
   mergedPr,
   openPr,
@@ -21,7 +31,21 @@ import {
   type World,
   world,
 } from "./fixtures.ts";
-import { account, machineFile } from "./launch-fixtures.ts";
+import {
+  account,
+  claimed,
+  driveRuns,
+  earlierRecord,
+  machineFile,
+} from "./launch-fixtures.ts";
+import { withOrigin } from "./pickup-fixtures.ts";
+import {
+  type ChildResult,
+  COVERED_CALLS,
+  SECOND_TICK,
+} from "./world-view-child.ts";
+
+const CHILD = resolve(import.meta.dir, "world-view-child.ts");
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -38,17 +62,23 @@ afterEach(() => {
   current = null;
 });
 
-/** PR #7's drive running with a fresh heartbeat, PR #8's stopped with no exit, PR #5 merged, issue #12 assigned. */
-function fixture(): World {
-  const w = world();
-  current = w;
-  w.setConfig(CONFIG);
-  const running = stoppedLedger(7, undefined);
+/** The running ledger of `pr`: its heartbeat now. */
+function runningLedger(pr: number) {
+  const running = stoppedLedger(pr, undefined);
   running.driver = {
     ...running.driver,
     state: "running",
     heartbeat: currentIso(),
   };
+  return running;
+}
+
+/** PR #7's drive running with a fresh heartbeat, PR #8's stopped with no exit, PR #5 merged, issue #12 assigned. */
+function fixture(): World {
+  const w = world();
+  current = w;
+  w.setConfig(CONFIG);
+  const running = runningLedger(7);
   w.setPrs("open", [openPr(7, "feature/7"), openPr(8, "feature/8")]);
   w.setComments(7, [ledgerComment(701, running)]);
   w.setComments(8, [ledgerComment(801, stoppedLedger(8, undefined))]);
@@ -66,17 +96,30 @@ function fixture(): World {
 
 /** Every `gh` call the fake answered, a GraphQL query by its operation's name. */
 function ghCalls(w: World): string[] {
+  return calls(w).map((line) => {
+    const op = /(?:query|mutation)\s+(\w+)/.exec(line)?.[1];
+    return op === undefined ? line : `graphql ${op}`;
+  });
+}
+
+/** Every line of the fake `gh`'s call log, as it wrote them. */
+function calls(w: World): string[] {
   const path = join(w.dir, "gh-calls.log");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const op = /(?:query|mutation)\s+(\w+)/.exec(line)?.[1];
-      return op === undefined ? line : `graphql ${op}`;
-    });
+  return readFileSync(path, "utf8").trim().split("\n").filter(Boolean);
 }
+
+/** Run the child's `mode` in the world's home; what it printed. */
+async function child(w: World, mode: string): Promise<ChildResult> {
+  const r = await w.dispatch([mode], CHILD);
+  expectSpawnExit(r, 0);
+  const last = r.stdout.trim().split("\n").at(-1) ?? "";
+  return JSON.parse(last) as ChildResult;
+}
+
+/** What a receipt's first repository planned: each action's stage, target and reason. */
+const planned = (receipt: TickReceipt | undefined) =>
+  (receipt?.repos[0]?.actions ?? []).map((a) => [a.stage, a.target, a.reason]);
 
 describe("the world view's direct implementation", () => {
   it("makes the calls a tick made before it, no new read and no write", async () => {
@@ -106,6 +149,182 @@ describe("the world view's direct implementation", () => {
       "TrackerDispatchQueue",
       "TrackerFacetEvidence",
       "TrackerIssue",
+    ]);
+  });
+});
+
+describe("a tick over a world view its caller supplies", () => {
+  it("plans the same work from replayed facts as from the direct reads, reading none of them", async () => {
+    const w = fixture();
+    const { receipts } = await child(w, "replay");
+    const [direct, replayed] = receipts;
+    expect(
+      planned(direct).map(([stage, target]) => `${stage} ${target}`),
+    ).toEqual(["pickup #12", "rearm PR #8", "followup PR #5"]);
+    expect(planned(replayed)).toEqual(planned(direct));
+    expect(replayed?.repos[0]?.refused).toBeNull();
+    // The replayed tick asked the forge for nothing the view covers, and the tracker for nothing.
+    const second = calls(w).slice(calls(w).indexOf(SECOND_TICK) + 1);
+    expect(second.length).toBeGreaterThan(0);
+    for (const match of COVERED_CALLS)
+      expect(second.filter((c) => c.includes(match))).toEqual([]);
+    expect(w.trackerOps().toSorted()).toEqual([
+      "TrackerAssignedBy",
+      "TrackerCollaborator",
+      "TrackerComments",
+      "TrackerDispatchQueue",
+      "TrackerFacetEvidence",
+      "TrackerIssue",
+    ]);
+  }, 90_000);
+
+  it("gives every fact the direct view returns its class: active for a running drive, background otherwise", async () => {
+    const w = fixture();
+    const { classes } = await child(w, "replay");
+    expect(classes).toEqual([
+      { method: "target", freshness: "background" },
+      { method: "configuration", freshness: "background" },
+      { method: "tracker", freshness: "background" },
+      {
+        method: "forge",
+        freshness: "active",
+        pullRequests: { "5": "background", "7": "active", "8": "background" },
+      },
+    ]);
+  }, 90_000);
+
+  it("launches on what the forge says at use, not on what the view served", async () => {
+    const w = fixture();
+    withOrigin(w);
+    const ws = join(w.root, "ws-8");
+    mkdirSync(ws, { recursive: true });
+    w.setWorkspaces([{ branch: "feature/8", linkedPR: 8, path: ws }]);
+    // Between the plan's read and the launch, a driver starts on PR #8.
+    writeFileSync(
+      join(w.dir, "gate-comments-8.json"),
+      JSON.stringify([ledgerComment(801, runningLedger(8))]),
+    );
+    const { receipts } = await child(w, "gate");
+    const [, applied] = receipts;
+    expect(
+      planned(applied).some(([s, t]) => s === "rearm" && t === "PR #8"),
+    ).toBe(true);
+    const launch = (applied?.repos[0]?.launches ?? []).find(
+      (l) => l.target === "PR #8",
+    );
+    expect(launch?.outcome).not.toBe("launched");
+    expect(String(launch?.detail)).toContain("changed since the plan read it");
+    expect(driveRuns(w)).toEqual([]);
+  }, 90_000);
+});
+
+describe("the machine view apart from the world view", () => {
+  it("settles a drive by this host's launch record without writing into the forge's facts", async () => {
+    const w = world();
+    current = w;
+    w.setConfig(CONFIG);
+    const change = `head ${HEAD_SHA}, base ${BASE_SHA}`;
+    w.setPrs("open", [openPr(7, "feature/7", { mergeable: "CONFLICTING" })]);
+    const stop = stoppedLedger(7, 9, { verifiedSha: HEAD_SHA });
+    stop.driver = { ...stop.driver, heartbeat: currentIso() };
+    w.setComments(7, [ledgerComment(701, stop)]);
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+    // This host already re-drove PR #7 for the change its ledger shows, and that drive stopped 9 again.
+    const id = "20261030T200000Z-aaaaaaaa";
+    earlierRecord(w, {
+      id,
+      account: "a",
+      redrive: {
+        cause: "stopped on a conflict with its base, and still conflicting",
+        change,
+        conflictStop: true,
+      },
+    });
+    claimed(
+      w,
+      id,
+      {
+        hostId: "",
+        host: "elsewhere",
+        bootId: "",
+        pid: 1,
+        start: "",
+        claimedAt: "2026-10-30T20:00:00.000Z",
+      },
+      9,
+    );
+    const { receipts, forgeDrive } = await child(w, "frozen");
+    const [receipt] = receipts;
+    expect(receipt?.repos[0]?.defect).toBeUndefined();
+    // The forge's fact is what the forge said, before the tick and after it.
+    expect(forgeDrive).toEqual({ returned: "stale", after: "stale" });
+    // The plan read the drive as this host's record settles it: a person's.
+    const [notify] = planned(receipt);
+    expect(notify?.slice(0, 2)).toEqual(["notify", "PR #7"]);
+    expect(String(notify?.[2])).toContain(
+      `launch record ${id} already re-drove it`,
+    );
+  }, 90_000);
+});
+
+describe("each forge fact's freshness class", () => {
+  const drive = (number: number, cls: LedgerClass) =>
+    ({ number, class: cls }) as unknown as DrivenPr;
+  const read = (drives: DrivenPr[], merged: number[] = []): ForgeRead => ({
+    ok: true,
+    open: drives.map((d) => ({
+      ...openPr(d.number, `feature/${d.number}`),
+      labels: [],
+    })),
+    read: new Set(drives.map((d) => d.number)),
+    scoped: false,
+    inScope: new Set(),
+    disputed: new Set(),
+    created: new Map(),
+    drives,
+    merged: merged.map((n) => ({
+      number: n,
+      url: "",
+      title: "",
+      head: `feature/${n}`,
+      mergedAt: "2026-10-31T00:00:00Z",
+      markers: [],
+    })),
+    login: "drive-bot",
+  });
+
+  it("is active for an open pull request whose drive runs or is armed, background for every other", () => {
+    const facts = forgeFacts(
+      read(
+        [
+          drive(1, "driven"),
+          drive(2, "silent"),
+          drive(3, "refused"),
+          drive(4, "re-armable"),
+          drive(5, "parked"),
+          drive(6, "unarmed"),
+        ],
+        [9],
+      ),
+    );
+    expect(Object.fromEntries(facts.pullRequests)).toEqual({
+      1: "active",
+      2: "active",
+      3: "active",
+      4: "background",
+      5: "background",
+      6: "background",
+      9: "background",
+    });
+    expect(facts.freshness).toBe("active");
+  });
+
+  it("makes a read with no active pull request background as a whole", () => {
+    const facts = forgeFacts(read([drive(4, "stale")], [9]));
+    expect(facts.freshness).toBe("background");
+    expect([...facts.pullRequests.values()]).toEqual([
+      "background",
+      "background",
     ]);
   });
 });

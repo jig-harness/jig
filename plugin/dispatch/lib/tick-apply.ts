@@ -57,11 +57,8 @@ import {
   type TickContext,
   type TickOptions,
 } from "./tick-context.ts";
-import {
-  readSessions,
-  type RepoObservation,
-  type Tracked,
-} from "./tick-observe.ts";
+import { readSessions, type RepoObservation } from "./tick-observe.ts";
+import type { Tracked } from "./tick-tracker.ts";
 import { afterWait } from "./tick-plan.ts";
 import { aboutTargets } from "./line.ts";
 import { endOwnClaims } from "./tick-shared.ts";

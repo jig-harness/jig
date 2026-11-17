@@ -87,7 +87,7 @@ import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
-import { prepareTrackers } from "./lib/tick-trackers.ts";
+import { tickWorld, worldOf } from "./lib/world-view.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
@@ -224,6 +224,7 @@ async function startTick(
   // One bound for every read the tick makes, from the launcher's deadline; none when no launcher bounds it.
   const bound = boundAt(deadlineOf(machine, startedMs));
   const read = await readLaunches();
+  const reads = tickReads(runtime, options.poolSize, bound);
   const receipt: TickReceipt = {
     version: 1,
     runId,
@@ -248,7 +249,8 @@ async function startTick(
     lineInputs: new Map(),
     reflections: [],
     pending: [],
-    reads: tickReads(runtime, options.poolSize, bound),
+    reads,
+    world: tickWorld(options, reads, bound),
     rerunsHeld: rerunsHeld(),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };
@@ -320,7 +322,7 @@ async function observeAll(
       }
     }),
   );
-  await prepareTrackers(
+  await worldOf(context).gatherQueues(
     prepared.map(({ opened }) => opened),
     context,
   );
