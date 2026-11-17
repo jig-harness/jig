@@ -1068,7 +1068,10 @@ still owes. Without the section the skill runs every core arm that applies
 and the fixed authority table. The skill reads the section from the
 integration branch's committed `.config/jig.yaml` when the clone has that
 branch (the working tree's otherwise), so a pull request's own change to it
-does not decide that pull request's preview. An unknown key, arm, act or
+does not decide that pull request's preview. The exception is a clone whose
+integration branch cannot be read: the skill then falls back to the layered
+configuration including the working tree, and a preview branch's own
+`followup` section can govern its own preview. An unknown key, arm, act or
 level is refused with a message naming the field, and so is a level that
 would loosen the fixed table.
 
