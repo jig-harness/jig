@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   recoverCancelled,
+  REPLACEMENT_WINDOW_MS,
   type RecoveryDeps,
   type RecoveryRecord,
 } from "../scripts/lib/cancelled-recovery.ts";
@@ -42,12 +43,15 @@ const gate = (suiteId: number, conclusion: string) => ({
   suiteId,
 });
 
-/** A head whose once-per-head re-run was requested at midnight and is spent. */
+/**
+ * A head whose once-per-head re-run was requested a replacement window before
+ * midnight and is spent, by a release that recorded no runs.
+ */
 function fixture(now: string, writes: string[]) {
   let clock = at(now);
   const record: RecoveryRecord = {
-    firstSeen: at("00:00:00"),
-    requestedAt: at("00:00:00"),
+    firstSeen: at("00:00:00") - REPLACEMENT_WINDOW_MS,
+    requestedAt: at("00:00:00") - REPLACEMENT_WINDOW_MS,
   };
   const reruns = new Map<string, number>();
   const calls: number[] = [];
@@ -56,6 +60,7 @@ function fixture(now: string, writes: string[]) {
     now: () => clock,
     observe: async () => record,
     claim: async () => false,
+    extend: async () => false,
     confirm: async () => true,
     rerunnable: async (_pr, runs) => runs.map((r) => r.id),
     rerun: async (id) => {

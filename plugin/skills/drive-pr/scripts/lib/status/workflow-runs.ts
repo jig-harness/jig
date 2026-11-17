@@ -21,7 +21,7 @@ export const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
  * question open: `skipped` says nothing ran, `cancelled` that it stopped, and
  * `startup_failure`, `action_required` and `stale` that it never got going.
  */
-const RESULT_CONCLUSIONS = new Set([
+export const RESULT_CONCLUSIONS: ReadonlySet<string> = new Set([
   "success",
   "failure",
   "neutral",

@@ -17,6 +17,7 @@ import {
 } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
+import { REPLACEMENT_WINDOW_MS } from "../scripts/lib/cancelled-recovery.ts";
 import {
   binDir,
   type CheckRunFixture,
@@ -140,6 +141,9 @@ async function driveConverged(
   );
 }
 
+/** A minute past the cancelled-run recovery's replacement window. */
+const PAST_WINDOW = REPLACEMENT_WINDOW_MS + 60_000;
+
 /** Seed elapsed recovery time in a subprocess, without waiting on the wall clock. */
 async function seedRecovery(dir: string, stateDir: string, spent: boolean) {
   const script = join(dir, "seed-recovery.ts");
@@ -150,7 +154,7 @@ async function seedRecovery(dir: string, stateDir: string, spent: boolean) {
     const { resolveStateDir } = await import(${JSON.stringify(pathToFileURL(join(SCRIPTS, "lib/state/store.ts")).href)});
     const drive = driveDb(await resolveStateDir());
     drive.db.run("INSERT OR REPLACE INTO cancelled_ci (clone, pr, head, first_seen, requested_at) VALUES (?, ?, ?, ?, ?)",
-      [drive.clone, "999", ${JSON.stringify(scratchClean.head)}, Date.now() - 120000, ${spent ? "Date.now() - 120000" : "null"}]);
+      [drive.clone, "999", ${JSON.stringify(scratchClean.head)}, Date.now() - ${PAST_WINDOW}, ${spent ? `Date.now() - ${PAST_WINDOW}` : "null"}]);
   `,
   );
   await expectSpawnExited(

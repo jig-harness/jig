@@ -28,9 +28,11 @@ shortlist those give beside what it actually started.
 - **Asks work-batch** which issues may be batched, through its eligibility
   mode, instead of keeping its own rules.
 
-It never starts work and never edits a tracker's Priority field. In this
-release the shortlist is a report only: the dispatcher's selection of what
-to start does not change.
+It never starts work and never edits a tracker's Priority field. The
+dispatcher reports the shortlist beside what it started, and starts its
+pickups in the shortlist's order only on a host whose machine file sets
+`priorities.enforce: true`
+([CONFIGURATION.md](../../CONFIGURATION.md#the-machines-dispatch-file)).
 
 ## The lanes
 

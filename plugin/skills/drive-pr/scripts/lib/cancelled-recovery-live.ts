@@ -2,6 +2,7 @@
 import {
   observeCancellation,
   claimCancellation,
+  extendCancellation,
   readCancellation,
   releasePendingGrant,
   labelReruns,
@@ -39,6 +40,7 @@ const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites"> = {
   now: currentMs,
   observe: observeCancellation,
   claim: claimCancellation,
+  extend: extendCancellation,
   releaseGrant: releasePendingGrant,
   labelReruns,
   claimLabelRerun,

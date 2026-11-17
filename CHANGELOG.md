@@ -401,6 +401,47 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.270.0] - 2026-11-17
+
+### Added
+
+- A host can let the declared priorities decide which pickups start first.
+  With `priorities.enforce: true` in the machine file, the owner host's
+  ranking places every pickup the tick plans to start, and each of a
+  repository's starts the host's capacity allows goes to the next in its
+  order: Urgent issues, then High bugs, then the weighted lanes by weight
+  and the peripheral floor, then the unallocated work. Repositories still
+  take their turns as before. Capacity stays the host's: the load factor, each
+  account's free slots and walls and `max_per_account` still say how many
+  start. A pickup that cannot start now passes its start to the next, and a
+  lane out of rotation (weight 0, or a weights file that fails closed)
+  starts nothing and its pickups are listed as quiet (`lane-paused`). The tick report names, for each start, the lane and
+  objective it is charged to and why. The setting is off by default, and
+  with it off nothing the dispatcher starts changes; a host turns it on
+  after reading the ranking's reports
+  ([CONFIGURATION.md § The machine's dispatch file](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+  **Consumer action:** none.
+
+### Fixed
+
+- The priorities shortlist ranks only the pickups the tick plans to start. A
+  pickup a running session or launch record holds, or one waiting on a
+  person, is listed as excluded with why, and no longer takes a place, and
+  a lane's share, from the work that can start.
+- `drive-pr`: after a person answers the `cancelled-ci` park with "Re-run
+  safely", the drive no longer parks again on cancelled runs it never re-ran.
+  The recovery now records the runs it re-runs and judges those: it waits
+  while their new attempts are queued or running, for up to ten minutes for
+  an attempt to appear (it was one minute), and parks only when a re-run run
+  shows no new attempt or result, naming those runs and what it saw of each.
+  A cancelled run of the same workflow that existed when the re-run was
+  requested, such as one a label event started and the workflow's
+  concurrency group cancelled, is answered by the re-run's result. A run
+  cancelled after the request, or of a workflow the request did not cover,
+  is re-run once on its own, and a later answer re-runs only what is still
+  without a result. A re-run requested by an earlier plugin version recorded
+  no runs, so it is still judged the old way once, with the longer window.
+
 ## [0.269.0] - 2026-11-17
 
 ### Added
@@ -9448,7 +9489,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.269.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.270.0...HEAD
+[0.270.0]: https://github.com/jig-harness/jig/compare/v0.269.0...v0.270.0
 [0.269.0]: https://github.com/jig-harness/jig/compare/v0.268.0...v0.269.0
 [0.268.0]: https://github.com/jig-harness/jig/compare/v0.267.1...v0.268.0
 [0.267.1]: https://github.com/jig-harness/jig/compare/v0.267.0...v0.267.1

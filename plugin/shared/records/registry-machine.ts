@@ -20,7 +20,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 38;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 8;
+const DRIVE_DB = 9;
 const REFLECT = "skills/reflect/scripts/";
 
 /** A file in a drive's per-clone state directory, of one state family. */
@@ -150,7 +150,7 @@ export const DRIVE_STATE: RecordKind[] = [
     "drive-cancelled-ci",
     `${DRIVE}lib/cancelled-recovery-state.ts`,
     "cancelled_ci",
-    "A head's cancelled required check: when the drive first saw it, whether it has claimed the head's one re-run, how many further re-runs a person's answer granted, which answers the last was for and whether a grant waits for a young claim to age out, so the grace period, the re-run and each grant outlast a re-arm.",
+    "A head's cancelled required check: when the drive first saw it, whether it has claimed the head's one re-run and which runs that re-run covers, how many further re-runs a person's answer granted, which answers the last was for and whether a grant waits for a young claim to age out, so the grace period, the re-run and each grant outlast a re-arm.",
   ),
   driveTable(
     "drive-cancelled-ci-label-rerun",

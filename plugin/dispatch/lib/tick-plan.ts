@@ -11,9 +11,10 @@
  * beside the plan's own (failure-notices.ts). A stalled pickup's finished
  * work is told from the open pull requests the observe phase already read
  * (`stalled-pr.ts`), and its moves to `pr_open` go on the report. On the
- * owner host the report-only priorities ranking's inputs are read after the
- * plan, for the tick to rank once every repository is planned
- * (`tick-priorities.ts`); the plan never reads it.
+ * owner host the priorities ranking's inputs are read after the plan, for the
+ * tick to rank once every repository is planned (`tick-priorities.ts`); the
+ * plan never reads it, and only the host's `priorities.enforce` lets the
+ * ranking reorder the planned pickups.
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
@@ -100,6 +101,7 @@ export function planObserved(
       unplaced: report.unplaced,
       trackerComplete: tracked.claimed !== null,
       nowMs: context.nowMs,
+      enforce: context.options.machine?.priorities?.enforce === true,
       ...deadlineField(context),
     });
     if (prepared !== null) {

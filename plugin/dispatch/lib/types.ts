@@ -148,7 +148,9 @@ export type PickupClass =
   | "claimed-idle"
   | "claimed"
   | "claimed-by-person"
-  | "claimed-pr-open";
+  | "claimed-pr-open"
+  /** Under the host's `priorities.enforce`: a pickup whose priority lane is out of rotation (`priorities-order.ts`). */
+  | "lane-paused";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -740,7 +742,7 @@ export interface RepoReport {
   board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
   shared?: SharedReport;
-  /** The report-only ranking of declared priorities on the owner host (`tick-priorities.ts`), or why it could not be made; dispatch's selection does not read it. */
+  /** The ranking of declared priorities on the owner host (`tick-priorities.ts`), or why it could not be made; dispatch's selection reads it only under the host's `priorities.enforce`, which orders the pickups by it. */
   priorities?:
     | import("./tick-priorities.ts").PrioritiesReport
     | { failed: string };
