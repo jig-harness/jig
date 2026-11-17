@@ -343,13 +343,19 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     const f = await grantedRequest();
     // The status layer still holds C's and D's cancellation, which predates
     // the attempts; A's and B's results answer it.
+    // The successful attempts skip C's and D's jobs while another job gives
+    // each workflow its result, so the cancellations survive normalization.
     const done = succeeded(requested + 60_000);
+    const skipped = [
+      { ...check(1, requested + 60_000, "skipped"), name: "gate-3" },
+      { ...check(2, requested + 60_000, "skipped"), name: "gate-4" },
+    ];
     f.advance(120_000);
     expect(
       await recoverCancelled(
         "5",
         "head",
-        [...done.checks, ...labelChecks],
+        [...done.checks, ...skipped, ...labelChecks],
         [...done.runs, ...labelRuns],
         f.deps,
       ),
@@ -388,6 +394,34 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
       expect(g.parks[0]).not.toContain("gh run rerun 3");
       expect(g.calls).toEqual([1, 2, 1, 2]);
     }
+  });
+
+  test("a later grant re-runs the runs the park named, not newer cancelled runs", async () => {
+    const f = await grantedRequest();
+    const jobs = [...firstChecks, ...labelChecks];
+    const runs = [A(), B(), ...labelRuns];
+    f.advance(REPLACEMENT_WINDOW_MS);
+    expect(await recoverCancelled("5", "head", jobs, runs, f.deps)).toBe(
+      "parked",
+    );
+    f.grant();
+    f.advance(30_000);
+    await recoverCancelled("5", "head", jobs, runs, f.deps);
+    expect(f.calls).toEqual([1, 2, 1, 2, 1, 2]);
+  });
+
+  test("a run in flight at the request and cancelled afterward is not answered by its result", async () => {
+    const f = await grantedRequest();
+    const start = requested + 60_000;
+    const done = succeeded(start);
+    // E started before the request but was cancelled after it.
+    const late = { ...wf(5, 10, requested - 4_000), updatedAt: at(start) };
+    // The successful attempt skips E's job, so the cancellation is retained.
+    const skip = { ...check(1, start, "skipped"), name: "gate-5" };
+    const jobs = [...done.checks, skip, check(5, requested - 4_000)];
+    f.advance(120_000);
+    await recoverCancelled("5", "head", jobs, [...done.runs, late], f.deps);
+    expect(f.calls).toEqual([1, 2, 1, 2, 5]);
   });
 
   test("a re-run whose results supersede every cancellation clears it", async () => {

@@ -149,8 +149,21 @@ function answers(answered: readonly RequestedRun[], run: WorkflowRun): boolean {
   return answered.some(
     (request) =>
       request.workflowId === run.workflowId &&
-      (request.id === run.id ||
-        parseMs(run.startedAt) < floorSecond(request.at)),
+      (request.id === run.id || cancelledBefore(run, request.at)),
+  );
+}
+
+/**
+ * Whether a run was already cancelled when the re-run was requested. A run
+ * that started earlier may still have been in flight and cancelled afterward,
+ * so its last update decides; without one the run is conservatively not
+ * answered, and is requested once itself.
+ */
+function cancelledBefore(run: WorkflowRun, at: number): boolean {
+  return (
+    run.updatedAt !== undefined &&
+    parseMs(run.startedAt) < floorSecond(at) &&
+    parseMs(run.updatedAt) < floorSecond(at)
   );
 }
 
@@ -187,7 +200,23 @@ async function requestOpen(
   const answered = observed
     .filter((o) => o.outcome === "result")
     .map((o) => o.run);
-  const open = orphaned.filter((run) => !answers(answered, run));
+  // A request that never produced a result is retried as the run it named,
+  // not as whichever cancelled run of its workflow is newest now.
+  const missing = observed.filter((o) => o.outcome === "missing");
+  const retried = missing.flatMap((o) => {
+    const live = runs.find((other) => other.id === o.run.id);
+    return live !== undefined
+      ? [live]
+      : orphaned.filter((run) => run.workflowId === o.run.workflowId);
+  });
+  const open = [
+    ...retried,
+    ...orphaned.filter(
+      (run) =>
+        !answers(answered, run) &&
+        !missing.some((o) => o.run.workflowId === run.workflowId),
+    ),
+  ].filter((run, i, all) => all.findIndex((r) => r.id === run.id) === i);
   if (open.length === 0) return "none";
   if (!(await deps.confirm(pr, head))) return "unknown";
   return await requestOnce(pr, head, open, record, deps, answered, "claim");
