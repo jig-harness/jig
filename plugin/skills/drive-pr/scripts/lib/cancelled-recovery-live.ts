@@ -2,6 +2,7 @@
 import {
   observeCancellation,
   claimCancellation,
+  extendCancellation,
   readCancellation,
   releasePendingGrant,
 } from "./cancelled-recovery-state.ts";
@@ -35,6 +36,7 @@ const live: RecoveryDeps = {
   now: currentMs,
   observe: observeCancellation,
   claim: claimCancellation,
+  extend: extendCancellation,
   releaseGrant: releasePendingGrant,
   async confirm(pr, head) {
     const read = await ghCall([

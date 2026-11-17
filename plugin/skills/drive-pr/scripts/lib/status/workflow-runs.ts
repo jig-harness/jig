@@ -21,7 +21,7 @@ export const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
  * question open: `skipped` says nothing ran, `cancelled` that it stopped, and
  * `startup_failure`, `action_required` and `stale` that it never got going.
  */
-const RESULT_CONCLUSIONS = new Set([
+export const RESULT_CONCLUSIONS: ReadonlySet<string> = new Set([
   "success",
   "failure",
   "neutral",
@@ -40,6 +40,8 @@ export interface WorkflowRun {
   startedAt: string;
   /** Which attempt this is; a re-run raises it. */
   attempt: number;
+  /** When the run last changed, such as when it was cancelled. */
+  updatedAt?: string;
 }
 
 /** What a check run has to say for its run to be read. */
@@ -95,6 +97,9 @@ function parseWorkflowRun(raw: unknown): WorkflowRun | null {
     createdAt,
     startedAt,
     attempt: typeof run.run_attempt === "number" ? run.run_attempt : 1,
+    ...(typeof run.updated_at === "string"
+      ? { updatedAt: run.updated_at }
+      : {}),
   };
 }
 

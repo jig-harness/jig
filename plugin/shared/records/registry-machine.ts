@@ -150,7 +150,7 @@ export const DRIVE_STATE: RecordKind[] = [
     "drive-cancelled-ci",
     `${DRIVE}lib/cancelled-recovery-state.ts`,
     "cancelled_ci",
-    "A head's cancelled required check: when the drive first saw it, whether it has claimed the head's one re-run, how many further re-runs a person's answer granted, which answers the last was for and whether a grant waits for a young claim to age out, so the grace period, the re-run and each grant outlast a re-arm.",
+    "A head's cancelled required check: when the drive first saw it, whether it has claimed the head's one re-run and which runs that re-run covers, how many further re-runs a person's answer granted, which answers the last was for and whether a grant waits for a young claim to age out, so the grace period, the re-run and each grant outlast a re-arm.",
   ),
   driveTable(
     "review-round-counter",

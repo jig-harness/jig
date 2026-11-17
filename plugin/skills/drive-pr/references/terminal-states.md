@@ -1598,16 +1598,25 @@ false "green":
   after a 30-second grace period, the drive requests one re-run per head,
   recorded in SQLite before the request so re-arms share its budget. It
   polls during recovery, including before an initial review pass that would
-  otherwise stop at `CI_HOLD_WAIT`. A refused or unconfirmed request, an
-  unsafe held event, or a cancellation still unreplaced 60 seconds after the
-  request with no active run parks `cancelled-ci` and reports [`HITL_PARKED`](../../../protocol/drive-exits.md); its decision
-  record and doctor recovery name the run. A person's "Re-run safely" answer
+  otherwise stop at `CI_HOLD_WAIT`. The claim records the runs it re-runs,
+  with the attempt each had, and the recovery judges those runs rather than
+  the cancelled set read again: a new attempt of one, or a run of its
+  workflow started since the request, that is still going is waited for; one
+  that ended with a result answers it, and every cancelled run of its
+  workflow with it, so a label event's run that the concurrency group
+  cancelled is not the re-run's failure. A workflow the request did not
+  cover is added to the claim and requested once, after the same grace. A
+  refused or unconfirmed request, an unsafe held event, or a re-run run with
+  no new attempt or result ten minutes after it was requested parks
+  `cancelled-ci` and reports [`HITL_PARKED`](../../../protocol/drive-exits.md); its decision
+  record and doctor recovery name the runs and what was seen of each. A person's "Re-run safely" answer
   (or approval) with no conditioning note, consumed by the re-arm, grants the
   head its park names one more re-run (`grants` in the same SQLite row, keyed
   to the answers so a later arm that reads them again grants nothing more;
-  `grant_pending` while the claim is younger than the replacement window),
-  which the drive requests after the same checks; a park after it says the
-  granted re-run was spent. Observing recovery clears that operational park. A
+  `grant_pending` while the claim is younger than a minute, until its re-run
+  is judged without a replacement), which the drive requests after the same
+  checks for the runs the last re-run left without a result; a park after it
+  says the granted re-run was spent. Observing recovery clears that operational park. A
   live CI hold is left for convergence to release.
   Cancellation stops counting only when a run of
   the same workflow on the head, started no earlier, has completed with a

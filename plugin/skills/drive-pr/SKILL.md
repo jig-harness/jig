@@ -368,15 +368,23 @@ the drive observes a 30-second grace period, then requests one re-run per
 head. Its SQLite claim survives re-arms and is recorded before the request.
 The drive keeps polling during the grace period and re-run; unrelated pending
 workflows do not hide a cancellation. It never replays an event created under
-the CI hold. A refused or unconfirmed request, or cancellation still unreplaced
-60 seconds after the request with no active replacement, parks `cancelled-ci`
-with a framed decision and stops with [`HITL_PARKED`](../../protocol/drive-exits.md). The doctor names the run and recovery.
+the CI hold. A refused or unconfirmed request parks `cancelled-ci`. After
+a request the drive judges the runs it re-ran, not the cancelled runs it finds
+again: it waits while a new attempt of one, or a run of its workflow, is
+going, and parks when one of them has no new attempt or result ten minutes
+after the request, naming those runs and what it saw of each. A run of the
+same workflow cancelled meanwhile, as a label event's run cancelled by the
+workflow's concurrency group, is answered by the re-run's result; a
+workflow the request did not cover is requested once on its own. The park
+carries a framed decision and stops with [`HITL_PARKED`](../../protocol/drive-exits.md). The doctor names the run and recovery.
 A person's answer choosing "Re-run safely" (or approving it), with no note
 conditioning it, grants the head its park names one more re-run when the
 re-arm consumes it: the drive repeats the same checks, requests the re-run
 and waits for its replacement, and a later park says the granted re-run was
-spent. A claim still inside the replacement window keeps the grant pending
-until it ages out with no replacement.
+spent. A grant re-runs only what the last re-run left without a result. An
+answer arriving while a claim younger than a minute may still be in flight
+stays pending, and pays for the next request once that re-run is judged
+without a replacement.
 A successful replacement clears that operational park. Intentional held-run
 cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
