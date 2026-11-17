@@ -7,7 +7,7 @@
  * change-area catalog (seeds only, never the `impliedBy` closure), the
  * commit of the base the prediction read, and, for a pickup, its session.
  */
-import { statSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   FOOTPRINT_MAX_PATHS,
@@ -91,11 +91,15 @@ export function pathLines(text: string): string[] {
   return out;
 }
 
-/** Whether `path` is a directory in the working tree; a path not there yet is a file to come. */
+/**
+ * Whether `path` is a directory in the working tree; a path not there yet is
+ * a file to come. A symlink is the file git tracks, never the directory it
+ * points at.
+ */
 function isDirectory(root: string, path: string): boolean {
   try {
     return (
-      statSync(join(root, path), { throwIfNoEntry: false })?.isDirectory() ===
+      lstatSync(join(root, path), { throwIfNoEntry: false })?.isDirectory() ===
       true
     );
   } catch (cause) {
@@ -116,9 +120,9 @@ function assertUsableDirectory(root: string, directory: string): void {
   const parts = directory.split("/").filter((part) => part !== "");
   for (let depth = 1; depth <= parts.length; depth++) {
     const prefix = parts.slice(0, depth).join("/");
-    let stat: ReturnType<typeof statSync>;
+    let stat: ReturnType<typeof lstatSync>;
     try {
-      stat = statSync(join(root, prefix), { throwIfNoEntry: false });
+      stat = lstatSync(join(root, prefix), { throwIfNoEntry: false });
     } catch (cause) {
       throw new PredictionError(
         "input",
@@ -135,8 +139,17 @@ function assertUsableDirectory(root: string, directory: string): void {
   }
 }
 
-/** Each path once, sorted; a directory that exists ends in `/`, and each is checked against the record's path shape. */
-export function normalizePaths(raw: readonly string[], root: string): string[] {
+/**
+ * Each path once, sorted; each is checked against the record's path shape.
+ * Named paths are also checked against the working tree, and a directory
+ * that exists ends in `/`; paths git reported (`fromGit`) are history, and
+ * may name a file the working tree no longer has, so they are not.
+ */
+export function normalizePaths(
+  raw: readonly string[],
+  root: string,
+  fromGit = false,
+): string[] {
   const out = new Set<string>();
   const refuse = (path: string) =>
     new PredictionError(
@@ -145,13 +158,14 @@ export function normalizePaths(raw: readonly string[], root: string): string[] {
     );
   for (const path of raw) {
     if (!matches(FOOTPRINT_PATH, path)) throw refuse(path);
-    const named = path.endsWith("/")
-      ? path
-      : isDirectory(root, path)
-        ? `${path}/`
-        : path;
+    const named =
+      fromGit || path.endsWith("/")
+        ? path
+        : isDirectory(root, path)
+          ? `${path}/`
+          : path;
     if (!matches(FOOTPRINT_PATH, named)) throw refuse(path);
-    if (named.endsWith("/")) assertUsableDirectory(root, named);
+    if (named.endsWith("/") && !fromGit) assertUsableDirectory(root, named);
     out.add(named);
   }
   if (out.size > FOOTPRINT_MAX_PATHS)
@@ -260,6 +274,11 @@ export function predictFootprint(
     options.paths === "diff"
       ? changedFilesFromWorktree(options.baseRef, deps.git)
       : [];
+  if (changed.length > FOOTPRINT_MAX_PATHS)
+    throw new PredictionError(
+      "input",
+      `${changed.length} changed files is more than a footprint carries (${FOOTPRINT_MAX_PATHS}): name their directories with --paths instead`,
+    );
   const raw =
     options.paths === "diff"
       ? changed.map((file) => {
@@ -272,7 +291,7 @@ export function predictFootprint(
           return carried;
         })
       : pathLines(options.paths.list);
-  const paths = normalizePaths(raw, deps.root);
+  const paths = normalizePaths(raw, deps.root, options.paths === "diff");
   if (paths.length === 0)
     throw new PredictionError(
       "nothing",

@@ -916,10 +916,10 @@ implementation. Skip this check for issues about the repository's own code.
    directly, the base commit (`<remote>/<base>` by default; pass
    `--base <remote>/<branch>` for a stacked change's predecessor) and this
    session, as input for planned dispatcher admission. Write it on a pickup
-   that claimed the item in this session, and again from that session when
-   the plan's paths change materially; a resumed session leaves the record
-   the claiming session wrote, since a reader prefers the claiming
-   session's record over a newer one from another. Never write it when the
+   in this session, a resumed one included, and again when the plan's paths
+   change materially: the record carries the writing session, and a reader
+   prefers the record of a session still running over a newer one from
+   another, falling back to the newest otherwise. Never write it when the
    item already has an open pull request, whose changed files stand for it. A
    non-zero exit never blocks the work: exit `2` names a path it cannot
    carry (fix the list and run it again), exit `3` means no path was named,

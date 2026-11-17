@@ -1,6 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -223,6 +229,25 @@ describe("normalizePaths", () => {
       /not a directory in the working tree: "file.ts"/,
     );
     expect(normalizePaths(["missing/new/"], root)).toEqual(["missing/new/"]);
+  });
+
+  test("a symlink to a directory stays the file git tracks", () => {
+    const root = scratch();
+    mkdirSync(join(root, "real"));
+    symlinkSync("real", join(root, "link"));
+    expect(normalizePaths(["link"], root)).toEqual(["link"]);
+  });
+
+  test("paths git reported are not checked against today's working tree", () => {
+    const root = scratch();
+    writeFileSync(join(root, "pkg"), "x\n");
+    expect(normalizePaths(["pkg", "pkg/old.ts"], root, true)).toEqual([
+      "pkg",
+      "pkg/old.ts",
+    ]);
+    expect(() => normalizePaths(["pkg/old.ts"], root)).toThrow(
+      /not a path in the working tree/,
+    );
   });
 
   test("a path line with whitespace at an end is refused, not trimmed", () => {
