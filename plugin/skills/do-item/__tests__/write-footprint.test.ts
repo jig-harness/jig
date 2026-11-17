@@ -10,6 +10,7 @@ import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { parseCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import type { GitRunner } from "../../change-areas/scripts/lib/resolve.ts";
 import {
+  carriedPath,
   normalizePaths,
   pathLines,
   type PredictionDeps,
@@ -123,7 +124,7 @@ describe("predictFootprint", () => {
     try {
       run();
     } catch (error) {
-      expect((error as PredictionError).kind).toBe("nothing");
+      expect((error as PredictionError).code).toBe("nothing");
     }
   });
 
@@ -142,7 +143,9 @@ describe("predictFootprint", () => {
         },
         deps({ git }),
       ),
-    ).toThrow(/names no commit/);
+    ).toThrow(
+      /names no commit here, or git could not read it .*fatal: bad revision/,
+    );
     expect(() =>
       predictFootprint(
         {
@@ -180,6 +183,21 @@ describe("normalizePaths", () => {
     );
   });
 
+  test("a path through a file is refused as input, naming the path", () => {
+    const root = scratch();
+    writeFileSync(join(root, "file.ts"), "x\n");
+    expect(() => normalizePaths(["file.ts/inner.ts"], root)).toThrow(
+      /not a path in the working tree: "file.ts\/inner.ts"/,
+    );
+  });
+
+  test("a changed file a footprint cannot name stands as its nearest parent it can", () => {
+    expect(carriedPath("app/[id]/page.tsx")).toBe("app/");
+    expect(carriedPath("src/a:b.ts")).toBe("src/");
+    expect(carriedPath("src/ok.ts")).toBe("src/ok.ts");
+    expect(carriedPath("[top].ts")).toBeNull();
+  });
+
   test("path lines drop blanks, comments and a leading ./", () => {
     expect(pathLines("a\r\n./b\n  # c\n\n./././d/\n")).toEqual([
       "a",
@@ -197,6 +215,10 @@ describe("seedAreas", () => {
       "docs",
       "web",
     ]);
+  });
+
+  test("a directory with no tracked file yet reaches the areas whose globs match it", () => {
+    expect(seedAreas(["src/api/new/"], CATALOG, fakeGit())).toEqual(["api"]);
   });
 
   test("without a catalog there are no areas", () => {
@@ -391,6 +413,27 @@ describe("the command in a repository", () => {
       base: head,
       paths: ["docs/new.md", "src/api/a.ts"],
       areas: ["api", "docs"],
+    });
+  });
+
+  test("a changed file with a glob character in its name is recorded as its directory", () => {
+    const dir = repository();
+    mkdirSync(join(dir, "src", "api", "[id]"));
+    writeFileSync(join(dir, "src", "api", "[id]", "page.ts"), "new\n");
+    const r = run(
+      dir,
+      "#12",
+      "--source",
+      "filing",
+      "--diff",
+      "--base",
+      "origin/main",
+      "--dry-run",
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      paths: ["src/api/"],
+      areas: ["api"],
     });
   });
 

@@ -13,7 +13,9 @@
  * tracked and untracked, as `change-areas`' resolver reads it. `--base` is
  * the ref the prediction read, `<remote>/<base branch>` by default; its
  * commit is recorded. The areas are the catalog areas the paths' files match
- * directly. A `pickup` record names the session it runs in, as the claim
+ * directly. A changed file whose name a footprint cannot carry (a glob
+ * character) stands as its nearest parent directory that it can. A `pickup`
+ * record names the session it runs in, as the claim
  * marker does. `--dry-run` prints the payload and writes nothing; the
  * payload is also valid input to `tracker.ts footprint <KEY> --input`.
  *
@@ -132,7 +134,7 @@ export async function main(
       return 1;
     }
     console.error(error.message);
-    return error.kind === "nothing" ? 3 : 2;
+    return error.code === "nothing" ? 3 : 2;
   }
   if (flags.has("dry-run")) {
     console.log(JSON.stringify(prediction, null, 2));

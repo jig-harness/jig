@@ -8,11 +8,12 @@
  * commit of the base the prediction read, and, for a pickup, its session.
  */
 import { statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   FOOTPRINT_MAX_PATHS,
   FOOTPRINT_PATH,
 } from "../../../../shared/footprint.ts";
+import { JigError } from "../../../../shared/outcome.ts";
 import { matches } from "../../../../shared/shapes.ts";
 import {
   areasOf,
@@ -30,15 +31,12 @@ export const WRITER_SOURCES: readonly WriterSource[] = [
   "filing",
 ];
 
-/** A prediction this module refuses before anything is written; the message names what is wrong. */
-export class PredictionError extends Error {
-  /** `nothing` when there is no path to record, `input` when a path or the base is unusable. */
-  readonly kind: "nothing" | "input";
-  constructor(kind: "nothing" | "input", message: string) {
-    super(message);
-    this.name = "PredictionError";
-    this.kind = kind;
-  }
+/**
+ * A prediction refused before anything is written: `nothing` when there is
+ * no path to record, `input` when a path or the base is unusable.
+ */
+export class PredictionError extends JigError<"nothing" | "input"> {
+  override name = "PredictionError";
 }
 
 export interface PredictionOptions {
@@ -70,6 +68,10 @@ export interface Prediction {
   pickup?: string;
 }
 
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 /** The lines of a paths file: blank lines and `#` comments skipped, `./` dropped. */
 export function pathLines(text: string): string[] {
   return text
@@ -81,24 +83,30 @@ export function pathLines(text: string): string[] {
 
 /** Whether `path` is a directory in the working tree; a path not there yet is a file to come. */
 function isDirectory(root: string, path: string): boolean {
-  return (
-    statSync(join(root, path), { throwIfNoEntry: false })?.isDirectory() ===
-    true
-  );
+  try {
+    return (
+      statSync(join(root, path), { throwIfNoEntry: false })?.isDirectory() ===
+      true
+    );
+  } catch (cause) {
+    throw new PredictionError(
+      "input",
+      `not a path in the working tree: ${JSON.stringify(path)} (${messageOf(cause)})`,
+      { cause },
+    );
+  }
 }
 
 /** Each path once, sorted; a directory that exists ends in `/`, and each is checked against the record's path shape. */
 export function normalizePaths(raw: readonly string[], root: string): string[] {
   const out = new Set<string>();
   for (const path of raw) {
-    const named =
-      path.endsWith("/") || !isDirectory(root, path) ? path : `${path}/`;
-    if (!matches(FOOTPRINT_PATH, named))
+    if (!matches(FOOTPRINT_PATH, path))
       throw new PredictionError(
         "input",
         `not a repository path a footprint can carry: ${JSON.stringify(path)} (relative, no '..', no glob characters)`,
       );
-    out.add(named);
+    out.add(path.endsWith("/") || !isDirectory(root, path) ? path : `${path}/`);
   }
   if (out.size > FOOTPRINT_MAX_PATHS)
     throw new PredictionError(
@@ -108,11 +116,32 @@ export function normalizePaths(raw: readonly string[], root: string): string[] {
   return [...out].sort();
 }
 
+/**
+ * A changed file whose name a footprint cannot carry (a glob character, a
+ * colon) stands as its nearest parent directory that it can, so one such
+ * name does not cost the whole footprint; one at the top level is left out.
+ */
+export function carriedPath(path: string): string | null {
+  const carries = (p: string): boolean => matches(FOOTPRINT_PATH, p);
+  let current = path;
+  while (!carries(current)) {
+    const parent = dirname(current.replace(/\/$/, ""));
+    if (parent === "." || parent === "/" || `${parent}/` === current)
+      return null;
+    current = `${parent}/`;
+  }
+  return current;
+}
+
 function splitNul(out: string): string[] {
   return out.split("\0").filter((p) => p !== "");
 }
 
-/** The areas the paths' files match directly, in catalog order; a directory reaches an area through its tracked files. */
+/**
+ * The areas the paths match directly, in catalog order. A directory
+ * reaches the areas whose globs match it and those of its tracked files, so
+ * a directory the change will create counts too.
+ */
 export function seedAreas(
   paths: readonly string[],
   catalog: ChangeAreaCatalog | null,
@@ -121,7 +150,9 @@ export function seedAreas(
   if (catalog === null) return [];
   const reached = new Set<string>();
   const files = paths.flatMap((path) =>
-    path.endsWith("/") ? splitNul(git(["ls-files", "-z", "--", path])) : [path],
+    path.endsWith("/")
+      ? [path, ...splitNul(git(["ls-files", "-z", "--", path]))]
+      : [path],
   );
   for (const file of files)
     for (const area of areasOf(file, catalog)) reached.add(area);
@@ -138,10 +169,11 @@ export function baseCommit(ref: string, git: GitRunner): string {
   let sha: string;
   try {
     sha = git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).trim();
-  } catch {
+  } catch (cause) {
     throw new PredictionError(
       "input",
-      `the base ${ref} names no commit here: fetch it first`,
+      `the base ${ref} names no commit here, or git could not read it (fetch it first): ${messageOf(cause)}`,
+      { cause },
     );
   }
   if (!/^[0-9a-f]{40,64}$/.test(sha))
@@ -161,7 +193,10 @@ export function predictFootprint(
   const base = baseCommit(options.baseRef, deps.git);
   const raw =
     options.paths === "diff"
-      ? changedFilesFromWorktree(options.baseRef, deps.git)
+      ? changedFilesFromWorktree(options.baseRef, deps.git).flatMap((file) => {
+          const carried = carriedPath(file);
+          return carried === null ? [] : [carried];
+        })
       : pathLines(options.paths.list);
   const paths = normalizePaths(raw, deps.root);
   if (paths.length === 0)
