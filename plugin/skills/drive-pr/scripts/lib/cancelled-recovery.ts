@@ -43,6 +43,8 @@ export interface RecoveryDeps {
   /** Claim the one re-run of a label-caused cancellation; false when already claimed. */
   claimLabelRerun?(pr: string, run: WorkflowRun): Promise<boolean>;
 }
+/** How long a requested re-run has to produce its replacement. */
+const LABEL_RETRY_WINDOW_MS = 60_000;
 /** The `cancelled-ci` park's option whose answer grants one more re-run. */
 export const RERUN_OPTION = "rerun";
 
@@ -232,15 +234,27 @@ async function recoverLabelCaused(
   if (deps.labelWrites === undefined || deps.claimLabelRerun === undefined)
     return null;
   const writes = await deps.labelWrites(pr);
+  const requested = (await deps.labelReruns?.(pr)) ?? new Map();
+  // A re-run raises its run's attempt, so a retry still inside its replacement
+  // window is found by run, whichever attempt it is on now.
+  if (
+    orphaned.some((run) =>
+      [...requested].some(
+        ([key, at]) =>
+          key.startsWith(`${run.id}:`) && now - at < LABEL_RETRY_WINDOW_MS,
+      ),
+    )
+  )
+    return "wait";
   const caused = labelCancelledRuns(orphaned, runs, writes);
   if (caused.length === 0) return null;
   // The label write's other runs may still be arriving to replace these.
   if (now - Math.max(...writes) < LABEL_SETTLE_MS) return "wait";
-  const requested = (await deps.labelReruns?.(pr)) ?? new Map();
   const fresh = caused.filter((run) => !requested.has(labelRerunKey(run)));
   if (fresh.length === 0)
     return caused.some(
-      (run) => now - (requested.get(labelRerunKey(run)) ?? 0) < 60_000,
+      (run) =>
+        now - (requested.get(labelRerunKey(run)) ?? 0) < LABEL_RETRY_WINDOW_MS,
     )
       ? "wait"
       : null;

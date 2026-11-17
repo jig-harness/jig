@@ -145,6 +145,50 @@ describe("cancellations a label write caused", () => {
     expect(f.parks).toEqual([]);
   });
 
+  test("a label run's re-run keeps its provenance for the person's run it cancelled", async () => {
+    const f = fixture("00:03:00", ["00:01:00"]);
+    // The person's run 1 was in flight when label run 3 arrived; run 3 has
+    // since been re-run (attempt 2, started long after the write) and skipped.
+    const persons = run(1, "00:00:30", {
+      createdAt: iso("00:00:00"),
+      updatedAt: iso("00:01:04"),
+      attempt: 2,
+    });
+    const rerunLabel = run(3, "00:01:50", {
+      conclusion: "success",
+      createdAt: iso("00:01:02"),
+      startedAt: iso("00:01:50"),
+      attempt: 2,
+    });
+    const jobs = [gate(1, "cancelled"), gate(3, "skipped")];
+    expect(
+      await recoverCancelled("5", "head", jobs, [persons, rerunLabel], f.deps),
+    ).toBe("wait");
+    expect(f.calls).toEqual([1]);
+    expect(f.parks).toEqual([]);
+  });
+
+  test("a retry's new attempt cancelled quickly keeps the replacement window", async () => {
+    const f = fixture("00:01:45", ["00:01:00"]);
+    const requested = at("00:01:40");
+    f.deps.labelReruns = async () => new Map([["3:1", requested]]);
+    const attempt2 = run(3, "00:01:45", {
+      createdAt: iso("00:01:02"),
+      startedAt: iso("00:01:41"),
+      attempt: 2,
+    });
+    expect(
+      await recoverCancelled(
+        "5",
+        "head",
+        [gate(3, "cancelled")],
+        [attempt2],
+        f.deps,
+      ),
+    ).toBe("wait");
+    expect(f.parks).toEqual([]);
+  });
+
   test("a run cancelled before the label write counts against the budget", async () => {
     const f = fixture("00:01:40", ["00:01:00"]);
     const cancelledEarlier = run(1, "00:00:30", {

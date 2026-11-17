@@ -51,19 +51,26 @@ export function labelWriteTimes(
   return times;
 }
 
-/** A first attempt the forge created right after a label write. */
-function labelStarted(run: WorkflowRun, writes: readonly number[]): boolean {
-  const created = parseMs(run.createdAt);
+/** Whether `time` falls within the window after some label write. */
+function afterWrite(time: number, writes: readonly number[]): boolean {
   return (
-    run.attempt === 1 &&
-    Number.isFinite(created) &&
-    writes.some((at) => created >= at && created - at <= LABEL_RUN_WINDOW_MS)
+    Number.isFinite(time) &&
+    writes.some((at) => time >= at && time - at <= LABEL_RUN_WINDOW_MS)
   );
 }
 
 /**
+ * A run the forge created right after a label write, whatever its attempt: the
+ * forge keeps a run's creation time across re-runs, so the provenance outlives
+ * the re-run that answers for it.
+ */
+function labelStarted(run: WorkflowRun, writes: readonly number[]): boolean {
+  return afterWrite(parseMs(run.createdAt), writes);
+}
+
+/**
  * The orphaned runs a label write cancelled: a label-started run itself, on its
- * first attempt, and any run of the same workflow whose latest attempt was in
+ * attempt the write started, and any run of the same workflow whose latest attempt was in
  * flight when a label-started run was created (it began no later and ended no
  * earlier), which that run's arrival cancelled under the workflow's
  * concurrency group. A run that names no end time is never read as in flight.
@@ -80,7 +87,10 @@ export function labelCancelledRuns(
     started.some(
       (label) =>
         label.workflowId === run.workflowId &&
-        (label.id === run.id || inFlightAt(run, parseMs(label.createdAt))),
+        // Only the attempt the write started can have been cancelled by it; a
+        // later attempt, started after the write settled, was not.
+        ((label.id === run.id && afterWrite(parseMs(run.startedAt), writes)) ||
+          inFlightAt(run, parseMs(label.createdAt))),
     ),
   );
 }
