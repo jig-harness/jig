@@ -140,6 +140,7 @@ import { observeTestLockWaits } from "./test-lock-waits.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
+  weights?: import("./local-weights.ts").AccountWeights | undefined;
   options: TickOptions;
   runtime: SessionRuntime;
   nowMs: number;
@@ -391,11 +392,18 @@ export async function observeRepo(
             context.options.machine?.serveDefaults,
             nowMs,
             context.options.machine == null ||
-              slotTable(context.options.machine.accounts, records, nowMs).some(
+              slotTable(
+                context.options.machine.accounts,
+                records,
+                nowMs,
+                undefined,
+                context.weights,
+              ).some(
                 (s) =>
                   s.held < s.account.maxPerAccount &&
                   s.wall === null &&
-                  !s.wallUnrecorded,
+                  !s.wallUnrecorded &&
+                  (s.weight.configured ?? 0) > 0,
               ),
             reads,
             records,
