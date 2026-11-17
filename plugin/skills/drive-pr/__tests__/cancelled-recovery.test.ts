@@ -133,3 +133,70 @@ describe("orphaned cancelled workflow recovery", () => {
     }
   });
 });
+
+describe("a successor that skipped the cancelled run's jobs", () => {
+  const later = (
+    id: number,
+    jobs: Array<[string, string]>,
+  ): { run: WorkflowRun; jobs: (typeof job)[] } => ({
+    run: { ...run(id), conclusion: "success" },
+    jobs: jobs.map(([name, conclusion]) => ({
+      name,
+      status: "completed",
+      conclusion,
+      suiteId: id,
+    })),
+  });
+  const selected = async (successor: ReturnType<typeof later>) => {
+    const f = fixture();
+    const jobs = [job, ...successor.jobs];
+    const runs = [run(1), successor.run];
+    await recoverCancelled("5", "head", jobs, runs, f.deps);
+    f.advance(30_000);
+    await recoverCancelled("5", "head", jobs, runs, f.deps);
+    return f.calls;
+  };
+  test("does not replace it when it skipped all of them", async () => {
+    expect(await selected(later(2, [["gate", "skipped"]]))).toEqual([1]);
+  });
+  test("does not replace it when it skipped only some of them", async () => {
+    expect(
+      await selected(
+        later(2, [
+          ["gate", "skipped"],
+          ["lint", "success"],
+        ]),
+      ),
+    ).toEqual([1]);
+  });
+  test("does not replace it when it skipped the job under its matrix names", async () => {
+    expect(
+      await selected(
+        later(2, [
+          ["gate (linux)", "skipped"],
+          ["gate (macos)", "skipped"],
+          ["lint", "success"],
+        ]),
+      ),
+    ).toEqual([1]);
+    expect(
+      await selected(
+        later(2, [
+          ["gate (linux)", "success"],
+          ["gate (macos)", "skipped"],
+        ]),
+      ),
+    ).toEqual([1]);
+  });
+  test("still replaces it when it ran the job to a result", async () => {
+    expect(await selected(later(2, [["gate", "success"]]))).toEqual([]);
+    expect(
+      await selected(
+        later(2, [
+          ["gate (linux)", "success"],
+          ["gate (macos)", "failure"],
+        ]),
+      ),
+    ).toEqual([]);
+  });
+});
