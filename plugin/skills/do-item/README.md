@@ -323,6 +323,22 @@ skill never moves an item into or out of `blocked`, and its claim refuses
 an item there. The [configuration reference](../../CONFIGURATION.md#issue_tracker)
 has the rules.
 
+## Predicted paths
+
+You can inspect an item's predicted paths with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>"`
+or append a prediction with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>" --input "<file>"`.
+Run the script from the consumer repository through Bun, using its path
+under the installed plugin directory (`<plugin-root>` above). The input
+is JSON with `source` (`pickup`, `scout`, `planner` or `filing`), `base`
+(the commit read), `paths` and `areas`; it may include the matching `key`
+and a claiming session as `pickup`. The command generates the record's
+writer and time, and rejects invalid input before writing. The standalone
+read chooses the newest trusted prediction; it does not assert that a
+pickup's claim and session are still running. With no prediction, it uses
+the configured change-area catalog's labels, otherwise reports unknown.
+See [the footprint record](../../RECORDS.md#the-registry-and-the-envelope)
+for bounds, reuse and failure behavior.
+
 ## Continuing work
 
 Invoke the same skill with the issue key again. It refreshes tracker state,

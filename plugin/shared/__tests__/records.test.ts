@@ -253,6 +253,7 @@ describe("the registry", () => {
       "orca-guard-heartbeat",
       "orca-guard-launch",
       "tracker-claim-marker",
+      "tracker-footprint",
     ]);
     for (const kind of enveloped) {
       expect(kind.key?.source.startsWith("^")).toBe(true);

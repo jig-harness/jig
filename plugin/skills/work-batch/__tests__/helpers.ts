@@ -207,6 +207,13 @@ export function fakeTracker(
     !(CLOSED_STATE_TYPES as readonly string[]).includes(i.state.type);
   return {
     adapter: "fake",
+    footprintCommentsUpdateIssue: false,
+    async footprints() {
+      return new Map();
+    },
+    async writeFootprint() {
+      /* Batch proposal never writes a footprint. */
+    },
     team: "ENG",
     queries,
     childReads,

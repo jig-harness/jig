@@ -371,6 +371,11 @@ changes are marked **Breaking** and say what a consumer changes.
   gives a repository, and the line that carries each change to merge. What
   goes wrong without it follows as its own section on the home page.
 - The planned hub and dispatch board treat phone access as a required read-only surface, with an explicit scope, private HTTPS setup, availability requirements and phone acceptance budgets.
+- Settled the planned priorities design: work competes in priority lanes
+  (Urgent, High-priority bugs, then weighted lanes for other bugs and core,
+  tactical and peripheral goals), set in a host-local weights file read on
+  every tick. Defined the priority lane, peripheral floor and weights file
+  terms.
 
 ### Fixed
 
@@ -395,6 +400,16 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.262.0] - 2026-11-17
+
+### Added
+
+- A tracker footprint record and interface for predicted repository paths
+  and change areas, with trusted comment selection on GitHub, Linear and
+  Jira. Bounded, governed reads reuse unchanged predictions, batch comment
+  requests where supported and retain an aged reading when a tracker does
+  not answer.
 
 ## [0.261.1] - 2026-11-17
 
@@ -9217,7 +9232,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.261.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.262.0...HEAD
+[0.262.0]: https://github.com/jig-harness/jig/compare/v0.261.1...v0.262.0
 [0.261.1]: https://github.com/jig-harness/jig/compare/v0.261.0...v0.261.1
 [0.261.0]: https://github.com/jig-harness/jig/compare/v0.260.1...v0.261.0
 [0.260.1]: https://github.com/jig-harness/jig/compare/v0.260.0...v0.260.1
