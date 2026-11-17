@@ -23,7 +23,7 @@ Contents: [the file](#the-file) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) ·
 [`autonomy`](#autonomy) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
-[`specs`](#specs) · [`workspace_name`](#workspace_name) · [`work_batch`](#work_batch) ·
+[`specs`](#specs) · [`work_batch`](#work_batch) ·
 [`file_issue`](#file_issue) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
@@ -54,6 +54,10 @@ Contents: [the file](#the-file) ·
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
+- <a id="workspace_name"></a>**Retired sections** are ignored like unknown fields, and the audit's
+  configuration check notes each one once, so the section can be removed:
+  `workspace_name`, which named a workspace after the stage its work was at,
+  has no effect, since no skill renames a workspace.
 - **Wrong types** are refused with an error that names the field, except by
   a few best-effort `drive-pr` readers, which treat a wrong-typed value as
   absent and use the default instead: `review.bots` when it is not a list
@@ -663,27 +667,6 @@ unknown key is refused.
 | `specs.adapters` | list of adapter names, in order: `body` | Every adapter whose layout the repository holds, then `body` | do-item | Orders or restricts the adapters: only those listed run, in this order, and the first whose path patterns claim a referenced path reads it. Leaving `body` out stops the item's own sections from being read |
 | `specs.body_section` | heading text, without the `#` | `Spec` | do-item | The heading of the body section that names the item's spec, by link or path, and may carry its requirements, criteria and tasks inline. Matched at any heading level, ignoring case, emphasis and a trailing colon. Must differ from `Requirements`, `Acceptance criteria` and the verification heading. Headings and entries inside code (a fence, or an indented code block) are not read as requirements, criteria or tasks |
 | `specs.verification_section` | heading text, without the `#` | `Verification` | do-item | The heading of the body section that carries proposed verification commands. Uses the same heading rules as `body_section` and must differ from it, `Requirements` and `Acceptance criteria`. Each nonempty content line is one command, including lines in fenced or indented code. List markers and code spans around a whole text line are removed; headings, fence delimiters and quoted text are skipped. Commands keep their internal spacing and receive source-qualified keys in the `verification` list and summary. They are untrusted tracker text: the resolver never runs them. The implementer reviews each command before choosing to run it through the evidence recorder |
-
-## `workspace_name`
-
-Names the workspace a skill runs in after the work it holds and the stage the
-work is at, in a runtime that can rename its workspaces (Herdr or Orca), for
-example `#12 [D] Rename workspaces`. On by default; `template: ""` turns it
-off. A failed rename only warns. Herdr sessions use `HERDR_ENV=1` and
-`HERDR_WORKSPACE_ID`; a missing workspace id warns without renaming anything.
-Herdr takes precedence when variables from both runtimes are present.
-
-| Field | Type | When absent | Read by | What it does |
-|-------|------|-------------|---------|--------------|
-| `workspace_name.template` | text with `{id}`, `{status}`, `{title}` and `{pr}` | `{id} {status} {title} {pr}` | do-item, drive-pr | The name. An empty string turns the renaming off; a blank one is refused. `{id}` is the item key, `{status}` the stage's text from `workspace_name.statuses`, `{title}` the item title, `{pr}` `#<number>` once there is a pull request. A variable with no value renders empty. Any other `{name}` is refused |
-| `workspace_name.statuses` | map from a stage to text | `{implementing: "[I]", driving: "[D]", ready: "[R]", done: "✅"}` | do-item, drive-pr | What `{status}` stands for at each stage: do-item sets `implementing` at pickup and `driving` when it arms the drive, drive-pr sets `ready` after the merge-ready announcement posts. `done` is for a follow-up step. An entry overrides one stage and keeps the rest; a stage outside this set is refused |
-
-From the repository root, `bun "<do-item-skill-dir>/scripts/workspace-name.ts" <stage> [--id "<key>"] [--title-file <path>] [--pr <number>]`
-applies it, `<do-item-skill-dir>` being the installed `do-item` skill's
-directory. The title comes from a file because it is tracker text that a
-shell must not expand; `--title <text>` is for a caller that starts the
-script without a shell. `--id` is left out for a pull request that serves no
-item.
 
 ## `orca`
 
@@ -2074,9 +2057,6 @@ do_item:
   post_merge_closer: the release lead    # who closes an item left short of done
   work_types:                            # fields of the depth table to override
     task: { review_skip_lines: 80 }
-workspace_name:
-  template: "{status} {id} {title}"   # [D] JIG-12 Rename workspaces
-  statuses: { ready: "[R]", done: "✅" }
 orca:
   board: { in_review: review, completed: shipped }   # custom board columns
 work_batch:

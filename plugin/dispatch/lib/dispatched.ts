@@ -1,7 +1,7 @@
 /**
  * The workspaces the dispatcher started sessions in since a time, found by
- * the dispatched mark on their launch records, not by their names: a skill
- * may rename a workspace to what the work became, and the record still
+ * the dispatched mark on their launch records, not by their names: a person
+ * may rename a workspace, and the record still
  * names the workspace it launched into. Each is read back from the session
  * runtime for the name it carries now and for whether its comment still
  * carries the mark. What the morning report lists as dispatched.

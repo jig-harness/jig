@@ -76,7 +76,6 @@ import {
   DEFAULT_POST_MERGE,
   POST_MERGE_STATES,
 } from "../../do-item/scripts/lib/post-merge.ts";
-import { DEFAULT_TEMPLATE as DEFAULT_WORKSPACE_TEMPLATE } from "../../do-item/scripts/workspace-name.ts";
 import {
   parseRouting,
   RAISE_FIELDS,
@@ -495,7 +494,6 @@ describe("the reading skills", () => {
       "specs.verification_section": DEFAULT_VERIFICATION_SECTION,
       "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
         .reviews,
-      "workspace_name.template": DEFAULT_WORKSPACE_TEMPLATE,
       "verify.output_lines": DEFAULT_OUTPUT_LINES,
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
@@ -826,6 +824,39 @@ describe("the schema's own format", () => {
         ?.default,
     ).toBe(1);
   });
+
+  test("a retired section is noted once, not refused or called unknown", () => {
+    const retiring = parseSchema({
+      ...withField({ type: "string" }),
+      retired: { old: "nothing reads it" },
+    });
+    expect(
+      checkConfig({ old: { anything: 1 }, a: { b: "x" } }, retiring),
+    ).toEqual([
+      {
+        id: "retired:old",
+        severity: "info",
+        message: "old no longer has an effect: nothing reads it",
+      },
+    ]);
+    expect(() =>
+      parseSchema({ ...withField({ type: "string" }), retired: { old: 1 } }),
+    ).toThrow("retired must map a section to a message");
+    for (const retired of [{ a: "x" }, { "a.b": "x" }])
+      expect(() =>
+        parseSchema({ ...withField({ type: "string" }), retired }),
+      ).toThrow("which the schema also declares");
+  });
+});
+
+test("workspace_name is retired: a file that keeps it gets only a notice", () => {
+  const findings = checkConfig(
+    { workspace_name: { template: "{id} {status} {title}", statuses: {} } },
+    schema,
+  );
+  expect(findings.map((f) => [f.id, f.severity])).toEqual([
+    ["retired:workspace_name", "info"],
+  ]);
 });
 
 test("dispatch.person accepts only usable recipient logins", () => {
