@@ -145,6 +145,23 @@ function refusedTick(startedAt: string, paths: string[]): LineSnapshot {
   );
 }
 
+/** The line of a tick that identified the repository at `path` as `slug`, then could not read its configuration. */
+function unobservedTick(
+  startedAt: string,
+  slug: string,
+  path: string,
+  reason = REFUSAL,
+): LineSnapshot {
+  return readBy(
+    {
+      ...tickLine(startedAt, []),
+      repos: [{ ...repo(slug, path), refused: reason, unobserved: true }],
+    },
+    startedAt,
+    startedAt,
+  );
+}
+
 describe("mergeLine", () => {
   test("a repository the tick could not identify keeps its part from the tick that last read it, with this tick's refusal", () => {
     const before = tickLine("2026-11-10T10:00:00.000Z", [
@@ -420,5 +437,72 @@ describe("mergeLine", () => {
     expect(merged.repos.map((r) => r.slug)).toEqual(["A", "B"]);
     expect(merged.needs.map((x) => x.target)).toEqual(["A-N0", "B-N1"]);
     expect(merged.load?.factor).toBe(0.5);
+  });
+
+  test("a repository identified but not opened keeps the part the tick that last read it found", () => {
+    const before = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const merged = mergeLine(
+      before,
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(merged.needs.map((x) => x.target)).toEqual(["A-N0"]);
+    expect(refusedRepos(merged)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: "2026-11-10T10:00:00.000Z" },
+    ]);
+  });
+
+  test("a repository no tick has read yet and could not open names no reading", () => {
+    const merged = mergeLine(
+      tickLine("2026-11-10T10:00:00.000Z", []),
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(refusedRepos(merged)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: null },
+    ]);
+  });
+
+  test("a delayed older read does not clear a newer refusal that kept an earlier reading", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const refused = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:04:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    const late = mergeLine(
+      refused,
+      tickLine("2026-11-10T10:02:00.000Z", [{ slug: "A", path: "/w/a", n: 1 }]),
+      LISTED,
+      "kept",
+    );
+    expect(late.needs.map((x) => x.target)).toEqual(["A-N0"]);
+    expect(refusedRepos(late).map((r) => r.refused)).toEqual([REFUSAL]);
+  });
+
+  test("a delayed older refusal does not replace the newest refusal's reason", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const newest = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:04:00.000Z", "A", "/w/a", "newest"),
+      LISTED,
+      "fresh",
+    );
+    const late = mergeLine(
+      newest,
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a", "older"),
+      LISTED,
+      "kept",
+    );
+    expect(refusedRepos(late).map((r) => r.refused)).toEqual(["newest"]);
   });
 });

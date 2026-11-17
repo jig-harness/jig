@@ -5,11 +5,14 @@
  * sessions, its Ready cards and its own entry) comes from the newest tick
  * that read it, and the entry names that tick and when it started (`runId`,
  * `readAt`), so the page can say which part is old and why. A repository the
- * tick read replaces its whole part. A report that found no slug read
- * nothing: its entry carries this tick's refusal, and the part the line
- * before held under the slug its path last had stays, with that part's tick
- * and time on the entry, so a need does not leave the line because a read
- * failed (`line-unread.ts` names such repositories). The rest belongs
+ * tick read replaces its whole part. A report that found no slug, or got no
+ * further than opening the repository (`unobserved`), read nothing: its entry
+ * carries this tick's refusal, and the part the line before held under the
+ * slug its path last had stays, with that part's tick and time on the entry,
+ * so a need does not leave the line because a read failed
+ * (`line-unread.ts` names such repositories). Two times are kept apart: when
+ * the part was read (`readAt`) and when the newest tick that tried started
+ * (`triedAt`), which orders ticks that write out of turn. The rest belongs
  * to the whole machine (the accounts, the line's own tick and times, the
  * receipt beside it, except the recent tick durations and their maximum,
  * which every tick that reads adds its own to): a tick the timer asked for every repository writes it,
@@ -17,8 +20,9 @@
  * that stopped still shows as one while woken ticks run.
  */
 import type { LineRepo, LineSnapshot } from "./dashboard-contract.ts";
+import { unread } from "./line-unread.ts";
 
-/** The line with each repository's entry marked as read by the tick `runId` that started at `at`. */
+/** The line with each repository's entry marked as read by the tick `runId` that started at `at`; an entry that read nothing is marked as tried then, with no reading. */
 export function readBy(
   line: LineSnapshot,
   runId: string,
@@ -26,7 +30,9 @@ export function readBy(
 ): LineSnapshot {
   return {
     ...line,
-    repos: line.repos.map((r) => ({ ...r, runId, readAt: at })),
+    repos: line.repos.map((r) =>
+      unread(r) ? { ...r, triedAt: at } : { ...r, runId, readAt: at },
+    ),
   };
 }
 
@@ -46,27 +52,32 @@ export function mergeLine(
   machine: "fresh" | "kept",
 ): LineSnapshot {
   const keptPaths = new Map(previous.repos.map((r) => [r.path, r]));
-  // A repository a newer tick read since this one did keeps that tick's part.
-  const outdated = (r: { path: string; readAt?: string }): boolean => {
+  // A repository a newer tick tried since this one did keeps that tick's entry and part.
+  const outdated = (r: LineRepo): boolean => {
     const before = keptPaths.get(r.path);
     return (
       before !== undefined &&
-      (before.readAt ?? previous.startedAt) > (r.readAt ?? fresh.startedAt)
+      (before.triedAt ?? before.readAt ?? previous.startedAt) >
+        (r.triedAt ?? r.readAt ?? fresh.startedAt)
     );
   };
   const current = fresh.repos.filter((r) => !outdated(r));
   const read = new Set(
-    current.flatMap((r) => (r.slug === null ? [] : [r.slug])),
+    current.flatMap((r) => (unread(r) || r.slug === null ? [] : [r.slug])),
   );
   const paths = new Set(listed.map((r) => r.path));
   const freshPaths = new Map(current.map((r) => [r.path, r]));
   // A path this tick did not identify keeps its part under the slug it last had.
-  const unidentified = (path: string): boolean =>
-    (freshPaths.get(path)?.slug ?? null) === null;
+  const unidentified = (path: string): boolean => {
+    const now = freshPaths.get(path);
+    return now === undefined || unread(now);
+  };
   const kept = new Set(
     previous.repos.flatMap((r) => {
       const slug = knownSlug(r);
+      // An entry that no tick read holds no part to keep.
       return slug === undefined ||
+        (unread(r) && r.readAt === undefined) ||
         !paths.has(r.path) ||
         !unidentified(r.path) ||
         read.has(slug)
@@ -123,11 +134,11 @@ export function mergeLine(
             };
       if (now === undefined)
         return before === undefined ? [] : [{ ...before, ...from }];
-      // An unidentified entry whose part was kept names the tick that part is from.
+      // An entry that read nothing and whose part was kept names the tick that part is from.
       const slug = before === undefined ? undefined : knownSlug(before);
       return [
-        now.slug === null && slug !== undefined && kept.has(slug)
-          ? { ...now, ...from }
+        unread(now) && slug !== undefined && kept.has(slug)
+          ? { ...now, ...from, triedAt: now.triedAt ?? fresh.startedAt }
           : now,
       ];
     }),

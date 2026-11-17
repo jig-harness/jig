@@ -34,7 +34,8 @@ export type HealthReceipt = Pick<
       | "defect"
       | "stageDefects"
       | "shared"
-    >
+    > &
+      Partial<Pick<TickReceipt["repos"][number], "section">>
   >;
   busy?: ReadonlyArray<{ path: string }>;
   lowBudget?: {
@@ -120,8 +121,11 @@ export function tickHealthOf(receipt: HealthReceipt, sweep: boolean): LineTick {
       (receipt.defect === undefined ? 0 : 1) +
       repos.filter((r) => r.defect !== null).length +
       receipt.repos.reduce((n, r) => n + (r.stageDefects?.length ?? 0), 0),
+    // A report that has a section was opened: a defect after that kept what its earlier phases read.
     refused: receipt.repos.flatMap((r) =>
-      r.refused === null ? [] : [r.slug ?? r.path],
+      r.refused === null || (r.section ?? null) !== null
+        ? []
+        : [r.slug ?? r.path],
     ),
   };
 }

@@ -1450,10 +1450,10 @@ create` does not do) live in the plugin, in
   the launch can carry it: `orca agent launch` takes no session id, so the
   interactive launch the pickup step built (the wrapper in a terminal tab,
   starting Claude Code itself) passes it as Claude Code's `--session-id`;
-  that `orca agent launch` can bind its agent to
-  an account so is checked when the pickup stage is built, and until it
-  does, interactive sessions are not launched. A pickup is launched as a
-  headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
+  `orca agent launch` cannot bind its agent to an account
+  ([orca-integration.md](orca-integration.md#what-jig-asks-of-orca) asks
+  Orca for it), and until it can, interactive sessions are not launched.
+  A pickup is launched as a headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
   and takes the headless form above, with the wrapper running
   `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
@@ -1641,10 +1641,11 @@ the same way, through the environment or account selection of its agent's
 launch, with the same isolation and the same check before it starts, and a
 person switching the host's active account does not move it.
 Switching Orca's active account before a launch is not used: it is
-host-wide and would move every other session's next pass too. Whether an
-Orca agent launch can bind its agent to an account is not verified (Orca's
-command line selects accounts only for some agents), so a pickup does not
-start as an interactive session: it runs as a headless pass, as a
+host-wide and would move every other session's next pass too. An Orca agent
+launch cannot bind its agent to an account either: that selection
+overrides a variable the launch hook adds
+([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)), so
+a pickup does not start as an interactive session: it runs as a headless pass, as a
 follow-up does
 ([headless pickups](../plugin/README.md#the-dispatcher)).
 
@@ -1776,7 +1777,11 @@ steward pass has judged yet. Its members are
 - an ended pass that recommends a resume;
 - a queued item missing a priority, type or size;
 - a need with no framing: one neither its pass, its drive's parks nor the
-  tick frames as a decision a person answers in a word.
+  tick frames as a decision a person answers in a word;
+- a pickup's or a follow-up's run that ended without a closing report and
+  whose end its wrapper did not explain, at most five no pass has seen, the
+  latest first
+  ([A run with no report](dispatched-sessions.md#when-a-runs-tab-closes)).
 
 The trigger reads the backlog only. An empty backlog starts no pass, and
 neither does one whose every member a pass of the repository's latest 20
@@ -1788,7 +1793,9 @@ read, so a file that sets it keeps loading, and changes nothing.
 The digest the pass reads carries the backlog, the unframed needs and,
 beside them, each framed need with the framing it already carries. A `need`
 record may name only a target among the digest's unframed needs; one for
-any other target is refused. A tick that starts no pass says why on its
+any other target is refused. The runs without a report are listed with
+an excerpt of each run's transcript copy, and a `cause` record may name only
+one of them. A tick that starts no pass says why on its
 receipt and in the line the dashboard reads: the backlog was empty, its
 members were all judged, or the hourly budget was spent.
 

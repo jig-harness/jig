@@ -4,12 +4,14 @@ release: patch
 
 ### Fixed
 
-- A dispatcher tick that could not identify a repository (the forge read
-  was refused, for example while a rate limit held it) no longer drops that
+- A dispatcher tick that could not identify a repository, or read its
+  dispatch section (the forge read was refused, for example while a rate
+  limit held it), no longer drops that
   repository's needs, queue, sessions and Ready cards from the line. The
   line keeps what the tick that last read the repository found, and its
   entry names that tick beside the newest refusal; before, a tick that
-  refused every repository wrote a line with no needs at all.
+  refused every repository wrote a line with no needs at all. Ticks that
+  write out of order leave the newest attempt's refusal in place.
 - `jig ask --waiting` says when the line it answers from is incomplete: the
   text lists each repository whose newest read was refused, why, and when
   its part was read (or that it never was), and `--json` carries the same

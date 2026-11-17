@@ -22,6 +22,8 @@ const STOP_GRACE_MS = 10_000;
 /** How long the wrapper waits, once the stage exited, for the rest of its output and for its descendants to end. */
 const DRAIN_MS = 2000;
 const DEFAULT_OPTIONS: RunOptions = { keepOutput: false, deadlineSec: 0 };
+/** How much of the start of a kept output the wrapper keeps, where a vendor prints its session id. */
+const HEAD_CHARS = 8192;
 
 export interface Ran {
   started?: number;
@@ -38,6 +40,10 @@ export interface Ran {
   /** Observed process cleanup could not be confirmed, so no exit is published. */
   unconfirmed?: true;
   interrupted?: true;
+  /** The wrapper stopped the stage at its deadline. */
+  timedOut?: true;
+  /** The start of a kept output, where a vendor prints its header (a Codex pass's session id). */
+  head?: string;
   /** The owned child pid, also kept when a rapid exit prevents identity capture. */
   pid?: number;
 }
@@ -87,11 +93,13 @@ function armDeadline(
   deadlineSec: number,
   signalTree: (name: NodeJS.Signals) => void,
   endTree: () => Promise<void>,
+  reached: () => void = () => undefined,
 ): ReturnType<typeof setTimeout>[] {
   const timers: ReturnType<typeof setTimeout>[] = [];
   if (deadlineSec <= 0) return timers;
   timers.push(
     setTimeout(() => {
+      reached();
       console.error(
         `jig dispatch run: the pass ran past its ${deadlineSec}s deadline; stopping it`,
       );
@@ -134,6 +142,8 @@ export function runStage(
   return new Promise((settle) => {
     const started = currentMs();
     let output = "";
+    let head = "";
+    let timedOut = false;
     let stdout = "";
     let stderr = "";
     const stdoutDecoder = new StringDecoder("utf8");
@@ -179,10 +189,15 @@ export function runStage(
     };
     const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
     let drained = !options.keepOutput;
+    const keepCombined = (decoded: string) => {
+      output = (output + decoded).slice(-8192);
+      if (head.length < HEAD_CHARS)
+        head = (head + decoded).slice(0, HEAD_CHARS);
+    };
     child.stdout?.on("data", (chunk: Buffer) => {
       const decoded = stdoutDecoder.write(chunk);
       stdout = (stdout + decoded).slice(-8192);
-      output = (output + decoded).slice(-8192);
+      keepCombined(decoded);
       if (!process.stdout.write(chunk)) {
         child.stdout?.pause();
         process.stdout.once("drain", () => child.stdout?.resume());
@@ -199,7 +214,7 @@ export function runStage(
     child.stderr?.on("data", (chunk: Buffer) => {
       const decoded = stderrDecoder.write(chunk);
       stderr = (stderr + decoded).slice(-8192);
-      output = (output + decoded).slice(-8192);
+      keepCombined(decoded);
       if (!process.stderr.write(chunk)) {
         child.stderr?.pause();
         process.stderr.once("drain", () => child.stderr?.resume());
@@ -220,8 +235,13 @@ export function runStage(
     };
     const forward = (name: NodeJS.Signals) => stop(name);
     for (const name of FORWARDED) process.on(name, forward);
-    const timers = armDeadline(options.deadlineSec, stop, () =>
-      endWindowsTree(),
+    const timers = armDeadline(
+      options.deadlineSec,
+      stop,
+      () => endWindowsTree(),
+      () => {
+        timedOut = true;
+      },
     );
     const parentWatch = watchOwner(options.owner, () => ended, stop);
     registerChild(child, options.owner, () => ended, stop);
@@ -250,6 +270,8 @@ export function runStage(
         ...(child.stderr === null ? {} : { errors: stderr }),
         ...(!treeEnded ? { unconfirmed: true as const } : {}),
         ...(stopping ? { interrupted: true as const } : {}),
+        ...(timedOut ? { timedOut: true as const } : {}),
+        ...(head === "" ? {} : { head }),
         ...(options.keepOutput && tail.question !== ""
           ? { said: tail.question }
           : {}),

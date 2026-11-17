@@ -8,7 +8,9 @@ import {
   dispatchScopeFailure,
   recordDispatchScopeFailure,
 } from "../../../skills/do-item/scripts/lib/tracker/dispatch-shared.ts";
+import { OutboundError } from "../../../shared/outbound/failure.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
+import { ended, within } from "./bounded.ts";
 import type { FacetBound } from "./tracker-facets.ts";
 
 interface ScopeState {
@@ -55,11 +57,20 @@ export function nativeFacts(
   const guarded = async <T>(
     read: () => Promise<T>,
     onlyUnavailable = false,
+    readBound: FacetBound | undefined = bound,
   ): Promise<T> => {
+    // A limiter may run this callback long after it was queued.  Do not let
+    // queued shared work begin once the tick that owns it has ended.
+    if (ended(readBound))
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
     const failure = reads.get("dispatch scope failure");
     if (failure !== undefined) return Promise.reject(await failure);
     try {
-      return await read();
+      return await (readBound === undefined
+        ? read()
+        : within(read(), readBound));
     } catch (error) {
       if (!onlyUnavailable || isUnavailable(error))
         recordDispatchScopeFailure(reads, error);
@@ -83,9 +94,12 @@ export function nativeFacts(
   return {
     failure: () => dispatchScopeFailure(reads),
     guarded,
-    async queue(identity: string): Promise<DispatchRawIssue[]> {
+    async queue(
+      identity: string,
+      readBound: FacetBound | undefined = bound,
+    ): Promise<DispatchRawIssue[]> {
       const reading = scope.queues.then(() =>
-        guarded(() => source.queue(identity, bound)),
+        guarded(() => source.queue(identity, readBound), false, readBound),
       );
       scope.queues = reading.catch(() => undefined);
       const rows = await reading;

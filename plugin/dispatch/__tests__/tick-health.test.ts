@@ -119,6 +119,24 @@ describe("a tick's entry on the strip", () => {
     expect(readNothing(tickHealthOf(receipt({ repos: [] }), true))).toBe(false);
   });
 
+  it("counts a repository whose turn a defect stopped after it opened as read, not refused", () => {
+    const tick = tickHealthOf(
+      receipt({
+        repos: [
+          {
+            path: "/srv/web",
+            slug: "acme/web",
+            refused: "a defect stopped this repository's turn",
+            section: {} as never,
+          },
+        ],
+      }),
+      true,
+    );
+    expect(tick.refused).toEqual([]);
+    expect(readNothing(tick)).toBe(false);
+  });
+
   it("counts busy repositories, the low budget's skipped reads and the tick's own defect, and takes the budget from the gate", () => {
     const tick = tickHealthOf(
       receipt({

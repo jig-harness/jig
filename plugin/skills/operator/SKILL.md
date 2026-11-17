@@ -1,6 +1,6 @@
 ---
 name: operator
-description: "Ask and tell the line's stations for a person: where a pull request, tracker item or follow-up stands, what waits on a person, what was said to a station, and a person's command to one (hold, release, drive, answer a parked question, pause or stop a drive), through jig ask and jig send, a status answered as one fixed card. Not for doing a station's work or steering a drive in ways jig send has no verb for (use drive-pr); not for how Jig works (use jig)."
+description: "Ask and tell the line's stations for a person: where a pull request, item or follow-up stands, what waits on a person, and a person's command to a station (hold, release, drive, answer, pause, stop), through jig ask and jig send. Not for doing a station's work (use drive-pr) or how Jig works (use jig)."
 argument-hint: "[question | command]"
 allowed-tools: "Read AskUserQuestion Bash(jig ask *) Bash(jig send *)"
 ---

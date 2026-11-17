@@ -6,7 +6,12 @@
  * a tick that could read none of the repositories it reported on. Pure, with
  * no imports but types, so the dashboard's page uses it as the plugin does.
  */
-import type { LineSnapshot, LineTick } from "./dashboard-contract.ts";
+import type { LineRepo, LineSnapshot, LineTick } from "./dashboard-contract.ts";
+
+/** Whether the tick that wrote the entry read nothing of its repository: it found no slug, or got no further than opening it. */
+export function unread(r: Pick<LineRepo, "slug" | "unobserved">): boolean {
+  return r.slug === null || r.unobserved === true;
+}
 
 /** A repository whose newest read was refused, and the reading its part of the line is from. */
 export interface RefusedRepo {
@@ -23,13 +28,12 @@ export function refusedRepos(line: LineSnapshot): RefusedRepo[] {
   return line.repos.flatMap((r) => {
     if (r.refused === null) return [];
     const known = r.slug ?? r.lastSlug;
-    // A report with a slug brought this tick's part; one without kept the part its path last had, if any.
-    const readAt =
-      r.slug !== null
-        ? (r.readAt ?? line.startedAt)
-        : known === undefined
-          ? null
-          : (r.readAt ?? null);
+    // An entry that read nothing holds the part its path last had, if any, with that reading's time.
+    const readAt = !unread(r)
+      ? (r.readAt ?? line.startedAt)
+      : known === undefined
+        ? null
+        : (r.readAt ?? null);
     return [{ repo: known ?? r.path, refused: r.refused, readAt }];
   });
 }
