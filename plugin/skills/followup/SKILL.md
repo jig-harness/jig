@@ -400,12 +400,12 @@ Then end as `settle` says:
 | Ending | When | Run by hand | Started by the dispatcher |
 |---|---|---|---|
 | done | every arm settled | `jig dispatch marker done <PR> --comment <marker>` | record done with the `jig dispatch result` command your prompt names |
-| wait | an arm is `pending` | report each pending arm, mark done, and run the follow-up again once it can settle | report each pending arm, then record `waits --until <when to look again> --reason pending --arm "<arm>"` with the `jig dispatch result` command your prompt names (the time at most a day ahead; the arm as `settle` prints it); the dispatcher starts the follow-up again after that time, and tells a person if the arm is still pending past `dispatch.followup_within` |
+| wait | an arm is `pending` | report each pending arm and leave the marker open (it keeps the claim); once the arm can settle, run the follow-up again with the same marker instead of claiming a new one | report each pending arm, then record `waits --until <when to look again> --reason pending --arm "<arm>"` with the `jig dispatch result` command your prompt names (the time at most a day ahead; the arm as `settle` prints it); the dispatcher starts the follow-up again after that time, and tells a person if the arm is still pending past `dispatch.followup_within` |
 | failed | an arm is `unread` | `jig dispatch marker failed <PR> --comment <marker>` | record failed |
 | preview | an open pull request | nothing to mark | nothing to record |
 
 In a run by hand, mark the marker done as soon as the last act succeeds and
-the ending is done or wait. In a session the dispatcher started, the wrapper
+the ending is done. A wait leaves it open. In a session the dispatcher started, the wrapper
 ends the marker; record only what the table's last column says. Its closing
 report comes last, with the `jig dispatch report` command its prompt names.
 

@@ -184,7 +184,7 @@ function endingLines(s: Settled): string[] {
     case "wait":
       return [
         `End: a wait, on ${s.because.join(", ")} (each settles by itself; the follow-up looks again later).`,
-        `- Run by hand: report each pending arm, ${markerDone}, and run the follow-up again once it can settle`,
+        `- Run by hand: report each pending arm and leave the marker open: it keeps the claim, and a done marker would hold against the later run. Once the arm can settle, run the follow-up again with this marker (${marker}) instead of claiming a new one, and end it as the settled ending says`,
         `- Started by the dispatcher: report each pending arm, then record \`waits --until <when to look again> --reason pending --arm "<arm>"\` with the \`jig dispatch result\` command your prompt names, the time at most a day ahead and the arm in one line: ${pendingArm(s)}`,
       ];
     case "failed":

@@ -194,7 +194,7 @@ describe("settling a run", () => {
     expect(failedRun.ok && failedRun.value.because).toEqual(["tracker"]);
   });
 
-  test("a wait tells a dispatched pass to record a pending wait naming the arm, and a hand run to mark done", () => {
+  test("a wait tells a dispatched pass to record a pending wait naming the arm, and a hand run to leave the marker open", () => {
     const wait = settle(settled(runOf(), { release: "pending" }));
     expect(wait.ok).toBe(true);
     if (!wait.ok) return;
@@ -204,7 +204,9 @@ describe("settling a run", () => {
     );
     expect(pendingArm(wait.value)).toStartWith("release: ");
     expect(text).toContain(pendingArm(wait.value));
-    expect(text).toContain("jig dispatch marker done 7 --comment 42");
+    expect(text).toContain("leave the marker open");
+    expect(text).toContain("this marker (42)");
+    expect(text).not.toContain("jig dispatch marker done 7 --comment 42");
     expect(text).not.toContain("record done");
   });
 

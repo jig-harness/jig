@@ -1241,11 +1241,6 @@ Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion.
-- **M7**:
-  - repository arms for the post-merge follow-up: `followup.arms[]` entries
-    that name an instructions file, a check command or a skill (the layer is
-    in [the follow-up design](followup.md#repository-arms); the shipped skill
-    runs the core arms only);
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
