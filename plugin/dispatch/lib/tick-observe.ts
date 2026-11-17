@@ -766,6 +766,43 @@ function withMergeFailures<R extends { ok: boolean; detail: string }>(
   } as R;
 }
 
+/** The served policy one repository's pickup read runs under. */
+function servedPolicyOf(
+  from: {
+    values: Record<string, unknown>;
+    repo: RepoTarget;
+    config: ReturnType<typeof trackerConfigOf>;
+    serveDefaults: Readonly<Record<string, string>> | undefined;
+  },
+  mergeEvidence: ReturnType<typeof planMergeReader>,
+): NonNullable<Tracked["servedPolicy"]> {
+  const { values, repo, config } = from;
+  const item = values.do_item as { execution_plan_block?: unknown } | undefined;
+  const scope = scopeOf(values);
+  return {
+    mergeEvidence,
+    hitl: config.labels.hitl,
+    manualOps: config.labels.manualOps,
+    ...(typeof item?.execution_plan_block === "string"
+      ? { executionPlanBlock: item.execution_plan_block }
+      : {}),
+    ...(scope === undefined ? {} : { repoScope: scope }),
+    unlabeled: unlabeledModeOf({
+      scope,
+      adapter: config.adapter,
+      team: config.team ?? "",
+      site: config.jira.site,
+      defaults: from.serveDefaults,
+      repoPath: repo.path,
+    }),
+    trackerNamespace: trackerDefaultKey(
+      config.adapter,
+      config.team ?? "",
+      config.jira.site,
+    ),
+  };
+}
+
 /** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
 async function readTracker(
   values: Record<string, unknown>,
@@ -796,44 +833,21 @@ async function readTracker(
     tracked.adapter = config.adapter;
     tracked.issueRepository =
       config.adapter === "github" ? config.github.repository : null;
-    const item = values.do_item as
-      | { execution_plan_block?: unknown }
-      | undefined;
-    const scope = scopeOf(values);
-    preparedTracker ??= openTracker(config, repo.path);
+    const tracker = preparedTracker ?? openTracker(config, repo.path);
     const mergeFailures: unknown[] = [];
-    const mergeReader = mergeReaderOf(
-      preparedTracker,
-      { values, repo, config, keySource: tracked.keys?.source, bound },
-      proofPoolOf(reads.pool),
-      mergeFailures,
-    );
-    tracked.servedPolicy = {
-      mergeEvidence: mergeReader,
-      hitl: config.labels.hitl,
-      manualOps: config.labels.manualOps,
-      ...(typeof item?.execution_plan_block === "string"
-        ? { executionPlanBlock: item.execution_plan_block }
-        : {}),
-      ...(scope === undefined ? {} : { repoScope: scope }),
-      unlabeled: unlabeledModeOf({
-        scope,
-        adapter: config.adapter,
-        team: config.team ?? "",
-        site: config.jira.site,
-        defaults: serveDefaults,
-        repoPath: repo.path,
-      }),
-      trackerNamespace: trackerDefaultKey(
-        config.adapter,
-        config.team ?? "",
-        config.jira.site,
+    tracked.servedPolicy = servedPolicyOf(
+      { values, repo, config, serveDefaults },
+      mergeReaderOf(
+        tracker,
+        { values, repo, config, keySource: tracked.keys?.source, bound },
+        proofPoolOf(reads.pool),
+        mergeFailures,
       ),
-    };
+    );
     const reading = await readPickups(
       () => {
-        tracked.tracker = preparedTracker ?? openTracker(config, repo.path);
-        return tracked.tracker;
+        tracked.tracker = tracker;
+        return tracker;
       },
       section,
       { bound: () => facetBound(bound?.deadline), tick: bound },
