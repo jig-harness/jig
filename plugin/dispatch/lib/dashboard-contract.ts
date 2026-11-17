@@ -289,7 +289,7 @@ export interface LineQueued {
 export interface LineRepo {
   /** `null` when the forge could not say which repository the path is. */
   slug: string | null;
-  /** The slug this path last had, kept while reports find none, so a repeated failure still recovers it. */
+  /** The slug this path last had, kept while reports find none, so a repeated failure still recovers it. On an entry that read nothing and kept an earlier part, the slug that part is under, whatever slug the newest attempt found. */
   lastSlug?: string;
   path: string;
   /** The stages the machine file enables for it. */

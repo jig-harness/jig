@@ -125,8 +125,9 @@ export function mergeLine(
     repos: listed.flatMap(({ path }) => {
       const now = freshPaths.get(path);
       const before = keptPaths.get(path);
+      // An entry no tick ever read has no reading to name.
       const from =
-        before === undefined
+        before === undefined || (unread(before) && before.readAt === undefined)
           ? undefined
           : {
               runId: before.runId ?? previous.runId,
@@ -136,18 +137,29 @@ export function mergeLine(
         return before === undefined ? [] : [{ ...before, ...from }];
       // An entry that read nothing and whose part was kept names the tick that part is from.
       const slug = before === undefined ? undefined : knownSlug(before);
+      if (!(unread(now) && slug !== undefined && kept.has(slug))) return [now];
+      // The retained part keeps its own identity and Ready omission count beside this attempt's entry.
+      const { readyOmitted: _attempted, ...attempt } = now;
       return [
-        unread(now) && slug !== undefined && kept.has(slug)
-          ? { ...now, ...from, triedAt: now.triedAt ?? fresh.startedAt }
-          : now,
+        {
+          ...attempt,
+          ...from,
+          lastSlug: slug,
+          ...(before?.readyOmitted === undefined
+            ? {}
+            : { readyOmitted: before.readyOmitted }),
+          triedAt: now.triedAt ?? fresh.startedAt,
+        },
       ];
     }),
   };
 }
 
-/** The slug of a repository's entry, else the slug its path last had. */
+/** The slug the repository's retained part is under: an entry that read nothing names it in `lastSlug`, whatever slug the newest attempt found; else the entry's slug. */
 function knownSlug(r: LineRepo): string | undefined {
-  return r.slug ?? r.lastSlug;
+  return unread(r) && r.lastSlug !== undefined
+    ? r.lastSlug
+    : (r.slug ?? r.lastSlug);
 }
 
 /**

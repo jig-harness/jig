@@ -505,4 +505,55 @@ describe("mergeLine", () => {
     );
     expect(refusedRepos(late).map((r) => r.refused)).toEqual(["newest"]);
   });
+  test("a wake-up for another repository leaves a never-read entry with no reading", () => {
+    const first = mergeLine(
+      tickLine("2026-11-10T10:00:00.000Z", []),
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    const woken = mergeLine(
+      first,
+      tickLine("2026-11-10T10:04:00.000Z", [{ slug: "B", path: "/w/b", n: 0 }]),
+      LISTED,
+      "kept",
+    );
+    expect(refusedRepos(woken)).toEqual([
+      { repo: "A", refused: REFUSAL, readAt: null },
+    ]);
+  });
+
+  test("a refusal keeps the retained Ready omission count", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    read.repos[0] = { ...read.repos[0], readyOmitted: 3 } as LineRepo;
+    const merged = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:02:00.000Z", "A", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(merged.repos[0]?.readyOmitted).toBe(3);
+  });
+
+  test("a refusal under a changed slug keeps the retained part across consecutive refusals", () => {
+    const read = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+    ]);
+    const once = mergeLine(
+      read,
+      unobservedTick("2026-11-10T10:02:00.000Z", "B", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    const twice = mergeLine(
+      once,
+      unobservedTick("2026-11-10T10:04:00.000Z", "B", "/w/a"),
+      LISTED,
+      "fresh",
+    );
+    expect(twice.needs.map((x) => x.target)).toEqual(["A-N0"]);
+    expect(refusedRepos(twice)[0]?.readAt).toBe("2026-11-10T10:00:00.000Z");
+  });
 });
