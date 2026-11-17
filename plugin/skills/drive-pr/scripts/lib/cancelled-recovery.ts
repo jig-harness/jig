@@ -84,34 +84,20 @@ export async function recoverCancelled(
   if (runs === null) return "unknown";
   const cancelled = unreplacedCancelledJobs(jobs, runs);
   if (cancelled.length === 0) return "none";
-  const affected = runs.filter((run) =>
-    cancelled.some((job) => job.suiteId === run.checkSuiteId),
-  );
-  if (
-    cancelled.some(
-      (job) => !affected.some((run) => run.checkSuiteId === job.suiteId),
-    )
-  )
-    return "unknown";
-  // A replacement only answers for its own workflow; another workflow still
-  // running on the head must not mask an orphaned cancellation.
-  const orphaned = affected.filter(
-    (run) =>
-      !runs.some(
-        (other) =>
-          other.workflowId === run.workflowId && other.status !== "completed",
-      ) &&
-      !affected.some(
-        (other) => other.workflowId === run.workflowId && other.id > run.id,
-      ),
-  );
+  const orphaned = orphanedRuns(cancelled, runs);
+  if (orphaned === "unknown") return "unknown";
   if (orphaned.length === 0) return "wait";
   const now = deps.now();
   const record = await observeReleasing(pr, head, now, deps);
   const granted = (record.grants ?? 0) > 0;
   if (record.requestedAt !== null) {
     if (now - record.requestedAt < 60_000) return "wait";
-    return await park(
+    return await parkCancelled(
+      deps,
+      pr,
+      head,
+      orphaned,
+      record,
       granted
         ? "the re-run a person's answer granted was requested and cancellation still has no replacement"
         : "the once-per-head re-run was already requested and cancellation still has no replacement",
@@ -121,7 +107,12 @@ export async function recoverCancelled(
   if (!(await deps.confirm(pr, head))) return "unknown";
   const allowed = await deps.rerunnable(pr, orphaned);
   if (orphaned.some((run) => !allowed.includes(run.id)))
-    return await park(
+    return await parkCancelled(
+      deps,
+      pr,
+      head,
+      orphaned,
+      record,
       "the run was created under the CI hold or its label history could not be verified; re-running it may replay the hold",
     );
   // Claim BEFORE the API mutation: an ambiguous response or a process death
@@ -142,19 +133,58 @@ export async function recoverCancelled(
     granted ? "the re-run a person's answer granted" : "re-run 1/1",
   );
   if (requested === "head-moved") return "unknown";
-  if (requested !== null) return await park(requested);
+  if (requested !== null)
+    return await parkCancelled(deps, pr, head, orphaned, record, requested);
   return "wait";
+}
 
-  async function park(why: string): Promise<"parked"> {
-    const commands = orphaned.map((run) => `gh run rerun ${run.id}`).join("; ");
-    const after = granted
+async function parkCancelled(
+  deps: RecoveryDeps,
+  pr: string,
+  head: string,
+  orphaned: readonly WorkflowRun[],
+  record: RecoveryRecord,
+  why: string,
+): Promise<"parked"> {
+  const commands = orphaned.map((run) => `gh run rerun ${run.id}`).join("; ");
+  const after =
+    (record.grants ?? 0) > 0
       ? ` (a person's answer granted ${record.grants} more re-run(s) on this head)`
       : "";
-    const reason = `Cancelled CI on head ${head}: run ${orphaned.map((run) => run.id).join(", ")}: ${why}${after}. Answering "Re-run safely" and re-arming grants one more re-run, which the drive requests after the same checks; or inspect the workflow's event and permissions, run ${commands} when safe and re-arm the drive.`;
-    await deps.park(pr, reason);
-    console.error(reason);
-    return "parked";
-  }
+  const reason = `Cancelled CI on head ${head}: run ${orphaned.map((run) => run.id).join(", ")}: ${why}${after}. Answering "Re-run safely" and re-arming grants one more re-run, which the drive requests after the same checks; or inspect the workflow's event and permissions, run ${commands} when safe and re-arm the drive.`;
+  await deps.park(pr, reason);
+  console.error(reason);
+  return "parked";
+}
+
+/**
+ * The cancelled runs no replacement answers for. A replacement only answers for
+ * its own workflow; another workflow still running on the head must not mask an
+ * orphaned cancellation.
+ */
+function orphanedRuns(
+  cancelled: readonly JobEvidence[],
+  runs: readonly WorkflowRun[],
+): WorkflowRun[] | "unknown" {
+  const affected = runs.filter((run) =>
+    cancelled.some((job) => job.suiteId === run.checkSuiteId),
+  );
+  if (
+    cancelled.some(
+      (job) => !affected.some((run) => run.checkSuiteId === job.suiteId),
+    )
+  )
+    return "unknown";
+  return affected.filter(
+    (run) =>
+      !runs.some(
+        (other) =>
+          other.workflowId === run.workflowId && other.status !== "completed",
+      ) &&
+      !affected.some(
+        (other) => other.workflowId === run.workflowId && other.id > run.id,
+      ),
+  );
 }
 
 /** The head's record, its claim released first when a pending grant waited on it. */
