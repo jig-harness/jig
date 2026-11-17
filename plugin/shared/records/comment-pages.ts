@@ -80,7 +80,10 @@ export function commentPages(
     target: { repo: string; number: number },
     deadline: Deadline = {},
   ): Promise<Outcome<unknown[], "unreadable">> => {
-    if (deps.ghCacheDir() === null) return deps.plain(target, deadline);
+    // A `{owner}/{repo}` placeholder names the checkout, which the page cache's
+    // named scope does not resolve; the plain read does.
+    if (deps.ghCacheDir() === null || target.repo.includes("{"))
+      return deps.plain(target, deadline);
     const began = currentMs();
     const comments: unknown[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
@@ -124,7 +127,19 @@ export function commentPages(
       comments.push(...listed);
       if (listed.length < PER_PAGE) return ok(comments);
     }
-    return deps.plain(target, deadline);
+    const left =
+      deadline.timeoutSec === undefined
+        ? undefined
+        : Math.ceil(deadline.timeoutSec - (currentMs() - began) / 1000);
+    if (left !== undefined && left <= 0)
+      return failed(
+        "unreadable",
+        "the comments could not be read (their deadline passed between pages)",
+      );
+    return deps.plain(
+      target,
+      left === undefined ? deadline : { ...deadline, timeoutSec: left },
+    );
   };
 }
 

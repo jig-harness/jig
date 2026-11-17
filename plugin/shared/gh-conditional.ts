@@ -529,6 +529,7 @@ export function createConditionalCache({
           spawnFailed: false,
           stderrTail: "",
         };
+        touchFile(file);
         return hit;
       }
     }
@@ -559,12 +560,17 @@ export function createConditionalCache({
       !r.timedOut &&
       r.stdout.trim() !== ""
     ) {
-      writeJsonFile(dir, file, {
-        v: ENTRY_VERSION,
-        request,
-        stdout: r.stdout,
-        at: currentMs(),
-      });
+      writeJsonFile(
+        dir,
+        file,
+        {
+          v: ENTRY_VERSION,
+          request,
+          stdout: r.stdout,
+          at: currentMs(),
+        },
+        limit,
+      );
     }
     return r;
   }

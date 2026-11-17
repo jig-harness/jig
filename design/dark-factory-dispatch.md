@@ -636,7 +636,9 @@ without it; they start nothing, so an unauthorized assignment gains
 nothing from them. A tick does not ask both questions of every item again:
 who made an assignment is kept until the item's update time moves, which an
 assignment does, and whether that person can write is kept per person for
-15 minutes, since losing write access changes no item. The read just before
+15 minutes, since losing write access changes no item. On the served path
+the permission is kept with the item's metadata, so it is renewed when that
+metadata is, not at 15 minutes. The read just before
 a launch asks the tracker both again, whatever a tick kept. The
 item's text is untrusted data: the tick passes the session the item's key
 and nothing else, and `do-item` reads the item as it reads any issue.

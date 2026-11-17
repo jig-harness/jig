@@ -157,6 +157,19 @@ it("reads the plain paged listing where no cache is kept", async () => {
   expect(await list(TARGET)).toEqual(ok([{ id: 1 }]));
 });
 
+it("reads a {owner}/{repo} placeholder target with the plain read", async () => {
+  const list = commentPages({
+    ghCacheDir: () => "/cache",
+    ghConditionalGet: async () => {
+      throw new Error("a placeholder target is never a named scope");
+    },
+    plain: async () => ok([{ id: 2 }]),
+  });
+  expect(await list({ repo: "{owner}/{repo}", number: 1 })).toEqual(
+    ok([{ id: 2 }]),
+  );
+});
+
 it("keeps a page GitHub answered 304 through a prune that removes older entries", async () => {
   const dir = mkdtempSync(join(tmpdir(), "comment-pages-prune-"));
   const bodies = new Map([
