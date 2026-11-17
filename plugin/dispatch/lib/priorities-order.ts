@@ -84,11 +84,15 @@ export function enforcePickupOrder(
       ? lane
       : null;
   };
+  const own = (key: string): WeightedLane | null => {
+    const lane = classes[key]?.lane;
+    return lane !== undefined && isWeightedLane(lane) ? lane : null;
+  };
   const placed: Placed[] = [];
   const withheld: EnforcedOrder["withheld"] = [];
   actions.forEach((action, index) => {
     if (action.stage !== "pickup") return;
-    const kept = withoutPaused(action, paused, withheld);
+    const kept = withoutPaused(action, paused, withheld, own);
     if (kept !== null) placed.push(place(kept, index, places, classes));
   });
   placed.sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1]);
@@ -130,6 +134,7 @@ function withoutPaused(
   action: Action,
   paused: (key: string) => WeightedLane | null,
   withheld: EnforcedOrder["withheld"],
+  own: (key: string) => WeightedLane | null,
 ): Action | null {
   const lead = paused(action.target);
   const batch = batchItemsOf(action.evidence.batchItems);
@@ -144,7 +149,7 @@ function withoutPaused(
       if (m.key !== action.target)
         withheld.push({
           target: m.key,
-          lane: paused(m.key) ?? lead,
+          lane: own(m.key) ?? lead,
           why: `batched behind ${action.target}, whose lane ${lead} ${PAUSED}`,
         });
     return null;

@@ -525,6 +525,8 @@ describe("a batch under the enforced order", () => {
     );
     expect(actions).toEqual([]);
     expect(order.withheld.map((w) => w.target)).toEqual(["#301", "#101"]);
+    // A member keeps its own lane; the paused lead's lane is only the reason.
+    expect(order.withheld.map((w) => w.lane)).toEqual(["peripheral", "core"]);
   });
 });
 
