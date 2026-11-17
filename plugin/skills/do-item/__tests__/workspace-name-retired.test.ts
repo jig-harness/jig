@@ -15,17 +15,18 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 
 const PLUGIN = join(import.meta.dir, "..", "..", "..");
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
-// The raw text is scanned, with no comment or quote handling to get wrong, so
-// nothing a file does with comments, strings or bindings can hide a rename: a
-// file is an offender when it carries the shell words `workspace rename`
-// (a line continuation or a quote between them included), or the word
-// `workspace` together with `rename` as a quoted string, which is how an
-// argument list or a binding spells the operation.
-const HERDR_RENAME = {
-  test: (text: string): boolean =>
-    /\bworkspace\b[\s\\"'`]*\brename\b/.test(text) ||
-    (/\bworkspace\b/.test(text) && /["'`]rename["'`]/.test(text)),
-};
+// The raw text is scanned, with no comment or string handling to get wrong. A
+// file is an offender when `workspace` is followed directly by `rename`: only
+// separators (whitespace, commas, brackets, a spread, a line continuation, a
+// quote, a comment) may sit between the two words, and a quote or backslash
+// may split `rename` itself, as a shell reads `r"ename"`. A word that merely
+// appears elsewhere in the file is no association, so unrelated operations
+// pass; an operation bound to a variable before the call is not followed.
+const SEPARATORS = String.raw`(?:[\s,.\[\]()"'\`\\]|/\*[\s\S]*?\*/|//[^\n]*\n)*`;
+const SPLIT = String.raw`["'\\]*`;
+const HERDR_RENAME = new RegExp(
+  `\\bworkspace${SEPARATORS}${[..."rename"].join(SPLIT)}(?![a-z])`,
+);
 const RENAMES = [/--display-name/, HERDR_RENAME];
 
 const dirs: string[] = [];
@@ -33,7 +34,7 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test("the Herdr recognizer sees quoting, comment and binding variants", () => {
+test("the Herdr recognizer sees quoting and comment variants and ignores unrelated operations", () => {
   for (const text of [
     'run(["workspace", "rename", id, name])',
     "run(['workspace', 'rename', id, name])",
@@ -44,7 +45,8 @@ test("the Herdr recognizer sees quoting, comment and binding variants", () => {
     "herdr workspace \\\nrename w1 name",
     "cd //tmp; herdr workspace rename w1 name",
     'run(["workspace", ...["rename", id, name]])',
-    'const operation = "rename"; run(["workspace", operation, id, name])',
+    'herdr workspace r"ename" w1 name',
+    "herdr workspace re\\name w1 name",
     `run([\n  "workspace",\n${" ".repeat(60)}"rename", id, name])`,
   ])
     expect(HERDR_RENAME.test(text)).toBe(true);
@@ -52,6 +54,10 @@ test("the Herdr recognizer sees quoting, comment and binding variants", () => {
     'run(["workspace", "list"])',
     "workspace renamed",
     "rename the file in this directory",
+    'const workspace = getWorkspace(); run(["git", "remote", "rename", "a", "b"])',
+    'run(["workspace", "list"]); // the next filesystem operation is "rename"',
+    'const workspace = getWorkspace(); run(["git", "remote", "rename", "a", "b"])',
+    'run(["workspace", "list"]); // the next filesystem operation is "rename"',
   ])
     expect(HERDR_RENAME.test(text)).toBe(false);
 });
