@@ -1,0 +1,791 @@
+{
+  "chapter": "steward-records",
+  "title": "Steward records",
+  "version": 1,
+  "status": "provisional",
+  "planItems": [
+    {
+      "item": 50,
+      "epic": 940
+    }
+  ],
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "registry for the kind the records are kept as in the records registry, record for a record kind a pass submits, field for a field of a record, cause for a cause a cause record names, and limit for a bound of a submission or its strings."
+    },
+    "record": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The record kind a field or a cause belongs to (rearm, resume, need, facet, order or cause), and a record kind's own name; null for the registry's kind, a field every kind carries and a bound."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The registry's kind's name, a record kind's name, a field's name (a kind's own field as `<kind>.<field>`, such as `rearm.target`; a field every kind carries by its name alone), a cause, or a bound's name. Unique among the values of one kind."
+    },
+    "type": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a field, the JSON type of its value (string, string[] for a list of strings, or integer or string); null for every other value."
+    },
+    "version": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For the registry's kind, the version of its records; null otherwise."
+    },
+    "limit": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a bound, its value; null otherwise."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What it means to a reader that meets it, and what that reader does with it."
+    }
+  },
+  "values": [
+    {
+      "kind": "registry",
+      "record": null,
+      "name": "dispatch-steward-record",
+      "type": null,
+      "version": 36,
+      "limit": null,
+      "meaning": "The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply."
+    },
+    {
+      "kind": "record",
+      "record": "rearm",
+      "name": "rearm",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "Re-arm a stopped drive once, its handoff and logs showing a passing cause. The tick re-arms it only while the drive's facts read as the record's, no person stopped or held it, no registry-class park waits on it, the recovery budget is not spent and no earlier record re-armed the same facts; otherwise it refuses the record."
+    },
+    {
+      "kind": "record",
+      "record": "resume",
+      "name": "resume",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "Resume an ended pickup or follow-up pass that stopped on a question outside the repository's human-decision classes and recommended one option. The tick launches it again with one fixed instruction, to take the option it recommended and record it as a decision taken unattended, after checking the account, holds and recovery budget again; no free text reaches the session."
+    },
+    {
+      "kind": "record",
+      "record": "need",
+      "name": "need",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "Frame a need that arrived with no framing and stays a person's: the act it asks for and a one-sentence ask. The tick shows them on the need while its cause and question are unchanged; a need that arrived framed is never framed again, and a record for one is refused."
+    },
+    {
+      "kind": "record",
+      "record": "facet",
+      "name": "facet",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "Fill a missing priority, type or size of an assigned issue in the queue. The tick posts the proposal and its reason on the issue, reads the issue again, and writes the value only while the facet is still empty and the issue still assigned as the digest read it."
+    },
+    {
+      "kind": "record",
+      "record": "order",
+      "name": "order",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "Order issues of the queue its own rules leave tied (priority, unblocking, epic order, size and age). The tick exchanges only the places of the members that are still tied, and never moves an issue past one the rules rank apart."
+    },
+    {
+      "kind": "record",
+      "record": "cause",
+      "name": "cause",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "Say why a pickup's or a follow-up's run that ended without a closing report fell short, read from the excerpt of its transcript. The tick records it as the run's closing report, written by the steward, only while the run holds none; otherwise it refuses the record."
+    },
+    {
+      "kind": "field",
+      "record": null,
+      "name": "kind",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "Which of the record kinds it is. A record of a kind not listed, or with a field its kind does not have, is refused with the whole submission."
+    },
+    {
+      "kind": "field",
+      "record": null,
+      "name": "reason",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "Why the steward proposes the record, in its own words. The tick carries it as the reason of what it does: beside a framed need's ask, on a facet's proposal comment, on a re-arm's receipt. It is text a pass wrote after reading untrusted evidence, so a program never acts on it."
+    },
+    {
+      "kind": "field",
+      "record": "rearm",
+      "name": "rearm.target",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "The stopped drive's pull request, as `PR #<number>`: one of the drives in the pass's digest."
+    },
+    {
+      "kind": "field",
+      "record": "rearm",
+      "name": "rearm.facts",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "The drive's facts as the digest gives them (`evidence.stewardFacts`), copied exactly: the tick compares them with the drive's facts when it applies the record."
+    },
+    {
+      "kind": "field",
+      "record": "rearm",
+      "name": "rearm.class",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "The recurring cause the steward read, in its own words. Three applied re-arms of one class in a repository within a week propose a reflection finding for a rule that settles it without judgment."
+    },
+    {
+      "kind": "field",
+      "record": "resume",
+      "name": "resume.record",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "The launch record of the ended pass: one of the passes in the digest."
+    },
+    {
+      "kind": "field",
+      "record": "need",
+      "name": "need.target",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "The need's target, as the digest's `needs` name it: only a need with no framing may be named."
+    },
+    {
+      "kind": "field",
+      "record": "need",
+      "name": "need.act",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "What the person is asked to do: one of the closed acts a need names (`NEED_ACTS` in `plugin/shared/acts.ts`). A registry-class park keeps its own act."
+    },
+    {
+      "kind": "field",
+      "record": "need",
+      "name": "need.ask",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "One sentence asking the person for the act."
+    },
+    {
+      "kind": "field",
+      "record": "facet",
+      "name": "facet.target",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "The issue's key: an assigned issue in the digest's queue."
+    },
+    {
+      "kind": "field",
+      "record": "facet",
+      "name": "facet.facet",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "Which facet is missing: `priority`, `type` or `size`, the issue facets of the tracker facets chapter."
+    },
+    {
+      "kind": "field",
+      "record": "facet",
+      "name": "facet.value",
+      "type": "integer or string",
+      "version": null,
+      "limit": null,
+      "meaning": "The value proposed: for a priority, its number from 1 (urgent) to 4 (low); for a type or a size, a canonical value of the repository's label taxonomy and facet configuration, which the tracker checks in the facet's configured store."
+    },
+    {
+      "kind": "field",
+      "record": "order",
+      "name": "order.targets",
+      "type": "string[]",
+      "version": null,
+      "limit": null,
+      "meaning": "The tied issues' keys in the order proposed, each in the digest's queue and none twice."
+    },
+    {
+      "kind": "field",
+      "record": "cause",
+      "name": "cause.record",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "The launch record of the run: one of the runs the digest lists as ended without a report (`unreported`)."
+    },
+    {
+      "kind": "field",
+      "record": "cause",
+      "name": "cause.cause",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "Why the run fell short: one of the causes listed below."
+    },
+    {
+      "kind": "field",
+      "record": "cause",
+      "name": "cause.summary",
+      "type": "string",
+      "version": null,
+      "limit": null,
+      "meaning": "What the run had done and where it stopped, with no secret, personal data or quoted output; it becomes the closing report's `concluded`."
+    },
+    {
+      "kind": "cause",
+      "record": "cause",
+      "name": "needs-person",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "The run reached something only a person can decide or do, and stopped there."
+    },
+    {
+      "kind": "cause",
+      "record": "cause",
+      "name": "refused",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "The run declined the work, or was refused a step it needed by a rule, a permission or a policy."
+    },
+    {
+      "kind": "cause",
+      "record": "cause",
+      "name": "tool-failed",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "A tool the run depended on (a command, a script, a service) failed, and the run could not go on."
+    },
+    {
+      "kind": "cause",
+      "record": "cause",
+      "name": "environment",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "The host or the checkout kept the run from working: a missing dependency or credential, a broken tree, a full disk."
+    },
+    {
+      "kind": "cause",
+      "record": "cause",
+      "name": "scope",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "The work was larger than, or other than, what the item described, and the run stopped rather than widen it."
+    },
+    {
+      "kind": "cause",
+      "record": "cause",
+      "name": "crashed",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "The transcript stops mid-work with no error that explains it."
+    },
+    {
+      "kind": "cause",
+      "record": "cause",
+      "name": "unknown",
+      "type": null,
+      "version": null,
+      "limit": null,
+      "meaning": "The excerpt does not show why the run fell short, or there is no excerpt."
+    },
+    {
+      "kind": "limit",
+      "record": null,
+      "name": "records",
+      "type": null,
+      "version": null,
+      "limit": 100,
+      "meaning": "The most records one submission holds."
+    },
+    {
+      "kind": "limit",
+      "record": null,
+      "name": "targets",
+      "type": null,
+      "version": null,
+      "limit": 100,
+      "meaning": "The most issue keys one `order` record names."
+    },
+    {
+      "kind": "limit",
+      "record": null,
+      "name": "text",
+      "type": null,
+      "version": null,
+      "limit": 4000,
+      "meaning": "The longest string a record carries, in UTF-16 code units: its reason, and each field other than the bounds below."
+    },
+    {
+      "kind": "limit",
+      "record": null,
+      "name": "facet-value",
+      "type": null,
+      "version": null,
+      "limit": 100,
+      "meaning": "The longest type or size a `facet` record proposes, in UTF-16 code units."
+    },
+    {
+      "kind": "limit",
+      "record": null,
+      "name": "summary",
+      "type": null,
+      "version": null,
+      "limit": 600,
+      "meaning": "The longest summary a `cause` record carries, in characters: the closing report's bound on what a run concluded."
+    }
+  ],
+  "schemas": {
+    "steward-rearm": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "rearm"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^PR #[1-9]\\d{0,3995}$",
+          "maxLength": 4000
+        },
+        "facts": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "class": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        }
+      },
+      "required": ["kind", "target", "facts", "class", "reason"],
+      "additionalProperties": false
+    },
+    "steward-resume": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "resume"
+        },
+        "record": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        }
+      },
+      "required": ["kind", "record", "reason"],
+      "additionalProperties": false
+    },
+    "steward-need": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "need"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "act": {
+          "enum": ["Merge", "Decide", "Authorize", "Reply", "Do", "Investigate"]
+        },
+        "ask": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        }
+      },
+      "required": ["kind", "target", "act", "ask", "reason"],
+      "additionalProperties": false
+    },
+    "steward-facet": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "facet"
+            },
+            "target": {
+              "type": "string",
+              "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+              "maxLength": 4000
+            },
+            "facet": {
+              "const": "priority"
+            },
+            "value": {
+              "enum": [1, 2, 3, 4]
+            },
+            "reason": {
+              "type": "string",
+              "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+              "maxLength": 4000
+            }
+          },
+          "required": ["kind", "target", "facet", "value", "reason"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "facet"
+            },
+            "target": {
+              "type": "string",
+              "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+              "maxLength": 4000
+            },
+            "facet": {
+              "enum": ["type", "size"]
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,100}$",
+              "maxLength": 100
+            },
+            "reason": {
+              "type": "string",
+              "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+              "maxLength": 4000
+            }
+          },
+          "required": ["kind", "target", "facet", "value", "reason"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "steward-order": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "order"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+            "maxLength": 4000
+          },
+          "maxItems": 100,
+          "uniqueItems": true
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        }
+      },
+      "required": ["kind", "targets", "reason"],
+      "additionalProperties": false
+    },
+    "steward-cause": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "cause"
+        },
+        "record": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        },
+        "cause": {
+          "enum": [
+            "needs-person",
+            "refused",
+            "tool-failed",
+            "environment",
+            "scope",
+            "crashed",
+            "unknown"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "pattern": "\\S",
+          "maxLength": 600
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+          "maxLength": 4000
+        }
+      },
+      "required": ["kind", "record", "cause", "summary", "reason"],
+      "additionalProperties": false
+    },
+    "steward-submission": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "rearm"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^PR #[1-9]\\d{0,3995}$",
+                "maxLength": 4000
+              },
+              "facts": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "class": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              }
+            },
+            "required": ["kind", "target", "facts", "class", "reason"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "resume"
+              },
+              "record": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              }
+            },
+            "required": ["kind", "record", "reason"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "need"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "act": {
+                "enum": [
+                  "Merge",
+                  "Decide",
+                  "Authorize",
+                  "Reply",
+                  "Do",
+                  "Investigate"
+                ]
+              },
+              "ask": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              }
+            },
+            "required": ["kind", "target", "act", "ask", "reason"],
+            "additionalProperties": false
+          },
+          {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "facet"
+                  },
+                  "target": {
+                    "type": "string",
+                    "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                    "maxLength": 4000
+                  },
+                  "facet": {
+                    "const": "priority"
+                  },
+                  "value": {
+                    "enum": [1, 2, 3, 4]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                    "maxLength": 4000
+                  }
+                },
+                "required": ["kind", "target", "facet", "value", "reason"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "facet"
+                  },
+                  "target": {
+                    "type": "string",
+                    "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                    "maxLength": 4000
+                  },
+                  "facet": {
+                    "enum": ["type", "size"]
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,100}$",
+                    "maxLength": 100
+                  },
+                  "reason": {
+                    "type": "string",
+                    "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                    "maxLength": 4000
+                  }
+                },
+                "required": ["kind", "target", "facet", "value", "reason"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "order"
+              },
+              "targets": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                  "maxLength": 4000
+                },
+                "maxItems": 100,
+                "uniqueItems": true
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              }
+            },
+            "required": ["kind", "targets", "reason"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "cause"
+              },
+              "record": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              },
+              "cause": {
+                "enum": [
+                  "needs-person",
+                  "refused",
+                  "tool-failed",
+                  "environment",
+                  "scope",
+                  "crashed",
+                  "unknown"
+                ]
+              },
+              "summary": {
+                "type": "string",
+                "pattern": "\\S",
+                "maxLength": 600
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+                "maxLength": 4000
+              }
+            },
+            "required": ["kind", "record", "cause", "summary", "reason"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "maxItems": 100
+    }
+  }
+}

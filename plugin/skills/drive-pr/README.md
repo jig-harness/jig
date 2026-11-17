@@ -677,8 +677,10 @@ mechanical state rather than on anyone's judgement:
   ([the plugin's README](../../README.md#telling-a-station-what-to-do)).
   Use `approve` to choose the recommendation or `choose <option name>` to
   choose an option by name. On a thread, either form can be the whole reply.
-  Beside an answer, `note <key>: <text>` adds a condition of at most 500
-  characters. Other prose or code makes the comment a free answer, which
+  Beside an answer, `note <key>: <text>` adds a condition; the forms, the
+  lines and their limits are in the Protocol's
+  [needs and structured answers](../../protocol/needs-and-answers.md)
+  chapter. Other prose or code makes the comment a free answer, which
   the pass interprets. An unknown option also stays free; `jig ask` labels
   it that way. Phone typography, case and Markdown emphasis do not affect
   matching. A note alone does not answer the question.

@@ -1468,6 +1468,12 @@ make, use the entry's term instead.
   line, which binds the pass. A **free answer** is
   anything else, in the person's own words, which a pass interprets
   ([design](design/structured-answers.md)).
+- **NFKC (Unicode compatibility normalization)** — the Unicode standard's
+  rewriting of text so that characters which differ only in form become
+  the same: a full-width `Ａ` becomes `A`, the ligature `ﬁ` becomes `fi`.
+  It is the first step Jig takes to normalize a *structured answer* and an
+  option's name before it compares them
+  ([the steps](plugin/protocol/needs-and-answers.md#answering-a-decision)).
 - **Decision model** — the shape of a decision for a person that a *park*
   and a decision sheet share: a **call** is one question with options that
   exclude each other. A park is one call; a sheet is one or more calls, with their
@@ -2873,6 +2879,12 @@ make, use the entry's term instead.
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   would turn such a record into a decision for a person
   ([the implementation plan](design/need-classes.md#the-stewards-remit)).
+- **Steward record** — one of the closed records a *steward* pass submits
+  for the *tick* to apply: its kind (a re-arm, a resume, a need's framing,
+  a missing facet, a queue order or a run's cause), the kind's own fields,
+  and a reason in the steward's words. The tick checks each against what it
+  reads itself before acting on it, and refuses one whose facts no longer
+  hold ([plugin/protocol/steward-records.md](plugin/protocol/steward-records.md)).
 - **Priorities record** — the proposed versioned declaration of objectives,
   their purposes, end states, owners, classes and shares at site, repository
   or individual level. A mechanical ranker reads it with a tracker snapshot

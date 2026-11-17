@@ -8,9 +8,8 @@ import type {
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { trackerStateMaps } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
+import { keptAssignedBy } from "./assigner-reads.ts";
 import type { PickupReads } from "../pickup-reads.ts";
-import { failureText } from "../text.ts";
 import { trackerScope, type ServedView } from "./served-reads.ts";
 import { closed } from "./served-pull.ts";
 
@@ -23,25 +22,27 @@ export interface Metadata {
   children: PoolIssue[];
   description: string | null;
 }
-/** Who made the assignment, or the history's definite answer that no user did; a failed read throws. */
+/**
+ * Who made the assignment, or the history's definite answer that no user
+ * did; a failed read throws. Kept apart from the rest by the item's update
+ * time alone (`assigner-reads.ts`), so a full reading asks only whether
+ * each assigner can still write.
+ */
 async function assigner(
   tracker: Tracker,
   issue: PoolIssue,
   identity: string,
+  cache: PickupReads,
   view: ServedView,
 ): Promise<Pick<Metadata, "by" | "noAssigner">> {
   if (issue.assignee === null) return { by: null };
-  try {
-    return {
-      by: await view.once(
-        `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
-        () => tracker.assignedBy(issue.identifier, identity),
-      ),
-    };
-  } catch (error) {
-    if (!(error instanceof AssignerUnknown)) throw error;
-    return { by: null, noAssigner: failureText(error) };
-  }
+  const read = await view.once(
+    `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
+    (bound) => keptAssignedBy(tracker, issue, identity, cache, bound?.signal),
+  );
+  return read.ok
+    ? { by: read.value }
+    : { by: null, noAssigner: read.failure.reason };
 }
 
 /** Child native rows are read once; each repository interprets them itself. */
@@ -82,7 +83,9 @@ async function issueRelations(
   const source = tracker.dispatchSource;
   if (source?.projectRelations !== undefined && view.raw !== undefined) {
     const row = await view.raw(issue.identifier);
-    if (row !== null) return source.projectRelations(row, view.bound);
+    const carried =
+      row === null ? null : await source.projectRelations(row, view.bound);
+    if (carried !== null) return carried;
   }
   return view.once(
     `relations ${issue.identifier} ${tracker.readinessKey ?? ""}`,
@@ -99,14 +102,26 @@ async function membership(
 ): Promise<Pick<Metadata, "children" | "description">> {
   const children = await childrenOf(tracker, issue, view, assigned);
   const description =
-    children.length > 0
-      ? await view.once(
-          `description ${issue.identifier}`,
-          async () =>
-            (await tracker.getIssue(issue.identifier))?.description ?? null,
-        )
-      : "";
+    children.length > 0 ? await descriptionOf(tracker, issue, view) : "";
   return { children, description };
+}
+
+/** An epic's description: from its native row where the row carries it, else read on its own; `null` when it cannot be read. */
+async function descriptionOf(
+  tracker: Tracker,
+  issue: PoolIssue,
+  view: ServedView,
+): Promise<string | null> {
+  const describe = tracker.dispatchSource?.describe;
+  if (describe !== undefined && view.raw !== undefined) {
+    const row = await view.raw(issue.identifier);
+    const carried = row === null ? null : describe(row);
+    if (carried !== null) return carried.description;
+  }
+  return view.once(
+    `description ${issue.identifier}`,
+    async () => (await tracker.getIssue(issue.identifier))?.description ?? null,
+  );
 }
 
 /** Cache entries without a timestamp are never reused. */
@@ -136,7 +151,7 @@ export async function metadata(
       ? `${issue.updatedAt}:${view.metadataEpoch?.(issue.identifier) ?? view.readAt}`
       : issue.updatedAt,
     async () => {
-      const assigned = await assigner(tracker, issue, identity, view);
+      const assigned = await assigner(tracker, issue, identity, cache, view);
       // An item no user assigned is not placed, so its relations are not read.
       const relations =
         carried !== null
