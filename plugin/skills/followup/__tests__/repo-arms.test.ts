@@ -513,6 +513,17 @@ describe("followup.ts with repository arms", () => {
     expect(early.stderr).toContain("run check ledger first");
   });
 
+  test("a plan once installed from the integration branch is kept when that branch can no longer be read", () => {
+    const root = integrated(threeForms(), {
+      ".config/followup/docs-site.md": INSTRUCTIONS,
+    });
+    expectSpawnExit(runScript(root, ["arms"]), 0);
+    gitRun(root, "update-ref", "-d", "refs/remotes/origin/main");
+    const refused = runScript(root, ["arms"]);
+    expectSpawnExit(refused, 1);
+    expect(refused.stderr).toContain("the saved plan stays as it is");
+  });
+
   test("without the integration branch, no check command runs and no instructions are read", () => {
     const root = repository({
       ".config/jig.yaml": threeForms(),

@@ -58,4 +58,20 @@ describe("followup.arms derivations", () => {
     expect(errors).not.toContain("derivation:followup.arms[1].instructions");
     expect(errors).toContain("derivation:followup.arms[2].instructions");
   });
+
+  test("an instructions file the repository does not track is a finding", () => {
+    const errors = findingIds(
+      {
+        ".gitignore": "local.md\n",
+        ".config/jig.yaml": `followup:
+  arms:
+    - id: docs-site
+      instructions: local.md
+`,
+        "local.md": "Rebuild the site.\n",
+      },
+      "error",
+    );
+    expect(errors).toContain("derivation:followup.arms[0].instructions");
+  });
 });

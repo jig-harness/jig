@@ -455,7 +455,8 @@ async function refreshedRun(dir: string, loaded: RunFile): Promise<RunFile> {
   const read = await settingsFor(dir, facts.remote, facts.integrationBranch);
   // A plan made from the integration branch is replaced only by one read from
   // it: the fallback working-tree settings could omit an arm, and with it the
-  // obligation and its verdict.
+  // obligation and its verdict. The saved facts take the origin of the plan
+  // installed, so a plan that once came from the branch stays protected.
   if (
     loaded.facts.configOrigin === "integration branch" &&
     read.origin !== "integration branch"
@@ -467,6 +468,7 @@ async function refreshedRun(dir: string, loaded: RunFile): Promise<RunFile> {
   const arms = planOf(read, facts);
   const updated = {
     ...loaded,
+    facts: { ...facts, configOrigin: read.origin },
     arms,
     verdicts: keepCurrentVerdicts(loaded, arms),
   };
