@@ -8,6 +8,7 @@
  * skipped with its reason, so the report still names it.
  */
 import { orcaCommand } from "../../../../shared/orca.ts";
+import type { RepoArm } from "./repo-arms.ts";
 
 /** One core arm. */
 export interface Arm {
@@ -36,9 +37,18 @@ export function isArmId(value: string): value is ArmId {
   return (ARM_IDS as readonly string[]).includes(value);
 }
 
-/** The title of an arm. */
-export function armTitle(id: ArmId): string {
-  return CORE_ARMS.find((a) => a.id === id)?.title ?? id;
+/** The title of an arm: a core arm's, else the repository arm's in `plan`, else its id. */
+export function armTitle(id: string, plan?: ArmPlan): string {
+  return (
+    CORE_ARMS.find((a) => a.id === id)?.title ??
+    plan?.repository?.find((a) => a.id === id)?.title ??
+    id
+  );
+}
+
+/** The repository arm `id` of `plan`, when it is one. */
+export function repoArmOf(plan: ArmPlan, id: string): RepoArm | undefined {
+  return plan.repository?.find((a) => a.id === id);
 }
 
 /** What decides which arms apply to a run. */
@@ -54,14 +64,16 @@ export interface ArmContext {
 
 /** An arm the run skips, with why. */
 export interface SkippedArm {
-  id: ArmId;
+  id: string;
   reason: string;
 }
 
-/** The arms a run settles, in order, and the ones it skips. */
+/** The arms a run settles (core and repository arms), in order, and the ones it skips. */
 export interface ArmPlan {
-  apply: ArmId[];
+  apply: string[];
   skipped: SkippedArm[];
+  /** The repository's own arms (`followup.arms`), those it skips included. */
+  repository?: RepoArm[];
 }
 
 /** Why `id` does not apply under `ctx`; `null` when it does. */
@@ -79,7 +91,10 @@ function skipReason(id: ArmId, ctx: ArmContext): string | null {
 
 /** The core arms that apply under `ctx`, minus the ones the repository turned off. */
 export function planArms(ctx: ArmContext): ArmPlan {
-  const plan: ArmPlan = { apply: [], skipped: [] };
+  const plan: { apply: ArmId[]; skipped: SkippedArm[] } = {
+    apply: [],
+    skipped: [],
+  };
   for (const { id } of CORE_ARMS) {
     const reason = skipReason(id, ctx);
     if (reason === null) plan.apply.push(id);

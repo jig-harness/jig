@@ -28,6 +28,7 @@ import {
   parse,
   relative,
   sep,
+  posix,
   win32,
 } from "node:path";
 import { isCalendarDate } from "../../../../shared/time.ts";
@@ -146,6 +147,15 @@ export function newerInstalledVersion(
  */
 export function configuredAt(root: string, path: string): string {
   return isAbsolute(path) ? path : join(root, path);
+}
+
+/**
+ * The file a repository-relative `path` names from `root`, spelled as the
+ * follow-up reads it: backslashes as separators, `./` dropped, no tilde.
+ */
+export function repoRelativeAt(root: string, path: string): string {
+  const slashed = posix.normalize(path.trim().replace(/\\/g, "/"));
+  return join(root, slashed.replace(/^\.\//, ""));
 }
 
 /**
