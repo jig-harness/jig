@@ -249,7 +249,7 @@ export const DISPATCHER: RecordKind[] = [
     table: "github_owner",
     version: 1,
     meaning:
-      "Which quota owner a GitHub credential's runs are admitted against, per hashed credential and host: the hashed user or installation, whether it was verified, the login GitHub answered with, and when to ask again. Every process reads it, so a credential is asked who it is at most once a check period.",
+      "Which quota owner a GitHub credential's runs are admitted against, per hashed credential (for a stored login, hashed with the repository a run addresses when it addresses one) and host: the hashed user or installation, whether it was verified, the login GitHub answered with, and when to ask again. Every process reads it, so a credential is asked who it is at most once a check period.",
   },
   {
     name: "outbound-cost-quota",
