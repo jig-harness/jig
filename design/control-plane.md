@@ -1163,15 +1163,22 @@ minutes) since the hub last answered, and only then edits the machine
 file; the hub is not started again until the disable is recorded.
 A disable is not rollbackable state: it is also written through the
 core's disable-record operation to a store outside what `jig hub backup`
-copies and restores, and the hub reads the union of both at every start,
-so restoring an earlier backup never lifts it. The process adapter keeps
-that record in a file beside the hub's machine file; the Cloudflare adapter
-keeps it in a key-value namespace of its own, outside the partitions'
-point-in-time restore. Only `jig hub release-owner --undo <repository>`
-removes a disable, from both places, and it refuses until the person has
-removed the repository's owner claim from the machine file. It then waits
-one drain margin for the local owner's effects to finish before the hub may
-name an owner again, so the local owner and a hub-named owner never overlap. A
+copies and restores, and the hub reads both at every start, so restoring an
+earlier backup never lifts it. The process adapter keeps that record in a
+file beside the hub's machine file; the Cloudflare adapter keeps it in a
+key-value namespace of its own, outside the partitions' point-in-time
+restore. Each repository's record is versioned: a disable and an undo are
+entries with a rising generation, and the hub takes the entry with the
+highest generation per repository across both stores, so an undo is a
+tombstone that a restored older disable cannot override. Only
+`jig hub release-owner --undo <repository>` writes one. It refuses until
+the person has removed the repository's owner claim from the machine file,
+and then until every enrolled host's last `hello` reports an ownership
+generation without that claim and a drain margin has passed since it: a
+tick that began before the edit keeps the claim it started with, so a host
+reports the new generation only once its running ticks have ended. Only
+then does the hub name an owner again, so the local owner and a hub-named
+owner never overlap. A
 machine-file edit alone never transfers an owner duty while the hub may
 still name an owner. This is the one exception to "works
 as it does today": it is stated in the levels above, in ADR-0016's
