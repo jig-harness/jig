@@ -101,7 +101,7 @@ criteria:
       - "the filing path looks up an open container for the same source and type and appends to it, filing a new issue only when none fits"
       - "deferred findings are batched by pull request and issue type on every supported tracker, with the highest priority and the union of categories, and later findings append to the open batch"
       - "the share of filed issues carrying no priority is measured over the issues the filing paths create (by a scheduled report, a tracker query or export, or drive-pr's fractal-metrics.ts for open follow-ups), so a filing path that skips priority shows up"
-      - "the ranked shortlist is reproducible from a tracker snapshot and a committed weights file; a ranker that is only planned or documented is not credited"
+      - "the ranked shortlist is reproducible from a tracker snapshot and committed priorities: a validated priorities record (`.config/priorities.yaml`, format priorities/v1) the dispatcher ranks from, or a committed weights file; a ranker that is only planned or documented is not credited"
     since: 0.19.0
 
   - id: memory-promotion-documented

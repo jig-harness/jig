@@ -21,6 +21,10 @@
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
+ * | `allocation_charge` | pickup claim | its claim id: written once, in the claim's transaction; a replay inserts nothing |
+ * | `allocation_week` | completed week | the week, written once by the next week's first tick and never rewritten |
+ * | `allocation_lane_epoch` | weighted lane's ready or empty transition | an increasing sequence; the newest is the epochs' revision |
+ * | `allocation_ranking` | repository | the newest ranking, replaced by each tick |
  * | `failures` | action, repository or tick scope that failed in a row | its failures in a row, the first and last failure's time, the last reason and the next try; removed by a success or once its action leaves the plan |
  *
  * The receipts, the account walls (which the drive's quota adapters write
@@ -55,6 +59,7 @@ import {
   schemaVersion,
 } from "../../shared/records/db.ts";
 import { stateRoot } from "../receipts.ts";
+import { ALLOCATION_TABLES_SQL } from "./allocation-store.ts";
 import { ExitError } from "../../shared/cli.ts";
 import { USAGE_EXIT } from "../../shared/command-line.ts";
 import { Defect, JigError } from "../../shared/errors.ts";
@@ -458,6 +463,11 @@ export const MIGRATIONS: readonly Migration[] = [
     // What a `waits` result waits for (`launch-result.ts`), as JSON: a rate limit's reset, or a follow-up's arm still pending and which. Written with the result, by the same update; `NULL` on a wait written before it was kept, which is a rate limit's.
     additive: true,
     sql: "ALTER TABLE launches ADD COLUMN result_wait TEXT;",
+  },
+  {
+    // The declared-priorities allocation records (`allocation-store.ts`): one charge per pickup claim, one row per completed week, each weighted lane's ready transitions, and each repository's newest ranking.
+    additive: true,
+    sql: ALLOCATION_TABLES_SQL,
   },
 ];
 
