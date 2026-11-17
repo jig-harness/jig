@@ -267,7 +267,7 @@ export function tickReads(
         reads.run(readBudget),
       ) as Promise<TickBudget>,
     pool: reads,
-    servedViews: new Map(),
+    servedViews: Object.assign(new Map(), bound === undefined ? {} : { bound }),
     ...(bound === undefined ? {} : { bound }),
   };
 }

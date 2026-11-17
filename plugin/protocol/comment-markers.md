@@ -133,17 +133,18 @@ one as a record.
 Labels and a tracker item's own fields carry no hidden marker, so they are
 not listed here. Nor are the forge claims, comments by which a host or a
 driver claims one act on a pull request: the follow-up claim has a chapter
-of its own, and [RECORDS.md](../RECORDS.md) gives the others' form. Of the
-trusted claims on one key, the earliest comment wins.
+of its own, and so do [the takeover claim, the launch claim and the
+merge-ready announcement](forge-claims.md). Of the trusted claims on one
+key, the earliest comment wins.
 
 <!-- protocol:generated source=plugin/shared/records/registry.ts#RECORD_KINDS -->
 
 | Kind | Medium | Why it is not listed |
 | --- | --- | --- |
-| `drive-takeover-claim` | forge | a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form |
+| `drive-takeover-claim` | forge | a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md) |
 | `dispatch-followup` | forge | the follow-up claim, which has a chapter of its own: [The follow-up claim and its result](followup-claim.md) |
-| `dispatch-launch-claim` | forge | a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form |
-| `drive-merge-ready` | forge | a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form |
+| `dispatch-launch-claim` | forge | a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md) |
+| `drive-merge-ready` | forge | a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md) |
 | `scanner-finding-reply` | forge | its marker line is written by the session the resolve-review-comments skill instructs, not by Jig's code, so the registry holds no marker for it; [RECORDS.md](../RECORDS.md) gives its form |
 | `ci-hold-label` | forge | a label on the pull request, not a hidden marker |
 | `dispatch-command-label` | forge | a label on the pull request, not a hidden marker |

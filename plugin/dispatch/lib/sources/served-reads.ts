@@ -127,14 +127,17 @@ export interface ServedView {
   held(key: string): HeldIssue | undefined;
   /** The parent the queue read carried with its description, by the parent's key. */
   parentBody(key: string): QueueParent | undefined;
-  /** `read` once per `key` in the tick, every repository sharing the view waiting on the same read. */
-  once<T>(key: string, read: () => Promise<T>): Promise<T>;
+  /** `read` once per key with the shared reading's bound, independently of caller projections. */
+  once<T>(key: string, read: (bound?: FacetBound) => Promise<T>): Promise<T>;
   /** Keep the reading for the next tick. */
   save(): void;
 }
 
 /** The views of one tick, shared by its repositories. */
-export type ServedViews = Map<string, Promise<ServedView>>;
+export type ServedViews = Map<string, Promise<ServedView>> & {
+  /** The whole tick's bound, independent of a caller's facet-read allowance. */
+  readonly bound?: FacetBound;
+};
 
 function snapshotOf(value: unknown): Snapshot | null {
   if (typeof value !== "object" || value === null) return null;
@@ -454,7 +457,10 @@ function offlineReason(p: Plan): unknown | null {
 
 function factReader(p: Plan, gate: Gate): ServedView["once"] {
   const reads = new Map<string, Promise<unknown>>();
-  return <T>(key: string, read: () => Promise<T>): Promise<T> =>
+  return <T>(
+    key: string,
+    read: (bound?: FacetBound) => Promise<T>,
+  ): Promise<T> =>
     coalesce(reads, key, () =>
       p.source === "offline" || ended(p.bound)
         ? Promise.reject(
@@ -462,7 +468,10 @@ function factReader(p: Plan, gate: Gate): ServedView["once"] {
           )
         : p.bound === undefined
           ? gate(read)
-          : within(gate(read), p.bound),
+          : within(
+              gate(() => read(p.bound)),
+              p.bound,
+            ),
     ) as Promise<T>;
 }
 

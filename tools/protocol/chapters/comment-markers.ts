@@ -5,9 +5,9 @@
  * (`ENVELOPE_FIELDS`, `encodeMarker`).
  *
  * It lists every forge and tracker kind that carries a hidden marker, except
- * the claims: the follow-up claim has its own chapter (`followup-claim.ts`),
- * and the other forge claims are left out while their contract moves. A
- * kind on another medium is outside the chapter, whatever it carries; a
+ * the forge claims, which have chapters of their own: the follow-up claim
+ * (`followup-claim.ts`) and the takeover, launch and merge-ready claims
+ * (`forge-claims.ts`). A kind on another medium is outside the chapter, whatever it carries; a
  * forge or tracker kind it does not list is named in `EXCLUSIONS` with why.
  */
 import { Defect } from "../../../plugin/shared/errors.ts";
@@ -123,7 +123,7 @@ const LABEL = "a label on the pull request, not a hidden marker";
 const ITEM =
   "the item's own assignee and state on the tracker, not a hidden marker";
 const FORGE_CLAIM =
-  "a forge claim, whose contract is still moving; [RECORDS.md](../RECORDS.md) gives its form";
+  "a forge claim, which has a chapter of its own: [Forge claims: takeover, launch and merge-ready](forge-claims.md)";
 
 /** The forge and tracker kinds the chapter does not list, each with why. */
 export const EXCLUSIONS: Readonly<Record<string, string>> = {

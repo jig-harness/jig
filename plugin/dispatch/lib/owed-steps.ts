@@ -393,18 +393,77 @@ function itemOf(
   return { indent: indentOf(line), kind: item.kind };
 }
 
+/** One step a description's out-of-tree section lists, in the words written. */
+export interface OutOfTreeStep {
+  text: string;
+  done: boolean;
+}
+
+/**
+ * What a description's out-of-tree sections say: whether it has one at all
+ * (`declared`), whether one of them says "None" or "N/A" (`saysNone`), and
+ * each step it lists. A declared section that says none and lists no step says
+ * nothing is owed; a declared section with neither is an unfilled template,
+ * and a description with no section says nothing either way.
+ */
+export interface OutOfTreeSection {
+  declared: boolean;
+  saysNone: boolean;
+  steps: OutOfTreeStep[];
+}
+
+/** A step's text with detail added to the nearest step above that is less indented than the detail: a nested step's own detail stays with it, its parent's with the parent. */
+function addDetail(
+  steps: { text: string; indent: number }[],
+  from: number,
+  text: string,
+  indent: number,
+): void {
+  if (text === "") return;
+  const own = steps.slice(from);
+  const target = own.findLast((step) => step.indent < indent) ?? own.at(-1);
+  if (target) target.text = `${target.text} ${text}`;
+}
+
+/** The steps of a description's out-of-tree sections, each with its text; none when it has no such section. */
+export function outOfTreeSteps(body: string): OutOfTreeSection {
+  const found = sections(body);
+  const steps: { text: string; indent: number; done: boolean }[] = [];
+  for (const lines of found) {
+    // The first step's indent is the steps' own; a plain item deeper than it, and any continuation line, is a step's detail.
+    const first = steps.length;
+    let top: number | null = null;
+    for (const l of lines) {
+      const item = itemOf(l);
+      const indent = indentOf(l);
+      if (item === null) {
+        addDetail(steps, first, l.trim(), indent);
+        continue;
+      }
+      top ??= item.indent;
+      const text = itemText(l)?.text ?? "";
+      if (item.kind === "done") steps.push({ text, indent, done: true });
+      else if (item.kind === "open" || item.indent <= top)
+        steps.push({ text, indent, done: false });
+      else addDetail(steps, first, text, indent);
+    }
+  }
+  const none = found.some((lines) =>
+    lines.some((l) => saysNone(itemText(l)?.text ?? l.trim())),
+  );
+  return {
+    declared: found.length > 0,
+    saysNone: none,
+    steps: steps.map(({ text, done }) => ({ text, done })),
+  };
+}
+
 /** The steps a description's out-of-tree section lists; none when it has no such section. */
 export function owedSteps(body: string): OwedSteps {
   const steps: OwedSteps = { open: 0, done: 0 };
-  for (const lines of sections(body)) {
-    // The first step's indent is the steps' own; a plain item deeper than it is a step's detail.
-    const items = lines.flatMap((l) => itemOf(l) ?? []);
-    const top = items[0]?.indent ?? 0;
-    for (const item of items) {
-      if (item.kind === "done") steps.done += 1;
-      else if (item.kind === "open" || item.indent <= top) steps.open += 1;
-    }
-  }
+  for (const step of outOfTreeSteps(body).steps)
+    if (step.done) steps.done += 1;
+    else steps.open += 1;
   return steps;
 }
 
