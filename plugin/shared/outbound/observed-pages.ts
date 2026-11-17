@@ -43,6 +43,7 @@ import { createHash } from "node:crypto";
 import { definedFields } from "../defined-fields.ts";
 import { swallow } from "../errors.ts";
 import {
+  CACHE_RETENTION_MS,
   entryFile,
   readJsonFile,
   touchFile,
@@ -108,7 +109,7 @@ export function withObservedEvaluation<T>(fn: () => T): T {
   return evaluation.run(new Map(), fn);
 }
 
-const ENTRY_VERSION = 1;
+const ENTRY_VERSION = 2;
 
 interface KeptPage {
   url: string;
@@ -118,6 +119,8 @@ interface KeptPage {
 }
 
 interface Entry {
+  /** When this complete resource was last acquired, never extended by page reuse. */
+  acquiredAt: number;
   pages: KeptPage[];
   /** The page after the last one, as last asked: an ETag for its empty answer. */
   tail: { url: string; etag: string } | null;
@@ -143,6 +146,12 @@ function keptPage(v: unknown): KeptPage | null {
 function readEntry(file: string, request: string): Entry | null {
   const e = readJsonFile(file);
   if (e === null || e.v !== ENTRY_VERSION || e.request !== request) return null;
+  if (
+    typeof e.acquiredAt !== "number" ||
+    !Number.isFinite(e.acquiredAt) ||
+    currentMs() - e.acquiredAt >= CACHE_RETENTION_MS
+  )
+    return null;
   if (!Array.isArray(e.pages)) return null;
   const pages = e.pages.map(keptPage);
   if (pages.some((p) => p === null)) return null;
@@ -151,7 +160,7 @@ function readEntry(file: string, request: string): Entry | null {
     t && isString(t.url) && isString(t.etag)
       ? { url: t.url, etag: t.etag }
       : null;
-  return { pages: pages as KeptPage[], tail };
+  return { acquiredAt: e.acquiredAt, pages: pages as KeptPage[], tail };
 }
 
 /** How many items a page holds: its array, or an object's first array (`check_runs`); null when neither. */
@@ -389,7 +398,14 @@ export function createObservedPages<R extends ObservedRun>(
     }
 
     function done() {
-      return { entry: { pages, tail }, changed };
+      return {
+        entry: {
+          acquiredAt: kept?.acquiredAt ?? startMs,
+          pages,
+          tail,
+        },
+        changed,
+      };
     }
   }
 
