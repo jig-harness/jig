@@ -21,6 +21,7 @@
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
+ * | `merge_facts` | repository and directly verified merged pull request | immutable merged time, base branch and complete changed files, independent of follow-up activation; associations and edge release are read again each tick |
  * | `allocation_charge` | pickup claim | its claim id: written once, in the claim's transaction; a replay inserts nothing |
  * | `allocation_week` | completed week | the week, written once by the next week's first tick and never rewritten |
  * | `allocation_lane_epoch` | weighted lane's ready or empty transition | an increasing sequence; the newest is the epochs' revision |
@@ -468,6 +469,10 @@ export const MIGRATIONS: readonly Migration[] = [
     // The declared-priorities allocation records (`allocation-store.ts`): one charge per pickup claim, one row per completed week, each weighted lane's ready transitions, and each repository's newest ranking.
     additive: true,
     sql: ALLOCATION_TABLES_SQL,
+  },
+  {
+    additive: true,
+    sql: "CREATE TABLE merge_facts (repo TEXT NOT NULL, pr INTEGER NOT NULL, fact TEXT NOT NULL, PRIMARY KEY (repo, pr));",
   },
 ];
 

@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.270.1] - 2026-11-17
+
+### Fixed
+
+- Dispatch releases an execution plan's merge conflict edge when the predecessor's linked pull request has merged into the integration branch and changed a declared conflict file. Direct merge evidence works before follow-up activation; unreadable evidence or a later open predecessor pull request keeps the edge held with a reason.
+
 ## [0.270.0] - 2026-11-17
 
 ### Added
@@ -9489,7 +9495,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.270.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.270.1...HEAD
+[0.270.1]: https://github.com/jig-harness/jig/compare/v0.270.0...v0.270.1
 [0.270.0]: https://github.com/jig-harness/jig/compare/v0.269.0...v0.270.0
 [0.269.0]: https://github.com/jig-harness/jig/compare/v0.268.0...v0.269.0
 [0.268.0]: https://github.com/jig-harness/jig/compare/v0.267.1...v0.268.0
