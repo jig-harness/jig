@@ -2648,7 +2648,8 @@ where a person can reverse it (§ 8). A park with no class is refused with
 
 Write a `ParkedDecision` JSON file with the file-writing tool, following the
 [writing rules for text that asks a human to decide](../decide/references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide).
-Its schema is `parked-decision/v1`:
+Its schema is `parked-decision/v1`
+([the decision record](../../protocol/needs-and-answers.md#the-decision-record)):
 
 ```json
 {

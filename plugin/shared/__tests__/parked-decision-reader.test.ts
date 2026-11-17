@@ -6,8 +6,8 @@
  * exact problems it names. The stored reader validates against the shape
  * description the Protocol's schema is generated from
  * (`decisions/park-shape.ts`), and the strict check takes its field lists
- * from the same description; these cases pin that both read every input as
- * they did before, and that an answer's spelling normalizes as it did.
+ * from the same description; these cases pin what each accepts and refuses,
+ * and how an answer's spelling normalizes.
  */
 import { describe, expect, it } from "bun:test";
 import { normalizeAnswerText } from "../decisions/answer-normalize.ts";

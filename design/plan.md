@@ -253,6 +253,10 @@ per issue in the design's order:
   rescue branch (`rescue_unpushed`).
 - **Follow-ups.** The routine question classes as configuration
   (`dispatch.followup_routine`).
+- **The Protocol.** The causes of a need, the act each asks for and the
+  classes they group into, added to the
+  [needs and structured answers chapter](../plugin/protocol/needs-and-answers.md)
+  once their table settles.
 
 Done when each build-order issue's acceptance holds, staged in tests where
 the case is rare, and on a dispatch host over a week: a drive whose only

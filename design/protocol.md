@@ -301,7 +301,7 @@ gets a JSON Schema (draft 2020-12) in `plugin/protocol/schemas/`:
 | The drive mailbox | a message a person or a tool writes to a running drive |
 | Hidden comment markers | the record envelope, and each marker's payload |
 | The follow-up claim and its result | the claim and the result record |
-| Needs and structured answers (provisional) | the decision record a pass writes, and an answer |
+| Needs and structured answers (provisional) | the decision record a pass writes; an answer's own record has its schema in the hidden comment markers' chapter |
 | Steward records (provisional) | each record kind |
 | Forge claims (provisional) | each claim |
 | The commands a repository supplies and tracker facets | the JSON a facet store answers with, and the output shapes callers parse |

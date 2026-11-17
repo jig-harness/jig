@@ -5,8 +5,8 @@
  * limits the readers hold an answer and a decision to. Each entry says what
  * it means to a reader that meets it.
  *
- * The decision record's shape (`park-shape.ts`) takes its field names and
- * which fields are required from here, the answer readers and writers
+ * The decision record's shape (`park-shape.ts`) declares the same fields,
+ * held equal to this table by its test, the answer readers and writers
  * (`decision-card.ts`, `answer-text.ts`, `answer-digest.ts`) their words
  * and limits, and the Jig Protocol's chapter on needs and structured answers
  * (`plugin/protocol/needs-and-answers.md`) is generated from these tables.
