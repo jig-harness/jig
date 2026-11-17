@@ -91,6 +91,7 @@ export function applyState(
   nowMs: number,
   unreadable: string[],
   startedAt: number,
+  weights?: import("./local-weights.ts").AccountWeights,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -108,7 +109,8 @@ export function applyState(
     machine,
     runtime,
     records,
-    table: slotTable(machine.accounts, records, nowMs),
+    table: slotTable(machine.accounts, records, nowMs, undefined, weights),
+    weights,
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),

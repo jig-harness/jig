@@ -5,6 +5,7 @@
  * receipt and makes the tick's exit `1`; what the tick launched stands, and
  * the next tick writes both again.
  */
+import { weightReport } from "./account-report.ts";
 import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
 import {
@@ -151,25 +152,32 @@ function accountsOf(
   records: ReadRecord[],
   nowMs: number,
   codexOptIn: CodexOptIn,
+  weights?: import("./local-weights.ts").AccountWeights,
 ): LineAccount[] {
   const refused = notAdmitted(
     machine.accounts,
     passTimeoutSeconds(),
     codexOptIn,
   );
-  return slotTable(machine.accounts, records, nowMs).map((slots) => ({
-    name: slots.account.name,
-    vendor: slots.account.vendor,
-    cap: slots.account.maxPerAccount,
-    held: slots.held,
-    wall:
-      slots.wall === null
-        ? null
-        : { resetAt: slots.wall.resetAt, source: slots.wall.source },
-    wallUnrecorded: slots.wallUnrecorded,
-    notAdmitted:
-      refused.find((r) => r.account === slots.account.name)?.reason ?? null,
-  }));
+  return slotTable(machine.accounts, records, nowMs, undefined, weights).map(
+    (slots) => ({
+      name: slots.account.name,
+      weight: weightReport(
+        slots,
+        refused.find((r) => r.account === slots.account.name)?.reason ?? null,
+      ),
+      vendor: slots.account.vendor,
+      cap: slots.account.maxPerAccount,
+      held: slots.held,
+      wall:
+        slots.wall === null
+          ? null
+          : { resetAt: slots.wall.resetAt, source: slots.wall.source },
+      wallUnrecorded: slots.wallUnrecorded,
+      notAdmitted:
+        refused.find((r) => r.account === slots.account.name)?.reason ?? null,
+    }),
+  );
 }
 
 /** The line with its parks, and the event rows of the parks that left: the rows and the line that records them as ingested land together. */
@@ -303,6 +311,7 @@ export function writeTickLine(
     inputs: Map<string, RepoLineInput>;
     /** The admission decision the tick launched under, so line and launches agree. */
     codexOptIn: CodexOptIn;
+    weights?: import("./local-weights.ts").AccountWeights | undefined;
   },
 ): void {
   const { machine } = tick;
@@ -371,6 +380,7 @@ function writeKept(
             records,
             parseMs(receipt.finishedAt),
             tick.codexOptIn,
+            tick.weights,
           ),
           lastAccount: lastAccount(records),
           previousNeeds: before?.needs ?? [],

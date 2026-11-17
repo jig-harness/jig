@@ -54,6 +54,7 @@ import {
   uncertainCleanupState,
   type StageSupervision,
 } from "./launch-supervision.ts";
+import { ordinalAnchors } from "./account-ordinal.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
@@ -155,6 +156,8 @@ export interface LaunchRecord {
   /** The item a pickup starts; `null` for a drive or a follow-up. */
   item: string | null;
   account: string;
+  /** Launch count for this vendor/configuration directory; absent on older records. */
+  accountLaunchOrdinal?: number;
   vendor: "claude" | "codex";
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
@@ -848,6 +851,7 @@ export function pruneLaunches(
 ): string[] {
   const cutoff = nowMs - days * 86_400_000;
   const kept = latestRefusals(records);
+  for (const id of ordinalAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
   for (const id of unsettledStartups(records, settled)) kept.add(id);
   for (const latest of [
