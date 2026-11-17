@@ -347,6 +347,10 @@ One pull request per remaining step.
 - **A queue.** A refused call returns at once with the time it clears. The
   callers are short-lived processes that run again; nothing holds requests
   in memory to send later.
-- **The systems' webhooks.** Being told of a change costs less than asking,
-  and needs an address the system can reach; the hub's design covers that
-  ([control-plane.md](control-plane.md)).
+- **Webhooks to each host.** Being told of a change costs less than asking,
+  and needs an address the system can reach, which a host does not offer.
+  The hub takes the forge's and the tracker's webhooks as its main feed for
+  every enrolled host, and its forge and tracker calls go through these
+  transports over `fetch`, with the library's portable parts split from
+  its machine stores
+  ([control-plane.md § The world view](control-plane.md#the-world-view-events-first-reconciled)).

@@ -2565,10 +2565,52 @@ make, use the entry's term instead.
   encryption scheme that also detects changed ciphertext. Each encryption
   under a key needs a fresh nonce, a value used only once.
   See [the unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
-- **Hub** — Jig's *shared control plane*: `jig hub serve`, one process with
-  one database that enrolled hosts call. Optional: a host that never
-  enrolls, or whose hub does not answer, dispatches alone. See
+- **Hub** — Jig's *shared control plane*: one service that enrolled hosts
+  call, a *portable core* run by an *adapter* (`jig hub serve`, a Bun
+  process with SQLite, first). Optional: a host that never enrolls, or
+  whose hub does not answer, dispatches alone. See
   [design/control-plane.md](design/control-plane.md).
+- **Portable core** — the part of the *hub* that holds all its logic and
+  runs on every platform unchanged, because it reaches storage, request
+  serving, scheduling, outbound calls and observability only through
+  *ports*: it runs no subprocess, imports no module bound to one runtime
+  and touches no local file, which a gate checks.
+- **Port and adapter (hub)** — a port is one small interface through which
+  the *hub*'s *portable core* asks for something its platform provides,
+  such as storage or a timer; an adapter implements every port for one
+  platform and runs the core there: a Bun process with SQLite (also a
+  container image), or Cloudflare Workers with Durable Objects or D1.
+  Unrelated to a *tracker adapter*.
+- **World view** — what the *dispatcher* knows of the forge and the
+  tracker (pull requests, checks, threads, queues, items), as opposed to
+  what it knows of its own machine. On a *hub* it is kept once for every
+  enrolled host, each fact with the version its source gave it.
+- **Webhook** — a request a forge, tracker or chat tool sends to an
+  address it was given, to say that something changed. It is signed with
+  a secret both sides hold, so the receiver can check who sent it, and it
+  can be lost, late, repeated or out of order, so a receiver that relies
+  on webhooks also runs a *reconciliation sweep*.
+- **Reconciliation sweep** — the *hub*'s slow, scheduled read of every
+  target it serves (hourly by default, using conditional requests where the
+  source honours them, which GitHub does not charge against its primary
+  limit when the answer is "unchanged"; a tracker's query still spends its
+  allowance), which corrects what *webhooks* lost or
+  misordered. A change it finds that no webhook brought is counted as
+  drift, the measure of whether webhooks can stay the main feed.
+- **Tunnel** — a connection a machine opens outward to a provider, which
+  then forwards requests from the internet for chosen paths to a port on
+  that machine, so the machine needs no open inbound port. A *hub* uses
+  one to publish its *webhook* path and nothing else; Cloudflare Tunnel
+  and Tailscale Funnel are two implementations.
+- **Drizzle** — an object-relational mapper (ORM) for TypeScript: a
+  library that declares database tables in code and builds typed queries
+  against them, with drivers for SQLite, PostgreSQL and serverless
+  databases, and `drizzle-kit`, its tool that writes migrations. The *hub*
+  keeps its tables through it.
+- **OpenTelemetry and OTLP** — OpenTelemetry is an open standard for a
+  program's telemetry (logs, metrics and spans); OTLP, the OpenTelemetry
+  Protocol, is the protocol that sends it to any collector that speaks it. The *hub*'s process adapter exports its
+  signals this way.
 - **Notification channel** — one way the *dispatcher*'s notices reach a
   person: a workspace card in Orca, a team's chat. The tick sends each
   notice through every channel a machine enables and keeps a record per
@@ -2598,13 +2640,14 @@ make, use the entry's term instead.
   repository may choose one of the hub's named policies. See
   [design/control-plane.md](design/control-plane.md#how-offers-are-ranked).
 - **Shared control plane** — one service that serves many hosts' *dispatchers*:
-  it reads the forge and the tracker once for all of them, puts claims with
+  it keeps one *world view* of the forge and the tracker for all of them,
+  fed by their *webhooks* and a *reconciliation sweep*, puts claims with
   leases in front of the forge and tracker claims, notices a host that
   stopped, serves the *source feed* of every host's work and may offer work
   to a host with free slots, in the order an *offer policy* gives. Each host's *dispatcher* is Jig's first
   *control plane*; Jig's shared one is the *hub*. The rules it keeps: no
-  level of use requires it, a host keeps authority over what it did, the
-  forge and tracker claims stay the fences, no server timer rewrites a
+  level of use requires it, a host keeps authority over what it did and
+  its own credentials, the forge and tracker claims stay the fences, no server timer rewrites a
   host's work, hosts call it and it calls no host, and a person's act
   carries that person's credential. See
   [ADR-0016](docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)

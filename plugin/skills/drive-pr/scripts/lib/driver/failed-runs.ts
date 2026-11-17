@@ -76,6 +76,7 @@ export async function failedRunsToTell(
 export async function rerunnableRuns(
   pr: string,
   failed: readonly FailedRun[],
+  readEvents: () => Promise<unknown[] | null> = () => timelineEvents(pr),
 ): Promise<number[]> {
   if (failed.length === 0) return [];
   let label: string | null;
@@ -85,7 +86,7 @@ export async function rerunnableRuns(
     return runsOutsideHold(failed, null);
   }
   if (label === null) return runsOutsideHold(failed, []);
-  const events = await timelineEvents(pr);
+  const events = await readEvents();
   return runsOutsideHold(
     failed,
     events === null ? null : ciHoldTransitions(events, label),

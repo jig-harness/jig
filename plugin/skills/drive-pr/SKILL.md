@@ -377,6 +377,18 @@ re-arm consumes it: the drive repeats the same checks, requests the re-run
 and waits for its replacement, and a later park says the granted re-run was
 spent. A claim still inside the replacement window keeps the grant pending
 until it ages out with no replacement.
+A cancellation a label write caused is re-run outside that budget: a first
+attempt the forge created within 30 seconds after a label other than the CI
+hold's was added or removed on the pull request, or a run of the same workflow
+whose latest attempt was still in flight when such a run arrived, which the
+workflow's concurrency group then cancelled. The drive's own state labels start these
+runs whenever it is armed or re-armed, and a person's re-run of a parked run
+is often their casualty. The drive waits 31 seconds after the latest label
+write, claims each attempt's one re-run in SQLite, requests it after the same
+head and CI-hold checks and waits for its replacement; an attempt still
+cancelled 60 seconds after its request, or one that may not be replayed, falls
+back to the head's budget. A run's next attempt is never label-started, so one
+label write never answers for a run twice.
 A successful replacement clears that operational park. Intentional held-run
 cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
