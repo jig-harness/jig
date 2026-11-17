@@ -51,6 +51,12 @@ import {
 
 import { resolveStateDir } from "./../state/store.ts";
 import type { ConsumedVerdict } from "./../state/resolution-receipt.ts";
+import {
+  answerGrantsRerun,
+  answeredHead,
+  grantKey,
+} from "./../cancelled-recovery.ts";
+import { grantCancellation } from "./../cancelled-recovery-state.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
 
@@ -303,6 +309,7 @@ export async function admitAnsweredParks(
     console.error(
       `re-arm: ${carried.length} answered item(s) an earlier arm unparked are still owed to a pass (${file}).`,
     );
+  if (!dryRun) await grantAnsweredRerun(pr, carried);
   const fresh = state.parked.length === 0 ? [] : await answeredParks(state);
   if (fresh === null || fresh.length === 0)
     return dryRun ? "" : rearmNotice(carried, file);
@@ -349,8 +356,32 @@ export async function admitAnsweredParks(
   );
   if (res.code !== 0)
     return recoverFailedUnpark(pr, res.code, carried, fresh, file);
+  await grantAnsweredRerun(pr, fresh);
   await announceUnparked(pr, fresh, file);
   return rearmNotice([...carried, ...fresh], file);
+}
+
+/**
+ * A person's "Re-run safely" answer to the `cancelled-ci` park is the
+ * cancelled-run recovery's next budget: without it the drive would find the
+ * once-per-head re-run spent and park the same question again. Answers an
+ * earlier arm unparked are granted again too, so a stop between the unpark
+ * and the grant loses nothing; the grant names its answers, so they count
+ * once.
+ */
+async function grantAnsweredRerun(
+  pr: string,
+  verdicts: readonly PendingVerdict[],
+): Promise<void> {
+  for (const verdict of verdicts.filter(answerGrantsRerun)) {
+    const head = answeredHead(verdict);
+    if (head === null) continue;
+    const heads = await grantCancellation(pr, head, grantKey(verdict));
+    if (heads > 0)
+      console.error(
+        `re-arm: a person's answer granted one more cancelled-run re-run on ${heads} recorded head(s) of PR #${pr}; the drive repeats the recovery's checks before it requests it.`,
+      );
+  }
 }
 
 /** What `unpark --stdin` keeps of a verdict for its receipt. */
@@ -385,7 +416,10 @@ async function recoverFailedUnpark(
       ? `re-arm: drive-state.ts unpark exited ${code}, but the answered items are unparked; handing their answers on.`
       : `re-arm: could not unpark the answered items (drive-state.ts exited ${code}); every one stays parked, and the next arm reads their answers again.`,
   );
-  if (gone.length > 0) await announceUnparked(pr, gone, file);
+  if (gone.length > 0) {
+    await grantAnsweredRerun(pr, gone);
+    await announceUnparked(pr, gone, file);
+  }
   return rearmNotice([...carried, ...gone], file);
 }
 
