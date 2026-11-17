@@ -24,6 +24,7 @@ import {
 } from "../../../skills/do-item/scripts/lib/tracker/github/refs.ts";
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { pullRequestFiles } from "../forge.ts";
+import type { Pool } from "../pool.ts";
 import { ended, secondsLeft, type TickBound } from "./bounded.ts";
 import {
   isMergeFact,
@@ -51,10 +52,19 @@ export interface MergeContext {
   bound?: TickBound | undefined;
   /** A merge proof's transport failure, retained by a tick's tracker record. */
   onFailure?(error: OutboundError): void;
+  /** The observe phase's shared read limit, when merge proofs run in a tick. */
+  pool?: Pool | undefined;
 }
 export interface MergeReads {
   links: LinkedPrReads;
   fact(pr: number): Promise<MergeFact | null>;
+}
+
+function defaultReads(tracker: Tracker, context: MergeContext): MergeReads {
+  return {
+    links: forgeReads(tracker, context.root, context.repository),
+    fact: (pr) => directFact(context, pr),
+  };
 }
 
 function associationOptions(context: MergeContext) {
@@ -131,10 +141,7 @@ async function directFact(
 export function planMergeReader(
   tracker: Tracker,
   context: MergeContext,
-  reads: MergeReads = {
-    links: forgeReads(tracker, context.root, context.repository),
-    fact: (pr) => directFact(context, pr),
-  },
+  reads: MergeReads = defaultReads(tracker, context),
 ): PlanMergeReader {
   const facts = new Map<number, Promise<MergeFact | null>>();
   const fact = (pr: number) => {
@@ -145,7 +152,7 @@ export function planMergeReader(
     }
     return value;
   };
-  return async (description, block) => {
+  const read = async (description: string, block?: string) => {
     const states = new Map<number, string>();
     const note = <T extends { number: number; state: string }>(pulls: T[]) => {
       for (const pull of pulls)
@@ -216,6 +223,9 @@ export function planMergeReader(
     }
     return evidence;
   };
+  const { pool } = context;
+  if (pool === undefined) return read;
+  return (description, block) => pool.run(() => read(description, block));
 }
 
 function delivers(
