@@ -200,9 +200,10 @@ describe("the answers on an item of another tracker", () => {
     return { tracker, reads };
   }
 
-  it("names each author, counts a member's comment trusted, and leaves out the tracker's own user", async () => {
+  it("names each author, counts a member's comment trusted, and keeps the tracker's own user's apart", async () => {
     const { tracker, reads } = onTracker([
-      fact("answer pickup: approve [d1]", FACTORY),
+      // The tracker's own user is no member (a guest), yet its answer is still detected.
+      fact("answer pickup: approve [d1]", FACTORY, { trusted: false }),
       fact("answer pickup: approve \\[0123456789ab\\]", DANA, {
         url: "https://linear.app/acme/issue/ENG-12/x#comment-7",
         editedAt: "2026-11-12T12:00:00.000Z",
@@ -221,32 +222,47 @@ describe("the answers on an item of another tracker", () => {
     const read = await ports.trackerComments("ENG-12");
     expect(read).toEqual({
       ok: true,
-      value: [
-        {
-          author: "Dana Lee",
-          association: "MEMBER",
-          at: "2026-11-12T11:00:00.000Z",
-          editedAt: "2026-11-12T12:00:00.000Z",
-          url: "https://linear.app/acme/issue/ENG-12/x#comment-7",
-          body: "answer pickup: approve [0123456789ab]",
+      value: {
+        own: {
+          name: "Jig Factory",
+          comments: [
+            {
+              author: "Jig Factory",
+              association: "MEMBER",
+              at: "2026-11-12T11:00:00.000Z",
+              editedAt: null,
+              url: `ENG-12#comment-c-27-u-factory`,
+              body: "answer pickup: approve [d1]",
+            },
+          ],
         },
-        {
-          author: "Guest",
-          association: "NONE",
-          at: "2026-11-12T11:00:00.000Z",
-          editedAt: null,
-          url: "ENG-12#comment-c-guest",
-          body: "answer pickup: approve",
-        },
-        {
-          author: "",
-          association: "NONE",
-          at: "2026-11-12T11:00:00.000Z",
-          editedAt: null,
-          url: "ENG-12#comment-c-bot",
-          body: "an integration wrote this",
-        },
-      ],
+        comments: [
+          {
+            author: "Dana Lee",
+            association: "MEMBER",
+            at: "2026-11-12T11:00:00.000Z",
+            editedAt: "2026-11-12T12:00:00.000Z",
+            url: "https://linear.app/acme/issue/ENG-12/x#comment-7",
+            body: "answer pickup: approve [0123456789ab]",
+          },
+          {
+            author: "Guest",
+            association: "NONE",
+            at: "2026-11-12T11:00:00.000Z",
+            editedAt: null,
+            url: "ENG-12#comment-c-guest",
+            body: "answer pickup: approve",
+          },
+          {
+            author: "",
+            association: "NONE",
+            at: "2026-11-12T11:00:00.000Z",
+            editedAt: null,
+            url: "ENG-12#comment-c-bot",
+            body: "an integration wrote this",
+          },
+        ],
+      },
     });
     await ports.trackerComments("ENG-13");
     // The tracker's own user is asked once a tick.
@@ -277,7 +293,7 @@ describe("the answers on an item of another tracker", () => {
     const read = await stationPorts(inputs({ tracker })).trackerComments(
       "ENG-12",
     );
-    expect(read.ok && read.value.map((c) => c.author)).toEqual([
+    expect(read.ok && read.value.comments.map((c) => c.author)).toEqual([
       "Sam (u-sam-1)",
       "Sam (u-sam-2)",
     ]);
@@ -292,7 +308,9 @@ describe("the answers on an item of another tracker", () => {
     const read = await stationPorts(inputs({ tracker })).trackerComments(
       "ENG-12",
     );
-    const labels = read.ok ? read.value.map((c) => c.author.toLowerCase()) : [];
+    const labels = read.ok
+      ? read.value.comments.map((c) => c.author.toLowerCase())
+      : [];
     expect(labels).toHaveLength(3);
     expect(new Set(labels).size).toBe(3);
   });
