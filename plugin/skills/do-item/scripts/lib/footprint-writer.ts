@@ -173,7 +173,8 @@ export function normalizePaths(
       "input",
       `${out.size} paths is more than a footprint carries (${FOOTPRINT_MAX_PATHS}): name their directories instead`,
     );
-  return [...out].sort();
+  // Code-unit order, so a footprint reads the same under every locale.
+  return [...out].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /**
