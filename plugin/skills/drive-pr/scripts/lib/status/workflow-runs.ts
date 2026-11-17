@@ -40,6 +40,8 @@ export interface WorkflowRun {
   startedAt: string;
   /** Which attempt this is; a re-run raises it. */
   attempt: number;
+  /** When the run last changed; for a completed run, about when it ended. */
+  updatedAt?: string;
 }
 
 /** What a check run has to say for its run to be read. */
@@ -95,6 +97,9 @@ function parseWorkflowRun(raw: unknown): WorkflowRun | null {
     createdAt,
     startedAt,
     attempt: typeof run.run_attempt === "number" ? run.run_attempt : 1,
+    ...(typeof run.updated_at === "string"
+      ? { updatedAt: run.updated_at }
+      : {}),
   };
 }
 

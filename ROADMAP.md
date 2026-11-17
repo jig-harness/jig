@@ -282,15 +282,18 @@ so it never finishes with them unanswered.
 ### 49. The hub: one control plane for many dispatchers
 
 A team or a person who runs the dispatcher on several machines can add one
-service that every host calls, the [hub](GLOSSARY.md). It reads the forge
-and the tracker once for all the hosts instead of once per host, so their
-rate limits are spent once. Its claims let several hosts pick up one
-repository's work, and it tells a person when a host stops. It shows every
-host's work on one dashboard, phone included. Later it offers work to
-whichever host has a free slot, in an order each team can set. The hub
-runs on a machine the team chooses and needs no cloud service. Nothing
-requires it: a host that does not enroll, or whose hub is down, dispatches
-on its own as it does today.
+service that every host calls, the [hub](GLOSSARY.md). The forge and the
+tracker tell it of each change through their webhooks, and an hourly check
+catches anything they missed. So the hosts stop reading for themselves, and
+rate limits are spent once, where something changed or a fact has gone stale. Its claims let
+several hosts pick up one repository's work, and it tells a person when a
+host stops. It shows every host's work and its own health on one
+dashboard, phone included. Later it offers work to whichever host has a
+free slot, in an order each team can set. The hub runs where the team
+chooses: as a process or a container on its own machine, with only its
+webhook address public, or on a serverless platform (Cloudflare first).
+Nothing requires it: a host that does not enroll, or whose hub is down,
+dispatches on its own as it does today, with its own credentials.
 
 ### 54. The line in a team's chat
 
