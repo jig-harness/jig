@@ -6,20 +6,19 @@ import { parseMs } from "./time.ts";
 import { OutboundError } from "./outbound/failure.ts";
 
 const FOOTPRINT_MARKER = "jig:footprint";
+/** One predicted path: repository-relative, no traversal, no glob, a directory ending in `/`. */
+export const FOOTPRINT_PATH = s.string({
+  minLength: 1,
+  maxLength: 1024,
+  pattern:
+    "^(?!/)(?!.*[\\\\:*?\\[\\]{}\\x00-\\x1F\\x7F])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//).+$",
+});
+/** The most paths one record carries. */
+export const FOOTPRINT_MAX_PATHS = 1000;
 export const FOOTPRINT_SHAPE = s.object({
   source: s.enum(["pickup", "scout", "planner", "filing"]),
   base: s.string({ pattern: "^[0-9a-f]{7,64}(?![\\s\\S])" }),
-  paths: s.array(
-    s.string({
-      minLength: 1,
-      maxLength: 1024,
-      pattern:
-        "^(?!/)(?!.*[\\\\:*?\\[\\]{}\\x00-\\x1F\\x7F])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//).+$",
-    }),
-    {
-      maxItems: 1000,
-    },
-  ),
+  paths: s.array(FOOTPRINT_PATH, { maxItems: FOOTPRINT_MAX_PATHS }),
   areas: s.array(
     s.string({
       pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])",
