@@ -14,8 +14,8 @@
  *
  * Every repository is observed at once, and within one the sources that do
  * not depend on each other are read side by side: the tracker beside the
- * forge, then the launch claims beside the runtime. The bounded reads inside
- * those sources share the tick's pool (`tick-reads.ts`).
+ * forge, then the launch claims beside the runtime. Each read runs through
+ * the tick's bounded pool (`tick-reads.ts`).
  *
  * Observing reads this machine's launch records as they stood when the tick
  * started and never the apply state, so it does not depend on what any
@@ -380,35 +380,37 @@ export async function observeRepo(
   try {
     [tracked, forge] = await settled(
       timer.time("tracker", () =>
-        readTracker(
-          values,
-          repo,
-          section,
-          trackerReport,
-          where,
-          context.bound,
-          opened.stages.has("pickup")
-            ? (context.options.machine?.serve ?? [])
-            : [],
-          context.options.machine?.serveDefaults,
-          nowMs,
-          context.options.machine == null ||
-            slotTable(
-              context.options.machine.accounts,
-              records,
-              nowMs,
-              undefined,
-              context.weights,
-            ).some(
-              (s) =>
-                s.held < s.account.maxPerAccount &&
-                s.wall === null &&
-                !s.wallUnrecorded &&
-                (s.weight.configured ?? 0) > 0,
-            ),
-          reads,
-          records,
-          opened.tracker,
+        pool.run(() =>
+          readTracker(
+            values,
+            repo,
+            section,
+            trackerReport,
+            where,
+            context.bound,
+            opened.stages.has("pickup")
+              ? (context.options.machine?.serve ?? [])
+              : [],
+            context.options.machine?.serveDefaults,
+            nowMs,
+            context.options.machine == null ||
+              slotTable(
+                context.options.machine.accounts,
+                records,
+                nowMs,
+                undefined,
+                context.weights,
+              ).some(
+                (s) =>
+                  s.held < s.account.maxPerAccount &&
+                  s.wall === null &&
+                  !s.wallUnrecorded &&
+                  (s.weight.configured ?? 0) > 0,
+              ),
+            reads,
+            records,
+            opened.tracker,
+          ),
         ),
       ),
       timer.time("forge", () =>
@@ -743,7 +745,6 @@ async function readTracker(
         (values.pull_requests as { issue_link?: unknown } | undefined)
           ?.issue_link !== "none",
       bound,
-      pool: reads.pool,
       onFailure: (error) => mergeFailures.push(error),
     });
     tracked.servedPolicy = {
