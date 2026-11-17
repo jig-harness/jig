@@ -189,6 +189,7 @@ differs between platforms sits behind a port:
 | Serving | A request in, a response out, with the caller's credential or the webhook's signature headers | Bun's HTTP server | The Worker's `fetch` handler |
 | Scheduling | Run a named job at a time or on a cadence, and run one soon | Timers in the process, with each job's next run kept in storage | Durable Object alarms and cron triggers |
 | Outbound | A call to the forge or the tracker through its [governed transport](../GLOSSARY.md), over `fetch` | The shared outbound library, its budget record and cost ledger kept through the storage port | The same |
+| Disable record | Write and read the per-repository owner disables, kept outside what backup restores ([Owner duties](#owner-duties)) | A file beside the hub's machine file | A key-value namespace outside the partitions' restore |
 | Observability | Typed events, metrics and spans ([Observability](#observability)) | Structured logs and the metrics `health` serves; OpenTelemetry's protocol (OTLP) to a collector when the settings name one | The platform's own logs and metrics; OTLP export when the settings name a collector |
 
 These rules keep the core portable:
@@ -1160,11 +1161,17 @@ first if it still runs, runs the command against its store, which records
 the disable the same way, waits out one lease and its drain margin (6
 minutes) since the hub last answered, and only then edits the machine
 file; the hub is not started again until the disable is recorded.
-A disable is not rollbackable state: it is also written to a record beside
-the hub's machine file, outside what `jig hub backup` copies and restores,
-and the hub reads the union of both at every start, so restoring an
-earlier backup never lifts it. Only `jig hub release-owner --undo
-<repository>` removes a disable, from both places. A
+A disable is not rollbackable state: it is also written through the
+core's disable-record operation to a store outside what `jig hub backup`
+copies and restores, and the hub reads the union of both at every start,
+so restoring an earlier backup never lifts it. The process adapter keeps
+that record in a file beside the hub's machine file; the Cloudflare adapter
+keeps it in a key-value namespace of its own, outside the partitions'
+point-in-time restore. Only `jig hub release-owner --undo <repository>`
+removes a disable, from both places, and it refuses until the person has
+removed the repository's owner claim from the machine file. It then waits
+one drain margin for the local owner's effects to finish before the hub may
+name an owner again, so the local owner and a hub-named owner never overlap. A
 machine-file edit alone never transfers an owner duty while the hub may
 still name an owner. This is the one exception to "works
 as it does today": it is stated in the levels above, in ADR-0016's
@@ -1178,7 +1185,8 @@ hub has named another owner; a timed fall-back would make two owners in
 the second case. What waits is bounded in kind: notices, label and board
 writes, the steward and reflection findings pause, while drives and
 pickups go on. So the hub is assumed available as a single machine is,
-not more: a host whose owner duties have waited 30 minutes raises a
+not more: a host that has not reached the hub for 30 minutes, owner or
+not and from the first wave, which has no owner leases, raises a
 [need](../GLOSSARY.md) on its own receipt and dashboard, so the person who
 runs the hub is told by the hosts even when the hub cannot tell anyone,
 and that person either restores the hub or takes the repository off it
