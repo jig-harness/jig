@@ -29,7 +29,7 @@ hold, release or drive a station, to `/jig:operator`.
 | --- | --- | --- |
 | The repository's objectives, their classes, epics or shares | `.config/priorities.yaml` on the default branch | A pull request plan |
 | How the lanes share starts on this host | `$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml`), `lanes:` | A local diff for the host's owner |
-| What this host serves for one person | the person's `priorities` in the host dispatch file | A local diff for the host's owner |
+| What this host serves for one person | the person's `priorities` in the host dispatch file (validated here; the dispatcher does not read it yet) | A local diff for the host's owner |
 | The site's record | the hub's operator configuration | Nothing: name the hub's procedure and stop |
 
 Write the record from the person's stated goals. Never infer objectives from
