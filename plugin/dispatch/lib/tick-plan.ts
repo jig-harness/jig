@@ -11,7 +11,8 @@
  * beside the plan's own (failure-notices.ts). A stalled pickup's finished
  * work is told from the open pull requests the observe phase already read
  * (`stalled-pr.ts`), and its moves to `pr_open` go on the report. On the
- * owner host the report-only priorities ranking follows the plan
+ * owner host the report-only priorities ranking's inputs are read after the
+ * plan, for the tick to rank once every repository is planned
  * (`tick-priorities.ts`); the plan never reads it.
  */
 import { slotTable } from "./accounts.ts";
@@ -40,7 +41,7 @@ import { applyStewardOrder } from "./steward-queue.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
-import { reportPriorities } from "./tick-priorities.ts";
+import { preparePriorities } from "./tick-priorities.ts";
 
 /** Plan one observed repository into its report. */
 export function planObserved(
@@ -89,8 +90,8 @@ export function planObserved(
     ...withStalledPr(observation),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
-  if (opened.owner)
-    reportPriorities(report, {
+  if (opened.owner) {
+    const prepared = preparePriorities(report, {
       slug: repo.slug,
       path: repo.path,
       defaultBranch: repo.defaultBranch,
@@ -99,6 +100,11 @@ export function planObserved(
       unplaced: report.unplaced,
       nowMs: context.nowMs,
     });
+    if (prepared !== null) {
+      context.priorities ??= [];
+      context.priorities.push(prepared);
+    }
+  }
   // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
   const failing = {
     actions: planFailureNotices(context, opened),

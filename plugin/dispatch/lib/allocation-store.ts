@@ -12,9 +12,11 @@
  *   tick of the next week and never rewritten: its `N`, `P`, `D0`, `F` and
  *   the next week's opening debt.
  * - `allocation_lane_epoch`: each weighted lane's ready and empty
- *   transitions, recorded by the tick with the snapshot hash; the latest
- *   ready transition of the week is the lane's epoch, and the table's newest
- *   sequence number is the epochs' revision the ranker hashes.
+ *   transitions across the host, recorded once per tick from every owned
+ *   repository's ready lanes with the snapshots' hash; the latest ready
+ *   transition of the week is the lane's epoch, and the table's newest
+ *   sequence number is the epochs' revision the ranker hashes. Rows of the
+ *   current and previous week are kept, and each lane's newest row.
  * - `allocation_ranking`: each repository's newest ranking, replaced by each
  *   tick: the ranker's input and output, and each item's lane and owners,
  *   which the claim path charges a claimed item with.
@@ -168,10 +170,10 @@ export function weekCharges(db: Database, week: string): WeekCharge[] {
   }));
 }
 
-/** The allocating level's owner id (`level:scope:id` → `id`). */
+/** The allocating level's owner, as its full reference key (`level:scope:id`), so objectives of the same id in two repositories stay apart. */
 function objectiveOf(owners: Record<string, unknown>): string | null {
   const owner = owners.repository ?? Object.values(owners)[0];
-  return typeof owner === "string" ? owner.split(":").slice(2).join(":") : null;
+  return typeof owner === "string" ? owner : null;
 }
 
 /** A JSON column read as an object; anything else as an empty one. */
@@ -283,10 +285,22 @@ export function pruneCharges(db: Database, nowMs: number): void {
 }
 
 /**
+ * Remove the lane transitions no epoch reads: every row outside the current
+ * and previous week except each lane's newest.
+ */
+export function pruneEpochs(db: Database, week: string): void {
+  db.query(
+    `DELETE FROM allocation_lane_epoch WHERE week NOT IN (?, ?)
+       AND seq NOT IN (SELECT MAX(seq) FROM allocation_lane_epoch GROUP BY lane)`,
+  ).run(week, previousWeek(week));
+}
+
+/**
  * Record each weighted lane's transition between having ready work and
  * having none, and return the epochs: per lane, the week's weighted-start
  * count at its latest ready transition this week (0 when it has been ready
- * since the week opened).
+ * since the week opened). Charges and epochs are the host's, so `ready` is
+ * the union of every owned repository's ready lanes, recorded once a tick.
  */
 export function recordEpochs(
   db: Database,

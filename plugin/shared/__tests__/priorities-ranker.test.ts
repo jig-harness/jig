@@ -166,6 +166,56 @@ describe("lanes", () => {
   });
 });
 
+describe("objectives within a lane", () => {
+  test("count only their own repository's starts, however another repository names its objectives", () => {
+    const rec = record({
+      objectives: [
+        objective("docs", "core", ["#100"], 0.5),
+        objective("api", "core", ["#110"], 0.5),
+      ],
+    });
+    const items = [
+      epic("#100"),
+      item("#101", { parent: "#100" }),
+      epic("#110"),
+      item("#111", { parent: "#110" }),
+    ];
+    // Three starts of another repository's objective of the same id.
+    const charges = [0, 1, 2].map((i) => ({
+      ...charge("core", i),
+      objective: "repository:other/repo:docs",
+    }));
+    const out = rank(
+      input({
+        records: [rec],
+        snapshot: { readAt: "t", items },
+        weights: weights({ tactical: 0, peripheral: 0, "bug-other": 0 }),
+        capacity: { starts: 1 },
+        week: { week: "2026-11-16", d0: 0, d0Reason: null, charges },
+      }),
+    );
+    expect(out.shortlist.map((p) => p.key)).toEqual(["#101"]);
+    const own = rank(
+      input({
+        records: [rec],
+        snapshot: { readAt: "t", items },
+        weights: weights({ tactical: 0, peripheral: 0, "bug-other": 0 }),
+        capacity: { starts: 1 },
+        week: {
+          week: "2026-11-16",
+          d0: 0,
+          d0Reason: null,
+          charges: charges.map((c) => ({
+            ...c,
+            objective: `repository:${SCOPE}:docs`,
+          })),
+        },
+      }),
+    );
+    expect(own.shortlist.map((p) => p.key)).toEqual(["#111"]);
+  });
+});
+
 describe("membership", () => {
   test("an epic's rank reaches its children, before their own Priority", () => {
     const rec = record({

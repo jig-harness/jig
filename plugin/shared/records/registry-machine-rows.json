@@ -160,7 +160,7 @@
       "dispatch-allocation-lane-epoch",
       "dispatch/lib/allocation-store.ts",
       "allocation_lane_epoch",
-      "Each weighted lane's transition between having ready work and having none, with the snapshot hash; a lane's latest ready transition this week is its epoch, and the newest row's sequence is the revision the ranker's input hash carries."
+      "Each weighted lane's transition between having ready work in any repository the host owns and having none, recorded once a tick with the snapshots' hash; a lane's latest ready transition this week is its epoch, and the newest row's sequence is the revision the ranker's input hash carries. Rows before the previous week are removed, except each lane's newest."
     ],
     [
       "dispatch-allocation-ranking",

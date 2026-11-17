@@ -24,7 +24,7 @@ import {
   WEIGHTED_LANES,
   type WeightedLane,
 } from "./lanes.ts";
-import type { Level, PrioritiesRecord } from "./record.ts";
+import { type Level, type PrioritiesRecord, refKey } from "./record.ts";
 import type { SnapshotItem, TrackerSnapshot } from "./snapshot.ts";
 import { clean, isWeighted, type WeekCharge } from "./week.ts";
 import type { LaneWeights } from "./weights.ts";
@@ -391,7 +391,11 @@ function takeFrom(
   const nLane = state.n[lane];
   for (const o of ready) {
     const share = o.share ?? (unshared > 0 ? residual / unshared : 0);
-    const d = share * (nLane + 1) - (state.nObjective.get(o.id) ?? 0);
+    const counted =
+      record === undefined
+        ? 0
+        : (state.nObjective.get(refKey(record.level, record.scope, o.id)) ?? 0);
+    const d = share * (nLane + 1) - counted;
     if (d > EPSILON && d > best + EPSILON) {
       chosen = o.id;
       best = d;
@@ -406,7 +410,15 @@ function takeFrom(
   const index = pool.findIndex((c) => c.placement?.objective === chosen);
   const [item] = pool.splice(Math.max(index, 0), 1);
   if (item === undefined) return null;
-  return { item, objective: item.placement?.objective ?? null, why };
+  const placed = item.placement;
+  return {
+    item,
+    objective:
+      placed === null
+        ? null
+        : refKey(placed.level, placed.scope, placed.objective),
+    why,
+  };
 }
 
 /** A lane's pool in its deterministic order. */

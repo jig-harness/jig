@@ -127,6 +127,7 @@ import {
   settleOutcomes,
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
+import { rankPriorities } from "./lib/tick-priorities.ts";
 import type { RepoReport } from "./lib/types.ts";
 import {
   type ScheduledUpgrade,
@@ -451,6 +452,8 @@ async function actAll(
     receipt.repos.push(await boundedAct(observed, context));
     acted.push(path);
   }
+  // The host's lane epochs read every owned repository's ready lanes at once.
+  rankPriorities(context.priorities ?? [], context.nowMs);
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
   // A repository's observe lock is kept until its launches and close are done.

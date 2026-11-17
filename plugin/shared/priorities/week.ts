@@ -18,7 +18,7 @@ const DAY_MS = 86_400_000;
 export interface WeekCharge {
   claimId: string;
   lane: Lane | "unallocated";
-  /** The repository-level allocation owner, for the in-lane objective counters. */
+  /** The repository-level allocation owner as its reference key (`level:scope:id`), for the in-lane objective counters. */
   objective: string | null;
   /** The peripheral lane's share when the start was charged. */
   peripheralShare: number;

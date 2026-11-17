@@ -100,7 +100,7 @@ describe("the design's sample week", () => {
       charges.push({
         claimId: `claim-${launch}`,
         lane: first.lane,
-        objective: first.objective,
+        objective: first.owners.repository ?? null,
         peripheralShare: 0.1,
         atMs: launch,
       });

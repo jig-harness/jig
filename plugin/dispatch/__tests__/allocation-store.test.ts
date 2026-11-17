@@ -13,8 +13,10 @@ import { rank } from "../../shared/priorities/ranker.ts";
 import { DEFAULT_WEIGHTS } from "../../shared/priorities/lanes.ts";
 import {
   claimId,
+  latestRanking,
   openWeek,
   pruneCharges,
+  pruneEpochs,
   recordEpochs,
   saveRanking,
   weekCharges,
@@ -25,7 +27,14 @@ import { type LaunchRecord, writeRecord } from "../lib/launches.ts";
 import { notePickupClaim } from "../lib/pickup-claim.ts";
 import { closeStateDb, stateDb } from "../lib/state.ts";
 import {
+  type PreparedPriorities,
+  rankPriorities,
+} from "../lib/tick-priorities.ts";
+import type { RepoReport } from "../lib/types.ts";
+import type { SnapshotItem } from "../../shared/priorities/snapshot.ts";
+import {
   input,
+  item,
   objectiveWork,
 } from "../../shared/__tests__/priorities-fixtures.ts";
 
@@ -127,6 +136,25 @@ describe("a claim's charge", () => {
       tactical: 25,
       peripheral: 25,
     });
+  });
+
+  it("that fails to write is rolled back alone: the claim is still noted", () => {
+    const dir = root();
+    writeRecord(pickup(), dir);
+    stateDb(dir).run("DROP TABLE allocation_charge");
+    const noted = notePickupClaim(
+      "#7",
+      { [LAUNCH_VARIABLE]: ID, JIG_HOME: root() },
+      dir,
+    );
+    expect(noted.ok && noted.value).toMatchObject({
+      noted: true,
+      record: ID,
+      chargeFailed: expect.stringContaining("allocation_charge"),
+    });
+    expect(
+      stateDb(dir).query("SELECT launch, item FROM pickup_claims").all(),
+    ).toEqual([{ launch: ID, item: "#7" }]);
   });
 
   it("is not written for a claim the record refuses", () => {
@@ -287,5 +315,82 @@ describe("the lanes' epochs", () => {
         NOW + 20,
       ).revision,
     ).toBe(second.revision);
+  });
+});
+
+/** A repository's prepared ranking inputs, with no record. */
+function prepared(
+  dir: string,
+  slug: string,
+  items: SnapshotItem[],
+): PreparedPriorities {
+  return {
+    report: {} as RepoReport,
+    slug,
+    read: { record: null, source: "none", blocked: null, lastValid: null },
+    weights: DEFAULTS,
+    snapshot: { readAt: "2026-11-18T08:00:00.000Z", items },
+    records: [],
+    allocationBlocked: null,
+    stateRoot: dir,
+  };
+}
+
+function epochRows(dir: string): number {
+  return (
+    stateDb(dir)
+      .query("SELECT COUNT(*) AS n FROM allocation_lane_epoch")
+      .get() as { n: number }
+  ).n;
+}
+
+describe("the host's lane epochs across repositories", () => {
+  it("are recorded once a tick from every repository's ready lanes, so one repository's empty lane neither restarts the epoch nor adds rows", () => {
+    const dir = root();
+    const ready = prepared(dir, "o/b", [
+      item("#1", { type: "bug", priority: 3 }),
+    ]);
+    const empty = prepared(dir, "o/c", [item("#2")]);
+    rankPriorities([ready, empty], NOW);
+    const rows = epochRows(dir);
+    for (let i = 1; i <= 3; i++) {
+      charge(dir, 100 + i, "bug-other", NOW + i * 1000);
+      rankPriorities([ready, empty], NOW + i * 1000 + 500);
+    }
+    expect(epochRows(dir)).toBe(rows);
+    const ranked = latestRanking(stateDb(dir), "o/b");
+    expect(ranked?.input.epochs.startN).toEqual({});
+    expect(ranked?.input.week.charges).toHaveLength(3);
+    expect(ready.report.priorities).toMatchObject({
+      ranking: { algorithm: "priorities-ranker/1" },
+    });
+  });
+
+  it("keep each lane's newest row and the rows of the current and previous week", () => {
+    const dir = root();
+    const db = stateDb(dir);
+    const insert = (lane: string, week: string, ready: number) =>
+      db
+        .query(
+          "INSERT INTO allocation_lane_epoch (lane, week, ready, start_n, snapshot, at_ms) VALUES (?, ?, ?, 0, 'h', 0)",
+        )
+        .run(lane, week, ready);
+    insert("core", "2026-10-26", 1);
+    insert("core", "2026-10-26", 0);
+    insert("tactical", "2026-10-26", 1);
+    insert("core", "2026-11-09", 1);
+    insert("core", "2026-11-16", 0);
+    pruneEpochs(db, "2026-11-16");
+    expect(
+      db
+        .query(
+          "SELECT lane, week, ready FROM allocation_lane_epoch ORDER BY seq",
+        )
+        .all(),
+    ).toEqual([
+      { lane: "tactical", week: "2026-10-26", ready: 1 },
+      { lane: "core", week: "2026-11-09", ready: 1 },
+      { lane: "core", week: "2026-11-16", ready: 0 },
+    ]);
   });
 });
