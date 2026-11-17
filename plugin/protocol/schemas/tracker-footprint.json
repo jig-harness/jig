@@ -64,14 +64,15 @@
         },
         "base": {
           "type": "string",
-          "pattern": "^[0-9a-f]{7,64}$"
+          "pattern": "^[0-9a-f]{7,64}(?![\\s\\S])"
         },
         "paths": {
           "type": "array",
           "items": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 1024
+            "maxLength": 1024,
+            "pattern": "^(?!/)(?!.*[\\\\:*?\\[\\]{}\\x00-\\x1F\\x7F])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//).+$"
           },
           "maxItems": 1000
         },
@@ -79,7 +80,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])",
             "maxLength": 100
           },
           "maxItems": 100

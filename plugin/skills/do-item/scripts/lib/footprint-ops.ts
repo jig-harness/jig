@@ -1,5 +1,5 @@
 /** Read or append an item's predicted paths through the tracker's footprint port. */
-import { readFile, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -25,12 +25,28 @@ function invalid(message: string, cause?: unknown): TrackerRequestError {
 }
 
 async function boundedInput(path: string): Promise<string> {
-  if ((await stat(path)).size > MAX_INPUT_BYTES)
-    throw invalid("input exceeds 2,000,000 bytes");
-  const raw = await readFile(path, "utf8");
-  if (Buffer.byteLength(raw) > MAX_INPUT_BYTES)
-    throw invalid("input exceeds 2,000,000 bytes");
-  return raw;
+  const handle = await open(path, "r");
+  try {
+    if (!(await handle.stat()).isFile())
+      throw invalid("input must be a regular file");
+    const bytes = Buffer.alloc(MAX_INPUT_BYTES + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const { bytesRead } = await handle.read(
+        bytes,
+        offset,
+        bytes.length - offset,
+        offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > MAX_INPUT_BYTES)
+      throw invalid("input exceeds 2,000,000 bytes");
+    return bytes.subarray(0, offset).toString("utf8");
+  } finally {
+    await handle.close();
+  }
 }
 function inputRecord(key: string, raw: string): FootprintRecord {
   let input: unknown;

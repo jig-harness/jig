@@ -25,6 +25,9 @@ test("multiline records round trip through tracker markup, including Jira", () =
   expect(readFootprint(adfToMarkdown(markdownToAdf(body)), "#42")).toEqual(
     record,
   );
+  expect(
+    readFootprint(adfToMarkdown(markdownToAdf(`Introduction\n${body}`)), "#42"),
+  ).toEqual(record);
 });
 test("only trusted, valid records for this item count; active pickup wins", () => {
   const old = { ...record, at: "2026-11-14T17:00:00.000Z" };
@@ -65,4 +68,10 @@ test("paths cannot escape the repository or carry glob syntax", () => {
   expect(
     readFootprint(footprintBody(record).replace('"v":1', '"v":99'), record.key),
   ).toBeNull();
+});
+test("published shape rejects paths and identifiers that local readers reject", () => {
+  for (const paths of [["src/**"], ["/tmp/file"], ["../escape"]])
+    expect(() => footprintBody({ ...record, paths })).toThrow();
+  expect(() => footprintBody({ ...record, base: "abcdef0\n" })).toThrow();
+  expect(() => footprintBody({ ...record, areas: ["shared\n"] })).toThrow();
 });

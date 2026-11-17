@@ -165,5 +165,6 @@ fields. JSON records also have their own schemas: the
 [claim marker](schemas/tracker-claim-marker.json),
 [claim outcome](schemas/tracker-claim-outcome.json),
 [attachment header](schemas/tracker-attachment.json) and
-[reflection event](schemas/reflection-record.json). Text marker grammars
+[reflection event](schemas/reflection-record.json), and
+[tracker footprint](schemas/tracker-footprint.json). Text marker grammars
 remain the forms this chapter lists.

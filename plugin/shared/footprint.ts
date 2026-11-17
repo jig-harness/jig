@@ -8,12 +8,23 @@ import { OutboundError } from "./outbound/failure.ts";
 const FOOTPRINT_MARKER = "jig:footprint";
 export const FOOTPRINT_SHAPE = s.object({
   source: s.enum(["pickup", "scout", "planner", "filing"]),
-  base: s.string({ pattern: "^[0-9a-f]{7,64}$" }),
-  paths: s.array(s.string({ minLength: 1, maxLength: 1024 }), {
-    maxItems: 1000,
-  }),
+  base: s.string({ pattern: "^[0-9a-f]{7,64}(?![\\s\\S])" }),
+  paths: s.array(
+    s.string({
+      minLength: 1,
+      maxLength: 1024,
+      pattern:
+        "^(?!/)(?!.*[\\\\:*?\\[\\]{}\\x00-\\x1F\\x7F])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//).+$",
+    }),
+    {
+      maxItems: 1000,
+    },
+  ),
   areas: s.array(
-    s.string({ pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$", maxLength: 100 }),
+    s.string({
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])",
+      maxLength: 100,
+    }),
     { maxItems: 100 },
   ),
   pickup: s.optional(s.string({ minLength: 1, maxLength: 200 })),
@@ -30,21 +41,6 @@ export interface FootprintRecord {
   pickup?: string | undefined;
 }
 
-function validPath(path: string): boolean {
-  return (
-    !Array.from(path).some(
-      (c) =>
-        c.charCodeAt(0) < 32 ||
-        c.charCodeAt(0) === 127 ||
-        "\\:*?[]{}".includes(c),
-    ) &&
-    !path.startsWith("/") &&
-    path
-      .replace(/\/$/, "")
-      .split("/")
-      .every((p) => p !== "" && p !== "." && p !== "..")
-  );
-}
 function payloadOf(record: FootprintRecord) {
   return {
     source: record.source,
@@ -58,7 +54,7 @@ function payloadOf(record: FootprintRecord) {
 /** Render through the envelope codec, which escapes marker delimiters in data. */
 export function footprintBody(record: FootprintRecord): string {
   const payload = payloadOf(record);
-  if (!matches(FOOTPRINT_SHAPE, payload) || !record.paths.every(validPath))
+  if (!matches(FOOTPRINT_SHAPE, payload))
     throw new OutboundError("invalid", "invalid tracker footprint payload");
   return `${encodeMarker(FOOTPRINT_MARKER, { kind: "tracker-footprint", v: 1, key: record.key, writer: record.writer, at: record.at }, payload)}\nPredicted footprint (${record.source}, at ${record.base}): ${record.paths.length} paths; areas: ${record.areas.join(", ") || "none"}.\n`;
 }
@@ -72,7 +68,7 @@ export function readFootprint(
   const read = decodeMarker(body, FOOTPRINT_MARKER, "tracker-footprint");
   if (!read.ok || read.value.envelope.key !== key) return null;
   const p = read.value.payload;
-  if (!matches(FOOTPRINT_SHAPE, p) || !p.paths.every(validPath)) return null;
+  if (!matches(FOOTPRINT_SHAPE, p)) return null;
   const { writer, at } = read.value.envelope;
   return {
     key,
