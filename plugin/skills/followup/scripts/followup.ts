@@ -445,13 +445,12 @@ function keepCurrentVerdicts(run: RunFile, arms: ArmPlan): RunFile["verdicts"] {
   );
 }
 
-async function armsCommand(args: string[]): Promise<number> {
-  const { values } = parseArgs({
-    args,
-    options: { pr: { type: "string" }, json: { type: "boolean" } },
-    strict: true,
-  });
-  const { dir, run: loaded } = loadRun(values.pr);
+/**
+ * The run replanned under the configuration as it stands now, saved: a
+ * verdict whose arm declaration changed since it was recorded is dropped, so
+ * no command acts on a stale snapshot of the declaration.
+ */
+async function refreshedRun(dir: string, loaded: RunFile): Promise<RunFile> {
   const { facts } = loaded;
   const read = await settingsFor(dir, facts.remote, facts.integrationBranch);
   const arms = planOf(read, facts);
@@ -461,6 +460,17 @@ async function armsCommand(args: string[]): Promise<number> {
     verdicts: keepCurrentVerdicts(loaded, arms),
   };
   writeRun(dir, updated);
+  return updated;
+}
+
+async function armsCommand(args: string[]): Promise<number> {
+  const { values } = parseArgs({
+    args,
+    options: { pr: { type: "string" }, json: { type: "boolean" } },
+    strict: true,
+  });
+  const { dir, run: first } = loadRun(values.pr);
+  const updated = await refreshedRun(dir, first);
   console.log(
     values.json
       ? JSON.stringify(updated.arms, null, 2)
@@ -488,7 +498,8 @@ async function recordCommand(args: string[]): Promise<number> {
   const evidence =
     values.evidence ??
     usage("record needs --evidence <the checkable fact that settled it>");
-  const { dir, run: loaded } = loadRun(values.pr);
+  const { dir, run: first } = loadRun(values.pr);
+  const loaded = await refreshedRun(dir, first);
   const recorded = recordVerdict(loaded, arm, verdict, evidence, values.item);
   writeRun(dir, must(recorded, 2));
   console.log(`recorded ${arm}: ${verdict}`);
@@ -588,7 +599,8 @@ function checkRefusal(arm: RepoArm, read: RunSettings): string | null {
 
 async function checkCommand(args: string[]): Promise<number> {
   const { id, pr } = armArgs(args, "check");
-  const { dir, run: loaded } = loadRun(pr);
+  const { dir, run: first } = loadRun(pr);
+  const loaded = await refreshedRun(dir, first);
   const { arm, read } = await declaredArm(dir, loaded, id);
   const command =
     arm.checkCommand ?? usage(`${id} has no check_command to run`);
@@ -641,7 +653,8 @@ async function settleCommand(args: string[]): Promise<number> {
     options: { pr: { type: "string" }, json: { type: "boolean" } },
     strict: true,
   });
-  const settled = must(settle(loadRun(values.pr).run), 1);
+  const { dir, run: first } = loadRun(values.pr);
+  const settled = must(settle(await refreshedRun(dir, first)), 1);
   console.log(
     values.json ? JSON.stringify(settled, null, 2) : renderSettled(settled),
   );

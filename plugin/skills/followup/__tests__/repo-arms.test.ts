@@ -466,6 +466,53 @@ describe("followup.ts with repository arms", () => {
     expect((JSON.parse(checked.stdout) as Row).verdict).toBe("owed");
   });
 
+  test("the program a check command runs comes from the integration branch, never the working tree", () => {
+    const program = (verdict: string) =>
+      `console.log(JSON.stringify({ verdict: ${JSON.stringify(verdict)}, evidence: "from the tracked program" }));\n`;
+    const command = `${JSON.stringify(process.execPath)} .config/followup/check.ts`;
+    const root = integrated(
+      [
+        "followup:",
+        "  arms:",
+        "    - id: ledger",
+        `      check_command: '${command.replace(/'/g, "''")}'`,
+        "",
+      ].join("\n"),
+      { ".config/followup/check.ts": program("owed") },
+    );
+    expectSpawnExit(runScript(root, ["arms"]), 0, "arms");
+    write(root, ".config/followup/check.ts", program("not-owed"));
+    gitRun(root, "commit", "-qam", "a pull request rewrites the check program");
+    const checked = runScript(root, ["check", "ledger"]);
+    expectSpawnExit(checked, 0);
+    expect((JSON.parse(checked.stdout) as Row).verdict).toBe("owed");
+  });
+
+  test("record, check and settle replan against the declaration as it stands", () => {
+    const instructionsOnly = [
+      "followup:",
+      "  arms:",
+      "    - id: ledger",
+      "      instructions: .config/followup/docs-site.md",
+      "",
+    ].join("\n");
+    const root = integrated(instructionsOnly, {
+      ".config/followup/docs-site.md": INSTRUCTIONS,
+    });
+    expectSpawnExit(runScript(root, ["arms"]), 0, "arms");
+    write(
+      root,
+      ".config/jig.yaml",
+      instructionsOnly + `      check_command: ${yamlCheck("verdict")}\n`,
+    );
+    gitRun(root, "commit", "-qam", "the integration branch adds a check");
+    gitRun(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+    // No `arms` run: the saved plan is stale, and record must not use it.
+    const early = record(root, "ledger", "not-owed", "settled by hand");
+    expectSpawnExit(early, 2);
+    expect(early.stderr).toContain("run check ledger first");
+  });
+
   test("without the integration branch, no check command runs and no instructions are read", () => {
     const root = repository({
       ".config/jig.yaml": threeForms(),

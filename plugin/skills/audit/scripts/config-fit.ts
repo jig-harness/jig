@@ -512,10 +512,23 @@ function listEntryFindings(
   if (
     typeof field.items === "object" &&
     "fields" in field.items &&
-    field.items.fields.command === "command" &&
     isRecord(entry)
-  )
-    return commandFindings(`${field.path}[${i}].command`, entry.command, root);
+  ) {
+    const { fields } = field.items;
+    return Object.entries(fields).flatMap(([key, spec]) => {
+      const type = typeof spec === "string" ? spec : spec.type;
+      const at = `${field.path}[${i}].${key}`;
+      if (type === "command") return commandFindings(at, entry[key], root);
+      // A path inside a list entry names a file its readers need.
+      if (type === "path")
+        return pathFindings(
+          { ...field, path: at, exists: "required" },
+          entry[key],
+          root,
+        );
+      return [];
+    });
+  }
   return [];
 }
 
