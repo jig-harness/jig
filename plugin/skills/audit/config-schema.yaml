@@ -140,7 +140,7 @@ fields:
 
   dispatch.identity:
     type: string
-    read_by: [dispatch]
+    read_by: [dispatch, do-item]
     repository_only: true
     since: 0.105.0
   dispatch.person:

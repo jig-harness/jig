@@ -757,6 +757,13 @@ implementation. Skip this check for issues about the repository's own code.
    A served-person dispatch prompt supplies the tracker identity and, for
    inherited assignment, its ancestor epic. Use the same claim command with
    `--for <identity>` and, when supplied, `--ancestor <epic-key>`.
+   A factory-inherited dispatch prompt instead supplies `--factory-ancestor <epic-key>`.
+   Pass it alone, without `--for`, `--ancestor` or `--blocking`. The claim reads
+   `dispatch.identity` from the default branch, verifies the live ancestor
+   assignment and writer authority, and assigns the empty child to the
+   credential identity. An absent or unreadable default-branch identity refuses
+   the claim; a refusal stops the pickup.
+
    Keep these as separate quoted arguments. The claim keeps that person as
    sole assignee, checks writer authority and live ancestry, and refuses
    changed holds or assignment. A refusal or stand-down requires a fresh
