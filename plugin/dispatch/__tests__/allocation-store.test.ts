@@ -292,6 +292,7 @@ describe("the lanes' epochs", () => {
       new Set(["core", "tactical"]),
       "h1",
       NOW,
+      true,
     );
     expect(first.startN).toEqual({});
     for (let i = 0; i < 3; i++) charge(dir, i, "core", NOW + i);
@@ -302,6 +303,7 @@ describe("the lanes' epochs", () => {
       new Set(["core", "tactical", "peripheral"]),
       "h2",
       NOW + 10,
+      true,
     );
     expect(second.startN).toEqual({ peripheral: 3 });
     expect(second.revision).toBeGreaterThan(first.revision);
@@ -313,7 +315,12 @@ describe("the lanes' epochs", () => {
         new Set(["core", "tactical", "peripheral"]),
         "h3",
         NOW + 20,
+        true,
       ).revision,
+    ).toBe(second.revision);
+    // An incomplete observation records no lane as empty.
+    expect(
+      recordEpochs(db, week, new Set(["core"]), "h4", NOW + 30, false).revision,
     ).toBe(second.revision);
   });
 });
@@ -351,11 +358,11 @@ describe("the host's lane epochs across repositories", () => {
       item("#1", { type: "bug", priority: 3 }),
     ]);
     const empty = prepared(dir, "o/c", [item("#2")]);
-    rankPriorities([ready, empty], NOW);
+    rankPriorities([ready, empty], NOW, true);
     const rows = epochRows(dir);
     for (let i = 1; i <= 3; i++) {
       charge(dir, 100 + i, "bug-other", NOW + i * 1000);
-      rankPriorities([ready, empty], NOW + i * 1000 + 500);
+      rankPriorities([ready, empty], NOW + i * 1000 + 500, true);
     }
     expect(epochRows(dir)).toBe(rows);
     const ranked = latestRanking(stateDb(dir), "o/b");

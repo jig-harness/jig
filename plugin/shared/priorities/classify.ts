@@ -70,9 +70,16 @@ function classifyOne(
   if (item.priority === 1)
     return { ...base, lane: "urgent", why: "Urgent: first, bug or not" };
   const ancestry = ancestors(item, byKey);
-  const memberships = ancestry.ok ? matches(item, ancestry.keys, records) : [];
+  const memberships = ancestry.ok
+    ? matches(
+        item,
+        ancestry.keys,
+        ancestorLabels(item, ancestry.keys, byKey),
+        records,
+      )
+    : [];
   const alsoIn = memberships.map((m) => refKey(m.level, m.scope, m.objective));
-  if (item.type === "bug" && item.assigned !== false) {
+  if (item.type === "bug" && item.assigned === true) {
     const lane: Lane = item.priority === 2 ? "bug-high" : "bug-other";
     const why =
       item.priority === 2
@@ -89,6 +96,8 @@ function classifyOne(
       alsoIn,
       why: "an epic: its children carry its rank",
     };
+  if (allocationBlocked !== null)
+    return { ...base, lane: "unallocated", alsoIn, why: allocationBlocked };
   if (records.length === 0)
     return {
       ...base,
@@ -105,8 +114,6 @@ function classifyOne(
           ? "an unassigned bug outside every objective"
           : "outside every objective and not a bug",
     };
-  if (allocationBlocked !== null)
-    return { ...base, lane: "unallocated", alsoIn, why: allocationBlocked };
   const owners: Partial<Record<Level, string>> = {};
   const firstByLevel = new Map<Level, Placement>();
   for (const m of memberships)
@@ -139,6 +146,15 @@ function classifyOne(
     alsoIn: reporting,
     why: `allocation owner ${placement.objective} (${placement.class})`,
   };
+}
+
+/** The labels the item's available ancestors carry. */
+function ancestorLabels(
+  item: SnapshotItem,
+  keys: readonly string[],
+  byKey: Map<string, SnapshotItem>,
+): string[] {
+  return keys.flatMap((key) => byKey.get(`${item.scope}#${key}`)?.labels ?? []);
 }
 
 /** The item's ancestor keys, nearest first; a cycle or an unreadable parent is incomplete evidence. */
@@ -178,6 +194,7 @@ function ancestors(
 function matches(
   item: SnapshotItem,
   ancestorKeys: readonly string[],
+  ancestorLabels: readonly string[],
   records: readonly PrioritiesRecord[],
 ): Placement[] {
   const out: Placement[] = [];
@@ -200,7 +217,11 @@ function matches(
           position++;
         }
         for (const label of selector.labels ?? []) {
-          if (inScope && item.labels.includes(label) && found === null)
+          if (
+            inScope &&
+            (item.labels.includes(label) || ancestorLabels.includes(label)) &&
+            found === null
+          )
             found = { position, epic: null, depth: 0 };
           position++;
         }

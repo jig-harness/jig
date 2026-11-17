@@ -36,7 +36,7 @@ to start does not change.
 
 | Lane | Holds | Default weight |
 | --- | --- | --- |
-| `urgent` | every Urgent issue, bug or not | none: always first |
+| `urgent` | Urgent issues among the tick's pickups, bug or not | none: always first |
 | `bug-high` | assigned High bugs | none: next |
 | `core` | work whose allocation owner is a core objective | 50 |
 | `tactical` | work owned by a tactical objective | 25 |

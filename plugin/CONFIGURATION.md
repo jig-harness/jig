@@ -1930,9 +1930,10 @@ lanes:
 | `lanes.core`, `lanes.tactical`, `lanes.peripheral`, `lanes.bug-other` | a number from 0 to 100 | 50, 25, 10, 15 | The lane's weight; its share of the weighted starts is its weight over the sum of the weights in rotation. 0 takes the lane out of rotation. The peripheral weight is also a floor owed across the week |
 | `accounts` | | | Each account's weight for its share of new launches (issue #1402). Accepted and not yet read |
 
-`urgent` (every Urgent issue) and `bug-high` (assigned High bugs) have no
-weight: they come first and next and count toward no share, and every Urgent
-issue is listed in every report. A missing file or entry means the default.
+`urgent` (Urgent issues) and `bug-high` (assigned High bugs) have no
+weight: they come first and next and count toward no share. A report ranks the
+pickups the tick read (an Urgent issue outside that pool is not in it) and lists
+the first 10 positions of the shortlist. A missing file or entry means the default.
 The file fails closed: an entry outside 0 to 100 takes that lane out of
 rotation, and an unknown lane or section, or a file that is not YAML, takes
 every weighted lane out. The tick report names each problem.

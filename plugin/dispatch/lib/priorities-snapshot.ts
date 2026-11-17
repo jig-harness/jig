@@ -97,3 +97,24 @@ export function snapshotItem(
     gaps,
   };
 }
+
+/**
+ * The issue's parent as a snapshot node, carried for its rank and its own
+ * parent's key and never as a start: where the read carried the parent, the
+ * ancestor chain reaches past an in-progress intermediate parent to the
+ * declared epic. `null` where the read carried no parent.
+ */
+export function ancestorItem(
+  issue: PoolIssue | QueueIssue,
+  scope: string,
+): SnapshotItem | null {
+  if (!("parent" in issue) || issue.parent === null) return null;
+  const node = snapshotItem(issue.parent.issue, { scope });
+  return {
+    ...node,
+    parent: issue.parent.parent,
+    gaps: node.gaps.filter((g) => g !== "parent"),
+    state: "ancestor",
+    excluded: "an ancestor carried for its rank, not a start",
+  };
+}

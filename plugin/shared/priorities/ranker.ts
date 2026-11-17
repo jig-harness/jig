@@ -136,7 +136,10 @@ export function rank(input: RankerInput): RankerOutput {
       records: input.records,
       blocked: input.allocationBlocked,
     }),
-    weights: hashOf(input.weights.weights),
+    weights: hashOf({
+      weights: input.weights.weights,
+      problems: input.weights.problems,
+    }),
     capacity: hashOf(input.capacity),
     epochs: hashOf(input.epochs),
     week: hashOf(input.week),
@@ -484,12 +487,15 @@ function isReady(item: SnapshotItem): boolean {
   return (
     item.state === "ready" &&
     item.excluded === null &&
-    item.blockers.length === 0
+    item.blockers.length === 0 &&
+    !item.gaps.includes("blockers")
   );
 }
 
 function notReady(item: SnapshotItem): string {
   if (item.excluded !== null) return item.excluded;
+  if (item.gaps.includes("blockers"))
+    return "its blockers could not be read, so it is not confirmed unblocked";
   if (item.blockers.length > 0) return `waiting on ${item.blockers.join(", ")}`;
   return `its state is ${item.state ?? "unknown"}, not ready`;
 }

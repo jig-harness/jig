@@ -300,7 +300,9 @@ export function pruneEpochs(db: Database, week: string): void {
  * having none, and return the epochs: per lane, the week's weighted-start
  * count at its latest ready transition this week (0 when it has been ready
  * since the week opened). Charges and epochs are the host's, so `ready` is
- * the union of every owned repository's ready lanes, recorded once a tick.
+ * the union of every owned repository's ready lanes, recorded once a tick;
+ * a tick that did not observe every owned repository (`complete` false)
+ * records only ready transitions.
  */
 export function recordEpochs(
   db: Database,
@@ -308,6 +310,7 @@ export function recordEpochs(
   ready: ReadonlySet<WeightedLane>,
   snapshotHash: string,
   nowMs: number,
+  complete: boolean,
 ): LaneEpochs {
   const n = week.charges.filter((c) => isWeightedLane(c.lane)).length;
   for (const lane of ["core", "tactical", "peripheral", "bug-other"] as const) {
@@ -317,6 +320,8 @@ export function recordEpochs(
       )
       .get(lane) as { ready: number; week: string } | null;
     const isReady = ready.has(lane);
+    // A tick that missed a repository cannot say a lane has no ready work.
+    if (!isReady && !complete) continue;
     if (
       last === null ||
       last.ready !== (isReady ? 1 : 0) ||

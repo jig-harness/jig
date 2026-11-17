@@ -79,7 +79,7 @@ export function parseLaneWeights(raw: string, file: string): LaneWeights {
     if (key !== "lanes" && key !== "accounts")
       return allOut(file, `${file} has an unknown section \`${key}\``);
   const lanes = values.lanes;
-  if (lanes === undefined || lanes === null)
+  if (lanes === undefined)
     return { weights: { ...DEFAULT_WEIGHTS }, source: file, problems: [] };
   if (!isRecord(lanes))
     return allOut(file, `${file}: \`lanes\` is not a mapping`);

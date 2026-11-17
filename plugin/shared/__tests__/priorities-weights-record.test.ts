@@ -201,3 +201,40 @@ describe("the priorities record", () => {
     if (!parsed.ok) expect(parsed.failure.code).toBe("unreadable");
   });
 });
+
+describe("review fixes", () => {
+  test("a present but empty lanes section fails closed, never resumes the defaults", () => {
+    const read = parseLaneWeights("lanes:\n", "w.yaml");
+    expect(Object.values(read.weights)).toEqual([null, null, null, null]);
+    expect(read.problems[0]).toContain("not a mapping");
+  });
+
+  test("a diamond of references is not a cycle", () => {
+    const o = (id: string, refs: string[]) => ({
+      id,
+      class: "core" as const,
+      purpose: "p",
+      endState: "e",
+      owner: "alex",
+      refs: refs.map((r) => ({
+        level: "individual" as const,
+        scope: "host",
+        id: r,
+      })),
+    });
+    const rec = {
+      level: "individual" as const,
+      scope: "host",
+      revision: 1,
+      objectives: [
+        o("a", ["b", "c"]),
+        o("b", ["d"]),
+        o("c", ["d"]),
+        o("d", []),
+      ],
+    };
+    expect(referenceProblems([rec]).filter((p) => p.kind === "cycle")).toEqual(
+      [],
+    );
+  });
+});

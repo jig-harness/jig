@@ -45,12 +45,7 @@ export function priorityLines(r: RepoReport, verb: string): string[] {
     );
   if (ranking.shortlist.length === 0)
     lines.push("  proposes nothing: no ranked work is ready");
-  const started = [
-    ...r.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
-    ...r.launches
-      .filter((l) => l.action === "pickup" && l.outcome === "launched")
-      .map((l) => l.target),
-  ];
+  const started = startedTargets(r, verb === "wants");
   lines.push(
     `  ${verb === "wants" ? "started " : "would   "} ${started.length === 0 ? "no pickup" : [...new Set(started)].join(", ")} (dispatch's own selection)`,
   );
@@ -59,4 +54,13 @@ export function priorityLines(r: RepoReport, verb: string): string[] {
       `  disagree ${d.objective}: ${d.ahead.key} (epic ${d.ahead.epic ?? "-"}, priority ${d.ahead.priority}) ranks ahead of ${d.behind.key} (epic ${d.behind.epic ?? "-"}, priority ${d.behind.priority}): ${d.rule}`,
     );
   return lines;
+}
+
+/** An applied receipt names what launched; a dry run names what the plan would pick up. */
+function startedTargets(r: RepoReport, applied: boolean): string[] {
+  return applied
+    ? r.launches
+        .filter((l) => l.action === "pickup" && l.outcome === "launched")
+        .map((l) => l.target)
+    : r.actions.filter((a) => a.stage === "pickup").map((a) => a.target);
 }

@@ -453,7 +453,13 @@ async function actAll(
     acted.push(path);
   }
   // The host's lane epochs read every owned repository's ready lanes at once.
-  rankPriorities(context.priorities ?? [], context.nowMs);
+  // A tick that did not see every owned repository cannot say a lane has no ready work.
+  const asked = new Set(order);
+  const complete =
+    observe.busy.size === 0 &&
+    (context.priorities?.length ?? 0) === asked.size &&
+    (options.machine?.repositories ?? []).every((r) => asked.has(r.path));
+  rankPriorities(context.priorities ?? [], context.nowMs, complete);
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
   // A repository's observe lock is kept until its launches and close are done.

@@ -210,6 +210,7 @@ export function referenceProblems(
           }
           seen.add(key);
           walk(objective.refs);
+          seen.delete(key);
         }
       };
       walk(o.refs);
@@ -260,17 +261,26 @@ export function refKey(level: string, scope: string, id: string): string {
   return `${level}:${scope}:${id}`;
 }
 
-function selectors(value: unknown, where: string, problems: string[]): void {
+/** Each mapping of a non-empty list, with the path to it; anything else is a problem. */
+function eachMapping(
+  value: unknown,
+  where: string,
+  problems: string[],
+  visit: (raw: Record<string, unknown>, at: string) => void,
+): void {
   if (!Array.isArray(value) || value.length === 0) {
     problems.push(`${where} must be a non-empty list`);
     return;
   }
   value.forEach((raw, i) => {
     const at = `${where}[${i}]`;
-    if (!isRecord(raw)) {
-      problems.push(`${at} is not a mapping`);
-      return;
-    }
+    if (!isRecord(raw)) problems.push(`${at} is not a mapping`);
+    else visit(raw, at);
+  });
+}
+
+function selectors(value: unknown, where: string, problems: string[]): void {
+  eachMapping(value, where, problems, (raw, at) => {
     unknownFields(raw, SELECTOR, at, problems);
     text(raw.scope, `${at}.scope`, problems);
     const keys = strings(raw.keys, `${at}.keys`, problems);
@@ -281,16 +291,7 @@ function selectors(value: unknown, where: string, problems: string[]): void {
 }
 
 function refs(value: unknown, where: string, problems: string[]): void {
-  if (!Array.isArray(value) || value.length === 0) {
-    problems.push(`${where} must be a non-empty list`);
-    return;
-  }
-  value.forEach((raw, i) => {
-    const at = `${where}[${i}]`;
-    if (!isRecord(raw)) {
-      problems.push(`${at} is not a mapping`);
-      return;
-    }
+  eachMapping(value, where, problems, (raw, at) => {
     unknownFields(raw, REF, at, problems);
     if (!(LEVELS as readonly unknown[]).includes(raw.level))
       problems.push(`${at}.level must be one of ${LEVELS.join(", ")}`);

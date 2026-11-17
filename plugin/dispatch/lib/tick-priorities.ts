@@ -26,7 +26,7 @@ import type {
   SnapshotItem,
   TrackerSnapshot,
 } from "../../shared/priorities/snapshot.ts";
-import { snapshotItem } from "./priorities-snapshot.ts";
+import { ancestorItem, snapshotItem } from "./priorities-snapshot.ts";
 import {
   type LaneWeights,
   readLaneWeights,
@@ -118,6 +118,7 @@ export function preparePriorities(
 export function rankPriorities(
   prepared: readonly PreparedPriorities[],
   nowMs: number,
+  complete: boolean,
 ): void {
   const first = prepared[0];
   if (first === undefined) return;
@@ -135,6 +136,7 @@ export function rankPriorities(
         ready,
         hashOf(prepared.map((p) => [p.slug, p.snapshot.items])),
         nowMs,
+        complete,
       );
       for (const p of prepared)
         try {
@@ -196,25 +198,43 @@ function snapshotItems(
   input: Pick<PrioritiesTickInput, "pickups" | "unplaced" | "scope">,
 ): SnapshotItem[] {
   const reasons = new Map(input.unplaced.map((u) => [u.target, u.reason]));
-  return input.pickups.flatMap((p) => {
-    if (p.queueIssue === undefined)
-      return [bareItem(p, input.scope, reasons.get(p.key) ?? null)];
+  const starts: SnapshotItem[] = [];
+  const ancestors: SnapshotItem[] = [];
+  for (const p of input.pickups) {
+    if (p.queueIssue === undefined) {
+      starts.push(bareItem(p, input.scope, reasons.get(p.key) ?? null));
+      continue;
+    }
     const item = snapshotItem(p.queueIssue, {
       scope: input.scope,
       excluded: reasons.get(p.key) ?? null,
     });
-    // The served walk names the epic it reached an item through; that is
-    // ancestry enough for membership where the read carried no parent.
+    // The served walk names the epic it reached an item through (the served
+    // person's, or the factory's); that is ancestry enough for membership
+    // where the read carried no parent.
+    const ancestor = p.ancestorEpic ?? p.factoryAncestor;
     const withAncestor =
-      item.gaps.includes("parent") && p.ancestorEpic !== undefined
+      item.gaps.includes("parent") && ancestor !== undefined
         ? {
             ...item,
-            parent: p.ancestorEpic,
+            parent: ancestor,
             gaps: item.gaps.filter((g) => g !== "parent"),
           }
         : item;
-    return [{ ...withAncestor, state: "ready" }];
-  });
+    starts.push({
+      ...withAncestor,
+      state: "ready",
+      // Dispatch's own selection admits only unblocked work: a pickup's unread relations are no gap.
+      gaps: withAncestor.gaps.filter((g) => g !== "blockers"),
+    });
+    const node = ancestorItem(p.queueIssue, input.scope);
+    if (node !== null) ancestors.push(node);
+  }
+  const keys = new Set(starts.map((i) => i.key));
+  return [
+    ...starts,
+    ...ancestors.filter((n) => !keys.has(n.key) && keys.add(n.key)),
+  ];
 }
 
 /** An item the read carried only in its listing form: every facet it lacks is a gap. */
@@ -231,7 +251,7 @@ function bareItem(
     type: null,
     state: "ready",
     isEpic: false,
-    parent: p.ancestorEpic ?? null,
+    parent: p.ancestorEpic ?? p.factoryAncestor ?? null,
     children: [],
     blockers: [],
     assigned: p.pooled !== true,
@@ -243,8 +263,9 @@ function bareItem(
     gaps: [
       "priority",
       "type",
-      ...(p.ancestorEpic === undefined ? (["parent"] as const) : []),
-      "blockers",
+      ...(p.ancestorEpic === undefined && p.factoryAncestor === undefined
+        ? (["parent"] as const)
+        : []),
       "dueDate",
       "project",
       "cycle",
