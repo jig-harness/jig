@@ -366,9 +366,10 @@ export function createObservedPages<R extends ObservedRun>(
         url = page.next;
         return "next";
       }
-      // A full final page proves this walk complete. There is no room for the
-      // optional tail probe, but a real next link above still fails closed.
-      if (pages.length >= PAGE_CAP) return "done";
+      // At the cap, only a live terminal response proves nothing was appended
+      // after a cached final page. A cached terminal link must fail closed so
+      // the whole read can discover a new page beyond the cap.
+      if (pages.length >= PAGE_CAP) return lastLive ? "done" : "failed";
       const after = followingPage(page.url);
       const known =
         after === null
@@ -406,15 +407,11 @@ export function createObservedPages<R extends ObservedRun>(
     path: string,
     ctx: ObservedOptions,
     knownScope?: string | null,
+    startMs = currentMs(),
   ): Promise<ObservedRun> {
-    const startMs = currentMs();
     const dir = deps.cacheDir();
     const scope =
-      dir === null
-        ? null
-        : knownScope === undefined
-          ? await deps.repoScope(ctx)
-          : knownScope;
+      knownScope === undefined ? await deps.repoScope(ctx) : knownScope;
     if (dir === null || scope === null) return wholeRead(path, ctx, startMs);
     const request = `pages ${path}`;
     const file = entryFile(dir, scope, request);
@@ -446,16 +443,19 @@ export function createObservedPages<R extends ObservedRun>(
     ctx = { ...ctx, timeoutSec: ctx.timeoutSec ?? deps.defaultTimeoutSec() };
     const reads = evaluation.getStore();
     if (reads === undefined) return read(path, ctx);
-    const dir = deps.cacheDir();
-    const scope = dir === null ? null : await deps.repoScope(ctx);
-    if (scope === null) return read(path, ctx, scope);
+    const startMs = currentMs();
+    const remaining = leftSec(ctx, startMs);
+    const scopeCtx =
+      remaining === undefined ? ctx : { ...ctx, timeoutSec: remaining };
+    const scope = await deps.repoScope(scopeCtx);
+    if (scope === null) return read(path, ctx, scope, startMs);
     const key = memoKey(path, scope);
     const shared = coalesce(reads, key, async () => {
-      const answer = await read(path, ctx, scope);
+      const answer = await read(path, ctx, scope, startMs);
       if (answer.code !== 0) reads.delete(key);
       return answer;
     });
-    return withinBudget(shared, path, ctx);
+    return withinBudget(shared, path, ctx, startMs);
   }
 
   return { ghObservedSlurp };
@@ -476,12 +476,15 @@ function withinBudget(
   shared: Promise<ObservedRun>,
   path: string,
   ctx: ObservedOptions,
+  startMs: number,
 ): Promise<ObservedRun> {
   const budgetSec = ctx.timeoutSec;
   if (budgetSec === undefined) return shared.then((r) => ({ ...r }));
+  const remainingMs = budgetSec * 1000 - (currentMs() - startMs);
+  if (remainingMs <= 0) return Promise.resolve(spent(path));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<ObservedRun>((done) => {
-    timer = setTimeout(() => done(spent(path)), budgetSec * 1000);
+    timer = setTimeout(() => done(spent(path)), remainingMs);
   });
   return Promise.race([shared.then((r) => ({ ...r })), late]).finally(() =>
     clearTimeout(timer),

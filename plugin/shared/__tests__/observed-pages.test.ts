@@ -493,6 +493,22 @@ describe("observed paged reads", () => {
     expect(github.sent.every((s) => s.ifNoneMatch === null)).toBe(true);
     expect(github.sent).toHaveLength(4);
   });
+
+  it("shares whole reads within an evaluation when disk caching is off", async () => {
+    cacheOn = false;
+    github.lists.set(route(COMMENTS), items("c", 3));
+    const read = reader();
+
+    await withObservedEvaluation(async () => {
+      const [first, second] = await Promise.all([
+        read(COMMENTS),
+        read(COMMENTS),
+      ]);
+      expect(first).toEqual(second);
+    });
+
+    expect(github.sent).toHaveLength(2);
+  });
 });
 
 describe("followingPage", () => {
