@@ -98,6 +98,8 @@ function forgeComment(c: unknown): ForgeComment | null {
 /**
  * Every comment on the pull request, or why they could not be read. `repo`
  * (`owner/name`) names the repository; without it, the current directory's.
+ * Read fresh, never an evaluation's shared reading (`../paged-read.ts`): it
+ * decides whether a ledger comment is written or which one is edited.
  */
 async function listComments(
   pr: string,

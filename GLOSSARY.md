@@ -3099,6 +3099,13 @@ make, use the entry's term instead.
   on the next request lets the service answer "not modified" at no quota cost,
   which is how Jig's polling loops watch an idle pull request cheaply
   ([conditional reads](plugin/skills/drive-pr/scripts/lib/gh-conditional.ts)).
+- **Observed read** — a drive pass's read of a pull-request resource that only
+  informs what the pass reports, as opposed to a read that authorizes a write,
+  which always asks the service afresh. Within one evaluation every part of the
+  pass that asks for the resource shares one reading; across evaluations each
+  page is asked again with its *ETag*, and the page after the last one is asked
+  too (the **tail probe**), so a page added at the end is not missed
+  ([observed paged reads](plugin/shared/outbound/observed-pages.ts)).
 - **NDJSON (newline-delimited JSON)** — structured JSON records written one per
   line, so a command can consume them as a stream.
 - **Trace span** — a timed record of one operation, such as a command or a

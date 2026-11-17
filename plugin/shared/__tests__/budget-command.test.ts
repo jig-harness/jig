@@ -142,3 +142,58 @@ test("jig budget shows spending no counted call explains as unattributed, never 
   );
   expect(text).not.toContain(`${UNATTRIBUTED}:`);
 });
+
+test("jig budget counts a route's 304 answers apart from its other requests", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-budget-not-modified-"));
+  roots.push(root);
+  const path = join(root, "budget.sqlite");
+  const call = {
+    path,
+    system: "github",
+    credential: "github:test",
+    operation: "GET /repos/{}/{}/issues/{}/comments",
+    caller: "pass:one",
+    unit: "requests",
+    requests: 1,
+    estimated: false,
+    durationMs: 1,
+  };
+  recordCall({ ...call, cost: 1 });
+  recordCall({ ...call, cost: 0, notModified: 1 });
+  recordCall({ ...call, cost: 0, notModified: 1 });
+  recordCall({ ...call, operation: "GET /repos/{}/{}/pulls/{}", cost: 1 });
+  const run = (args: string[]) => {
+    const script =
+      "const {main} = await import(process.env.TEST_JIG); const {withLedgerPath} = await import(process.env.TEST_LEDGER); process.exit(await withLedgerPath(process.env.TEST_PATH, () => main(JSON.parse(process.env.TEST_ARGS))));";
+    const result = Bun.spawnSync([process.execPath, "--eval", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        TEST_JIG: jig,
+        TEST_LEDGER: ledger,
+        TEST_PATH: path,
+        TEST_ARGS: JSON.stringify(args),
+      },
+    });
+    expectSpawnExit(result, 0);
+    return result.stdout.toString();
+  };
+  const answer = JSON.parse(run(["budget", "--json"]));
+  const byRoute = (operation: string) =>
+    answer.operations.find(
+      (o: { operation: string }) => o.operation === operation,
+    );
+  expect(byRoute(call.operation)).toMatchObject({
+    requests: 3,
+    notModified: 2,
+    cost: 1,
+  });
+  expect(byRoute("GET /repos/{}/{}/pulls/{}")).toMatchObject({
+    requests: 1,
+    notModified: 0,
+  });
+  expect(run(["budget"])).toContain(
+    `${call.operation}: 3 requests (2 answered 304 Not Modified), 1 requests`,
+  );
+});

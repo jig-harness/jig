@@ -63,6 +63,8 @@ import {
   reviewerLabel,
 } from "../overlay.ts";
 import { ghCall } from "../proc.ts";
+import { withObservedEvaluation } from "../gh-conditional.ts";
+import { summaryReport } from "../../summary-findings.ts";
 import {
   type CiReport,
   checkRunsFor,
@@ -71,7 +73,6 @@ import {
   reviewerRun,
   reviewerStickyMarkers,
   SHA_MARKER,
-  summaryFindings,
   type UnresolvedThread,
   unresolvedThreads,
 } from "./evidence.ts";
@@ -285,13 +286,16 @@ export {
   STALLED_MIN_AGE_SEC,
 } from "./stranded-run.ts";
 
+/** One evaluation, whose observed reads share one reading per resource. */
 export async function evaluate(
   ctx: EvaluateContext,
   report: StatusReport,
 ): Promise<number> {
-  return ctx.waitingCache
-    ? ctx.waitingCache.evaluate(ctx, report, () => evaluateFresh(ctx, report))
-    : evaluateFresh(ctx, report);
+  return withObservedEvaluation(() =>
+    ctx.waitingCache
+      ? ctx.waitingCache.evaluate(ctx, report, () => evaluateFresh(ctx, report))
+      : evaluateFresh(ctx, report),
+  );
 }
 
 /**
@@ -415,19 +419,18 @@ async function evaluateFresh(
   // covered instead by refusing to converge with no mergeability verdict at
   // all, and by re-evaluating each round.
   //
-  // ALL THREE — state, head and base — are read TOGETHER, in one call, for
-  // the same reason the opening snapshot reads them together: two calls are
-  // two instants, and every one of these is part of what the verdict depends
-  // on. The first version of this recheck read `headRefOid` alone, which
-  // makes the guard blind to the terminal transition it most needs to catch:
-  // a PR that MERGES between the liveness check at the top and a terminal
-  // return keeps the exact same head, so the head comparison passes and the
-  // drive is told CONVERGED / HITL_PARKED / REVIEWER_FAILED about a pull
-  // request that is no longer open. That is the required `PR_NOT_OPEN` (5) —
-  // the one state that must stop the loop without a push — reported instead
-  // as states that do not stop it that way. Liveness, head and base are one
-  // observation, so they are read in one call and asserted together,
-  // liveness first.
+  // ALL THREE — state, head and base — are read TOGETHER, in one call, for the
+  // same reason the opening snapshot reads them together: two calls are two
+  // instants, and every one of these is part of what the verdict depends on.
+  // The first version of this recheck read `headRefOid` alone, which makes the
+  // guard blind to the terminal transition it most needs to catch: a PR that
+  // MERGES between the liveness check at the top and a terminal return keeps
+  // the exact same head, so the head comparison passes and the drive is told
+  // CONVERGED / HITL_PARKED / REVIEWER_FAILED about a pull request that is no
+  // longer open. That is the required `PR_NOT_OPEN` (5) — the one state that
+  // must stop the loop without a push — reported instead as states that do not
+  // stop it that way. Liveness, head and base are one observation, so they are
+  // read in one call and asserted together, liveness first.
   async function stillOnHead(): Promise<number> {
     const now = await ghCall(
       ["pr", "view", ctx.pr, "--json", "state,headRefOid,baseRefOid"],
@@ -554,14 +557,13 @@ async function evaluateFresh(
     return 0;
   }
 
-  // ONE snapshot for liveness, draft-ness, the head, the base and
-  // mergeability. Not fields bolted onto convenience: `mergeable` describes a
-  // specific (head, base) pair — see `stillOnHead` above — so reading any of
-  // these in a separate call opens a window where they describe different
-  // commits, and the mergeability verdict is terminal, so that window is a
-  // false-terminal window. `isDraft` rides the same read for the cheaper
-  // reason that it costs nothing there and a second call would be a second
-  // instant for no gain.
+  // ONE snapshot for liveness, draft-ness, the head, the base and mergeability.
+  // Not fields bolted onto convenience: `mergeable` describes a specific (head,
+  // base) pair — see `stillOnHead` above — so reading any of these in a
+  // separate call opens a window where they describe different commits, and the
+  // mergeability verdict is terminal, so that window is a false-terminal
+  // window. `isDraft` rides the same read for the cheaper reason that it costs
+  // nothing there and a second call would be a second instant for no gain.
   //
   // Every field in it is REQUIRED OF THE CLI — which is a narrower claim than
   // "every field is validated after the read", and the two are deliberately not
@@ -721,13 +723,12 @@ async function evaluateFresh(
   // after ANY push to the PR or its base — including the base-race
   // `stillOnHead` checks for. It is NOT treated as "not conflicting": GitHub
   // has not finished computing an answer at all, so nothing downstream (the
-  // reviewer's own witnesses, `CONVERGED`) is safe to trust against it
-  // either. Reported as MERGEABILITY_UNKNOWN (exit 4, the same "becomes
-  // something else with time" bucket as HEAD_LAG) rather than let it silently
-  // fall through to the reviewer/work checks below and risk a terminal claim
-  // resting on a mergeability verdict GitHub itself had not settled — the
-  // false-CONVERGED sibling of the false-CONFLICTING case this skill exists
-  // to prevent.
+  // reviewer's own witnesses, `CONVERGED`) is safe to trust against it either.
+  // Reported as MERGEABILITY_UNKNOWN (exit 4, the same "becomes something else
+  // with time" bucket as HEAD_LAG) rather than let it silently fall through to
+  // the reviewer/work checks below and risk a terminal claim resting on a
+  // mergeability verdict GitHub itself had not settled — the false-CONVERGED
+  // sibling of the false-CONFLICTING case this skill exists to prevent.
   //
   // Only CONFLICTING is otherwise acted on. `MERGEABLE` proceeds to the
   // reviewer checks below. There is no fourth possibility: the validation
@@ -765,7 +766,12 @@ async function evaluateFresh(
   // ever being reported. The verdict
   // degrades to "unknown" instead, which is what the reporter prints and what
   // announce-merge-ready already refuses to announce on.
-  let runs = await checkRunsFor(ctx.owner, ctx.repo, report.apiHead);
+  let runs = await checkRunsFor(
+    ctx.owner,
+    ctx.repo,
+    report.apiHead,
+    "observed",
+  );
   let runsUnreadable = false;
   if (runs === null) {
     if (!conflicting) {
@@ -781,9 +787,8 @@ async function evaluateFresh(
 
   // Bound to the app slug AND a check name, not the app alone: an app may
   // publish several checks on one SHA, and picking "the newest run from this
-  // app" would let an unrelated sibling check attest that the review
-  // completed. Newest wins within that pair (a re-run, or a cancelled first
-  // attempt).
+  // app" would let an unrelated sibling check attest that the review completed.
+  // Newest wins within that pair (a re-run, or a cancelled first attempt).
   const reviewer = reviewerRun(runs);
 
   const awaitReviewer = reviewerGatesApply(conflicting);
@@ -825,12 +830,11 @@ async function evaluateFresh(
     report.reviewerConclusion = reviewer.conclusion ?? "";
   }
 
-  // Set only by the stranded-check-run bypass below, and appended to
-  // whichever terminal reason this evaluation ends up reporting — so a
-  // ROUND_READY, CONVERGED or HITL_PARKED reached BECAUSE the bypass fired
-  // always says so (the operator can see which witness was used), rather
-  // than reading identically to one reached with a normally-completed
-  // check-run.
+  // Set only by the stranded-check-run bypass below, and appended to whichever
+  // terminal reason this evaluation ends up reporting — so a ROUND_READY,
+  // CONVERGED or HITL_PARKED reached BECAUSE the bypass fired always says so
+  // (the operator can see which witness was used), rather than reading
+  // identically to one reached with a normally-completed check-run.
   let stalledCheckRunNote = "";
   // `undefined` = the bypass below never ran (status was not 'in_progress');
   // `null` = it ran and the fetch itself failed; a `ReviewerSticky` = it ran
@@ -941,11 +945,10 @@ async function evaluateFresh(
     }
   }
 
-  // A conflicting head skips the reviewed-SHA GATE — every return inside it
-  // is STALE_REVIEW (exit 4), the same poll-to-timeout stall as the reviewer
-  // gate above, for the same reason: the marker only advances when the
-  // reviewer publishes, and nothing here becomes true with time while the
-  // conflict sits.
+  // A conflicting head skips the reviewed-SHA GATE — every return inside it is
+  // STALE_REVIEW (exit 4), the same poll-to-timeout stall as the reviewer gate
+  // above, for the same reason: the marker only advances when the reviewer
+  // publishes, and nothing here becomes true with time while the conflict sits.
   //
   // It does NOT skip READING the marker. Skipping the read as well threw away
   // the one piece of evidence that says whether a conflicting head's findings
@@ -1030,10 +1033,10 @@ async function evaluateFresh(
   report.openThreadKeys = threads.map((t) => String(t.threadId)).sort();
   report.openThreadVersions = openThreadVersions(threads);
 
-  const summary = await summaryFindings(
-    ctx.summaryScript,
-    ctx.pr,
-    ctx.helperTimeoutSec,
+  const summary = await summaryReport(
+    Number(ctx.pr),
+    `${ctx.owner}/${ctx.repo}`,
+    true,
   );
   if (summary === null) {
     return terminal(
@@ -1223,13 +1226,12 @@ async function evaluateFresh(
     }
     // Convergence needs the reviewer's OWN stamp for this head, never the
     // check-run fallback. The zeroes above are both read out of the sticky
-    // comment's neighbourhood: `summary-findings.ts` reads a missing sticky
-    // as zero findings, and a review that posted nothing leaves zero threads.
-    // So when the check-run completed but its sticky never published — a
-    // failed comment write, a changed bot identity, a reviewer whose findings
-    // went somewhere this driver cannot see — "no evidence of work" is
-    // indexed on the same absence, and the weaker witness cannot tell the two
-    // apart.
+    // comment's neighbourhood: `summary-findings.ts` reads a missing sticky as
+    // zero findings, and a review that posted nothing leaves zero threads. So
+    // when the check-run completed but its sticky never published — a failed
+    // comment write, a changed bot identity, a reviewer whose findings went
+    // somewhere this driver cannot see — "no evidence of work" is indexed on
+    // the same absence, and the weaker witness cannot tell the two apart.
     //
     // ROUND_READY keeps the fallback: there, the evidence of live work is
     // positive, so a weak SHA witness costs nothing. Only the terminal claim

@@ -694,7 +694,8 @@ export function parseNativeStacks(json: unknown): NativeStack[] {
  * Every native stack of the repository, or `null` when GitHub's Stacks API
  * cannot be read (it answers 404 where stacked pull requests are not
  * enabled). Unreadable is never "no stacks": treating it so would plan a new
- * stack over a predecessor that already belongs to one.
+ * stack over a predecessor that already belongs to one. Read fresh: it plans
+ * the stack link a pull request is about to get.
  */
 export async function listNativeStacks(
   root: string,

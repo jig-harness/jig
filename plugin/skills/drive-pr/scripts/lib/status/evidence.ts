@@ -17,6 +17,7 @@ import {
   stickyMarker,
 } from "../overlay.ts";
 import { checkPattern } from "../merge-ready.ts";
+import { type PagedRead, slurpPages } from "../paged-read.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
 import {
   type FailedRun,
@@ -107,20 +108,21 @@ function parsePages(raw: string): unknown[] | null {
   }
 }
 
-/** Every page of a commit's `check-runs` or `statuses` listing; `null` when unreadable. */
+/**
+ * Every page of a commit's `check-runs` or `statuses` listing; `null` when
+ * unreadable. `fresh` unless the caller only observes (`paged-read.ts`): a
+ * CI-green proof or a hold release reads what GitHub says now.
+ */
 async function commitPages(
   owner: string,
   repo: string,
   sha: string,
   listing: "check-runs" | "statuses",
+  read: PagedRead = "fresh",
 ): Promise<unknown[] | null> {
-  const r = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
-    ],
+  const r = await slurpPages(
+    `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
+    read,
     { stderr: "ignore" },
   );
   return r.code === 0 ? parsePages(r.stdout) : null;
@@ -145,8 +147,9 @@ export async function checkRunsFor(
   owner: string,
   repo: string,
   sha: string,
+  read: PagedRead = "fresh",
 ): Promise<CheckRun[] | null> {
-  const pages = await commitPages(owner, repo, sha, "check-runs");
+  const pages = await commitPages(owner, repo, sha, "check-runs", read);
   if (pages === null) return null;
   const runs: CheckRun[] = [];
   for (const page of pages) {
@@ -187,14 +190,11 @@ export async function commitStatusesFor(
   owner: string,
   repo: string,
   sha: string,
+  read: PagedRead = "fresh",
 ): Promise<CommitStatus[] | null> {
-  const r = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${owner}/${repo}/commits/${sha}/status?per_page=100`,
-    ],
+  const r = await slurpPages(
+    `repos/${owner}/${repo}/commits/${sha}/status?per_page=100`,
+    read,
     { stderr: "ignore" },
   );
   if (r.code !== 0) return null;
@@ -711,8 +711,14 @@ export async function ciReportFor(
   runsUnreadable: boolean,
   pr?: string,
 ): Promise<CiReport> {
-  const statuses = await commitStatusesFor(owner, repo, head);
-  const workflowRuns = await workflowRunsBehind(owner, repo, head, runs);
+  const statuses = await commitStatusesFor(owner, repo, head, "observed");
+  const workflowRuns = await workflowRunsBehind(
+    owner,
+    repo,
+    head,
+    runs,
+    "observed",
+  );
   const held = pr === undefined ? [] : await liveHeldChecks(pr);
   const reduced = readChecks(runs, workflowRuns);
   const heldRuns = reduced.failing.filter((r) => held.includes(r.name));
@@ -834,13 +840,10 @@ export async function reviewerStickyMarkers(
   repo: string,
   pr: string,
 ): Promise<ReviewerSticky | null> {
-  const r = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${owner}/${repo}/issues/${pr}/comments?per_page=100`,
-    ],
+  // An observation for the evaluation's verdict (`paged-read.ts`).
+  const r = await slurpPages(
+    `repos/${owner}/${repo}/issues/${pr}/comments?per_page=100`,
+    "observed",
     { stderr: "ignore" },
   );
   if (r.code !== 0) return null;

@@ -304,6 +304,9 @@ process.exit(status === 200 ? 0 : 1);
 import { writeFileSync, readFileSync } from 'node:fs';
 import { setSystemTime } from 'bun:test';
 import { FinalCiWait } from ${JSON.stringify(resolve(import.meta.dir, "../scripts/lib/final-ci-wait.ts"))};
+import { currentMs } from ${JSON.stringify(resolve(import.meta.dir, "../../../shared/time.ts"))};
+const epoch = currentMs();
+setSystemTime(epoch);
 const gate = new FinalCiWait('123');
 const phase = (value) => writeFileSync(process.env.FIXTURE_DIR + '/phase', value);
 const arm = async (unwitnessed = true) => {
@@ -325,8 +328,6 @@ for (const change of ['checks-changed', 'check-error', 'malformed', 'closed']) {
   results.push(await gate.skip(1, 180));
 }
 const calls = () => readFileSync(process.env.FIXTURE_DIR + '/calls', 'utf8').trim().split('\\n').map(JSON.parse);
-const epoch = 1_800_000_000_000;
-setSystemTime(epoch);
 await arm();
 const baseline = calls().length;
 for (let tick = 0; tick < 300_000; tick += 10_000) {
