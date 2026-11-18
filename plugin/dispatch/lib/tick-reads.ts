@@ -51,7 +51,12 @@ import { forgetMergeRead } from "./merge-reads.ts";
 import { pickupReads } from "./pickup-reads.ts";
 import { type Pool, pool } from "./pool.ts";
 import type { SessionRuntime, SessionsReader } from "./runtime/port.ts";
-import { type TickBound, unlessEnded } from "./sources/bounded.ts";
+import {
+  ended,
+  secondsLeft,
+  type TickBound,
+  unlessEnded,
+} from "./sources/bounded.ts";
 import type { ServedViews } from "./sources/served-reads.ts";
 import { failureText } from "./text.ts";
 import { type TickComments, tickComments } from "./tick-comments.ts";
@@ -259,7 +264,9 @@ export function tickReads(
     comments,
     login: () =>
       coalesce(singletonReads, "login", () =>
-        reads.run(() => resolveLogin()),
+        reads.run(async () =>
+          ended(bound) ? null : resolveLogin(secondsLeft(bound), bound?.signal),
+        ),
       ) as Promise<string | null>,
     sessions: lazySessions(runtime),
     budgets: [],

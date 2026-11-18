@@ -81,6 +81,11 @@ if (fs.existsSync(F + "/forge-fails.json")) {
   const rule = JSON.parse(fs.readFileSync(F + "/forge-fails.json", "utf8")).find((r) => args.join(" ").includes(r.match));
   if (rule !== undefined) { process.stderr.write(rule.stderr + "\\n"); process.exit(1); }
 }
+// One call held for gh-hold.json's \`ms\` before it is answered, each whose arguments contain its \`match\`: a read still in flight when the tick's deadline passes.
+if (fs.existsSync(F + "/gh-hold.json")) {
+  const hold = JSON.parse(fs.readFileSync(F + "/gh-hold.json", "utf8"));
+  if (args.join(" ").includes(hold.match)) Bun.sleepSync(hold.ms);
+}
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
 // The repository's labels as labels-repo.json lists them: a name alone is a label with no description.
 const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])

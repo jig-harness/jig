@@ -117,6 +117,13 @@ import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
 import { branchHead } from "../forge.ts";
+import {
+  ended,
+  heldRead,
+  passedBefore,
+  secondsLeft,
+  type TickBound,
+} from "./bounded.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
 import { failureText, minutesBetween } from "../text.ts";
@@ -755,8 +762,12 @@ interface Reading {
 /** Runs a forge read when the tick's pool has a place for it (`pool.ts`). */
 export type Admit = <T>(read: () => Promise<T>) => Promise<T>;
 
-/** A reading's reader of base branch heads: pull requests on one base share one read. */
-function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
+/** A reading's reader of base branch heads: pull requests on one base share one read, none started once `bound` has ended. */
+function baseHeads(
+  slug: string,
+  admit: Admit,
+  bound: TickBound | undefined,
+): Reading["baseHead"] {
   const read = new Map<string, Promise<BaseHead>>();
   return (branch) => {
     if (branch === undefined || branch === "")
@@ -765,7 +776,11 @@ function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
       });
     const known = read.get(branch);
     if (known !== undefined) return known;
-    const head = admit(() => branchHead(slug, branch)).then(
+    const head = admit(() =>
+      heldRead(bound, `the head of base branch ${branch} was read`, () =>
+        branchHead(slug, branch, secondsLeft(bound)),
+      ),
+    ).then(
       (oid): BaseHead =>
         oid.ok
           ? { oid: oid.value }
@@ -938,7 +953,9 @@ function waitingOf(
  * unless `labels` are on and it carries the `drive` label, or `adoption`
  * adopts it (`unarmed`). Each pull request's comments are read through
  * `comments`, the tick's listings, where the observe phase passes them, and
- * from the forge where it does not, as a launch's fresh read does.
+ * from the forge where it does not, as a launch's fresh read does. Under
+ * the tick's `bound`, no base branch's head and no driver's presence is
+ * read once it has ended.
  */
 export async function readDrives(
   slug: string,
@@ -949,6 +966,7 @@ export async function readDrives(
   adoption: Adoption | null = null,
   comments?: (pr: number) => Promise<Listing>,
   admit: Admit = (read) => read(),
+  bound?: TickBound,
 ): Promise<DrivenPr[]> {
   const reading: Reading = {
     slug,
@@ -957,8 +975,14 @@ export async function readDrives(
     windowMs: stallThresholdMs(),
     labels,
     adoption,
-    baseHead: baseHeads(slug, admit),
-    presence: driverPresence,
+    baseHead: baseHeads(slug, admit, bound),
+    presence: (pr, ledger) =>
+      ended(bound)
+        ? Promise.resolve({
+            gone: false,
+            why: passedBefore("this host looked for its driver's run"),
+          })
+        : driverPresence(pr, ledger),
     comments: comments ?? ((pr) => listComments({ repo: slug, number: pr })),
   };
   const out: DrivenPr[] = [];
