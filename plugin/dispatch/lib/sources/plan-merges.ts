@@ -25,7 +25,7 @@ import {
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { pullRequestFiles } from "../forge.ts";
 import type { Pool } from "../pool.ts";
-import { ended, secondsLeft, type TickBound } from "./bounded.ts";
+import { ended, passedBefore, secondsLeft, type TickBound } from "./bounded.ts";
 import {
   isMergeFact,
   readMergeFact,
@@ -67,6 +67,12 @@ function defaultReads(tracker: Tracker, context: MergeContext): MergeReads {
   };
 }
 
+/** The bound has ended: the proof is unread, and the tick's record says so rather than reading complete. */
+function passedBound(context: MergeContext, what: string): null {
+  context.onFailure?.(new OutboundError("unreachable", passedBefore(what)));
+  return null;
+}
+
 function associationOptions(context: MergeContext) {
   const timeoutSec = secondsLeft(context.bound);
   return {
@@ -85,7 +91,7 @@ async function directFact(
 ): Promise<MergeFact | null> {
   const kept = readMergeFact(context.repository, pr);
   if (kept !== null) return kept;
-  if (ended(context.bound)) return null;
+  if (ended(context.bound)) return passedBound(context, "a merge proof");
   const timeoutSec = secondsLeft(context.bound);
   const result = await ghCall(
     [
@@ -174,10 +180,11 @@ export function planMergeReader(
     const currentLinks: LinkedPrReads = {
       comments: (key) =>
         ended(context.bound)
-          ? Promise.resolve(null)
+          ? Promise.resolve(passedBound(context, "a linked-pull-request read"))
           : reads.links.comments(key, associationOptions(context)),
       search: async (term) => {
-        if (ended(context.bound)) return null;
+        if (ended(context.bound))
+          return passedBound(context, "a linked-pull-request search");
         const found = await reads.links.search(
           term,
           associationOptions(context),
@@ -185,7 +192,8 @@ export function planMergeReader(
         return found === null ? null : note(found);
       },
       view: async (pr) => {
-        if (ended(context.bound)) return null;
+        if (ended(context.bound))
+          return passedBound(context, "a linked-pull-request view");
         const found = await reads.links.view(pr, associationOptions(context));
         if (found !== null) note([found]);
         return found;

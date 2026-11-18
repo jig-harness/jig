@@ -277,3 +277,22 @@ test("inherited epic expansion and fresh launch checks use delivering merge evid
     }),
   ).toContain("open or not yet landed");
 });
+
+test("a proof read the tick's bound ended reports an unreachable failure, not a clean hold", async () => {
+  const f = fixture();
+  const failures: unknown[] = [];
+  const read = planMergeReader(
+    {} as Tracker,
+    {
+      ...context,
+      bound: { deadline: 0, signal: AbortSignal.abort() },
+      onFailure: (error) => failures.push(error),
+    },
+    f.reads,
+  );
+  const evidence = await read(description);
+  expect(Object.keys(evidence.held)).toEqual(["#2>#3"]);
+  expect(f.counts).toEqual({ search: 0, fact: 0, comments: 0 });
+  expect(failures.length).toBeGreaterThan(0);
+  expect(failures[0]).toMatchObject({ code: "unreachable" });
+});
