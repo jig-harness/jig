@@ -699,7 +699,7 @@ export async function readPickups(
     once().dispatchSource !== undefined &&
     factoryReading.factoryView === undefined
   ) {
-    return withClaimsUnread(factory, once().adapter, served?.people ?? []);
+    return withClaimsUnread(factory, once().adapter, served?.people);
   }
   const roots = [
     ...(factoryReading.epicRoots ?? []),
@@ -747,19 +747,27 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
-    ...(extra.limitedUntil !== undefined ||
+    ...(partialRead(factory, extra) ? { partial: true as const } : {}),
+  };
+}
+
+/** A reading is partial when the pool, a served queue or an item below it was not read. */
+function partialRead(
+  factory: TrackerReading,
+  extra: Awaited<ReturnType<typeof readServedPickups>>,
+): boolean {
+  return (
+    extra.limitedUntil !== undefined ||
     extra.incomplete === true ||
     factory.partial === true
-      ? { partial: true as const }
-      : {}),
-  };
+  );
 }
 
 /** A failed native scope leaves each served person's claims unread: say so, beside the scope's own row. */
 function withClaimsUnread(
   factory: TrackerReading,
   adapter: string,
-  people: readonly ServedPerson[],
+  people: readonly ServedPerson[] = [],
 ): TrackerReading {
   const rows = people.flatMap((person) => {
     const identity = person.tracker[adapter as keyof ServedPerson["tracker"]];
