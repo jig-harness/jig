@@ -12,7 +12,12 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { ParkedDecision } from "../../shared/decisions/park.ts";
 import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
-import { followupEnd, outcomeOf } from "../lib/followup-outcomes.ts";
+import {
+  followupEnd,
+  outcomeOf,
+  readOutcomes,
+  settleFollowups,
+} from "../lib/followup-outcomes.ts";
 import {
   readEnded,
   readResult,
@@ -193,6 +198,31 @@ describe("a pass that ends waiting or parked, not failed", () => {
     expect(readRows(undefined, undefined, root)).toMatchObject([
       { class: "parked for a person", next: PARKED_NEXT },
     ]);
+  });
+
+  it("updates an already logged follow-up outcome when a late framed decision supplies its question", async () => {
+    const w = endedClean("followup");
+    const root = dispatchState(w);
+    const first = readEnded(ID, root);
+    if (first === null) throw new TypeError("missing launch");
+    settleFollowups([first], root);
+    expect(
+      readOutcomes("example-org/example-repo", root).get(12)?.question,
+    ).toBe(null);
+
+    const path = join(w.root, "decision.json");
+    writeFileSync(path, JSON.stringify(DECISION));
+    expectSpawnExit(await result(w, "failed", "--decision", path), 0);
+    const later = readEnded(ID, root);
+    if (later === null) throw new TypeError("missing launch");
+    settleFollowups([later], root);
+
+    expect(
+      readOutcomes("example-org/example-repo", root).get(12),
+    ).toMatchObject({
+      outcome: "failed",
+      question: DECISION.call.question,
+    });
   });
 
   it("keeps a pass that records failed with no wait and no decision a failure", async () => {

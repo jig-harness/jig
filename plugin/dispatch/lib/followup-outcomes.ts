@@ -139,7 +139,12 @@ export function readOutcomes(
 /** What an ended follow-up record asked: its question, its tag's class where its prompt offered tags, and whether it was a run again. */
 export function askedBy(r: ReadRecord): Asked {
   // An unwritten end is a host fault: its database question is never asked.
-  const question = unwrittenResult(r) ? null : questionOf(r.state);
+  const question = unwrittenResult(r)
+    ? null
+    : (questionOf(r.state) ??
+      r.report?.report.question ??
+      (r.result === "parked" ? r.framed?.decision.call.question : undefined) ??
+      null);
   return {
     question,
     ...(r.record.routineTags === true
@@ -211,16 +216,24 @@ export function settleFollowups(
     if (record.action !== "followup" || record.pr === null) continue;
     const outcome = outcomeOf(r);
     if (outcome === null) continue;
+    const asked = askedBy(r);
     let outcomes = known.get(record.repo);
     if (outcomes === undefined) {
       outcomes = readOutcomes(record.repo, root);
       known.set(record.repo, outcomes);
     }
     const written = outcomes.get(record.pr);
-    if (written?.record === record.id && written.outcome === outcome) continue;
+    if (
+      written?.record === record.id &&
+      written.outcome === outcome &&
+      written.question === asked.question &&
+      written.routine === asked.routine &&
+      written.rerun === asked.rerun &&
+      written.unreadable === asked.unreadable
+    )
+      continue;
     // A later attempt's outcome stands over an earlier record that ends after it: ordered by when the record was created, the ids only break a tie (their suffix is random within a second).
     if (written !== undefined && supersedes(written, record)) continue;
-    const asked = askedBy(r);
     const value: FollowupOutcome = {
       repo: record.repo,
       pr: record.pr,

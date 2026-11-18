@@ -16,6 +16,10 @@ release: patch
   records these as `arm pending` and `parked for a person`; a parked run names
   who answers it and what they must do; and the dashboard, the recurring
   classes and the steward stop counting them as failures.
+- A follow-up outcome now preserves the question from its framed decision,
+  including when that decision is recorded after the outcome row, so retained
+  outcomes still show what needs a person's answer after their launch records
+  expire.
 - The dispatch dashboard says a repository the dispatcher paused for its
   GitHub quota in one short line: what paused it, when it resumes and how old
   the data shown is, with the full detail on expanding the card. A repository
