@@ -15,13 +15,13 @@ what is still owed.
 
 The notebook is a folder on your machine, `~/.jig/orchestrate/<topic>/`
 (under `JIG_HOME` when that is set), outside every repository and never
-committed. Claude Code and Codex read it alike. It holds two files:
+committed. Claude Code and Codex read it alike. It holds:
 
 - `state.md`, the topic as it stands now, rewritten whole at every change:
   the focus, the decisions waiting on you with a recommendation each, what
   the session owes and by when, what is running, cautions, the next act,
   and links to the issues, plans and pull requests involved.
-- `journal/<date>.md`, one per day, only ever added to: each decision,
+- `journal/`, a folder with one file a day, `<date>.md`, only ever added to: each decision,
   ruling and action with its reason, for when someone needs the history.
 
 A session started with `/jig:orchestrate <topic>` reads `state.md` first and

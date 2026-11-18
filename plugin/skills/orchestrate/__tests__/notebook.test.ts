@@ -59,7 +59,11 @@ describe("the notebook's topic and place", () => {
     expect(topicSlug("  release--cadence! ")).toBe("release-cadence");
     expect(topicSlug("../../etc")).toBe("etc");
     expect(topicSlug("!!!")).toBeUndefined();
-    expect(topicSlug("x".repeat(100))).toHaveLength(64);
+    const long = (tail: string) => topicSlug(`${"a".repeat(64)}-${tail}`);
+    expect(long("alpha")).toHaveLength(64);
+    expect(long("alpha")).not.toBe(long("beta"));
+    expect(long("alpha")).toBe(long("alpha"));
+    expect(topicSlug(long("alpha") ?? "")).toBe(long("alpha"));
     expect(topicSlug("Café crème")).toBe("cafe-creme");
   });
 
@@ -92,6 +96,50 @@ describe("the notebook's topic and place", () => {
     expect(readdirSync(join(tree, "notebooks"))).toEqual([]);
   });
 
+  test("a working tree GIT_WORK_TREE designates counts as inside it", () => {
+    const tree = home(false);
+    const outside = home(false);
+    expect(enclosingWorkTree(join(tree, "a"), { GIT_WORK_TREE: tree })).toBe(
+      realpathSync(tree),
+    );
+    expect(
+      enclosingWorkTree(join(outside, "a"), { GIT_WORK_TREE: tree }),
+    ).toBeUndefined();
+  });
+
+  test("a symbolic link at the journal or today's file is refused", () => {
+    const tree = home(false);
+    mkdirSync(join(tree, ".git"));
+    mkdirSync(join(tree, "elsewhere"));
+    const jigHome = home(false);
+    const folder = join(jigHome, "orchestrate", "release-cadence");
+    mkdirSync(folder, { recursive: true });
+    symlinkSync(join(tree, "elsewhere"), join(folder, "journal"));
+    expectSpawnExit(run(jigHome, ["journal", "release-cadence"], "entry"), 4);
+    expectSpawnExit(run(jigHome, ["state", "release-cadence"], stateText()), 4);
+    expect(readdirSync(join(tree, "elsewhere"))).toEqual([]);
+
+    const other = home(false);
+    const journal = join(other, "orchestrate", "release-cadence", "journal");
+    mkdirSync(journal, { recursive: true });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const target = join(tree, "elsewhere", "entry.md");
+    writeFileSync(target, "kept\n");
+    symlinkSync(target, join(journal, `${stamp}.md`));
+    expectSpawnExit(run(other, ["journal", "release-cadence"], "entry"), 4);
+    expect(readFileSync(target, "utf8")).toBe("kept\n");
+  });
+
+  test("list refuses a notebook root inside a working tree", () => {
+    const tree = home(false);
+    mkdirSync(join(tree, ".git"));
+    const jigHome = join(tree, "jig-home");
+    mkdirSync(join(jigHome, "orchestrate", "x"), { recursive: true });
+    const result = run(jigHome, ["list"]);
+    expectSpawnExit(result, 4);
+    expect(result.out).toBe("");
+  });
+
   test("the fixture in this repository is itself refused as a JIG_HOME", () => {
     expectSpawnExit(run(fixtureHome, ["open", "release-cadence"]), 4);
   });
@@ -117,9 +165,14 @@ describe("resuming from the notebook alone", () => {
     expect(out).toContain(
       "Should a release wait for a red nightly run? Recommended: no",
     );
+    expect(out).toContain("2. Keep `patch` releases outside the weekly train?");
+    expect(out).toContain("Recommended: yes.");
     expect(out).toContain("## Owed");
     expect(out).toContain(
       "File the agreed release-train issue once decision 1 is answered (due 2026-11-20)",
+    );
+    expect(out).toContain(
+      "Bring the change-note survey's figures back re-measured (due 2026-11-19)",
     );
     expect(out).toContain("Ask decision 1 again");
     expect(out).not.toContain("The person ruled that release notes");
@@ -214,8 +267,14 @@ describe("writing the notebook", () => {
     const journal = join(jigHome, "orchestrate", "release-cadence", "journal");
     const days = readdirSync(journal).sort();
     expect(days).toContain("2026-11-17.md");
-    const today = days.find((d) => d !== "2026-11-17.md") ?? "2026-11-17.md";
-    const text = readFileSync(join(journal, today), "utf8");
+    // The two runs use the live clock, so a midnight between them splits the
+    // entries across two files: read every new day in order.
+    const text = days
+      .filter((d) => d !== "2026-11-17.md")
+      .map((d) => readFileSync(join(journal, d), "utf8"))
+      .join("");
+    expect(text).toContain("Decision one, because.");
+    expect(text).toContain("Decision two, because.");
     expect(text.indexOf("Decision one")).toBeLessThan(
       text.indexOf("Decision two"),
     );
@@ -249,5 +308,23 @@ describe("writing the notebook", () => {
       "utf8",
     );
     expect(missingSections(fixture)).toEqual([]);
+  });
+
+  test("headings inside a fence do not count, however it is written", () => {
+    const headings = STATE_SECTIONS.map((n) => `## ${n}`);
+    const all = [...STATE_SECTIONS];
+    expect(missingSections(["```", ...headings].join("\n"))).toEqual(all);
+    expect(missingSections(["  ```", ...headings, "  ```"].join("\n"))).toEqual(
+      all,
+    );
+    expect(
+      missingSections(["````", "```", ...headings, "```", "````"].join("\n")),
+    ).toEqual(all);
+    expect(missingSections(["~~~", ...headings, "~~~"].join("\n"))).toEqual(
+      all,
+    );
+    expect(
+      missingSections([...headings, "```", "text", "```"].join("\n")),
+    ).toEqual([]);
   });
 });

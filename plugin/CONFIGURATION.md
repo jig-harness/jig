@@ -1139,7 +1139,8 @@ each topic's record in an orchestration notebook, the host-local folder
 The folder is named after the topic in lowercase Latin letters and digits
 joined by hyphens, accents dropped (a topic with none of these is refused), and holds `state.md`, the current state rewritten whole, and
 `journal/YYYY-MM-DD.md`, one append-only file a day (UTC). It is never
-written inside a Git working tree: when `JIG_HOME` lies in one, the skill
+written inside a Git working tree: when the notebook's resolved destination
+lies in one (`JIG_HOME` there, or a symbolic link into one), the skill
 refuses the notebook and falls back to a plain file outside the repository.
 Nothing in it depends on the agent tool that writes it. Fresh filing sessions
 use the existing `file_issue` and `issue_tracker` settings; starting work on a

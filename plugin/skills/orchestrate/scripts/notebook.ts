@@ -16,6 +16,7 @@
  * input is empty; 4 refused, nothing written: the folder lies inside a Git
  * working tree.
  */
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -27,7 +28,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { jigHome } from "../../../shared/config-layers.ts";
 import { JigError } from "../../../shared/outcome.ts";
 import { renameWithRetry } from "../../../shared/rename-with-retry.ts";
@@ -69,10 +70,15 @@ class Refusal extends JigError<RefusalCode> {
   override name = "Refusal";
 }
 
+/** The longest slug a folder is named with. */
+const SLUG_LIMIT = 64;
+
 /**
  * A topic as its folder is named: lowercase letters and digits joined by
  * single hyphens, so "Dispatch reliability" and `dispatch-reliability` are
- * one topic. Undefined when nothing nameable is left.
+ * one topic. A name longer than the limit keeps its start and ends in a
+ * digest of the whole name, so two long topics never share a folder.
+ * Undefined when nothing nameable is left.
  */
 export function topicSlug(topic: string): string | undefined {
   const slug = topic
@@ -80,10 +86,11 @@ export function topicSlug(topic: string): string | undefined {
     .replace(/\p{M}+/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/, "");
-  return slug === "" ? undefined : slug;
+    .replace(/^-+|-+$/g, "");
+  if (slug === "") return undefined;
+  if (slug.length <= SLUG_LIMIT) return slug;
+  const digest = createHash("sha256").update(slug).digest("hex").slice(0, 8);
+  return `${slug.slice(0, SLUG_LIMIT - 9).replace(/-+$/, "")}-${digest}`;
 }
 
 /** The folder holding every topic's notebook. */
@@ -96,9 +103,15 @@ export function notebooksRoot(env: Env = process.env): string {
  * above it holding a `.git` entry (a folder, or the file a linked worktree
  * keeps). The deepest part of `path` that exists is resolved first, so a
  * symbolic link into a checkout counts as inside it. A `.git` entry that
- * cannot be checked throws rather than reading as absent.
+ * cannot be checked throws rather than reading as absent. A working tree
+ * `env.GIT_WORK_TREE` designates counts too; one a Git configuration
+ * (`core.worktree`) designates from a separate Git directory leaves no mark
+ * inside it and cannot be found from here.
  */
-export function enclosingWorkTree(path: string): string | undefined {
+export function enclosingWorkTree(
+  path: string,
+  env: Env = process.env,
+): string | undefined {
   let existing = path;
   while (lstatSync(existing, { throwIfNoEntry: false }) === undefined) {
     const parent = dirname(existing);
@@ -106,6 +119,14 @@ export function enclosingWorkTree(path: string): string | undefined {
     existing = parent;
   }
   let current = realpathSync(existing);
+  if (!statSync(current).isDirectory()) current = dirname(current);
+  const designated = env.GIT_WORK_TREE;
+  if (designated !== undefined && designated !== "") {
+    const tree = realpathSync(resolve(designated));
+    const below = relative(tree, current);
+    if (below === "" || (!below.startsWith("..") && !below.startsWith("/")))
+      return tree;
+  }
   for (;;) {
     if (
       lstatSync(join(current, ".git"), { throwIfNoEntry: false }) !== undefined
@@ -119,12 +140,26 @@ export function enclosingWorkTree(path: string): string | undefined {
 
 /** The sections of `STATE_SECTIONS` a state text lacks. */
 export function missingSections(text: string): string[] {
-  const outsideFences = text.replace(/^(```|~~~)[\s\S]*?^\1/gm, "");
-  const headings = new Set(
-    [...outsideFences.matchAll(/^## +(.+?)\s*$/gm)].map((m) =>
-      m[1]?.toLowerCase(),
-    ),
-  );
+  const headings = new Set<string>();
+  let fence: { char: string; length: number } | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    if (fence !== undefined) {
+      const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line)?.[1];
+      if (close?.[0] === fence.char && close.length >= fence.length)
+        fence = undefined;
+      continue;
+    }
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (
+      open?.[1] !== undefined &&
+      !(open[1][0] === "`" && open[2]?.includes("`"))
+    ) {
+      fence = { char: open[1][0] ?? "`", length: open[1].length };
+      continue;
+    }
+    const heading = /^ {0,3}## +(.+?)\s*$/.exec(line)?.[1];
+    if (heading !== undefined) headings.add(heading.toLowerCase());
+  }
   return STATE_SECTIONS.filter((name) => !headings.has(name.toLowerCase()));
 }
 
@@ -136,6 +171,18 @@ export function resumePrompts(slug: string): Record<string, string> {
   };
 }
 
+/** Refuse a destination that resolves into a Git working tree. */
+function guardDestination(path: string, env: Env): void {
+  const tree = io("could not check for a Git working tree", () =>
+    enclosingWorkTree(path, env),
+  );
+  if (tree !== undefined)
+    throw new Refusal(
+      "in-work-tree",
+      `${path} lies inside the Git working tree ${tree}; a notebook is never written there. Move JIG_HOME outside every repository.`,
+    );
+}
+
 function folderOf(topic: string, env: Env): { slug: string; folder: string } {
   const slug = topicSlug(topic);
   if (slug === undefined)
@@ -144,14 +191,8 @@ function folderOf(topic: string, env: Env): { slug: string; folder: string } {
       `a topic needs a letter or digit (got ${JSON.stringify(topic)})`,
     );
   const folder = join(notebooksRoot(env), slug);
-  const tree = io("could not check for a Git working tree", () =>
-    enclosingWorkTree(folder),
-  );
-  if (tree !== undefined)
-    throw new Refusal(
-      "in-work-tree",
-      `${folder} lies inside the Git working tree ${tree}; a notebook is never written there. Move JIG_HOME outside every repository.`,
-    );
+  guardDestination(folder, env);
+  guardDestination(join(folder, "journal"), env);
   return { slug, folder };
 }
 
@@ -229,6 +270,7 @@ export function writeState(
       `the state lacks the section(s) ${missing.map((m) => `"## ${m}"`).join(", ")}; nothing written. Write "None." under a section with nothing in it.`,
     );
   const statePath = join(folder, "state.md");
+  guardDestination(statePath, env);
   const body = text.endsWith("\n") ? text : `${text}\n`;
   io("could not write state.md", () => {
     mkdirSync(join(folder, "journal"), { recursive: true });
@@ -253,6 +295,7 @@ export function appendJournal(
     throw new Refusal("refused", "the entry is empty; nothing written");
   const now = currentIso();
   const path = join(folder, "journal", `${now.slice(0, 10)}.md`);
+  guardDestination(path, env);
   io("could not append to the journal", () => {
     mkdirSync(dirname(path), { recursive: true });
     appendFileSync(path, `## ${now}\n\n${text.trim()}\n\n`);
@@ -263,6 +306,7 @@ export function appendJournal(
 /** `list`: each topic with the time its state was last written. */
 export function list(env: Env = process.env): string {
   const root = notebooksRoot(env);
+  guardDestination(root, env);
   if (!existsSync(root)) return "";
   const topics = io("could not list the notebooks", () =>
     readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()),

@@ -33,7 +33,7 @@ Each topic keeps its record in an **orchestration notebook**: a folder on
 this host at `$JIG_HOME/orchestrate/<topic>/` (`~/.jig/orchestrate/<topic>/`
 by default), outside every repository's working tree and never committed.
 Every agent tool reads and writes it the same way; it belongs to no agent's
-profile or memory facility. It has two parts:
+profile or memory facility. It holds:
 
 - **`state.md`**, the current state: rewritten whole at every change of state,
   and kept to about 150 lines. Each of its sections is required, with "None."
@@ -76,8 +76,9 @@ section; past 150 lines it writes and warns, and the next rewrite moves the
 history to the journal; on that refusal, add the missing section and run it
 again. `journal` appends one timestamped entry to today's file. `list` names
 each topic with when its state was written. Every command refuses (exit `4`)
-a folder inside a Git working tree, a symbolic link into one included, which
-happens only when `JIG_HOME` lies in one; exit `1` is a folder or file that
+a notebook whose resolved destination lies inside a Git working tree, whether
+`JIG_HOME` lies in one or a symbolic link on the way (the `orchestrate`
+folder, the topic folder, `journal` or a day's file) leads into one; exit `1` is a folder or file that
 could not be read or written. On exit `4` or `1`, use step 12's fallback.
 
 When each part is written:
