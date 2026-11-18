@@ -73,6 +73,7 @@ import {
   resultMain,
 } from "./result.ts";
 import { reportFileMain } from "./report-command.ts";
+import { releaseOwedMain } from "./release-owed-command.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -260,6 +261,20 @@ const report = command(
   },
 );
 
+const releaseOwed = command(
+  "release-owed",
+  object({
+    action: constant("release-owed"),
+    record: argument(string({ metavar: "RECORD" })),
+    token: argument(string({ metavar: "TOKEN" })),
+    tag: argument(string({ metavar: "TAG" })),
+    item: optional(argument(string({ metavar: "ITEM" }))),
+  }),
+  {
+    brief: message`Reserve a release's tracker filing or record its item.`,
+  },
+);
+
 const marker = command(
   "marker",
   object({
@@ -425,6 +440,7 @@ const dispatch = (wholeMinutes: boolean) =>
         receipts,
         result,
         report,
+        releaseOwed,
         marker,
         labels,
         dashboard,
@@ -734,6 +750,8 @@ function subcommandMain(
     );
   if (args.action === "report")
     return reportFileMain(args.record, args.token, args.file);
+  if (args.action === "release-owed")
+    return releaseOwedMain(args.record, args.token, args.tag, args.item);
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "log")
     return logMain({
