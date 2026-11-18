@@ -1,7 +1,7 @@
 /**
  * What one tick reads once and shares between its repositories' observe
  * phases: each repository's query (`forge-batch.ts`: the repository, its
- * configuration, its open pull requests and their comments), each pull
+ * configuration, its open pull requests and periodically their comments), each pull
  * request's comments (`tick-comments.ts`, filled from that query where it
  * read them in full, the rest revalidated page by page against what an
  * earlier tick read, `records/comment-pages.ts`), the forge's login, the runtime's host-wide listings, and the forge's budget. The
@@ -32,6 +32,7 @@
  * and the runtime (`tick-apply.ts`).
  */
 import { coalesce } from "../../shared/outbound/coalesce.ts";
+import { ghCacheDir } from "../../shared/gh-conditional.ts";
 import { OutboundError } from "../../shared/outbound/failure.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { listCommentsKept } from "../../shared/records/comment-pages.ts";
@@ -176,6 +177,9 @@ const pageSizes: PageSizes = {
   set: (key, size) => pickupReads.set(`forge:page:${key}`, size),
 };
 
+/** How often the repository query reads comments in addition to the current pull request state. */
+const FULL_REPOSITORY_READ_MS = 60 * 60_000;
+
 /** A repository's query, its comments read in full held as the tick's listings; a query that throws is one that did not read. */
 async function queryRepository(
   path: string,
@@ -184,7 +188,22 @@ async function queryRepository(
 ): Promise<RepositoryOutcome> {
   let read: RepositoryOutcome;
   try {
-    read = await readRepository(path, pageSizes, undefined, bound);
+    const key = `forge:repository-full:${path}`;
+    const now = currentMs();
+    const last = pickupReads.get<unknown>(key);
+    const full =
+      ghCacheDir() === null ||
+      typeof last !== "number" ||
+      last > now ||
+      now - last >= FULL_REPOSITORY_READ_MS;
+    read = await readRepository(
+      path,
+      pageSizes,
+      undefined,
+      bound,
+      full ? "full" : "state",
+    );
+    if (full && read.ok) pickupReads.set(key, read.value.startedAtMs);
   } catch (error) {
     return failed("unreadable", failureText(error));
   }

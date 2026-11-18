@@ -558,7 +558,7 @@ it("names the deadline when a later wave of admission probes cannot start", asyn
     outcome: {
       outcome: "waits",
       waitsOn: "tick-deadline",
-      detail: expect.stringContaining("tracker preflight"),
+      detail: expect.stringContaining("issue preflight"),
     },
   });
 });

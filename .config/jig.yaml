@@ -50,6 +50,7 @@ design_brief:
     browser_executable: tools/design/chromium.sh
 gates:
   command: bun run gates
+  dispatch_fast: true
 review:
   bots: ["docomply-review[bot]", "coderabbitai[bot]", "github-advanced-security[bot]"]
   # Naming the reviewer's app is what makes drive-pr wait for its review.

@@ -12,7 +12,7 @@ describe("the links the line tells", () => {
       "https://forge.example/example-org/api/issues/245",
     );
     expect(derivedLink("example-org/api", "API-91", forges)).toBe(
-      "https://tracker.example/acme/issue/API-91",
+      "https://issues.example/acme/issue/API-91",
     );
   });
 
@@ -24,9 +24,9 @@ describe("the links the line tells", () => {
     const linked = withDerivedLinks(line);
     const queued = (target: string) =>
       linked.queue.find((q) => q.target === target)?.url;
-    expect(queued("API-93")).toBe("https://tracker.example/acme/issue/API-93");
+    expect(queued("API-93")).toBe("https://issues.example/acme/issue/API-93");
     expect(queued("API-80")).toBe(
-      "https://tracker.example/acme/issue/API-80/backfill-the-ledger",
+      "https://issues.example/acme/issue/API-80/backfill-the-ledger",
     );
   });
 });

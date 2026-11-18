@@ -949,7 +949,7 @@ async function heldReason(
   });
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
-    return `${pull.reason}; this tracker cannot assign a blocker on its own, so a person assigns it`;
+    return `${pull.reason}; this issue service cannot assign a blocker on its own, so a person assigns it`;
   found.pending.push(...pulledNodes(pull, ctx.seen, candidate.by));
   return pull.reason;
 }

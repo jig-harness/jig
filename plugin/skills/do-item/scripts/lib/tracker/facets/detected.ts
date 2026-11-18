@@ -220,7 +220,7 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
                     ? Promise.reject(
                         new TrackerRequestError(
                           "invalid",
-                          "the tracker has no native dispatch source",
+                          "the issue service has no native dispatch source",
                         ),
                       )
                     : source.project(raw, options);
@@ -250,7 +250,7 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
             if (read === undefined)
               throw new TrackerRequestError(
                 "invalid",
-                "this tracker reads no ready pool",
+                "this issue service reads no ready pool",
               );
             return read(states, options);
           },

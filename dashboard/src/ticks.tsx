@@ -4,9 +4,10 @@
  * slowest single phase named, the forge budget it read, and a chip for each
  * thing that went wrong. Each row opens to its phases and its repositories.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { Fold, Hint, PanelHelp } from "./fold.tsx";
+import { Hint, PanelHelp } from "./fold.tsx";
+import { Disc, useTapToggle } from "./gutter.tsx";
 import { seconds } from "./format.ts";
 import {
   TICK_PHASE_MEANINGS,
@@ -40,83 +41,104 @@ function Bar({ row }: { row: TickRowView }) {
 
 function Detail({ row }: { row: TickRowView }) {
   return (
-    <Fold label="Details">
-      <dl className="kv tkKv">
-        {row.phases.map((p) => (
-          <div key={p.phase} style={{ display: "contents" }}>
-            <dt>{p.phase}</dt>
-            <dd className="m">{seconds(p.ms)}</dd>
-          </div>
-        ))}
-        {row.repos.map((r) => (
-          <div key={r.repo} style={{ display: "contents" }}>
-            <dt className="m">{r.repo}</dt>
-            <dd className="prose">
-              <span>
-                {r.took}
-                {r.phases === "" ? "" : `: ${r.phases}`}
-                {r.defect === null ? "" : ` (a defect in ${r.defect})`}
-              </span>
-            </dd>
-          </div>
-        ))}
-        {row.busy.map((path) => (
-          <div key={path} style={{ display: "contents" }}>
-            <dt className="m">{path}</dt>
-            <dd>busy: another tick held it</dd>
-          </div>
-        ))}
-        {row.skipped.length === 0 ? null : (
-          <div style={{ display: "contents" }}>
-            <dt>skipped</dt>
-            <dd>{row.skipped.join(", ")}</dd>
-          </div>
-        )}
-      </dl>
-    </Fold>
+    <dl className="kv tkKv">
+      {row.phases.map((p) => (
+        <div key={p.phase} style={{ display: "contents" }}>
+          <dt>{p.phase}</dt>
+          <dd className="m">{seconds(p.ms)}</dd>
+        </div>
+      ))}
+      {row.repos.map((r) => (
+        <div key={r.repo} style={{ display: "contents" }}>
+          <dt className="m">{r.repo}</dt>
+          <dd className="prose">
+            <span>
+              {r.took}
+              {r.phases === "" ? "" : `: ${r.phases}`}
+              {r.defect === null ? "" : ` (a defect in ${r.defect})`}
+            </span>
+          </dd>
+        </div>
+      ))}
+      {row.busy.map((path) => (
+        <div key={path} style={{ display: "contents" }}>
+          <dt className="m">{path}</dt>
+          <dd>busy: another tick held it</dd>
+        </div>
+      ))}
+      {row.skipped.length === 0 ? null : (
+        <div style={{ display: "contents" }}>
+          <dt>skipped</dt>
+          <dd>{row.skipped.join(", ")}</dd>
+        </div>
+      )}
+    </dl>
   );
 }
 
+/** A tick's row on the gutter: the chevron, or a tap on the row, opens its phases and repositories. */
 function TickRow({ row, rest }: { row: TickRowView; rest: boolean }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const toggle = () => setOpen((was) => !was);
+  const tap = useTapToggle(toggle);
   return (
-    <li className={rest ? "tkRow rest" : "tkRow"}>
-      <span className="m sm tkAt">{row.at}</span>
-      <span className="m tkTook">{row.took}</span>
-      <Bar row={row} />
-      <span className="sm tkSlow">
-        {row.slowest === null ? null : (
-          <>
-            <span className="mut">slowest </span>
-            {row.slowest}
-          </>
-        )}
-      </span>
-      <span className="tkMarks">
-        {row.marks.map((mark) => (
-          <Hint
-            key={mark.word}
-            className="chipBtn"
-            label={mark.word}
-            trigger={
-              <span className={`chip tkMark r-${mark.tone}`}>{mark.word}</span>
-            }
-          >
-            {mark.meaning}
-          </Hint>
-        ))}
-      </span>
-      <span className="sm mut tkBudget">
-        {row.budget === null ? null : (
-          <>
-            <span className="m">{row.budget.remaining}</span> of{" "}
-            <span className="m">{row.budget.limit}</span> left
-          </>
-        )}
-      </span>
-      <span className="sm mut tkScope">{row.scope}</span>
-      <span className="tkDetail">
-        <Detail row={row} />
-      </span>
+    <li
+      className={`tkRow opens${rest ? " rest" : ""}${open ? " open" : ""}`}
+      {...tap}
+    >
+      <div className="gutter">
+        <Disc
+          open={open}
+          label={`Phases and repositories of the ${row.at} tick`}
+          controls={id}
+          onToggle={toggle}
+        />
+        {open ? <span className="spine" aria-hidden="true" /> : null}
+      </div>
+      <div className="tkCells">
+        <span className="m sm tkAt">{row.at}</span>
+        <span className="m tkTook">{row.took}</span>
+        <Bar row={row} />
+        <span className="sm tkSlow">
+          {row.slowest === null ? null : (
+            <>
+              <span className="mut">slowest </span>
+              {row.slowest}
+            </>
+          )}
+        </span>
+        <span className="tkMarks">
+          {row.marks.map((mark) => (
+            <Hint
+              key={mark.word}
+              className="chipBtn"
+              label={mark.word}
+              trigger={
+                <span className={`chip tkMark r-${mark.tone}`}>
+                  {mark.word}
+                </span>
+              }
+            >
+              {mark.meaning}
+            </Hint>
+          ))}
+        </span>
+        <span className="sm mut tkBudget">
+          {row.budget === null ? null : (
+            <>
+              <span className="m">{row.budget.remaining}</span> of{" "}
+              <span className="m">{row.budget.limit}</span> left
+            </>
+          )}
+        </span>
+        <span className="sm mut tkScope">{row.scope}</span>
+      </div>
+      {open ? (
+        <div className="detail tkDetail" id={id} data-no-toggle="">
+          <Detail row={row} />
+        </div>
+      ) : null}
     </li>
   );
 }

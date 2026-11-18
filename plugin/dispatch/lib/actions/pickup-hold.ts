@@ -184,7 +184,7 @@ function waitsHold(
     ? {
         kind: "held",
         record: latest,
-        why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${until}; the item starts again after it`,
+        why: `launch record ${latest.record.id} waits for the issue service's rate limit to reset at ${until}; the item starts again after it`,
       }
     : { kind: "none" };
 }

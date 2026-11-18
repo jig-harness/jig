@@ -415,7 +415,7 @@ export async function readPoolPickups(
       return unread(
         tracker,
         names,
-        `the ready pool (${names}) is not read: the tracker credential acts as ${viewer.name}, not as the dispatch identity ${identity}, so a claim would assign pool items to the wrong user`,
+        `the ready pool (${names}) is not read: the issue service credential acts as ${viewer.name}, not as the dispatch identity ${identity}, so a claim would assign pool items to the wrong user`,
       );
     if (ended(bound))
       return deadlineUnread(
@@ -474,7 +474,7 @@ export async function freshPoolPickup(
   try {
     issue = await tracker.poolIssue(key);
   } catch (error) {
-    return `the tracker cannot be read again: ${failureText(error)}`;
+    return `the issue service cannot be read again: ${failureText(error)}`;
   }
   if (issue === null) return "it no longer exists";
   if (issue.assignee !== null)

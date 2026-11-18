@@ -401,6 +401,65 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.277.2] - 2026-11-18
+
+### Changed
+
+- The sessions Jig's dispatcher starts on Jig itself run fast checks and
+  targeted tests locally, leaving the full suites to required CI. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` collects finished Orca workspaces on a machine with more than 200
+  of them. It read Orca's workspace registry without asking for more than
+  Orca's default page of 200 rows, took the cut page for an incomplete
+  registry and marked every Orca workspace unverified, so none was ever
+  removed. It now requests up to 5,000 rows and continues to refuse
+  collection when Orca reports that either registry response is truncated.
+
+## [0.277.1] - 2026-11-18
+
+### Changed
+
+- Dispatch reads open pull requests' checks, threads and heads every tick.
+  Between full repository reads it revalidates comments when it needs them,
+  so unchanged comment pages use no GitHub primary rate-limit points.
+
+## [0.277.0] - 2026-11-18
+
+### Added
+
+- A card shows the work it is linked to after its identity, from the
+  line's links: the issues a pull request closes, or the open pull requests
+  that close an issue, up to two and then "+N more". Its popover and the
+  opened card list them all, or say "none found" or "not known for this
+  read". **Consumer action:** none.
+
+### Changed
+
+- The dispatch dashboard's cards open and close from one place: a chevron
+  in a fixed column at each card's left, the same on every view, History's
+  rows and the tick strip included, or a tap anywhere on the card that is
+  not a link, a button or a field. Enter and `o` open the focused card; a
+  text selection or a scroll over a card leaves it as it is. The load
+  breakdown, the accounts list, the repositories list and Help's folds open
+  from the same column. **Consumer action:** none.
+- A pull request and an issue are drawn the same way wherever a card names
+  them: an icon that opens a popover (title, kind and product, standing,
+  repository, linked work and one link out), the number or key as its link,
+  and a Copy. A pull request's icon now shows only its standing on the
+  forge; where the dispatcher holds it stays with the card's status mark and
+  stage chip. **Consumer action:** none.
+- The dashboard names each repository's tracker by its product (GitHub
+  Issues, Linear, Jira) from the repository's configured adapter, and says
+  "issues" where the line does not say; cards no longer repeat "Open the
+  pull request" or "Open in the tracker" links their identity already
+  gives. **Consumer action:** none.
+- The dispatcher's own sentences that the dashboard and `jig dispatch`
+  show (holds, waits, refusals and probe answers) name the issue service
+  by its product, or say "the issue service" or "issues", instead of
+  "tracker". **Consumer action:** none.
+
 ## [0.276.0] - 2026-11-18
 
 ### Fixed
@@ -9695,7 +9754,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.276.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.2...HEAD
+[0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
+[0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
+[0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
 [0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0
 [0.275.1]: https://github.com/jig-harness/jig/compare/v0.275.0...v0.275.1
 [0.275.0]: https://github.com/jig-harness/jig/compare/v0.274.2...v0.275.0

@@ -67,7 +67,7 @@ export function servedPlan(
         present: true,
         order: [],
         holds: {},
-        error: `Execution plan contradicts the tracker's blocks: ${contradictions.join("; ")}`,
+        error: `Execution plan contradicts the blocks recorded on the issues: ${contradictions.join("; ")}`,
       };
     // A blocker outside the plan is the queue's to hold or pull; only the plan's own steps order it.
     const steps = new Set(plan.steps.map((s) => s.issue));
