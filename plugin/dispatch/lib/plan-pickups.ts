@@ -425,13 +425,17 @@ function planClaimed(
   }
   plan.idleNow.push(item.key);
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
-  // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
+  const latest = latestPickupFor(item.key, input.launches);
+  // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked. A move goes first only when no ordinary question is recorded: the move does not keep that question, and the item is quiet afterwards.
+  const asksPerson =
+    latest !== undefined &&
+    !unwrittenResult(latest) &&
+    endedQuestion(latest) !== null;
   if (
-    (pr.step?.kind === "quiet" || pr.step?.kind === "move") &&
+    (pr.step?.kind === "quiet" || (pr.step?.kind === "move" && !asksPerson)) &&
     settledByPr(item.key, pr.step, plan)
   )
     return;
-  const latest = latestPickupFor(item.key, input.launches);
   const early = earlyRelaunch(item, latest, pr, input);
   if (early !== null && relaunched(early, item.key, plan)) return;
   const asked = questionAsked(

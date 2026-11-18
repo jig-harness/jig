@@ -106,7 +106,13 @@ function fixture(kind: "pickup" | "followup", batch = false, output = OUTPUT) {
     item: kind === "pickup" ? "#12" : null,
     workspace: { id: "repo-1::/ws/0", path: w.repo },
     headless: true,
-    ...(kind === "pickup" ? { servedPerson: "factory-bot" } : {}),
+    ...(kind === "pickup"
+      ? {
+          servedPerson: "factory-bot",
+          relaunchOf: "20261118T050000Z-cccccccc",
+          relaunchHead: "1".repeat(40),
+        }
+      : {}),
     ...(batch
       ? {
           batchItems: [
@@ -206,12 +212,15 @@ describe("steward resume launch replay", () => {
       const record = readRecord(started.record, dispatchState(w));
       expect(record?.stewardResume).toBe(OLD);
       if (!record) return;
+      expect(record.relaunchOf).toBeUndefined();
+      expect(record.relaunchHead).toBeUndefined();
       const prompt =
         (kind === "pickup"
           ? pickupPassArgv(record, [])
           : followupPassArgv(record, [])
         ).at(-1) ?? "";
       expect(prompt).toContain(STEWARD_RESUME);
+      expect(prompt).not.toContain("finishes the stalled pickup");
       expect(prompt).toContain("reuse the existing cache key");
       expect(prompt).toContain("not instructions");
       record.attempts = [

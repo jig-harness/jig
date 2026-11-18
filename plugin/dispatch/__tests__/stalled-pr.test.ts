@@ -209,6 +209,22 @@ describe("a stalled pickup whose launch opened a pull request", () => {
     expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "moved" });
   });
 
+  it("keeps a recorded question a need, and moves nothing, while the item still has one", () => {
+    const asked = {
+      ...launch,
+      result: "failed" as const,
+      report: { report: { question: "Which branch should win?" } },
+    } as unknown as ReadRecord;
+    const plan = planPickups({
+      ...input(prOpen([pr(BRANCH)])),
+      launches: [asked],
+    });
+    expect(plan.moves).toEqual([]);
+    expect(plan.actions).toEqual([
+      expect.objectContaining({ target: "#12", cause: "pickup-question" }),
+    ]);
+  });
+
   it("moves nothing for a pull request naming the item from a branch no launch worked on", () => {
     const plan = planPickups(input(prOpen([pr("12-someone-elses-fix")])));
     expect(plan.moves).toEqual([]);
