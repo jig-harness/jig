@@ -88,8 +88,11 @@ function ghCalls(w: World): string[] {
     : [];
 }
 
+const queryCalls = (w: World, name: string) =>
+  ghCalls(w).filter((c) => c.includes(`query ${name}`));
+
 const queries = (w: World, name = "DispatchRepository") =>
-  ghCalls(w).filter((c) => c.includes(`query ${name}`)).length;
+  queryCalls(w, name).length;
 
 /** The comment listings of pull request `pr` among the calls. */
 const listings = (w: World, pr: number) =>
@@ -130,12 +133,16 @@ describe("one query per repository", () => {
     const targets = async () =>
       (await tick(w, false, cache)).repos[0]?.actions.map((a) => a.target);
     expect(await targets()).toEqual(["PR #8"]);
-    expect(queries(w, "DispatchRepository(")).toBe(1);
+    expect(queryCalls(w, "DispatchRepository(")).toEqual([
+      expect.stringContaining("comments(first:"),
+    ]);
 
     resetCalls(w);
     expect(await targets()).toEqual(["PR #8"]);
     expect(queries(w, "DispatchRepository(")).toBe(0);
-    expect(queries(w, "DispatchRepositoryState(")).toBe(1);
+    expect(queryCalls(w, "DispatchRepositoryState(")).toEqual([
+      expect.not.stringContaining("comments(first:"),
+    ]);
 
     resetCalls(w);
     w.setPrs("open", [
@@ -148,7 +155,9 @@ describe("one query per repository", () => {
     w.setComments(9, [ledgerComment(901, stoppedLedger(9, 16))]);
     expect(await targets()).toEqual(["PR #7", "PR #9", "PR #10"]);
     expect(queries(w, "DispatchRepository(")).toBe(0);
-    expect(queries(w, "DispatchRepositoryState(")).toBe(1);
+    expect(queryCalls(w, "DispatchRepositoryState(")).toEqual([
+      expect.not.stringContaining("comments(first:"),
+    ]);
     expect(
       ghCalls(w).filter((c) => c.includes("If-None-Match:")).length,
     ).toBeGreaterThanOrEqual(4);
@@ -167,7 +176,9 @@ describe("one query per repository", () => {
       state.close();
     }
     expect(await targets()).toEqual(["PR #7", "PR #9", "PR #10"]);
-    expect(queries(w, "DispatchRepository(")).toBe(1);
+    expect(queryCalls(w, "DispatchRepository(")).toEqual([
+      expect.stringContaining("comments(first:"),
+    ]);
   }, 60_000);
 
   it("reads the repository, its configuration, its open pull requests and their comments in one call", async () => {
