@@ -696,6 +696,19 @@ export function takeRepositoryLock(slug: string, root = stateRoot()): Lock {
   return takeObserveKey(`repository:${slug}`, root);
 }
 
+/**
+ * The lock of a repository's conflict rates refresh
+ * (`lib/conflict-rates-refresh.ts`), taken after the act phase, so two ticks
+ * that acted on the repository never run the refresh together, and neither
+ * holds a lock another tick's observe or act phase waits for.
+ */
+export function takeRatesLock(slug: string, root = stateRoot()): Lock {
+  const digest = createHash("sha256").update(slug).digest("hex");
+  return takeLockAt(
+    join(root, "conflict-rates", `${digest.slice(0, 16)}.lock`),
+  );
+}
+
 function takeObserveKey(key: string, root: string): Lock {
   const digest = createHash("sha256").update(key).digest("hex");
   return takeLockAt(join(root, "observe", `${digest.slice(0, 16)}.lock`));

@@ -6,6 +6,7 @@
  * them again under the act lock, and builds the apply state from that read.
  */
 import type { ApplyState } from "./actions/drive.ts";
+import type { ActedRepository, AfterAct } from "./conflict-rates-refresh.ts";
 import { enforcedDeadlineMs } from "./actions/launch.ts";
 import { actionBook, type ActionBook } from "./failures.ts";
 import { failureSettings } from "./machine-config.ts";
@@ -43,6 +44,16 @@ export interface TickOptions {
    * process, never from the command line or a file.
    */
   world?: (direct: WorldView) => WorldView;
+  /**
+   * What runs once the act phase is done and its locks are given up, with
+   * the repositories the tick acted on: the daily refresh of their conflict
+   * rates (`conflict-rates-refresh.ts`) when absent. Given by a caller in the
+   * same process, never from the command line or a file.
+   */
+  afterAct?: (
+    repos: readonly ActedRepository[],
+    tick: AfterAct,
+  ) => Promise<unknown>;
 }
 
 /** What one repository's turn needs beyond its path. */
