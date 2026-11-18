@@ -236,7 +236,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       continue;
     }
     if (hold.kind !== "none") {
-      planStopped(input, item, hold, launches, plan);
+      planStopped(input, item, hold, plan);
       continue;
     }
     plan.actions.push(pickupAction(item, held.evidence));
@@ -264,7 +264,6 @@ function planStopped(
   input: PickupInput,
   item: WantedItem,
   hold: Extract<PickupHold, { kind: "ended" | "refused" }>,
-  launches: ReadRecord[],
   plan: PickupPlan,
 ): void {
   const why = hold.why;
@@ -272,7 +271,7 @@ function planStopped(
     plan.quiet.push({ target: item.key, class: "pickup-refused", why });
     return;
   }
-  const asked = questionAsked(input, item, launches);
+  const asked = questionAsked(input, item, hold.record);
   if (asked !== null) {
     plan.actions.push(asked);
     return;
@@ -291,12 +290,15 @@ function planStopped(
  */
 function endedNeed(
   slug: string,
-  item: WantedItem,
+  item: Pick<WantedItem, "key" | "title" | "state">,
   latest: ReadRecord,
   why: string,
 ): Action {
   const { record } = latest;
-  const reason = `the pickup ended without moving it on, and no rule starts it again: ${why}`;
+  const sibling = batchQuestionForSibling(latest, item.key);
+  const reason = sibling
+    ? "the ended batch pickup still holds this member; it can be released from the batch"
+    : `the pickup ended without moving it on, and no rule starts it again: ${why}`;
   return {
     stage: "notify",
     target: item.key,
@@ -308,15 +310,20 @@ function endedNeed(
       title: item.title,
       state: item.state,
       account: record.account,
-      ended: endedHow(latest),
-      ...reportEvidence(latest.report),
+      ...(sibling
+        ? {}
+        : { ended: endedHow(latest), ...reportEvidence(latest.report) }),
     },
     cause: "pickup-ended",
-    notice: pickupNotice(
-      slug,
-      `${item.key} pickup ended, record ${record.id}`,
-      `${item.key} (${item.title}): ${reason}; a person picks it up again or leaves it`,
-    ),
+    ...(sibling
+      ? {}
+      : {
+          notice: pickupNotice(
+            slug,
+            `${item.key} pickup ended, record ${record.id}`,
+            `${item.key} (${item.title}): ${reason}; a person picks it up again or leaves it`,
+          ),
+        }),
     ...(record.workspace === null ? {} : { workspace: record.workspace.path }),
     // The pass's ended row in the outcome log already holds how it ended.
     launched: true,
@@ -481,12 +488,20 @@ function planClaimed(
   plan.idleNow.push(item.key);
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   if (quietByPr(item, input, pr, plan)) return;
-  const asked = questionAsked(input, item, input.launches);
+  const asked =
+    pickup.kind === "ended" ? questionAsked(input, item, pickup.record) : null;
   if (asked !== null) {
     plan.actions.push(asked);
     return;
   }
   if (settledOrHeld(item, input, pr.step, plan)) return;
+  if (
+    pickup.kind === "ended" &&
+    batchQuestionForSibling(pickup.record, item.key)
+  ) {
+    plan.actions.push(endedNeed(input.slug, item, pickup.record, pickup.why));
+    return;
+  }
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
@@ -567,6 +582,28 @@ function settledByPr(
 }
 
 /**
+ * Whether a batch question belongs elsewhere. With no named member, its
+ * anchor carries the batch's question. The anchor stays fixed after release
+ * so an answered question cannot reappear on a sibling.
+ */
+function batchQuestionForSibling(latest: ReadRecord, item: string): boolean {
+  const members = latest.record.batchItems;
+  if (members === undefined || members.length < 2) return false;
+  const asked = endedQuestion(latest);
+  if (asked === null) return false;
+  const question = reportQuestion(latest.report, asked);
+  const keys = new Set(
+    question
+      .toUpperCase()
+      .match(/(?<![\w#])(?:#\d+|[A-Z][A-Z0-9]*-\d+)(?!\w)/g),
+  );
+  const named = members.filter(({ key }) => keys.has(key.toUpperCase()));
+  return named.length > 0
+    ? !named.some(({ key }) => key === item)
+    : latest.record.item !== item;
+}
+
+/**
  * The need an item's latest pickup raises when its pass ended on a
  * question without recording `done`: the question, notified once per
  * launch record; `null` otherwise. A pass whose result or exit the host
@@ -577,18 +614,20 @@ function settledByPr(
 function questionAsked(
   input: Pick<PickupInput, "slug" | "rerunsHeld">,
   item: { key: string; title: string; state: string },
-  launches: ReadRecord[],
+  latest: ReadRecord,
 ): Action | null {
   const { slug } = input;
-  const latest = latestPickupFor(item.key, launches);
-  if (latest === undefined) return null;
   // What a pass whose result the host could not write asked is the host's fault, never a person's question.
   const unwritten = unwrittenResult(latest);
   if (unwritten && (input.rerunsHeld ?? null) !== null) return null;
   const asked = unwritten
     ? `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
     : endedQuestion(latest);
-  if (asked === null) return null;
+  if (
+    asked === null ||
+    (!unwritten && batchQuestionForSibling(latest, item.key))
+  )
+    return null;
   // A pass whose result the host could not write wrote no report a person reads.
   const report = unwritten ? null : latest.report;
   const question = reportQuestion(report, asked);
