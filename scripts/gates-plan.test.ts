@@ -1,4 +1,9 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+import { withoutLeakyGitEnv } from "../plugin/shared/guarded-git-spawn.ts";
 
 test("the gate set runs its cheap stages first and --fast runs only those", async () => {
   const { plan, CHECKS, heavyStages, testStage } = await import("./gates.ts");
@@ -86,17 +91,81 @@ test("a run names its part in the closing line", async () => {
   expect(summary(green, false)).toBe("all gates passed");
 });
 
-test("only opted-in dispatch launches use targeted local gates", async () => {
-  const { dispatchFastEnabled } = await import("./dispatch-gates.ts");
-  const { dispatchPlan, plan, testStage } = await import("./gates.ts");
-  const launch = { JIG_LAUNCH: "20260101T000000Z-abcdef12" };
-  const full = testStage([], () => []);
-  const stages = (setting: unknown) =>
-    dispatchFastEnabled(setting, launch)
-      ? dispatchPlan(["scripts/example.test.ts"])
-      : plan(false, full);
-  expect(stages(true).at(-1)).toEqual({
-    name: "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./scripts/example.test.ts",
+const launch = { JIG_LAUNCH: "20260101T000000Z-abcdef12" };
+
+function git(cwd: string, ...args: string[]): void {
+  const child = Bun.spawnSync(
+    ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", ...args],
+    { cwd, env: withoutLeakyGitEnv(process.env) },
+  );
+  expectSpawnExit(child, 0, `git ${args.join(" ")}`);
+}
+
+/** A repository whose one change, against origin/main, is `lib/thing.ts`. */
+function changedRepository(config: string): string {
+  const root = mkdtempSync(join(tmpdir(), "jig-dispatch-gates-"));
+  roots.push(root);
+  const files: Record<string, string> = {
+    ".config/jig.yaml": config,
+    "lib/thing.ts": "export const thing = 1;\n",
+    "lib/thing.test.ts": "",
+    "lib/plain.test.ts": 'import { thing } from "./thing.ts";\n',
+    "lib/bare.test.ts": 'import { thing } from "./thing";\n',
+    "other/late.test.ts": 'await import("../lib/thing.ts");\n',
+    "other/dynamic.test.ts": "await import(`../lib/${name}.ts`);\n",
+    "other/unrelated.test.ts": 'import { x } from "./x.ts";\n',
+  };
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  git(root, "init", "-q");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base");
+  git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+  writeFileSync(join(root, "lib/thing.ts"), "export const thing = 2;\n");
+  return root;
+}
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+test("only an opted-in dispatch launch runs the targeted form", async () => {
+  const { gateRun, testStage } = await import("./gates.ts");
+  const on = changedRepository("gates:\n  dispatch_fast: true\n");
+  const off = changedRepository("gates:\n  command: bun run gates\n");
+  const full = testStage([], () => []).name;
+  const names = (run: { stages: { name: string }[] }) =>
+    run.stages.map((stage) => stage.name);
+  const targeted = gateRun(false, undefined, on, launch);
+  expect(targeted.dispatch).toBe(true);
+  expect(names(targeted)).not.toContain(full);
+  expect(targeted.stages.at(-1)?.name).toBe(
+    "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./lib/bare.test.ts ./lib/plain.test.ts ./lib/thing.test.ts ./other/late.test.ts",
+  );
+  for (const run of [
+    gateRun(false, undefined, off, launch),
+    gateRun(false, undefined, on, {}),
+    gateRun(false, undefined, on, { JIG_LAUNCH: "drive-pr 14 driver 2" }),
+    gateRun(false, undefined, on, { ...launch, CI: "true" }),
+  ]) {
+    expect(run.dispatch).toBe(false);
+    expect(names(run)).toContain(full);
+  }
+  expect(gateRun(true, undefined, on, launch).dispatch).toBe(false);
+  expect(gateRun(false, "checks", on, launch).dispatch).toBe(false);
+});
+
+test("the targeted tests run outside the lock, without the line's variables", async () => {
+  const { dispatchPlan } = await import("./gates.ts");
+  const stage = dispatchPlan(["scripts/example.test.ts"], {
+    ...launch,
+    DRIVE_PR_TARGET: "14",
+    PATH: "/bin",
+  }).at(-1);
+  expect(stage).toMatchObject({
     command: [
       "scripts/test.ts",
       "--parallel=1",
@@ -104,17 +173,21 @@ test("only opted-in dispatch launches use targeted local gates", async () => {
       "60000",
       "./scripts/example.test.ts",
     ],
-    env: { RESOURCE_LOCK_BYPASS: "1" },
+    env: { PATH: "/bin", RESOURCE_LOCK_BYPASS: "1" },
   });
-  expect(stages(true).map((stage) => stage.name)).not.toContain(full.name);
-  expect(stages(undefined).map((stage) => stage.name)).toContain(full.name);
-  expect(dispatchFastEnabled(false, launch)).toBe(false);
-  expect(dispatchFastEnabled(undefined, launch)).toBe(false);
-  expect(dispatchFastEnabled(true, {})).toBe(false);
-  expect(
-    dispatchFastEnabled(true, { JIG_LAUNCH: "drive-pr 14 driver 2" }),
-  ).toBe(false);
-  expect(dispatchFastEnabled(true, { ...launch, CI: "true" })).toBe(false);
+  expect(Object.keys((stage as { env: object }).env).sort()).toEqual([
+    "PATH",
+    "RESOURCE_LOCK_BYPASS",
+  ]);
+});
+
+test("a change that selects no test adds no test stage", async () => {
+  const { dispatchPlan, plan, testStage } = await import("./gates.ts");
+  const quick = plan(
+    true,
+    testStage([], () => []),
+  ).map((stage) => stage.name);
+  expect(dispatchPlan([], {}).map((stage) => stage.name)).toEqual(quick);
 });
 
 test("targeted gates select changed tests and nearby tests named for changed sources", async () => {
@@ -138,26 +211,52 @@ test("targeted gates select changed tests and nearby tests named for changed sou
       (test) =>
         test.endsWith("/session.test.ts") ? ["plugin/dispatch/lib/run.ts"] : [],
     ),
-  ).toEqual([
-    "plugin/dispatch/__tests__/run-timeout.test.ts",
-    "plugin/dispatch/__tests__/run.test.ts",
-    "plugin/dispatch/__tests__/session.test.ts",
-    "scripts/gates-plan.test.ts",
-  ]);
+  ).toEqual({
+    tests: [
+      "plugin/dispatch/__tests__/run-timeout.test.ts",
+      "plugin/dispatch/__tests__/run.test.ts",
+      "plugin/dispatch/__tests__/session.test.ts",
+      "scripts/gates-plan.test.ts",
+    ],
+    leftToCi: 0,
+  });
 });
 
-test("a command stage runs with the environment it names", async () => {
+test("tests that only import a changed file stop at the limit", async () => {
+  const { selectDispatchTests } = await import("./dispatch-gates.ts");
+  const importers = ["a", "b", "c", "d"].map((name) => `t/${name}.test.ts`);
+  expect(
+    selectDispatchTests(
+      ["lib/run.ts", "t/z.test.ts"],
+      [...importers, "t/z.test.ts", "lib/run.test.ts"],
+      (test) => (importers.includes(test) ? ["lib/run.ts"] : []),
+      3,
+    ),
+  ).toEqual({
+    tests: ["lib/run.test.ts", "t/a.test.ts", "t/z.test.ts"],
+    leftToCi: 3,
+  });
+});
+
+test("a command stage runs with exactly the environment it names", async () => {
   const { runStages } = await import("./gates.ts");
-  const probe = ["-e", "process.exit(process.env.STAGE_PROBE === '1' ? 0 : 1)"];
-  const outcomes = await runStages(
+  const probe = [
+    "-e",
+    "process.exit(process.env.STAGE_PROBE === '1' && !process.env.PATH ? 0 : 1)",
+  ];
+  const [named, unnamed] = await runStages(
     [
-      { name: "with", command: probe, env: { STAGE_PROBE: "1" } },
-      { name: "without", command: probe },
+      { name: "named", command: probe, env: { STAGE_PROBE: "1" } },
+      { name: "unnamed", command: probe },
     ],
     import.meta.dir,
   );
-  expect(outcomes).toEqual([
-    { name: "with", status: 0 },
-    { name: "without", status: 1 },
-  ]);
+  // Each stage's output goes straight to this run's own.
+  const exit = (status = -1) => ({
+    exitCode: status,
+    stdout: null,
+    stderr: null,
+  });
+  expectSpawnExit(exit(named?.status), 0, "named");
+  expectSpawnExit(exit(unnamed?.status), 1, "unnamed");
 });

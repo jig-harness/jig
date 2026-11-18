@@ -120,7 +120,7 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
   addition to CHANGELOG.md's open sections or a move of the plugin version:
   the release step writes those after the merge. Never split related work into small
   pull requests that touch the same files.
-- **Run `bun run gates` before pushing.** In dispatched pickups and drives,
+- **Run `bun run gates` before pushing.** In sessions the dispatcher starts,
   this command uses the fast checks and targeted tests when the repository
   enables them. Fix any failures before pushing. Never add a `Ratchet-Loosen` trailer unless a person asked
   for that loosening. Source file size follows

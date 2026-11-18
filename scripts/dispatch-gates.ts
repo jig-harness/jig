@@ -8,6 +8,23 @@ import { LAUNCH_RECORD_ID_PATTERN } from "../plugin/shared/records/forge-claim-s
 const { basename, dirname, extname, normalize } = posix;
 const dispatchLaunchId = new RegExp(LAUNCH_RECORD_ID_PATTERN);
 const testSuffix = /\.(test|spec)\.[cm]?[jt]sx?$/;
+/** What a session of the line carries and a test must not read as its own. */
+const lineVariable = /^(?:JIG_LAUNCH$|DRIVE_PR_)/;
+const moduleSuffixes = [".ts", ".tsx", ".mts", ".js", ".mjs", "/index.ts"];
+const literalPath = /^(["'`])(\.{1,2}\/[^"'`$]*)\1$/;
+
+/**
+ * How many test files a targeted run takes beyond the ones a change names or
+ * sits beside. A file run alone takes seconds, so this bounds a run outside
+ * the lock to minutes when a change touches a widely imported module.
+ */
+export const DISPATCH_TEST_LIMIT = 40;
+
+/** The tests a targeted run takes, and how many importers it leaves to CI. */
+export interface DispatchTests {
+  tests: string[];
+  leftToCi: number;
+}
 
 export function dispatchFastEnabled(
   setting: unknown,
@@ -21,13 +38,25 @@ export function dispatchFastEnabled(
   );
 }
 
-export function useDispatchFastGates(root: string): boolean {
-  if (!dispatchFastEnabled(true, process.env)) return false;
+export function useDispatchFastGates(
+  root: string,
+  env: Record<string, string | undefined>,
+): boolean {
+  if (!dispatchFastEnabled(true, env)) return false;
   const config = readConfigFile(join(root, ".config/jig.yaml"));
-  return dispatchFastEnabled(
-    valueAt(config ?? {}, "gates.dispatch_fast"),
-    process.env,
-  );
+  return dispatchFastEnabled(valueAt(config ?? {}, "gates.dispatch_fast"), env);
+}
+
+/** The targeted tests' environment: outside the lock, as nobody's session. */
+export function dispatchTestEnv(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(env).filter(([name]) => !lineVariable.test(name)),
+    ),
+    RESOURCE_LOCK_BYPASS: "1",
+  };
 }
 
 class DispatchTestPathsError extends Error {}
@@ -55,30 +84,59 @@ export function selectDispatchTests(
   changed: string[],
   files: string[],
   importsFor: (test: string) => string[],
-): string[] {
+  limit = DISPATCH_TEST_LIMIT,
+): DispatchTests {
   const touched = new Set(changed);
   const sources = changed.filter((path) => !testSuffix.test(path));
-  return [...new Set(files)]
+  const candidates = [...new Set(files)]
     .filter(
       (path) =>
         testSuffix.test(path) &&
-        !/(^|\/)(fixtures?|\.context|dist|seeds)\//.test(path) &&
-        (touched.has(path) ||
-          sources.some((source) => isRelatedTest(path, source)) ||
-          importsFor(path).some((source) => touched.has(source))),
+        !/(^|\/)(fixtures?|\.context|dist|seeds)\//.test(path),
     )
     .sort();
+  const named = candidates.filter(
+    (path) =>
+      touched.has(path) ||
+      sources.some((source) => isRelatedTest(path, source)),
+  );
+  const importers = candidates.filter(
+    (path) =>
+      !named.includes(path) &&
+      importsFor(path).some((source) => touched.has(source)),
+  );
+  const taken = importers.slice(0, Math.max(0, limit - named.length));
+  return {
+    tests: [...named, ...taken].sort(),
+    leftToCi: importers.length - taken.length,
+  };
+}
+
+/** The files a relative import may name: as written, or as it resolves. */
+function importedFiles(test: string, specifier: string): string[] {
+  const path = normalize(`${dirname(test)}/${specifier}`);
+  return [
+    path,
+    path.replace(/\.[cm]?js$/, ".ts"),
+    ...moduleSuffixes.map((suffix) => `${path}${suffix}`),
+  ];
 }
 
 function testImports(root: string, test: string): string[] {
   const code = readFileSync(join(root, test), "utf8");
-  return parseSync(test, code)
-    .module.staticImports.map(({ moduleRequest }) => moduleRequest.value)
+  const { staticImports, dynamicImports } = parseSync(test, code).module;
+  return [
+    ...staticImports.map(({ moduleRequest }) => moduleRequest.value),
+    ...dynamicImports.flatMap(({ moduleRequest: { start, end } }) => {
+      const path = literalPath.exec(code.slice(start, end))?.[2];
+      return path === undefined ? [] : [path];
+    }),
+  ]
     .filter((path) => path.startsWith("./") || path.startsWith("../"))
-    .map((path) => normalize(`${dirname(test)}/${path}`));
+    .flatMap((path) => importedFiles(test, path));
 }
 
-export function dispatchTestPaths(root: string): string[] {
+export function dispatchTestPaths(root: string): DispatchTests {
   const untracked = gitPaths(root, [
     "ls-files",
     "--others",

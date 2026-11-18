@@ -4,5 +4,5 @@ release: patch
 
 ### Changed
 
-- Jig's dispatched pickups and drives run fast checks and targeted tests
-  locally, leaving the full suites to required CI. **Consumer action:** none.
+- The sessions Jig's dispatcher starts on Jig itself run fast checks and
+  targeted tests locally, leaving the full suites to required CI. **Consumer action:** none.

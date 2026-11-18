@@ -15,7 +15,11 @@
 // Two unrelated failures surface in one run rather than two.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { dispatchTestPaths, useDispatchFastGates } from "./dispatch-gates.ts";
+import {
+  dispatchTestEnv,
+  dispatchTestPaths,
+  useDispatchFastGates,
+} from "./dispatch-gates.ts";
 import { cli } from "../lib/cli.ts";
 import { couldNotCheck } from "../lib/findings.ts";
 import { checkLinks } from "./check-md-links.ts";
@@ -150,7 +154,7 @@ function configuredIgnores(): string[] {
  * called in this process with the repository root.
  */
 export type Stage = { name: string } & (
-  | { command: string[]; env?: Record<string, string> }
+  | { command: string[]; env?: Record<string, string | undefined> }
   | { check: (root: string) => number | Promise<number> }
 );
 
@@ -311,7 +315,7 @@ async function runStage(stage: Stage, root: string): Promise<number> {
   if (!("command" in stage)) return stage.check(root);
   const child = Bun.spawn([process.execPath, ...stage.command], {
     cwd: root,
-    env: { ...process.env, ...stage.env },
+    env: stage.env ?? process.env,
     stdout: "inherit",
     stderr: "inherit",
   });
@@ -382,11 +386,14 @@ export function summary(
 
 /**
  * A dispatched pass's stages: the fast ones, then the tests the change
- * reaches. Those go through the suite's own runner, which scrubs the
- * environment and refuses a run that executed nothing, one file at a time and
- * outside the machine-wide lock, whose admission is sized for full suites.
+ * reaches. Those go through the suite's own runner, which refuses a run that
+ * executed nothing, one file at a time and outside the machine-wide lock,
+ * whose admission is sized for full suites.
  */
-export function dispatchPlan(tests: string[]): Stage[] {
+export function dispatchPlan(
+  tests: string[],
+  env: Record<string, string | undefined> = process.env,
+): Stage[] {
   const run = command(
     "scripts/test.ts",
     "--parallel=1",
@@ -397,21 +404,52 @@ export function dispatchPlan(tests: string[]): Stage[] {
   const targeted: Stage = {
     ...run,
     name: `RESOURCE_LOCK_BYPASS=1 ${run.name}`,
-    env: { RESOURCE_LOCK_BYPASS: "1" },
+    env: dispatchTestEnv(env),
   };
   return [...plan(true, targeted), ...(tests.length ? [targeted] : [])];
 }
 
-async function dispatchGates(): Promise<number> {
-  const tests = dispatchTestPaths(root);
-  if (!tests.length)
-    console.log("dispatch gates: no matching local test files");
-  const outcomes = await runStages(dispatchPlan(tests), root);
-  const status = verdict(outcomes);
-  (status ? console.error : console.log)(
-    status ? summary(outcomes, true) : "dispatch gates passed",
-  );
-  return status;
+/** What one run of the gates does: its stages and what it says first. */
+export interface GateRun {
+  stages: Stage[];
+  notes: string[];
+  dispatch: boolean;
+}
+
+/** The run these arguments and this environment ask for. */
+export function gateRun(
+  fast: boolean,
+  part: Part | undefined,
+  repository: string,
+  env: Record<string, string | undefined> = process.env,
+): GateRun {
+  if (!fast && !part && useDispatchFastGates(repository, env)) {
+    const { tests, leftToCi } = dispatchTestPaths(repository);
+    return {
+      stages: dispatchPlan(tests, env),
+      notes: [
+        ...(tests.length
+          ? []
+          : ["dispatch gates: no matching local test files"]),
+        ...(leftToCi
+          ? [`dispatch gates: ${leftToCi} importing test files left to CI`]
+          : []),
+      ],
+      dispatch: true,
+    };
+  }
+  const skipped = fast ? [] : skippedSuites(process.platform, env);
+  return {
+    stages: plan(
+      fast,
+      testStage(skipped, configuredIgnores, () => shardArgs(env)),
+      part,
+    ),
+    notes: skipped.length
+      ? [`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`]
+      : [],
+    dispatch: false,
+  };
 }
 
 async function gates(fast: boolean): Promise<number> {
@@ -425,20 +463,15 @@ async function gates(fast: boolean): Promise<number> {
       error instanceof Error ? error.message : String(error),
     );
   }
-  if (!fast && !part && useDispatchFastGates(root)) return dispatchGates();
-  const skipped = fast ? [] : skippedSuites(process.platform, process.env);
-  if (skipped.length)
-    console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);
-  const outcomes = await runStages(
-    plan(
-      fast,
-      testStage(skipped, configuredIgnores, () => shardArgs(process.env)),
-      part,
-    ),
-    root,
-  );
+  const run = gateRun(fast, part, root);
+  for (const note of run.notes) console.log(note);
+  const outcomes = await runStages(run.stages, root);
   const status = verdict(outcomes);
-  (status ? console.error : console.log)(summary(outcomes, fast, part));
+  (status ? console.error : console.log)(
+    run.dispatch && !status
+      ? "dispatch gates passed"
+      : summary(outcomes, fast || run.dispatch, part),
+  );
   return status;
 }
 if (import.meta.main) cli(() => gates(process.argv.includes("--fast")));
