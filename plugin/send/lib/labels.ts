@@ -12,14 +12,17 @@
  * known local tree and no person's stop; `hold` only where no `hold` label
  * is; `release` only where one is.
  */
+import { swallow } from "../../shared/errors.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { commandLabel, type LabelConfig } from "../../dispatch/lib/labels.ts";
 import { writeCommandLabel } from "../../dispatch/lib/requests.ts";
 import { pendingRearm } from "../../dispatch/lib/actions/rearm-request.ts";
+import { recordRearmLockRead } from "../../dispatch/lib/rearm-lock-needs.ts";
 import { readSection } from "../../dispatch/lib/section.ts";
 import { type DriveReading, readDrive } from "../../ask/lib/drive.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readDefaultConfig } from "../../ask/lib/forge.ts";
 import { type AskContext, pullFor } from "../../ask/lib/station.ts";
 import { NEXT_TICK, type Planned, refused, type TickReader } from "./plan.ts";
@@ -51,6 +54,7 @@ async function labelConfig(
 async function pullFacts(
   ctx: AskContext,
   verb: LabelVerb,
+  dryRun: boolean,
 ): Promise<
   Outcome<{ labels: string[]; url: string; tree?: string }, "refused">
 > {
@@ -64,18 +68,19 @@ async function pullFacts(
       );
     return ok({ labels: pull.doc.labels, url: pull.doc.url });
   }
-  return driveFacts(ctx, verb);
+  return driveFacts(ctx, verb, dryRun);
 }
 
 /** The drive-specific state both arm commands require. */
 async function driveFacts(
   ctx: AskContext,
   verb: LabelVerb,
+  dryRun: boolean,
 ): Promise<
   Outcome<{ labels: string[]; url: string; tree?: string }, "refused">
 > {
   const pr = ctx.address.key;
-  const d = await readDrive(ctx);
+  const d = await readDrive(ctx, "lock-only");
   const opened = openDrive(d, pr, "the tick arms a drive only on an open one");
   if (!opened.ok) return opened;
   const doc = opened.value;
@@ -87,7 +92,7 @@ async function driveFacts(
     return refused(
       `whether pull request ${pr} has a drive ledger cannot be told: ${d.ledger}`,
     );
-  if (verb === "rearm") return rearmFacts(d, ctx, doc);
+  if (verb === "rearm") return rearmFacts(d, ctx, doc, dryRun);
   if (d.ledger !== null)
     return refused(
       `pull request ${pr} already has a drive ledger (${d.answer.state}): the drive label adopts only a pull request with none; a stopped drive is picked up by its re-arm (jig ask ${ctx.name} says what it waits on)`,
@@ -100,10 +105,11 @@ async function rearmFacts(
   d: DriveReading,
   ctx: AskContext,
   doc: { labels: string[]; url: string },
+  dryRun: boolean,
 ): Promise<
   Outcome<{ labels: string[]; url: string; tree?: string }, "refused">
 > {
-  const fault = rearmFault(d, ctx);
+  const fault = rearmFault(d, ctx, dryRun);
   if (fault !== null) return refused(fault);
   const tree = await rearmTree(d, ctx);
   if (!tree.ok) return tree;
@@ -111,7 +117,11 @@ async function rearmFacts(
 }
 
 /** A stopped ledger's eligibility, before local tree selection. */
-function rearmFault(d: DriveReading, ctx: AskContext): string | null {
+function rearmFault(
+  d: DriveReading,
+  ctx: AskContext,
+  dryRun: boolean,
+): string | null {
   const pr = ctx.address.key;
   const ledger = d.ledger;
   if (ledger === null || typeof ledger === "string")
@@ -128,19 +138,52 @@ function rearmFault(d: DriveReading, ctx: AskContext): string | null {
     return `pull request ${pr} still has a delivered rearm awaiting acknowledgment; let the tick finish removing its request label before sending another`;
   if (d.answer.holder !== "none")
     return `pull request ${pr}'s drive is still held on ${d.answer.holder.host}: rearm requires a stopped drive with no active launch`;
-  return lockFault(d, ctx);
+  return lockFault(d, ctx, ledger, dryRun);
 }
 
 /** An unreadable or possibly live local lock prevents a second launch. */
-function lockFault(d: DriveReading, ctx: AskContext): string | null {
+function lockFault(
+  d: DriveReading,
+  ctx: AskContext,
+  ledger: Ledger,
+  dryRun: boolean,
+): string | null {
   const unread = ctx.reading
     .sources()
     .records.find((s) => s.record === "drive-lock" && !s.read);
-  if (unread !== undefined)
-    return `the driver lock could not be read: ${unread.detail ?? "no reason given"}; rearm waits until its state is known`;
+  const reason =
+    unread === undefined ? null : (unread.detail ?? "no reason given");
+  const report = dryRun ? "" : noteLockRead(ctx, ledger, reason);
+  if (reason !== null)
+    return `the driver lock could not be read: ${reason}; rearm waits until its state is known${report}`;
   if (d.row !== null && d.row.lock !== "empty" && d.row.lock !== "stale")
     return `the local driver lock is ${d.row.lock}: rearm requires a stopped drive with no live or uncertain lock`;
   return null;
+}
+
+/** Preserve the refusal even when this host cannot save its investigation need. */
+function noteLockRead(
+  ctx: AskContext,
+  ledger: Ledger,
+  reason: string | null,
+): string {
+  try {
+    recordRearmLockRead(
+      ctx.address.repo,
+      Number(ctx.address.key),
+      ledger.generation,
+      ledger.driver.heartbeat,
+      reason,
+    );
+    return reason === null ? "" : "; recorded a need for the local dispatcher";
+  } catch (error) {
+    if (reason === null)
+      swallow(
+        error,
+        "rearm can proceed when it could not clear a prior lock-read need",
+      );
+    return `; could not save the dispatcher's lock-read need: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 const ACTS: Record<LabelVerb, string> = {
@@ -184,6 +227,7 @@ export async function planLabel(
   ctx: AskContext,
   verb: LabelVerb,
   writesAs: string,
+  dryRun: boolean,
 ): Promise<Planned> {
   const config = await labelConfig(ctx);
   if (!config.ok) return config;
@@ -192,7 +236,7 @@ export async function planLabel(
       `${verb} writes a dispatch label, and ${ctx.address.repo} has them off: dispatch.labels.enabled is not true in ${OVERLAY_RELPATH} on its default branch`,
     );
   const label = commandLabel(config.value, COMMAND_FOR[verb]);
-  const facts = await pullFacts(ctx, verb);
+  const facts = await pullFacts(ctx, verb, dryRun);
   if (!facts.ok) return facts;
   const pr = Number(ctx.address.key);
   const carries = facts.value.labels.includes(label);

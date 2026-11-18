@@ -127,6 +127,12 @@
       "The follow-up that reserved tracker filing for a release, the issue that carries it, the observed tag state, and whether the dispatcher claimed its one authorized rerun."
     ],
     [
+      "dispatch-rearm-lock-need",
+      "dispatch/lib/rearm-lock-needs.ts",
+      "rearm_lock_needs",
+      "An unreadable driver lock that refused an operator's rearm, keyed by repository and pull request and projected while the same stopped ledger stands."
+    ],
+    [
       "dispatch-pickup-read",
       "dispatch/lib/pickup-reads.ts",
       "pickup_reads",

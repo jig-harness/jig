@@ -1639,9 +1639,9 @@ not changed since the last read costs nothing against the forge's limit; it
 never calls the tracker. A `pickup` reads the item through the tracker the
 repository's configuration names, and makes no forge call. On the machine
 that dispatched the work it also reads the dispatcher's launch records, its
-outcome log and, for a drive, the drive's own listing in a checkout of the
-repository (`drives-read-only.ts`), whose doctor verdict and recovery command
-it prints and never runs. It opens these databases read-only and migrates
+outcome log. For a drive, it reads the local driver lock and the doctor's
+diagnosis as separate sources in a checkout of the repository. It prints
+the doctor's recovery command when available. It opens these databases read-only and migrates
 none: against one an older schema holds, it reads what that schema allows or
 names the source in `sources` as not read until the owner's next run brings
 it forward. On a machine that never dispatched, it answers

@@ -46,6 +46,7 @@ import { type CarrierInput, carrierInput } from "./carried-pr.ts";
 import { branchPattern } from "./section.ts";
 import type { PrLinkText } from "./work-links.ts";
 import { preparePriorities } from "./tick-priorities.ts";
+import { rearmLockNeeds } from "./rearm-lock-needs.ts";
 
 /** Put the steward's recorded queue order on the tracked pickups, where this host owns the repository. */
 function orderTracked(
@@ -123,9 +124,12 @@ export function planObserved(
       context.priorities.push(prepared);
     }
   }
-  // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
+  // A failure on a held pull request, or one not known to be labelled, stands down with every other action.
   const failing = {
-    actions: planFailureNotices(context, opened),
+    actions: [
+      ...planFailureNotices(context, opened),
+      ...rearmLockNeeds(repo.slug, observation.drives, context.apply?.root),
+    ],
     held: [],
     withheld: report.withheld ?? [],
   };
