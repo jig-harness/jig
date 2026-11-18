@@ -104,7 +104,13 @@ function fake(script: Script) {
       reruns.set(key, now);
       return true;
     },
-    rerunFailed: async (_pr, _head, run) => {
+    rerunFailed: async (_pr, _head, run, mayMutate) => {
+      if (!(await mayMutate()))
+        return {
+          ok: false,
+          indeterminate: true,
+          detail: "the drive no longer owns the pull request",
+        };
       asked.push(run);
       if (script.rerunIndeterminate === true)
         return { ok: false, indeterminate: true, detail: "timed out" };
@@ -485,6 +491,17 @@ describe("the converged CI watch after another clone takes the drive over", () =
     });
     const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
     expect(verdict.kind).toBe("stands");
+    expect(f.asked).toEqual([]);
+  });
+
+  it("asks the failed-job re-run's mutation boundary again: a successor that arrived there parks nothing", async () => {
+    const f = fake({
+      ci: [failing(1)],
+      runs: [[workflowRun(1, 2_000)]],
+      owned: ["ours", "ours", "lost"],
+    });
+    const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).not.toBe("park");
     expect(f.asked).toEqual([]);
   });
 

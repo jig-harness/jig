@@ -253,23 +253,9 @@ export async function recoverCancelledOnHead(
   // The durable claim must not be spent until the mutation fence is held.
   // Otherwise a rival can make this invocation unable to re-run after it has
   // consumed the once-per-head recovery budget.
-  let lock = null;
-  try {
-    const context = alreadyFenced
-      ? null
-      : await resolveFenceContext("cancelled CI recovery");
-    lock =
-      context === null
-        ? null
-        : await assertRemoteMutationAllowed(
-            context,
-            pr,
-            "cancelled CI recovery",
-          );
-  } catch (err) {
-    swallow(err, "the cancellation recovery mutation fence is unavailable");
-    return "unknown";
-  }
+  const fence = await acquireFence(pr, alreadyFenced);
+  if (fence === "unavailable") return "unknown";
+  const lock = fence;
   try {
     // A caller that can lose the drive to a successor asks again here, where
     // the first claim is about to be spent.
@@ -277,12 +263,8 @@ export async function recoverCancelledOnHead(
     const answer = await recoverCancelled(pr, head, relevant, runs, {
       ...live,
       ...timelineDeps(pr),
+      ...(mayMutate === undefined ? {} : { mayMutate }),
       async rerun(id) {
-        if (mayMutate !== undefined && !(await mayMutate()))
-          return {
-            code: 1,
-            stderr: "the drive no longer owns the pull request",
-          };
         if (!(await live.confirm(pr, head)))
           return {
             code: 1,
@@ -294,6 +276,21 @@ export async function recoverCancelledOnHead(
     return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
   } finally {
     lock?.dispose();
+  }
+}
+
+/** The mutation fence for a recovery, `null` when the caller already holds one; "unavailable" when it cannot be had. */
+async function acquireFence(pr: string, alreadyFenced: boolean) {
+  try {
+    const context = alreadyFenced
+      ? null
+      : await resolveFenceContext("cancelled CI recovery");
+    return context === null
+      ? null
+      : await assertRemoteMutationAllowed(context, pr, "cancelled CI recovery");
+  } catch (err) {
+    swallow(err, "the cancellation recovery mutation fence is unavailable");
+    return "unavailable" as const;
   }
 }
 

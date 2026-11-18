@@ -128,8 +128,8 @@ export function liveConvergedCi(windowMinutes: number): ConvergedCiDeps {
     labelReruns,
     rerunnable: (pr, runs) => rerunnableRuns(pr, runs),
     claimRerun: claimLabelRerun,
-    async rerunFailed(pr, head, run) {
-      const asked = await failedCheckForge.retry(pr, head, run);
+    async rerunFailed(pr, head, run, mayMutate) {
+      const asked = await failedCheckForge.retry(pr, head, run, mayMutate);
       return {
         ok: asked.ok,
         detail: asked.detail,

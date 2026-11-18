@@ -64,6 +64,11 @@ export interface RecoveryDeps {
   rerunnable(pr: string, runs: readonly WorkflowRun[]): Promise<number[]>;
   rerun(run: number): Promise<{ code: number; stderr: string }>;
   park(pr: string, reason: string): Promise<void>;
+  /**
+   * Whether the caller still owns the pull request; asked before every forge
+   * mutation and every park, and a refusal stands down without either.
+   */
+  mayMutate?(): Promise<boolean>;
   /** Release a claim a pending grant waited on; false when none was pending. */
   releaseGrant?(pr: string, head: string): Promise<boolean>;
   /** When each label was added or removed on the pull request, the CI hold's left out. */
@@ -395,7 +400,9 @@ async function parkCancelled(
   named: readonly { id: number }[],
   record: RecoveryRecord,
   why: string,
-): Promise<"parked"> {
+): Promise<"parked" | "unknown"> {
+  if (deps.mayMutate !== undefined && !(await deps.mayMutate()))
+    return "unknown";
   const commands = named.map((run) => `gh run rerun ${run.id}`).join("; ");
   const after =
     (record.grants ?? 0) > 0
@@ -610,6 +617,8 @@ async function requestRuns(
 ): Promise<string | null> {
   for (const run of runs) {
     if (!(await deps.confirm(pr, head))) return "head-moved";
+    if (deps.mayMutate !== undefined && !(await deps.mayMutate()))
+      return "head-moved";
     const answer = await deps.rerun(run.id);
     if (answer.code !== 0)
       return `the forge refused or could not confirm the re-run: ${answer.stderr.trim()}`;

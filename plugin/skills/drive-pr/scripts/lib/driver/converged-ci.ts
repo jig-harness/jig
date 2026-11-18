@@ -76,6 +76,7 @@ export interface ConvergedCiDeps {
     pr: string,
     head: string,
     run: number,
+    mayMutate: () => Promise<boolean>,
   ): Promise<{ ok: boolean; indeterminate?: boolean; detail: string }>;
   /**
    * The cancelled-run recovery on the head; `mayMutate` is asked at its
@@ -260,7 +261,12 @@ async function rerun(
     const held = await ownershipHold(deps);
     if (held !== null) return held;
     if (!(await deps.claimRerun(pr, run))) continue;
-    const asked = await deps.rerunFailed(pr, head, run.id);
+    const asked = await deps.rerunFailed(
+      pr,
+      head,
+      run.id,
+      async () => (await ownershipOf(deps)) === "ours",
+    );
     // An indeterminate answer may still have started the run: the claim is
     // recorded, so the next reading looks for its new attempt and parks when
     // none appears.
