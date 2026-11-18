@@ -401,6 +401,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.279.1] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` read every issue an epic's execution plan names one request
+  at a time when it re-checked a pickup just before launching it, and again
+  when the claim checked it: about 40 requests for each pickup under a long
+  plan, repeated for every pickup that waited on the workspace budget. That
+  check now reads the plan's issues, and each parent's own row, together:
+  on GitHub one `TrackerDispatchIssues` request for up to 20 issues, on
+  Linear the batched pool read. It still reads them fresh, with nothing kept
+  from the tick. A batch that names an issue the credential cannot see is
+  read one issue at a time; a batch refused for the rate limit or left
+  without an answer fails the check with that failure, as a single read did.
+
 ## [0.279.0] - 2026-11-18
 
 ### Added
@@ -9810,7 +9825,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.279.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.279.1...HEAD
+[0.279.1]: https://github.com/jig-harness/jig/compare/v0.279.0...v0.279.1
 [0.279.0]: https://github.com/jig-harness/jig/compare/v0.278.1...v0.279.0
 [0.278.1]: https://github.com/jig-harness/jig/compare/v0.278.0...v0.278.1
 [0.278.0]: https://github.com/jig-harness/jig/compare/v0.277.3...v0.278.0
