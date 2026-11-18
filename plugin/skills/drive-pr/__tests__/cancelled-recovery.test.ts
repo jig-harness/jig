@@ -48,6 +48,15 @@ function fixture(start = 0) {
       calls.push(id);
       return { code: 0, stderr: "" };
     },
+    withdrawClaim: async (_pr, _head, claimed, kept, release) => {
+      if (record === null || record.requestedRuns !== claimed) return;
+      record = {
+        ...record,
+        requestedRuns: kept,
+        ...(release ? { requestedAt: null } : {}),
+      };
+    },
+    withdrawLabelRerun: async () => undefined,
     park: async (_pr, reason) => {
       parks.push(reason);
     },
@@ -80,6 +89,79 @@ const job = {
   conclusion: "cancelled",
   suiteId: 1,
 };
+
+describe("a head read that fails after the re-run is claimed", () => {
+  /** Past the grace period, with the head's confirmations answered in turn, then `true`. */
+  async function pastGrace(runs: WorkflowRun[], jobs = [job]) {
+    const f = fixture();
+    await recoverCancelled("5", "head", jobs, runs, f.deps);
+    f.advance(30_000);
+    return f;
+  }
+  function confirmsInTurn(
+    f: ReturnType<typeof fixture>,
+    answers: (boolean | "unread")[],
+  ) {
+    let at = 0;
+    f.deps.confirm = async () => answers[at++] ?? true;
+  }
+
+  test("gives the claim back, so a re-armed drive requests the re-run", async () => {
+    const f = await pastGrace([run(1)]);
+    // Before the claim the head confirms; the request's own check cannot read.
+    confirmsInTurn(f, [true, "unread"]);
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "unknown",
+    );
+    expect(f.calls).toEqual([]);
+    expect(f.parks).toEqual([]);
+    expect(f.record()?.requestedAt).toBeNull();
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "wait",
+    );
+    expect(f.calls).toEqual([1]);
+  });
+
+  test("the last check before the re-run neither parks nor spends the claim", async () => {
+    const f = await pastGrace([run(1)]);
+    f.deps.rerun = async () => ({ code: 1, stderr: "HTTP 502", unread: true });
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "unknown",
+    );
+    expect(f.parks).toEqual([]);
+    expect(f.record()?.requestedAt).toBeNull();
+  });
+
+  test("keeps the claim for a run already requested, naming only that run", async () => {
+    const other = { ...job, name: "other", suiteId: 2 };
+    const runs = [run(1), run(2, 11)];
+    const f = await pastGrace(runs, [job, other]);
+    // Before the claim, before the first request, then before the second.
+    confirmsInTurn(f, [true, true, "unread"]);
+    expect(
+      await recoverCancelled("5", "head", [job, other], runs, f.deps),
+    ).toBe("unknown");
+    expect(f.calls).toEqual([1]);
+    expect(f.record()?.requestedAt).not.toBeNull();
+    expect(f.record()?.requestedRuns?.map((r) => r.id)).toEqual([1]);
+  });
+
+  test("a released claim still names the runs it named before", async () => {
+    const f = await pastGrace([run(1)]);
+    await recoverCancelled("5", "head", [job], [run(1)], f.deps);
+    const before = f.record()?.requestedRuns;
+    expect(before?.map((r) => r.id)).toEqual([1]);
+    f.grant();
+    f.advance(REPLACEMENT_WINDOW_MS);
+    confirmsInTurn(f, [true, "unread"]);
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "unknown",
+    );
+    expect(f.calls).toEqual([1]);
+    expect(f.record()?.requestedAt).toBeNull();
+    expect(f.record()?.requestedRuns).toEqual(before);
+  });
+});
 
 describe("orphaned cancelled workflow recovery", () => {
   test("requests only the newest orphaned run per workflow", async () => {
@@ -518,6 +600,24 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     }
     expect(f.parks).toEqual([]);
     expect(f.calls).toEqual([1, 2, 1, 2]);
+  });
+
+  test("an extension gives back only what it added", async () => {
+    const f = await grantedRequest();
+    const done = succeeded(requested + 60_000);
+    const later = wf(5, 10, requested + 120_000);
+    const jobs = [...done.checks, check(5, requested + 120_000)];
+    const before = f.record();
+    f.advance(180_000);
+    let confirms = 0;
+    // Before the extension the head confirms; the request's own check cannot read.
+    f.deps.confirm = async () => (++confirms === 2 ? "unread" : true);
+    expect(
+      await recoverCancelled("5", "head", jobs, [...done.runs, later], f.deps),
+    ).toBe("unknown");
+    expect(f.calls).toEqual([1, 2, 1, 2]);
+    expect(f.record()?.requestedAt).toBe(before?.requestedAt ?? -1);
+    expect(f.record()?.requestedRuns).toEqual(before?.requestedRuns);
   });
 
   test("a run cancelled after the request is requested once, then judged on its own", async () => {

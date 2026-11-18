@@ -1170,6 +1170,17 @@ emit() {
   if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
 }
 
+# Answer a 502 while the count in file $1 is above zero, spending one per call.
+fail_counted() {
+  [ -f "$1" ] || return 0
+  local left
+  left=$(< "$1")
+  [ "$left" -gt 0 ] || return 0
+  printf '%s' "$(( left - 1 ))" > "$1"
+  echo 'gh: HTTP 502: Bad Gateway' >&2
+  exit 1
+}
+
 # Unconditional poll counter, distinct from \`head-reads\` below: every \`gh pr
 # view\` call whose --json list names \`isDraft\` is one evaluate() OPENING
 # snapshot, and exactly one — no recheck asks for the field any more, since
@@ -1649,6 +1660,26 @@ if [ -f "$F/head-moves-after" ]; then
   fi
 fi
 
+# The forge failing the cancelled-run recovery's reads. Its hold read asks for
+# this exact field list: \`hold-read-passes\` lets that many through first, and
+# \`hold-read-fails\` then fails that many. \`hold-read-seen\` arms
+# \`runs-read-fails\` below, so the failures land on the recovery's read of the
+# workflow runs and not on the status reads before it.
+if [ "\${1:-}" = "pr" ]; then
+  for a in "$@"; do
+    if [ "$a" = "state,headRefOid,labels" ]; then
+      : > "$F/hold-read-seen"
+      passes=0
+      [ -f "$F/hold-read-passes" ] && passes=$(< "$F/hold-read-passes")
+      if [ "$passes" -gt 0 ]; then
+        printf '%s' "$(( passes - 1 ))" > "$F/hold-read-passes"
+      else
+        fail_counted "$F/hold-read-fails"
+      fi
+    fi
+  done
+fi
+
 # Model a scratch edit landing only after final-ready has established the
 # exact-head CI registration and set-verified starts its own evidence chain.
 # Both use this exact field list; call 1 is final-ready and call 2 is the first
@@ -2056,7 +2087,9 @@ for a in "$@"; do
       fi
       emit "$F/timeline.json"; exit 0 ;;
     *check-runs*)        emit "$F/check-runs.json"; exit 0 ;;
-    *actions/runs*)      emit "$F/workflow-runs.json"; exit 0 ;;
+    *actions/runs*)
+      [ -f "$F/hold-read-seen" ] && fail_counted "$F/runs-read-fails"
+      emit "$F/workflow-runs.json"; exit 0 ;;
     # Query string included: drive-status.ts paginates this endpoint with an
     # explicit \`?per_page=\`, and a stub matching only the bare path would make
     # every commit-status test read as "API unreadable" instead of exercising it.
