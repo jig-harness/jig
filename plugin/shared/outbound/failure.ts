@@ -42,6 +42,8 @@ export type FailureClass = (typeof FAILURE_CLASSES)[number];
 
 /** A call's failure: its class as the code, a sentence for a person, and what the class carries. */
 export interface OutboundFailure extends Failure<FailureClass> {
+  /** Opaque quota owner or credential key, never the credential itself. */
+  account?: string;
   /** `rate-limited`: when the system lets the credential send again, epoch milliseconds. */
   until?: number;
   /** The request left before the answer was lost: a write may have landed. */
@@ -111,6 +113,7 @@ export function outboundFailure(
   code: FailureClass,
   reason: string,
   extra: {
+    account?: string | undefined;
     until?: number | null;
     sent?: boolean;
     retryAfterMs?: number | null;
@@ -118,6 +121,7 @@ export function outboundFailure(
   } = {},
 ): OutboundFailure {
   const failure: OutboundFailure = { code, reason };
+  if (extra.account !== undefined) failure.account = extra.account;
   if (extra.until !== undefined && extra.until !== null)
     failure.until = extra.until;
   if (extra.sent === true) failure.sent = true;

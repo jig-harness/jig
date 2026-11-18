@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { ok as assert } from "node:assert/strict";
 import type {
   LineAccount,
   LineRepo,
@@ -367,6 +368,55 @@ describe("staleness", () => {
         body: `The newest tick that tried could not read it (${refusal}). Its needs, queue and sessions below are as of the 16:05 tick.`,
       },
     ]);
+  });
+
+  function refusedRepos(count: number, start = 0, account = "one") {
+    const [template] = lineOf("partial").repos;
+    assert(template);
+    return Array.from({ length: count }, (_, index) => {
+      const number = start + index;
+      return {
+        ...template,
+        slug: `example-org/repo-${number}`,
+        path: `/repos/${number}`,
+        readAt: `2026-11-03T16:${10 + number}:00Z`,
+        refused: `rate limit; last reading for repository ${number}`,
+        refusedBy: {
+          class: "rate-limited" as const,
+          account,
+          until: "2026-11-03T17:00:00Z",
+        },
+      };
+    });
+  }
+
+  it("groups eight stale repositories by cause and retains each last read", () => {
+    const repos = refusedRepos(8).reverse();
+    const banners = staleBanners({ ...line, repos }, CLOCK);
+    expect(banners).toHaveLength(1);
+    expect(banners[0]?.title).toBe(
+      "8 repositories have not been read since 16:10 · rate limit",
+    );
+    expect(banners[0]?.body).toContain("17:00");
+    expect(
+      banners[0]?.repositories?.map(({ name, lastRead }) => [name, lastRead]),
+    ).toEqual(repos.map((repo) => [repo.slug, repo.readAt.slice(11, 16)]));
+  });
+
+  it("distinguishes accounts and leaves busy and legacy entries individual", () => {
+    const partial = lineOf("partial");
+    const busy = partial.repos.find(
+      (repo) => repo.slug === "example-org/mobile",
+    );
+    assert(busy);
+    const repos = [...refusedRepos(3), ...refusedRepos(2, 3, "two"), busy];
+    expect(
+      staleBanners({ ...partial, repos }, CLOCK).map(
+        (banner) => banner.repositories?.length,
+      ),
+    ).toEqual([3, 2, undefined]);
+    const legacy = repos.map(({ refusedBy: _refusedBy, ...repo }) => repo);
+    expect(staleBanners({ ...partial, repos: legacy }, CLOCK)).toHaveLength(6);
   });
 
   it("says when the server is not answering, and alarms", () => {

@@ -781,7 +781,7 @@ function governed(
           refused: outboundFailure(
             "rate-limited",
             `${error.message}${said}; nothing was sent`,
-            { until: error.resetAt },
+            { until: error.resetAt, account: key },
           ),
         };
       }
@@ -898,7 +898,12 @@ export function ghGovernance(
       );
       const answered =
         strip && headers !== null ? { ...observed, stdout: body } : observed;
-      return until === null ? answered : { ...answered, limitedUntil: until };
+      if (failure === null) return answered;
+      return {
+        ...answered,
+        failureAccount: opts.attribution?.owner ?? key,
+        ...(until === null ? {} : { limitedUntil: until }),
+      };
     },
   };
 }

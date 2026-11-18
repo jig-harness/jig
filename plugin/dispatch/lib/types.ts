@@ -593,6 +593,8 @@ export interface Running {
  */
 export interface ReadFailure {
   class: FailureClass;
+  /** Opaque quota owner or credential key, when known. */
+  account?: string;
   until?: string;
 }
 

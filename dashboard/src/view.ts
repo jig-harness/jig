@@ -9,7 +9,7 @@ import type {
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { ago, clock, plural, span, until } from "./format.ts";
+import { ago, clock, hostDay, plural, span, stamp, until } from "./format.ts";
 import { retainedSlug } from "../../plugin/dispatch/lib/line-unread.ts";
 import { noLinkText } from "./links.ts";
 import { trackerOf } from "./tracker-name.ts";
@@ -110,42 +110,114 @@ export function timerBanner(
   };
 }
 
-/**
- * A banner for each repository whose part of the line is past the timer's
- * next tick and its longest recent one while the line itself is current:
- * the ticks since ran, and none of them read it. Each names the repository,
- * when its part was read, and why the ticks since did not read it: the
- * newest that tried was refused, another tick held it busy, or they read
- * other repositories.
- */
+interface StaleRepository {
+  key: string;
+  name: string;
+  lastRead: string;
+  detail: string;
+}
+
+export interface StaleBanner {
+  key: string;
+  title: string;
+  body: string;
+  repositories?: StaleRepository[];
+}
+
+type StaleReading = {
+  cause: LineRepo["refusedBy"];
+  read: number;
+  entry: StaleRepository;
+};
+
+function staleReading(
+  repo: LineRepo,
+  line: LineSnapshot,
+  { nowMs, timeZone }: Clock,
+): StaleReading[] {
+  if (repo.readAt === undefined) return [];
+  const read = Date.parse(repo.readAt);
+  if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
+  const name = retainedSlug(repo) ?? repo.path;
+  const since = (line.ticks ?? []).filter(
+    (t) => Date.parse(t.startedAt) > read,
+  );
+  const busy = since.filter((t) => t.busy.includes(repo.path)).length;
+  const why =
+    repo.refused !== null
+      ? `The newest tick that tried could not read it (${repo.refused}).`
+      : busy === 0
+        ? `None of the ${plural(since.length, "tick")} since read it.`
+        : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
+  const lastRead = clock(read, timeZone);
+  return [
+    {
+      cause: repo.refused === null ? undefined : repo.refusedBy,
+      read,
+      entry: {
+        key: repo.path,
+        name,
+        lastRead,
+        detail: `${why} Its needs, queue and sessions below are as of the ${lastRead} tick.`,
+      },
+    },
+  ];
+}
+
+function staleBanner(
+  key: string,
+  group: [StaleReading, ...StaleReading[]],
+  { nowMs, timeZone }: Clock,
+): StaleBanner {
+  const [{ cause, entry, read }] = group;
+  if (group.length === 1 || cause === undefined) {
+    return {
+      key: entry.key,
+      title: `${entry.name} has not been read since ${entry.lastRead}, ${ago(read, nowMs)} ago.`,
+      body: entry.detail,
+    };
+  }
+  const earliest = Math.min(...group.map(({ read }) => read));
+  const reset = Math.max(
+    ...group
+      .map(({ cause }) => Date.parse(cause?.until ?? ""))
+      .filter(Number.isFinite),
+  );
+  const label =
+    cause.class === "rate-limited"
+      ? "rate limit"
+      : cause.class.replaceAll("-", " ");
+  return {
+    key,
+    title: `${group.length} repositories have not been read since ${clock(earliest, timeZone)} · ${label}`,
+    body: Number.isFinite(reset)
+      ? `The latest known reset is ${stamp(reset, hostDay(nowMs, timeZone), timeZone)}.`
+      : "The newest reads were refused.",
+    repositories: group.map(({ entry }) => entry),
+  };
+}
+
+/** A banner for each stale repository, with shared refusals shown together. */
 export function staleBanners(
   line: LineSnapshot,
   clockNow: Clock,
-): Array<{ key: string; title: string; body: string }> {
-  const { nowMs, timeZone } = clockNow;
-  return line.repos.flatMap((repo) => {
-    if (repo.readAt === undefined) return [];
-    const read = Date.parse(repo.readAt);
-    if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
-    const name = retainedSlug(repo) ?? repo.path;
-    const since = (line.ticks ?? []).filter(
-      (t) => Date.parse(t.startedAt) > read,
-    );
-    const busy = since.filter((t) => t.busy.includes(repo.path)).length;
-    const why =
-      repo.refused !== null
-        ? `The newest tick that tried could not read it (${repo.refused}).`
-        : busy === 0
-          ? `None of the ${plural(since.length, "tick")} since read it.`
-          : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
-    return [
-      {
-        key: repo.path,
-        title: `${name} has not been read since ${clock(read, timeZone)}, ${ago(read, nowMs)} ago.`,
-        body: `${why} Its needs, queue and sessions below are as of the ${clock(read, timeZone)} tick.`,
-      },
-    ];
-  });
+): StaleBanner[] {
+  const groups = new Map<string, [StaleReading, ...StaleReading[]]>();
+  for (const reading of line.repos.flatMap((repo) =>
+    staleReading(repo, line, clockNow),
+  )) {
+    const { cause, entry } = reading;
+    const key =
+      cause === undefined
+        ? JSON.stringify(["repository", entry.key])
+        : JSON.stringify(["cause", cause.class, cause.account]);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [reading]);
+    else group.push(reading);
+  }
+  return Array.from(groups, ([key, group]) =>
+    staleBanner(key, group, clockNow),
+  );
 }
 
 // ---------- sessions ----------

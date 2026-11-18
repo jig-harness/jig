@@ -15,6 +15,7 @@ import type {
   LaunchOutcome,
   NotifyCause,
   NotifyOutcome,
+  ReadFailure,
 } from "./types.ts";
 import type {
   Act,
@@ -300,6 +301,8 @@ export interface LineRepo {
   tracker?: { adapter: string; repository?: string } | null;
   /** Why nothing could be dispatched for it at the newest tick that tried; `null` when it was read. Beside an earlier tick's `runId` when that tick's part of the line was kept because this one could not identify the repository. */
   refused: string | null;
+  /** The structured cause of the newest refusal, when the failed call classified it. */
+  refusedBy?: ReadFailure;
   /** The records that did not read at the newest tick. */
   failedReads: Array<{ record: string; source: string; detail: string }>;
   /** What each record's read said about what this repository has, such as no pickups. */

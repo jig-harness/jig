@@ -73,7 +73,12 @@ import {
   themeSearch,
   useTheme,
 } from "./theme.ts";
-import { type Clock, staleBanners, timerBanner } from "./view.ts";
+import {
+  type Clock,
+  type StaleBanner,
+  staleBanners,
+  timerBanner,
+} from "./view.ts";
 import { WindowPanel } from "./window-panel.tsx";
 
 const COMMAND = "jig dispatch dashboard";
@@ -105,10 +110,12 @@ function Banner({
   body,
   command,
   icon,
+  repositories,
 }: {
   title: string;
   body: string;
   command: boolean;
+  repositories?: StaleBanner["repositories"];
   /** What the title is about, where the icon vocabulary draws it. */
   icon?: IconWord;
 }) {
@@ -122,6 +129,25 @@ function Banner({
           {icon === undefined ? title : <BareWord of={icon}>{title}</BareWord>}
         </h2>
         <p className="sm">{body}</p>
+        {repositories === undefined ? null : (
+          <>
+            <p className="sm">
+              {repositories
+                .map(({ name, lastRead }) => `${name} (${lastRead})`)
+                .join(" · ")}
+            </p>
+            <details>
+              <summary>Read failure details</summary>
+              <ul>
+                {repositories.map(({ key, name, detail }) => (
+                  <li key={key}>
+                    <strong>{name}</strong> {detail}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </>
+        )}
         {command ? <CommandRow /> : null}
       </div>
     </section>
@@ -501,7 +527,13 @@ function Banners({ view }: { view: PageView }) {
         <Banner {...timerBanner(line, view.clock)} command={false} />
       ) : line === null ? null : (
         staleBanners(line, view.clock).map((b) => (
-          <Banner key={b.key} title={b.title} body={b.body} command={false} />
+          <Banner
+            key={b.key}
+            title={b.title}
+            body={b.body}
+            repositories={b.repositories}
+            command={false}
+          />
         ))
       )}
       {coded === null ? null : (

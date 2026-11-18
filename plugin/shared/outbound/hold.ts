@@ -116,6 +116,7 @@ function heldFailure(system: string, first: OutboundFailure): OutboundFailure {
   return outboundFailure(
     first.code,
     `${system} did not answer earlier in this run, so it is not asked again before the next: ${first.reason}`,
+    { account: first.account, until: first.until ?? null },
   );
 }
 
