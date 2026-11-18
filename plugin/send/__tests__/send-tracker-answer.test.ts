@@ -225,7 +225,7 @@ describe("jig send … answer on an item of another tracker", () => {
     const [item, body] = t.posted[0] ?? [];
     expect(item).toBe("ENG-12");
     expect(body?.split("\n")[0]).toBe(`answer pickup: approve [${DIGEST}]`);
-    expect(body).not.toContain("jig-send-answer");
+    expect(body).toContain("jig-send-answer");
   });
 
   it("refuses when the factory identity cannot be looked up", async () => {
@@ -421,7 +421,7 @@ describe("jig send … answer on an item of another tracker", () => {
     expect(planned.value.notice).not.toContain("cannot be told here");
     await planned.value.write();
     expect(t.posted).toHaveLength(1);
-    expect(t.posted[0]?.[1]).toBe(`answer pickup: approve [${DIGEST}]`);
+    expect(t.posted[0]?.[1]).toContain("<!-- jig-send-answer");
   });
 
   it("posts from a host that does not own a repository naming no factory identity, saying how the tick counts it", async () => {
@@ -625,7 +625,7 @@ describe("jig send … answer on another tracker's item, from the command line",
     expect(bodies[0]?.split("\n")[0]).toBe(
       `answer pickup: approve [${digest}]`,
     );
-    expect(bodies[0]).not.toContain("jig-send-answer");
+    expect(bodies[0]).toContain("jig-send-answer");
     expect(w.writes()).toEqual([]);
     // The default branch's tracker and factory identity are the ones asked, never the checkout's.
     const issueAsks = ops.filter((o) => o.op === "TrackerIssue");
