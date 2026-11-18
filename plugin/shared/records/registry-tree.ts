@@ -82,6 +82,14 @@ export const TREE: RecordKind[] = [
   ),
   plain(
     "tree",
+    "process-worktree-owner",
+    "shared/process-worktree-owner.ts",
+    "<git dir>/jig-process-owner.json",
+    1,
+    "Which process owns a checkout a dispatched run is working in, so collection and admission keep to the owner's evidence rather than another run's.",
+  ),
+  plain(
+    "tree",
     "driven-tree",
     "shared/driven-tree.ts",
     "<git dir>/jig-driven-pr.json",
