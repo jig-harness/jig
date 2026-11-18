@@ -35,6 +35,9 @@ if (args[0] === "api" && args[1] === "-i") {
   const [base, query] = path.split("?");
   const file = F + "/api/" + base.replace(/\\//g, "_") + ".json";
   if (fs.existsSync(F + "/api-fail")) { process.stdout.write("HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n{}"); process.exit(1); }
+  // A path's refusal: the status line and headers gh prints with -i, its error output, exit 1.
+  const refusal = F + "/api-refuse/" + base.replace(/\\//g, "_") + ".json";
+  if (fs.existsSync(refusal)) { const r = JSON.parse(fs.readFileSync(refusal, "utf8")); process.stdout.write(r.head + "\\r\\n\\r\\n{}"); process.stderr.write(r.stderr + "\\n"); process.exit(1); }
   if (!fs.existsSync(file)) { process.stdout.write("HTTP/2.0 404 Not Found\\r\\n\\r\\n{}"); process.exit(1); }
   let body = JSON.parse(fs.readFileSync(file, "utf8"));
   if (Array.isArray(body) && query !== undefined) {
@@ -94,6 +97,8 @@ export interface AskWorld {
   env: Record<string, string>;
   /** What `gh api -i <path>` answers for `path` (without its query). */
   api(path: string, body: unknown): void;
+  /** Make `gh api -i <path>` fail: `head` is the status line and headers it prints, `stderr` gh's error output. */
+  refuse(path: string, head: string, stderr: string): void;
   /** Every forge call the fake answered. */
   calls(): string[];
   /** Every write the fake took (`gh pr edit`, a comment posted), as its arguments. */
@@ -126,7 +131,14 @@ export function askWorld(): AskWorld {
   const dir = join(root, "fake");
   const repo = join(root, "checkout");
   const away = join(root, "away");
-  for (const d of [home, bin, join(dir, "api"), repo, away])
+  for (const d of [
+    home,
+    bin,
+    join(dir, "api"),
+    join(dir, "api-refuse"),
+    repo,
+    away,
+  ])
     mkdirSync(d, { recursive: true });
   writeFakeProgram(join(bin, "gh"), FAKE_GH);
   writeFileSync(join(dir, "gh-calls.log"), "");
@@ -179,6 +191,11 @@ export function askWorld(): AskWorld {
       writeFileSync(
         join(dir, "api", `${path.replace(/\//g, "_")}.json`),
         JSON.stringify(body),
+      ),
+    refuse: (path, head, stderr) =>
+      writeFileSync(
+        join(dir, "api-refuse", `${path.replace(/\//g, "_")}.json`),
+        JSON.stringify({ head, stderr }),
       ),
     calls: () =>
       readFileSync(join(dir, "gh-calls.log"), "utf8")

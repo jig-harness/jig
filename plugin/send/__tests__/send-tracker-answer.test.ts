@@ -24,6 +24,7 @@ import { closeStateDb } from "../../dispatch/lib/state.ts";
 import type { Action } from "../../dispatch/lib/types.ts";
 import { reading } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
+import { OutboundError } from "../../shared/outbound/failure.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type {
   Tracker,
@@ -261,6 +262,19 @@ describe("jig send … answer on an item of another tracker", () => {
       ).toContain(says);
       expect(t.posted).toEqual([]);
     }
+  });
+
+  it("refuses, writing nothing, naming why the tracker's user was not read", async () => {
+    const t = tracker(DANA, {
+      viewer: async () => {
+        throw new OutboundError("unauthorized", "HTTP 401");
+      },
+    });
+    const planned = await plan(t);
+    expect(planned !== null && !planned.ok ? planned.failure.reason : "").toBe(
+      "the login this machine is signed in as on the tracker was not read, so nothing was sent: the tracker refused the credential (HTTP 401); sign in again, then send again",
+    );
+    expect(t.posted).toEqual([]);
   });
 
   it("refuses, writing nothing, on the host that owns the repository, whether or not it names a factory identity", async () => {
