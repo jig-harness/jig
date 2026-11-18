@@ -52,6 +52,8 @@ export interface FollowupOutcome {
   routine?: string | null;
   /** Whether the attempt was itself a run again (its facts carry the recovery tag); absent on a row that kept none. */
   rerun?: boolean;
+  /** Whether the attempt parked on a decision for a person; absent when it did not. */
+  parked?: boolean;
   /** Why the row's `asked` column does not read: it does not parse, is not a mapping, or names another record. Such a row is a person's, never read as an earlier release's. */
   unreadable?: string;
 }
@@ -59,7 +61,7 @@ export interface FollowupOutcome {
 /** What a row keeps of the pass's question, as its `asked` column holds it. */
 export type Asked = Pick<
   FollowupOutcome,
-  "question" | "routine" | "rerun" | "unreadable"
+  "question" | "routine" | "rerun" | "parked" | "unreadable"
 >;
 
 /** The rows this process has warned of, so a row read every tick warns once and is written at debug level after. */
@@ -101,16 +103,19 @@ function parseAsked(text: string | null, record: string): Asked {
       ? {}
       : { routine: value.routine as string | null }),
     rerun: value.rerun as boolean,
+    ...(value.parked === true ? { parked: true } : {}),
   };
 }
 
 /** Why a mapping in the `asked` column does not hold the fields a row keeps; `null` when it does. */
 function invalidAsked(value: Record<string, unknown>): string | null {
-  const { question, routine, rerun } = value;
+  const { question, routine, rerun, parked } = value;
   if (question !== null && typeof question !== "string")
     return "its question is neither text nor null";
   if (typeof rerun !== "boolean")
     return "it does not say whether the attempt was a run again";
+  if (parked !== undefined && typeof parked !== "boolean")
+    return "its parked flag is not a boolean";
   const unlisted =
     typeof routine !== "string" || routineQuestion(routine) === undefined;
   if (routine !== undefined && routine !== null && unlisted)
@@ -151,6 +156,7 @@ export function askedBy(r: ReadRecord): Asked {
       ? { routine: routineClassOf(question) }
       : {}),
     rerun: isRerun(r.record),
+    ...(r.result === "parked" ? { parked: true } : {}),
   };
 }
 
@@ -229,6 +235,7 @@ export function settleFollowups(
       written.question === asked.question &&
       written.routine === asked.routine &&
       written.rerun === asked.rerun &&
+      written.parked === asked.parked &&
       written.unreadable === asked.unreadable
     )
       continue;

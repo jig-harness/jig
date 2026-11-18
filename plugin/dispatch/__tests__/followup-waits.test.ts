@@ -342,6 +342,15 @@ it("reads a question as a wait only when it names a rate limit and carries no ro
     created: base.createdAt,
   };
   expect(routineRerun(outcome, [parked])).toBeNull();
+  // The launch record is gone: the outcome row's own parked flag still holds the guard.
+  const tagged = {
+    ...outcome,
+    question: "[person-owed] who lifts the tracker's rate limit?",
+    routine: "person-owed",
+    rerun: false,
+  };
+  expect(routineRerun({ ...tagged, parked: true }, [])).toBeNull();
+  expect(routineRerun(tagged, [])).not.toBeNull();
 });
 
 it("counts, at a pass's exit, an earlier wait whose wrapper died before writing its exit", () => {

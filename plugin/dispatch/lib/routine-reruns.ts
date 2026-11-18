@@ -67,7 +67,7 @@ function ownedElsewhere(
   outcome: FollowupOutcome,
   found: ReadRecord | undefined,
 ): boolean {
-  if (outcome.rerun === true) return true;
+  if (outcome.rerun === true || outcome.parked === true) return true;
   if (found === undefined) return false;
   return (
     unwrittenResult(found) ||
