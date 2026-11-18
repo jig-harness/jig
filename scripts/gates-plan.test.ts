@@ -211,6 +211,9 @@ test("a test whose imports cannot be read stops the selection", async () => {
   const { dispatchTestPaths } = await import("./dispatch-gates.ts");
   const root = changedRepository("gates:\n  dispatch_fast: true\n");
   writeFileSync(join(root, "other/broken.test.ts"), "const = ;\n");
+  git(root, "add", "other/broken.test.ts");
+  git(root, "commit", "-qm", "an unchanged test the parser cannot read");
+  git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
   expect(() => dispatchTestPaths(root)).toThrow("other/broken.test.ts");
 });
 
