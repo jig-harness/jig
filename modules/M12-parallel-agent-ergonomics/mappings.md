@@ -41,6 +41,7 @@ point differs per tool.
 | Herdr | Jig's Herdr plugin ([`tools/herdr/plugin`](../../tools/herdr/README.md#the-worktree-hooks)) answers `worktree.created` by running `.config/worktree-hooks/create` inside the worktree the event names (`data.worktree.path` in `HERDR_PLUGIN_EVENT_JSON`); `tools/herdr/workspace.ts open` waits for it before starting an agent, and runs it itself where the plugin is not installed | `tools/herdr/workspace.ts remove` resolves the worktree, runs `.config/worktree-hooks/remove` inside it and parks its reflection findings on the machine that holds it, and removes it through `herdr worktree remove` only when both succeed | Herdr runs a plugin's commands in the plugin's own directory, so a create hook that read its working directory would give every worktree the same identity and port slot; `worktree.removed` fires after the checkout is gone, so it can only notify, never park |
 | Orca | the [Orca workspace tool](../../tools/orca/README.md)'s `open` (the launcher's `orca` provider) runs `.config/worktree-hooks/create` inside the new worktree once its branch is named, before the agent starts, and marks the run in the worktree's git directory so it runs once; a worktree created in the Orca app runs Orca's own setup hook instead (Settings → Repository, or `scripts.setup` in the repository's `orca.yaml`), which can name the same file | `tools/orca/workspace.ts remove` runs `.config/worktree-hooks/remove` inside the worktree, parks its reflection findings when the clone is on this machine, and removes it through `orca worktree rm` only when both succeed; Orca's own delete runs an `orca.yaml` archive hook only when asked (`--run-hooks`) and has no other pre-remove point | Orca names a new branch after the worktree under its own prefix, so the tool renames it before the hook runs; Orca reads the branch from git and follows |
 | Worktrunk | a blocking `pre-start` hook in the repository's `.config/wt.toml` (`pre-start = ".config/worktree-hooks/create"`); Worktrunk runs it inside the new worktree, before any `post-start` hook runs | a blocking `pre-remove` hook (`pre-remove = ".config/worktree-hooks/remove"`) runs inside the worktree being removed, before it is deleted; its failure aborts the removal, so unsent reflection findings are parked or the worktree stays, provided the hook ran | Worktrunk asks before it first runs a repository's project hooks, and again when one changes; declining skips every project command for the operation and the removal continues, so the hook must be approved before the first removal and after each change to it, because a refusal is not a removal veto and deletes the git directory holding unsent findings; `post-remove` runs in the primary worktree after the checkout is gone, so it can only notify, never park |
+| [T3 Code](https://t3.codes/) — watched | a script in the repository's `t3.json` with `"runOnWorktreeCreate": true` and `"command": ".config/worktree-hooks/create"`; T3 Code runs it inside the new worktree (with `T3CODE_PROJECT_ROOT` and `T3CODE_WORKTREE_PATH` set) once the script is imported into the project's actions (Settings → Projects → Actions), and `"async": false` holds the agent until the hook exits | none: T3 Code offers no point before a worktree is removed, so a wrapper runs `.config/worktree-hooks/remove` inside the worktree, parks its unsent reflection findings, and removes it only when both succeed; set the project's automatic worktree cleanup to Off, since a cleanup policy removes worktrees without the hook | T3 Code reads a `t3.json` script only when someone imports it, per environment, so the file is the shared declaration and the import a step each environment takes; a `runOnSettle` script runs at every settle and cannot veto a removal; worktrees isolate files, not ports or databases, which the create hook's port slot covers; Jig ships no T3 Code provider, and its revisit conditions are assessed below |
 | [Rex](https://www.superlogical.com/rex/docs) — watched | no worktree concept: a wrapper would create the worktree, run its create hook inside it, then open a Rex session in it | a wrapper would run the remove hook inside the worktree, park its unsent reflection findings, and remove it only when both succeed | Jig ships no Rex provider; its [program status](../../GLOSSARY.md) and provider revisit conditions are assessed below |
 | another [workspace runtime](../../GLOSSARY.md) (such as Conductor) | the runtime's post-create / workspace-setup hook | the runtime's pre-remove / teardown hook | the runtime already brackets a session — the natural home for both |
 | `direnv` / per-directory env | `.envrc` calls `allocate-port.ts` on entry and exports `PORT` | none (no teardown event) | derived ports mean no cleanup is needed |
@@ -83,6 +84,48 @@ and in `steer`'s check that the agent still waits before sending an answer.
 Rex exposes status records through the terminal block's `program_status`
 method ([Lua API](https://www.superlogical.com/rex/docs/reference/lua)),
 reachable through `block.method` in its server API.
+
+### T3 Code: conditions for reconsidering a provider
+
+Assessment dated 2026-11-18: [T3 Code](https://t3.codes/) (MIT licence,
+`pingdotgg/t3code`) is a candidate [workspace runtime](../../GLOSSARY.md),
+with no supported Jig integration beyond the worktree hooks above. It is a
+server that runs Claude Code, Codex, Cursor, OpenCode and other agents in a
+worktree per thread, with web, desktop and phone clients. What it offers
+Jig's tooling today:
+
+- A seam for a [workspace provider](../../GLOSSARY.md): a thread opens in a
+  worktree of its own, and the repository's `t3.json` script runs the create
+  hook there.
+- [MCP](../../GLOSSARY.md) thread tools for agents it did not start
+  (`t3_thread_launch`, `t3_thread_wait`, `t3_thread_read`, `t3_thread_list`),
+  and the same tools on the host as `t3 thread start`, `send`, `show` and
+  `list` ([outside agents](https://github.com/pingdotgg/t3code/blob/main/docs/user/outside-agents.md)).
+- A provider instance per subscription account: each Claude instance names
+  its own `CLAUDE_CONFIG_DIR`
+  ([Claude provider](https://github.com/pingdotgg/t3code/blob/main/docs/user/providers-claude.md)).
+- A headless server, `t3 serve`, or `t3 up` as a background service
+  ([remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)).
+
+Reconsider a provider when each prerequisite can be checked:
+
+- A stable release is available; T3 Code is at 0.1.x, with nightly
+  prereleases.
+- It offers a hook before a worktree is removed, so the remove hook can park
+  reflection findings without a wrapper and cleanup policies cannot bypass
+  it.
+- Usage per subscription account is readable by a program. Its usage view
+  reports token history and estimated cost, not the account's limit and
+  reset, which the dispatcher's [wall](../../GLOSSARY.md) needs.
+- Jig's plugin skills and hooks are confirmed to load in its threads, under
+  each provider instance's configuration directory.
+
+The first integration would be a workspace provider for the
+[launcher](../../tools/launcher/README.md#providers). The dispatcher's
+[session runtime](../../GLOSSARY.md) would follow once its account usage is
+readable and the dispatcher's subscription-account binding
+([ADR-0011](../../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md))
+can map onto its provider instances.
 
 ## Package managers — the wrong-root-install footgun
 
