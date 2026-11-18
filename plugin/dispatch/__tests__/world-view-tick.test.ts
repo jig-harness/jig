@@ -344,7 +344,6 @@ describe("each forge fact's freshness class", () => {
     ({ number, class: cls }) as unknown as DrivenPr;
   const read = (drives: DrivenPr[], merged: number[] = []): ForgeRead => ({
     ok: true,
-    openReadable: true,
     open: drives.map((d) => ({
       ...openPr(d.number, `feature/${d.number}`),
       labels: [],

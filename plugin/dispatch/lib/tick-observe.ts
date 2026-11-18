@@ -432,7 +432,6 @@ export async function observeRepo(
           });
           const none: ForgeRead = {
             ok: false,
-            openReadable: false,
             open: [],
             openReadable: false,
             read: new Set(),
