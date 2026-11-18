@@ -235,7 +235,7 @@ describe("the comparison with the integration branch", () => {
     });
     const fields = {
       ...FIELDS,
-      carriedBy: spec("string"),
+      carriedBy: { ...spec("string"), comparedAs: "carriers" as const },
       fieldRequired: spec("boolean"),
     };
     const chapter = (rows: Record<string, unknown>[]) =>
@@ -322,12 +322,15 @@ describe("the comparison with the integration branch", () => {
     expect(
       check(scratchRepo([emptied], [sometimesOnly]), [sometimesOnly]).problems,
     ).toEqual([]);
-    const alwaysOnly = chapter([
+    // A carrier the base names elsewhere in the field may not join as always.
+    const tickElsewhere = { ...second, carriedBy: "tick (sometimes)" };
+    const noneHere = chapter([{ ...first, carriedBy: "" }, tickElsewhere]);
+    const alwaysHere = chapter([
       { ...first, carriedBy: "tick (always)" },
-      second,
+      tickElsewhere,
     ]);
     expect(
-      check(scratchRepo([emptied], [alwaysOnly]), [alwaysOnly]).problems,
+      check(scratchRepo([noneHere], [alwaysHere]), [alwaysHere]).problems,
     ).toHaveLength(1);
   });
 

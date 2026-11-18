@@ -117,6 +117,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: true,
     required: true,
     identifies: false,
+    comparedAs: "names",
     description:
       "For a verb, the stations whose addresses take it, each separated from the next by a comma and a space. Null for a station.",
   },

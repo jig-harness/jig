@@ -1,6 +1,7 @@
 import { expect, it } from "bun:test";
 import {
   changed,
+  leftBehindBusy,
   pendingBatchBlock,
   servedAuthorization,
 } from "../lib/actions/pickup.ts";
@@ -73,6 +74,39 @@ it("holds a secondary item when another session appears before the batch launch"
     servedPerson: "alex",
   });
   expect("why" in result).toBe(true);
+});
+it("starts a member the ended batch left out, though an agent runs in the workspace still joined to it", async () => {
+  const { state, ctx } = guards();
+  state.records = [
+    {
+      record: {
+        id: "2026-11-09T00-00-00-000Z-batch",
+        action: "pickup",
+        repo: SLUG,
+        item: "#2",
+        released: false,
+        createdAt: "2026-11-09T00:00:00.000Z",
+        workspace: { id: "rival", path: "/rival" },
+        batchItems: [{ key: "#2" }, { key: "#3" }, { key: "#4" }],
+        claimedItems: ["#3", "#4"],
+      } as unknown as LaunchRecord,
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-09T01:00:00Z", code: 0, signal: null },
+        process: null,
+      },
+      result: "done",
+    } as ReadRecord,
+  ];
+  const result = await changed(state, repo, ctx, "#2", {
+    servedPerson: "alex",
+  });
+  expect("why" in result ? result.why : null).toBeNull();
+  // Its branch may still be checked out there: it then waits for that agent.
+  expect(await leftBehindBusy(state, repo, ctx, "#2", "/rival")).toContain(
+    "an agent is running",
+  );
+  expect(await leftBehindBusy(state, repo, ctx, "#2", "/fresh")).toBeNull();
 });
 it("refuses replay on a secondary competing session or a removed served person", async () => {
   const { state, ctx, record } = guards();

@@ -8,8 +8,8 @@
  * A run is found in its vendor's transcripts by its session id: Claude Code
  * takes the one the tick minted (`--session-id`, the record's `sessionId`)
  * and writes `<config dir>/projects/<project>/<session>.jsonl`; Codex takes
- * none and prints the one it chose (`session id: <uuid>`), which the wrapper
- * keeps on the exit (`session`), and writes
+ * none and prints the one it chose in its header or JSON startup event.
+ * The wrapper keeps it on the exit (`session`). Codex writes
  * `<CODEX_HOME>/sessions/<yyyy>/<mm>/<dd>/rollout-<time>-<session>.jsonl`.
  * A Codex run that printed no session id has no transcript Jig can find.
  *
@@ -96,14 +96,29 @@ function withoutColor(text: string): string {
     .join("");
 }
 
-/** The session id a Codex pass printed at its start (`session id: <uuid>`); `null` when it printed none. */
+/** Read the session ID from a Codex text header or JSON startup event. */
 export function codexSessionIn(text: string | undefined): string | null {
   for (const raw of (text ?? "").split(/\r?\n/)) {
     const line = withoutColor(raw).trim();
-    const m = /^session id:\s*(\S+)$/i.exec(line);
-    if (m?.[1] !== undefined && SESSION.test(m[1])) return m[1].toLowerCase();
+    const id = /^session id:\s*(\S+)$/i.exec(line)?.[1] ?? codexThreadId(line);
+    if (id !== null && SESSION.test(id)) return id.toLowerCase();
   }
   return null;
+}
+
+function codexThreadId(line: string): string | null {
+  if (!line.startsWith("{") || !line.includes('"thread.started"')) return null;
+  try {
+    const event: unknown = JSON.parse(line);
+    return isMapping(event) &&
+      event.type === "thread.started" &&
+      typeof event.thread_id === "string"
+      ? event.thread_id
+      : null;
+  } catch (error) {
+    swallow(error, "Codex's startup event does not read as JSON");
+    return null;
+  }
 }
 
 /** Claude Code's transcript of `session` under `configDir`, in any project. */

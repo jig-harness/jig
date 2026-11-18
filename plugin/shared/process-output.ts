@@ -31,20 +31,66 @@ export function accountingStderr(mode: "pipe" | "inherit" | "ignore" = "pipe") {
 }
 
 interface OutputOptions {
+  stdout?: "pipe" | "inherit" | "ignore";
   stderr?: "pipe" | "inherit" | "ignore";
   maxBufferBytes?: number;
   onOutput?: (stream: "stdout" | "stderr", text: string) => void;
+  onInheritedOutput?: (stream: "stdout" | "stderr", bytes: Buffer) => void;
   onChunk?: (
     stream: "stdout" | "stderr",
     bytes: number,
     captured: boolean,
   ) => void;
 }
+
+/** Pipe observed streams so they can be forwarded without being captured. */
+export function observedStdio(
+  options: OutputOptions & { stdin?: string },
+): ("pipe" | "inherit" | "ignore")[] {
+  const mode = (value: "pipe" | "inherit" | "ignore") =>
+    value === "inherit" && options.onInheritedOutput !== undefined
+      ? "pipe"
+      : value;
+  return [
+    options.stdin === undefined ? "ignore" : "pipe",
+    mode(options.stdout ?? "pipe"),
+    mode(accountingStderr(options.stderr)),
+  ];
+}
 interface OutputCancellation {
   timedOut(): boolean;
   signalTree(signal: NodeJS.Signals): void;
   settle(code: number): void;
   timers: ProcessTimers;
+}
+
+/** Give observed output written before exit a brief drain without waiting on other pipe writers. */
+const OBSERVED_DRAIN_MS = 100;
+
+function closeObservedOutput(
+  child: ChildProcess,
+  streams: NonNullable<ChildProcess["stdout"]>[],
+  hasCapturedOutput: boolean,
+  timers: ProcessTimers,
+): void {
+  if (streams.length === 0) return;
+  child.once("exit", () => {
+    // With inherited output the leader's exit ends its deadline. Preserve
+    // that even when draining our extra pipes, and leave cancellation
+    // escalation and regular captured streams to their existing handlers.
+    if (!hasCapturedOutput) clearTimeout(timers.kill);
+    const drain = setTimeout(() => {
+      // A descendant can retain an inherited pipe after the leader exits.
+      // We must bound that wait, but do not make a dropped diagnostic silent.
+      for (const stream of streams) {
+        console.error(
+          "jig: inherited output forwarding ended before the stream closed; later diagnostics may be incomplete",
+        );
+        stream.destroy();
+      }
+    }, OBSERVED_DRAIN_MS);
+    child.once("close", () => clearTimeout(drain));
+  });
 }
 
 /** A bounded marker scan relays accounting failure without retaining diagnostics. */
@@ -107,10 +153,23 @@ export function captureProcessOutput(
     options.onChunk?.(stream, length, captured);
     if (bytes > (options.maxBufferBytes ?? MAX_BUFFER_BYTES)) overflow();
   };
-  child.stdout?.setEncoding("utf8");
-  child.stderr?.setEncoding("utf8");
-  child.stdout?.on("data", (text: string) => receive("stdout", text));
-  child.stderr?.on("data", (text: string) => receive("stderr", text));
+  const observed: NonNullable<ChildProcess["stdout"]>[] = [];
+  let hasCapturedOutput = false;
+  for (const stream of ["stdout", "stderr"] as const) {
+    const source = child[stream];
+    if (source === null) continue;
+    const observe = options.onInheritedOutput;
+    if (options[stream] === "inherit" && observe !== undefined) {
+      observed.push(source);
+      source.on("data", (chunk: Buffer) => observe(stream, chunk));
+      source.pipe(process[stream], { end: false });
+    } else {
+      hasCapturedOutput = true;
+      source.setEncoding("utf8");
+      source.on("data", (text: string) => receive(stream, text));
+    }
+  }
+  closeObservedOutput(child, observed, hasCapturedOutput, cancellation.timers);
   return {
     get stdout() {
       return stdout;

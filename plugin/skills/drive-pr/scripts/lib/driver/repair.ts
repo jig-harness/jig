@@ -1,4 +1,3 @@
-import { runObservedPass } from "../driver-observation.ts";
 /** Dispatch bounded repair passes and record quota parking with the same ownership controls as review passes. */
 import {
   type RepairTask,
@@ -13,12 +12,13 @@ import { NO_BACKGROUND_TASKS } from "../pass-command.ts";
 import { refreshAccountIdentityBeforeSpawn } from "./identity.ts";
 
 import { driverRuntime } from "./runtime.ts";
+import { prepareQuotaSpawn, reportPreparedQuotaSpawn } from "../quota/index.ts";
 
 import { DRIVER_REPORT_VARIABLE } from "../../../../../shared/driver-report.ts";
 import {
-  notePassStarted,
   repairRound,
   ROUND_VARIABLE,
+  runRoundPass,
   withPassRound,
 } from "./pass-round.ts";
 
@@ -176,6 +176,11 @@ export async function runRepairPass(
   // last await before the spawn.
   const pr = process.env.DRIVE_PR_TARGET ?? "";
   const round = await repairRound(pr);
+  const env = withPassRound(passEnv({ task, detail, ...ci }), round);
+  // Reuse the Claude session argument handling without applying quota
+  // accounting to repairs.
+  const prepared = prepareQuotaSpawn(agent, env);
+  reportPreparedQuotaSpawn(agent, prepared);
   // Re-checked HERE, after the identity refresh above, not only by the
   // caller before this function was invoked: that refresh is itself an await
   // a mailbox directive can land during, so the caller's own pre-dispatch
@@ -191,18 +196,16 @@ export async function runRepairPass(
     return { dispatched: false, resumed: false, code: mailboxBeforeSpawn };
   if (mailboxBeforeSpawn === "resumed")
     return { dispatched: false, resumed: true };
+  const session = prepared?.correlation.sessionId ?? null;
   const res = await span("pass", { kind: "repair" }, () =>
-    runObservedPass(agent, {
-      stdout: "inherit",
-      stderr: "inherit",
-      detached: true,
-      env: withPassRound(passEnv({ task, detail, ...ci }), round),
-      ...(deadlineSec > 0 ? { timeoutSec: deadlineSec } : {}),
-      onSpawn: (h) => {
-        driverRuntime.activePass = h;
-        notePassStarted(pr, round, null);
+    runRoundPass(
+      prepared?.argv ?? agent,
+      { pr, round, session },
+      {
+        env: prepared?.env ?? env,
+        ...(deadlineSec > 0 ? { timeoutSec: deadlineSec } : {}),
       },
-    }),
+    ),
   );
   // Captured before `activePass` is cleared, same as the ordinary-pass
   // path's own `passHandle` — see its comment for why this has to happen
