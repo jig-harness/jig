@@ -22,6 +22,7 @@ import {
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 import {
   DRIVE_PR_AREA,
+  GATE_SET_MATRIX,
   NIGHTLY_TRIGGERS,
   PR_SUITE,
   PR_TRIGGERS,
@@ -1015,16 +1016,27 @@ test("POSIX regex classes retain tracker pattern matching", async () => {
 test("the test step leaves out POSIX-only suites on Windows and separate suites on request", async () => {
   const {
     POSIX_ONLY_SUITES,
-    SEPARATE_SUITES,
     SKIP_SEPARATE_ENV,
+    separateSuitesOf,
     skippedSuites,
     testArgs,
   } = await import("./gates.ts");
-  expect(skippedSuites("linux", {})).toEqual([]);
-  expect(skippedSuites("darwin", { [SKIP_SEPARATE_ENV]: "1" })).toEqual(
-    SEPARATE_SUITES,
+  const SEPARATE_SUITES = separateSuitesOf(root);
+  const separate = () => SEPARATE_SUITES;
+  // The catalog is read only when the environment asks to skip its suites.
+  expect(
+    skippedSuites("linux", {}, () => {
+      throw new Error("read");
+    }),
+  ).toEqual([]);
+  expect(
+    skippedSuites("darwin", { [SKIP_SEPARATE_ENV]: "1" }, separate),
+  ).toEqual(SEPARATE_SUITES);
+  const windows = skippedSuites(
+    "win32",
+    { [SKIP_SEPARATE_ENV]: "1" },
+    separate,
   );
-  const windows = skippedSuites("win32", { [SKIP_SEPARATE_ENV]: "1" });
   for (const suite of [...POSIX_ONLY_SUITES, ...SEPARATE_SUITES])
     expect(windows).toContain(suite);
   expect(testArgs([], ["**/fixtures/**"])).toEqual(["run", "test"]);
@@ -1281,6 +1293,11 @@ function suiteJobShapeAllowed(job: SuiteJob, contract: SuiteContract) {
   if (strategy === undefined) return true;
   if (!onlyKeys(strategy, SUITE_STRATEGY_KEYS)) return false;
   const matrix = strategy.matrix;
+  // The gate-set job's matrix is the one the change-area resolution writes,
+  // which always holds the checks leg a step selected by `stepIf` runs in
+  // (scripts/area-validation.test.ts).
+  if (contract.stepIf !== undefined && (matrix as unknown) === GATE_SET_MATRIX)
+    return true;
   return (
     matrix === undefined ||
     (Object.keys(matrix).length === 1 &&
@@ -1348,7 +1365,7 @@ function workflowRunsSuite(
 }
 
 test("a suite counts as run only by an allowlisted job and command", async () => {
-  const { SEPARATE_SUITES } = await import("./gates.ts");
+  const SEPARATE_SUITES = (await import("./gates.ts")).separateSuitesOf(root);
   for (const suite of SEPARATE_SUITES) {
     const dir = suite.replace(/\*\*$/, "");
     const sharded = `bun run test --shard=\${{ matrix.shard }}/4 ./${dir}`;
@@ -1502,7 +1519,7 @@ test("a suite's step condition counts only where the contract names it, and only
 // The same holds one scope up: a workflow-level setting reaches every step of
 // every job.
 test("a suite counts as run only in an allowlisted workflow", async () => {
-  const { SEPARATE_SUITES } = await import("./gates.ts");
+  const SEPARATE_SUITES = (await import("./gates.ts")).separateSuitesOf(root);
   for (const suite of SEPARATE_SUITES) {
     const dir = suite.replace(/\*\*$/, "");
     const sharded = `bun run test --shard=\${{ matrix.shard }}/4 ./${dir}`;
@@ -1574,8 +1591,34 @@ function skipsSeparate(job: SuiteJob | undefined, env: string): boolean {
   );
 }
 
+// The catalog is one side of the separate suites and the workflows the
+// other: marking another area's suite separate, with no job that runs it,
+// fails the check below.
+test("a suite the catalog marks separate without a CI job of its own fails the workflow check", async () => {
+  const { load } = await import("js-yaml");
+  const { separateSuites } = await import("./area-validation.ts");
+  const { validDocument } = await import("./change-areas.ts");
+  const doc = structuredClone(validDocument(root));
+  const gc = doc.areas.gc;
+  if (gc?.validation === undefined) throw new Error("no gc validation");
+  gc.validation.separateSuite = true;
+  const suites = separateSuites(doc);
+  expect(suites).toContain("plugin/gc/**");
+  const workflow = load(
+    readFileSync(join(root, ".github/workflows/gates.yml"), "utf8"),
+  ) as SuiteWorkflow;
+  const [job, contract] = suiteRunner(
+    "gates.yml",
+    "gate-set",
+    "plugin/gc/**",
+    PR_TRIGGERS,
+  );
+  expect(workflowRunsSuite(workflow, job, "plugin/gc/", contract)).toBe(false);
+});
+
 test("every suite the gate job leaves out runs in a CI job of its own or a selected step", async () => {
-  const { SEPARATE_SUITES, SKIP_SEPARATE_ENV } = await import("./gates.ts");
+  const { separateSuitesOf, SKIP_SEPARATE_ENV } = await import("./gates.ts");
+  const SEPARATE_SUITES = separateSuitesOf(root);
   const { load } = await import("js-yaml");
   const read = (name: string) =>
     load(

@@ -21,6 +21,9 @@ export const PR_SUITE: SuiteContract = {
   needs: "areas",
   if: `\${{ ${DRIVE_PR_AREA} && ${NOT_HELD} && ${NOT_A_MIRROR} }}`,
 };
+// The gate-set job's legs are the matrix the change-area resolution writes
+// (scripts/area-validation.ts), which always holds the checks leg.
+export const GATE_SET_MATRIX = `\${{ fromJSON(needs.areas.outputs.matrix) }}`;
 export const WEBSITE_STEP = `\${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') && matrix.part == 'checks' }}`;
 export const PR_WEBSITE_SUITE: SuiteContract = {
   needs: "areas",

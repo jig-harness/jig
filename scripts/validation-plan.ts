@@ -1,7 +1,11 @@
 // Jig's review and drive adapter: changed paths arrive one per line on stdin.
-// Validate Jig's catalog extensions before using the shared routing projection.
+// Validate Jig's catalog extensions, then print the shared routing projection
+// with Jig's validation plan (scripts/area-validation.ts): the touched areas'
+// profiles, own tests and generated-file checks, the whole gate set when a
+// changed file no own test covers.
 import { cli } from "../lib/cli.ts";
-import { validCatalog, resolveAreas } from "./change-areas.ts";
+import { validDocument, resolveAreas } from "./change-areas.ts";
+import { jigValidation } from "./area-validation.ts";
 import { toResolution } from "../plugin/skills/change-areas/scripts/lib/emit.ts";
 
 if (import.meta.main)
@@ -9,30 +13,16 @@ if (import.meta.main)
     const files = [
       ...new Set((await Bun.stdin.text()).split(/\r?\n/).filter(Boolean)),
     ];
-    const areas = validCatalog(process.cwd());
-    const resolution = resolveAreas(files, areas);
+    const doc = validDocument(process.cwd());
+    const resolution = resolveAreas(files, doc.areas);
     const plan = toResolution(
       {
         changedFiles: files,
-        catalog: { areas },
+        catalog: doc,
         seed: new Set(resolution.seedAreas),
         resolved: new Set(resolution.areas),
       },
-      (ctx) => ({
-        sourceAreas: [...ctx.seed].sort((a, b) => a.localeCompare(b)),
-        profiles: [],
-        localChecks: ["bun run gates"],
-        verificationChecks: ["bun run gates"],
-        testbox: {
-          required: false,
-          command: null,
-          warmupCommand: null,
-          reason: null,
-          requiredBy: [],
-        },
-        repositoryHooksRequired: true,
-        githubCiRequired: true,
-      }),
+      jigValidation,
     );
     console.log(JSON.stringify(plan));
     return 0;

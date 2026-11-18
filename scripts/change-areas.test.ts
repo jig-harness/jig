@@ -37,7 +37,6 @@ test("a change seeds its own areas and every area that implies-by closure adds",
   expect(resolveAreas(["core/index.ts"], catalog)).toMatchObject({
     seedAreas: ["core"],
     areas: ["app", "core"],
-    code: true,
   });
   // Two hops: build implies core, core implies app.
   expect(resolveAreas(["package.json"], catalog).areas).toEqual([
@@ -48,19 +47,18 @@ test("a change seeds its own areas and every area that implies-by closure adds",
   expect(resolveAreas(["app/main.ts"], catalog).areas).toEqual(["app"]);
 });
 
-test("a documentation-only change is not code, and an unmatched file is", () => {
+test("a documentation change seeds its area, and an unmatched file is reported", () => {
   expect(resolveAreas(["README.md", "docs/a/b.md"], catalog)).toMatchObject({
     areas: ["docs"],
-    code: false,
+    unmatched: [],
   });
   // `*.md` matches the root only.
   expect(resolveAreas(["other/README.md"], catalog).areas).toEqual(["other"]);
   expect(resolveAreas(["stray.txt"], catalog)).toMatchObject({
     areas: [],
     unmatched: ["stray.txt"],
-    code: true,
   });
-  expect(resolveAreas([], catalog)).toMatchObject({ areas: [], code: false });
+  expect(resolveAreas([], catalog)).toMatchObject({ areas: [], unmatched: [] });
 });
 
 test("files no area matches are reported", () => {
@@ -181,18 +179,6 @@ test("Jig's catalog runs the drive-pr suite for what it depends on, and not for 
     "scripts/check-md-links.ts",
   ])
     expect(areas(file)).not.toContain("drive-pr");
-  expect(
-    resolveAreas(
-      ["README.md", "modules/M1-gates-enforcement-ladder/mappings.md"],
-      jig,
-    ).code,
-  ).toBe(false);
-  expect(
-    resolveAreas(
-      ["modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts"],
-      jig,
-    ).code,
-  ).toBe(true);
 });
 
 test("a catalog that repeats an area is refused, not read as its last copy", () => {

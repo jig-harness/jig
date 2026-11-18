@@ -4,9 +4,10 @@
 // `--check` validates the catalog and that every repository file belongs to
 // an area: exit 1 on a violation, 2 when the catalog cannot be read.
 // `--base <ref>` resolves the files changed since the merge base with <ref>
-// to areas and prints the resolution as JSON; under GitHub Actions it also
-// writes the `areas` and `code` step outputs the CI workflow selects jobs by.
-// `--all` resolves to every area.
+// to areas and prints the resolution as JSON, with the validation plan and
+// CI's gate-set matrix (scripts/area-validation.ts); under GitHub Actions it
+// also writes the `areas` and `matrix` step outputs the CI workflow selects
+// jobs and test legs by. `--all` resolves to every area and every shard.
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
@@ -31,12 +32,23 @@ import {
   defaultGitRunner,
   matchSeedAreas,
 } from "../plugin/skills/change-areas/scripts/lib/resolve.ts";
+import {
+  ciMatrix,
+  countTestFiles,
+  fullMatrix,
+  jigValidation,
+  type Matrix,
+  ownTestsProblems,
+} from "./area-validation.ts";
 import { generatedListProblems } from "../modules/M2-generated-artifact-freshness/reference/inventory/run-generated-checks.ts";
 
 export const CATALOG = ".config/change-areas.yaml";
 
-/** The field Jig's catalog adds to the shipped schema. */
-const FIELDS: FieldExtensions = { area: { reviewRisk: ["high"] } };
+/** The fields Jig's catalog adds to the shipped schema. */
+const FIELDS: FieldExtensions = {
+  area: { reviewRisk: ["high"] },
+  validation: { separateSuite: "boolean" },
+};
 
 export interface Area extends SharedArea {
   /** `high` puts the area's paths in the AI reviewer's high-risk list. */
@@ -50,13 +62,12 @@ export interface Resolution {
   seedAreas: string[];
   /** The seed areas and every area that implies-by closure adds. */
   areas: string[];
-  /** Changed files no area matches; they count as code. */
+  /** Changed files no area matches. */
   unmatched: string[];
-  /** Whether anything outside the `docs` category changed. */
-  code: boolean;
 }
 
-const shared = (catalog: Catalog): SharedCatalog => ({ areas: catalog });
+/** The whole catalog: its profiles beside the areas. */
+export type Document = SharedCatalog & { areas: Catalog };
 const slashes = (files: string[]) => files.map((f) => f.replaceAll("\\", "/"));
 
 /**
@@ -74,8 +85,9 @@ export function readCatalog(path: string): unknown {
  * field and its own vocabularies, each derived-file entry in the shape M2's
  * runner reads (scripts/check-generated-files.ts runs them), and an
  * implied-by relation whose references exist, never point at their own area
- * and form no cycle. Both schemas check the derived-file entries; a problem
- * both report is listed once.
+ * and form no cycle, and every own-tests command in the one shape CI routes
+ * (scripts/area-validation.ts). Both schemas check the derived-file entries;
+ * a problem both report is listed once.
  */
 export function catalogProblems(doc: unknown): string[] {
   const problems = schemaProblems(doc, FIELDS);
@@ -88,14 +100,17 @@ export function catalogProblems(doc: unknown): string[] {
           ),
         );
   if (problems.length === 0)
-    problems.push(...graphProblems(doc as SharedCatalog));
+    problems.push(
+      ...graphProblems(doc as SharedCatalog),
+      ...ownTestsProblems(doc as SharedCatalog),
+    );
   return [...new Set(problems)];
 }
 
 /** The files no area matches. */
 export function uncoveredFiles(files: string[], catalog: Catalog): string[] {
   const normal = slashes(files);
-  const uncovered = new Set(sharedUncovered(normal, shared(catalog)));
+  const uncovered = new Set(sharedUncovered(normal, { areas: catalog }));
   return files.filter((_, i) => uncovered.has(normal[i] as string));
 }
 
@@ -104,7 +119,7 @@ export function uncoveredFiles(files: string[], catalog: Catalog): string[] {
  * whose `impliedBy` lists an area already in the set, until it stops growing.
  */
 export function resolveAreas(files: string[], catalog: Catalog): Resolution {
-  const whole = shared(catalog);
+  const whole: SharedCatalog = { areas: catalog };
   const normal = slashes(files);
   const seed = matchSeedAreas(normal, whole);
   const resolved = applyImpliedClosure(seed, whole);
@@ -118,9 +133,6 @@ export function resolveAreas(files: string[], catalog: Catalog): Resolution {
     seedAreas: sorted(seed),
     areas: sorted(resolved),
     unmatched,
-    code:
-      unmatched.length > 0 ||
-      [...resolved].some((id) => catalog[id]?.category !== "docs"),
   };
 }
 
@@ -135,12 +147,41 @@ export function changedFiles(root: string, base: string): string[] {
     .filter(Boolean);
 }
 
-/** The repository's catalog; throws when it cannot be read or is invalid. */
-export function validCatalog(root: string): Catalog {
+/** The repository's catalog document; throws when it cannot be read or is invalid. */
+export function validDocument(root: string): Document {
   const doc = readCatalog(join(root, CATALOG));
   const problems = catalogProblems(doc);
   if (problems.length) throw new Error(`${CATALOG}: ${problems.join("; ")}`);
-  return (doc as { areas: Catalog }).areas;
+  return doc as Document;
+}
+
+/** The repository's areas; throws when the catalog cannot be read or is invalid. */
+export function validCatalog(root: string): Catalog {
+  return validDocument(root).areas;
+}
+
+/**
+ * The resolution of `files` with Jig's validation plan and the gate-set
+ * matrix CI runs for it; `tracked` lists the repository's files, whose test
+ * files the matrix's legs split.
+ */
+export function planChange(
+  files: string[],
+  doc: Document,
+  tracked: string[],
+): Resolution & { validation: unknown; matrix: Matrix } {
+  const resolution = resolveAreas(files, doc.areas);
+  const ctx = {
+    changedFiles: slashes(files),
+    catalog: doc,
+    seed: new Set(resolution.seedAreas),
+    resolved: new Set(resolution.areas),
+  };
+  const validation = jigValidation(ctx);
+  const matrix = ciMatrix(validation, ctx.changedFiles, doc, (dirs) =>
+    countTestFiles(tracked, dirs),
+  );
+  return { ...resolution, validation, matrix };
 }
 
 /** The gate: a valid catalog that every repository file belongs to. */
@@ -175,12 +216,12 @@ export function checkChangeAreas(root = "."): number {
   return 0;
 }
 
-function writeOutputs(resolution: Resolution): void {
+function writeOutputs(areas: string[], matrix: Matrix): void {
   const output = process.env.GITHUB_OUTPUT;
   if (!output) return;
   appendFileSync(
     output,
-    `areas=${JSON.stringify(resolution.areas)}\ncode=${resolution.code}\n`,
+    `areas=${JSON.stringify(areas)}\nmatrix=${JSON.stringify(matrix)}\n`,
   );
 }
 
@@ -189,23 +230,23 @@ if (import.meta.main)
     const root = join(import.meta.dir, "..");
     const [flag, ref] = process.argv.slice(2);
     if (flag === "--check") return checkChangeAreas(root);
-    const catalog = validCatalog(root);
-    let resolution: Resolution;
+    const doc = validDocument(root);
+    let resolution: Resolution & { matrix: Matrix };
     if (flag === "--all")
       resolution = {
         changedFiles: [],
         seedAreas: [],
-        areas: Object.keys(catalog),
+        areas: Object.keys(doc.areas),
         unmatched: [],
-        code: true,
+        matrix: fullMatrix(),
       };
     else if (flag === "--base" && ref)
-      resolution = resolveAreas(changedFiles(root, ref), catalog);
+      resolution = planChange(changedFiles(root, ref), doc, repoFiles(root));
     else {
       console.error("usage: change-areas.ts --check | --base <ref> | --all");
       return 2;
     }
     console.log(JSON.stringify(resolution, null, 2));
-    writeOutputs(resolution);
+    writeOutputs(resolution.areas, resolution.matrix);
     return 0;
   });
