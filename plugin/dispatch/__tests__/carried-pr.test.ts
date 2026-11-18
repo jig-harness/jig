@@ -209,16 +209,14 @@ describe("a claimed item an open pull request carries", () => {
 
   it("is still a stalled pickup naming the pull request when the pull request has no drive", () => {
     const reason = expectStalled(planPickups(input(stalled([pr()], []))));
-    expect(reason).toContain("pull request #31 links it, but it has no drive");
+    expect(reason).toContain("pull request #31: it has no drive");
   });
 
   it("is still a stalled pickup naming the pull request when its drive stopped", () => {
     const reason = expectStalled(
       planPickups(input(stalled([pr()], [drive("parked")]))),
     );
-    expect(reason).toContain(
-      `pull request #31 links it, but its drive stopped (parked`,
-    );
+    expect(reason).toContain(`pull request #31: its drive stopped (parked`);
   });
 
   it("is not quieted by a fork's pull request that links it, or one whose head repository did not read", () => {
@@ -273,6 +271,14 @@ describe("a claimed item an open pull request carries", () => {
     expect(plan.moves).toEqual([
       expect.objectContaining({ target: "#12", pr: 31, to: "PR Open" }),
     ]);
+  });
+
+  it("does not read an item already in pr_open as carried, whichever pull request links it", () => {
+    const named = { ...stalled([pr()], [LIVE]), prOpen: () => "In Progress" };
+    const plan = planPickups(input(named));
+    expect(plan.quiet).not.toContainEqual(
+      expect.objectContaining({ class: "claimed-carried" }),
+    );
   });
 
   it("is a stalled pickup when the carriers are not read", () => {

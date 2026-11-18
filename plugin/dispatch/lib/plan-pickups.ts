@@ -68,6 +68,7 @@ import { unwrittenResult } from "./session-startup.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
+  inPrOpen,
   readLaunchPr,
   type StalledPrInput,
   stallNote,
@@ -428,11 +429,15 @@ function planClaimed(
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
   if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
   // So is one a driven pull request carries, unless it is still to move to pr_open.
-  const carriage = readCarriage(
-    item,
-    input.prOpen?.carried,
-    pr.read.kind === "open" ? pr.read.pr.number : undefined,
-  );
+  // An item already in pr_open keeps its existing handling, whichever pull request links it.
+  const carriage: Carriage =
+    input.prOpen !== undefined && inPrOpen(item, input.prOpen)
+      ? { kind: "none" }
+      : readCarriage(
+          item,
+          input.prOpen?.carried,
+          pr.read.kind === "open" ? pr.read.pr.number : undefined,
+        );
   if (carriage.kind === "carried" && pr.step?.kind !== "move") {
     plan.quiet.push({
       target: item.key,

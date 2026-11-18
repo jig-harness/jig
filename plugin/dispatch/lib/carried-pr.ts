@@ -184,7 +184,12 @@ export function readCarriage(
         drive: drive.kind,
         why: carriedWhy(item.state, pr, drive.kind),
       };
-    told.push(`${prName(pr, named)} links it, but ${drive.why}`);
+    // The stall need already says the named pull request links the item.
+    told.push(
+      pr.number === named
+        ? `${prName(pr, named)}: ${drive.why}`
+        : `${prName(pr)} links it, but ${drive.why}`,
+    );
     unread ||= drive.kind === "unread";
   }
   return {

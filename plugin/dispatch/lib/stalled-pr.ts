@@ -132,6 +132,12 @@ function prText(pr: LaunchPr): string {
 }
 
 /** What the open pull request a launch opened makes of a claimed item with no running session. */
+/** Whether the item is already in the tracker's `pr_open` state, whichever pull request is open. */
+export function inPrOpen(item: ClaimedItem, input: StalledPrInput): boolean {
+  const prOpen = input.prOpen(item.nativeType ?? null)?.trim() || null;
+  return prOpen !== null && sameName(item.state, prOpen);
+}
+
 function launchPrStep(
   item: ClaimedItem,
   pr: LaunchPr,
