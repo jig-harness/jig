@@ -277,11 +277,14 @@ it is judged as a tree without a pull request.
 
 ### Run tabs
 
-A run Jig starts in an Orca terminal tab closes its own tab when it ends
-with nothing left for a person, and records the tab under
-`~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`). A run
-killed before its end leaves the tab and its record
-behind, and a tab parked for a person stays until someone closes it. The
+A run Jig starts in an Orca terminal tab records the tab under
+`~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`), and
+closes it when it ends: a run the dispatcher launched on every exit, and a
+drive armed in a tab when it ends with nothing left for a person. A
+dispatched run whose wrapper died has its tab closed by a later dispatcher
+tick with `--apply`, while nothing runs in it. A run killed before
+its end that nothing closed leaves the tab and its record behind, and a
+tab a drive parked for a person stays until someone closes it. The
 `orca-terminals` kind joins those records to `orca terminal list --json`,
 read with the machine entry's `orca.command`, and proves each tab:
 

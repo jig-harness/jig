@@ -302,6 +302,7 @@ function newFollowupRecord(
     mark: named.mark,
     token: newToken(),
     action: "followup",
+    ...(ctx.shared.owner ? {} : { followupOwner: false }),
     repo: repo.slug,
     repoPath: repo.path,
     pr: pr.number,

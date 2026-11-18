@@ -111,6 +111,8 @@ export interface RuntimeReceipt {
   unread?: boolean;
   /** For `notify`: the confirmed projection was persisted as dispatcher-only under the lock. */
   ownedComment?: boolean;
+  /** For `endRun`: the run left nothing the runtime ends (its wrapper closed its tab, or none was recorded). */
+  nothingLeft?: true;
 }
 
 /** Notification identity and the comment policy rechecked under the write lock. */
@@ -191,6 +193,14 @@ export interface PullRequestTarget {
 export interface NoticesTarget {
   notices: string;
   dispatched: Dispatched;
+}
+
+/** A launch record's run that ended without its wrapper recording an exit, as `endRun` is given it. */
+export interface EndedRun {
+  /** The launch record's id. */
+  id: string;
+  /** The workspace the record names; `null` when it names none. */
+  workspace: { id: string; path: string } | null;
 }
 
 /** Whether a runtime can start an interactive session billed to a chosen account. */
@@ -308,6 +318,22 @@ export interface SessionRuntime {
     workspace: { id: string; path: string },
     expected: { comment: string; unread: boolean; branch?: string },
     timeoutMs?: number,
+  ): Promise<RuntimeReceipt>;
+  /**
+   * What the runtime does with what a run left once the tick finds the run
+   * ended, for a wrapper that died before it could close what it opened:
+   * on Orca, the run's recorded tab closed by the run-tab idle checks, so a
+   * terminal someone typed into stays. It never ends a process. Its
+   * receipt: `ok` when nothing of the run is left open, with `nothingLeft`
+   * when there was nothing to end; `ok: false` with the reason when
+   * something stays (a busy tab, a refused close), which a later collection
+   * may still close. No further
+   * cleanup step starts once `signal` aborts.
+   */
+  endRun(
+    run: EndedRun,
+    timeoutMs?: number,
+    signal?: AbortSignal,
   ): Promise<RuntimeReceipt>;
 }
 

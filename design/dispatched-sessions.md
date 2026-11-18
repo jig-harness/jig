@@ -23,7 +23,7 @@ a worktree Jig opens itself, so a host needs no terminal kept open and no
 desktop app to dispatch; once it has run on a host that dispatches, it
 becomes the default, and Orca stays supported as an option.
 
-This is the design of [plan.md](plan.md) item 51. Steps 1 to 4 of the
+This is the design of [plan.md](plan.md) item 51. Steps 1 to 5 of the
 [build order](#build-order) are built: the `closing-report/v1` check,
 `jig dispatch report`, the report on the launch record and the outcome
 log, and the prompts that ask for it; a drive's round reports, the report
@@ -36,7 +36,9 @@ filtered to that work) and *What needs you*, `jig ask`'s *Last run* line
 wrapper's own report of an end it explains, the transcript copy of a run
 that left no report, with its retention, and the steward's `cause` record
 for such a run, from the copy's excerpt in its digest, for pickups and
-follow-ups. The rest is not. It builds on the dispatcher (item 33,
+follow-ups; and the run tab closed on every exit the wrapper records,
+with `endRun` in the session runtime interface, which the tick calls for a
+record that ended without its wrapper. The rest is not. It builds on the dispatcher (item 33,
 [dark-factory-dispatch.md](dark-factory-dispatch.md)), whose
 [session runtime interface](dark-factory-dispatch.md#the-session-runtime-interface)
 the process runtime implements, and on the
@@ -190,7 +192,16 @@ terminals. A tab whose run was killed before anything closed it is closed by
 
 The session runtime interface gains one method for this, `endRun(record)`:
 what the runtime does with what a run left once the tick finds the run
-ended without its wrapper. Orca closes the run's recorded tab; the process
+ended without its wrapper. A tick with `--apply` asks once for every
+record that ended, and the record keeps that it asked, apart from its
+outcome row, which a tick without `--apply` may write first; a record whose
+exit the wrapper recorded is asked about a minute after that exit, so the
+wrapper's own close goes first, and a run whose wrapper closed its tab
+leaves nothing to end. This covers the wrapper killed while its stage's
+supervisor records the exit, as well as the record with no exit at all.
+Orca closes the run's recorded tab, which it finds by the launch record its
+run-tab record names; a tab an earlier release recorded names none, and is
+left to `jig gc`. The process
 runtime has no tab, and reports whether any of the run's recorded
 processes is still alive (below).
 
@@ -229,10 +240,11 @@ deletes a vendor's files.
 
 A run is found in its vendor's transcripts by its session id. Claude Code
 takes one: the tick already mints it for a pickup, a follow-up and the
-steward (`--session-id`), and `drive.ts` gives each drive pass its own,
-which the driver records per round on the launch record. Codex takes none;
-the wrapper records the session id a Codex pass prints on its output, and a
-Codex run that printed none has no transcript Jig can find.
+steward (`--session-id`). The driver gives fresh Claude Code review and
+repair passes their own ids and records them per round on the launch record.
+The wrapper reads the session id from a standalone Codex pass's startup
+output, and the driver does the same for a Codex review or repair pass.
+When Codex prints no session id, Jig has no transcript to look up.
 
 For a run without a report, the wrapper (or, for a run that died, the tick
 that finds it) copies the end of the run's transcript, at most 2 MiB, with
@@ -517,7 +529,7 @@ without making it the default; step 7 waits on step 6, and step 8 on step
 
 ## Left out
 
-- **Building the rest of it.** Steps 1 to 3 of the build order are built;
+- **Building the rest of it.** Steps 1 to 5 of the build order are built;
   the steps after them are filed as the build reaches them.
 - **`jig gc`'s own fixes** (#990, #991), which come first.
 - **The closing report as a protocol chapter.** The Jig Protocol (#1016) may

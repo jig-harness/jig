@@ -49,7 +49,18 @@ type AdapterFactory = (
   config: TrackerConfig,
   root: string,
   facets: () => Facets,
+  signal?: AbortSignal,
 ) => Tracker;
+
+/** Keep the caller's operation bound as well as any narrower request bound. */
+function boundedSignal(
+  request: AbortSignal | undefined,
+  operation: AbortSignal,
+): AbortSignal {
+  return request === undefined
+    ? operation
+    : AbortSignal.any([request, operation]);
+}
 
 /**
  * The GitHub adapter, with the GitHub default for every facet the
@@ -60,6 +71,7 @@ function gitHub(
   config: TrackerConfig,
   root: string,
   resolve: () => Facets,
+  signal?: AbortSignal,
 ): Tracker {
   const home = homeRepo(config.github.repository, () => remoteUrl(root));
   const model = gitHubModel(config.states, config.github);
@@ -68,7 +80,16 @@ function gitHub(
     home,
     model,
     settings: config.github,
-    transport,
+    transport:
+      signal === undefined
+        ? transport
+        : (query, variables, request, idempotent) =>
+            transport(
+              query,
+              variables,
+              boundedSignal(request, signal),
+              idempotent,
+            ),
     facets: resolve(),
     entries: config.facets,
     resolveWith: (entries) => facetsOf({ ...config, facets: entries }, root),
@@ -78,24 +99,35 @@ function gitHub(
 }
 
 const ADAPTERS: Record<string, AdapterFactory> = {
-  linear: (config, _root, facets) =>
-    linearTracker({
+  linear: (config, _root, facets, signal) => {
+    const transport = defaultTransport();
+    return linearTracker({
       team: requireTeamKey(config),
       states: config.states,
-      transport: defaultTransport(),
+      transport:
+        signal === undefined
+          ? transport
+          : (query, variables, request) =>
+              transport(query, variables, boundedSignal(request, signal)),
       facets: facets(),
-    }),
+    });
+  },
   github: gitHub,
-  jira: (config, _root, facets) => {
+  jira: (config, _root, facets, signal) => {
     const project = requireTeamKey(config);
     const site = requireSite(config.jira);
+    const transport = jiraTransport(requestBase(config.jira));
     return jiraTracker(
       jiraClient({
         project,
         site,
         model: jiraModel(config.states, config.jira),
         settings: config.jira,
-        transport: jiraTransport(requestBase(config.jira)),
+        transport:
+          signal === undefined
+            ? transport
+            : (query, request) =>
+                transport(query, boundedSignal(request, signal)),
         facets: facets(),
       }),
     );
@@ -121,6 +153,7 @@ export function knownAdapters(): string[] {
 export function openTracker(
   config: TrackerConfig = ownTrackerConfig(),
   root: string = consumerRoot(),
+  signal?: AbortSignal,
 ): Tracker {
   const factory = Object.hasOwn(ADAPTERS, config.adapter)
     ? ADAPTERS[config.adapter]
@@ -134,7 +167,7 @@ export function openTracker(
     facets ??= facetsOf(config, root);
     return facets;
   };
-  const tracker = factory(config, root, resolve);
+  const tracker = factory(config, root, resolve, signal);
   return checkedTracker(tracker, resolve(), () =>
     readTaxonomy(root, config.taxonomy),
   );

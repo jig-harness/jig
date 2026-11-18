@@ -4,16 +4,18 @@
  * and stamps its round report with it (`round-report.ts`); the driver
  * remembers the round and start time of the last pass it started, the only
  * round report its closing report reads, and only when the pass wrote it (`closing-report.ts`). Under the
- * dispatcher's wrapper (`shared/driver-report.ts`), a pass the driver gave a
- * session id has that id recorded on the launch record, round by round
- * (`dispatch/lib/round-sessions.ts`); a drive armed any other way records
- * nothing there.
+ * dispatcher's wrapper (`shared/driver-report.ts`), the driver records each
+ * known session id on the launch record, round by round.
  */
 import { recordRoundSession } from "../../../../../dispatch/lib/round-sessions.ts";
+import { codexSessionIn } from "../../../../../dispatch/lib/transcript-copy.ts";
 import { driverReportPath } from "../../../../../shared/driver-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { launchOf } from "../../../../../shared/launched-session.ts";
 import { currentIso } from "../../../../../shared/time.ts";
+import { runObservedPass } from "../driver-observation.ts";
+import { passVendor } from "../identity.ts";
+import type { RunOptions, RunResult } from "../proc.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 
@@ -42,32 +44,97 @@ export async function repairRound(pr: string): Promise<number> {
   return state?.rounds ?? 0;
 }
 
-/**
- * A pass of round `round` started: remember its round and, under the
- * dispatcher's wrapper, record its session id on the launch record. Best
- * effort: a session that cannot be recorded is one line on the driver's
- * output, never a reason to stop the pass.
- */
-export function notePassStarted(
+/** A failed launch-record write is logged without interrupting the pass. */
+function recordSession(
+  launch: string,
   pr: string,
   round: number,
-  session: string | null,
-  env: Record<string, string | undefined> = process.env,
+  session: string,
+  startedAt: string,
 ): void {
-  driverRuntime.passRound = round;
-  driverRuntime.passStartedAt = currentIso();
-  const launch = launchOf(env);
-  if (session === null || launch === null || driverReportPath(env) === null)
-    return;
   try {
-    const refused = recordRoundSession(launch, Number(pr), round, session);
+    const refused = recordRoundSession(
+      launch,
+      Number(pr),
+      round,
+      session,
+      undefined,
+      startedAt,
+    );
     if (refused !== null)
       console.error(
         `drive.ts: round ${round}'s pass session was not recorded on launch record ${launch}: ${refused}`,
       );
   } catch (error) {
+    swallow(error, "a pass session could not be saved on its launch record");
     console.error(
       `drive.ts: round ${round}'s pass session was not recorded on launch record ${launch} (${error instanceof Error ? error.message : String(error)})`,
     );
   }
+}
+
+/** Codex writes its session id in its startup header. Inspect a bounded prefix of each stream. */
+const STARTUP_BYTES = 16 * 1024;
+
+function codexStartup(keep: (id: string) => void) {
+  const prefix = { stdout: "", stderr: "" };
+  const remaining = { stdout: STARTUP_BYTES, stderr: STARTUP_BYTES };
+  let found = false;
+  const inspect = (text: string) => {
+    if (found) return;
+    const session = codexSessionIn(text);
+    if (session === null) return;
+    found = true;
+    keep(session);
+  };
+  return {
+    observe(stream: "stdout" | "stderr", bytes: Buffer) {
+      if (found || remaining[stream] === 0) return;
+      const chunk = bytes.subarray(0, remaining[stream]);
+      remaining[stream] -= chunk.length;
+      const text = prefix[stream] + chunk.toString("utf8");
+      const lineEnd = text.lastIndexOf("\n") + 1;
+      prefix[stream] = text.slice(lineEnd);
+      inspect(text.slice(0, lineEnd));
+    },
+    finish() {
+      // An unterminated line can only be accepted after the output ends.
+      for (const stream of ["stdout", "stderr"] as const) {
+        if (remaining[stream] > 0) inspect(prefix[stream]);
+      }
+    },
+  };
+}
+
+/** Stamp a pass's round at spawn and record its id as soon as it is known. */
+export async function runRoundPass(
+  argv: string[],
+  { pr, round, session }: { pr: string; round: number; session: string | null },
+  options: RunOptions,
+): Promise<RunResult> {
+  const launch = driverReportPath() === null ? null : launchOf(process.env);
+  let startedAt: string | null = null;
+  const keep = (id: string) => {
+    if (launch !== null && startedAt !== null)
+      recordSession(launch, pr, round, id, startedAt);
+  };
+  const startup =
+    launch !== null && passVendor(argv) === "codex" ? codexStartup(keep) : null;
+  const result = await runObservedPass(argv, {
+    ...options,
+    stdout: "inherit",
+    stderr: "inherit",
+    detached: true,
+    ...(startup === null ? {} : { onInheritedOutput: startup.observe }),
+    onSpawn: (handle) => {
+      startedAt = currentIso();
+      driverRuntime.activePass = handle;
+      driverRuntime.passRound = round;
+      driverRuntime.passStartedAt = startedAt;
+      if (session !== null) keep(session);
+      options.onSpawn?.(handle);
+    },
+  });
+  startup?.finish();
+  return result;
 }
