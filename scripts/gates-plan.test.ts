@@ -176,6 +176,32 @@ test("only an opted-in dispatch launch runs the targeted form", async () => {
   expect(gateRun(false, "checks", on, launch).dispatch).toBe(false);
 });
 
+test("the configuration layers decide the targeted form, the environment last", async () => {
+  const { gateRun, testStage } = await import("./gates.ts");
+  const on = changedRepository("gates:\n  dispatch_fast: true\n");
+  const full = testStage([], () => []).name;
+  const names = (run: { stages: { name: string }[] }) =>
+    run.stages.map((stage) => stage.name);
+  // An environment false overrides the repository's true.
+  const envOff = gateRun(false, undefined, on, {
+    ...launch,
+    JIG__GATES__DISPATCH_FAST: "false",
+  });
+  expect(envOff.dispatch).toBe(false);
+  expect(names(envOff)).toContain(full);
+  // JIG_OVERLAY names the repository file that is read.
+  const alternate = join(on, "alternate.yaml");
+  writeFileSync(alternate, "gates:\n  dispatch_fast: false\n");
+  const overlaid = gateRun(false, undefined, on, {
+    ...launch,
+    JIG_OVERLAY: alternate,
+  });
+  expect(overlaid.dispatch).toBe(false);
+  expect(names(overlaid)).toContain(full);
+  // Neither override leaves the opted-in default behind.
+  expect(gateRun(false, undefined, on, launch).dispatch).toBe(true);
+});
+
 test("the targeted tests run outside the lock, without the line's variables", async () => {
   const { dispatchPlan } = await import("./gates.ts");
   const stage = dispatchPlan(["scripts/example.test.ts"], {
