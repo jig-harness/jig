@@ -401,6 +401,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.275.1] - 2026-11-18
+
+### Fixed
+
+- A person who shares a forge login or tracker user with their host's
+  dispatcher can now answer its stopped-drive, follow-up and pickup cards with
+  `jig send`. The dispatcher still ignores its own identity's comments, except
+  one carrying the record `jig send` writes for that identity, the decision's
+  key and current digest and the option chosen. `jig send` to a tracker item no
+  longer refuses on the host that owns the repository: the comment carries that
+  record. An answer typed by hand under the shared identity is still not read;
+  on a tracker item the card says why.
+
 ## [0.275.0] - 2026-11-18
 
 ### Added
@@ -9652,7 +9665,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.275.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.275.1...HEAD
+[0.275.1]: https://github.com/jig-harness/jig/compare/v0.275.0...v0.275.1
 [0.275.0]: https://github.com/jig-harness/jig/compare/v0.274.2...v0.275.0
 [0.274.2]: https://github.com/jig-harness/jig/compare/v0.274.1...v0.274.2
 [0.274.1]: https://github.com/jig-harness/jig/compare/v0.274.0...v0.274.1
