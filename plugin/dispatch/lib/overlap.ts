@@ -136,7 +136,11 @@ function elements(footprint: Footprint): Element[] {
   ];
 }
 
-const bare = (dir: string) => dir.replace(/\/+$/, "");
+const bare = (dir: string) => {
+  let end = dir.length;
+  while (end > 0 && dir[end - 1] === "/") end--;
+  return dir.slice(0, end);
+};
 
 /** The directory part of a glob before its first wildcard segment. */
 function staticDir(glob: string): string {
@@ -207,7 +211,9 @@ export function sharedUnits(
   }));
   if (coarse.length > 0)
     units.push({
-      path: [...new Set(coarse)].sort()[0] as string,
+      path: [...new Set(coarse)].sort((a, b) =>
+        a.localeCompare(b),
+      )[0] as string,
       rate: model.settings.areaRate,
       coarse: true,
     });

@@ -263,6 +263,8 @@ function pickupsInFlight(
  * The wait one member of a placed batch keeps: its own recorded history, with
  * the batch's tier-3 start and promotion added only where the batch gained
  * them this tick, so joining a promoted member's batch never promotes another.
+ * A member joining a batch already in tier 3 starts its own tier-3 timer now,
+ * never the batch's older one and never none.
  */
 export function memberWait(
   p: Placed,
@@ -275,7 +277,9 @@ export function memberWait(
     sinceMs: own?.sinceMs ?? nowMs,
     tier3SinceMs:
       own?.tier3SinceMs ??
-      (before?.tier3SinceMs == null ? p.wait.tier3SinceMs : null),
+      (before?.tier3SinceMs == null || p.wait.tier3SinceMs === null
+        ? p.wait.tier3SinceMs
+        : nowMs),
     promotedMs:
       own?.promotedMs ??
       (before?.promotedMs == null ? p.wait.promotedMs : null),
