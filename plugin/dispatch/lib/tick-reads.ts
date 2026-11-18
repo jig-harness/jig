@@ -234,7 +234,7 @@ function readLogin(bound: TickBound | undefined): Promise<string | null> {
     Promise.reject(new OutboundError("unreachable", what));
   if (ended(bound)) return passed(passedBefore("the login was read"));
   return resolveLogin(secondsLeft(bound), bound?.signal).then((login) =>
-    ended(bound) && login === null
+    ended(bound)
       ? passed("the tick's deadline passed during the login read")
       : login,
   );

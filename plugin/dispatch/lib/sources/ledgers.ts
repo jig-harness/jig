@@ -116,24 +116,15 @@ import { infraStopClass } from "../infra-backoff.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
-import { branchHead } from "../forge.ts";
-import {
-  ended,
-  heldRead,
-  passedBefore,
-  secondsLeft,
-  type TickBound,
-} from "./bounded.ts";
+import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
+export type { Admit } from "./base-heads.ts";
+import { ended, passedBefore, type TickBound } from "./bounded.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
-import { failureText, minutesBetween } from "../text.ts";
+import { minutesBetween } from "../text.ts";
 import { readPark, type ParkReading } from "./park-reading.ts";
 import { ledgerParks } from "../park-events.ts";
-import {
-  combinedFailure,
-  readFailureOf,
-  readFailureOfError,
-} from "../read-failures.ts";
+import { combinedFailure, readFailureOf } from "../read-failures.ts";
 import { listComments } from "../../../shared/records/forge-claims.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
@@ -145,13 +136,6 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
-
-/** What the head of a pull request's base branch read as; where it did not, the failed call's class. */
-type BaseHead = { oid: string } | { unreadable: string; failure?: ReadFailure };
-
-/** The `failure` field of a failed read with a class; nothing without one. */
-const classed = (failure: ReadFailure | undefined) =>
-  failure === undefined ? {} : { failure };
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
@@ -759,45 +743,6 @@ interface Reading {
   presence: (pr: number, ledger: Ledger) => Promise<DriverPresence>;
   /** The tick's bound, where it has one: no park thread is read once it has ended. */
   bound?: TickBound;
-}
-
-/** Runs a forge read when the tick's pool has a place for it (`pool.ts`). */
-export type Admit = <T>(read: () => Promise<T>) => Promise<T>;
-
-/** A reading's reader of base branch heads: pull requests on one base share one read, none started once `bound` has ended. */
-function baseHeads(
-  slug: string,
-  admit: Admit,
-  bound: TickBound | undefined,
-): Reading["baseHead"] {
-  const read = new Map<string, Promise<BaseHead>>();
-  return (branch) => {
-    if (branch === undefined || branch === "")
-      return Promise.resolve({
-        unreadable: "the forge reports no base branch for it",
-      });
-    const known = read.get(branch);
-    if (known !== undefined) return known;
-    const head = admit(() =>
-      heldRead(bound, `the head of base branch ${branch} was read`, () =>
-        branchHead(slug, branch, secondsLeft(bound)),
-      ),
-    ).then(
-      (oid): BaseHead =>
-        oid.ok
-          ? { oid: oid.value }
-          : {
-              unreadable: oid.failure.reason,
-              ...classed(readFailureOf(oid.failure)),
-            },
-      (error: unknown): BaseHead => ({
-        unreadable: failureText(error),
-        ...classed(readFailureOfError(error)),
-      }),
-    );
-    read.set(branch, head);
-    return head;
-  };
 }
 
 /** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger whose stop a conflict re-drives. */
