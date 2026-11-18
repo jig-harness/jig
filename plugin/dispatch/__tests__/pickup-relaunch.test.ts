@@ -13,6 +13,7 @@ import {
   type LaunchRecord,
   type ReadRecord,
   readRecord,
+  writeRecord,
 } from "../lib/launches.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
 import { type PickupTree, readPickupTree } from "../lib/pickup-tree.ts";
@@ -424,7 +425,8 @@ dispatch:
     machineFile(w, [account(w, "a", "a@example.com")], {}, ["pickup"]);
     const [launched] = (await applyTick(w, false)).repos[0]?.launches ?? [];
     const id = String(launched?.record);
-    const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
+    const source = readRecord(id, dispatchState(w));
+    const path = source?.workspace?.path ?? "";
     await waitFor("the pass", () => claudeRuns(w).length === 1);
     w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
     writeFileSync(join(w.dir, "claude-exit"), "0");
@@ -433,6 +435,13 @@ dispatch:
     writeFileSync(join(path, "work.txt"), "work\n");
     commit(path, "work.txt");
 
+    // A source whose run was already ended and cleaned up must not hand that state on.
+    const stored = readRecord(id, dispatchState(w));
+    if (stored !== null)
+      writeRecord(
+        { ...stored, runEndedAt: "2026-11-18T06:30:00.000Z" },
+        dispatchState(w),
+      );
     let since = Date.now();
     await plan(w);
     await past(since);
@@ -445,12 +454,14 @@ dispatch:
       [],
     );
     const again = String(launch?.record);
-    expect(readRecord(again, dispatchState(w))).toEqual(
+    const record = readRecord(again, dispatchState(w));
+    expect(record).toEqual(
       expect.objectContaining({
         relaunchOf: id,
         workspace: expect.objectContaining({ path }),
       }),
     );
+    expect(record?.runEndedAt).toBeUndefined();
     await waitFor("the relaunch", () => claudeRuns(w).length === 2);
     const run = claudeRuns(w)[1];
     expect(run?.cwd).toBe(path);

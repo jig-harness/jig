@@ -180,6 +180,7 @@ function relaunchRecord(
   for (const field of [
     "endedAt",
     "cancelledAt",
+    "runEndedAt",
     "stewardResume",
     "stewardContext",
     "stewardDecision",
