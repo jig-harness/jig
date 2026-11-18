@@ -20,8 +20,9 @@ import { RATE_LIMIT_WAIT, type WaitFor } from "./wait-for.ts";
  * framed for a person, as `failed` with that decision in `result_decision`.
  * A copy of the plugin that knows neither reads a failed pass, which it
  * holds until a person settles it rather than starting it again; this one
- * reads each apart from a failure, rows written before it knew them
- * included. `failed` stays for a pass that recorded it with no wait and no
+ * reads each apart from a failure, launch records written before it knew
+ * them included. An outcome row already logged keeps the class it was
+ * logged with. `failed` stays for a pass that recorded it with no wait and no
  * framed decision, and for a row whose `result_until` is not a time or
  * whose `result_decision` is not a readable decision.
  */

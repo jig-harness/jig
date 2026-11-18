@@ -330,6 +330,7 @@ it("reads a question as a wait only when it names a rate limit and carries no ro
       asked("Question: [person-owed] who lifts the tracker's rate limit?"),
     ),
   ).toBeNull();
+  expect(waitUntil({ ...asked(RATE_LIMITED), result: "parked" })).toBeNull();
 });
 
 it("counts, at a pass's exit, an earlier wait whose wrapper died before writing its exit", () => {

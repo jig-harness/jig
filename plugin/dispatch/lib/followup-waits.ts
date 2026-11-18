@@ -104,10 +104,16 @@ export function waitUntil(r: ReadRecord): string | null {
  * as its session's last output or its closing report states it, names a
  * rate limit and carries no routine class's tag; `null` for any other, and
  * for one whose result the host could not write, whose question is the
- * host's.
+ * host's, and for a pass that parked on a decision it framed, which a
+ * person answers however it words the question.
  */
 function questionWait(r: ReadRecord): string | null {
-  if (r.result === "done" || r.state.kind !== "ended" || unwrittenResult(r))
+  if (
+    r.result === "done" ||
+    r.result === "parked" ||
+    r.state.kind !== "ended" ||
+    unwrittenResult(r)
+  )
     return null;
   const question = questionOf(r.state) ?? r.report?.report.question ?? null;
   if (question === null || !RATE_LIMIT.test(question)) return null;
