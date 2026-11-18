@@ -80,7 +80,13 @@ describe("jig send when the forge login is not read", () => {
   });
 
   it("names an answer that is not a user document or names a malformed login", async () => {
-    for (const body of [["not", "a user"], { login: "bad login!" }]) {
+    for (const body of [
+      ["not", "a user"],
+      { login: "bad login!" },
+      { login: 123 },
+      { login: [] },
+      { login: {} },
+    ]) {
       const w = world();
       w.api("user", body);
       const r = await w.send([ADDRESS, "hold"]);

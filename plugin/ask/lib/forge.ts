@@ -226,6 +226,8 @@ export async function readLogin(
     );
   const v = json(got.value);
   if (!isRecord(v)) return unreadable("is not a user document");
+  if (v.login !== undefined && v.login !== null && typeof v.login !== "string")
+    return unreadable("names a login that is not text");
   const login = text(v.login);
   if (login === "") return ok(null);
   return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login)
