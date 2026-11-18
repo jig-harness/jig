@@ -1133,8 +1133,15 @@ overrides) and takes the agent command for its fresh runs on the command
 line.
 
 `orchestrate` adds no configuration fields. It uses the repository and host's
-existing plan review surface and durable record facility, with chat review
-and a plain file outside the repository as fallbacks. Fresh filing sessions
+existing plan review surface, with chat review as the fallback, and keeps
+each topic's record in an orchestration notebook, the host-local folder
+`$JIG_HOME/orchestrate/<topic>/` (`~/.jig/orchestrate/<topic>/` by default).
+The folder is named after the topic in lowercase letters and digits joined
+by hyphens, and holds `state.md`, the current state rewritten whole, and
+`journal/YYYY-MM-DD.md`, one append-only file a day (UTC). It is never
+written inside a Git working tree: when `JIG_HOME` lies in one, the skill
+refuses the notebook and falls back to a plain file outside the repository.
+Nothing in it depends on the agent tool that writes it. Fresh filing sessions
 use the existing `file_issue` and `issue_tracker` settings; starting work on a
 dispatcher host uses [`dispatch.identity`](#dispatch) and the host's configured
 start procedure. Missing start configuration is a question for the person,
@@ -1194,7 +1201,7 @@ These are set per machine or per run, not committed:
 |----------|--------------|
 | `JIG_OVERLAY` | Path of the configuration file to read instead of the repository's own |
 | `JIG_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
-| `JIG_HOME` | The folder holding the user layer's `jig.yaml`, instead of `~/.jig` |
+| `JIG_HOME` | The folder holding the user layer's `jig.yaml` and the host-local files beside it (the dispatcher's `dispatch.yaml`, orchestration notebooks under `orchestrate/`), instead of `~/.jig` |
 | `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
 | `JIG_FORGE_BUDGET` | `off` leaves the forge's calls out of the machine's budget record (see `outbound_share`), the `gh` client's runs and the GraphQL requests sent over HTTPS to `JIG_GITHUB_GRAPHQL_URL` alike: nothing is admitted against it, nothing it answers is recorded, and `gh api` runs without `--include`. Unset, every call is governed |
 | `JIG_GITHUB_INSTALLATION_ID` | The GitHub App installation the `gh` client's installation token (`ghs_`) belongs to, a positive integer, set by whatever issues the token. GitHub counts an installation's primary limits across all its tokens, and a token cannot name its own installation, so this declaration is what lets two tokens of one installation, a replacement after expiry included, share one record in the machine's budget record (see `outbound_share`) and its hold. Unset or unreadable, the token shares the record every credential on the host whose owner is unknown shares. Read only for an installation token. A machine that works for several GitHub accounts needs no setting: a token or a client configuration directory per repository is its own credential, and a stored login whose client picks the account per repository has its owner asked per repository a call addresses (`-R`, a positional repository URL, a `repos/<owner>/<repo>` route, `GH_REPO`, else the working directory's `gh repo set-default` remote or `origin` remote), with `GH_REPO` set for the question |
