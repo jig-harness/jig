@@ -87,6 +87,12 @@ describe("the reset a usage notice states", () => {
     expect(
       reset("resets Oct 25, 2:30am (Europe/Amsterdam)", "2026-10-25T00:00:00Z"),
     ).toBe("2026-10-25T00:30:00Z");
+    // Read seconds into the first showing, neither form slides to the second.
+    const seconds = "2026-10-25T00:30:30Z";
+    expect(reset("resets 2:30am (Europe/Amsterdam)", seconds)).toBeNull();
+    expect(
+      reset("resets Oct 25, 2:30am (Europe/Amsterdam)", seconds),
+    ).toBeNull();
     // A time the clock skips does not read.
     expect(
       reset("resets Mar 29, 2:30am (Europe/Amsterdam)", "2026-03-28T12:00:00Z"),
@@ -213,18 +219,22 @@ describe("a pickup that stops on a usage notice", () => {
     const wall = wallOf("a", Date.now(), dispatchState(w));
     expect(wall?.resetAt).toBe(isoFromMs(resetMs));
     expect(wall?.source).toContain("the usage notice's reset");
-    let again = await applyTick(w, false);
-    if (!again.repos[0]?.launches?.some((l) => l.outcome === "launched"))
-      again = await applyTick(w, false);
-    expect(again.repos[0]?.launches).toContainEqual(
+    const ticks = [await applyTick(w, false)];
+    if (!ticks[0]?.repos[0]?.launches?.some((l) => l.outcome === "launched"))
+      ticks.push(await applyTick(w, false));
+    const again = ticks[ticks.length - 1];
+    expect(again?.repos[0]?.launches).toContainEqual(
       expect.objectContaining({
         action: "pickup",
         account: "b",
         outcome: "launched",
       }),
     );
-    expect(
-      (again.repos[0]?.actions ?? []).filter((a) => a.cause === "pickup-ended"),
-    ).toEqual([]);
+    for (const tick of ticks)
+      expect(
+        (tick.repos[0]?.actions ?? []).filter(
+          (a) => a.cause === "pickup-ended",
+        ),
+      ).toEqual([]);
   });
 });

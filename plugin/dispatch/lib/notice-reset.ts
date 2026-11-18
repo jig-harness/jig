@@ -61,7 +61,8 @@ function hourOf(raw: number, meridiem: string | undefined): number | null {
 /**
  * The next instant after `now` that shows `month`-`day` `hour`:`minute` in
  * `zone`: a time the clock skips (a spring-forward gap) does not read, and a
- * time it shows twice (a fall-back) resolves to the first showing still ahead.
+ * time it shows twice (a fall-back) resolves to the first showing not before
+ * the current minute.
  */
 function nextDated(
   now: Temporal.Instant,
@@ -73,6 +74,10 @@ function nextDated(
 ): Temporal.Instant | null {
   try {
     const year = now.toZonedDateTimeISO(zone).year;
+    // Candidates sit at second 0 of their minute, so compare against the
+    // current minute, as the clock-time resolver does: a notice read seconds
+    // after the first showing must not slide to the repeated hour's second.
+    const flooredNow = Math.floor(now.epochMilliseconds / 60_000) * 60_000;
     for (const y of [year, year + 1]) {
       const wall = Temporal.PlainDateTime.from(
         { year: y, month, day, hour, minute },
@@ -82,7 +87,7 @@ function nextDated(
       if (first.toPlainDateTime().equals(wall) === false) return null;
       const later = wall.toZonedDateTime(zone, { disambiguation: "later" });
       for (const at of [first.toInstant(), later.toInstant()])
-        if (at.epochMilliseconds > now.epochMilliseconds) return at;
+        if (at.epochMilliseconds >= flooredNow) return at;
     }
   } catch (error) {
     // An unknown zone or a date the calendar lacks (Feb 30) does not read.
