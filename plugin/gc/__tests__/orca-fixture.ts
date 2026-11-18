@@ -75,6 +75,12 @@ export interface OrcaState {
    * `ps` once, at the first registry read after the remove hook ran.
    */
   commitAt?: "rm" | "ps";
+  /** Rows of other workspaces Orca lists before this repository's, enough to push its worktrees past a default page. */
+  filler?: number;
+  /** Rows that make only the worktree-list response incomplete. */
+  listFiller?: number;
+  /** Rows that make only the worktree-process response incomplete. */
+  psFiller?: number;
 }
 
 /** A fake `orca` reading and writing its registry in `state.json`. */
@@ -101,9 +107,16 @@ const commit = (tree, message) =>
 if (sub === "ps" && state.commitAt === "ps" && existsSync(join(root, "hook-ran")) && !existsSync(join(root, "late-commit"))) {
   writeFileSync(join(root, "late-commit"), String(commit(state.worktrees[0].path, "late").exitCode));
 }
+// Orca answers a listing with its first 200 rows unless --limit asks for more, and marks a cut page truncated.
+const page = (rows, filler = state.filler ?? 0) => {
+  const limit = args.includes("--limit") ? Number(value("--limit")) : 200;
+  const all = [...Array.from({ length: filler }, (_, index) => ({ id: "filler-" + index, path: "/orca/filler-" + index, agents: [] })), ...rows];
+  return { rows: all.slice(0, limit), totalCount: all.length, truncated: all.length > limit };
+};
 if (sub === "list") {
   if (value("--repo") !== "path:" + state.repo) refuse("repo_not_found");
-  answer({ worktrees: state.worktrees.map(({ id, path }) => ({ id, path })), totalCount: state.worktrees.length, truncated: false });
+  const { rows, totalCount, truncated } = page(state.worktrees, state.listFiller);
+  answer({ worktrees: rows.map(({ id, path }) => ({ id, path })), totalCount, truncated });
 }
 if (sub === "ps" && state.launchAfterAdmission) {
   const guard = state.launchAfterAdmission;
@@ -115,8 +128,10 @@ if (sub === "ps" && state.launchAfterAdmission) {
     renameSync(join(guard, "launches", ".staged.tmp"), join(guard, "launches", key + ".json"));
   }
 }
-if (sub === "ps")
-  answer({ worktrees: state.worktrees.map(({ path, agents }) => ({ path, agents })), totalCount: state.worktrees.length, truncated: false });
+if (sub === "ps") {
+  const { rows, totalCount, truncated } = page(state.worktrees, state.psFiller);
+  answer({ worktrees: rows.map(({ path, agents }) => ({ path, agents })), totalCount, truncated });
+}
 if (sub === "rm") {
   const id = value("--worktree").replace(/^id:/, "");
   const row = state.worktrees.find((entry) => entry.id === id);
