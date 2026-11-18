@@ -401,6 +401,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.277.2] - 2026-11-18
+
+### Changed
+
+- The sessions Jig's dispatcher starts on Jig itself run fast checks and
+  targeted tests locally, leaving the full suites to required CI. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` collects finished Orca workspaces on a machine with more than 200
+  of them. It read Orca's workspace registry without asking for more than
+  Orca's default page of 200 rows, took the cut page for an incomplete
+  registry and marked every Orca workspace unverified, so none was ever
+  removed. It now requests up to 5,000 rows and continues to refuse
+  collection when Orca reports that either registry response is truncated.
+
 ## [0.277.1] - 2026-11-18
 
 ### Changed
@@ -9738,7 +9754,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.2...HEAD
+[0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
 [0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
 [0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
 [0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0

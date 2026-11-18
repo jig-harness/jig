@@ -293,7 +293,7 @@ fields:
     type: boolean
     read_by: [jig-gates]
     repository_only: true
-    since: next
+    since: 0.277.2
 
   review.bots:
     type: list
