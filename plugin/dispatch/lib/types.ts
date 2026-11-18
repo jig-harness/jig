@@ -299,6 +299,7 @@ export interface FollowupMarker {
         /** Whether that host says it owns the repository. */
         owner?: boolean;
         outcome?: TickOutcome;
+        releaseTags?: string[];
       }
     | { kind: "manual"; done: boolean }
     | { kind: "unreadable"; reason: string };
@@ -343,6 +344,7 @@ export type NotifyCause =
   | "stopped-unknown"
   | "followup-failed"
   | "followup-stale"
+  | "release-owed"
   | "drifting"
   | "nudge-unanswered"
   | "pickup-question"
