@@ -397,8 +397,8 @@ function mechanicalStopClass(
   const last = lastStopEvent(ledger.events ?? []);
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
   const words =
-    stop.kind === "check-runs" && last?.listingPages !== undefined
-      ? `${stop.words} after ${last.listingPages} page(s)`
+    stop.kind === "check-runs" && Number.isSafeInteger(last?.listingPages)
+      ? `${stop.words} after ${last?.listingPages} page(s)`
       : stop.words;
   return {
     class: "stale",

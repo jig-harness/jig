@@ -126,13 +126,14 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
               kind: "stop",
               cause: String(exit),
               leftWork: false,
+              ...(kind === "check-runs" ? { listingPages: 14 } : {}),
             },
           ],
         }),
       );
       const record = await redrive(w, exit);
       expect(readRecord(record, dispatchState(w))?.redrive).toEqual({
-        cause: `stopped ${exit}, ${words}`,
+        cause: `stopped ${exit}, ${words}${kind === "check-runs" ? " after 14 page(s)" : ""}`,
         change: `head ${HEAD_SHA}, stopped ${exit}`,
         mechanicalStop: kind,
       });
