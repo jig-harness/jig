@@ -28,6 +28,7 @@ import {
 } from "../../plugin/skills/changelog/scripts/notes-dir.ts";
 import { spawnSync } from "../../plugin/shared/guarded-git-spawn.ts";
 import {
+  carriedMap,
   type Chapter,
   chapterFile,
   DATA_DIR,
@@ -362,8 +363,8 @@ function behaviourProblems(view: ValueView): string[] {
 
 /**
  * The comparison a field is held to: the base's, so that declaring a looser
- * one excuses nothing in the same change. A base written before fields
- * declared one has none to hold, and the declaration made now stands.
+ * one excuses nothing in the same change. A base whose data file declares
+ * none has nothing to hold, and the declaration made now stands.
  */
 const comparisonHeld = (was: FieldSpec, is?: FieldSpec): FieldComparison =>
   was.comparedAs ?? is?.comparedAs ?? "exact";
@@ -378,33 +379,30 @@ function changedFields(view: ValueView, self: DataValue, v: DataValue) {
         comparisonHeld(spec, view.now.fields[field]),
         self[field],
         v[field] ?? null,
+        knownCarriers(view.base, field),
       ),
   );
 }
 
-/**
- * What a `carriers` field names, each with `always` or `sometimes`
- * (`tick (always), manual (sometimes)`); an empty text names none; null
- * when the text is not that shape, which is then compared as written.
- */
-function carriedMap(text: Scalar | undefined): Map<string, string> | null {
-  if (typeof text !== "string") return null;
-  const runs = new Map<string, string>();
-  if (text === "") return runs;
-  for (const part of text.split(", ")) {
-    const m = /^(\S+) \((always|sometimes)\)$/.exec(part);
-    if (m === null || runs.has(m[1] as string)) return null;
-    runs.set(m[1] as string, m[2] as string);
-  }
-  return runs;
+/** Every carrier the base's values name in a field. */
+function knownCarriers(base: DataFile, field: string): Set<string> {
+  return new Set(
+    base.values.flatMap((v) => [...(carriedMap(v[field])?.keys() ?? [])]),
+  );
 }
 
 /**
  * What carries a value is compared by carrier, not as text: one that always
- * carried it still does, and any other may start or stop carrying it only
- * as `sometimes`, so the order they are written in does not matter.
+ * carried it still does, and one the base's values name may start or stop
+ * carrying it only as `sometimes`, so the order they are written in does not
+ * matter. A carrier no value of the field names yet, a new kind of line, has
+ * no writer or reader to break and may join as `always`.
  */
-function keepsCarriers(was: Scalar, is: Scalar): boolean {
+function keepsCarriers(
+  was: Scalar,
+  is: Scalar,
+  known: ReadonlySet<string>,
+): boolean {
   const before = carriedMap(was);
   const after = carriedMap(is);
   if (before === null || after === null) return false;
@@ -416,7 +414,7 @@ function keepsCarriers(was: Scalar, is: Scalar): boolean {
     )
       return false;
   return [...after].every(
-    ([run, how]) => before.has(run) || how === "sometimes",
+    ([run, how]) => before.has(run) || how === "sometimes" || !known.has(run),
   );
 }
 
@@ -443,33 +441,42 @@ function keepsNames(was: Scalar, is: Scalar): boolean {
 const states = (text: Scalar) => text !== null && String(text).trim() !== "";
 
 /** Whether a field's new content keeps what a reader relied on, read as its comparison says. */
-function sameBehaviour(how: FieldComparison, was: Scalar, is: Scalar): boolean {
+function sameBehaviour(
+  how: FieldComparison,
+  was: Scalar,
+  is: Scalar,
+  known: ReadonlySet<string>,
+): boolean {
   if (was === is) return true;
   if (how === "prose") return states(was) === states(is);
   if (how === "names") return keepsNames(was, is);
-  if (how === "carriers") return keepsCarriers(was, is);
+  if (how === "carriers") return keepsCarriers(was, is, known);
   return false;
+}
+
+/** Whether a carrier the base's values name must now always carry this new value. */
+function obligesKnownCarrier(view: ValueView, v: DataValue): boolean {
+  return Object.entries(view.now.fields).some(([field, spec]) => {
+    const was = view.base.fields[field];
+    const how = was === undefined ? spec.comparedAs : comparisonHeld(was, spec);
+    if (how !== "carriers") return false;
+    const known = knownCarriers(view.base, field);
+    return [...(carriedMap(v[field]) ?? [])].some(
+      ([carrier, carried]) => carried === "always" && known.has(carrier),
+    );
+  });
 }
 
 /**
  * A value the base lacks that obliges every writer from now on: an
- * envelope field every record must carry, or a field some carrier always
- * carries. Adding it is the "new and required" break the outer fields
- * already name.
+ * envelope field every record must carry, or a field a carrier the base
+ * already names always carries. Adding it is the "new and required" break
+ * the outer fields already name.
  */
 function obligingNewValues(view: ValueView): string[] {
-  const carriers = Object.entries(view.now.fields)
-    .filter(([, spec]) => spec.comparedAs === "carriers")
-    .map(([name]) => name);
   return [...view.after]
     .filter(([k]) => !view.before.has(k))
-    .filter(
-      ([, v]) =>
-        v.fieldRequired === true ||
-        carriers.some((field) =>
-          [...(carriedMap(v[field])?.values() ?? [])].includes("always"),
-        ),
-    )
+    .filter(([, v]) => v.fieldRequired === true || obligesKnownCarrier(view, v))
     .map(
       ([, v]) => `the new value ${view.show(v)} is required of every writer`,
     );

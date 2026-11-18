@@ -102,8 +102,6 @@ describe("what a data file publishes about a field", () => {
     expect(declared("mailbox")).toEqual({ carriedBy: "carriers" });
     expect(declared("followup-claim")).toEqual({ carriedBy: "carriers" });
     expect(declared("rule-matchers")).toEqual({
-      holds: "prose",
-      ruleValue: "prose",
       compared: "prose",
       facts: "names",
       readBy: "names",
@@ -190,20 +188,54 @@ describe("a field listing what carries a value", () => {
     ]);
   });
 
-  test("makes a new value some carrier always holds a break", () => {
-    const base = dataOf(chapterWith(null, "carriers"));
-    const now = dataOf(
+  /** The chapter with ALPHA's carriers, and a new value BETA carried as `beta` says. */
+  const withNew = (alpha: string, beta: string, how: FieldComparison) =>
+    dataOf(
       fixtureChapter({
-        fields: { ...FIELDS, extra: textField("carriers") },
+        fields: { ...FIELDS, extra: textField(how) },
         values: [
-          { ...ALPHA, extra: null },
-          { name: "BETA", code: 2, meaning: "new", extra: "tick (always)" },
+          { ...ALPHA, extra: alpha },
+          { name: "BETA", code: 2, meaning: "new", extra: beta },
         ],
       }),
     );
-    expect(compare(base, now)).toEqual([
-      'the new value name "BETA", code 2 is required of every writer',
-    ]);
+  const REQUIRED =
+    'the new value name "BETA", code 2 is required of every writer';
+
+  test("makes a new value a known carrier always holds a break", () => {
+    const base = dataOf(chapterWith("tick (sometimes)", "carriers"));
+    expect(
+      compare(base, withNew("tick (sometimes)", "tick (always)", "carriers")),
+    ).toEqual([REQUIRED]);
+  });
+
+  test("keeps that break when the same change declares the field exact", () => {
+    const base = dataOf(chapterWith("tick (sometimes)", "carriers"));
+    expect(
+      compare(base, withNew("tick (sometimes)", "tick (always)", "exact")),
+    ).toEqual([REQUIRED]);
+  });
+
+  test("lets a carrier no value names yet join as always, on a listed value and a new one", () => {
+    const base = dataOf(chapterWith("note (always)", "carriers"));
+    expect(
+      compare(
+        base,
+        withNew(
+          "note (always), question (always)",
+          "question (always)",
+          "carriers",
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  test("refuses a known carrier joining a listed value as always", () => {
+    const two = (alpha: string) =>
+      withNew(alpha, "manual (sometimes)", "carriers");
+    expect(
+      compare(two("tick (always)"), two("tick (always), manual (always)")),
+    ).toEqual([changed("tick (always)", "tick (always), manual (always)")]);
   });
 
   test("a field merely named carriedBy is compared exactly", () => {
@@ -280,10 +312,13 @@ describe("the declaration the comparison holds", () => {
 });
 
 describe("a declaration the generator refuses", () => {
-  const generated = (fields: Readonly<Record<string, FieldSpec>>) => {
+  const generated = (
+    fields: Readonly<Record<string, FieldSpec>>,
+    extra: string | number = 1,
+  ) => {
     const chapter = fixtureChapter({
       fields,
-      values: [{ ...ALPHA, extra: 1 } as DataValue],
+      values: [{ ...ALPHA, extra } as DataValue],
     });
     const root = tempDir("comparison");
     ok(root, "init", "-q");
@@ -301,6 +336,14 @@ describe("a declaration the generator refuses", () => {
       }),
     ).toEqual([
       "the field extra is compared as prose, which only a string field can be",
+    ]);
+  });
+
+  test("a carriers value that is not written as carriers", () => {
+    expect(
+      generated({ ...FIELDS, extra: textField("carriers") }, "tick,manual"),
+    ).toEqual([
+      'ALPHA\'s extra is "tick,manual", which is not a list of carriers, each with (always) or (sometimes)',
     ]);
   });
 

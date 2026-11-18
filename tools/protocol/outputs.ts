@@ -9,6 +9,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Finding } from "../../lib/findings.ts";
 import {
+  carriedMap,
   type Chapter,
   COMMAND,
   chapterFile,
@@ -163,9 +164,13 @@ function identityFindings(chapter: Chapter, values: readonly DataValue[]) {
 /**
  * A comparison the field cannot be read by: anything but exact on a field
  * that identifies a value, which is matched and never compared, or on one
- * that holds no text.
+ * that holds no text; and a `carriers` value not written as that comparison
+ * reads it, which it could not hold to its promise.
  */
-function comparisonFindings(chapter: Chapter): Finding[] {
+function comparisonFindings(
+  chapter: Chapter,
+  values: readonly DataValue[],
+): Finding[] {
   const file = chapterFile(chapter.id);
   const remedy = "correct the field's comparedAs in the chapter's fields";
   return Object.entries(chapter.fields).flatMap(([name, spec]) => {
@@ -187,7 +192,16 @@ function comparisonFindings(chapter: Chapter): Finding[] {
           remedy,
         ),
       ];
-    return [];
+    if (how !== "carriers") return [];
+    return values
+      .filter((v) => (v[name] ?? null) !== null && !carriedMap(v[name]))
+      .map((v) =>
+        finding(
+          file,
+          `${String(v.name)}'s ${name} is ${JSON.stringify(v[name])}, which is not a list of carriers, each with (always) or (sometimes)`,
+          "write it as `tick (always), manual (sometimes)`, each carrier once",
+        ),
+      );
   });
 }
 
@@ -401,7 +415,7 @@ function chapterOutputs(
     ],
     findings: [
       ...statusFindings(chapter, open),
-      ...comparisonFindings(chapter),
+      ...comparisonFindings(chapter, data.values),
       ...valueFindings(chapter, data.values),
       ...identityFindings(chapter, data.values),
       ...markdown.findings,

@@ -203,8 +203,8 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     description:
       "The fact, combination, list semantics or form as configuration and the code name it; for a field, its dotted path in .config/jig.yaml.",
   },
-  holds: prose("For a fact, what the item or change holds for it; else null."),
-  ruleValue: prose("For a fact, what a rule lists for it; else null."),
+  holds: text("For a fact, what the item or change holds for it; else null."),
+  ruleValue: text("For a fact, what a rule lists for it; else null."),
   compared: prose(
     "For a fact, how a rule's value is compared with the item's; else null.",
   ),

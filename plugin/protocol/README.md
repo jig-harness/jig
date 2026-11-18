@@ -27,13 +27,16 @@ Each chapter's values are also in a JSON file under [data/](data/), with the
 chapter's version, status and a description of each field, for a program in
 any language. These files describe the plugin release they ship in.
 
-A field's `comparedAs` says what a stable chapter promises about its content
-within one version. An `exact` field does not change. A `prose` field may be
-reworded, but is not emptied or newly stated on a value. A `names` field, a
+A field's `comparedAs` says what a stable chapter promises, within one
+version, about the field on a value the chapter lists and that holds it, null
+included. An `exact` field keeps its content. A `prose` field may be reworded,
+but what it states stays stated and a null stays null. A `names` field, a
 comma-separated list, may gain a name and never loses one, in any order. A
 `carriers` field lists what carries a value, each with `always` or
-`sometimes`: what always carried it still does, and anything else joins or
-leaves only as `sometimes`.
+`sometimes`: what always carried it still does, a carrier already named
+elsewhere in the field joins or leaves only as `sometimes`, and a new one, such
+as a new kind of line, may join as `always`. An optional field a value does not
+hold may appear on it.
 
 JSON documents also have draft 2020-12 JSON Schemas in [schemas/](schemas/).
 Their `$id` identifies the owning chapter and its version. The descriptions

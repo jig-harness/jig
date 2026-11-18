@@ -222,14 +222,16 @@ does in the release that ships it; the comparison applies to a chapter
 the base holds as stable, whatever status the change gives it.
 
 Not every field is something a reader branches on, so each field of a data
-file says how a change to its content is read, in `comparedAs`:
+file says how a change to its content is read, in `comparedAs`. The promise
+is about a value the base lists and a field that value holds, null included;
+an optional field a value does not hold may appear on it.
 
 | `comparedAs` | The field holds | A change keeps the promise when |
 | --- | --- | --- |
 | `exact` | a code, a flag, a type or any other value a reader branches on; every field that identifies a value, and any field that declares nothing else | it does not happen |
-| `prose` | words for a person: every `meaning`, and fields such as a command's `given` and `answers` | the field is reworded; emptying it, or stating it on a value that had none, is a break |
+| `prose` | words for a person: every `meaning`, and fields such as a command's `given` and `answers` | the field is reworded; emptying it, or stating it where the value held null, is a break |
 | `names` | a comma-separated list of names, such as a command's `runBy` or a label's `writers` | every name the base lists is still listed; a name may be added, and the order does not matter |
-| `carriers` | what carries a value, each with `always` or `sometimes`, as a mailbox field's `carriedBy` | what always carried it still does, and anything else joins or leaves only as `sometimes` |
+| `carriers` | what carries a value, each with `always` or `sometimes`, as a mailbox field's `carriedBy` | what always carried it still does; a carrier the base's values name joins or leaves only as `sometimes`; a carrier none of them names, such as a new kind of line, may join as `always`, on a listed value or a new one |
 
 The lists stay strings. Publishing them as arrays would retype the field, a
 break of every stable chapter that has one, and a reader gets the same
@@ -238,7 +240,8 @@ entries by splitting on the comma.
 The comparison held is the one the base declares, so declaring a looser one
 excuses nothing in the same change. Within a version a field's comparison
 moves only to `exact`; any other move fails the check unless the chapter's
-version is raised.
+version is raised. A base whose data files declare no comparison has none to
+hold, and the declaration the change makes stands.
 
 ### The generator and its gate
 

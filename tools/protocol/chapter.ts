@@ -40,10 +40,11 @@ export type FieldType = "string" | "integer" | "boolean";
  * How the comparison with the integration branch reads a change to a field's
  * content (design/protocol.md § What stable promises, and how the gate holds
  * it): `exact`, every change is a break; `prose`, words for a person, which
- * may be reworded but not emptied or newly stated; `names`, a comma-separated
- * list of names, which may gain a name, in any order, and not lose one;
- * `carriers`, what carries a value, each with always or sometimes, which only
- * a `sometimes` entry may join or leave.
+ * may be reworded but not emptied, nor stated where a value held null;
+ * `names`, a comma-separated list of names, which may gain a name, in any
+ * order, and not lose one; `carriers`, what carries a value, each with always
+ * or sometimes, which a carrier the base names joins or leaves only as
+ * sometimes.
  */
 export type FieldComparison = "exact" | "prose" | "names" | "carriers";
 
@@ -55,12 +56,31 @@ export interface FieldSpec {
   readonly required: boolean;
   /** Whether the field is part of what makes one value the same value at the base and now. */
   readonly identifies: boolean;
-  /** How a change to its content is read; left out, `comparisonOf` says. A data file always states it, except one written before fields declared it. */
+  /** How a change to its content is read; left out of a chapter's declaration, `comparisonOf` says. */
   readonly comparedAs?: FieldComparison;
   readonly description: string;
 }
 
 export type Scalar = string | number | boolean | null;
+
+/**
+ * What a `carriers` field names, each with `always` or `sometimes`
+ * (`tick (always), manual (sometimes)`); an empty text names none; null
+ * when the text is not that shape.
+ */
+export function carriedMap(
+  text: Scalar | undefined,
+): Map<string, string> | null {
+  if (typeof text !== "string") return null;
+  const carriers = new Map<string, string>();
+  if (text === "") return carriers;
+  for (const part of text.split(", ")) {
+    const m = /^(\S+) \((always|sometimes)\)$/.exec(part);
+    if (m === null || carriers.has(m[1] as string)) return null;
+    carriers.set(m[1] as string, m[2] as string);
+  }
+  return carriers;
+}
 
 /** One value of a chapter, as its data file lists it. */
 export type DataValue = Readonly<Record<string, Scalar>>;

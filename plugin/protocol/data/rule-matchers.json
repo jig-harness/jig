@@ -25,7 +25,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
-      "comparedAs": "prose",
+      "comparedAs": "exact",
       "description": "For a fact, what the item or change holds for it; else null."
     },
     "ruleValue": {
@@ -33,7 +33,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
-      "comparedAs": "prose",
+      "comparedAs": "exact",
       "description": "For a fact, what a rule lists for it; else null."
     },
     "compared": {
