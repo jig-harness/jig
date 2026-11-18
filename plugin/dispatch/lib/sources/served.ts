@@ -22,6 +22,7 @@ import {
   readyForWalk,
   carriedRelations,
   pulledNodes,
+  servedClaim,
 } from "./served-walk-inputs.ts";
 import type {
   PoolIssue,
@@ -31,9 +32,11 @@ import { metadata, type Metadata } from "./served-metadata.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
 import {
+  claimsUnread,
   claimsUnreadRow,
   itemFailed,
   limitedRow,
+  noteFailure,
   readFailureRow,
 } from "./served-failures.ts";
 import {
@@ -156,18 +159,6 @@ interface PersonReading {
   claimsUnread: string | null;
 }
 
-/** A served item in progress, as the claim dispatch monitors. */
-function servedClaim(i: PoolIssue) {
-  return {
-    key: i.identifier,
-    title: i.title,
-    url: i.url,
-    state: i.state.name,
-    ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
-    served: true as const,
-  };
-}
-
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
 async function readPerson(
   tracker: Tracker,
@@ -200,12 +191,7 @@ async function readPerson(
         ),
       );
     }
-    // A queue read the limit stopped or that failed leaves only a kept
-    // reading's items in progress, which may no longer hold.
-    if (view.limited !== null)
-      got.claimsUnread = `the tracker is rate limited until ${isoFromMs(view.limited.resetAt)}`;
-    else if (view.unavailable !== undefined)
-      got.claimsUnread = view.unavailable;
+    got.claimsUnread = claimsUnread(view);
     const progress = view.progress();
     got.claimed = progress.map(servedClaim);
     // Claims are monitored either way; an invalid scope only starts nothing.
@@ -218,11 +204,7 @@ async function readPerson(
       got,
     );
   } catch (error) {
-    // Thrown before the queue's items in progress were read: its claims are unknown.
-    if (view === null)
-      got.claimsUnread = isRateLimited(error)
-        ? `the tracker is rate limited until ${isoFromMs(error.resetAt)}`
-        : failureText(error);
+    if (view === null) got.claimsUnread = claimsUnread(null, error);
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
       got.failures.push(error);
@@ -232,14 +214,6 @@ async function readPerson(
     view?.save();
   }
   return got;
-}
-
-/** A failed queue or item read makes the reading incomplete; every cause that fails the record is kept. */
-function noteFailure(out: ServedReading, got: PersonReading): void {
-  if (got.failures.length === 0 && !got.partial) return;
-  if (got.failures.length > 0)
-    out.failures = [...(out.failures ?? []), ...got.failures];
-  out.incomplete = true;
 }
 
 /** Read every served identity for this adapter; an unreadable identity starts nothing. */
