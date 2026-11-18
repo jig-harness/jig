@@ -365,9 +365,8 @@ describe("a phone with everything open", () => {
           await shows(page, "main :is(h1, h2)");
           const all = page.getByRole("button", { name: /^Show all/ });
           if ((await all.count()) > 0) await all.first().click();
-          const folds = page.locator(".disc[aria-expanded='false']");
-          for (let left = await folds.count(); left > 0; left--)
-            await folds.first().click();
+          const folds = page.locator(".disc[aria-expanded='false']:visible");
+          while ((await folds.count()) > 0) await folds.first().click();
           expect(await overflowOf()).toBeLessThanOrEqual(0);
           expect(await shortControls(page)).toEqual([]);
         }

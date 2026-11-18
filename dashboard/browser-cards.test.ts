@@ -246,9 +246,15 @@ describe("the card with gutter", () => {
         "needs",
       );
       try {
+        await page.getByRole("button", { name: "Investigate group" }).click();
         const card = cardOf(page, "PR #479");
-        const title = await card.locator(".itemTitle").boundingBox();
-        if (title === null) throw new Error("the card shows its title");
+        const title = await card.locator(".itemTitle").evaluate((node) => {
+          node.scrollIntoView({ block: "center" });
+          const text = document.createRange();
+          text.selectNodeContents(node);
+          const { x, y, width, height } = text.getBoundingClientRect();
+          return { x, y, width, height };
+        });
         await page.mouse.move(title.x + 2, title.y + title.height / 2);
         await page.mouse.down();
         await page.mouse.move(title.x + title.width - 2, title.y + 4, {
@@ -311,7 +317,8 @@ describe("the card with gutter", () => {
         await page.locator(".acctList > .ghead h3").tap();
         await until(
           "the accounts folded",
-          async () => (await page.locator(".pLine .acct").count()) === 0,
+          async () =>
+            (await page.locator(".pLine .acct:visible").count()) === 0,
         );
         const load = page.locator(".load .ghead");
         await load.tap();
@@ -389,6 +396,7 @@ describe("the work identity and its linked work", () => {
         "needs",
       );
       try {
+        await page.getByRole("button", { name: "Investigate group" }).click();
         const card = cardOf(page, "API-77");
         expect(
           await card.locator(".rowTop .links .tgt").allTextContents(),

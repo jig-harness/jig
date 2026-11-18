@@ -14,6 +14,8 @@ import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.
 import { keptCommit } from "./answers.ts";
 import { allCards, type CardInfo } from "./cards.ts";
 import { announce, copyText } from "./copy.tsx";
+import { type CardFilter, EMPTY_CARD_FILTER } from "./facets.ts";
+import { type FilterResults, useFilterResults } from "./facet-results.ts";
 import { Glyph } from "./icon-word.tsx";
 import { CONTROL_ICONS } from "./icons.ts";
 import {
@@ -22,7 +24,6 @@ import {
   cardsIn,
   focusCard,
   focusStart,
-  rove,
   useKeys,
 } from "./keys.ts";
 import {
@@ -30,7 +31,7 @@ import {
   type PaletteRun,
   paletteEntries,
 } from "./palette.tsx";
-import type { ViewId } from "./search.ts";
+import { useCardFilters, type ViewId } from "./search.ts";
 import type { Clock } from "./view.ts";
 
 /** Where `?` and the palette's Help land: the keys. */
@@ -43,11 +44,9 @@ const START = "start";
 export function ViewFilter({
   value,
   setValue,
-  shown,
 }: {
   value: string;
   setValue: (value: string) => void;
-  shown: string | null;
 }) {
   return (
     <div className="viewFilter">
@@ -68,46 +67,8 @@ export function ViewFilter({
           }}
         />
       </label>
-      {shown === null ? null : <span className="sm mut">{shown}</span>}
     </div>
   );
-}
-
-/** Hides each card whose text lacks a word of the query; how many cards it keeps. */
-function applyFilter(element: HTMLElement, query: string): string | null {
-  const words = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w !== "");
-  const cards = [...element.querySelectorAll<HTMLElement>("[data-card]")];
-  for (const card of cards) {
-    const text = card.textContent?.toLowerCase() ?? "";
-    const hide = !words.every((w) => text.includes(w));
-    if (card.hidden !== hide) card.hidden = hide;
-  }
-  // While a query stands, the cards a phone keeps behind Show all are searched and shown too.
-  element.classList.toggle("filtering", words.length > 0);
-  rove(element);
-  if (words.length === 0) return null;
-  return `${cards.filter((c) => !c.hidden).length} of ${cards.length} cards`;
-}
-
-/** Keeps the filter applied as cards come and go with each read. */
-function useCardFilter(
-  root: RefObject<HTMLElement | null>,
-  query: string,
-): string | null {
-  const [shown, setShown] = useState<string | null>(null);
-  useEffect(() => {
-    const element = root.current;
-    if (element === null) return;
-    const apply = () => setShown(applyFilter(element, query));
-    apply();
-    const watcher = new MutationObserver(apply);
-    watcher.observe(element, { childList: true, subtree: true });
-    return () => watcher.disconnect();
-  }, [root, query]);
-  return shown;
 }
 
 /** The element a pending focus names: a card by its key, or a heading by its selector. */
@@ -122,7 +83,22 @@ function pendingTarget(element: HTMLElement, key: string): HTMLElement | null {
 
 /** Opens the view's Show all when it holds the card; whether it was opened, for the commit it schedules to draw the card. */
 function reveal(element: HTMLElement, target: HTMLElement): boolean {
-  if (target.closest(".rest") === null) return false;
+  const group = target.closest<HTMLElement>("[data-facet-group]");
+  const fold = group?.querySelector<HTMLButtonElement>(
+    ".ghead .disc[aria-expanded='false']",
+  );
+  fold?.click();
+  if (
+    target.closest(".groupRest") !== null &&
+    !element.classList.contains("filtering")
+  ) {
+    const more = group?.querySelector<HTMLButtonElement>(
+      "[data-group-more][aria-expanded='false']",
+    );
+    more?.click();
+    return fold != null || more != null;
+  }
+  if (target.closest(".rest") === null) return fold != null;
   const more = element.querySelector<HTMLButtonElement>(
     ".moreBtn[aria-expanded='false']",
   );
@@ -205,10 +181,15 @@ function useFocusAfterDraw(
 }
 
 function focusFilter(element: HTMLElement | null): void {
-  const field = element?.querySelector<HTMLInputElement>(
-    '[data-view-filter], .fields input[type="search"]',
+  const field = Array.from(
+    element?.querySelectorAll<HTMLElement>(
+      '[data-view-filter], .fields input[type="search"], .facetControls select',
+    ) ?? [],
+  ).find(
+    (candidate) =>
+      !candidate.matches(":disabled") && candidate.getClientRects().length > 0,
   );
-  if (field == null) announce("This view has no filter");
+  if (field == null) announce("This view has no visible filter");
   else field.focus();
 }
 
@@ -219,15 +200,15 @@ function activeElement(): HTMLElement | null {
 }
 
 export interface Steering {
-  /** Goes to a view, as a tab does: its filter cleared. */
+  /** Goes to a view as a tab does. */
   go: (view: ViewId) => void;
   /** Goes to a view and puts focus where it starts, for a control that the change removes. */
   goAndFocus: (view: ViewId) => void;
   /** Puts focus where the view starts, for a control that removes itself. */
   focusStart: () => void;
-  cardQuery: string;
-  setCardQuery: (query: string) => void;
-  shown: string | null;
+  cardFilter: CardFilter;
+  replaceCardFilter: (filter: CardFilter) => void;
+  filterResults: FilterResults;
   /** The palette's entries while it is open, `null` while it is closed. */
   entries: PaletteEntry[] | null;
   runPalette: (run: PaletteRun) => void;
@@ -242,11 +223,12 @@ export function useSteering(
     clock: Clock;
     counts: Partial<Record<ViewId, number>>;
     setView: (view: ViewId) => void;
+    view: ViewId;
   },
 ): Steering {
   const { setView } = o;
-  const [cardQuery, setCardQuery] = useState("");
-  const shown = useCardFilter(main, cardQuery);
+  const [cardFilter, replaceCardFilter] = useCardFilters(o.view);
+  const filterResults = useFilterResults(main, cardFilter, o.view);
   const [pending, setPending] = useState<string | null>(null);
   const settle = useCallback(() => setPending(null), []);
   const commitAfter = useRef<CardInfo | null>(null);
@@ -258,12 +240,12 @@ export function useSteering(
   const [back, setBack] = useState<HTMLElement | null>(null);
   const go = useCallback(
     (view: ViewId) => {
-      setCardQuery("");
       setView(view);
     },
     [setView],
   );
   const goFocused = (view: ViewId, focus: string) => {
+    if (focus !== START) replaceCardFilter(EMPTY_CARD_FILTER);
     go(view);
     setPending(view === "help" ? KEYS_HEADING : focus);
   };
@@ -346,9 +328,9 @@ export function useSteering(
     go,
     goAndFocus: (view) => goFocused(view, START),
     focusStart: () => setPending(START),
-    cardQuery,
-    setCardQuery,
-    shown,
+    cardFilter,
+    replaceCardFilter,
+    filterResults,
     entries,
     runPalette,
     closePalette,
