@@ -360,4 +360,32 @@ describe("Orca's endRun", () => {
     });
     expect(readRunTabs(root)).toHaveLength(1);
   });
+
+  it("closes nothing when its signal aborts during the process-table read", async () => {
+    const root = tabsRoot();
+    writeTab(root, { launch: "run-1" });
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const receipt = await orcaEndRun(
+      run,
+      "orca",
+      5000,
+      {
+        root,
+        orca: async (...args) => {
+          calls.push(String(args[1]));
+          return orca();
+        },
+        table: async () => {
+          controller.abort();
+          return shell()();
+        },
+      },
+      controller.signal,
+    );
+    expect(receipt.ok).toBe(false);
+    expect(receipt.detail).toContain("out of time");
+    expect(calls).toEqual([]);
+    expect(readRunTabs(root)).toHaveLength(1);
+  });
 });

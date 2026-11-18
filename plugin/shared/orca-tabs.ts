@@ -327,6 +327,7 @@ export async function closeRunTab(
   until: number = Number.POSITIVE_INFINITY,
   known?: ReadonlySet<number>,
   keepWhenShellGone = false,
+  signal?: AbortSignal,
 ): Promise<CloseOutcome> {
   const tableBudget = within(until, TABLE_CALL_SEC);
   if (tableBudget === null) return "out of time";
@@ -345,7 +346,7 @@ export async function closeRunTab(
       ? "reused"
       : "busy";
   const closeBudget = within(until, Number.POSITIVE_INFINITY);
-  if (closeBudget === null) return "out of time";
+  if (closeBudget === null || signal?.aborted === true) return "out of time";
   const done = await deps.orca(
     tab.orca,
     ["terminal", "close", "--terminal", tab.handle, "--json"],
@@ -423,7 +424,14 @@ export async function closeLaunchTabs(
       outcome:
         currentMs() >= until || signal?.aborted === true
           ? "out of time"
-          : await closeRunTab({ ...tab, orca }, deps, until, undefined, true),
+          : await closeRunTab(
+              { ...tab, orca },
+              deps,
+              until,
+              undefined,
+              true,
+              signal,
+            ),
     });
   return ended;
 }
