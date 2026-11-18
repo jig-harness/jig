@@ -512,6 +512,10 @@ describe("a served queue's cost in tracker requests", () => {
           `rate limited until ${new Date(reset).toISOString()}`,
         ),
       }),
+      expect.objectContaining({
+        target: "the items person@example.com claimed",
+        reason: expect.stringContaining("stalls, double claims"),
+      }),
     ]);
     expect(read.wanted).toEqual([]);
     expect(fake.count()).toBe(0);

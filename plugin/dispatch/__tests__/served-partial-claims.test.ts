@@ -281,3 +281,13 @@ describe("a served queue whose items in progress were not read", () => {
     });
   });
 });
+
+describe("an item whose epic ancestry did not read", () => {
+  it("makes the reading partial through readPickups, and keeps the claims known", async () => {
+    const { tracker, cache } = queue();
+    tracker.getIssue = (async () => null) as unknown as Tracker["getIssue"];
+    const reading = await read(tracker, cache);
+    expect(reading.partial).toBe(true);
+    expect(reading.claimed).not.toBeNull();
+  });
+});

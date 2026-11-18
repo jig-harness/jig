@@ -38,7 +38,7 @@ import {
 } from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
-import { limitedRow } from "./served-failures.ts";
+import { claimsUnreadRow, limitedRow } from "./served-failures.ts";
 import {
   readServedPickups,
   freshServedPickup,
@@ -694,8 +694,23 @@ export async function readPickups(
     factory.claimed === null &&
     once().dispatchSource !== undefined &&
     factoryReading.factoryView === undefined
-  )
-    return factory;
+  ) {
+    const adapter = once().adapter as keyof ServedPerson["tracker"];
+    const unchecked = (served?.people ?? []).flatMap((person) => {
+      const identity = person.tracker[adapter];
+      return identity === undefined
+        ? []
+        : [
+            claimsUnreadRow(
+              identity,
+              "the tracker's scope failed before the queue was read",
+            ),
+          ];
+    });
+    return unchecked.length === 0
+      ? factory
+      : { ...factory, unplaced: onceEach([...factory.unplaced, ...unchecked]) };
+  }
   const roots = [
     ...(factoryReading.epicRoots ?? []),
     ...factoryReading.wanted.flatMap((i) =>
@@ -742,7 +757,9 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
-    ...(extra.limitedUntil !== undefined || extra.incomplete === true
+    ...(extra.limitedUntil !== undefined ||
+    extra.incomplete === true ||
+    factory.partial === true
       ? { partial: true as const }
       : {}),
   };
@@ -835,6 +852,11 @@ function withPool(
       ...pool.unplaced,
       ...(pool.limited === undefined ? [] : [limitedRow(open(), pool.limited)]),
     ]),
+    // A pool that was not read may hold an ended pickup's item: the reading
+    // is partial, so its record is kept.
+    ...(pool.limited !== undefined || pool.failed === true
+      ? { partial: true as const }
+      : {}),
   };
 }
 

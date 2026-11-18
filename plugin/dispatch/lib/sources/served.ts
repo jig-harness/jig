@@ -43,7 +43,7 @@ import {
   isRateLimited,
   type TrackerRateLimited,
 } from "../../../shared/outbound/budget.ts";
-import { servedParentHold } from "./served-parents.ts";
+import { parentHoldUnread, servedParentHold } from "./served-parents.ts";
 import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import {
   closed,
@@ -776,7 +776,10 @@ async function placeLeaf(
     view,
     options.mergeEvidence,
   );
-  if (parentHold !== null) return void unplace(parentHold);
+  if (parentHold !== null) {
+    if (parentHoldUnread(parentHold)) itemFailed(found);
+    return void unplace(parentHold);
+  }
   const admissionHold = await attachAdmissions(
     ctx,
     candidate,
@@ -937,7 +940,10 @@ async function heldReason(
     view,
     options.mergeEvidence,
   );
-  if (parentHold !== null) return parentHold;
+  if (parentHold !== null) {
+    if (parentHoldUnread(parentHold)) itemFailed(found);
+    return parentHold;
+  }
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
     hitl: options.hitl,
     manualOps: options.manualOps,
