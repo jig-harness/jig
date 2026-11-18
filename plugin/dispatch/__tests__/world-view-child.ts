@@ -48,6 +48,8 @@ export interface ChildResult {
   }>;
   /** `frozen` only: PR #7's drive class in the forge facts as returned, and as they stood after the tick. */
   forgeDrive?: { returned: string | null; after: string | null };
+  /** `frozen` only: the tracker fact's pickup keys as returned, and as they stood after the tick. */
+  pickups?: { returned: string[]; after: string[] };
 }
 
 /** The calls the forge refuses while the replayed tick runs: each read the world view covers. */
@@ -240,10 +242,14 @@ async function main(mode: string | undefined): Promise<ChildResult> {
   if (mode === "frozen") {
     let returned: ForgeRead | null = null;
     let frozen: ForgeRead | null = null;
+    const trackerFact: { pickups: Array<{ key: string }> }[] = [];
+    let returnedPickups: string[] = [];
     const receipt = await tick(false, (direct) => ({
       ...direct,
       async tracker(request) {
         const fact = await direct.tracker(request);
+        returnedPickups = fact.value.pickups.map((p) => p.key);
+        trackerFact.push(fact.value);
         Object.freeze(fact.value.pickups);
         if (fact.value.claimed !== null) Object.freeze(fact.value.claimed);
         Object.freeze(fact.value);
@@ -260,6 +266,10 @@ async function main(mode: string | undefined): Promise<ChildResult> {
       receipts: [receipt],
       classes: [],
       forgeDrive: { returned: classOf7(returned), after: classOf7(frozen) },
+      pickups: {
+        returned: returnedPickups,
+        after: (trackerFact[0]?.pickups ?? []).map((p) => p.key),
+      },
     };
   }
   const first = await tick(false, (direct) => recording(direct, recorded));

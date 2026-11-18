@@ -220,6 +220,7 @@ export async function openRepo(
   try {
     target = await heldTo(() => world.target(path), context.bound);
   } catch (error) {
+    if (ended(context.bound)) return passed();
     target = failed("unreadable", failureText(error), error);
   }
   if (!target.ok && target.failure.code === "passed") return passed();
@@ -245,6 +246,7 @@ export async function openRepo(
   try {
     config = await heldTo(() => world.configuration(path, repo), context.bound);
   } catch (error) {
+    if (ended(context.bound)) return passed();
     return unread(failureText(error));
   }
   if (!config.ok) return unread(config.failure.reason, config.failure);
@@ -353,46 +355,92 @@ export async function observeRepo(
   try {
     [tracked, forge] = await settled(
       timer.time("tracker", async () => {
-        const fact = await heldTo(
-          () =>
-            world.tracker({
-              values,
-              repo,
-              section,
-              report: trackerReport,
-              where,
-              people: opened.stages.has("pickup")
-                ? (context.options.machine?.serve ?? [])
-                : [],
-              serveDefaults: context.options.machine?.serveDefaults,
-              nowMs,
-              headroom: pickupHeadroom(context, records),
-              records,
-              preparedTracker: opened.tracker,
-            }),
-          context.bound,
-        );
-        // Planning orders the pickups for this host: it gets its own copy, never the view's fact.
-        return {
-          ...fact.value,
-          pickups: [...fact.value.pickups],
-          claimed: fact.value.claimed && [...fact.value.claimed],
-        };
+        try {
+          const fact = await heldTo(
+            () =>
+              world.tracker({
+                values,
+                repo,
+                section,
+                report: trackerReport,
+                where,
+                people: opened.stages.has("pickup")
+                  ? (context.options.machine?.serve ?? [])
+                  : [],
+                serveDefaults: context.options.machine?.serveDefaults,
+                nowMs,
+                headroom: pickupHeadroom(context, records),
+                records,
+                preparedTracker: opened.tracker,
+              }),
+            context.bound,
+          );
+          // Planning orders the pickups for this host: it gets its own copy, never the view's fact.
+          return {
+            ...fact.value,
+            pickups: [...fact.value.pickups],
+            claimed: fact.value.claimed && [...fact.value.claimed],
+          };
+        } catch (error) {
+          if (context.bound?.signal.aborted !== true) throw error;
+          // The bound ended the read: a failed tracker reading, beside the forge's facts.
+          trackerReport.records.push({
+            record: "tracker",
+            source: where,
+            ok: false,
+            detail: cutRead("the tracker was read").failure.reason,
+            failure: CUT_AT_BOUND,
+          });
+          const none: Tracked = {
+            keys: null,
+            adapter: null,
+            issueRepository: null,
+            pickups: [],
+            claimed: null,
+            tracker: null,
+          };
+          return none;
+        }
       }),
       timer.time("forge", async () => {
-        const facts = await heldTo(
-          () =>
-            world.forge({
-              repo,
-              report: forgeReport,
-              section,
-              labels,
-              nowMs,
-              shared: shared.records,
-            }),
-          context.bound,
-        );
-        return facts.value;
+        try {
+          const facts = await heldTo(
+            () =>
+              world.forge({
+                repo,
+                report: forgeReport,
+                section,
+                labels,
+                nowMs,
+                shared: shared.records,
+              }),
+            context.bound,
+          );
+          return facts.value;
+        } catch (error) {
+          if (context.bound?.signal.aborted !== true) throw error;
+          // The bound ended the read: a failed forge reading, beside the tracker's facts.
+          forgeReport.records.push({
+            record: "forge",
+            source: `gh ${repo.slug}`,
+            ok: false,
+            detail: `the pull requests cannot be read: ${cutRead("the pull requests were read").failure.reason}${lastForgeReading(repo.path, nowMs)}`,
+            failure: CUT_AT_BOUND,
+          });
+          const none: ForgeRead = {
+            ok: false,
+            open: [],
+            read: new Set(),
+            scoped: labels?.onlyLabeled === true,
+            inScope: new Set(),
+            disputed: new Set(),
+            created: new Map(),
+            drives: [],
+            merged: [],
+            login: null,
+          };
+          return none;
+        }
       }),
     );
   } finally {

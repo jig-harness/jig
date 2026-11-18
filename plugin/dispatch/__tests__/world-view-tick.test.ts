@@ -18,6 +18,8 @@ import { currentIso } from "../../shared/time.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { ForgeRead } from "../lib/tick-forge.ts";
 import type { DrivenPr, LedgerClass } from "../lib/types.ts";
+import { keepStewardRun, submitStewardRecords } from "../lib/steward.ts";
+import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { FRESHNESS_BOUND_MS, forgeFacts } from "../lib/world-view.ts";
 import {
   assignedIssue,
@@ -36,6 +38,7 @@ import {
   claimed,
   driveRuns,
   earlierRecord,
+  dispatchState,
   machineFile,
 } from "./launch-fixtures.ts";
 import { withOrigin } from "./pickup-fixtures.ts";
@@ -264,6 +267,72 @@ describe("the machine view apart from the world view", () => {
     expect(String(notify?.[2])).toContain(
       `launch record ${id} already re-drove it`,
     );
+  }, 90_000);
+});
+
+describe("planning's own tracker copy", () => {
+  it("orders the pickups for the steward without touching the fact the view returned", async () => {
+    const w = world();
+    current = w;
+    w.setConfig(CONFIG);
+    w.setPrs("open", []);
+    w.setPrs("merged", []);
+    w.setIssues([
+      assignedIssue(12, "factory-bot", []),
+      assignedIssue(13, "factory-bot", []),
+    ]);
+    w.setAssigner(12, "maintainer", "WRITE");
+    w.setAssigner(13, "maintainer", "WRITE");
+    machineFile(
+      w,
+      [account(w, "a", "a@example.com")],
+      { steward: { enabled: true, every: "20m" } },
+      ["pickup", "steward"],
+    );
+    const issue = (key: string) =>
+      ({
+        identifier: key,
+        title: "Task",
+        url: null,
+        type: "task",
+        priority: 2,
+        size: "small",
+        state: { id: "todo", name: "Todo", type: "unstarted" },
+        createdAt: "2026-01-01",
+        assignee: { id: "a", name: "factory-bot" },
+        labels: [],
+        hasOpenChildren: false,
+        isEpic: false,
+        truncated: [],
+      }) as unknown as PoolIssue;
+    keepStewardRun(
+      "ordered",
+      {
+        version: 1,
+        repo: SLUG,
+        backlog: [],
+        drives: [],
+        needs: [],
+        queue: [issue("#12"), issue("#13")],
+        passes: [],
+        failures: [],
+        load: null,
+      },
+      Date.now(),
+      dispatchState(w),
+    );
+    expect(
+      submitStewardRecords(
+        "ordered",
+        [{ kind: "order", targets: ["#12", "#13"], reason: "keep the tie" }],
+        dispatchState(w),
+      ).ok,
+    ).toBe(true);
+    const { receipts, pickups } = await child(w, "frozen");
+    // Planning took its own copy to order: the frozen fact still reads as the view returned it.
+    expect(receipts[0]?.repos[0]?.defect).toBeUndefined();
+    expect(pickups?.returned.length).toBe(2);
+    expect(pickups?.after).toEqual(pickups?.returned);
   }, 90_000);
 });
 
