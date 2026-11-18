@@ -63,18 +63,35 @@ function expanded(card: Locator): Promise<string | null> {
   return card.locator(".disc").first().getAttribute("aria-expanded");
 }
 
-/** A point on the card that is its own space: no link, button, field or text control under it. */
+/**
+ * A point on the card that is its own space: no link, button, field or text
+ * control under it, nor within `MARGIN` pixels of it, nor the card's edge. A
+ * browser moves a tap towards the nearest thing it takes for the target
+ * (Chrome's touch adjustment), so a point near the edge can open the card
+ * beside it, and one near a control can press the control.
+ */
 async function emptyPoint(card: Locator): Promise<{ x: number; y: number }> {
   const point = await card.evaluate((element) => {
+    const MARGIN = 16;
     const box = element.getBoundingClientRect();
     const own =
-      "a, button, input, select, textarea, label, [role='button'], [role='option']";
-    for (let y = box.top + 4; y < box.bottom - 2; y += 4)
-      for (let x = box.right - 6; x > box.left + 40; x -= 8) {
-        const hit = document.elementFromPoint(x, y);
-        if (hit !== null && element.contains(hit) && hit.closest(own) === null)
+      "a, button, input, select, textarea, label, summary, [role='button'], [role='option'], [role='combobox'], [data-no-toggle]";
+    const isOwn = (x: number, y: number) => {
+      const hit = document.elementFromPoint(x, y);
+      return hit !== null && element.contains(hit) && hit.closest(own) === null;
+    };
+    for (let y = box.top + MARGIN; y < box.bottom - MARGIN; y += 4)
+      for (let x = box.right - MARGIN; x > box.left + 40; x -= 8)
+        if (
+          [
+            [0, 0],
+            [-MARGIN, 0],
+            [MARGIN, 0],
+            [0, -MARGIN],
+            [0, MARGIN],
+          ].every(([dx = 0, dy = 0]) => isOwn(x + dx, y + dy))
+        )
           return { x, y };
-      }
     return null;
   });
   if (point === null) throw new Error("the card has no space of its own");
