@@ -84,15 +84,32 @@ function unreadProof(context: MergeContext, what: string): null {
   return null;
 }
 
+/** The options of one read, and whether that read reported a cause of its own. */
 function associationOptions(context: MergeContext) {
   const timeoutSec = secondsLeft(context.bound);
-  return {
+  const state = { reported: false };
+  const options = {
     ...(context.bound === undefined ? {} : { signal: context.bound.signal }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
     ...(context.onFailure === undefined
       ? {}
-      : { onFailure: context.onFailure }),
+      : {
+          onFailure: (err: unknown) => {
+            state.reported = true;
+            context.onFailure?.(err);
+          },
+        }),
   };
+  return { options, state };
+}
+
+/** A null read that named its cause keeps it; one that named none is unreadable evidence. */
+function nullRead(
+  context: MergeContext,
+  state: { reported: boolean },
+  what: string,
+): null {
+  return state.reported ? null : unreadProof(context, what);
 }
 
 /** One direct merge view, followed by the governed, bounded complete file listing. */
@@ -201,24 +218,23 @@ export function planMergeReader(
       comments: (key) =>
         ended(context.bound)
           ? Promise.resolve(passedBound(context, "a linked-pull-request read"))
-          : reads.links.comments(key, associationOptions(context)),
+          : reads.links.comments(key, associationOptions(context).options),
       search: async (term) => {
         if (ended(context.bound))
           return passedBound(context, "a linked-pull-request search");
-        const found = await reads.links.search(
-          term,
-          associationOptions(context),
-        );
+        const { options, state } = associationOptions(context);
+        const found = await reads.links.search(term, options);
         return found === null
-          ? unreadProof(context, "a linked-pull-request search")
+          ? nullRead(context, state, "a linked-pull-request search")
           : note(found);
       },
       view: async (pr) => {
         if (ended(context.bound))
           return passedBound(context, "a linked-pull-request view");
-        const found = await reads.links.view(pr, associationOptions(context));
+        const { options, state } = associationOptions(context);
+        const found = await reads.links.view(pr, options);
         if (found === null)
-          return unreadProof(context, "a linked-pull-request view");
+          return nullRead(context, state, "a linked-pull-request view");
         note([found]);
         return found;
       },

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { OutboundError } from "../../shared/outbound/failure.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { servedParentHold } from "../lib/sources/served-parents.ts";
@@ -309,3 +310,38 @@ test("a linked-pull-request search that returns no readable answer reports an in
   expect(Object.keys(evidence.held)).toEqual(["#2>#3"]);
   expect(failures[0]).toMatchObject({ code: "invalid" });
 });
+
+for (const name of ["search", "view"] as const) {
+  test(`a linked-pull-request ${name} that reported a transport failure keeps it and adds no invalid one`, async () => {
+    const f = fixture();
+    const failures: unknown[] = [];
+    const cause = new OutboundError("unreachable", "the forge timed out");
+    const read = planMergeReader(
+      {} as Tracker,
+      { ...context, onFailure: (error) => failures.push(error) },
+      {
+        ...f.reads,
+        links: {
+          ...f.reads.links,
+          ...(name === "view"
+            ? {
+                comments: async () => [
+                  "https://github.com/example/repo/pull/10",
+                ],
+                search: async () => [],
+              }
+            : {}),
+          [name]: async (
+            _: unknown,
+            options?: { onFailure?: (e: unknown) => void },
+          ) => {
+            options?.onFailure?.(cause);
+            return null;
+          },
+        },
+      },
+    );
+    await read(description);
+    expect(failures).toEqual([cause]);
+  });
+}
