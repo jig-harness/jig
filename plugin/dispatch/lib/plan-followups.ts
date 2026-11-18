@@ -96,6 +96,7 @@ import {
 } from "./followup-waits.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
 import { parseMs } from "../../shared/time.ts";
+import type { TickOutcome } from "../../shared/records/followup-values.ts";
 
 export interface FollowupInput {
   slug: string;
@@ -244,7 +245,7 @@ function endedAs(
   pr: number,
   id: string,
   found: ReadRecord | undefined,
-): "done" | "failed" | null {
+): TickOutcome | null {
   const outcome = input.outcomes.get(pr);
   if (outcome?.record === id) return outcome.outcome;
   return found === undefined ? null : outcomeOf(found);
@@ -387,7 +388,7 @@ function releaseWhy(
   pr: number,
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
-  ended: "done" | "failed" | null,
+  ended: TickOutcome | null,
 ): { what: string; fault: boolean } | null {
   if (
     found !== undefined &&
@@ -441,7 +442,7 @@ function plannedWait(
   input: FollowupInput,
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
-  ended: "done" | "failed" | null,
+  ended: TickOutcome | null,
   plan: Plan,
   target: string,
 ): boolean {
@@ -548,7 +549,7 @@ function endedHere(
   pr: number,
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
-): "done" | "failed" | null {
+): TickOutcome | null {
   // A marker a person's answer marked done settles the follow-up, whatever this host's records of the run say.
   if (marker.run.outcome === "done") return "done";
   const ended = endedAs(input, pr, marker.run.record, found);
