@@ -102,6 +102,35 @@ function joinedTo(
   return (w) => w.items.includes(key) && !left.has(w.path);
 }
 
+/**
+ * Why the item must not start in `path`: opening its branch can return the
+ * tree a batch left it out of, while an agent still works there.
+ */
+export async function leftBehindBusy(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: PickupContext,
+  key: string,
+  path: string,
+): Promise<string | null> {
+  const left = leftBehindWorkspaces(
+    key,
+    state.records.filter((r) => r.record.repo === repo.slug),
+  );
+  if (!left.has(path)) return null;
+  let sessions: SessionsReport;
+  try {
+    sessions = await ctx.sessions();
+  } catch (error) {
+    return `the runtime cannot be read again: ${failureText(error)}`;
+  }
+  const held = holding(sessions, (w) => w.path === path);
+  if (held.kind === "unknown") return held.reason;
+  return held.kind === "running"
+    ? `its branch is checked out in ${path}, the batch's workspace, where an agent is running`
+    : null;
+}
+
 /** Why the item must not be started now; `null` when nothing changed. */
 export async function changed(
   state: ApplyState,
@@ -230,6 +259,14 @@ async function launchOne(
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
+  const busy = await leftBehindBusy(
+    state,
+    repo,
+    ctx,
+    action.target,
+    workspace.path,
+  );
+  if (busy !== null) return waits(action, busy, slots.account.name);
   const after = await changed(state, repo, ctx, action.target, served);
   if ("why" in after) return waits(action, after.why, slots.account.name);
   const afterBatch = await checkBatch();

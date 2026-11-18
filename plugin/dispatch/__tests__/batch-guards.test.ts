@@ -1,6 +1,7 @@
 import { expect, it } from "bun:test";
 import {
   changed,
+  leftBehindBusy,
   pendingBatchBlock,
   servedAuthorization,
 } from "../lib/actions/pickup.ts";
@@ -101,6 +102,11 @@ it("starts a member the ended batch left out, though an agent runs in the worksp
     servedPerson: "alex",
   });
   expect("why" in result ? result.why : null).toBeNull();
+  // Its branch may still be checked out there: it then waits for that agent.
+  expect(await leftBehindBusy(state, repo, ctx, "#2", "/rival")).toContain(
+    "an agent is running",
+  );
+  expect(await leftBehindBusy(state, repo, ctx, "#2", "/fresh")).toBeNull();
 });
 it("refuses replay on a secondary competing session or a removed served person", async () => {
   const { state, ctx, record } = guards();

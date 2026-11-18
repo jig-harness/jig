@@ -16,6 +16,7 @@ import {
   releaseEnded,
 } from "../lib/actions/pickup-hold.ts";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
+import { leftBehindWorkspaces } from "../lib/actions/pickup-hold.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
 import { closeStateDb } from "../lib/state.ts";
@@ -191,6 +192,18 @@ describe("a batch pickup that ended after claiming one member", () => {
       next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
     ).toEqual(["#464"]);
     expect(next.running).toEqual([]);
+  });
+
+  it("gives the workspace back to the anchor once its own pickup ran there", () => {
+    const [batch] = [endedBatch(["#464", "#713"], "done", ["#713"])];
+    const [own] = [endedBatch(["#464"], "done", [])];
+    if (batch === undefined || own === undefined) throw new Error("no record");
+    batch.record.workspace = { id: "w1", path: "/tree/batch" };
+    expect([...leftBehindWorkspaces("#464", [batch])]).toEqual(["/tree/batch"]);
+    own.record.id = "2026-11-12T18-00-00-000Z-own";
+    own.record.createdAt = "2026-11-12T18:00:00.000Z";
+    own.record.workspace = { id: "w1", path: "/tree/batch" };
+    expect([...leftBehindWorkspaces("#464", [batch, own])]).toEqual([]);
   });
 
   it("keeps every member of a batch that ended on a question, so the person answers it first", () => {
