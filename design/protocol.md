@@ -474,9 +474,8 @@ Each step is one pull request, shippable alone.
 - **Chapters for contracts no outside reader reads.** A shape inside one
   skill stays documented with that skill.
 - **What a dispatched session leaves behind**
-  ([#1017](https://github.com/jig-harness/jig/issues/1017)). A later
-  provisional chapter may cover its closing report once that design defines
-  it.
+  ([dispatched-sessions.md](dispatched-sessions.md)). A later provisional
+  chapter may cover its closing report, whose fields that design defines.
 
 ## Review
 

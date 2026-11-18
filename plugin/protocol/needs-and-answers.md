@@ -141,11 +141,17 @@ in square brackets: `answer drive: approve [3fa9c2d1e0b4]`. A reader takes
 a trailing digest off before it reads the form. An answer naming a digest
 that is not the decision's current one is **stale**: it settles nothing and
 the decision waits, so an approval of an earlier framing never settles the
-one that replaced it. An answer naming no digest is bound by its time alone.
+one that replaced it. An answer naming no digest is bound by its time alone on a parked question;
+on a dispatcher need, a structured answer naming no digest is stale and
+settles nothing.
 Every line Jig offers to copy, and every answer `jig send` writes, carries
-the digest. On the forge, `jig send` also writes a hidden record beside
-the line, listed in [the hidden comment markers' chapter](comment-markers.md)
-as `drive-answer`.
+the digest. On the forge, and on a tracker's item when the sender may be the
+user the dispatcher's own tracker credential acts as, `jig send` also writes
+a hidden record beside the line, listed in
+[the hidden comment markers' chapter](comment-markers.md) as `drive-answer`.
+A dispatcher reads a comment by its own forge login or tracker user as an
+answer to a need's decision only with that record, naming that identity, the
+decision's key and digest and the option the line chooses.
 
 Each person's latest answer counts, its time being when its comment was
 last edited. When every person's latest answer chooses the same option with

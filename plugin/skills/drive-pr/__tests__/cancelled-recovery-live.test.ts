@@ -25,6 +25,12 @@ function fixture() {
     const mode = process.argv[2];
     const head = process.argv[3] || ${JSON.stringify(HEAD)};
     if (mode === "request") { await observeCancellation("5", head); console.log(await claimCancellation("5", head, [10])); process.exit(0); }
+    if (mode === "refused") {
+      await observeCancellation("5", head);
+      const refusal = await claimCancellation("5", head, [10], [], async () => { throw new Error("lost"); }).then(() => "claimed", (err) => err.message);
+      console.log(JSON.stringify(refusal));
+      process.exit(0);
+    }
     console.log(JSON.stringify(mode === "observe" ? await observeCancellation("5", head) :
       mode === "claim" ? await claimCancellation("5", head) : await recoverCancelledOnHead("5", head)));
   `,
@@ -87,6 +93,16 @@ describe("durable cancellation recovery boundary", () => {
       expect((await f.run("observe")).requestedAt).toBeNumber();
       await f.run("observe", "b".repeat(40));
       expect(await f.run("claim", "b".repeat(40))).toBe(true);
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a claim refused by its commit check is not spent", async () => {
+    const f = fixture();
+    try {
+      expect(await f.run("refused")).toBe("lost");
+      expect(await f.run("claim")).toBe(true);
     } finally {
       rmSync(f.dir, { recursive: true, force: true });
     }

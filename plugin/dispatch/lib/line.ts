@@ -911,6 +911,24 @@ export function buildLine(input: LineInput): LineSnapshot {
               why: q.why,
             })),
     ),
+    carried: input.reports.flatMap((r) =>
+      r.slug === null
+        ? []
+        : r.quiet.flatMap((q) =>
+            q.class === "claimed-carried" && q.carried !== undefined
+              ? [
+                  {
+                    repo: r.slug as string,
+                    target: q.target,
+                    pr: q.carried.pr,
+                    url: q.carried.url,
+                    drive: q.carried.drive,
+                    why: q.why,
+                  },
+                ]
+              : [],
+          ),
+    ),
     queue: views.flatMap(queueOf),
     ready: readyOf(input.reports).map((r) => ({
       ...r,

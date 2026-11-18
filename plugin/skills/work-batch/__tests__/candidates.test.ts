@@ -928,6 +928,7 @@ describe("the table", () => {
       points: 2,
       candidates: [candidate()],
       excluded: [],
+      leftOut: [],
       labellingGaps: [],
       overflow: 0,
       warnings: [],

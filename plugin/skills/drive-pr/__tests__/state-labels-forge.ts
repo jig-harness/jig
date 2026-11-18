@@ -13,12 +13,14 @@ const LABELS_ON = "dispatch:\n  labels:\n    enabled: true\n";
 
 /**
  * A `gh` that serves the repository and its default branch's
- * `.config/jig.yaml` (`jig.yaml` beside it), keeps the pull request's labels
+ * `.config/jig.yaml` (`jig.yaml` beside it) and the pull request's author, keeps its labels
  * in `labels.json` and its head in `head` (the label read's own), logs each
- * label edit to `edits.log`, refuses one while `edit-refused` exists, and
- * runs the stub forge for everything else.
+ * label edit to `edits.log`, refuses one while `edit-refused` exists, puts
+ * `status-after-converged.json` in place of the fixture's `status.json` once
+ * an edit adds `jig:converged` (CI the label write disturbed), and runs the
+ * stub forge for everything else.
  */
-const LABEL_GH = (stub: string) => `#!/usr/bin/env bun
+const LABEL_GH = (stub: string, fixture: string) => `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const dir = path.dirname(process.argv[1]);
@@ -32,6 +34,8 @@ if (args[0] === "api" && args[1] === "repos/example/project/contents/.config/jig
   out({ encoding: "base64", content: fs.readFileSync(path.join(dir, "jig.yaml")).toString("base64") });
 if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid")
   out({ labels: read().map((name) => ({ name })), headRefOid: fs.readFileSync(path.join(dir, "head"), "utf8") });
+if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "author")
+  out({ author: { login: "example-user" } });
 const values = (flag) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
 const add = values("--add-label");
 const remove = values("--remove-label");
@@ -42,6 +46,9 @@ if (args[0] === "pr" && args[1] === "edit" && [...add, ...remove].some((l) => l.
     process.exit(1);
   }
   fs.writeFileSync(file, JSON.stringify([...read().filter((l) => !remove.includes(l)), ...add]));
+  const after = path.join(dir, "status-after-converged.json");
+  if (add.includes("jig:converged") && fs.existsSync(after))
+    fs.copyFileSync(after, path.join(${JSON.stringify(fixture)}, "status.json"));
   process.exit(0);
 }
 const child = require("node:child_process").spawnSync(${JSON.stringify(stub)}, args, { stdio: "inherit" });
@@ -60,7 +67,7 @@ export function labelForge(
 ) {
   const bin = join(dir, "label-bin");
   mkdirSync(bin, { recursive: true });
-  writeFakeProgram(join(bin, "gh"), LABEL_GH(stub));
+  writeFakeProgram(join(bin, "gh"), LABEL_GH(stub, dir));
   writeFileSync(join(bin, "labels.json"), JSON.stringify(labels));
   writeFileSync(join(bin, "jig.yaml"), LABELS_ON);
   writeFileSync(join(bin, "head"), head);
