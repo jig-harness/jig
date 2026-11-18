@@ -68,7 +68,12 @@ export function readingNote(
   unread: string,
 ): string | null {
   if (reading === undefined) return `footprint unknown: ${unread}`;
-  if (reading.stale) {
+  if (
+    reading.stale &&
+    reading.readAt !== null &&
+    reading.source !== "labels" &&
+    reading.source !== "unknown"
+  ) {
     const detail = reading.failure?.reason ?? reading.reason;
     return `footprint stale: ${detail ?? "the last footprint read could not be refreshed"}`;
   }

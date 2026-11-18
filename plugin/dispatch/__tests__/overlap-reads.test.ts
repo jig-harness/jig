@@ -200,7 +200,22 @@ describe("the footprint note beside the rank", () => {
         reading("#12", { reason: "fresh footprint read limit", stale: true }),
         "unread",
       ),
-    ).toBe("footprint stale: fresh footprint read limit");
+    ).toBe(
+      "footprint unknown: its footprint was not read this tick (fresh footprint read limit)",
+    );
+    expect(
+      readingNote(
+        reading("#12", {
+          source: "record" as FootprintReading["source"],
+          paths: ["a.ts"],
+          readAt: 1,
+          ageMs: 5,
+          reason: "timeout",
+          stale: true,
+        }),
+        "unread",
+      ),
+    ).toBe("footprint stale: timeout");
     expect(
       readingNote(
         reading("#12", { source: "labels", areas: ["dispatch"] }),
