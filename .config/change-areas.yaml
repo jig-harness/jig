@@ -57,7 +57,9 @@ vocabularies:
 # a workflow does not run it.
 profiles:
   docs:
-    notes: Prose and configuration no test reads; the repository checks hold it.
+    notes: >-
+      Prose and configuration: the repository checks hold it, and CI still runs
+      any test that names a changed YAML, JSON or TOML file.
     localChecks: ["bun run gates --fast"]
     verificationChecks: ["bun run gates --fast"]
   area:

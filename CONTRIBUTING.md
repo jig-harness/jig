@@ -408,14 +408,17 @@ in; a directory with no test file fails `bun run gates`), and
 `printf '%s\n' <files> | bun scripts/validation-plan.ts` prints the plan
 drive-pr, review and fix-ci read: the quick gates (`bun run gates --fast`),
 the touched areas' own tests and the generators the change touches, or the
-whole `bun run gates` when a changed file belongs to no area or to areas with
-no own tests.
+whole `bun run gates` when a changed file belongs to no area, or only to areas
+above the `docs` profile that have no own tests.
 
-CI's test legs start from the same resolution (`scripts/area-validation.ts`)
-and add the [dependent tests](GLOSSARY.md): `scripts/test-reach.ts` walks back
-from the changed files through what imports them and through test code that
-names a script, so a test that depends on the change runs wherever it lives.
-A change no test reads runs no test leg. Any other runs its areas' own tests,
+CI's test legs (the gate set's parallel jobs that run tests) start from the
+same resolution (`scripts/area-validation.ts`) and add the
+[dependent tests](GLOSSARY.md): `scripts/test-reach.ts` walks back from the
+changed files through what imports them and through test code that names them
+(a script, or a YAML, JSON or TOML file), wherever that test lives. It does not
+follow Markdown files or paths built at run time, which the full runs below
+cover. A change the walk and the catalog tie to no test runs no test leg. Any
+other runs its areas' own tests,
 the own tests of the areas that list one of them under `impliedBy` (the
 catalog's way of saying a change to that area also affects this one, for what
 the walk cannot see) and the dependent tests outside those directories, split

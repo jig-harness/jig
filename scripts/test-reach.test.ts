@@ -138,14 +138,34 @@ test("a test, or a helper beside the tests, that names a script's file is reache
   ]);
 });
 
-test("a file name two files share gives no edge, and its imports still do", () => {
+test("a file name two files share leads on only from the file whose path the text spells", () => {
   const files = {
     "one/cli.ts": "export {};\n",
     "two/cli.ts": "export {};\n",
-    "tests/names.test.ts": 'Bun.spawnSync(["bun", "one/cli.ts"]);\n',
-    "tests/imports.test.ts": 'import "../one/cli.ts";\n',
+    "tests/names.test.ts": 'Bun.spawnSync(["bun", "./one/cli.ts"]);\n',
+    "tests/bare.test.ts": 'const script = "cli.ts";\nscript;\n',
+    "tests/imports.test.ts": 'import "../two/cli.ts";\n',
   };
-  expect(reach(files, "one/cli.ts").tests).toEqual(["tests/imports.test.ts"]);
+  expect(reach(files, "one/cli.ts").tests).toEqual(["tests/names.test.ts"]);
+  expect(reach(files, "two/cli.ts").tests).toEqual(["tests/imports.test.ts"]);
+});
+
+test("a data file leads to the tests naming it, and a Markdown file does not", () => {
+  const files = {
+    "config/rules.yaml": "a: 1\n",
+    "config/table.json": "{}\n",
+    "config/tool.toml": "a = 1\n",
+    "docs/page.md": "# Page\n",
+    "tests/rules.test.ts":
+      'const names = ["rules.yaml", "table.json", "tool.toml", "page.md"];\nnames;\n',
+  };
+  for (const data of [
+    "config/rules.yaml",
+    "config/table.json",
+    "config/tool.toml",
+  ])
+    expect(reach(files, data).tests).toEqual(["tests/rules.test.ts"]);
+  expect(reach(files, "docs/page.md").tests).toEqual([]);
 });
 
 test("a name does not lead on from a test to the tests that mention it", () => {

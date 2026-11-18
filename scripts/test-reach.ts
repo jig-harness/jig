@@ -2,9 +2,10 @@
 // own files rather than declared in the change-area catalog. Walking back from
 // the changed files, a file reaches what imports it (static imports, re-exports,
 // `require` and dynamic imports with literal paths; `import type` loads nothing
-// and gives no edge) and, since tests also start scripts by path, each file of
-// the test code that names its file name. CI's test legs run the test files the
-// walk reaches (scripts/area-validation.ts).
+// and gives no edge) and, since tests also start scripts and read data files
+// by path, each file of the test code that names its file name. A Markdown file
+// gives no such edge, so a change to prose alone reaches no test. CI's test legs
+// run the test files the walk reaches (scripts/area-validation.ts).
 //
 // Every doubt falls toward running more: a code file that cannot be read or
 // scanned may import anything, so it counts as reached by every change. The
@@ -56,8 +57,9 @@ const IMPLIED = [
   "/index.js",
 ];
 
-/** A script file name as a test's text spells it. */
-const SCRIPT_NAME = /[\w.-]+\.(?:tsx?|mts|cts|jsx?|mjs|cjs|sh|py)\b/g;
+/** A script's or data file's name as a test's text spells it, with any path. */
+const FILE_NAME =
+  /[\w./-]*[\w-]\.(?:tsx?|mts|cts|jsx?|mjs|cjs|sh|py|ya?ml|json|toml)\b/g;
 
 /** An import or re-export of types alone: its path names nothing that runs. */
 const TYPE_ONLY =
@@ -147,12 +149,121 @@ export function runnableTests(tracked: string[], read: ReadFile): string[] {
   );
 }
 
+/** Whether `file` is `path` or ends in it at a directory boundary. */
+const pathEndsWith = (file: string, path: string) =>
+  file === path || file.endsWith(`/${path}`);
+
+/** What the walk follows, read from the code files of the repository. */
+interface Edges {
+  imports: Map<string, string[]>;
+  importers: Map<string, string[]>;
+  /** By file name: the test code spelling it, and the path it spells. */
+  namedBy: Map<string, { by: string; path: string }[]>;
+  /** The code files that could not be read or scanned. */
+  opaque: string[];
+}
+
+/** Adds what `file` imports and, for test code, the file names it spells. */
+function addEdges(
+  edges: Edges,
+  file: string,
+  source: string,
+  specifiers: string[],
+  known: Set<string>,
+  tests: Set<string>,
+) {
+  const targets = specifiers.flatMap(
+    (specifier) => resolveSpecifier(specifier, file, known) ?? [],
+  );
+  edges.imports.set(file, targets);
+  for (const target of targets) append(edges.importers, target, file);
+  if (!tests.has(file) && !TEST_SUPPORT.test(file)) return;
+  const text = source.replace(TYPE_ONLY, "");
+  for (const spelled of new Set(text.match(FILE_NAME))) {
+    const path = spelled.replace(/^(?:\.{0,2}\/)+/, "");
+    const name = posix.basename(path);
+    const named = edges.namedBy.get(name);
+    if (named === undefined) edges.namedBy.set(name, [{ by: file, path }]);
+    else named.push({ by: file, path });
+  }
+}
+
+function readEdges(
+  tracked: string[],
+  known: Set<string>,
+  tests: Set<string>,
+  read: ReadFile,
+): Edges {
+  const edges: Edges = {
+    imports: new Map(),
+    importers: new Map(),
+    namedBy: new Map(),
+    opaque: [],
+  };
+  for (const file of tracked) {
+    if (loaderOf(file) === undefined) continue;
+    try {
+      const source = read(file);
+      const specifiers = scanSpecifiers(file, source);
+      addEdges(edges, file, source, specifiers, known, tests);
+    } catch (error) {
+      swallow(error, `${file} unscanned: it counts as reached`);
+      edges.opaque.push(file);
+    }
+  }
+  return edges;
+}
+
+/** How many of `files` carry each file name. */
+function nameCounts(files: Set<string>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const name = posix.basename(file);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** The test code that names `file`, as far as its text can tell. */
+function namersOf(
+  file: string,
+  edges: Edges,
+  counts: Map<string, number>,
+): string[] {
+  const name = posix.basename(file);
+  const shared = (counts.get(name) ?? 0) > 1;
+  return (edges.namedBy.get(name) ?? [])
+    .filter(
+      ({ path }) => !shared || (path.includes("/") && pathEndsWith(file, path)),
+    )
+    .map(({ by }) => by);
+}
+
+/** The changed files, the opaque ones and everything leading back to them. */
+function walkBack(
+  changed: string[],
+  edges: Edges,
+  known: Set<string>,
+  tests: Set<string>,
+): Set<string> {
+  const counts = nameCounts(known);
+  const reached = new Set([...changed, ...edges.opaque]);
+  for (const file of reached) {
+    for (const importer of edges.importers.get(file) ?? [])
+      reached.add(importer);
+    // A test is run, never started by another, so a name leads on from code only.
+    if (tests.has(file)) continue;
+    for (const namer of namersOf(file, edges, counts)) reached.add(namer);
+  }
+  return reached;
+}
+
 /**
  * The test files `changed` can affect, walking back through `tracked`, and
  * the changed files every test run loads (`bunfig.toml`, its preloads and what
- * they import), which no selection of tests can narrow. A file name two known
- * files share says nothing about which is meant, so it gives no edge and such
- * a file is reached through its imports alone.
+ * they import), which no selection of tests can narrow. A file name several
+ * files share leads on only where the text spells enough of the path to tell
+ * which is meant; otherwise such a file is reached through its imports alone.
  */
 export function testReach(
   changed: string[],
@@ -164,50 +275,16 @@ export function testReach(
   const known = new Set([...tracked, ...changed]);
   const config = testConfig(known, read);
   const tests = new Set(runnableTests(tracked, read));
-  const imports = new Map<string, string[]>();
-  const importers = new Map<string, string[]>();
-  const namedBy = new Map<string, string[]>();
-  const opaque: string[] = [];
-  const sharers = new Map<string, number>();
-  for (const file of known) {
-    const name = posix.basename(file);
-    sharers.set(name, (sharers.get(name) ?? 0) + 1);
-  }
-  for (const file of tracked) {
-    if (loaderOf(file) === undefined) continue;
-    let source: string;
-    let specifiers: string[];
-    try {
-      source = read(file);
-      specifiers = scanSpecifiers(file, source);
-    } catch (error) {
-      swallow(error, `${file} unscanned: it counts as reached`);
-      opaque.push(file);
-      continue;
-    }
-    const targets = specifiers.flatMap(
-      (specifier) => resolveSpecifier(specifier, file, known) ?? [],
-    );
-    imports.set(file, targets);
-    for (const target of targets) append(importers, target, file);
-    if (!tests.has(file) && !TEST_SUPPORT.test(file)) continue;
-    const text = source.replace(TYPE_ONLY, "");
-    for (const name of new Set(text.match(SCRIPT_NAME)))
-      append(namedBy, name, file);
-  }
-
-  const reached = new Set([...changed, ...opaque]);
-  for (const file of reached) {
-    for (const importer of importers.get(file) ?? []) reached.add(importer);
-    // A test is run, never started by another, so a name leads on from code only.
-    const name = posix.basename(file);
-    if (!tests.has(file) && sharers.get(name) === 1)
-      for (const namer of namedBy.get(name) ?? []) reached.add(namer);
-  }
-
+  const edges = readEdges(tracked, known, tests, read);
+  const reached = walkBack(changed, edges, known, tests);
   return {
     tests: [...reached].filter((file) => tests.has(file)).sort(),
-    everyRun: everyRunFiles(changed, config, imports, new Set(opaque)),
+    everyRun: everyRunFiles(
+      changed,
+      config,
+      edges.imports,
+      new Set(edges.opaque),
+    ),
   };
 }
 

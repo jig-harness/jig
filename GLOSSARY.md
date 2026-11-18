@@ -455,9 +455,10 @@ make, use the entry's term instead.
   the whole suite runs.
 - **Dependent test** — a test file a change can affect wherever it lives,
   found by walking back from the changed files through what imports them and
-  through test code that names a script. CI runs these beside the *own tests*
-  of the areas the change touches, so narrowing a run does not leave out a test
-  of the changed code.
+  through test code that names them (a script, or a YAML, JSON or TOML file).
+  CI runs these beside the *own tests* of the areas the change touches. What
+  the walk cannot see, such as a Markdown file a test reads or a path built at
+  run time, is left to the full runs on the main branch.
 - **Self-check paradox** — the situation where a *check* validates the same
   data its own trigger condition is computed from (e.g. a catalog's structural
   check, triggered by resolving changed paths *through* that catalog). The
