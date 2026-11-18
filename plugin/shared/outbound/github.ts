@@ -9,15 +9,44 @@
 import {
   answerClass,
   type FailureClass,
+  failedBy,
   type OutboundFailure,
   outboundFailure,
   retryAfterMs,
   TIMEOUT_FLOOR_MS,
 } from "./failure.ts";
+import { failed, ok, type Outcome } from "../outcome.ts";
 import { currentMs } from "../time.ts";
 
 /** The system the forge's calls are held under in a run (`hold.ts`). */
 export const GITHUB = "github";
+
+/**
+ * A GraphQL query's answer, parsed, from one run of `gh api graphql` that
+ * `run` makes through the forge client's runner: `too-costly` when the forge
+ * ran out of time on it, which fewer items to a query may avoid; any other
+ * failed run is `unreadable`, carrying its failure class.
+ */
+export async function graphqlAnswer(
+  run: () => Promise<GhRun & { stdout: string }>,
+): Promise<Outcome<unknown, "unreadable" | "too-costly">> {
+  const began = currentMs();
+  const r = await run();
+  const failure = ghRunFailure(r, currentMs() - began);
+  if (failure !== null) {
+    const said = r.stderr.trim().split("\n").at(-1) ?? "";
+    return failedBy(
+      failure.code === "too-costly" ? "too-costly" : "unreadable",
+      failure,
+      `gh api graphql exited ${r.code}${said === "" ? "" : `: ${said}`}`,
+    );
+  }
+  try {
+    return ok(JSON.parse(r.stdout));
+  } catch (error) {
+    return failed("unreadable", "the query's answer is not JSON", error);
+  }
+}
 
 /**
  * How long a refusal that named no reset holds: GitHub's secondary limits
