@@ -401,6 +401,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.274.2] - 2026-11-18
+
+### Fixed
+
+- `jig send` names why it could not read the login it would write as: a
+  spent allowance with the time it resets, a refused credential, or no
+  answer from the forge or the tracker, and that nothing was sent. The
+  refusal saying the forge or tracker named no login now appears only when
+  it answered without one. `--as` is checked as before.
+
 ## [0.274.1] - 2026-11-18
 
 ### Fixed
@@ -9630,7 +9640,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.274.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.274.2...HEAD
+[0.274.2]: https://github.com/jig-harness/jig/compare/v0.274.1...v0.274.2
 [0.274.1]: https://github.com/jig-harness/jig/compare/v0.274.0...v0.274.1
 [0.274.0]: https://github.com/jig-harness/jig/compare/v0.273.1...v0.274.0
 [0.273.1]: https://github.com/jig-harness/jig/compare/v0.273.0...v0.273.1
