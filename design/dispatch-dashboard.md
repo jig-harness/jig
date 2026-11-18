@@ -140,9 +140,20 @@ drag) or that ends a text selection does not count as one. An open card
 draws a line down its gutter beside what it opened. The load breakdown, the
 accounts list and the list of repositories on Running, and the folds of the
 Help view, are headings on the same gutter, opened by their chevron or a
-tap on the heading; the accounts list starts open. Group headings (the
-Merge lanes, the acts of Needs you, the groups of Queue) start on the same
-gutter and do not fold yet.
+tap on the heading. The accounts list starts open. On Needs you, each act
+heading uses the same disclosure. It shows the act icon, matching count and
+oldest wait. It opens on the first ten cards, with a control to show the rest.
+Investigate starts folded when Decide or Authorize cards are present.
+
+**Filters.** On desktop, the text filter comes first. Filters below it show
+each value with its icon, name and matching count. Selected values within a
+facet match any of those values, and the facets combine with one another.
+A facet with more than six values uses a select. An active filter shows
+“Showing N of M” and a Clear control. Sharing the address preserves the view
+and its filters. Needs you shows the oldest wait alongside its act and
+repository filters, with additional facets for who is waiting, stage and
+age when they have multiple values. Merge and Running offer a repository
+facet when the view contains multiple repositories.
 
 **One identity for a pull request and an issue.** Wherever a card names a
 pull request or an issue it draws its [work identity](../GLOSSARY.md): an
@@ -872,8 +883,9 @@ rules, timestamps and failure states serve desktop and phone.
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
 The phone excludes operator chat, command palettes and advanced filter
-composition: reading and deciding have priority over composing and
-investigating on a small screen. It excludes session chat and steering,
+composition. On the card views, repository is the editable filter. A link
+with text or other facets still narrows the view and shows those selections
+as read-only, with a Clear control. It excludes session chat and steering,
 which need the workspace and its context. Its one write today is Send, which
 answers a parked decision as the person from the phone's own browser, over the
 HTTPS front, as the comment `jig send` writes, record included ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). The

@@ -141,7 +141,20 @@ export function Disc({
       aria-expanded={open}
       aria-controls={controls}
       aria-label={label}
+      aria-keyshortcuts={card ? undefined : "O"}
       onClick={onToggle}
+      onKeyDown={(event) => {
+        if (
+          card ||
+          event.key !== "o" ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey
+        )
+          return;
+        event.preventDefault();
+        if (!event.repeat) onToggle();
+      }}
     >
       <Glyph of={CONTROL_ICONS.disclosure} size={16} />
     </button>
@@ -212,6 +225,7 @@ export function GutterFold({
   head,
   children,
   defaultOpen = false,
+  keepMounted = false,
 }: {
   className?: string;
   /** The chevron's name. */
@@ -219,10 +233,13 @@ export function GutterFold({
   head: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
+  /** Keep the folded content in the document, so filters can still read it. */
+  keepMounted?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [chosenOpen, setOpen] = useState<boolean | null>(null);
+  const open = chosenOpen ?? defaultOpen;
   const id = useId();
-  const toggle = () => setOpen((was) => !was);
+  const toggle = () => setOpen((was) => !(was ?? defaultOpen));
   const tap = useTapToggle(toggle);
   return (
     <div
@@ -234,8 +251,8 @@ export function GutterFold({
         </div>
         <div className="gheadBody">{head}</div>
       </div>
-      {open ? (
-        <div className="gpanel" id={id}>
+      {open || keepMounted ? (
+        <div className="gpanel" id={id} hidden={!open}>
           {children}
         </div>
       ) : null}

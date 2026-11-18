@@ -94,6 +94,7 @@ describe("the closing report", () => {
       );
       try {
         await shows(page, ".need");
+        await page.getByRole("button", { name: "Investigate group" }).click();
         const card = page.locator(".need", { hasText: "PR #461" });
         await card.locator(".concluded").waitFor();
         expect(await card.locator(".concluded").textContent()).toBe(
