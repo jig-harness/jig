@@ -112,7 +112,7 @@ function changedRepository(config: string): string {
     "lib/plain.test.ts": 'import { thing } from "./thing.ts";\n',
     "lib/bare.test.ts": 'import { thing } from "./thing";\n',
     "other/late.test.ts": 'await import("../lib/thing.ts");\n',
-    "other/dynamic.test.ts": "await import(`../lib/${name}.ts`);\n",
+    "other/dynamic.test.ts": "await import('../lib/' + name);\n",
     "other/unrelated.test.ts": 'import { x } from "./x.ts";\n',
     "website/site.test.ts": 'import { thing } from "../lib/thing.ts";\n',
   };
@@ -205,6 +205,13 @@ test("a selection that fails could not check, and the other stages still run", a
   expect(await runStages([last], root)).toEqual([
     { name: "dispatch test selection", status: 2 },
   ]);
+});
+
+test("a test whose imports cannot be read stops the selection", async () => {
+  const { dispatchTestPaths } = await import("./dispatch-gates.ts");
+  const root = changedRepository("gates:\n  dispatch_fast: true\n");
+  writeFileSync(join(root, "other/broken.test.ts"), "const = ;\n");
+  expect(() => dispatchTestPaths(root)).toThrow("other/broken.test.ts");
 });
 
 test("a change that selects no test adds no test stage", async () => {

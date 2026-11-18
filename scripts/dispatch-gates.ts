@@ -126,7 +126,14 @@ function importedFiles(test: string, specifier: string): string[] {
 
 function testImports(root: string, test: string): string[] {
   const code = readFileSync(join(root, test), "utf8");
-  const { staticImports, dynamicImports } = parseSync(test, code).module;
+  const { errors, module } = parseSync(test, code);
+  // A file the parser cannot read would otherwise look like one importing
+  // nothing, and drop out of the run unnoticed.
+  if (errors.length)
+    throw new DispatchTestPathsError(
+      `${test}: cannot read its imports: ${errors[0]?.message}`,
+    );
+  const { staticImports, dynamicImports } = module;
   return [
     ...staticImports.map(({ moduleRequest }) => moduleRequest.value),
     ...dynamicImports.flatMap(({ moduleRequest: { start, end } }) => {
