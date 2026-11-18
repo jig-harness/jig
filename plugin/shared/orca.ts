@@ -24,6 +24,14 @@ type Env = Record<string, string | undefined>;
 /** Seconds one Orca call may take. */
 const ORCA_CALL_TIMEOUT_SEC = 20;
 
+/**
+ * The most rows a listing asks Orca for. Orca answers a listing without
+ * `--limit` with its first 200 rows and marks it `truncated`, which a caller
+ * that needs every row (a registry read before a removal) must refuse, so a
+ * machine with more workspaces than that is never read in full by default.
+ */
+export const ORCA_LIST_LIMIT = 5000;
+
 /** Runs Orca's command with `args`; the seam tests replace. */
 export type OrcaRunner = (
   command: string,

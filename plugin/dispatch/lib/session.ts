@@ -24,7 +24,8 @@ import {
   CODEX_BYPASS,
   skillPrompt,
 } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
-import type { LaunchRecord, LaunchState, SessionResult } from "./launches.ts";
+import type { LaunchRecord, LaunchState } from "./launches.ts";
+import type { RecordedResult } from "./session-result-types.ts";
 import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 import { STEWARD_RESUME } from "./steward.ts";
 import { NEED_ACTS } from "../../shared/acts.ts";
@@ -75,7 +76,7 @@ function jigCommand(args: string[]): string {
 /** The command a session runs to record its answer. */
 function resultCommand(
   record: Pick<LaunchRecord, "id" | "token">,
-  result: SessionResult,
+  result: RecordedResult,
 ): string {
   return jigCommand(["result", record.id, record.token, result]);
 }

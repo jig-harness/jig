@@ -5,12 +5,16 @@
  * the same repository's tracker (`shared/item-links.ts`). A record written
  * before the dispatcher kept links reads the same way.
  */
-import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import type {
+  LineLinks,
+  LineSnapshot,
+} from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import {
   type ItemBases,
   itemBases,
   itemLinkFrom,
 } from "../../plugin/shared/item-links.ts";
+import { itemWords, type Tracker } from "./tracker-name.ts";
 
 /** What the line's links tell of each repository, and the title each target was read with. */
 export interface Forges {
@@ -20,6 +24,10 @@ export interface Forges {
   items: Map<string, ItemBases>;
   /** Each target's title as the line holds it, by `<repo> <target>`. */
   titles: Map<string, string>;
+  /** The tracker each repository's configuration names, as the line holds it. */
+  trackers: Map<string, Tracker>;
+  /** The work each target is linked to as the line holds it, by `<repo> <target>`. */
+  links: Map<string, LineLinks>;
 }
 
 const PULL_URL = /^(.*\/)([^/]+\/[^/]+)\/pull\/\d+$/;
@@ -29,6 +37,7 @@ interface Linked {
   target: string;
   url: string | null;
   title: string | null;
+  links?: LineLinks | undefined;
 }
 
 /** Every target the line names, with its repository, link and title. */
@@ -51,20 +60,33 @@ export function forgesOf(line: LineSnapshot | null): Forges {
     pulls: new Map(),
     items: new Map(),
     titles: new Map(),
+    trackers: new Map(),
+    links: new Map(),
   };
   if (line === null) return forges;
+  for (const r of line.repos)
+    if (r.slug !== null) forges.trackers.set(r.slug, r.tracker);
   const linked = linkedOf(line);
+  noteForges(forges, linked);
+  for (const repo of new Set(linked.map((x) => x.repo)))
+    forges.items.set(repo, itemBases(linked.filter((x) => x.repo === repo)));
+  return forges;
+}
+
+/** The pull-request bases, titles and links the targets carry; the first of a target wins. */
+function noteForges(forges: Forges, linked: Linked[]): void {
   for (const { url } of linked) {
     const found = url === null ? null : PULL_URL.exec(url);
     if (found?.[1] !== undefined && found[2] !== undefined)
       forges.pulls.set(found[2], found[1]);
   }
-  for (const repo of new Set(linked.map((x) => x.repo)))
-    forges.items.set(repo, itemBases(linked.filter((x) => x.repo === repo)));
-  for (const x of linked)
-    if (x.title !== null && !forges.titles.has(`${x.repo} ${x.target}`))
-      forges.titles.set(`${x.repo} ${x.target}`, x.title);
-  return forges;
+  for (const x of linked) {
+    const key = `${x.repo} ${x.target}`;
+    if (x.title !== null && !forges.titles.has(key))
+      forges.titles.set(key, x.title);
+    if (x.links !== undefined && !forges.links.has(key))
+      forges.links.set(key, x.links);
+  }
 }
 
 function pullLink(repo: string, pr: string, forges: Forges): string | null {
@@ -89,9 +111,18 @@ export function derivedLink(
   return bases === undefined ? null : itemLinkFrom(bases, target);
 }
 
-/** What a card says when neither its record nor the line's other links give a target's link: what is missing, and where to look. */
-export function noLinkText(repo: string, target: string): string {
-  return `No link was recorded for ${target}, and the line holds no other link to ${repo}'s tracker to work it out from: look ${target} up in that tracker.`;
+/** What a card says when neither its record nor the line's other links give a target's link: what is missing, and where to look, by the name of the repository's tracker. */
+export function noLinkText(
+  repo: string,
+  target: string,
+  tracker?: Tracker,
+): string {
+  if (/^PR #\d+$/.test(target))
+    return `No link was recorded for ${target}, and the line holds no other link to ${repo}'s pull requests to work it out from: look ${target} up on its forge.`;
+  const { name, where } = itemWords(tracker);
+  if (name === null)
+    return `No link was recorded for ${target}, and the line holds no other link to ${repo}'s issues to work it out from: look ${target} up there.`;
+  return `No link was recorded for ${target}, and the line holds no other ${name} link of ${repo}'s to work it out from: look ${target} up in ${where}.`;
 }
 
 /** The line with every target whose record holds no link given the one its other links tell. */

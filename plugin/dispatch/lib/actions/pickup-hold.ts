@@ -17,6 +17,10 @@
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
  *   launched again after it, with no person asked;
+ * - except a record whose pass stopped at startup on its account's usage
+ *   notice, with the account's wall recorded (`run.ts`): the wall keeps the
+ *   next pickup off that account until its reset, so the item is wanted
+ *   again at once, with no person asked;
  * - a record whose claim the repository's start rules refused (its
  *   `refusal`) holds the item, with the reason, only until the item's
  *   `updatedAt` moves past the time the rules saw: a person changed the
@@ -156,7 +160,18 @@ export function pickupHold(
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
     return waitsHold(latest, latest.waitsUntil, nowMs);
+  if (stoppedOnWall(latest)) return { kind: "none" };
   return stoppedHold(latest, item, updatedAt);
+}
+
+/** Whether a pass stopped at startup on its account's usage notice, and the wrapper walled that account. */
+function stoppedOnWall(r: ReadRecord): boolean {
+  return (
+    r.result === null &&
+    r.state.kind === "ended" &&
+    r.state.exit.startup === "quota" &&
+    r.state.exit.wallUnrecorded !== true
+  );
 }
 
 /** A rate-limit wait: held until the reset it names, then nothing. */
@@ -169,7 +184,7 @@ function waitsHold(
     ? {
         kind: "held",
         record: latest,
-        why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${until}; the item starts again after it`,
+        why: `launch record ${latest.record.id} waits for the issue service's rate limit to reset at ${until}; the item starts again after it`,
       }
     : { kind: "none" };
 }
@@ -203,7 +218,7 @@ function stoppedHold(
 /**
  * The question an ended pickup left for a person, or `null`: none after
  * `done` or a rate-limit wait, else the pass's trailing question, else the
- * question its closing report asks, or for a failed pass the question of its
+ * question its closing report asks, or for a parked pass the question of its
  * framed decision. Question planning and
  * the release of unclaimed members read this one policy.
  */
@@ -212,7 +227,7 @@ export function endedQuestion(r: ReadRecord): string | null {
   return (
     questionOf(r.state) ??
     r.report?.report.question ??
-    (r.result === "failed" ? (r.framed?.decision.call.question ?? null) : null)
+    (r.result === "parked" ? (r.framed?.decision.call.question ?? null) : null)
   );
 }
 

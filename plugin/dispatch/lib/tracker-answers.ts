@@ -4,9 +4,11 @@
  * (`station-answers.ts`): each comment's author named by the tracker, a
  * comment by a trusted author (`CommentFact.trusted`: a real, non-guest
  * member of the tracker's workspace) read as a member's, and a comment by
- * the user the tracker's credential acts as left out, since a dispatcher
- * never answers on a person's behalf. The comments left out are kept apart,
- * so a need whose only answer is one of them can say why it is not read.
+ * the user the tracker's credential acts as kept apart, since a dispatcher
+ * never answers on a person's behalf: only such a comment that carries the
+ * record `jig send` writes can answer, for a person who shares that user, and
+ * the others let a need whose only answer is one of them say why it is not
+ * read.
  *
  * A tracker that cannot name who wrote each comment (`Tracker.commentAuthors`)
  * is not read: one person's answer could not be told from another's, or
@@ -23,14 +25,24 @@ import type {
   TrackerUser,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { CommentLike } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
+import {
+  answerRecordStart,
+  readSentAnswer,
+} from "../../shared/decisions/answer-record.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { failureText } from "./text.ts";
 
-/** An item's comments as answers are read: those that may answer, and those by the user the tracker's credential acts as, which never do. */
+/** An item's comments as answers are read: those by anyone else, and those by the user the tracker's credential acts as. */
 export interface TrackerConversation {
   comments: CommentLike[];
-  /** The user the tracker's credential acts as, and its comments, left out of `comments`. */
-  own: { name: string; comments: CommentLike[] };
+  /**
+   * The user the tracker's credential acts as, and its comments, left out of
+   * `comments`, each read as a member's so that an answer among them is
+   * detected. `sent` holds those that carry a sent answer's record, read
+   * under the user's real standing: the only ones that can answer; absent
+   * when there are none.
+   */
+  own: { name: string; comments: CommentLike[]; sent?: CommentLike[] };
 }
 
 /** The longest one read of the tracker for answers runs. */
@@ -47,10 +59,14 @@ const NONE = "NONE";
 /**
  * `body` without Markdown's backslash escapes. A tracker hands its comments
  * over as Markdown, which escapes the brackets around an answer's digest
- * (`\[…\]`); the answer grammar reads the text a person wrote.
+ * (`\[…\]`); the answer grammar reads the text a person wrote. A sent
+ * answer's record stays as written: its JSON has escapes of its own.
  */
 function plainText(body: string): string {
-  return body.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+  const record = answerRecordStart(body);
+  const text = record === -1 ? body : body.slice(0, record);
+  const kept = record === -1 ? "" : body.slice(record);
+  return `${text.replace(/\\([!-/:-@[-`{-~])/g, "$1")}${kept}`;
 }
 
 /**
@@ -109,13 +125,18 @@ function trackerConversation(
     body: plainText(c.body),
   });
   const mine = (c: CommentFact) => c.author?.id === self.id;
+  const own = comments.filter(mine);
+  const sent = own
+    .map((c) => read(c))
+    .filter((c) => readSentAnswer(c.body) !== null);
   return {
     comments: comments.filter((c) => !mine(c)).map((c) => read(c)),
     // Read as a member's whatever the user's standing: these are never acted
     // on, only detected, so that a need whose only answer is one of them can say why.
     own: {
       name: self.name,
-      comments: comments.filter(mine).map((c) => read(c, true)),
+      comments: own.map((c) => read(c, true)),
+      ...(sent.length === 0 ? {} : { sent }),
     },
   };
 }

@@ -401,6 +401,191 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.279.1] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` read every issue an epic's execution plan names one request
+  at a time when it re-checked a pickup just before launching it, and again
+  when the claim checked it: about 40 requests for each pickup under a long
+  plan, repeated for every pickup that waited on the workspace budget. That
+  check now reads the plan's issues, and each parent's own row, together:
+  on GitHub one `TrackerDispatchIssues` request for up to 20 issues, on
+  Linear the batched pool read. It still reads them fresh, with nothing kept
+  from the tick. A batch that names an issue the credential cannot see is
+  read one issue at a time; a batch refused for the rate limit or left
+  without an answer fails the check with that failure, as a single read did.
+
+## [0.279.0] - 2026-11-18
+
+### Added
+
+- [M12's mappings](modules/M12-parallel-agent-ergonomics/mappings.md) map T3 Code as a workspace runtime: a `t3.json` script with `runOnWorktreeCreate` runs the worktree create hook once it is imported into the project's actions, and a wrapper runs the remove hook, since T3 Code has no point before a worktree is removed. A dated assessment says what T3 Code offers Jig's tooling and when Jig would add a launcher provider or a dispatcher session runtime for it.
+- The audit's `M12/worktree-hooks-wired` criterion recognises T3 Code: a tracked `t3.json` whose worktree-create script runs the create hook, with a documented step that imports it, counts as wired creation, and removal counts as wired only when the repository tracks how the remove hook is reached and documents the project's automatic worktree cleanup as off. **Consumer action:** none.
+
+## [0.278.1] - 2026-11-18
+
+### Fixed
+
+- A dispatched drive or headless pass now records how it ended even when the
+  host upgrades Jig during the stage to a release whose state database
+  refuses older readers. The tick logs the launch by its real exit instead of
+  "its wrapper is gone without an exit". If the wrapper still cannot record
+  the exit, it says the stage ran and exits with the stage's own code instead
+  of reporting that nothing was started.
+- The dispatcher no longer counts a pickup or follow-up that ended normally
+  while waiting (a follow-up whose release or deployment is still pending), or
+  that stopped on a decision for a person, as a failure. The outcome log
+  records these as `arm pending` and `parked for a person`; a parked run names
+  who answers it and what they must do; and the dashboard, the recurring
+  classes and the steward stop counting them as failures.
+- A follow-up outcome now preserves the question from its framed decision,
+  including when that decision is recorded after the outcome row, so retained
+  outcomes still show what needs a person's answer after their launch records
+  expire.
+- The dispatch dashboard says a repository the dispatcher paused for its
+  GitHub quota in one short line: what paused it, when it resumes and how old
+  the data shown is, with the full detail on expanding the card. A repository
+  lookup held by a rate limit no longer reads as the forge not knowing which
+  repository it is.
+
+## [0.278.0] - 2026-11-18
+
+### Added
+
+- The dispatch dashboard offers shareable filters with matching counts and folding act headings on Needs you. On a phone, shared filters still apply and can be cleared.
+
+## [0.277.3] - 2026-11-18
+
+### Fixed
+
+- A dispatched pickup or steward pass whose Claude Code session stops at
+  startup on a usage-limit notice now walls its account, as a follow-up's
+  already did; before, the pickup was logged as died, the account stayed
+  admitted, and the item waited for a person to release it. The wall lifts
+  at the reset the notice states, in both its time-of-day form
+  (`resets 3:20am (Europe/Amsterdam)`) and its dated weekly form
+  (`resets Nov 13, 11am (Europe/Amsterdam)`), and `dispatch.wall_backoff`
+  applies only when that reset cannot be read. A pickup stopped this way is
+  picked up again on another account, or on its own once the wall lifts,
+  with no person asked. A pickup or steward pass that stops at startup with
+  no usage notice now backs its account off for `dispatch.wall_backoff`, as
+  a follow-up's already did. **Consumer action:** none.
+
+## [0.277.2] - 2026-11-18
+
+### Changed
+
+- The sessions Jig's dispatcher starts on Jig itself run fast checks and
+  targeted tests locally, leaving the full suites to required CI. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` collects finished Orca workspaces on a machine with more than 200
+  of them. It read Orca's workspace registry without asking for more than
+  Orca's default page of 200 rows, took the cut page for an incomplete
+  registry and marked every Orca workspace unverified, so none was ever
+  removed. It now requests up to 5,000 rows and continues to refuse
+  collection when Orca reports that either registry response is truncated.
+
+## [0.277.1] - 2026-11-18
+
+### Changed
+
+- Dispatch reads open pull requests' checks, threads and heads every tick.
+  Between full repository reads it revalidates comments when it needs them,
+  so unchanged comment pages use no GitHub primary rate-limit points.
+
+## [0.277.0] - 2026-11-18
+
+### Added
+
+- A card shows the work it is linked to after its identity, from the
+  line's links: the issues a pull request closes, or the open pull requests
+  that close an issue, up to two and then "+N more". Its popover and the
+  opened card list them all, or say "none found" or "not known for this
+  read". **Consumer action:** none.
+
+### Changed
+
+- The dispatch dashboard's cards open and close from one place: a chevron
+  in a fixed column at each card's left, the same on every view, History's
+  rows and the tick strip included, or a tap anywhere on the card that is
+  not a link, a button or a field. Enter and `o` open the focused card; a
+  text selection or a scroll over a card leaves it as it is. The load
+  breakdown, the accounts list, the repositories list and Help's folds open
+  from the same column. **Consumer action:** none.
+- A pull request and an issue are drawn the same way wherever a card names
+  them: an icon that opens a popover (title, kind and product, standing,
+  repository, linked work and one link out), the number or key as its link,
+  and a Copy. A pull request's icon now shows only its standing on the
+  forge; where the dispatcher holds it stays with the card's status mark and
+  stage chip. **Consumer action:** none.
+- The dashboard names each repository's tracker by its product (GitHub
+  Issues, Linear, Jira) from the repository's configured adapter, and says
+  "issues" where the line does not say; cards no longer repeat "Open the
+  pull request" or "Open in the tracker" links their identity already
+  gives. **Consumer action:** none.
+- The dispatcher's own sentences that the dashboard and `jig dispatch`
+  show (holds, waits, refusals and probe answers) name the issue service
+  by its product, or say "the issue service" or "issues", instead of
+  "tracker". **Consumer action:** none.
+
+## [0.276.0] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` no longer asks a person about a claimed item as a stalled
+  pickup while an open pull request of its repository carries it: one the
+  line links to the item (its branch names the item's key, its description
+  closes it, or the forge says it closes it), not from a fork, whose drive
+  is live or has converged and waits for its merge. The tick reports the
+  item as carried by that pull request, with its link and the drive's state,
+  and the line the dashboard reads lists it under `carried`, whether or not the
+  repository names a `pr_open` state; an item already in `pr_open`, or with a
+  move to `pr_open` still to make, keeps its existing handling and is not
+  listed as carried. A pull request with no drive or a
+  stopped one still leaves the stalled need, which now names it; where the
+  open pull requests or the drive did not read, the need says what could not
+  be told.
+- A drive that stops `CONVERGED` no longer leaves a pull request labelled
+  `converged` while its own label write blocked CI. In a repository whose
+  workflows run on label events, adding `converged` and removing `driving`
+  starts runs on the head the drive just verified; those runs could cancel
+  each other or fail a flaky test, and no drive was left to notice. The drive
+  now watches that head's CI after the write, while it still holds the pull
+  request: it re-runs a cancellation the write caused through the
+  cancelled-run recovery, re-runs a failure in a run a label write started
+  once, and when CI is still not green, or has not settled within
+  `DRIVE_PR_CONVERGED_CI_MINUTES` (30 minutes by default, `0` turns the watch
+  off), it parks `converged-ci` with the runs it saw, stops with
+  `HITL_PARKED` and labels the pull request `parked`.
+
+## [0.275.1] - 2026-11-18
+
+### Fixed
+
+- A person who shares a forge login or tracker user with their host's
+  dispatcher can now answer its stopped-drive, follow-up and pickup cards with
+  `jig send`. The dispatcher still ignores its own identity's comments, except
+  one carrying the record `jig send` writes for that identity, the decision's
+  key and current digest and the option chosen. `jig send` to a tracker item no
+  longer refuses on the host that owns the repository: the comment carries that
+  record. An answer typed by hand under the shared identity is still not read;
+  on a tracker item the card says why.
+
+## [0.275.0] - 2026-11-18
+
+### Added
+
+- `/jig:orchestrate` keeps each topic's record in an orchestration notebook,
+  `~/.jig/orchestrate/<topic>/` (under `JIG_HOME` when set), outside every
+  repository and the same for Claude Code and Codex: `state.md`, the current
+  state with the decisions waiting on you and the acts owed, rewritten whole
+  at each change, and `journal/<date>.md`, an append-only log of decisions
+  and their reasons. A session started with `/jig:orchestrate <topic>` resumes
+  from the state alone, and a handover hands the successor just the topic.
+
 ## [0.274.2] - 2026-11-18
 
 ### Fixed
@@ -9640,7 +9825,18 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.274.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.279.1...HEAD
+[0.279.1]: https://github.com/jig-harness/jig/compare/v0.279.0...v0.279.1
+[0.279.0]: https://github.com/jig-harness/jig/compare/v0.278.1...v0.279.0
+[0.278.1]: https://github.com/jig-harness/jig/compare/v0.278.0...v0.278.1
+[0.278.0]: https://github.com/jig-harness/jig/compare/v0.277.3...v0.278.0
+[0.277.3]: https://github.com/jig-harness/jig/compare/v0.277.2...v0.277.3
+[0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
+[0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
+[0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
+[0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0
+[0.275.1]: https://github.com/jig-harness/jig/compare/v0.275.0...v0.275.1
+[0.275.0]: https://github.com/jig-harness/jig/compare/v0.274.2...v0.275.0
 [0.274.2]: https://github.com/jig-harness/jig/compare/v0.274.1...v0.274.2
 [0.274.1]: https://github.com/jig-harness/jig/compare/v0.274.0...v0.274.1
 [0.274.0]: https://github.com/jig-harness/jig/compare/v0.273.1...v0.274.0

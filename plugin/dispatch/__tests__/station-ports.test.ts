@@ -132,7 +132,7 @@ describe("the steps on a person's answer", () => {
         },
         "a session holds #513",
       ],
-      [{ tracker: null }, "the tracker did not open"],
+      [{ tracker: null }, "the issue service did not open"],
     ];
     for (const [fields, says] of cases) {
       const i = inputs(fields);

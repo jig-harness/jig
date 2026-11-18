@@ -682,6 +682,16 @@ function repoOf(
     stages: entry?.stages ?? [],
     ...(input?.tracker === undefined ? {} : { tracker: input.tracker }),
     refused: report.refused,
+    ...(report.refused === null || report.refusedStep === undefined
+      ? {}
+      : {
+          refusal: {
+            step: report.refusedStep,
+            ...(report.refusedBy === undefined
+              ? {}
+              : { failure: report.refusedBy }),
+          },
+        }),
     ...(report.slug !== null &&
     report.refused !== null &&
     report.section === null
@@ -910,6 +920,24 @@ export function buildLine(input: LineInput): LineSnapshot {
               target: q.target,
               why: q.why,
             })),
+    ),
+    carried: input.reports.flatMap((r) =>
+      r.slug === null
+        ? []
+        : r.quiet.flatMap((q) =>
+            q.class === "claimed-carried" && q.carried !== undefined
+              ? [
+                  {
+                    repo: r.slug as string,
+                    target: q.target,
+                    pr: q.carried.pr,
+                    url: q.carried.url,
+                    drive: q.carried.drive,
+                    why: q.why,
+                  },
+                ]
+              : [],
+          ),
     ),
     queue: views.flatMap(queueOf),
     ready: readyOf(input.reports).map((r) => ({

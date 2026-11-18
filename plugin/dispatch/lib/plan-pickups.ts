@@ -24,6 +24,11 @@
  *   (`stalled-pr.ts`): from its in-progress state it is moved to `pr_open`,
  *   and in `pr_open` it is quiet while that pull request is open. Where it
  *   cannot move, the stall need names the pull request.
+ * - A claimed item with no running session that an open pull request of the
+ *   repository links, while that pull request's drive is live or converged,
+ *   is carried by it, not a stall, whatever state the item is in
+ *   (`carried-pr.ts`). A linked pull request with no drive, or a stopped
+ *   one, leaves the stall need, which names it.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -58,6 +63,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { type Carriage, readCarriage } from "./carried-pr.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { testLockNote } from "./test-lock-waits.ts";
@@ -67,6 +73,7 @@ import type { TreeReader } from "./pickup-tree.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
+  inPrOpen,
   readLaunchPr,
   type StalledPrInput,
   stallNote,
@@ -379,6 +386,72 @@ function settledOrHeld(
   return settledByPr(item.key, step, plan) || heldForHost(item, input, plan);
 }
 
+/** The carriage of an item a driven pull request may carry: none for one already in pr_open, which keeps its existing handling whichever pull request links it. */
+function carriageOf(
+  item: ClaimedItem,
+  input: PickupInput,
+  pr: LaunchPrReading,
+): Carriage {
+  if (input.prOpen !== undefined && inPrOpen(item, input.prOpen)) {
+    return { kind: "none" };
+  }
+  return readCarriage(
+    item,
+    input.prOpen?.carried,
+    pr.read.kind === "open" ? pr.read.pr.number : undefined,
+  );
+}
+
+/** Quiets an item a driven pull request carries, unless it is still to move to pr_open; whether it did. */
+function carriedQuiet(
+  item: ClaimedItem,
+  carriage: Carriage,
+  pr: LaunchPrReading,
+  plan: PickupPlan,
+): boolean {
+  if (carriage.kind !== "carried" || pr.step?.kind === "move") return false;
+  plan.quiet.push({
+    target: item.key,
+    class: "claimed-carried",
+    why: carriage.why,
+    carried: {
+      pr: carriage.pr.number,
+      url: carriage.pr.url,
+      drive: carriage.drive,
+    },
+  });
+  return true;
+}
+
+/**
+ * Quiets an item its launch's open pull request settles or a driven pull
+ * request carries; whether it did. An item already in pr_open under its
+ * launch's open pull request is quiet whatever the pickup once asked. A move
+ * goes first only when no ordinary question is recorded: the move does not
+ * keep that question, and the item is quiet afterwards.
+ */
+function quietByPr(
+  item: ClaimedItem,
+  input: PickupInput,
+  pr: LaunchPrReading,
+  plan: PickupPlan,
+  asksPerson: boolean,
+): boolean {
+  const settles =
+    pr.step?.kind === "quiet" || (pr.step?.kind === "move" && !asksPerson);
+  if (settles && settledByPr(item.key, pr.step, plan)) return true;
+  return carriedQuiet(item, carriageOf(item, input, pr), pr, plan);
+}
+
+/** Whether the latest pickup ended on an ordinary question, one a person answers; a pass whose result the host could not write asks nothing yet. */
+function asksPerson(latest: ReturnType<typeof latestPickupFor>): boolean {
+  return (
+    latest !== undefined &&
+    !unwrittenResult(latest) &&
+    endedQuestion(latest) !== null
+  );
+}
+
 /** One claimed item: a double claim, running, idle, or stalled. */
 function planClaimed(
   item: ClaimedItem,
@@ -440,16 +513,7 @@ function planIdleClaimed(
 ): void {
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   const latest = latestPickupFor(item.key, input.launches);
-  // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked. A move goes first only when no ordinary question is recorded: the move does not keep that question, and the item is quiet afterwards.
-  const asksPerson =
-    latest !== undefined &&
-    !unwrittenResult(latest) &&
-    endedQuestion(latest) !== null;
-  if (
-    (pr.step?.kind === "quiet" || (pr.step?.kind === "move" && !asksPerson)) &&
-    settledByPr(item.key, pr.step, plan)
-  )
-    return;
+  if (quietByPr(item, input, pr, plan, asksPerson(latest))) return;
   const early = earlyRelaunch(item, latest, pr, input);
   if (early !== null && relaunched(early, item.key, plan)) return;
   const asked = questionAsked(
@@ -545,7 +609,12 @@ function stalledPickup(
   treeNote: string | null,
 ): Action {
   const idle = input.nowMs - since;
-  const notes = [stallNote(pr), treeNote].filter((n) => n !== null);
+  const carriage = carriageOf(item, input, pr);
+  const notes = [
+    stallNote(pr),
+    carriage.kind === "stall" ? carriage.note : null,
+    treeNote,
+  ].filter((n): n is string => n !== null);
   const note = notes.length === 0 ? null : notes.join("; ");
   const latest = input.launches
     .filter(

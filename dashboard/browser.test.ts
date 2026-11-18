@@ -66,21 +66,23 @@ const TICK_FACT: Record<ScenarioId, RegExp> = {
   long: /^Updated 2 min ago$/,
   picks: /^Updated 2 min ago$/,
   partial: /^Updated 2 min ago$/,
+  linked: /^Updated 2 min ago$/,
 };
 
 /** What each scenario's answer must say first. */
 const ANSWER: Partial<Record<ScenarioId, RegExp>> = {
   quiet: /Nothing needs a person\./,
-  loud: /8 need a person\..*First: PR #456, parked for a person\./s,
-  merge: /8 need a person\..*First: PR #456, parked for a person\./s,
-  hung: /1 needs a person\..*First: PR #472, nudge-unanswered\./s,
-  queue: /1 needs a person\..*First: #231, assigner cannot write\./s,
+  loud: /8 need a person.*Oldest.*PR #456/s,
+  merge: /8 need a person.*Oldest.*PR #456/s,
+  hung: /5 need a person.*Oldest.*PR #460/s,
+  queue: /1 needs a person.*Oldest.*#231/s,
   stopped: /Nothing needed a person at the 16:00 tick\./,
-  gone: /8 needed a person at the 16:40 tick\..*First: PR #456, parked for a person\./s,
+  gone: /8 needed a person at the 16:40 tick\..*Oldest.*PR #456/s,
   empty: /No tick has run on this host\./,
   long: /Nothing needs a person\./,
-  picks: /3 need a person\..*First: PR #501, parked for a person\./s,
-  partial: /1 needs a person\..*First: #240, stalled\./s,
+  picks: /3 need a person.*Oldest.*PR #501/s,
+  partial: /1 needs a person.*Oldest.*#240/s,
+  linked: /9 need a person.*Oldest.*PR #456/s,
 };
 
 const WIDTHS = [
@@ -274,7 +276,7 @@ describe("the view a page opens on", () => {
         // What needs you runs past the fold by design: its heading and first rows must stand above it.
         expect(await bottomOf(page, ".pNeeds .need")).toBeLessThanOrEqual(900);
         expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
-        expect(await page.locator(".answer.loud").count()).toBe(1);
+        expect(await page.locator(".answer .facetOldest").count()).toBe(1);
         expect(await page.locator(".flash").count()).toBe(0);
         expect(await page.locator(".pLine, .pQueue, .pMerge").count()).toBe(0);
       } finally {
@@ -297,7 +299,7 @@ describe("the view a page opens on", () => {
       try {
         await shows(page, ".answer");
         expect(await currentTab(page)).toBe("Needs you");
-        expect(await page.locator(".answer.loud").count()).toBe(0);
+        expect(await page.locator(".answer .facetOldest").count()).toBe(0);
         expect(await page.locator(".pNeeds").count()).toBe(0);
       } finally {
         await context.close();

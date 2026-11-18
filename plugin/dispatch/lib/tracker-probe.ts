@@ -11,6 +11,7 @@
  */
 import { isMapping } from "../../shared/config-layers.ts";
 import { isRateLimited } from "../../shared/outbound/budget.ts";
+import { issueService } from "../../shared/tracker-product.ts";
 import { TrackerConfigError } from "../../skills/do-item/scripts/lib/tracker/config-error.ts";
 import {
   openTracker,
@@ -101,6 +102,7 @@ export async function reachTracker(
       kind: "config",
       reason: "the configuration handed to it is not a mapping",
     };
+  const service = issueService(adapterOf(values));
   let tracker: Tracker;
   try {
     tracker = openTracker(trackerConfigOf(values, slug), root);
@@ -108,7 +110,7 @@ export async function reachTracker(
     return {
       ok: false,
       kind: "config",
-      reason: `the tracker cannot be opened: ${answerText(error)}`,
+      reason: `${service} cannot be opened: ${answerText(error)}`,
     };
   }
   const deadline = new AbortController();
@@ -116,7 +118,7 @@ export async function reachTracker(
     () =>
       deadline.abort(
         new Error(
-          `the tracker gave no answer within ${deadlineMs / 1000} seconds`,
+          `${service} gave no answer within ${deadlineMs / 1000} seconds`,
         ),
       ),
     deadlineMs,
@@ -142,4 +144,14 @@ export async function reachTracker(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** The adapter the configuration names, GitHub's when it names none; `null` when the setting is not one. */
+function adapterOf(values: Record<string, unknown>): string | null {
+  const section = values.issue_tracker;
+  if (section === undefined || section === null) return "github";
+  if (!isMapping(section)) return null;
+  const adapter = section.adapter;
+  if (adapter === undefined) return "github";
+  return typeof adapter === "string" ? adapter : null;
 }

@@ -2,7 +2,8 @@
  * dispatch --apply: a follow-up whose pass stopped on a question for a
  * person and wrote a closing report. The failed follow-up's need shows the
  * report's `question` and framed `decision` where it shows the pass's
- * `Question:` line, with the report's `concluded` beside them.
+ * `Question:` line, with the report's `concluded` beside them; one that
+ * parked on the decision it framed asks that decision's question.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -32,6 +33,22 @@ const HEAD = "feature/9-done";
 const QUESTION = "Which version does this merge ship in?";
 const CONCLUDED =
   "Updated the website; the release tag waits on the version to ship in.";
+const DECISION = {
+  schema: "parked-decision/v1",
+  class: "scope",
+  call: {
+    id: "a",
+    question: QUESTION,
+    options: [
+      { id: "minor", name: "Minor", summary: "1.3.0.", pay: ["None."] },
+      { id: "patch", name: "Patch", summary: "1.2.1.", pay: ["None."] },
+    ],
+    recommended: "minor",
+    why: "The merge adds a command.",
+  },
+  steps: [],
+  alreadyDone: "The website is updated.",
+};
 
 let current: World | null = null;
 afterEach(() => {
@@ -79,22 +96,7 @@ describe("a follow-up's closing report on What needs you", () => {
         schema: "closing-report/v1",
         concluded: CONCLUDED,
         question: QUESTION,
-        decision: {
-          schema: "parked-decision/v1",
-          class: "scope",
-          call: {
-            id: "a",
-            question: QUESTION,
-            options: [
-              { id: "minor", name: "Minor", summary: "1.3.0.", pay: ["None."] },
-              { id: "patch", name: "Patch", summary: "1.2.1.", pay: ["None."] },
-            ],
-            recommended: "minor",
-            why: "The merge adds a command.",
-          },
-          steps: [],
-          alreadyDone: "The website is updated.",
-        },
+        decision: DECISION,
         suggested_next: {
           step: "Choose the version.",
           owner: "person",
@@ -130,5 +132,31 @@ describe("a follow-up's closing report on What needs you", () => {
       decisionClass: "scope",
       answer: { framedBy: "session" },
     });
+  });
+
+  it("asks the question of the decision a pass parked on, with no Question: line and no report", async () => {
+    const w = fixture();
+    const receipt = await applyTick(w, false);
+    const [started] = (receipt.repos[0]?.launches ?? []) as Array<{
+      record?: string;
+    }>;
+    const id = String(started?.record);
+    const token = readRecord(id, dispatchState(w))?.token ?? "";
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    const file = join(w.root, "decision.json");
+    writeFileSync(file, JSON.stringify(DECISION));
+    expectSpawnExit(
+      await w.dispatch(["result", id, token, "failed", "--decision", file]),
+      0,
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "0");
+    await waitFor("the exit", () => exitWritten(w, id));
+    w.setWorkspaces([]);
+
+    const after = await applyTick(w, false);
+    const action = (after.repos[0]?.actions ?? []).find(
+      (a) => a.cause === "followup-failed",
+    );
+    expect(action?.evidence).toMatchObject({ question: QUESTION });
   });
 });

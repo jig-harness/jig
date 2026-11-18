@@ -12,6 +12,7 @@ import type {
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
 import { ago } from "./format.ts";
+import type { ForgeStanding } from "./icons.ts";
 import { queuedFollowup } from "./followup-view.ts";
 import { type Clock, sessionKind } from "./view.ts";
 
@@ -56,7 +57,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "pickup-ended": "Pickup ended without moving the item on",
   "double-claim": "Claimed twice",
   "assigner-cannot-write": "Assigned by someone who cannot write",
-  "tracker-unreachable": "An account cannot reach the tracker",
+  "tracker-unreachable": "An account cannot reach the repository's issues",
   "low-quota": "Quota projected to run out",
 };
 
@@ -283,4 +284,38 @@ export function prStanding(
 function withTone(found: Found): Standing {
   const { followup: _followup, ...standing } = found;
   return { ...standing, tone: KIND_TONE[found.kind] };
+}
+
+/**
+ * A pull request's standing on the forge alone, which its icon shows: the
+ * forge's own read, else what the tick's board read placed (a Ready card is
+ * open), its follow-up queue or a follow-up session (a merged pull request);
+ * otherwise not read.
+ * Where the dispatcher holds it is the card's status mark and stage chip.
+ */
+export function forgeStanding(
+  line: LineSnapshot | null,
+  repo: string,
+  pr: number,
+  fact: DashboardPr | null,
+): ForgeStanding {
+  if (fact !== null) {
+    if (fact.state === "MERGED") return "merged";
+    if (fact.state === "CLOSED") return "closed";
+    return fact.isDraft ? "draft" : "open";
+  }
+  if (line?.ready?.some((r) => r.repo === repo && r.pr === pr)) return "open";
+  if (
+    line?.queue.some(
+      (q) => q.repo === repo && q.pr === pr && q.source === "merged",
+    )
+  )
+    return "merged";
+  if (
+    line?.sessions.some(
+      (s) => s.repo === repo && s.pr === pr && s.stage === "followup",
+    )
+  )
+    return "merged";
+  return "not read";
 }

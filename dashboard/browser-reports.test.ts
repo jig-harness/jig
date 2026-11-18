@@ -50,10 +50,10 @@ describe("the closing report", () => {
         PHONE,
       );
       try {
-        await shows(page, ".rowExpand");
+        await shows(page, ".row .disc");
         await page
           .locator(".row", { hasText: "PR #92" })
-          .locator(".rowExpand")
+          .locator(".disc")
           .click();
         await page.getByRole("button", { name: "All runs of PR #92" }).click();
         await shows(page, ".workRuns");
@@ -94,6 +94,7 @@ describe("the closing report", () => {
       );
       try {
         await shows(page, ".need");
+        await page.getByRole("button", { name: "Investigate group" }).click();
         const card = page.locator(".need", { hasText: "PR #461" });
         await card.locator(".concluded").waitFor();
         expect(await card.locator(".concluded").textContent()).toBe(
