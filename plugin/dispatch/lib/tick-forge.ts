@@ -317,11 +317,13 @@ function decideScope(
 function queryNote(queried: RepositoryOutcome): string {
   if (!queried.ok)
     return ` (the repository query did not read, so each was read on its own: ${queried.failure.reason})`;
-  const { pages, cost, overflow, pageSize } = queried.value;
+  const { pages, cost, overflow, pageSize, mode } = queried.value;
   const own =
-    overflow.length === 0
-      ? ""
-      : `; ${overflow.length} with more comments than one page holds, listed on their own`;
+    mode === "state"
+      ? "; comments revalidated separately"
+      : overflow.length === 0
+        ? ""
+        : `; ${overflow.length} with more comments than one page holds, listed on their own`;
   const sized =
     pageSize < PAGE
       ? ` ending at ${pageSize} pull requests per page, as many as the forge answers in time`

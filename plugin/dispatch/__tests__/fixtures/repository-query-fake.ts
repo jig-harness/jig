@@ -132,6 +132,27 @@ export function commentsQuery(dir: string, args: string[]): unknown {
   };
 }
 
+/** One page of the REST comment listing with a validator that follows its contents. */
+export function replyConditionalCommentPage(dir: string, args: string[]): void {
+  const match = /\/issues\/(\d+)\/comments\?per_page=100&page=(\d+)$/.exec(
+    args.at(-1) ?? "",
+  );
+  if (match === null) return;
+  const { has, json } = files(dir);
+  const specific = "comments-" + match[1] + ".json";
+  const all = json(has(specific) ? specific : "comments.json") as unknown[];
+  const start = (Number(match[2]) - 1) * COMMENTS_PAGE;
+  const body = JSON.stringify(all.slice(start, start + COMMENTS_PAGE));
+  const tag = '"' + Bun.hash(body).toString(16) + '"';
+  const unchanged = args.includes("If-None-Match: " + tag);
+  const status = unchanged ? "304 Not Modified" : "200 OK";
+  process.stdout.write(
+    `HTTP/2.0 ${status}\r\nEtag: ${tag}\r\n\r\n${unchanged ? "" : body}`,
+  );
+  if (unchanged) process.stderr.write("gh: HTTP 304\n");
+  process.exit(unchanged ? 1 : 0);
+}
+
 /** The query's answer, or `null` for a query that fails. */
 export function repositoryQuery(
   dir: string,
@@ -144,6 +165,7 @@ export function repositoryQuery(
     (args.find((a) => a.startsWith(`${key}=`)) ?? "").slice(key.length + 1);
   const first = Number(arg("first"));
   const after = arg("after") === "" ? 0 : Number(arg("after"));
+  const query = arg("query");
   const all = json("prs-open.json") as Listed[];
   const nodes = all.slice(after, after + first).map((p) => {
     return {
@@ -156,9 +178,9 @@ export function repositoryQuery(
               p.author.is_bot === true,
             ),
       labels: { pageInfo: { hasNextPage: false }, nodes: p.labels },
-      headRef: headRef(p),
-      reviewThreads: threads(p.number),
-      comments: comments(p.number),
+      ...(query.includes("statusCheckRollup") ? { headRef: headRef(p) } : {}),
+      ...(query.includes("reviewThreads") ? { reviewThreads: threads(p.number) } : {}),
+      ...(query.includes("comments(first:") ? { comments: comments(p.number) } : {}),
     };
   });
   const more = after + first < all.length;
