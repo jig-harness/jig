@@ -428,6 +428,16 @@ function planClaimed(
     return;
   }
   plan.idleNow.push(item.key);
+  planIdleClaimed(item, input, plan, held);
+}
+
+/** An idle claimed item no session holds: settled by its pull request, relaunched, asked about, held, or planned as idle. */
+function planIdleClaimed(
+  item: ClaimedItem,
+  input: PickupInput,
+  plan: PickupPlan,
+  held: ReturnType<typeof holding>,
+): void {
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   const latest = latestPickupFor(item.key, input.launches);
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked. A move goes first only when no ordinary question is recorded: the move does not keep that question, and the item is quiet afterwards.
