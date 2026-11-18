@@ -17,7 +17,7 @@ import { outboundFailure } from "../outbound/failure.ts";
 import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import { ok } from "../outcome.ts";
 import { heldRun, type RunOptions, type RunResult } from "../proc.ts";
-import { commentPages } from "../records/comment-pages.ts";
+import { commentPages, reviewCommentPages } from "../records/comment-pages.ts";
 import { currentMs } from "../time.ts";
 import { traceGhRunner } from "../trace.ts";
 
@@ -168,6 +168,57 @@ it("reads a {owner}/{repo} placeholder target with the plain read", async () => 
   expect(await list({ repo: "{owner}/{repo}", number: 1 })).toEqual(
     ok([{ id: 2 }]),
   );
+});
+
+it("lists a pull request's review comments page by page", async () => {
+  const asked: string[] = [];
+  const list = reviewCommentPages({
+    ghCacheDir: () => "/cache",
+    ghConditionalGet: async (path) => {
+      asked.push(path);
+      const full = asked.length === 1;
+      return {
+        ok: true,
+        changed: false,
+        body: JSON.stringify(full ? Array(100).fill({ id: 1 }) : [{ id: 2 }]),
+      };
+    },
+  });
+  const read = await list(TARGET);
+  expect(read.ok && read.value.length).toBe(101);
+  expect(asked).toEqual([
+    "repos/acme/app/pulls/7/comments?per_page=100&page=1",
+    "repos/acme/app/pulls/7/comments?per_page=100&page=2",
+  ]);
+});
+
+it("does not read review comments it cannot revalidate or that run past the last page", async () => {
+  const never = async (): Promise<never> => {
+    throw new Error("no conditional read without a cache");
+  };
+  const uncached = reviewCommentPages({
+    ghCacheDir: () => null,
+    ghConditionalGet: never,
+  });
+  expect((await uncached(TARGET)).ok).toBe(false);
+  const placeholder = reviewCommentPages({
+    ghCacheDir: () => "/cache",
+    ghConditionalGet: never,
+  });
+  expect((await placeholder({ repo: "{owner}/{repo}", number: 1 })).ok).toBe(
+    false,
+  );
+  const endless = reviewCommentPages({
+    ghCacheDir: () => "/cache",
+    ghConditionalGet: async () => ({
+      ok: true,
+      changed: false,
+      body: JSON.stringify(Array(100).fill({ id: 1 })),
+    }),
+  });
+  const read = await endless(TARGET);
+  expect(read.ok).toBe(false);
+  if (!read.ok) expect(read.failure.reason).toContain("pages");
 });
 
 it("keeps a page GitHub answered 304 through a prune that removes older entries", async () => {

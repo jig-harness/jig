@@ -15,9 +15,11 @@
  * (`sizeToKeep`) and starts the next read from it (`startSize`), so it does
  * not time out once on every run before it shrinks. The kept size halves
  * after a page that came close to the limit, and doubles back toward the
- * most once pages answer quickly, but not within `GROW_AFTER_MS` of the
- * last time it shrank: a size that fails is then tried once in that time,
- * not on every other run.
+ * most once pages answer quickly, but not during the hold that follows a
+ * shrink. The first hold is short (`FIRST_HOLD_MS`), so one timeout does not
+ * cost the smaller pages for long; a shrink that follows the last one within
+ * `HOLDS_FORGOTTEN_MS` doubles the hold, up to `LONGEST_HOLD_MS`, so a size
+ * that keeps failing is tried less and less often.
  */
 import { Defect, type Failure, type Outcome } from "../outcome.ts";
 import { currentMs } from "../time.ts";
@@ -28,8 +30,14 @@ export const QUICK_MS = 2_500;
 /** A page that took this long came close to the system's limit: the next read starts from half. */
 export const SLOW_MS = 6_000;
 
-/** How long after a page shrank the kept size stays as it is, however quickly pages answer. */
-export const GROW_AFTER_MS = 3_600_000;
+/** How long the kept size stays as it is after a first shrink, however quickly pages answer. */
+export const FIRST_HOLD_MS = 300_000;
+
+/** The longest a shrink holds the kept size. */
+export const LONGEST_HOLD_MS = 3_600_000;
+
+/** A shrink this long after the last one is a first shrink again. */
+const HOLDS_FORGOTTEN_MS = 2 * LONGEST_HOLD_MS;
 
 /** One page as `readShrinking` read it. */
 export interface ShrunkRead<T, Code extends string> {
@@ -70,19 +78,27 @@ export interface KeptSize {
   size: number;
   /** When the size last shrank, epoch milliseconds. */
   shrankAt: number;
+  /** How long after `shrankAt` the size may not grow; `FIRST_HOLD_MS` when absent. */
+  holdMs?: number;
 }
 
 /** What was kept, where it reads as a size from one to `most`; else `null`. */
 export function keptSize(value: unknown, most: number): KeptSize | null {
   if (typeof value !== "object" || value === null) return null;
-  const { size, shrankAt } = value as Record<string, unknown>;
+  const { size, shrankAt, holdMs } = value as Record<string, unknown>;
   return typeof size === "number" &&
     Number.isInteger(size) &&
     size >= 1 &&
     size <= most &&
     typeof shrankAt === "number" &&
     Number.isFinite(shrankAt)
-    ? { size, shrankAt }
+    ? {
+        size,
+        shrankAt,
+        ...(typeof holdMs === "number" && Number.isFinite(holdMs) && holdMs > 0
+          ? { holdMs }
+          : {}),
+      }
     : null;
 }
 
@@ -105,12 +121,25 @@ export interface PagedRun {
   whole: boolean;
 }
 
+/** What a shrink at `now` keeps: `size`, held twice as long as the last hold when that shrink was recent. */
+function shrunkTo(size: number, kept: KeptSize | null, now: number): KeptSize {
+  const since = kept === null ? null : now - kept.shrankAt;
+  const recent = since !== null && since >= 0 && since < HOLDS_FORGOTTEN_MS;
+  return {
+    size,
+    shrankAt: now,
+    holdMs: recent
+      ? Math.min(LONGEST_HOLD_MS, 2 * (kept?.holdMs ?? FIRST_HOLD_MS))
+      : FIRST_HOLD_MS,
+  };
+}
+
 /**
  * What to keep after `run`, or `null` to leave what is kept as it is. A run
  * that shrank keeps the size it ended at. A run that read whole keeps half
  * its size when its slowest page took `SLOW_MS` or longer, and twice its
- * size, up to `most`, when every page took less than `QUICK_MS` and nothing
- * shrank in the last `GROW_AFTER_MS`.
+ * size, up to `most`, when every page took less than `QUICK_MS` and the
+ * hold after the last shrink has passed.
  */
 export function sizeToKeep(
   kept: KeptSize | null,
@@ -118,17 +147,19 @@ export function sizeToKeep(
   most: number,
   now: number,
 ): KeptSize | null {
-  if (run.size < run.started) return { size: run.size, shrankAt: now };
+  if (run.size < run.started) return shrunkTo(run.size, kept, now);
   if (!run.whole || run.pages === 0) return null;
   if (run.slowestMs >= SLOW_MS)
     return run.size === 1
       ? null
-      : { size: Math.floor(run.size / 2), shrankAt: now };
-  const settled = kept === null || now - kept.shrankAt >= GROW_AFTER_MS;
+      : shrunkTo(Math.floor(run.size / 2), kept, now);
+  const settled =
+    kept === null || now - kept.shrankAt >= (kept.holdMs ?? FIRST_HOLD_MS);
   if (run.slowestMs < QUICK_MS && run.size < most && settled)
     return {
       size: Math.min(most, run.size * 2),
       shrankAt: kept?.shrankAt ?? 0,
+      ...(kept?.holdMs === undefined ? {} : { holdMs: kept.holdMs }),
     };
   return null;
 }
