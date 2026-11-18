@@ -115,33 +115,24 @@ function isReleasingCommit(value: unknown): value is ReleasingCommit {
   );
 }
 
-/**
- * releasingCommit reads changelog history with synchronous Git calls. Keep that
- * implementation isolated in a child so a station tick can cancel the scan.
- */
-async function inspectReleasingCommit(
+/** Run one inspection script in a bounded child and read the JSON it prints. */
+async function inspectInChild(
   repo: RepoTarget,
-  tag: string,
-  branch: string,
   bound: TickBound | undefined,
-): Promise<Outcome<ReleasingCommit | null, "refused">> {
+  script: string,
+  env: Record<string, string>,
+  what: string,
+): Promise<Outcome<unknown, "refused">> {
   const reply = await bounded(
     (onSpawn) =>
       run(
-        [
-          process.execPath,
-          "--no-env-file",
-          `--config=${BUNFIG}`,
-          "-e",
-          RELEASING_COMMIT_INSPECTION,
-        ],
+        [process.execPath, "--no-env-file", `--config=${BUNFIG}`, "-e", script],
         {
           cwd: repo.path,
           env: {
             ...process.env,
-            JIG_RELEASE_INSPECTION_BRANCH: branch,
             JIG_RELEASE_INSPECTION_ROOT: repo.path,
-            JIG_RELEASE_INSPECTION_TAG: tag,
+            ...env,
           },
           stderr: "pipe",
           timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
@@ -152,15 +143,28 @@ async function inspectReleasingCommit(
   );
   const failure = ghRunFailure(reply);
   if (failure !== null)
-    return failedBy(
-      "refused",
-      failure,
-      "the releasing commit could not be read",
-    );
-  const parsed = attempt(
-    "refused",
-    "the releasing commit response is unreadable",
-    (): unknown => JSON.parse(reply.stdout),
+    return failedBy("refused", failure, `${what} could not be read`);
+  return attempt("refused", `${what} response is unreadable`, (): unknown =>
+    JSON.parse(reply.stdout),
+  );
+}
+
+/**
+ * releasingCommit reads changelog history with synchronous Git calls. Keep that
+ * implementation isolated in a child so a station tick can cancel the scan.
+ */
+async function inspectReleasingCommit(
+  repo: RepoTarget,
+  tag: string,
+  branch: string,
+  bound: TickBound | undefined,
+): Promise<Outcome<ReleasingCommit | null, "refused">> {
+  const parsed = await inspectInChild(
+    repo,
+    bound,
+    RELEASING_COMMIT_INSPECTION,
+    { JIG_RELEASE_INSPECTION_BRANCH: branch, JIG_RELEASE_INSPECTION_TAG: tag },
+    "the releasing commit",
   );
   if (!parsed.ok) return parsed;
   return parsed.value === null || isReleasingCommit(parsed.value)
@@ -173,37 +177,12 @@ async function inspectIntegrationBranch(
   repo: RepoTarget,
   bound: TickBound | undefined,
 ): Promise<Outcome<string | null, "refused">> {
-  const reply = await bounded(
-    (onSpawn) =>
-      run(
-        [
-          process.execPath,
-          "--no-env-file",
-          `--config=${BUNFIG}`,
-          "-e",
-          INTEGRATION_BRANCH_INSPECTION,
-        ],
-        {
-          cwd: repo.path,
-          env: { ...process.env, JIG_RELEASE_INSPECTION_ROOT: repo.path },
-          stderr: "pipe",
-          timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
-          onSpawn,
-        },
-      ),
+  const parsed = await inspectInChild(
+    repo,
     bound,
-  );
-  const failure = ghRunFailure(reply);
-  if (failure !== null)
-    return failedBy(
-      "refused",
-      failure,
-      "the integration branch could not be identified",
-    );
-  const parsed = attempt(
-    "refused",
-    "the integration branch response is unreadable",
-    (): unknown => JSON.parse(reply.stdout),
+    INTEGRATION_BRANCH_INSPECTION,
+    {},
+    "the integration branch",
   );
   if (!parsed.ok) return parsed;
   return parsed.value === null || isString(parsed.value)
