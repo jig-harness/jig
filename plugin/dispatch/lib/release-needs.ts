@@ -3,6 +3,7 @@ import { stateRoot } from "../receipts.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { SHARED_RELEASE_LIMIT } from "../../shared/records/release-tags.ts";
+import { releaseActions } from "./release-groups.ts";
 import type { Action, MarkedPr } from "./types.ts";
 
 export interface ReleaseNeed {
@@ -11,6 +12,8 @@ export interface ReleaseNeed {
   launch: string;
   rerun_claimed: number;
   tagged: number;
+  /** The decision a person took the release under (`release-groups.ts`); `null` when none did. */
+  taken_as: string | null;
 }
 
 export type ReleaseReservation =
@@ -94,19 +97,10 @@ export function releaseNeeds(repo: string, root = stateRoot()): ReleaseNeed[] {
 }
 
 export function releaseNeedActions(needs: readonly ReleaseNeed[]): Action[] {
-  return needs.flatMap(({ tag, item }) =>
-    item === null
-      ? []
-      : [
-          {
-            stage: "notify",
-            cause: "release-owed",
-            target: item,
-            record: "tracker",
-            reason: `Release ${tag} is owed its tag.`,
-            evidence: { tag },
-          } satisfies Action,
-        ],
+  return releaseActions(
+    needs.flatMap((need) =>
+      need.item === null ? [] : [{ ...need, item: need.item }],
+    ),
   );
 }
 
@@ -121,6 +115,22 @@ export function recordTagged(
   );
   inTransaction(db, () => {
     for (const tag of tags) update.run(repo, tag);
+  });
+}
+
+/** A person's answer took these releases under `decision`, which stays theirs while the other versions change; `null` returns them to the line. */
+export function recordReleasesTaken(
+  repo: string,
+  tags: readonly string[],
+  decision: string | null,
+  root = stateRoot(),
+): void {
+  const db = stateDb(root);
+  const update = db.query(
+    "UPDATE release_needs SET taken_as = ? WHERE repo = ? AND tag = ?",
+  );
+  inTransaction(db, () => {
+    for (const tag of tags) update.run(decision, repo, tag);
   });
 }
 

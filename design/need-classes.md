@@ -201,8 +201,22 @@ follow-up then asks the same question.
 - A follow-up that finds its release untagged records "release owed" as a
   step a person owes (the `person-owed` routine class) and finishes, and the
   line keeps one need per release, not one per merge (#957).
+- Untagged releases of one repository that share a remedy are shown as one
+  need, not one per version (#1533). The remedy is what is left to try:
+  releases whose failed gates can still be re-run once group together, and
+  releases whose re-run was requested group together. A lone release keeps
+  its own need. The records stay per version: one reservation and one
+  tracker item each.
+- A group's need lists its versions and is answered on the tracker item of
+  the newest. The answer covers every version listed. A version that gets
+  its tag leaves the list, which changes the decision, and the need goes
+  with the last one. Versions a person took (**Investigate**, **Tag it by
+  hand**) keep the decision they answered, so tagging them one by one does
+  not bring the need back. When that answer stops holding them (a later
+  answer replaced it, or it was removed), they return to the groups above.
 - That need is framed under `release`, act Authorize: **Re-run the failed
-  gates**, **Investigate**, **Tag it by hand**.
+  gates**, **Investigate**, **Tag it by hand**. Once a release's one re-run
+  was requested, its need offers only the last two.
 - Tagging a release by hand where a re-run cannot (#894, #721), an
   environment approval and a stuck deployment (#711) stay a person's alone.
 

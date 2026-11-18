@@ -42,8 +42,9 @@ import {
   removeRecordIf,
   writeRecord,
 } from "./launches.ts";
-import type { TickBound } from "./sources/bounded.ts";
+import { boundAt, type TickBound } from "./sources/bounded.ts";
 import { rerunReleaseGates } from "./release-gates.ts";
+import { recordReleasesTaken } from "./release-needs.ts";
 import { writeCommandLabel } from "./requests.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -53,7 +54,7 @@ import { readTrackerAnswers } from "./tracker-answers.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
 import type { WorkLinks } from "./work-links.ts";
-import { currentIso } from "../../shared/time.ts";
+import { currentIso, currentMs } from "../../shared/time.ts";
 
 /** The longest one step's git checks run. */
 const STEP_LIMIT_MS = 60_000;
@@ -415,6 +416,12 @@ export function stationPorts(inputs: StationInputs): StationPorts {
     });
     return asked;
   };
+  // A tick with no deadline of its own still limits what its release re-runs spend together.
+  let rerunLimit = inputs.bound;
+  const rerunBound = () => {
+    rerunLimit ??= boundAt(currentMs() + 120_000);
+    return rerunLimit;
+  };
   return {
     self: inputs.login,
     issueRepository: inputs.issueRepository,
@@ -431,9 +438,11 @@ export function stationPorts(inputs: StationInputs): StationPorts {
         ? null
         : stageOff(inputs, "followup");
       return off === null
-        ? rerunReleaseGates(inputs.repo, tag, inputs.root, inputs.bound)
+        ? rerunReleaseGates(inputs.repo, tag, inputs.root, rerunBound())
         : Promise.resolve(refused(off));
     },
+    takeReleases: (tags, decision) =>
+      recordReleasesTaken(inputs.repo.slug, tags, decision, inputs.root),
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
     releasePickup: (item, record = null) => releasePickup(inputs, item, record),

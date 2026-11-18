@@ -20,6 +20,7 @@ import {
   nextReleaseHandoff,
   recordTagged,
   releaseNeedActions,
+  releaseNeeds,
   reserveRelease,
 } from "./release-needs.ts";
 import { trackerConfigOf } from "./section.ts";
@@ -96,10 +97,12 @@ export async function settleReleaseHandoff({
     if (!item.ok) return unplaced(item.failure.reason);
     const attached = reserveRelease(repo.slug, tag, launch, item.value, root);
     if (!attached.ok) return unplaced(attached.failure.reason);
+    // The new release may join a group the tick already planned.
     if (attached.value.status === "recorded")
-      report.actions.push(
-        ...releaseNeedActions([{ ...due, item: attached.value.item }]),
-      );
+      report.actions = [
+        ...report.actions.filter((a) => a.cause !== "release-owed"),
+        ...releaseNeedActions(releaseNeeds(repo.slug, root)),
+      ];
   } catch (error) {
     unplaced(failureText(error));
   }

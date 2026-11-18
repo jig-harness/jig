@@ -284,7 +284,7 @@ export async function rerunReleaseGates(
   if (!tags.ok) return tags;
   if (tags.value.has(tag)) {
     recordTagged(repo.slug, [tag], root);
-    return refused(`release ${tag} already has its tag`);
+    return ok(`release ${tag} already has its tag`);
   }
   const branchRead = await inspectIntegrationBranch(repo, bound);
   if (!branchRead.ok) return branchRead;

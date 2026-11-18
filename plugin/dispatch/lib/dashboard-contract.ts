@@ -160,6 +160,8 @@ export interface LineNeed {
   workspaces: string[];
   /** For a stuck launch record: its id, which `jig dispatch clear` takes. */
   stuckRecord?: string | null;
+  /** For a group of releases: the tracker item of every release it lists. */
+  covers?: string[];
 }
 
 /** An account's wall as the newest tick read it. */
