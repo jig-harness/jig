@@ -180,6 +180,7 @@ function carriersOf(
           },
     drives,
     read: forge.read,
+    ...(forge.scoped ? { inScope: forge.inScope } : {}),
   });
 }
 

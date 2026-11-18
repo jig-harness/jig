@@ -13,11 +13,11 @@
  * - Its drive carries the item while the drive's state is `driving` or
  *   `converged`, the state the pull request's dispatch label shows
  *   (`labels.ts`). A pull request with no drive, or one whose drive stopped
- *   for a person, does not: the item is a stalled pickup as before, and its
- *   need names the pull request.
+ *   for a person, does not: the item is a stalled pickup, and its need names
+ *   the pull request.
  * - Where the open pull requests, their links or a linked pull request's
- *   drive did not read this tick, the item is handled as it would be
- *   without this rule, and its need says what could not be told.
+ *   drive did not read this tick, the stall watch reads the item as it reads
+ *   one no pull request links, and its need says what could not be told.
  *
  * Like the rest of the stall watch it reads only what the tick's query of
  * the repository already read, and makes no forge request of its own.
@@ -53,26 +53,30 @@ export type CarryingDrive = "driving" | "converged";
 
 /** What the open pull requests make of a claimed item with no running session. */
 export type Carriage =
-  /** No open pull request links it, or the rule was not read: the stall watch goes on as before. */
+  /** No open pull request links it, or the carriers were not read: the stall watch reads the item by its other rules. */
   | { kind: "none" }
   | { kind: "carried"; pr: CarrierPr; drive: CarryingDrive; why: string }
   /** A pull request links it, but no drive carries it, or what carries it could not be told: the stall need says which. */
   | { kind: "stall"; note: string };
 
-/** The drive of a pull request among `drives`, the ones `read` holds the ledgers of. */
+/** The drive of a pull request among `drives`, the ones `read` holds the ledgers of, `inScope` those `only_labeled` keeps. */
 function carrierDrive(
   pr: number,
   drives: readonly DrivenPr[],
   read: ReadonlySet<number>,
+  inScope: ReadonlySet<number> | undefined,
 ): CarrierDrive {
   const drive = drives.find((d) => d.number === pr);
-  if (drive === undefined)
-    return read.has(pr)
-      ? { kind: "none", why: "it has no drive" }
-      : {
-          kind: "unread",
-          why: "its drive was not read this tick",
-        };
+  if (drive === undefined) {
+    if (read.has(pr)) return { kind: "none", why: "it has no drive" };
+    return {
+      kind: "unread",
+      why:
+        inScope !== undefined && !inScope.has(pr)
+          ? "it carries no dispatch label, so its drive is not read (dispatch.labels.only_labeled)"
+          : "its drive was not read this tick",
+    };
+  }
   const projected = stateOf(drive);
   if (projected === "unknown")
     return {
@@ -100,13 +104,15 @@ export function carrierInput(read: {
   rules: LinkRules | null;
   drives: readonly DrivenPr[];
   read: ReadonlySet<number>;
+  /** Under `only_labeled`, the pull requests in scope: one outside it has no drive the tick reads. */
+  inScope?: ReadonlySet<number>;
 }): CarrierInput {
   const own = read.prs?.filter((p) => p.crossRepository === false) ?? null;
   const links =
     own === null || read.rules === null ? null : workLinks(own, read.rules);
   return {
     carriers: (key) => links?.prsOf(key) ?? null,
-    drive: (pr) => carrierDrive(pr, read.drives, read.read),
+    drive: (pr) => carrierDrive(pr, read.drives, read.read, read.inScope),
   };
 }
 

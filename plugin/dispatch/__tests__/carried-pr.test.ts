@@ -5,8 +5,8 @@
  * request's drive is live or converged, raises no stall need and is reported
  * as carried by it, on the tick's report and on the line. A pull request
  * with no drive, a stopped drive, a fork's pull request, and open pull
- * requests that did not read leave the stall need as it was, naming what
- * could not be told.
+ * requests that did not read leave the stall need, which names what could
+ * not be told.
  */
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -17,6 +17,7 @@ import { numberKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { carrierInput } from "../lib/carried-pr.ts";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
+import type { LineCarried } from "../lib/dashboard-contract.ts";
 import { buildLine } from "../lib/line.ts";
 import { readBy } from "../lib/line-merge.ts";
 import { readLine, writeLine } from "../lib/line-store.ts";
@@ -115,6 +116,7 @@ function stalled(
   prs: PrLinkText[] | null,
   drives: DrivenPr[],
   read: ReadonlySet<number> = new Set([31]),
+  inScope?: ReadonlySet<number>,
 ): StalledPrInput {
   return {
     prs,
@@ -137,6 +139,7 @@ function stalled(
       },
       drives,
       read,
+      ...(inScope === undefined ? {} : { inScope }),
     }),
   };
 }
@@ -228,7 +231,7 @@ describe("a claimed item an open pull request carries", () => {
     }
   });
 
-  it("is handled as before when the open pull requests did not read, and the need says what could not be told", () => {
+  it("is a stalled pickup when the open pull requests did not read, and the need says what could not be told", () => {
     const reason = expectStalled(planPickups(input(stalled(null, []))));
     expect(reason).toContain(
       "the open pull requests' descriptions did not read this tick",
@@ -238,7 +241,7 @@ describe("a claimed item an open pull request carries", () => {
     );
   });
 
-  it("is handled as before when the linked pull request's drive did not read, and the need says so", () => {
+  it("is a stalled pickup when the linked pull request's drive did not read, and the need says so", () => {
     const unplaced = { ...drive("unplaced"), why: "its comments did not read" };
     for (const [drives, read] of [
       [[unplaced], new Set([31])],
@@ -251,7 +254,25 @@ describe("a claimed item an open pull request carries", () => {
     }
   });
 
-  it("goes on as before without the carriers' reads", () => {
+  it("says a pull request outside dispatch.labels.only_labeled's scope has no drive the tick reads", () => {
+    const reason = expectStalled(
+      planPickups(input(stalled([pr()], [], new Set(), new Set()))),
+    );
+    expect(reason).toContain(
+      "it carries no dispatch label, so its drive is not read (dispatch.labels.only_labeled)",
+    );
+  });
+
+  it("still moves the item to pr_open where the repository names one", () => {
+    const named = { ...stalled([pr()], [LIVE]), prOpen: () => "PR Open" };
+    const plan = planPickups(input(named));
+    expect(plan.actions).toEqual([]);
+    expect(plan.moves).toEqual([
+      expect.objectContaining({ target: "#12", pr: 31, to: "PR Open" }),
+    ]);
+  });
+
+  it("is a stalled pickup when the carriers are not read", () => {
     const { carried: _, ...without } = stalled([pr()], [LIVE]);
     expectStalled(planPickups(input(without)));
   });
@@ -313,6 +334,16 @@ describe("the line", () => {
       if (!stored.ok) return;
       expect(stored.value?.carried).toEqual(line.carried);
       expect(line.carried).toHaveLength(1);
+      const [entry] = line.carried ?? [];
+      writeLine(
+        {
+          ...line,
+          carried: [{ ...entry, drive: "parked" } as unknown as LineCarried],
+        },
+        "{}",
+        root,
+      );
+      expect(readLine(root).ok).toBe(false);
     } finally {
       closeStateDb(root);
       rmSync(root, { recursive: true, force: true });

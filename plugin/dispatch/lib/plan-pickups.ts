@@ -427,14 +427,9 @@ function planClaimed(
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
   if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
-  const asked = questionAsked(input, item, input.launches);
-  if (asked !== null) {
-    plan.actions.push(asked);
-    return;
-  }
-  if (settledOrHeld(item, input, pr.step, plan)) return;
+  // So is one a driven pull request carries, unless it is still to move to pr_open.
   const carriage = readCarriage(item, input.prOpen?.carried);
-  if (carriage.kind === "carried") {
+  if (carriage.kind === "carried" && pr.step?.kind !== "move") {
     plan.quiet.push({
       target: item.key,
       class: "claimed-carried",
@@ -447,6 +442,12 @@ function planClaimed(
     });
     return;
   }
+  const asked = questionAsked(input, item, input.launches);
+  if (asked !== null) {
+    plan.actions.push(asked);
+    return;
+  }
+  if (settledOrHeld(item, input, pr.step, plan)) return;
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {

@@ -760,7 +760,7 @@ export interface RepoReport {
     carried?: {
       pr: number;
       url: string;
-      drive: import("./carried-pr.ts").CarryingDrive;
+      drive: "driving" | "converged";
     };
   }>;
 }
