@@ -77,10 +77,9 @@ export function endRunOf(context: TickContext): EndRun | null {
     const left = timeLeftMs(state);
     if (left !== null && left <= 0) return null;
     const { runtimeTimeoutMs } = state.machine;
-    return state.runtime.endRun(
-      run,
-      left === null ? runtimeTimeoutMs : Math.min(runtimeTimeoutMs, left),
-    );
+    const ms =
+      left === null ? runtimeTimeoutMs : Math.min(runtimeTimeoutMs, left);
+    return state.runtime.endRun(run, ms, AbortSignal.timeout(ms));
   };
 }
 

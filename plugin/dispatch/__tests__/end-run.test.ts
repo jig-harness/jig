@@ -20,7 +20,7 @@ import { orcaEndRun } from "../lib/runtime/orca-end-run.ts";
 import type { EndedRun, RuntimeReceipt } from "../lib/runtime/port.ts";
 import { endRunOf } from "../lib/tick-settle.ts";
 import type { TickContext } from "../lib/tick-context.ts";
-import type { RunTab } from "../../shared/orca-tabs.ts";
+import { readRunTabs, type RunTab } from "../../shared/orca-tabs.ts";
 import { currentMs, parseMs } from "../../shared/time.ts";
 import { dispatchState, earlierRecord } from "./launch-fixtures.ts";
 import { type World, world } from "./fixtures.ts";
@@ -329,5 +329,35 @@ describe("Orca's endRun", () => {
       ok: true,
       detail: "run tab term_run (jig dispatch · rearm #7): closed",
     });
+  });
+
+  it("keeps the record of a tab whose shell is gone and reports it left", async () => {
+    const root = tabsRoot();
+    writeTab(root, { launch: "run-1" });
+    const receipt = await orcaEndRun(run, "orca", 5000, {
+      root,
+      orca,
+      table: async () => [],
+    });
+    expect(receipt.ok).toBe(false);
+    expect(receipt.detail).toContain("shell gone");
+    expect(readRunTabs(root)).toHaveLength(1);
+  });
+
+  it("starts no cleanup once its signal aborted", async () => {
+    const root = tabsRoot();
+    writeTab(root, { launch: "run-1" });
+    const receipt = await orcaEndRun(
+      run,
+      "orca",
+      5000,
+      { root, orca, table: shell() },
+      AbortSignal.abort(),
+    );
+    expect(receipt).toEqual({
+      ok: false,
+      detail: "run tab term_run (jig dispatch · rearm #7): out of time",
+    });
+    expect(readRunTabs(root)).toHaveLength(1);
   });
 });

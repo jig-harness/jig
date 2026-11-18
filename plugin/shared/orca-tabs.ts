@@ -306,6 +306,7 @@ export type CloseOutcome =
   | "busy"
   | "reused"
   | "gone"
+  | "shell gone"
   | "out of time"
   | { failed: string };
 
@@ -325,6 +326,7 @@ export async function closeRunTab(
   deps: Pick<RunTabDeps, "root" | "orca" | "table">,
   until: number = Number.POSITIVE_INFINITY,
   known?: ReadonlySet<number>,
+  keepWhenShellGone = false,
 ): Promise<CloseOutcome> {
   const tableBudget = within(until, TABLE_CALL_SEC);
   if (tableBudget === null) return "out of time";
@@ -332,6 +334,8 @@ export async function closeRunTab(
   if (rows === null) return "busy";
   const state = tabState(tab, rows);
   if (state === "gone") {
+    // The terminal can outlive its shell: only Orca's own answer drops it.
+    if (keepWhenShellGone) return "shell gone";
     forgetRunTab(deps.root, tab.handle);
     return "gone";
   }
@@ -401,7 +405,8 @@ export async function closePreviousTabs(
  * Close the run tabs a launch record's run left, once the run ended without
  * its wrapper closing them: each tab recorded for `launch`, by the idle
  * checks `closeRunTab` makes, through `orca` (the caller's own command,
- * never the one the record carries). Returns one line per tab it looked at;
+ * never the one the record carries); a tab whose shell is gone keeps its
+ * record, as the terminal may still show. None starts once `signal` aborts. Returns one line per tab it looked at;
  * none when no tab is recorded for the launch.
  */
 export async function closeLaunchTabs(
@@ -409,15 +414,16 @@ export async function closeLaunchTabs(
   orca: string,
   deps: Pick<RunTabDeps, "root" | "orca" | "table">,
   until: number = Number.POSITIVE_INFINITY,
+  signal?: AbortSignal,
 ): Promise<{ tab: RunTab; outcome: CloseOutcome }[]> {
   const ended: { tab: RunTab; outcome: CloseOutcome }[] = [];
   for (const tab of readRunTabs(deps.root).filter((t) => t.launch === launch))
     ended.push({
       tab,
       outcome:
-        currentMs() >= until
+        currentMs() >= until || signal?.aborted === true
           ? "out of time"
-          : await closeRunTab({ ...tab, orca }, deps, until),
+          : await closeRunTab({ ...tab, orca }, deps, until, undefined, true),
     });
   return ended;
 }

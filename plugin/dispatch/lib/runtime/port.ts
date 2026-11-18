@@ -327,9 +327,14 @@ export interface SessionRuntime {
    * receipt: `ok` when nothing of the run is left open, with `nothingLeft`
    * when there was nothing to end; `ok: false` with the reason when
    * something stays (a busy tab, a refused close), which a later collection
-   * may still close.
+   * may still close. No further
+   * cleanup step starts once `signal` aborts.
    */
-  endRun(run: EndedRun, timeoutMs?: number): Promise<RuntimeReceipt>;
+  endRun(
+    run: EndedRun,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<RuntimeReceipt>;
 }
 
 /**

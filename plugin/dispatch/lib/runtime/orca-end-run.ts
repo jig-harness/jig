@@ -26,10 +26,17 @@ export async function orcaEndRun(
   orca: string,
   timeoutMs: number,
   deps: Pick<RunTabDeps, "root" | "orca" | "table"> = defaultRunTabDeps(),
+  signal?: AbortSignal,
 ): Promise<RuntimeReceipt> {
   let ended: Awaited<ReturnType<typeof closeLaunchTabs>>;
   try {
-    ended = await closeLaunchTabs(run.id, orca, deps, currentMs() + timeoutMs);
+    ended = await closeLaunchTabs(
+      run.id,
+      orca,
+      deps,
+      currentMs() + timeoutMs,
+      signal,
+    );
   } catch (error) {
     return {
       ok: false,

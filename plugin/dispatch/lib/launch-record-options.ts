@@ -67,6 +67,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalStrings(value.codexPassArgs) &&
     [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&
     optionalPositiveInteger(value.followupWithinMs) &&
+    optionalTime(value.runEndedAt) &&
     optionalPositiveInteger(value.accountLaunchOrdinal) &&
     optionalBooleans(value, [
       "rearmConsumed",

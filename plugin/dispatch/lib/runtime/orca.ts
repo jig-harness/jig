@@ -475,7 +475,7 @@ export function orcaRuntime(
           deadlines.runtimeTimeoutMs,
         ),
       ),
-    endRun: (ended, timeoutMs) =>
+    endRun: (ended, timeoutMs, signal) =>
       orcaEndRun(
         ended,
         orcaCommandOrInstalled(process.env),
@@ -483,6 +483,8 @@ export function orcaRuntime(
           timeoutMs ?? deadlines.runtimeTimeoutMs,
           deadlines.runtimeTimeoutMs,
         ),
+        undefined,
+        signal,
       ),
   };
 }
