@@ -301,6 +301,7 @@ export interface FollowupMarker {
         /** Whether that host says it owns the repository. */
         owner?: boolean;
         outcome?: TickOutcome;
+        releaseTags?: string[];
       }
     | { kind: "manual"; done: boolean }
     | { kind: "unreadable"; reason: string };
@@ -345,6 +346,7 @@ export type NotifyCause =
   | "stopped-unknown"
   | "followup-failed"
   | "followup-stale"
+  | "release-owed"
   | "drifting"
   | "nudge-unanswered"
   | "pickup-question"
@@ -692,6 +694,17 @@ export interface PreflightHold {
   stages: Stage[];
 }
 
+/** What `--apply` had the session runtime end of what an ended run left, its wrapper gone before closing its tab (`endRun`, `end-runs.ts`). */
+export interface EndRunOutcome {
+  /** The launch record's id. */
+  record: string;
+  /** What the run was for: `PR #7`, an item's key, the steward. */
+  target: string;
+  /** `ended`: nothing of the run is left open; `left`: something stays, `jig gc`'s to collect. */
+  outcome: "ended" | "left";
+  detail: string;
+}
+
 export interface RepoReport {
   /** The steward on this tick: what it did, and for a pass the judgment backlog started or did not start, why (`trigger`). */
   steward?: {
@@ -730,6 +743,8 @@ export interface RepoReport {
   notifications: NotifyOutcome[];
   /** What `--apply` did with the repository's notices workspace, where the machine file enables `notify` and one is open. */
   noticesWorkspace?: RetireOutcome;
+  /** What `--apply` had the session runtime end of what ended runs left; absent when none left anything. */
+  endedRuns?: EndRunOutcome[];
   /** What `--apply` nudged, where the machine file enables `steer`; empty otherwise. */
   steers?: SteerOutcome[];
   /** What `--apply` did with the stale follow-up claims it released, where the machine file enables `followup`; absent when there were none. */

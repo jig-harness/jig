@@ -8,9 +8,10 @@
  * Protocol's chapter on the follow-up claim and its result
  * (`plugin/protocol/followup-claim.md`) is generated from them.
  *
- * Nothing here imports anything, so the chapter's generator reads the tables
- * without loading the dispatcher.
+ * The chapter's generator reads the tables without loading the dispatcher.
  */
+
+import { SHARED_RELEASE_LIMIT } from "./release-tags.ts";
 
 /** A value of one of the tables, with what it means to a reader that branches on it. */
 export interface FollowupValue {
@@ -83,7 +84,7 @@ export type Carried = "always" | "sometimes";
 /** A field of the marker's payload: which runs' markers carry it, and what it says. */
 export interface FollowupField extends FollowupValue {
   /** The JSON type of the field's value. */
-  readonly type: "string" | "integer" | "boolean";
+  readonly type: "string" | "integer" | "boolean" | "array";
   readonly carriedBy: Readonly<Partial<Record<FollowupRun, Carried>>>;
 }
 
@@ -133,6 +134,11 @@ export const FOLLOWUP_FIELDS = {
     carriedBy: { tick: "sometimes" },
     meaning:
       "When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome.",
+  },
+  releaseTags: {
+    type: "array",
+    carriedBy: { tick: "sometimes" },
+    meaning: `Up to ${SHARED_RELEASE_LIMIT} release tags the follow-up found owed, handed to the repository's owner dispatcher for tracker filing. The owner takes these only from a trusted non-owner follow-up outcome.`,
   },
   by: {
     type: "string",

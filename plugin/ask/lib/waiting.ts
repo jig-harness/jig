@@ -30,6 +30,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "stopped-unknown": "re-arm",
   "followup-failed": "re-run the follow-up",
   "followup-stale": "re-run the follow-up",
+  "release-owed": "answer",
   "double-claim": "choose the session that keeps the item",
   stalled: "look at the stalled pickup",
   "nudge-unanswered": "answer the waiting session",
@@ -80,6 +81,7 @@ export interface WaitingAnswer {
 
 /** The station a need is about. */
 function stationOf(need: LineNeed): Station {
+  if (need.cause === "release-owed") return "pickup";
   if (need.stage === "followup") return "followup";
   if (need.stage === "pickup") return "pickup";
   if (need.stage === "steer") return need.item === null ? "drive" : "pickup";

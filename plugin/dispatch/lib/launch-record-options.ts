@@ -80,7 +80,9 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       value.standing === null ||
       isStandingAnswer(value.standing)) &&
     (value.answered === undefined || isCarriedAnswer(value.answered)) &&
-    [value.endedAt, value.cancelledAt, value.openedAt].every(optionalTime) &&
+    [value.endedAt, value.cancelledAt, value.openedAt, value.runEndedAt].every(
+      optionalTime,
+    ) &&
     optionalTestLockWait(value.testLockWait) &&
     isRedrive(value.redrive)
   );
