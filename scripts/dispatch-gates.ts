@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parseSync } from "oxc-parser";
-import { readConfigFile, valueAt } from "../plugin/shared/config-layers.ts";
+import { loadLayeredConfig, valueAt } from "../plugin/shared/config-layers.ts";
 import { launchOf } from "../plugin/shared/launched-session.ts";
 import { LAUNCH_RECORD_ID_PATTERN } from "../plugin/shared/records/forge-claim-shapes.ts";
 
@@ -10,8 +10,14 @@ const dispatchLaunchId = new RegExp(LAUNCH_RECORD_ID_PATTERN);
 const testSuffix = /\.(test|spec)\.[cm]?[jt]sx?$/;
 /** What a session of the line carries and a test must not read as its own. */
 const lineVariable = /^(?:JIG_LAUNCH$|DRIVE_PR_)/;
-const moduleSuffixes = [".ts", ".tsx", ".mts", ".js", ".mjs", "/index.ts"];
-const literalPath = /^(["'`])(\.{1,2}\/[^"'`$]*)\1$/;
+const moduleExtensions = [".ts", ".tsx", ".mts", ".js", ".mjs"];
+const moduleSuffixes = [
+  ...moduleExtensions,
+  ...moduleExtensions.map((extension) => `/index${extension}`),
+];
+/** A string, or a template without an interpolation: one fixed specifier. */
+const literalSpecifier =
+  /^(?:'([^'\\]*)'|"([^"\\]*)"|`((?:(?!\$\{)[^`\\])*)`)$/;
 
 /**
  * How many test files a targeted run takes. A file run alone takes seconds, so
@@ -43,8 +49,8 @@ export function useDispatchFastGates(
   env: Record<string, string | undefined>,
 ): boolean {
   if (!dispatchFastEnabled(true, env)) return false;
-  const config = readConfigFile(join(root, ".config/jig.yaml"));
-  return dispatchFastEnabled(valueAt(config ?? {}, "gates.dispatch_fast"), env);
+  const { values } = loadLayeredConfig(root, env);
+  return dispatchFastEnabled(valueAt(values, "gates.dispatch_fast"), env);
 }
 
 /** The targeted tests' environment: outside the lock, as nobody's session. */
@@ -137,7 +143,8 @@ function testImports(root: string, test: string): string[] {
   return [
     ...staticImports.map(({ moduleRequest }) => moduleRequest.value),
     ...dynamicImports.flatMap(({ moduleRequest: { start, end } }) => {
-      const path = literalPath.exec(code.slice(start, end))?.[2];
+      const match = literalSpecifier.exec(code.slice(start, end));
+      const path = match?.[1] ?? match?.[2] ?? match?.[3];
       return path === undefined ? [] : [path];
     }),
   ]
@@ -175,13 +182,23 @@ export function dispatchTestPaths(root: string): DispatchTests {
   // The website's tests need its own dependencies, which CI's website job
   // installs and a dispatched worktree usually lacks.
   const websiteInstalled = existsSync(join(root, "website/node_modules"));
-  return selectDispatchTests(
+  const present = files.filter((path) => existsSync(join(root, path)));
+  const importsFor = (test: string) => testImports(root, test);
+  const selection = selectDispatchTests(
     changed,
-    files.filter(
-      (path) =>
-        existsSync(join(root, path)) &&
-        (websiteInstalled || !path.startsWith("website/")),
-    ),
-    (test) => testImports(root, test),
+    present.filter((path) => websiteInstalled || !path.startsWith("website/")),
+    importsFor,
   );
+  if (websiteInstalled) return selection;
+  // The tests left out for want of dependencies are CI's, and counted so.
+  const excluded = selectDispatchTests(
+    changed,
+    present.filter((path) => path.startsWith("website/")),
+    importsFor,
+    Number.POSITIVE_INFINITY,
+  );
+  return {
+    tests: selection.tests,
+    leftToCi: selection.leftToCi + excluded.tests.length,
+  };
 }

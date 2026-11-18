@@ -66,7 +66,7 @@ command runs as long as the step that runs it lets it.
 
 | Setting | Through a shell | Given | Answers with |
 | --- | --- | --- | --- |
-| `gates.command` | yes | Nothing: it runs from the repository root, in the working tree being changed. | Exit 0 when every one of the repository's local checks passes. |
+| `gates.command` | yes | Nothing: it runs from the repository root, in the working tree being changed. | Exit 0 when every local check the repository runs in this session passes. A repository may run fewer in a session its dispatcher starts, as `gates.dispatch_fast` describes, and leave the rest to CI. |
 | `drive.validation_plan_command` | yes | The changed files on standard input, one path per line. | Exit 0 and the validation plan as one JSON object on standard output; a nonzero exit or output that is not a JSON object is reported apart from a plan. |
 | `drive.load_guard_command` | yes | Nothing: it runs from the repository root before a round's heavy checks. | Exit 0 once the machine can take the checks; any other exit is a warning that the round's heavy checks may be refused. |
 | `ci.log_command` | yes | One JSON object, `{"context", "target_url"}`, the failing commit status's context and the page it links to (null when it links to none), on standard input. It runs in a temporary copy of the default branch's files, not in the pull request's working tree. | Exit 0 and the status's failed log on standard output, at most 64 KiB of it. |

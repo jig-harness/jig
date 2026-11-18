@@ -113,6 +113,12 @@ function changedRepository(config: string): string {
     "lib/bare.test.ts": 'import { thing } from "./thing";\n',
     "other/late.test.ts": 'await import("../lib/thing.ts");\n',
     "other/dynamic.test.ts": "await import('../lib/' + name);\n",
+    "other/prefix.test.ts": "await import('../lib/thing.ts' + suffix);\n",
+    "other/dollar.test.ts": "await import('../lib/$cost.ts');\n",
+    "other/widget.test.ts": 'import "../lib/widget";\n',
+    "lib/$cost.ts": "export const cost = 1;\n",
+    "lib/widget/index.tsx": "export const widget = 1;\n",
+    "other/template.test.ts": `await import(\`../lib/thing.ts\${suffix}\`);\n`,
     "other/unrelated.test.ts": 'import { x } from "./x.ts";\n',
     "website/site.test.ts": 'import { thing } from "../lib/thing.ts";\n',
   };
@@ -125,6 +131,11 @@ function changedRepository(config: string): string {
   git(root, "commit", "-qm", "base");
   git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
   writeFileSync(join(root, "lib/thing.ts"), "export const thing = 2;\n");
+  writeFileSync(join(root, "lib/$cost.ts"), "export const cost = 2;\n");
+  writeFileSync(
+    join(root, "lib/widget/index.tsx"),
+    "export const widget = 2;\n",
+  );
   return root;
 }
 
@@ -144,7 +155,7 @@ test("only an opted-in dispatch launch runs the targeted form", async () => {
   expect(targeted.dispatch).toBe(true);
   expect(names(targeted)).not.toContain(full);
   expect(targeted.stages.at(-1)?.name).toBe(
-    "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./lib/bare.test.ts ./lib/plain.test.ts ./lib/thing.test.ts ./other/late.test.ts",
+    "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./lib/bare.test.ts ./lib/plain.test.ts ./lib/thing.test.ts ./other/dollar.test.ts ./other/late.test.ts ./other/widget.test.ts",
   );
   for (const run of [
     gateRun(false, undefined, off, launch),
@@ -185,7 +196,9 @@ test("the targeted tests run outside the lock, without the line's variables", as
 test("the website's tests run only where its dependencies are installed", async () => {
   const { dispatchTestPaths } = await import("./dispatch-gates.ts");
   const root = changedRepository("gates:\n  dispatch_fast: true\n");
-  expect(dispatchTestPaths(root).tests).not.toContain("website/site.test.ts");
+  const without = dispatchTestPaths(root);
+  expect(without.tests).not.toContain("website/site.test.ts");
+  expect(without.leftToCi).toBe(1);
   mkdirSync(join(root, "website/node_modules"), { recursive: true });
   expect(dispatchTestPaths(root).tests).toContain("website/site.test.ts");
 });

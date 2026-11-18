@@ -87,7 +87,8 @@ export const REPO_COMMANDS = {
     shell: true,
     given:
       "Nothing: it runs from the repository root, in the working tree being changed.",
-    answers: "Exit 0 when every one of the repository's local checks passes.",
+    answers:
+      "Exit 0 when every local check the repository runs in this session passes. A repository may run fewer in a session its dispatcher starts, as `gates.dispatch_fast` describes, and leave the rest to CI.",
     commandStore: false,
     deadline: null,
     exits: {},

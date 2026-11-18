@@ -191,7 +191,7 @@ field only to override the derivation:
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
+| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push; a session the dispatcher starts may run fewer, as `gates.dispatch_fast` says. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
 | `gates.dispatch_fast` | boolean | Full local gates | jig-gates | Jig’s repository gate command runs fast checks and targeted tests in the sessions the dispatcher starts when this repository-only setting is true. CI retains the full gate set. Other repositories can opt in by implementing this setting in their own gate command using the dispatch launch identifier in `JIG_LAUNCH`. |
 
 ## `review`
