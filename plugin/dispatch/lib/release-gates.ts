@@ -1,6 +1,11 @@
 /** The release station observes tags and, on counted authorization, retries failed jobs on the releasing commit. */
 import { releasingCommit } from "../../skills/changelog/scripts/releasing-commit.ts";
-import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
+import {
+  ghCall,
+  ghRepoEnv,
+  run,
+  type RunHandle,
+} from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
@@ -23,14 +28,63 @@ import type { RepoTarget } from "./types.ts";
 const refused = (why: string) => failed("refused", why);
 
 async function forge(repo: RepoTarget, args: string[], bound?: TickBound) {
-  const reply = await ghCall(args, {
-    cwd: repo.path,
-    env: ghRepoEnv(),
-    stderr: "pipe",
-    timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
-  });
+  const reply = await bounded(
+    (onSpawn) =>
+      ghCall(args, {
+        cwd: repo.path,
+        env: ghRepoEnv(),
+        stderr: "pipe",
+        timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
+        onSpawn,
+      }),
+    bound,
+  );
   const failure = ghRunFailure(reply);
   return failure === null ? ok(reply.stdout) : failedBy("refused", failure);
+}
+
+/** Run one subprocess under the tick's cancellation signal as well as its deadline. */
+async function bounded<T>(
+  start: (onSpawn: (handle: RunHandle) => void) => Promise<T>,
+  bound: TickBound | undefined,
+): Promise<T> {
+  let stop: (() => void) | undefined;
+  const onSpawn = (handle: RunHandle) => {
+    if (bound === undefined) return;
+    stop = () => void handle.stop();
+    bound.signal.addEventListener("abort", stop, { once: true });
+    if (bound.signal.aborted) stop();
+  };
+  try {
+    return await start(onSpawn);
+  } finally {
+    if (stop !== undefined) bound?.signal.removeEventListener("abort", stop);
+  }
+}
+
+async function refreshIntegration(
+  repo: RepoTarget,
+  branch: string,
+  bound: TickBound | undefined,
+): Promise<Outcome<null, "refused">> {
+  const reply = await bounded(
+    (onSpawn) =>
+      run(["git", "fetch", "origin", branch], {
+        cwd: repo.path,
+        stderr: "pipe",
+        timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
+        onSpawn,
+      }),
+    bound,
+  );
+  const failure = ghRunFailure(reply);
+  return failure === null
+    ? ok(null)
+    : failedBy(
+        "refused",
+        failure,
+        "the integration branch could not be refreshed",
+      );
 }
 
 export async function taggedReleases(
@@ -116,6 +170,16 @@ export async function rerunReleaseGates(
   if (!commit.ok) return commit;
   if (commit.value === null)
     return refused(`the releasing commit for ${tag} could not be identified`);
+  const refreshed = await refreshIntegration(repo, commit.value.branch, bound);
+  if (!refreshed.ok) return refreshed;
+  const current = attempt(
+    "refused",
+    "the releasing commit could not be read",
+    () => releasingCommit(repo.path, tag),
+  );
+  if (!current.ok) return current;
+  if (current.value === null)
+    return refused(`the releasing commit for ${tag} could not be identified`);
   const runs = await failedGateRuns(async (endpoint) => {
     if (ended(bound))
       return refused("the tick ran out of time reading the failed gates");
@@ -131,7 +195,7 @@ export async function rerunReleaseGates(
           (): unknown => JSON.parse(reply.value),
         )
       : reply;
-  }, commit.value);
+  }, current.value);
   if (!runs.ok) return runs;
   if (runs.value.length === 0)
     return refused(
