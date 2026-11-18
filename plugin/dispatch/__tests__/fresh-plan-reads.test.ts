@@ -346,3 +346,31 @@ it("starts no read of any kind when the check's signal was already aborted", asy
   ).rejects.toBeDefined();
   expect(calls).toEqual([]);
 });
+
+it("refuses every pending key of a failed batch with the original failure", async () => {
+  const failure = READ_FAILURES["rate limit"];
+  const tracker = {
+    adapter: "linear",
+    team: "ENG",
+    poolIssues: async () => {
+      throw failure;
+    },
+    poolIssue: async () => {
+      throw new Error("no key is read alone after a batch failure");
+    },
+  } as unknown as Tracker;
+  const reads = freshReads(tracker);
+  const settled = Promise.all(
+    ["ENG-1", "ENG-2", "ENG-3"].map((key) =>
+      reads.pool(key).then(
+        () => null,
+        (error: unknown) => error,
+      ),
+    ),
+  );
+  const timeout = new Promise<"timeout">((resolve) =>
+    setTimeout(() => resolve("timeout"), 2000),
+  );
+  const outcome = await Promise.race([settled, timeout]);
+  expect(outcome).toEqual([failure, failure, failure]);
+});
