@@ -284,6 +284,9 @@ describe("openKnownColumns", () => {
       { things: ["id", "name"] },
     );
     expect(opened.ok).toBe(false);
-    if (!opened.ok) expect(opened.failure.code).toBe("migration-history");
+    if (!opened.ok) {
+      expect(opened.failure.code).toBe("newer-schema");
+      expect(opened.failure.reason).toContain("needs a reader of version 2");
+    }
   });
 });

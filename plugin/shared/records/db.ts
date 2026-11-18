@@ -42,9 +42,12 @@
  * refuses a newer schema, uses it as it is (never migrated, its meta row
  * left as the newer copy wrote it) when the database's migration history
  * starts with this copy's and every named column is still in it; otherwise
- * the refusal stands. So a non-additive step keeps every such caller working
- * as long as it leaves those columns as they are, and a step that changes or
- * removes one of them refuses that caller as it refuses any other.
+ * the refusal stands. The check sees only that each named column is still
+ * there: a step that removes or renames one refuses that caller as it
+ * refuses any other, while one that keeps a column's name but changes what it
+ * holds, or adds a constraint this copy's writes break, is not detected. So a
+ * non-additive step keeps every such caller working only when it leaves the
+ * named columns as they are, in name and in meaning.
  *
  * **The instance.** The meta row also holds a random id minted when the row
  * is first written. A database deleted and created again, or another file put
@@ -411,7 +414,11 @@ export function openKnownColumns(
     const conn = db;
     const refused = conn.transaction((): Outcome<never, OpenCode> | null => {
       const verified = verifyMigrations(conn, spec, userVersion(conn));
-      if (!verified.ok) return verified;
+      if (!verified.ok)
+        return failed(
+          "newer-schema",
+          `${opened.failure.reason}; ${verified.failure.reason}`,
+        );
       const missing = missingColumns(conn, columns);
       return missing.length === 0
         ? null

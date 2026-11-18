@@ -49,16 +49,17 @@
  *
  * A wrapper whose stage has ended is the one reader that still uses such a
  * database: from `enterAfterStage` on, its process opens it through the
- * shared module's `openKnownColumns`, naming `AFTER_STAGE_COLUMNS`, the
- * columns the wrapper reads and writes on its own launch record once the
- * stage is over (the record, its claim, result and closing report, its
- * thread samples, waiting episodes and claimed items, and the `exit` it
- * writes). So an upgrade during a stage, past a step that was not additive,
+ * shared module's `openKnownColumns`, naming `AFTER_STAGE_COLUMNS`, every
+ * column the wrapper reads or writes once the stage is over (its own launch
+ * row, read whole, and the `exit` it writes; the earlier follow-up launches
+ * of its pull request; the thread samples, waiting episodes and claimed
+ * items read with its record; the claim ends it settles; a steward run's
+ * submitted flag). So an upgrade during a stage, past a step that was not additive,
  * still gets the stage's exit recorded, and the newer tick classes the
  * launch by it. Nothing else the dispatcher runs opens the database that way:
  * the tick, a claim and every reader that decides slots stay refused. A
- * future step that is not additive keeps those columns readable and
- * writable as they are, or older wrappers' exits stop crossing it: their
+ * future step that is not additive keeps those columns as they are, in
+ * name and in meaning, or older wrappers' exits stop crossing it: their
  * open is refused as before, the wrapper says so with the stage's own exit
  * code, and the tick finds the launch's wrapper gone without an exit.
  */
@@ -549,21 +550,31 @@ export function stateDbFailure(error: unknown): string | null {
 }
 
 /**
- * The columns a wrapper reads and writes on its own launch record once its
- * stage has ended, by table: the record, its claim, result, closing report
- * and `exit`, and the thread samples, waiting episodes and claimed items
- * read with it.
+ * The columns a wrapper reads and writes once its stage has ended, by table:
+ * its own launch row, which it reads whole, with the `exit` it writes; the
+ * earlier follow-up launches of its pull request it reads a wait from; the
+ * thread samples, waiting episodes and claimed items read with its record;
+ * the claim ends it settles; and a steward run's submitted flag.
  */
 const AFTER_STAGE_COLUMNS: KnownColumns = {
   launches: [
     "id",
+    "repo",
+    "action",
+    "pr",
+    "created_at",
     "record",
     "claim",
     "exit",
     "result",
+    "result_at",
     "result_until",
+    "result_wait",
+    "result_next",
     "result_decision",
+    "refusal",
     "report",
+    "sessions",
   ],
   thread_samples: ["launch", "round", "threads", "at"],
   waiting_episodes: [
@@ -575,6 +586,8 @@ const AFTER_STAGE_COLUMNS: KnownColumns = {
     "read_at",
   ],
   pickup_claims: ["launch", "item"],
+  settled_ends: ["record", "at"],
+  steward_runs: ["id", "submitted"],
 };
 
 let afterStage = false;
