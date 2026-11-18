@@ -374,6 +374,8 @@ export interface RunOptions {
   stderr?: "pipe" | "inherit" | "ignore";
   /** 'inherit' streams output through (drive.ts's pass command). */
   stdout?: "pipe" | "inherit" | "ignore";
+  /** Observe inherited output as it is forwarded, without capturing it. */
+  onInheritedOutput?: (stream: "stdout" | "stderr", bytes: Buffer) => void;
   /**
    * Put the child in its OWN process group even without a deadline, so a
    * `stop()` reaches everything it spawned rather than the one process.
@@ -671,8 +673,12 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       windowsHide: true,
       stdio: [
         opts.stdin === undefined ? "ignore" : "pipe",
-        opts.stdout ?? "pipe",
-        accountingStderr(opts.stderr),
+        opts.stdout === "inherit" && opts.onInheritedOutput !== undefined
+          ? "pipe"
+          : (opts.stdout ?? "pipe"),
+        opts.stderr === "inherit" && opts.onInheritedOutput !== undefined
+          ? "pipe"
+          : accountingStderr(opts.stderr),
       ],
     };
     let child: ReturnType<typeof spawnCommand>;

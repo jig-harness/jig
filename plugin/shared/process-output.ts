@@ -31,9 +31,11 @@ export function accountingStderr(mode: "pipe" | "inherit" | "ignore" = "pipe") {
 }
 
 interface OutputOptions {
+  stdout?: "pipe" | "inherit" | "ignore";
   stderr?: "pipe" | "inherit" | "ignore";
   maxBufferBytes?: number;
   onOutput?: (stream: "stdout" | "stderr", text: string) => void;
+  onInheritedOutput?: (stream: "stdout" | "stderr", bytes: Buffer) => void;
   onChunk?: (
     stream: "stdout" | "stderr",
     bytes: number,
@@ -107,10 +109,18 @@ export function captureProcessOutput(
     options.onChunk?.(stream, length, captured);
     if (bytes > (options.maxBufferBytes ?? MAX_BUFFER_BYTES)) overflow();
   };
-  child.stdout?.setEncoding("utf8");
-  child.stderr?.setEncoding("utf8");
-  child.stdout?.on("data", (text: string) => receive("stdout", text));
-  child.stderr?.on("data", (text: string) => receive("stderr", text));
+  for (const stream of ["stdout", "stderr"] as const) {
+    const source = child[stream];
+    if (source === null) continue;
+    const observe = options.onInheritedOutput;
+    if (options[stream] === "inherit" && observe !== undefined) {
+      source.on("data", (chunk: Buffer) => observe(stream, chunk));
+      source.pipe(process[stream], { end: false });
+    } else {
+      source.setEncoding("utf8");
+      source.on("data", (text: string) => receive(stream, text));
+    }
+  }
   return {
     get stdout() {
       return stdout;

@@ -229,10 +229,11 @@ deletes a vendor's files.
 
 A run is found in its vendor's transcripts by its session id. Claude Code
 takes one: the tick already mints it for a pickup, a follow-up and the
-steward (`--session-id`), and `drive.ts` gives each drive pass its own,
-which the driver records per round on the launch record. Codex takes none;
-the wrapper records the session id a Codex pass prints on its output, and a
-Codex run that printed none has no transcript Jig can find.
+steward (`--session-id`). The driver gives fresh Claude Code review and
+repair passes their own ids and records them per round on the launch record.
+The wrapper reads the session id from a standalone Codex pass's startup
+output, and the driver does the same for a Codex review or repair pass.
+When Codex prints no session id, Jig has no transcript to look up.
 
 For a run without a report, the wrapper (or, for a run that died, the tick
 that finds it) copies the end of the run's transcript, at most 2 MiB, with

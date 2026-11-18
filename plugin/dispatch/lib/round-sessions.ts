@@ -3,13 +3,10 @@
  * column of the `launches` table, a JSON list of `{round, session, at}`, one
  * entry per pass in the order the passes started. A run is found in its
  * vendor's transcripts by its session id (design/dispatched-sessions.md §
- * How long transcripts are kept): `drive.ts` gives each Claude Code review
- * pass its own (`--session-id`, minted for quota attribution) and, when the dispatcher
- * runs it, records it here as the pass starts, so a drive that dies still
- * leaves its passes findable. A pass that runs again on the same round (a
- * deadline restart) adds an entry of its own. A Codex pass takes no session
- * id and prints none the drive reads, so it adds none; nor does a repair
- * pass (a CI or conflict repair), which is started without one.
+ * How long transcripts are kept). Under the dispatcher, `drive.ts` records
+ * a Claude Code review or repair pass's session id at spawn, or a Codex
+ * pass's id when its startup output identifies the session. A pass that
+ * runs again on the same round adds an entry of its own.
  *
  * The driver is the column's one writer. It writes only on a record that is
  * a drive's launch of the same pull request, so a drive armed by hand inside

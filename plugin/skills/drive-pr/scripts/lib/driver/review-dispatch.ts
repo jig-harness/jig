@@ -1,4 +1,3 @@
-import { runObservedPass } from "../driver-observation.ts";
 /** Prepare quota attribution, charge the attempt at dispatch and join all post-pass acquisition work. */
 import type { DriveRoundContext } from "./round-context.ts";
 
@@ -19,7 +18,7 @@ import { resolveAccountIdentity } from "./../identity.ts";
 
 import { passEnv } from "./repair.ts";
 
-import { notePassStarted, withPassRound } from "./pass-round.ts";
+import { runRoundPass, withPassRound } from "./pass-round.ts";
 
 import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
 
@@ -278,39 +277,35 @@ export async function dispatchReviewPass(
     );
   }
   context.passIdentity = resolveAccountIdentity(context.agent);
+  const session = prepared?.correlation.sessionId ?? null;
   const passRes = await span("pass", { round }, () =>
-    runObservedPass(prepared?.argv ?? context.agent, {
-      stdout: "inherit",
-      stderr: "inherit",
-      detached: true,
-      env: prepared?.env ?? baseEnv,
-      // `0` disables, matching every other deadline knob in this skill; `run()`
-      // takes the absence of the field as "no deadline" rather than a zero.
-      ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
-      onSpawn: (handle) => {
-        driverRuntime.activePass = handle;
-        notePassStarted(
-          context.pr,
-          round,
-          prepared?.correlation.sessionId ?? null,
-        );
-        passSpawnProgressStamp = run(
-          tsArgv(driveState, [
-            "progress",
-            context.pr,
-            "--phase",
-            "pass-spawned",
-          ]),
-          { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
-        ).then((progressStamp) => {
-          if (progressStamp.code !== 0) {
-            console.error(
-              `drive.ts: could not stamp progress for round ${round}'s pass (drive-state.ts exited ${progressStamp.code}) — continuing anyway.`,
-            );
-          }
-        });
+    runRoundPass(
+      prepared?.argv ?? context.agent,
+      { pr: context.pr, round, session },
+      {
+        env: prepared?.env ?? baseEnv,
+        // `0` disables, matching every other deadline knob in this skill; `run()`
+        // takes the absence of the field as "no deadline" rather than a zero.
+        ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
+        onSpawn: () => {
+          passSpawnProgressStamp = run(
+            tsArgv(driveState, [
+              "progress",
+              context.pr,
+              "--phase",
+              "pass-spawned",
+            ]),
+            { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+          ).then((progressStamp) => {
+            if (progressStamp.code !== 0) {
+              console.error(
+                `drive.ts: could not stamp progress for round ${round}'s pass (drive-state.ts exited ${progressStamp.code}) — continuing anyway.`,
+              );
+            }
+          });
+        },
       },
-    }),
+    ),
   );
   // Captured before `activePass` is cleared: the PASS_DEADLINE branch below
   // needs it to witness the pass tree's termination, which happens after
