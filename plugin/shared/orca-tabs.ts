@@ -310,6 +310,38 @@ export type CloseOutcome =
   | "out of time"
   | { failed: string };
 
+/** A busy tab is "reused" when a child lies outside the ending run's `known` set. */
+function busyOutcome(
+  tab: RunTab,
+  rows: ProcessRow[],
+  known: ReadonlySet<number> | undefined,
+): CloseOutcome {
+  if (known === undefined) return "busy";
+  return childPids(tab, rows).some((p) => !known.has(p)) ? "reused" : "busy";
+}
+
+/** Read Orca's answer to a close: drop the record when the tab is closed or stale. */
+function closeResult(
+  tab: RunTab,
+  root: string,
+  done: { code: number | null; stdout: string; stderr: string },
+): CloseOutcome {
+  const envelope = orcaEnvelope(done.stdout);
+  const stale =
+    envelope?.ok === false && envelope.code === "terminal_handle_stale";
+  if (done.code === 0 && envelope?.ok === true) {
+    forgetRunTab(root, tab.handle);
+    return "closed";
+  }
+  if (stale) {
+    forgetRunTab(root, tab.handle);
+    return "gone";
+  }
+  return {
+    failed: `orca terminal close (exit ${done.code}): ${(done.stdout || done.stderr).trim().slice(0, 200)}`,
+  };
+}
+
 /**
  * Close `tab` through Orca if it is idle. A tab whose shell is gone, or that
  * Orca no longer knows, has its record dropped: Orca cannot close it by its
@@ -340,11 +372,7 @@ export async function closeRunTab(
     forgetRunTab(deps.root, tab.handle);
     return "gone";
   }
-  if (state === "busy")
-    return known !== undefined &&
-      childPids(tab, rows).some((p) => !known.has(p))
-      ? "reused"
-      : "busy";
+  if (state === "busy") return busyOutcome(tab, rows, known);
   const closeBudget = within(until, Number.POSITIVE_INFINITY);
   if (closeBudget === null || signal?.aborted === true) return "out of time";
   const done = await deps.orca(
@@ -352,18 +380,7 @@ export async function closeRunTab(
     ["terminal", "close", "--terminal", tab.handle, "--json"],
     closeBudget,
   );
-  const envelope = orcaEnvelope(done.stdout);
-  if (done.code === 0 && envelope?.ok === true) {
-    forgetRunTab(deps.root, tab.handle);
-    return "closed";
-  }
-  if (envelope?.ok === false && envelope.code === "terminal_handle_stale") {
-    forgetRunTab(deps.root, tab.handle);
-    return "gone";
-  }
-  return {
-    failed: `orca terminal close (exit ${done.code}): ${(done.stdout || done.stderr).trim().slice(0, 200)}`,
-  };
+  return closeResult(tab, deps.root, done);
 }
 
 /** How closing one tab ended, in words. */
