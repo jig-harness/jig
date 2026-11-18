@@ -178,7 +178,13 @@ export function delegateRelease(
       .query(
         "UPDATE launches SET release_tags = ? WHERE repo = ? AND id = ? AND result IS NULL AND exit IS NULL",
       )
-      .run(JSON.stringify([...tags, tag].sort()), repo, launch);
+      .run(
+        JSON.stringify(
+          [...tags, tag].sort((left, right) => left.localeCompare(right)),
+        ),
+        repo,
+        launch,
+      );
     return written.changes === 1
       ? ok({ status: "delegated" })
       : failed(

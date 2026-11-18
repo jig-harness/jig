@@ -1,12 +1,11 @@
 /** The release station observes tags and, on counted authorization, retries failed jobs on the releasing commit. */
-import { releasingCommit } from "../../skills/changelog/scripts/releasing-commit.ts";
 import {
   ghCall,
   ghRepoEnv,
   run,
   type RunHandle,
 } from "../../skills/drive-pr/scripts/lib/proc.ts";
-import { isRecord } from "../../shared/guards.ts";
+import { isRecord, isString, isStringArray } from "../../shared/guards.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import { failedBy } from "../../shared/outbound/failure.ts";
@@ -24,6 +23,7 @@ import {
 } from "./sources/bounded.ts";
 import { currentMs } from "../../shared/time.ts";
 import type { RepoTarget } from "./types.ts";
+import { integrationBranch } from "../../skills/changelog/scripts/branches.ts";
 
 const refused = (why: string) => failed("refused", why);
 
@@ -85,6 +85,66 @@ async function refreshIntegration(
         failure,
         "the integration branch could not be refreshed",
       );
+}
+
+type ReleasingCommit = {
+  sha: string;
+  branch: string;
+  checks: string[] | undefined;
+};
+
+function isReleasingCommit(value: unknown): value is ReleasingCommit {
+  return (
+    isRecord(value) &&
+    isString(value.sha) &&
+    isString(value.branch) &&
+    (value.checks === undefined || isStringArray(value.checks))
+  );
+}
+
+/**
+ * releasingCommit reads changelog history with synchronous Git calls. Keep that
+ * implementation isolated in a child so a station tick can cancel the scan.
+ */
+async function inspectReleasingCommit(
+  repo: RepoTarget,
+  tag: string,
+  bound: TickBound | undefined,
+): Promise<Outcome<ReleasingCommit | null, "refused">> {
+  const reply = await bounded(
+    (onSpawn) =>
+      run(
+        [
+          "bun",
+          `${import.meta.dir}/releasing-commit-inspect.ts`,
+          repo.path,
+          tag,
+        ],
+        {
+          cwd: repo.path,
+          stderr: "pipe",
+          timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
+          onSpawn,
+        },
+      ),
+    bound,
+  );
+  const failure = ghRunFailure(reply);
+  if (failure !== null)
+    return failedBy(
+      "refused",
+      failure,
+      "the releasing commit could not be read",
+    );
+  const parsed = attempt(
+    "refused",
+    "the releasing commit response is unreadable",
+    (): unknown => JSON.parse(reply.stdout),
+  );
+  if (!parsed.ok) return parsed;
+  return parsed.value === null || isReleasingCommit(parsed.value)
+    ? ok(parsed.value)
+    : refused("the release inspection returned an invalid commit");
 }
 
 export async function taggedReleases(
@@ -162,21 +222,12 @@ export async function rerunReleaseGates(
     recordTagged(repo.slug, [tag], root);
     return refused(`release ${tag} already has its tag`);
   }
-  const commit = attempt(
-    "refused",
-    "the releasing commit could not be read",
-    () => releasingCommit(repo.path, tag),
-  );
-  if (!commit.ok) return commit;
-  if (commit.value === null)
-    return refused(`the releasing commit for ${tag} could not be identified`);
-  const refreshed = await refreshIntegration(repo, commit.value.branch, bound);
+  const branch = integrationBranch(repo.path);
+  if (branch === null)
+    return refused(`the integration branch for ${tag} could not be identified`);
+  const refreshed = await refreshIntegration(repo, branch, bound);
   if (!refreshed.ok) return refreshed;
-  const current = attempt(
-    "refused",
-    "the releasing commit could not be read",
-    () => releasingCommit(repo.path, tag),
-  );
+  const current = await inspectReleasingCommit(repo, tag, bound);
   if (!current.ok) return current;
   if (current.value === null)
     return refused(`the releasing commit for ${tag} could not be identified`);

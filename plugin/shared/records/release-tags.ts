@@ -1,12 +1,20 @@
 /** Release tags are safe ref names with a version suffix. */
 export const SHARED_RELEASE_LIMIT = 100;
 
+const SAFE_REF_PREFIX = /^[A-Za-z0-9_./-]*$/;
+const VERSION_SUFFIX =
+  /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/;
+
 export function releaseTag(tag: string): boolean {
+  const hasVersionSuffix = [...tag].some(
+    (character, index) =>
+      /^\d$/.test(character) &&
+      SAFE_REF_PREFIX.test(tag.slice(0, index)) &&
+      VERSION_SUFFIX.test(tag.slice(index)),
+  );
   return (
     tag.length <= 128 &&
-    /^[A-Za-z0-9_./-]*\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/.test(
-      tag,
-    ) &&
+    hasVersionSuffix &&
     !tag.startsWith("-") &&
     !tag.includes("..") &&
     tag
