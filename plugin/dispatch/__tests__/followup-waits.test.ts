@@ -19,6 +19,7 @@ import {
 } from "../../shared/records/launch-claims.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { waitEnd, waitStreak, waitUntil } from "../lib/followup-waits.ts";
+import { routineRerun } from "../lib/routine-reruns.ts";
 import {
   claimRecord,
   type ReadRecord,
@@ -330,6 +331,26 @@ it("reads a question as a wait only when it names a rate limit and carries no ro
       asked("Question: [person-owed] who lifts the tracker's rate limit?"),
     ),
   ).toBeNull();
+  expect(waitUntil({ ...asked(RATE_LIMITED), result: "parked" })).toBeNull();
+  const parked = { ...asked(RATE_LIMITED), result: "parked" as const };
+  const outcome = {
+    repo: "o/r",
+    pr: 1,
+    record: base.id,
+    outcome: "failed" as const,
+    at: "2026-10-31T13:05:00.000Z",
+    created: base.createdAt,
+  };
+  expect(routineRerun(outcome, [parked])).toBeNull();
+  // The launch record is gone: the outcome row's own parked flag still holds the guard.
+  const tagged = {
+    ...outcome,
+    question: "[person-owed] who lifts the tracker's rate limit?",
+    routine: "person-owed",
+    rerun: false,
+  };
+  expect(routineRerun({ ...tagged, parked: true }, [])).toBeNull();
+  expect(routineRerun(tagged, [])).not.toBeNull();
 });
 
 it("counts, at a pass's exit, an earlier wait whose wrapper died before writing its exit", () => {

@@ -67,6 +67,18 @@ describe("the legend", () => {
     );
   });
 
+  it("holds a follow-up waiting on a pending arm back and a park for a person, never as finishing badly", () => {
+    expect(roleOf("outcome class", "arm pending")).toBe(ROLES.held);
+    const held = buildLegend().find((r) => r.word === "held back");
+    expect(held?.sets.find((s) => s.set === "outcome class")?.items).toBe(
+      "arm pending",
+    );
+    const needs = buildLegend().find((r) => r.word === "needs a person");
+    expect(needs?.sets.find((s) => s.set === "outcome class")?.items).toBe(
+      "parked for a person",
+    );
+  });
+
   it("leaves out a set with no word for that role", () => {
     const stale = buildLegend().find((r) => r.word === "stale");
     expect(stale?.sets.map((s) => s.set)).toEqual(["ledger class", "label"]);

@@ -199,13 +199,16 @@ export class TrackerRateLimited extends JigError<"tracker-rate-limited"> {
   readonly resetAt: number;
   /** The adapter, for messages. */
   readonly adapter: string;
-  constructor(adapter: string, resetAt: number, reason: string) {
+  /** The dispatcher's share of a window is spent, not the window itself: the dispatcher holds back, the system has not refused. */
+  readonly share: boolean;
+  constructor(adapter: string, resetAt: number, reason: string, share = false) {
     super(
       "tracker-rate-limited",
       `${adapter}'s rate limit for this credential is spent until ${isoFromMs(resetAt)}: ${reason}`,
     );
     this.resetAt = resetAt;
     this.adapter = adapter;
+    this.share = share;
   }
 }
 
@@ -609,6 +612,13 @@ function usableAt(
   return Math.min(w.resetAt, now + Math.ceil(wait) + 1000);
 }
 
+/** A window that stops the dispatcher: until when, why, and whether only its share of the window is spent. */
+interface Blocked {
+  resetAt: number;
+  why: string;
+  share: boolean;
+}
+
 /**
  * The window that stops the dispatcher, if one does: spent, or at its share.
  * With several blocked, the one that recovers last, since admission waits for
@@ -619,8 +629,8 @@ function spentWindow(
   share: number | null,
   now: number,
   names: readonly string[],
-): { resetAt: number; why: string } | null {
-  let binding: { resetAt: number; why: string } | null = null;
+): Blocked | null {
+  let binding: Blocked | null = null;
   for (const name of names) {
     const w = windowOf(record, name);
     if (w === undefined) continue;
@@ -641,7 +651,7 @@ function blockedWindow(
   observedAt: number,
   share: number | null,
   now: number,
-): { resetAt: number; why: string } | null {
+): Blocked | null {
   const held = holds(w, observedAt, now);
   if (held === null || w.resetAt === null || w.resetAt <= now) return null;
   // What the window must hold again: more than the part of it kept for
@@ -656,6 +666,7 @@ function blockedWindow(
     why: empty
       ? `no ${name} left in the window`
       : `the dispatcher's share (${Math.round((share ?? 0) * 100)}%) of the ${name} window is spent; ${Math.floor(held)} of ${w.limit} are left to passes and people`,
+    share: !empty,
   };
 }
 
@@ -688,7 +699,7 @@ function refusalFor(
   const spent = spentWindow(record, share, now, names);
   return spent === null
     ? null
-    : new TrackerRateLimited(adapter, spent.resetAt, spent.why);
+    : new TrackerRateLimited(adapter, spent.resetAt, spent.why, spent.share);
 }
 
 /** The record with one request taken from the balance of its window `name`; null when unchanged. */

@@ -1,8 +1,9 @@
 /**
  * The one definition of a recurring class, which the dashboard lists
  * (`dashboard-log.ts`) and the reflection route records (`reflection-route.ts`):
- * a bad class (any but `converged`, `merged` and `parked for a person`) of one
- * stage on one repository, on at least three of the last seven host days,
+ * a bad class (any but `converged`, `merged`, `parked for a person` and
+ * `arm pending`) of one stage on one repository, on at least three of the
+ * last seven host days,
  * today included. It counts the outcome log's ended rows and the event rows
  * that carry a class, such as a drive stopped for a person; an event row that
  * carries none (a drift, a wait, a nudge, a hold) stays out, however often it
@@ -17,11 +18,12 @@ import { OUTCOME_CLASSES, type OutcomeClass } from "./log.ts";
 export const RECURRENCE_DAYS = 7;
 const RECURRENCE_AT_LEAST = 3;
 
-/** The classes that are not a stage finishing badly: the finished-well ones, and a park, which is a person's to answer. */
+/** The classes that are not a stage finishing badly: the finished-well ones, a park, which is a person's to answer, and a follow-up waiting on an arm still pending. */
 const NOT_BAD: readonly OutcomeClass[] = [
   "converged",
   "merged",
   "parked for a person",
+  "arm pending",
 ];
 
 const quoted = (names: readonly string[]) =>

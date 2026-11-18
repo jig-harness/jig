@@ -11,6 +11,8 @@ import {
   outboundFailure,
 } from "../../shared/outbound/failure.ts";
 import { failed } from "../../shared/outcome.ts";
+import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
+import { lookupFailed } from "../lib/tick-observe.ts";
 import {
   combinedFailure,
   keepForgeReading,
@@ -121,6 +123,46 @@ describe("a repository whose read a failed call stopped", () => {
       ),
     ).toEqual({ class: "unreachable" });
     expect(readFailureOf(failed("unreadable", "x").failure)).toBeUndefined();
+  });
+
+  it("keeps whose quota held a rate-limited call, and whether only the dispatcher's share is spent", () => {
+    const share = new TrackerRateLimited("GitHub", NOW, "share spent", true);
+    expect(readFailureOf(failed("unreadable", "x", share).failure)).toEqual({
+      class: "rate-limited",
+      until: new Date(NOW).toISOString(),
+      quota: { system: "GitHub", share: true },
+    });
+    const whole = new TrackerRateLimited("linear", NOW, "RATELIMITED");
+    expect(
+      readFailureOf(failed("unreadable", "x", whole).failure)?.quota,
+    ).toEqual({ system: "linear", share: false });
+  });
+});
+
+describe("a failed lookup of which repository a path is", () => {
+  it("says the rate limit holds it, not that the forge cannot say which repository it is", () => {
+    const limited = outboundFailure("rate-limited", "spent", { until: NOW });
+    const said = lookupFailed({
+      code: "unreadable",
+      reason: "x",
+      outbound: limited,
+    } as never);
+    expect(said).toBe("the repository lookup waits for the rate limit");
+    expect(said).not.toContain("cannot say which repository");
+  });
+
+  it("says the forge cannot say which repository it is for any other failure", () => {
+    const refused = outboundFailure("unauthorized", "bad credential");
+    expect(
+      lookupFailed({
+        code: "unreadable",
+        reason: "x",
+        outbound: refused,
+      } as never),
+    ).toBe("the forge cannot say which repository this is");
+    expect(lookupFailed(failed("unreadable", "no owner/name").failure)).toBe(
+      "the forge cannot say which repository this is",
+    );
   });
 });
 
