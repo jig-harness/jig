@@ -52,6 +52,7 @@ import {
   type TickComments,
 } from "./tick-comments.ts";
 import type { ForgeRead } from "./tick-forge.ts";
+import type { TickReads } from "./tick-reads.ts";
 import type { ActionBook } from "./failures.ts";
 import type { DrivenPr, MarkedPr, RepoReport, SharedReport } from "./types.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
@@ -106,27 +107,31 @@ export function openShared(
  * the forge's while they stand (`keptEnded`); the claims read otherwise are
  * kept for the next tick (`merge-reads.ts`). Writing an end lists the claims
  * from the forge first, and the write drops what was kept.
+ * When several listings are still missing, ask for them in one bounded
+ * batch first. Incomplete listings fall through to their own REST reads.
  */
 async function addEndedLaunches(
   ctx: SharedContext,
-  forge: ForgeRead,
+  forge: Readonly<ForgeRead>,
   records: readonly ReadRecord[],
   claims: DriveClaims,
-  nowMs?: number,
+  nowMs: number,
+  reads: TickReads,
 ): Promise<void> {
   const extra = endedLaunches(ctx.slug, forge, records);
   if (extra.size === 0) return;
   const merged = new Map(forge.merged.map((p) => [p.number, p]));
-  const toRead =
-    nowMs === undefined
-      ? [...extra.keys()]
-      : fromKept(ctx, extra, merged, claims, nowMs);
+  const toRead = fromKept(ctx, extra, merged, claims, nowMs);
   if (toRead.length === 0) return;
+  const missing = toRead.filter(
+    (pr) => reads.comments.startedAt(ctx.slug, pr) === null,
+  );
+  if (missing.length > 1) await reads.pullRequestComments(ctx.slug, missing);
   const read = await ctx.records.listRepository(ctx.slug, toRead, "drive");
   for (const [pr, listing] of read) {
     claims.set(pr, listing);
     const updatedAt = merged.get(pr)?.updatedAt;
-    if (nowMs !== undefined && listing.ok && updatedAt !== undefined)
+    if (listing.ok && updatedAt !== undefined)
       writeKeptClaims(ctx.slug, pr, updatedAt, listing.value, nowMs, ctx.login);
   }
 }
@@ -134,7 +139,7 @@ async function addEndedLaunches(
 /** This host's launch records whose claims may still owe an end, by the pull request outside the open drives they name. */
 function endedLaunches(
   slug: string,
-  forge: ForgeRead,
+  forge: Readonly<ForgeRead>,
   records: readonly ReadRecord[],
 ): Map<number, ReadRecord[]> {
   const open = new Set(forge.drives.map((d) => d.number));
@@ -145,9 +150,16 @@ function endedLaunches(
   for (const r of records) {
     if (r.record.repo !== slug || r.record.action === "followup") continue;
     if (settled.has(r.record.id)) continue;
-    const pr = Number(r.record.pr);
+    const pr = r.record.pr;
     // Under `only_labeled` nothing is written on a pull request out of scope, so its claims are not read to be ended.
-    if (!Number.isInteger(pr) || open.has(pr) || !inScope(pr)) continue;
+    if (
+      pr === null ||
+      !Number.isSafeInteger(pr) ||
+      pr <= 0 ||
+      open.has(pr) ||
+      !inScope(pr)
+    )
+      continue;
     extra.set(pr, [...(extra.get(pr) ?? []), r]);
   }
   return extra;
@@ -206,34 +218,45 @@ function keptEnded(
     : claims;
 }
 
+/** The launch claims of every host, and the forge's drives as this host's records and those claims settle them. */
+export interface ClaimsRead {
+  claims: DriveClaims;
+  /** The machine view of the forge's drives (`settleDrives`); the forge's read is left as the forge gave it. */
+  drives: DrivenPr[];
+}
+
 /**
  * Read the launch claims of every drive the forge gave, and the heads of
  * each whose latest re-arm failed (`failed-rearms.ts`), and settle each
  * drive's stop on a conflict by this host's records and then by another
- * host's claims. The claims are read through `reader`, the tick's comment
- * listings where the observe phase passes them, and, with the tick's clock
- * `nowMs`, an ended launch's merge from the claims a tick kept of it.
+ * host's claims, into a list of its own: nothing of what this host did is
+ * written into `forge`. The claims are read through `reader`, the tick's
+ * comment listings where the observe phase passes them, and an ended
+ * launch's merge from the claims a tick kept of it. When several listings
+ * are still missing, it asks for them in one bounded batch first; incomplete
+ * listings fall through to their own REST reads.
  */
 export async function readDriveClaims(
   ctx: SharedContext,
-  forge: ForgeRead,
+  forge: Readonly<ForgeRead>,
   records: readonly ReadRecord[],
   reader: SharedRecords = ctx.records,
-  nowMs?: number,
-): Promise<DriveClaims> {
+  nowMs: number,
+  reads: TickReads,
+): Promise<ClaimsRead> {
   const reading = { ...ctx, records: reader };
   const claims: DriveClaims = forge.ok
     ? await readSharedDrives(reading, forge.drives)
     : new Map();
-  if (forge.ok) await addEndedLaunches(reading, forge, records, claims, nowMs);
+  if (forge.ok)
+    await addEndedLaunches(reading, forge, records, claims, nowMs, reads);
   const weighed = await withRearmHeads(
     ctx.slug,
     forge.drives,
     forge.open,
     records,
   );
-  forge.drives = settleDrives(ctx, weighed, records, claims);
-  return claims;
+  return { claims, drives: settleDrives(ctx, weighed, records, claims) };
 }
 
 /**

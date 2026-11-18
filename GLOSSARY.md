@@ -735,6 +735,11 @@ make, use the entry's term instead.
   concludes: which file, why it conflicted, what was decided, and whether a
   review-loop round started the resolution. It keeps the conflicts a merge replay cannot see, because a
   rebase leaves no merge commit to merge again.
+- **Conflict rate** — for one file, the share of the merged pull requests
+  that changed it in a window and met a conflict before they merged, counting
+  only those whose conflicts the *merge replay* or the *live conflict record*
+  observed. The dispatcher refreshes each repository's rates once a day; a
+  file too few pull requests changed takes a default rate.
 - **Changelog** — a file listing each release's notable changes, newest
   first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
@@ -2583,8 +2588,24 @@ make, use the entry's term instead.
   Unrelated to a *tracker adapter*.
 - **World view** — what the *dispatcher* knows of the forge and the
   tracker (pull requests, checks, threads, queues, items), as opposed to
-  what it knows of its own machine. On a *hub* it is kept once for every
-  enrolled host, each fact with the version its source gave it.
+  what it knows of its own machine (its *machine view*). A tick reads it
+  through one interface its caller can supply, which by default reads the
+  forge and the tracker directly; every fact it returns carries its
+  *freshness class*. On a *hub* it is kept once for every enrolled host,
+  each fact with the version its source gave it.
+- **Machine view** — what the *dispatcher* knows of its own host: the
+  launches it made and their records, its sessions, its locks. It is read
+  beside the *world view* and kept apart from it: a tick settles what the
+  forge says by its launch records into a list of its own, and never
+  writes what this host did into a fact the forge gave.
+- **Freshness class** — how stale a fact of the *world view* may be when
+  it is served from a copy rather than read at the source: at most 10
+  minutes for an open pull request whose drive runs or is armed (active),
+  at most 75 minutes for everything else. The third class, *gates a
+  write*, holds the facts a write depends on (a *forge claim* and its
+  read-back, the `hold` and `drive` labels, whether a pull request is ready
+  to merge, a pickup's item): they are never served from a copy, and are
+  read at the source when they are used.
 - **Webhook** — a request a forge, tracker or chat tool sends to an
   address it was given, to say that something changed. It is signed with
   a secret both sides hold, so the receiver can check who sent it, and it

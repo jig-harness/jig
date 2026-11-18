@@ -6,7 +6,7 @@ import {
   settleMs,
   type ApplyState,
 } from "../lib/actions/launch.ts";
-import type { Tracked } from "../lib/tick-observe.ts";
+import type { Tracked } from "../lib/tick-tracker.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { WantedItem } from "../lib/types.ts";
 

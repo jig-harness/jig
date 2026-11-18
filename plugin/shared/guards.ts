@@ -21,6 +21,13 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The value at `path` inside `value`, each key read from a record; `undefined` where a step is no record. */
+export function valueAt(value: unknown, ...path: string[]): unknown {
+  let at = value;
+  for (const key of path) at = isRecord(at) ? at[key] : undefined;
+  return at;
+}
+
 export function isString(value: unknown): value is string {
   return typeof value === "string";
 }

@@ -11,12 +11,12 @@ import { allRecords, type TickContext } from "./tick-context.ts";
 import { settleDrives } from "./tick-shared.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 
-/** A report never writes a drive ledger; recovery runs only for the machine's owned, scoped, unheld PRs. */
+/** A report never writes a drive ledger; recovery runs only for the machine's owned, scoped, unheld PRs, and a recovered drive replaces its entry in the machine view (`RepoObservation.drives`), the forge's read left as it was. */
 export async function recoverLedgers(
   context: TickContext,
   observation: RepoObservation,
 ): Promise<void> {
-  const { opened, forge, ctx, held } = observation;
+  const { opened, forge, ctx, held, drives } = observation;
   if (
     context.apply === null ||
     !opened.listed ||
@@ -25,8 +25,8 @@ export async function recoverLedgers(
     !forge.ok
   )
     return;
-  for (let i = 0; i < forge.drives.length; i++) {
-    const drive = forge.drives[i];
+  for (let i = 0; i < drives.length; i++) {
+    const drive = drives[i];
     if (
       drive === undefined ||
       drive.class !== "silent" ||
@@ -69,9 +69,9 @@ export async function recoverLedgers(
       observation.labels,
       adoptionOf(opened.section, forge.login),
     );
-    // The fresh read is settled as the observed one was, by the records and claims read this tick.
+    // The fresh read is settled as the observed one was, by the records and claims read this tick, into the machine view.
     if (fresh !== undefined)
-      forge.drives[i] = settleDrives(
+      drives[i] = settleDrives(
         observation.ctx,
         [fresh],
         allRecords(context),

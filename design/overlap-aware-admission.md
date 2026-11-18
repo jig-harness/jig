@@ -21,8 +21,10 @@ starts no more passes than the host can validate in time. A person sees,
 for each item that waits, what it waits on.
 
 This is the design of [plan.md](plan.md) item 57. The tracker footprint
-record, its adapter interface and the pickup, scout and filing writers are
-built; admission, the planner's writer and the remaining build steps are
+record, its adapter interface, the pickup, scout and filing writers, the
+merge evidence for conflict edges, the changed-files read of every open pull
+request, and the conflict rates with the tick's daily refresh and their reader
+are built; admission, the planner's writer and the remaining build steps are
 open.
 It builds on the change that lets a plan-less epic's ready children start
 in parallel up to a width per epic (#1178), and on that change's decision
@@ -162,21 +164,24 @@ represented by its footprint record, on whichever host runs it (the tick
 reads every host's launch claims already). A pickup that opened its pull
 request is represented by the pull request alone.
 
-The tick already reads changed files for the pull requests in a
-[serialized area](../GLOSSARY.md) (`pullRequestFiles` in
-`plugin/dispatch/lib/forge.ts`, page by page, cut short at the forge's
-listing limit). This design widens that read to every open pull request of
-the repository, through the forge's governed transport (item 55):
+The tick reads changed files for every open pull request of the
+repository (`plugin/dispatch/lib/sources/pr-files.ts`, page by page through
+`pullRequestFiles` in `plugin/dispatch/lib/forge.ts`, cut short at the
+forge's listing limit), through the forge's governed transport (item 55).
+A [serialized area](../GLOSSARY.md) and overlap read the same files:
 
-- **Reuse.** A pull request's files are kept under its head commit and its
-  comparison base (the base branch's name and commit, as the listing
-  reports them), so a pull request whose head and base did not move costs
-  nothing; a retarget or a base that moved is read again. The same reading
-  serves serialization and overlap.
+- **Reuse.** A pull request's files are kept under its head commit, its
+  comparison base snapshot (the base branch's name and commit, as the listing
+  reports them), and the live base-branch tip. When the listing supplies that
+  live tip, an unchanged head, comparison snapshot and tip need no file-page
+  requests; a retarget or either base commit that moved is read again. When
+  the listing omits the live tip, the tick reads it before deciding whether it
+  can reuse the cached comparison. The same file reading serves serialization
+  and overlap.
 - **Admit and bound.** Each page asks the shared budget record. Pages of
   100 files, at most 3,000 files a pull request (the forge's own listing
-  limit), and at most a declared number of pull requests read fresh in one
-  tick; the rest keep their last reading, with its age, until a later tick.
+  limit), and at most eight pull requests of a repository read fresh in
+  one tick; the rest keep their last reading, with its age, until a later tick.
 - **Record.** One request a page for each pull request whose head moved
   since the last reading, recorded in the cost ledger under the operation
   `pr-files`.
@@ -544,9 +549,3 @@ One pull request each, in this order.
 - **Overlap across repositories.** Files collide only within one
   repository. Two repositories' passes still share a host's validation
   capacity when they share its lock, and the gauge counts them both.
-
-## Review
-
-Reviewed on 2026-11-14 at commit 11c00b4d8 by a reviewer with fresh
-context (a subagent that did not write the design), against the issue's
-decisions, the ADRs it names and the dispatcher's code.
