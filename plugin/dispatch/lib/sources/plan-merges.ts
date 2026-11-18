@@ -214,28 +214,36 @@ export function planMergeReader(
         states.set(pull.number, pull.state.toUpperCase());
       return pulls;
     };
+    // Every association read passes the same three checks, so none can drop one:
+    // the tick's bound, the read's own options, and a null that named no cause.
+    const governed = async <T>(
+      what: string,
+      run: (
+        options: ReturnType<typeof associationOptions>["options"],
+      ) => Promise<T | null>,
+    ): Promise<T | null> => {
+      if (ended(context.bound)) return passedBound(context, what);
+      const { options, state } = associationOptions(context);
+      const found = await run(options);
+      return found === null ? nullRead(context, state, what) : found;
+    };
     const currentLinks: LinkedPrReads = {
       comments: (key) =>
-        ended(context.bound)
-          ? Promise.resolve(passedBound(context, "a linked-pull-request read"))
-          : reads.links.comments(key, associationOptions(context).options),
+        governed("a linked-pull-request read", (options) =>
+          reads.links.comments(key, options),
+        ),
       search: async (term) => {
-        if (ended(context.bound))
-          return passedBound(context, "a linked-pull-request search");
-        const { options, state } = associationOptions(context);
-        const found = await reads.links.search(term, options);
-        return found === null
-          ? nullRead(context, state, "a linked-pull-request search")
-          : note(found);
+        const found = await governed(
+          "a linked-pull-request search",
+          (options) => reads.links.search(term, options),
+        );
+        return found === null ? null : note(found);
       },
       view: async (pr) => {
-        if (ended(context.bound))
-          return passedBound(context, "a linked-pull-request view");
-        const { options, state } = associationOptions(context);
-        const found = await reads.links.view(pr, options);
-        if (found === null)
-          return nullRead(context, state, "a linked-pull-request view");
-        note([found]);
+        const found = await governed("a linked-pull-request view", (options) =>
+          reads.links.view(pr, options),
+        );
+        if (found !== null) note([found]);
         return found;
       },
     };

@@ -298,20 +298,22 @@ test("a proof read the tick's bound ended reports an unreachable failure, not a 
   expect(failures[0]).toMatchObject({ code: "unreachable" });
 });
 
-test("a linked-pull-request search that returns no readable answer reports an invalid failure", async () => {
-  const f = fixture();
-  const failures: unknown[] = [];
-  const read = planMergeReader(
-    {} as Tracker,
-    { ...context, onFailure: (error) => failures.push(error) },
-    { ...f.reads, links: { ...f.reads.links, search: async () => null } },
-  );
-  const evidence = await read(description);
-  expect(Object.keys(evidence.held)).toEqual(["#2>#3"]);
-  expect(failures[0]).toMatchObject({ code: "invalid" });
-});
+for (const name of ["comments", "search"] as const) {
+  test(`a linked-pull-request ${name} that returns no readable answer reports an invalid failure`, async () => {
+    const f = fixture();
+    const failures: unknown[] = [];
+    const read = planMergeReader(
+      {} as Tracker,
+      { ...context, onFailure: (error) => failures.push(error) },
+      { ...f.reads, links: { ...f.reads.links, [name]: async () => null } },
+    );
+    const evidence = await read(description);
+    expect(Object.keys(evidence.held)).toEqual(["#2>#3"]);
+    expect(failures[0]).toMatchObject({ code: "invalid" });
+  });
+}
 
-for (const name of ["search", "view"] as const) {
+for (const name of ["comments", "search", "view"] as const) {
   test(`a linked-pull-request ${name} that reported a transport failure keeps it and adds no invalid one`, async () => {
     const f = fixture();
     const failures: unknown[] = [];
