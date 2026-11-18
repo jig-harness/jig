@@ -214,8 +214,8 @@ export function planMergeReader(
         states.set(pull.number, pull.state.toUpperCase());
       return pulls;
     };
-    // Every association read passes the same three checks, so none can drop one:
-    // the tick's bound, the read's own options, and a null that named no cause.
+    // Every association read passes the same checks, so none can drop one: the
+    // tick's bound, the read's own options, and a null that named no cause.
     const governed = async <T>(
       what: string,
       run: (
