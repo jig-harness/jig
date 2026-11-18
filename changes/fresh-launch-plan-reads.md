@@ -11,5 +11,6 @@ release: patch
   check now reads the plan's issues, and each parent's own row, together:
   on GitHub one `TrackerDispatchIssues` request for up to 20 issues, on
   Linear the batched pool read. It still reads them fresh, with nothing kept
-  from the tick, and a batch the tracker cannot answer is read one issue at
-  a time as before.
+  from the tick. A batch that names an issue the credential cannot see is
+  read one issue at a time; a batch refused for the rate limit or left
+  without an answer fails the check with that failure, as a single read did.

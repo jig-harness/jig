@@ -4,7 +4,7 @@
  * together (a parent plan's steps) read in one batch rather than one request
  * each.
  */
-import { isRateLimited } from "../../../shared/outbound/budget.ts";
+import { failureOf } from "../../../shared/outbound/failure.ts";
 import type {
   DispatchRawIssue,
   PoolIssue,
@@ -36,18 +36,23 @@ function readEach(tracker: Tracker, batch: Batch): Promise<unknown> {
   );
 }
 
-/** A way of reading a whole batch: its rows, or `null` when it cannot answer every key. */
+/** A way of reading a batch: the rows it answered, or `null` where the tracker offers no such read. */
 type Way = (
   tracker: Tracker,
   keys: string[],
 ) => Promise<Map<string, Row> | null>;
 
-/** The batch as native rows, each projected as the tracker projects its pool issues. */
+/**
+ * The batch as native rows, each projected as the tracker projects its pool
+ * issues: only where a row carries its description and parent (`describe`),
+ * which spares the walk an issue read for each parent's plan. Elsewhere the
+ * tracker's pool read is the lighter batch.
+ */
 const readNative: Way = async (tracker, keys) => {
   const source = tracker.dispatchSource;
-  if (source?.issues === undefined) return null;
+  if (source?.issues === undefined || source.describe === undefined)
+    return null;
   const rows = await source.issues(keys);
-  if (!keys.every((key) => rows.has(key))) return null;
   return new Map(
     await Promise.all(
       [...rows].map(
@@ -68,9 +73,21 @@ const readPooled: Way = async (tracker, keys) => {
 };
 
 /**
- * Settle the batch by the first way that answers it whole: native rows, the
- * tracker's batched pool read, else each key alone. A refusal by the rate
- * limit refuses every key; any other failure tries the next way.
+ * Whether a narrower read may answer what the batch could not: one key the
+ * credential cannot see (`not-found`), or a batch too large to ask at once
+ * (`too-costly`). Any other failure fails each key alike.
+ */
+function readsNarrower(error: unknown): boolean {
+  const { code } = failureOf(error);
+  return code === "not-found" || code === "too-costly";
+}
+
+/**
+ * Settle the batch by the first way that answers it: native rows, the
+ * tracker's batched pool read, else each key alone, which also reads a key a
+ * way left unanswered. A failure a narrower read cannot clear (the rate
+ * limit, no answer, a refused credential, a malformed answer) refuses every
+ * key with that failure.
  */
 async function settle(tracker: Tracker, batch: Batch): Promise<void> {
   const keys = [...batch.keys()];
@@ -79,15 +96,18 @@ async function settle(tracker: Tracker, batch: Batch): Promise<void> {
     try {
       rows = await way(tracker, keys);
     } catch (error) {
-      if (!isRateLimited(error)) continue;
+      if (readsNarrower(error)) continue;
       for (const waiter of batch.values()) waiter.reject(error);
       return;
     }
     if (rows === null) continue;
+    const unanswered: Batch = new Map();
     for (const [key, waiter] of batch) {
       const row = rows.get(key);
-      if (row !== undefined) waiter.resolve(row);
+      if (row === undefined) unanswered.set(key, waiter);
+      else waiter.resolve(row);
     }
+    await readEach(tracker, unanswered);
     return;
   }
   await readEach(tracker, batch);
