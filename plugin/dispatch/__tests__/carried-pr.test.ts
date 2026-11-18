@@ -16,14 +16,12 @@ import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import { numberKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { carrierInput } from "../lib/carried-pr.ts";
-import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import type { LineCarried } from "../lib/dashboard-contract.ts";
 import { buildLine } from "../lib/line.ts";
 import { readBy } from "../lib/line-merge.ts";
 import { readLine, writeLine } from "../lib/line-store.ts";
 import { closeStateDb } from "../lib/state.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
-import type { SessionsReport } from "../lib/runtime/port.ts";
 import type { StalledPrInput } from "../lib/stalled-pr.ts";
 import type {
   ClaimedItem,
@@ -33,54 +31,16 @@ import type {
 } from "../lib/types.ts";
 import type { PrLinkText } from "../lib/work-links.ts";
 import { input as lineInput, REPO, report } from "./line-fixtures.ts";
+import { BRANCH, endedPickup, idleSessions } from "./ended-pickup-fixtures.ts";
 import { SLUG } from "./fixtures.ts";
 import { parseMs } from "../../shared/time.ts";
 
 const NOW = parseMs("2026-11-14T17:14:00Z");
 const HOUR = 3_600_000;
-const PATH = "/work/example-repo-12";
-const BRANCH = "12-issue-12";
 const URL = `https://github.com/${SLUG}/pull/31`;
 
-/** The ended pickup of #12 this host launched, in the workspace at `PATH`. */
-const launch: ReadRecord = {
-  record: {
-    id: "20261114T145000Z-abcdef12",
-    action: "pickup",
-    repo: SLUG,
-    item: "#12",
-    pr: null,
-    released: false,
-    workspace: { id: "repo-1::12", path: PATH },
-    claimedItems: ["#12"],
-  } as unknown as LaunchRecord,
-  state: {
-    kind: "ended",
-    exit: { at: "2026-11-14T14:54:00Z", code: 0, signal: null },
-    process: null,
-  },
-  result: null,
-};
-
-/** The runtime's answer: the launch's workspace on its branch, no agent running. */
-const sessions: SessionsReport = {
-  ok: true,
-  source: "fake",
-  workspaces: [
-    {
-      id: "repo-1::12",
-      path: PATH,
-      branch: BRANCH,
-      items: ["#12"],
-      prs: [31],
-      agents: [],
-      unverifiableTerminals: 0,
-      comment: "",
-      unread: null,
-      name: "",
-    },
-  ],
-};
+const launch = endedPickup("20261114T145000Z-abcdef12", "2026-11-14T14:54:00Z");
+const sessions = idleSessions;
 
 function pr(over: Partial<PrLinkText> = {}): PrLinkText {
   return {
