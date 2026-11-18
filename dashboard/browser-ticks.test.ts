@@ -106,7 +106,7 @@ describe("the tick strip", () => {
         await shows(page, ".pTicks .tkRow");
         await page
           .locator(".pTicks")
-          .getByRole("button", { name: "Details", exact: true })
+          .getByRole("button", { name: /^Phases and repositories of the / })
           .first()
           .click();
         await shows(page, ".pTicks .tkKv");

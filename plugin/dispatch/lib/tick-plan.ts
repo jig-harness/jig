@@ -42,6 +42,9 @@ import { applyStewardOrder } from "./steward-queue.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
+import { type CarrierInput, carrierInput } from "./carried-pr.ts";
+import { branchPattern } from "./section.ts";
+import type { PrLinkText } from "./work-links.ts";
 import { preparePriorities } from "./tick-priorities.ts";
 
 /** Plan one observed repository into its report. */
@@ -128,7 +131,8 @@ export function planObserved(
 /**
  * What tells a stalled pickup's finished work: the open pull requests'
  * descriptions where the repository's query read them all, the tracker's
- * `pr_open` state, and whether this host owns the repository. None where
+ * `pr_open` state, whether this host owns the repository, and which open
+ * pull requests carry an item with the drives that work them. None where
  * the tracker's keys do not read.
  */
 function withStalledPr(observation: RepoObservation): {
@@ -139,9 +143,12 @@ function withStalledPr(observation: RepoObservation): {
   if (keys == null) return {};
   const repository = opened.repo.slug;
   const trackerRepository = tracked.issueRepository ?? undefined;
+  const prs =
+    forge.ok && forge.linkTexts !== undefined ? forge.linkTexts : null;
   return {
     prOpen: {
-      prs: forge.ok && forge.linkTexts !== undefined ? forge.linkTexts : null,
+      prs,
+      carried: carriersOf(observation, prs),
       prOpen: (nativeType) => prOpenOf(tracked.tracker, nativeType),
       owner: ctx.owner,
       pickup: opened.stages.has("pickup"),
@@ -153,6 +160,29 @@ function withStalledPr(observation: RepoObservation): {
         })(body),
     },
   };
+}
+
+/** Which open pull requests carry an item, and the drives the tick read for them (`carried-pr.ts`). */
+function carriersOf(
+  observation: RepoObservation,
+  prs: readonly PrLinkText[] | null,
+): CarrierInput {
+  const { tracked, forge, opened, drives } = observation;
+  return carrierInput({
+    prs,
+    rules:
+      tracked.keys == null
+        ? null
+        : {
+            keys: tracked.keys,
+            branchPattern: branchPattern(opened.values),
+            repository: opened.repo.slug,
+            issueRepository: tracked.issueRepository ?? null,
+          },
+    drives,
+    read: forge.read,
+    ...(forge.scoped ? { inScope: forge.inScope } : {}),
+  });
 }
 
 /** The `pr_open` name of the workflow an item of this native type is in; `null` where there is no tracker or that workflow names none. */

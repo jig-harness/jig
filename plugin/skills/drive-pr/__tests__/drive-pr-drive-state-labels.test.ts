@@ -22,6 +22,7 @@ import {
 } from "./drive-pr-harness.ts";
 import { PASS_NOOP, runDriveIn } from "./drive-loop-harness.ts";
 import { labelForge } from "./state-labels-forge.ts";
+import { readState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
@@ -89,6 +90,8 @@ describe("a drive writes its own state label", () => {
     const r = await drive(run, PASS_NOOP);
     expectSpawnExit({ ...r, stdout: null }, 0);
     expect(run.labels()).toEqual(["jig:converged"]);
+    // The head's CI, read again after the write, is still green.
+    expect(r.stderr).toContain("converged CI: the converged label stands");
     expect(run.edits()).toEqual([
       { add: ["jig:driving"], remove: ["jig:stale"] },
       { add: ["jig:converged"], remove: ["jig:driving"] },
@@ -108,6 +111,34 @@ describe("a drive writes its own state label", () => {
     expect(r.stderr).toContain(
       "labels: PR #999's labels are left as they are: its head 7bd2ca906c111111111111111111111111111111 is not the head",
     );
+  });
+
+  it("parks a converged stop whose CI its own label write left red", async () => {
+    const run = labelled({ threads: [] }, ["jig:stale"]);
+    // The converged label's write starts CI that a commit status reports failing.
+    writeFileSync(
+      join(run.bin, "status-after-converged.json"),
+      JSON.stringify({
+        state: "failure",
+        statuses: [
+          { context: "ci/legacy", state: "failure", description: "failed" },
+        ],
+      }),
+    );
+    const r = await drive(run, PASS_NOOP);
+    expectSpawnExit({ ...r, stdout: null }, 8);
+    expect(r.stderr).toContain(
+      "converged CI: parking: commit status ci/legacy failed on head",
+    );
+    expect(run.edits()).toEqual([
+      { add: ["jig:driving"], remove: ["jig:stale"] },
+      { add: ["jig:converged"], remove: ["jig:driving"] },
+      { add: ["jig:parked"], remove: ["jig:converged"] },
+    ]);
+    const parked = readState(run.stateDir, "999")?.parked as
+      | Array<{ key: string }>
+      | undefined;
+    expect(parked?.map((p) => p.key)).toEqual(["converged-ci"]);
   });
 
   it("replaces the state label with parked when it parks", async () => {

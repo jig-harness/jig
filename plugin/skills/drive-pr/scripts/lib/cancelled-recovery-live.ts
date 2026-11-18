@@ -36,7 +36,20 @@ import { parsePrSnapshot } from "./ci-hold.ts";
 import { workflowRunsFor, withoutSuperseded } from "./status/workflow-runs.ts";
 import { currentIso, currentMs } from "../../../../shared/time.ts";
 
-const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites"> = {
+/** Thrown by a guarded mutation when the drive passed to another driver; the recovery stands down. */
+class OwnershipLost extends Error {
+  constructor() {
+    super("the drive passed to another driver");
+  }
+}
+
+const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites" | "park"> & {
+  park(
+    pr: string,
+    reason: string,
+    stillOwned?: () => Promise<boolean>,
+  ): Promise<void>;
+} = {
   now: currentMs,
   observe: observeCancellation,
   claim: claimCancellation,
@@ -75,12 +88,18 @@ const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites"> = {
     }
   },
   rerun: (id) => ghCall(["run", "rerun", String(id)]),
-  async park(pr, reason) {
+  async park(pr, reason, stillOwned) {
     const person = await resolveParkPerson(pr, "cancelled-ci", "finding", "");
     const decision = cancelledCiDecision(reason);
     const question = decision.call.question;
     const store = await openStore(pr);
     const capacity = await parkAdmissionContext(pr, store.stateDir);
+    // Ownership is asked inside the store's lock, after the wait for it, as the
+    // write is about to run.
+    if (stillOwned !== undefined)
+      store.setFence(async () => {
+        if (!(await stillOwned())) throw new OwnershipLost();
+      });
     await store.update((state) => {
       const next = {
         ...state,
@@ -178,29 +197,11 @@ export function cancelledCiDecision(reason: string): ParkedDecision {
   };
 }
 
-/** A required-check subset at acquisition; all cancelled workflow jobs at final convergence. */
-export async function recoverCancelledOnHead(
+/** What the live pull request says of the CI hold: `free` to go on, `none` while held, `unknown` when it cannot be established. */
+async function liveHoldState(
   pr: string,
   head: string,
-  required?: readonly string[],
-  alreadyFenced = false,
-) {
-  const jobs = await checkRuns(head);
-  if (jobs === null) {
-    console.error(
-      "cancelled CI recovery: could not read exact-head check runs",
-    );
-    return "unknown";
-  }
-  if (
-    !jobs.some(
-      (job) =>
-        job.status === "completed" &&
-        job.conclusion === "cancelled" &&
-        (required === undefined || required.includes(job.name)),
-    )
-  )
-    return await waitForRequestedRun(pr, head);
+): Promise<"free" | "none" | "unknown"> {
   const snapshot = await ghCall([
     "pr",
     "view",
@@ -223,7 +224,7 @@ export async function recoverCancelledOnHead(
       return "unknown";
     // Held synchronize runs cancel deliberately. Their release at convergence,
     // rather than a re-run of the held event, supplies their replacement.
-    if (current.held) return "none";
+    return current.held ? "none" : "free";
   } catch (err) {
     swallow(
       err,
@@ -231,6 +232,84 @@ export async function recoverCancelledOnHead(
     );
     return "unknown";
   }
+}
+
+/** The recovery's dependencies, each durable claim, forge mutation and park asking `owned` first. */
+function fencedDeps(
+  pr: string,
+  head: string,
+  mayMutate: (() => Promise<boolean>) | undefined,
+  owned: () => Promise<void>,
+) {
+  return {
+    ...live,
+    ...timelineDeps(pr),
+    ...(mayMutate === undefined ? {} : { mayMutate }),
+    async claim(
+      pr: string,
+      head: string,
+      workflowIds: Parameters<typeof claimCancellation>[2],
+      requested: Parameters<typeof claimCancellation>[3],
+    ) {
+      return await claimCancellation(pr, head, workflowIds, requested, owned);
+    },
+    async extend(
+      pr: string,
+      head: string,
+      earlier: Parameters<typeof extendCancellation>[2],
+      requested: Parameters<typeof extendCancellation>[3],
+    ) {
+      return await extendCancellation(pr, head, earlier, requested, owned);
+    },
+    async claimLabelRerun(
+      pr: string,
+      run: Parameters<typeof claimLabelRerun>[1],
+    ) {
+      return await claimLabelRerun(pr, run, owned);
+    },
+    async park(parkPr: string, reason: string) {
+      await live.park(parkPr, reason, async () => {
+        return mayMutate === undefined || (await mayMutate());
+      });
+    },
+    async rerun(id: number) {
+      if (!(await live.confirm(pr, head)))
+        return {
+          code: 1,
+          stderr: "the pull request closed or its head changed",
+        };
+      await owned();
+      return await live.rerun(id);
+    },
+  };
+}
+
+/** A required-check subset at acquisition; all cancelled workflow jobs at final convergence. */
+export async function recoverCancelledOnHead(
+  pr: string,
+  head: string,
+  required?: readonly string[],
+  alreadyFenced = false,
+  mayMutate?: () => Promise<boolean>,
+) {
+  const jobs = await checkRuns(head);
+  if (jobs === null) {
+    console.error(
+      "cancelled CI recovery: could not read exact-head check runs",
+    );
+    return "unknown";
+  }
+  if (
+    !jobs.some(
+      (job) =>
+        job.status === "completed" &&
+        job.conclusion === "cancelled" &&
+        (required === undefined || required.includes(job.name)),
+    )
+  )
+    return await waitForRequestedRun(pr, head);
+  const hold = await liveHoldState(pr, head);
+  if (hold !== "free") return hold;
   const runs = await workflowRunsFor("{owner}", "{repo}", head);
   if (runs === null) {
     console.error(
@@ -252,39 +331,47 @@ export async function recoverCancelledOnHead(
   // The durable claim must not be spent until the mutation fence is held.
   // Otherwise a rival can make this invocation unable to re-run after it has
   // consumed the once-per-head recovery budget.
-  let lock = null;
+  const fence = await acquireFence(pr, alreadyFenced);
+  if (fence === "unavailable") return "unknown";
+  const lock = fence;
+  try {
+    // A caller that can lose the drive to a successor asks again here, where
+    // the first claim is about to be spent.
+    if (mayMutate !== undefined && !(await mayMutate())) return "unknown";
+    // Every durable claim, forge mutation and park asks again immediately
+    // before it commits, after the reads that precede it.
+    const owned = async () => {
+      if (mayMutate !== undefined && !(await mayMutate()))
+        throw new OwnershipLost();
+    };
+    const answer = await recoverCancelled(
+      pr,
+      head,
+      relevant,
+      runs,
+      fencedDeps(pr, head, mayMutate, owned),
+    );
+    return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
+  } catch (err) {
+    if (err instanceof OwnershipLost) return "unknown";
+    throw err;
+  } finally {
+    lock?.dispose();
+  }
+}
+
+/** The mutation fence for a recovery, `null` when the caller already holds one; "unavailable" when it cannot be had. */
+async function acquireFence(pr: string, alreadyFenced: boolean) {
   try {
     const context = alreadyFenced
       ? null
       : await resolveFenceContext("cancelled CI recovery");
-    lock =
-      context === null
-        ? null
-        : await assertRemoteMutationAllowed(
-            context,
-            pr,
-            "cancelled CI recovery",
-          );
+    return context === null
+      ? null
+      : await assertRemoteMutationAllowed(context, pr, "cancelled CI recovery");
   } catch (err) {
     swallow(err, "the cancellation recovery mutation fence is unavailable");
-    return "unknown";
-  }
-  try {
-    const answer = await recoverCancelled(pr, head, relevant, runs, {
-      ...live,
-      ...timelineDeps(pr),
-      async rerun(id) {
-        if (!(await live.confirm(pr, head)))
-          return {
-            code: 1,
-            stderr: "the pull request closed or its head changed",
-          };
-        return await live.rerun(id);
-      },
-    });
-    return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
-  } finally {
-    lock?.dispose();
+    return "unavailable" as const;
   }
 }
 

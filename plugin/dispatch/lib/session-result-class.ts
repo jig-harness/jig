@@ -24,7 +24,7 @@ export function sessionResultClass(
     return {
       class: "quota wall",
       reason:
-        "result waits: the tracker's rate limit stopped it; it starts again after the reset",
+        "result waits: the issue service's rate limit stopped it; it starts again after the reset",
     };
   const question = typeof said === "string" ? questionIn(said) : null;
   if (question !== null)

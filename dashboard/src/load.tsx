@@ -4,7 +4,8 @@
  * kind's reservation and each hold folded below.
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { Fold, PanelHelp } from "./fold.tsx";
+import { PanelHelp } from "./fold.tsx";
+import { GutterFold } from "./gutter.tsx";
 import { BareWord } from "./icon-word.tsx";
 import { GAUGE_ICONS, iconOf } from "./icons.ts";
 import { loadView } from "./load-view.ts";
@@ -33,7 +34,13 @@ export function LoadGauge({ line }: { line: LineSnapshot | null }) {
         </PanelHelp>
       </div>
       <div className="sm mut">{view.summary}</div>
-      <Fold label="Each gauge, the reservations and the holds">
+      <GutterFold
+        className="loadFold"
+        label="Each gauge, the reservations and the holds"
+        head={
+          <span className="sm">Each gauge, the reservations and the holds</span>
+        }
+      >
         <dl className="kv">
           {view.gauges.map((g) => (
             <div key={g.name} style={{ display: "contents" }}>
@@ -71,7 +78,7 @@ export function LoadGauge({ line }: { line: LineSnapshot | null }) {
             </div>
           ))}
         </dl>
-      </Fold>
+      </GutterFold>
     </div>
   );
 }

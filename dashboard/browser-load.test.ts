@@ -50,12 +50,11 @@ describe("the load gauge", () => {
             .click();
           await until("the gauges open", async () =>
             (
-              (await page.locator(".pLine .load .foldPanel").textContent()) ??
-              ""
+              (await page.locator(".pLine .load .gpanel").textContent()) ?? ""
             ).includes("2 holding, 1 waiting"),
           );
           expect(
-            await page.locator(".pLine .load .foldPanel").textContent(),
+            await page.locator(".pLine .load .gpanel").textContent(),
           ).toContain("would hold the pickup: memory binds");
           await settled(page);
           await shoot(page, `load-${name}`);

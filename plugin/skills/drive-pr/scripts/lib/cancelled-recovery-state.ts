@@ -69,6 +69,10 @@ function isRequestedRun(value: unknown): value is RequestedRun {
 }
 
 /**
+ * `beforeCommit`, on each claim below, runs after the database is resolved and
+ * immediately before the mutation, so an ownership check made there is the
+ * last thing that can refuse it.
+ *
  * Atomic even when two callers observed the same unclaimed row. `requested`
  * names the runs the claim re-runs, so the recovery judges those runs; a
  * released claim keeps them until the next claim, so a grant re-runs only
@@ -79,8 +83,10 @@ export async function claimCancellation(
   head: string,
   workflowIds: readonly number[] = [],
   requested: readonly RequestedRun[] = [],
+  beforeCommit?: () => Promise<void>,
 ): Promise<boolean> {
   const drive = driveDb(await resolveStateDir());
+  await beforeCommit?.();
   return (
     drive.db
       .query(
@@ -106,8 +112,10 @@ export async function extendCancellation(
   head: string,
   earlier: readonly RequestedRun[],
   requested: readonly RequestedRun[],
+  beforeCommit?: () => Promise<void>,
 ): Promise<boolean> {
   const drive = driveDb(await resolveStateDir());
+  await beforeCommit?.();
   const workflowIds = [...new Set(requested.map((run) => run.workflowId))];
   return (
     drive.db
@@ -207,8 +215,10 @@ export async function labelReruns(
 export async function claimLabelRerun(
   pr: string,
   run: WorkflowRun,
+  beforeCommit?: () => Promise<void>,
 ): Promise<boolean> {
   const drive = driveDb(await resolveStateDir());
+  await beforeCommit?.();
   return (
     drive.db
       .query(

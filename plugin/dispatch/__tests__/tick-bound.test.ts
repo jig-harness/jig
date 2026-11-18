@@ -441,6 +441,7 @@ describe("the forge's reads under the tick's bound", () => {
       forgeReads(
         ok({
           target: REPO,
+          mode: "full",
           config: "",
           open: [],
           comments: new Map(),

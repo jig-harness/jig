@@ -145,7 +145,6 @@ describe("a park", () => {
     expect(view.classNote).toBe(", class scope, thread");
     expect(view.question).toBe("Which one?");
     expect(view.recommendation).toBe("Recommended: A, it is smaller");
-    expect(view.goLabel).toBe("Answer on the pull request");
   });
 
   it("sends to its pull request on github.com, and a stop with no decision does not", () => {
@@ -273,22 +272,21 @@ describe("a stage that stopped on a question", () => {
 });
 
 describe("a need's words", () => {
-  it("labels the link by what the person does", () => {
-    const label = (change: Partial<LineNeed>) =>
-      needView({ ...NEED, ...change }, CLOCK).goLabel;
-    expect(label({ cause: "needs-person" })).toBe(
-      "Read the handoff on the pull request",
-    );
-    expect(label({ cause: "followup-failed" })).toBe("Open the pull request");
-    expect(label({ cause: "nudge-unanswered" })).toBe("Open the pull request");
-    expect(label({ cause: "stalled", pr: null, item: "ENG-4" })).toBe(
-      "Open in the tracker",
-    );
+  it("names a repository's tracker by its product where its issues cannot be reached", () => {
+    const words = (tracker?: { adapter: string } | null) =>
+      needView(
+        { ...NEED, cause: "tracker-unreachable", pr: null, item: "ENG-4" },
+        CLOCK,
+        tracker,
+      ).recorded;
+    expect(words({ adapter: "linear" })).toBe("Linear unreachable");
+    expect(words({ adapter: "github" })).toBe("GitHub Issues unreachable");
+    expect(words(null)).toBe("issues unreachable");
+    expect(words()).toBe("issues unreachable");
   });
 
   it("sends a stuck launch record to its session and the clear command", () => {
     const view = needView({ ...NEED, stuckRecord: "launch-9" }, CLOCK);
-    expect(view.goLabel).toBe("Open the pull request");
     expect(view.evidence).toContainEqual({
       k: "to release",
       v: "a person checks for a session it started, then runs jig dispatch clear",
@@ -312,9 +310,24 @@ describe("a need's words", () => {
       },
       CLOCK,
     );
-    expect(view.goLabel).toBeNull();
     expect(view.noLink).toBe(
-      "No link was recorded for WEB-1, and the line holds no other link to example-org/web's tracker to work it out from: look WEB-1 up in that tracker.",
+      "No link was recorded for WEB-1, and the line holds no other link to example-org/web's issues to work it out from: look WEB-1 up there.",
+    );
+    expect(
+      needView(
+        {
+          ...NEED,
+          cause: "double-claim",
+          pr: null,
+          target: "WEB-1",
+          item: "WEB-1",
+          url: null,
+        },
+        CLOCK,
+        { adapter: "jira" },
+      ).noLink,
+    ).toBe(
+      "No link was recorded for WEB-1, and the line holds no other Jira link of example-org/web's to work it out from: look WEB-1 up in Jira.",
     );
     expect(view.title).toBe(NEED.title);
     expect(view.keyText).toBe("WEB-1");
@@ -371,7 +384,6 @@ describe("the person's list", () => {
   it("names repeated no-cause stops as needing a person", () => {
     const view = needView({ ...NEED, cause: "stopped-unknown" }, CLOCK);
     expect(view.recorded).toBe("repeated no-cause stops (needs a person)");
-    expect(view.goLabel).toBe("Open the pull request");
   });
 
   it("lists the needs by act, in the acts' order, oldest first in each", () => {

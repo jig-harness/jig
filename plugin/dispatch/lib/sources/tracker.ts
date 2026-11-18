@@ -38,7 +38,11 @@ import {
 } from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
-import { claimsUnreadRow, limitedRow } from "./served-failures.ts";
+import {
+  claimsUnreadRow,
+  LIMITED_REASON,
+  limitedRow,
+} from "./served-failures.ts";
 import {
   readServedPickups,
   freshServedPickup,
@@ -596,7 +600,7 @@ export async function freshPickup(
       section.states as CanonicalState[],
     );
   } catch (error) {
-    return `the tracker cannot be read again: ${failureText(error)}`;
+    return `the issue service cannot be read again: ${failureText(error)}`;
   }
   const issue = issues.find((i) => i.identifier === key);
   const unassigned = `it is no longer assigned to ${section.identity} in ${section.states.join(", ")}`;
@@ -839,7 +843,7 @@ function withPool(
   const keys = new Set(factory.wanted.map((i) => i.key));
   const detail =
     pool.limited !== undefined
-      ? `the ready pool (${pool.states}) waits for the tracker's rate limit to reset`
+      ? `the ready pool (${pool.states}) waits for the issue service's rate limit to reset`
       : pool.failed === true
         ? `the ready pool (${pool.states}) was not read`
         : `${pool.read} unassigned item(s) in the ready pool (${pool.states}), ${pool.wanted.length} made ready by a person with write access`;
@@ -878,7 +882,7 @@ function limitedFactory(
       record: "tracker",
       source: `${tracker.adapter} ${tracker.team}`,
       ok: true,
-      detail: `the items assigned to ${identity} wait for the tracker's rate limit to reset`,
+      detail: `the items assigned to ${identity} wait for the issue service's rate limit to reset`,
       ...(stores === undefined ? {} : { facets: stores }),
     },
     wanted: [],
@@ -891,8 +895,7 @@ function limitedFactory(
 function onceEach(rows: Unplaced[]): Unplaced[] {
   const limited = new Set<string>();
   return rows.filter((row) => {
-    if (!row.reason.startsWith("the tracker is rate limited until"))
-      return true;
+    if (!row.reason.startsWith(LIMITED_REASON)) return true;
     if (limited.has(row.target)) return false;
     limited.add(row.target);
     return true;

@@ -2514,6 +2514,15 @@ make, use the entry's term instead.
   instruction and after showing what it would write, and holds no state of
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
+- **Carried item** — a claimed item no session holds that an open pull
+  request of its own repository carries: the line links the pull request to
+  the item, and its drive is live or has converged and waits for a person's
+  merge. The dispatcher reports it, and the line lists it, as carried
+  rather than as a stalled pickup. A pull request with no drive, or a
+  stopped one, does not carry it, and the stall need names the pull
+  request. An item already in the tracker's pull-request-open state, or
+  with a move to it still to make, keeps its existing handling and is not
+  reported as carried.
 - **Dispatch dashboard** — the page a person watches and steers the
   execution line from, and the process that serves it. Today
   `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to
@@ -2536,6 +2545,21 @@ make, use the entry's term instead.
   item is one, and so is an item with no pull request yet. Each of its
   stations has an *address*. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-piece-of-work-and-its-views).
+- **Work identity** — how the *dispatch dashboard* draws a pull request or
+  an issue wherever it names one: an icon, the number or key as its link, a
+  Copy, and a popover with its title, kind, standing, repository, *linked
+  work* and one link out. A pull request's icon shows only its standing on
+  the forge; an issue's is the same whichever product holds it. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-piece-of-work-and-its-views).
+- **Linked work** — the pull requests and issues a card's own is joined to:
+  for a pull request, the issues it closes or was opened from; for an issue,
+  the open pull requests that close it. A card shows up to two after its
+  *work identity*, then "+N more", and says when none was found or when the
+  read could not tell.
+- **Card with gutter** — the *dispatch dashboard*'s one way to open and
+  close a card: a chevron in a fixed column at the card's left, so it sits
+  in one place on every card of a view, and a tap anywhere on the card that
+  is not a link, a button or a field.
 - **QR code** (quick response code) — a square barcode a phone camera can
   scan to open an address. `jig dispatch dashboard --access` draws one of
   the *dispatch dashboard*'s private, token-free front address

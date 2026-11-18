@@ -3,9 +3,9 @@
  * is and its default branch, the dispatch configuration on that branch, and
  * every open pull request with its labels, its description, its head, its
  * mergeability, its checks' rollup, its unresolved review threads, the
- * issues it closes and its comments. A tick reads it once per repository
- * (`tick-reads.ts`), in place of a repository view, a file read, a pull
- * request listing and one comment listing per pull request.
+ * issues it closes. The full query includes comments. Between full reads
+ * the state query leaves them to conditional comment listings
+ * (`tick-reads.ts`).
  *
  * The query runs in the checkout with the forge client's `{owner}` and
  * `{repo}` placeholders, so the repository is the one the client's own view
@@ -78,8 +78,8 @@ const CLOSING = 5;
 const PR_LIMIT = 1000;
 
 /** The queries' names, which a fake forge recognises. */
-const QUERY_NAME = "DispatchRepository";
 const COMMENTS_QUERY_NAME = "DispatchComments";
+type RepositoryReadMode = "full" | "state";
 
 /** What the queries read of a pull request's comments: one page, and whether there are more. */
 const COMMENTS = `comments(first: ${ITEMS}) {
@@ -88,7 +88,10 @@ const COMMENTS = `comments(first: ${ITEMS}) {
           nodes { databaseId fullDatabaseId url createdAt updatedAt authorAssociation body author { __typename login } }
         }`;
 
-const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!, $after: String) {
+function repositoryQuery(mode: RepositoryReadMode): string {
+  const name =
+    mode === "full" ? "DispatchRepository" : "DispatchRepositoryState";
+  return `query ${name}($owner: String!, $name: String!, $first: Int!, $after: String) {
   rateLimit { cost remaining }
   repository(owner: $owner, name: $name) {
     nameWithOwner
@@ -103,11 +106,12 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
         headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
         reviewThreads(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { isResolved } }
         closingIssuesReferences(first: ${CLOSING}) { pageInfo { hasNextPage } nodes { number repository { nameWithOwner } } }
-        ${COMMENTS}
+        ${mode === "full" ? COMMENTS : ""}
       }
     }
   }
 }`;
+}
 
 /** The pull requests' comments a query read. */
 export interface CommentsRead {
@@ -125,6 +129,7 @@ export interface CommentsRead {
 /** What one repository's query read. */
 export interface RepositoryRead extends CommentsRead {
   target: RepoTarget;
+  mode: RepositoryReadMode;
   /** The pull requests a page asked for when the read ended: `PAGE`, or fewer where the forge ran out of time on a larger page. */
   pageSize: number;
   /** The dispatch configuration file on the default branch; `null` when the branch has none. */
@@ -489,21 +494,23 @@ async function graphql(
 }
 
 /** One page of the repository's query, as the forge answered it in the checkout at `path`. */
-const page: AskPage = (path, after, size) =>
-  graphql(
-    [
-      "-f",
-      `query=${QUERY}`,
-      "-F",
-      "owner={owner}",
-      "-F",
-      "name={repo}",
-      "-F",
-      `first=${size}`,
-      ...(after === null ? [] : ["-f", `after=${after}`]),
-    ],
-    path,
-  );
+const repositoryPage =
+  (mode: RepositoryReadMode): AskPage =>
+  (path, after, size) =>
+    graphql(
+      [
+        "-f",
+        `query=${repositoryQuery(mode)}`,
+        "-F",
+        "owner={owner}",
+        "-F",
+        "name={repo}",
+        "-F",
+        `first=${size}`,
+        ...(after === null ? [] : ["-f", `after=${after}`]),
+      ],
+      path,
+    );
 
 /** Hold one pull request's comments in `read`, or count it among those listed on their own. */
 function addComments(
@@ -553,7 +560,7 @@ function addPage(read: RepositoryRead, answer: unknown): Read<string | null> {
     if (!listed.ok) return listed;
     read.open.push(listed.value);
     const number = listed.value.number;
-    if (typeof number === "number")
+    if (read.mode === "full" && typeof number === "number")
       addComments(read, number, field(node, "comments"));
   }
   if (read.open.length >= PR_LIMIT)
@@ -581,15 +588,22 @@ function addPage(read: RepositoryRead, answer: unknown): Read<string | null> {
 export async function readRepository(
   path: string,
   sizes?: PageSizes,
-  ask: AskPage = page,
+  ask?: AskPage,
   bound?: TickBound,
+  mode: RepositoryReadMode = "full",
 ): Promise<Outcome<RepositoryRead, "unreadable">> {
-  const key = `repository:${path}`;
+  const key =
+    mode === "full" ? `repository:${path}` : `repository-state:${path}`;
   const paging = pagingOf(sizes, key);
   const read = await readPages(
     path,
     paging,
-    heldAsk(ask, bound, "the next page of pull requests was asked"),
+    heldAsk(
+      ask ?? repositoryPage(mode),
+      bound,
+      "the next page of pull requests was asked",
+    ),
+    mode,
   );
   keepSize(sizes, key, paging, read.ok);
   return read;
@@ -600,6 +614,7 @@ async function readPages(
   path: string,
   paging: Paging,
   ask: AskPage,
+  mode: RepositoryReadMode,
 ): Promise<Outcome<RepositoryRead, "unreadable">> {
   const startedAtMs = currentMs();
   const pageAfter = (after: string | null) =>
@@ -615,6 +630,7 @@ async function readPages(
   if (!config.ok) return config;
   const read: RepositoryRead = {
     target: target.value,
+    mode,
     config: config.value,
     open: [],
     comments: new Map(),

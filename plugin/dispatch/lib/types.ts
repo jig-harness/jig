@@ -149,6 +149,8 @@ export type PickupClass =
   | "claimed"
   | "claimed-by-person"
   | "claimed-pr-open"
+  /** A claimed item with no running session that an open pull request whose drive is live or converged carries (`carried-pr.ts`). */
+  | "claimed-carried"
   /** Under the host's `priorities.enforce`: a pickup whose priority lane is out of rotation (`priorities-order.ts`). */
   | "lane-paused";
 
@@ -769,6 +771,12 @@ export interface RepoReport {
     /** `answered-hold`: a need a person answered with the hold option, kept off Needs you for its facts (`station-answers.ts`). */
     class: LedgerClass | PickupClass | FollowupClass | "answered-hold";
     why: string;
+    /** For `claimed-carried`: the pull request that carries the item, and its drive's state. */
+    carried?: {
+      pr: number;
+      url: string;
+      drive: "driving" | "converged";
+    };
   }>;
 }
 
