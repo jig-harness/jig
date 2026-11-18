@@ -173,7 +173,7 @@ describe("the disclosures", () => {
   browserIt(
     "a long list closes from its panel's head as well as its foot",
     async () => {
-      const server = await served("loud");
+      const server = await served("queue");
       const { page, context } = await open(
         requireBrowser(),
         server.origin,

@@ -10,6 +10,7 @@ import {
   readFacetAttrs,
 } from "./facets.ts";
 import { rove } from "./keys.ts";
+import { reasonCounts } from "./queue-view.ts";
 import { FILTERED_VIEWS, type ViewId } from "./search.ts";
 
 export interface Oldest {
@@ -75,6 +76,11 @@ function applyGroupFilter(root: HTMLElement, active: boolean): void {
       group,
       "[data-group-oldest]",
       oldest === null ? "" : `Oldest ${oldest.age}`,
+    );
+    textIn(
+      group,
+      "[data-group-why]",
+      reasonCounts(visible.flatMap((card) => card.dataset.groupWhy ?? [])),
     );
   }
 }

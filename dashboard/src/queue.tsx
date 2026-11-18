@@ -1,31 +1,58 @@
+import { GitBranch } from "lucide-react";
 import { FollowupBadge } from "./followups.tsx";
 import { RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * What is coming, ordered by what will happen to each target rather than where
- * it came from. The cap at the foot says items cannot be added here; it is never
- * a control.
+ * it came from, or grouped by repository or source on a person's choice. What
+ * starts next always leads and never folds; every other group is a heading that
+ * folds. The cap at the foot says items cannot be added here; it is never a
+ * control.
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import {
+  DEFAULT_QUEUE_GROUPING,
+  facetAttrs,
+  type QueueGrouping,
+} from "./facets.ts";
 import { Evidence, PanelHelp, SourceHint } from "./fold.tsx";
-import { facetAttrs } from "./facets.ts";
-import { GutterCard } from "./gutter.tsx";
+import { GutterCard, GutterFold } from "./gutter.tsx";
 import { queueCard } from "./cards.ts";
-import { Glyph } from "./icon-word.tsx";
-import { GROUP_ICONS, iconOf } from "./icons.ts";
+import { BareWord, Glyph } from "./icon-word.tsx";
+import { GROUP_ICONS, type IconWord, iconOf, SOURCE_ICONS } from "./icons.ts";
 import { cardAttrs } from "./keys.ts";
 import { Mark } from "./marks.tsx";
 import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
-import { type QueueItemView, queueGroups } from "./queue-view.ts";
+import {
+  type QueueItemView,
+  queueGroups,
+  type QueueSectionView,
+  queueSections,
+} from "./queue-view.ts";
 import type { Clock } from "./view.ts";
 
-function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
+function QueueItem({
+  item,
+  rest,
+  showHappens,
+}: {
+  item: QueueItemView;
+  rest: boolean;
+  /** Whether the card says what will happen to it, where no heading does. */
+  showHappens: boolean;
+}) {
   return (
     <GutterCard
       className={rest ? "qItem rest" : "qItem"}
       attrs={{
         ...cardAttrs(queueCard(item)),
-        ...facetAttrs({ source: [item.source] }),
+        ...facetAttrs({
+          repo: [item.repo],
+          source: [item.source],
+          kind: [item.kind],
+          happens: [item.group],
+        }),
+        ...(item.refusal === null ? {} : { "data-group-why": item.refusal }),
       }}
       label={`The record for ${item.target}`}
       face={
@@ -39,12 +66,21 @@ function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
               title={item.title}
               links={item.links}
             />
-            <RepoLink repo={item.repo} url={item.url} />
-            <SourceHint source={item.source} />
-            <FollowupBadge label={item.followup} />
             {item.wait === null ? null : (
               <span className="m sm mut end nowrap">{item.wait}</span>
             )}
+            <span className="br" />
+            <RepoLink repo={item.repo} url={item.url} />
+            <SourceHint source={item.source} />
+            {showHappens ? (
+              <BareWord
+                of={iconOf(GROUP_ICONS, item.group)}
+                className="sm qHappens"
+              >
+                {item.happens}
+              </BareWord>
+            ) : null}
+            <FollowupBadge label={item.followup} />
           </div>
           {item.title === null ? null : <div className="sm">{item.title}</div>}
           {item.why === null ? null : (
@@ -66,17 +102,119 @@ function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
   );
 }
 
+/** What a section's heading draws beside its title. */
+function sectionIcon(section: QueueSectionView): IconWord {
+  switch (section.by) {
+    case "source":
+      return iconOf(SOURCE_ICONS, section.value);
+    case "repo":
+      return { icon: GitBranch, word: section.value };
+    default:
+      return iconOf(GROUP_ICONS, section.value);
+  }
+}
+
+function SectionTitle({
+  section,
+  className,
+}: {
+  section: QueueSectionView;
+  className?: string;
+}) {
+  return (
+    <h3 className={`needGroupTitle${className ? ` ${className}` : ""}`}>
+      <span className="headWord">
+        <Glyph of={sectionIcon(section)} size={16} />
+        {section.title}
+      </span>{" "}
+      <span className="m" data-group-count="">
+        {section.items.length}
+      </span>
+      {section.reasons === null ? null : (
+        <>
+          {" "}
+          <span className="sm mut" data-group-why="">
+            {section.reasons}
+          </span>
+        </>
+      )}
+    </h3>
+  );
+}
+
+function SectionCards({ section }: { section: QueueSectionView }) {
+  return (
+    <>
+      {section.note === null ? null : (
+        <p className={`sm mut gnote${section.keepNote ? " keep" : ""}`}>
+          {section.note}
+        </p>
+      )}
+      {section.items.map((item, i) => (
+        <QueueItem
+          item={item}
+          rest={i >= SHOWN_CLOSED}
+          showHappens={section.by !== DEFAULT_QUEUE_GROUPING}
+          key={item.rowKey}
+        />
+      ))}
+    </>
+  );
+}
+
+function QueueSection({
+  section,
+  filterActive,
+  filterKey,
+}: {
+  section: QueueSectionView;
+  filterActive: boolean;
+  filterKey: string;
+}) {
+  if (section.title === null) return <SectionCards section={section} />;
+  return (
+    <div data-facet-group="">
+      {section.fixed ? (
+        <>
+          <SectionTitle section={section} className="groupWord qFixed" />
+          <SectionCards section={section} />
+        </>
+      ) : (
+        <GutterFold
+          className="qFold"
+          label={`${section.title} group`}
+          defaultOpen={filterActive || !section.startsFolded}
+          resetKey={filterKey}
+          keepMounted
+          head={<SectionTitle section={section} />}
+        >
+          <SectionCards section={section} />
+        </GutterFold>
+      )}
+    </div>
+  );
+}
+
 export function QueuePanel({
   line,
   clock,
+  grouping = DEFAULT_QUEUE_GROUPING,
+  filterActive = false,
+  filterKey = "",
 }: {
   line: LineSnapshot | null;
   clock: Clock;
+  grouping?: QueueGrouping;
+  filterActive?: boolean;
+  /** Changes whenever the card filter does, reopening matching groups. */
+  filterKey?: string;
 }) {
   const [all, setAll, panel] = useShowAll();
   const groups = line === null ? [] : queueGroups(line, clock);
+  const sections = queueSections(groups, grouping);
   const total = groups.reduce((sum, g) => sum + g.items.length, 0);
-  let seen = 0;
+  // On a phone each section shows its first cards, so Show all has work only past them.
+  const more = sections.some((s) => s.items.length > SHOWN_CLOSED) ? total : 0;
   return (
     <section
       className="panel pQueue"
@@ -89,10 +227,10 @@ export function QueuePanel({
         <PanelHelp panel="What is coming">
           What the next ticks will do with each target, in the order it will
           happen: started when an account has a free slot, held, reported
-          without starting, or never started. Hover a source to see where an
-          item came from.
+          without starting, or never started. Open a source to see where an item
+          came from.
         </PanelHelp>
-        <MoreToggle count={total} all={all} setAll={setAll} where="head" />
+        <MoreToggle count={more} all={all} setAll={setAll} where="head" />
       </div>
       {total > 0 ? null : (
         <p className="emptyLine">
@@ -102,25 +240,15 @@ export function QueuePanel({
         </p>
       )}
       <div className={all ? "qList all" : "qList"}>
-        {groups.map((g, i) => (
-          <div className={i === 0 ? "qGroup first" : "qGroup"} key={g.group}>
-            <h3 className="headWord groupWord">
-              <Glyph of={iconOf(GROUP_ICONS, g.group)} size={16} />
-              {g.title}
-            </h3>
-            {g.note === null ? null : (
-              <p className={`sm mut gnote${g.keepNote ? " keep" : ""}`}>
-                {g.note}
-              </p>
-            )}
-            {g.items.map((item) => {
-              const rest = seen >= SHOWN_CLOSED;
-              seen++;
-              return <QueueItem item={item} rest={rest} key={item.rowKey} />;
-            })}
-          </div>
+        {sections.map((section) => (
+          <QueueSection
+            key={section.key}
+            section={section}
+            filterActive={filterActive}
+            filterKey={filterKey}
+          />
         ))}
-        <MoreToggle count={total} all={all} setAll={setAll} where="foot" />
+        <MoreToggle count={more} all={all} setAll={setAll} where="foot" />
       </div>
       <div className="ghost">
         <span className="mk plan" aria-hidden="true" />

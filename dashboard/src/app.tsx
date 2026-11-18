@@ -16,7 +16,7 @@ import { tabCounts } from "./cards.ts";
 import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
 import { KeyBar } from "./key-bar.tsx";
 import { FacetControls } from "./facet-controls.tsx";
-import { EMPTY_CARD_FILTER } from "./facets.ts";
+import { EMPTY_CARD_FILTER, type QueueGrouping } from "./facets.ts";
 import { Fold, Hint, PopupRoot } from "./fold.tsx";
 import { clock as clockLabel, hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
@@ -59,6 +59,7 @@ import {
   openingView,
   tokenOf,
   useFilter,
+  useQueueGrouping,
   useView,
   VIEWS,
   type ViewId,
@@ -341,6 +342,7 @@ function Page({
   );
   const counts = tabCounts(line, clock, rows.data?.total ?? null);
   const [flash, dismissFlash] = useFlash(line);
+  const [grouping, setGrouping] = useQueueGrouping();
   const main = useRef<HTMLElement | null>(null);
   const steer = useSteering(main, {
     line,
@@ -382,6 +384,8 @@ function Page({
               steer={steer}
               view={view}
               logHasRows={rows.data?.logHasRows === true}
+              grouping={grouping}
+              setGrouping={setGrouping}
             />
             <ViewBody
               tab={tab}
@@ -392,6 +396,7 @@ function Page({
               theme={theme}
               filterActive={steer.filterResults.active}
               filterKey={JSON.stringify(steer.cardFilter)}
+              grouping={grouping}
             />
           </main>
           <footer className="foot">
@@ -422,6 +427,8 @@ function ViewTop({
   steer,
   view,
   logHasRows,
+  grouping,
+  setGrouping,
 }: {
   tab: ViewId;
   flash: FlashView | null;
@@ -430,6 +437,8 @@ function ViewTop({
   steer: Steering;
   view: PageView;
   logHasRows: boolean;
+  grouping: QueueGrouping;
+  setGrouping: (grouping: QueueGrouping) => void;
 }) {
   const { line, clock } = view;
   const needs =
@@ -470,6 +479,11 @@ function ViewTop({
             filter={steer.cardFilter}
             results={steer.filterResults}
             needs={needs}
+            grouping={
+              tab === "queue"
+                ? { value: grouping, set: setGrouping }
+                : undefined
+            }
             replace={steer.replaceCardFilter}
             clear={() => {
               steer.replaceCardFilter(EMPTY_CARD_FILTER);
@@ -492,6 +506,7 @@ function ViewBody({
   theme,
   filterActive,
   filterKey,
+  grouping,
 }: {
   tab: ViewId;
   view: PageView;
@@ -501,6 +516,7 @@ function ViewBody({
   theme: Theme;
   filterActive: boolean;
   filterKey: string;
+  grouping: QueueGrouping;
 }) {
   const { line, clock } = view;
   const today = hostDay(clock.nowMs, clock.timeZone);
@@ -518,6 +534,7 @@ function ViewBody({
         view={view}
         filterActive={filterActive}
         filterKey={filterKey}
+        grouping={grouping}
       />
     );
   return (
@@ -570,11 +587,13 @@ function CardView({
   view,
   filterActive,
   filterKey,
+  grouping,
 }: {
   tab: ViewId;
   view: PageView;
   filterActive: boolean;
   filterKey: string;
+  grouping: QueueGrouping;
 }) {
   const { line, clock } = view;
   const { kept } = useKeptToken();
@@ -593,7 +612,13 @@ function CardView({
   if (tab === "queue")
     return (
       <PanelBoundary name="What is coming" className="pQueue" reads={line}>
-        <QueuePanel line={line} clock={clock} />
+        <QueuePanel
+          line={line}
+          clock={clock}
+          grouping={grouping}
+          filterActive={filterActive}
+          filterKey={filterKey}
+        />
       </PanelBoundary>
     );
   return (

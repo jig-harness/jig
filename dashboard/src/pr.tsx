@@ -81,7 +81,9 @@ export function ItemTitle({ title }: { title: string | null }) {
 }
 
 export function RepoLink({ repo, url }: { repo: string; url?: string | null }) {
-  const base = url?.match(/^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/pull\/\d+$/)?.[1];
+  const base = url?.match(
+    /^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/(?:pull|issues)\/\d+$/,
+  )?.[1];
   return base ? (
     <a
       className="m sm mut"

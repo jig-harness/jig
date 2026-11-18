@@ -6,11 +6,16 @@ import {
   type Facet,
   type FacetCount,
   facetsFor,
+  orderedOptions,
+  QUEUE_GROUPINGS,
+  type QueueGrouping,
 } from "./facets.ts";
 import { Glyph } from "./icon-word.tsx";
 import {
   ACT_ICONS,
+  GROUP_ICONS,
   type IconWord,
+  QUEUE_KIND_ICONS,
   SOURCE_ICONS,
   STAGE_ICONS,
   iconOf,
@@ -25,6 +30,8 @@ const LABEL: Record<Facet, string> = {
   stage: "Stage",
   age: "Age",
   source: "Source",
+  kind: "Kind",
+  happens: "Group",
 };
 
 function icon(facet: Facet, value: string): IconWord {
@@ -35,6 +42,10 @@ function icon(facet: Facet, value: string): IconWord {
       return iconOf(STAGE_ICONS, value);
     case "source":
       return iconOf(SOURCE_ICONS, value);
+    case "kind":
+      return iconOf(QUEUE_KIND_ICONS, value);
+    case "happens":
+      return iconOf(GROUP_ICONS, value);
     case "repo":
       return { icon: GitBranch, word: value };
     case "person":
@@ -135,6 +146,36 @@ function FacetRow(props: RowProps) {
   );
 }
 
+export interface GroupingControl {
+  value: QueueGrouping;
+  set: (grouping: QueueGrouping) => void;
+}
+
+/** How What is coming is grouped: a desktop control, since a phone keeps the default. */
+function GroupingRow({ value, set }: GroupingControl) {
+  return (
+    <div className="facetRow facet-grouping">
+      <fieldset className="facetDesktop">
+        <legend className="vh">Group by</legend>
+        <span className="facetLabel sm mut" aria-hidden="true">
+          Group by
+        </span>
+        {QUEUE_GROUPINGS.map(({ id, word }) => (
+          <button
+            className="facetChip"
+            key={id}
+            type="button"
+            aria-pressed={value === id}
+            onClick={() => set(id)}
+          >
+            {word}
+          </button>
+        ))}
+      </fieldset>
+    </div>
+  );
+}
+
 function namedValues(facet: Facet, values: readonly string[]): string {
   return `${LABEL[facet].toLowerCase()}: ${values.map((value) => icon(facet, value).word).join(", ")}`;
 }
@@ -197,11 +238,8 @@ function OtherFilters({ view, filter }: { view: ViewId; filter: CardFilter }) {
   );
   if (query !== "") labels.push(`text: ${query}`);
   if (labels.length === 0) return null;
-  // Queue source can travel in a link while the queue-specific controls are absent.
   return (
-    <div className={readonly.includes("source") ? "" : "phoneFilters"}>
-      Also filtered by {labels.join("; ")}
-    </div>
+    <div className="phoneFilters">Also filtered by {labels.join("; ")}</div>
   );
 }
 
@@ -240,6 +278,7 @@ export function FacetControls({
   replace,
   clear,
   needs,
+  grouping,
 }: {
   view: ViewId;
   filter: CardFilter;
@@ -247,6 +286,7 @@ export function FacetControls({
   replace: (filter: CardFilter) => void;
   clear: () => void;
   needs?: NeedsSummary | undefined;
+  grouping?: GroupingControl | undefined;
 }) {
   return (
     <section
@@ -258,27 +298,32 @@ export function FacetControls({
       {needs === undefined ? null : (
         <NeedsHeading summary={needs} results={results} />
       )}
-      {facetsFor(view)
-        .filter((facet) => facet !== "source")
-        .map((facet) => {
-          const options = results.counts[facet] ?? [];
-          const selected = filter.values[facet] ?? [];
-          if (options.length < 2 && selected.length === 0) return null;
-          return (
-            <FacetRow
-              key={facet}
-              facet={facet}
-              options={options}
-              selected={selected}
-              setSelected={(values) =>
-                replace({
-                  ...filter,
-                  values: { ...filter.values, [facet]: values },
-                })
-              }
-            />
-          );
-        })}
+      {facetsFor(view).map((facet) => {
+        const options = orderedOptions(
+          view,
+          facet,
+          results.counts[facet] ?? [],
+        );
+        const selected = filter.values[facet] ?? [];
+        if (options.length < 2 && selected.length === 0) return null;
+        return (
+          <FacetRow
+            key={facet}
+            facet={facet}
+            options={options}
+            selected={selected}
+            setSelected={(values) =>
+              replace({
+                ...filter,
+                values: { ...filter.values, [facet]: values },
+              })
+            }
+          />
+        );
+      })}
+      {grouping === undefined || results.total === 0 ? null : (
+        <GroupingRow {...grouping} />
+      )}
       <OldestWait oldest={results.oldest} />
       {needs?.more}
       <FilterStatus
