@@ -3,8 +3,8 @@ import { armProcessDeadline } from "../../../../shared/process-deadline.ts";
 import { spawnCommand } from "../../../../shared/windows-command.ts";
 import { shutdownRequested } from "../../../../shared/cleanup.ts";
 import {
-  accountingStderr,
   captureProcessOutput,
+  observedStdio,
   type ProcessTimers,
 } from "../../../../shared/process-output.ts";
 import { windowsProcessLifecycle } from "../../../../shared/windows-process.ts";
@@ -671,15 +671,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       env: traceEnv(windows.env) as NodeJS.ProcessEnv,
       detached,
       windowsHide: true,
-      stdio: [
-        opts.stdin === undefined ? "ignore" : "pipe",
-        opts.stdout === "inherit" && opts.onInheritedOutput !== undefined
-          ? "pipe"
-          : (opts.stdout ?? "pipe"),
-        opts.stderr === "inherit" && opts.onInheritedOutput !== undefined
-          ? "pipe"
-          : accountingStderr(opts.stderr),
-      ],
+      stdio: observedStdio(opts),
     };
     let child: ReturnType<typeof spawnCommand>;
     try {

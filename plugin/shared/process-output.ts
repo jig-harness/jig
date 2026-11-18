@@ -42,6 +42,21 @@ interface OutputOptions {
     captured: boolean,
   ) => void;
 }
+
+/** Pipe observed streams so they can be forwarded without being captured. */
+export function observedStdio(
+  options: OutputOptions & { stdin?: string },
+): ("pipe" | "inherit" | "ignore")[] {
+  const mode = (value: "pipe" | "inherit" | "ignore") =>
+    value === "inherit" && options.onInheritedOutput !== undefined
+      ? "pipe"
+      : value;
+  return [
+    options.stdin === undefined ? "ignore" : "pipe",
+    mode(options.stdout ?? "pipe"),
+    mode(accountingStderr(options.stderr)),
+  ];
+}
 interface OutputCancellation {
   timedOut(): boolean;
   signalTree(signal: NodeJS.Signals): void;
