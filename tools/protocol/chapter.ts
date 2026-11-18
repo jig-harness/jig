@@ -36,6 +36,17 @@ export interface PlanItem {
 /** The JSON type of a data file field; `nullable` says whether `null` is allowed too. */
 export type FieldType = "string" | "integer" | "boolean";
 
+/**
+ * How the comparison with the integration branch reads a change to a field's
+ * content (design/protocol.md § What stable promises, and how the gate holds
+ * it): `exact`, every change is a break; `prose`, words for a person, which
+ * may be reworded but not emptied or newly stated; `names`, a comma-separated
+ * list of names, which may gain a name, in any order, and not lose one;
+ * `carriers`, what carries a value, each with always or sometimes, which only
+ * a `sometimes` entry may join or leave.
+ */
+export type FieldComparison = "exact" | "prose" | "names" | "carriers";
+
 /** One field of a chapter's values, as its data file declares it. */
 export interface FieldSpec {
   readonly type: FieldType;
@@ -44,6 +55,8 @@ export interface FieldSpec {
   readonly required: boolean;
   /** Whether the field is part of what makes one value the same value at the base and now. */
   readonly identifies: boolean;
+  /** How a change to its content is read; left out, `comparisonOf` says. A data file always states it, except one written before fields declared it. */
+  readonly comparedAs?: FieldComparison;
   readonly description: string;
 }
 
@@ -125,6 +138,23 @@ export function schemaOf(chapter: Chapter, name: string, shape: Shape) {
   };
 }
 
+/** A field's comparison: its declared one, else prose for a value's `meaning` and exact for any other field. */
+export const comparisonOf = (name: string, spec: FieldSpec): FieldComparison =>
+  spec.comparedAs ?? (name === "meaning" ? "prose" : "exact");
+
+/** A field as its data file publishes it, its comparison stated. */
+function publishedField(name: string, spec: FieldSpec): FieldSpec {
+  const { type, nullable, required, identifies, description } = spec;
+  return {
+    type,
+    nullable,
+    required,
+    identifies,
+    comparedAs: comparisonOf(name, spec),
+    description,
+  };
+}
+
 /** The chapter's data file, in the order its JSON lists the keys. */
 export function dataOf(chapter: Chapter): DataFile {
   return {
@@ -135,7 +165,12 @@ export function dataOf(chapter: Chapter): DataFile {
     ...(chapter.status === "provisional"
       ? { planItems: chapter.planItems.map((p) => ({ ...p })) }
       : {}),
-    fields: chapter.fields,
+    fields: Object.fromEntries(
+      Object.entries(chapter.fields).map(([name, spec]) => [
+        name,
+        publishedField(name, spec),
+      ]),
+    ),
     values: chapter.values(),
     ...((chapter.schemas?.length ?? 0) > 0
       ? {

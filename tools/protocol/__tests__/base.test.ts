@@ -235,7 +235,7 @@ describe("the comparison with the integration branch", () => {
     });
     const fields = {
       ...FIELDS,
-      carriedBy: spec("string"),
+      carriedBy: { ...spec("string"), comparedAs: "carriers" as const },
       fieldRequired: spec("boolean"),
     };
     const chapter = (rows: Record<string, unknown>[]) =>

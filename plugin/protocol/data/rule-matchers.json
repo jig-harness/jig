@@ -9,6 +9,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "fact for a fact a rule may test, combination for how a rule's values combine, list for how a field's rules resolve, form for how a field is written, field for a configuration field that uses the matcher."
     },
     "name": {
@@ -16,6 +17,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The fact, combination, list semantics or form as configuration and the code name it; for a field, its dotted path in .config/jig.yaml."
     },
     "holds": {
@@ -23,6 +25,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a fact, what the item or change holds for it; else null."
     },
     "ruleValue": {
@@ -30,6 +33,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a fact, what a rule lists for it; else null."
     },
     "compared": {
@@ -37,6 +41,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a fact, how a rule's value is compared with the item's; else null."
     },
     "comparison": {
@@ -44,6 +49,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a fact, the comparison's name, for a program that evaluates a rule: equal-ignoring-case (equal after trimming white space and folding case), contained-ignoring-case (the rule's value is a substring of the item's, case folded) or glob (the change-area catalog's glob claims the path); else null."
     },
     "facts": {
@@ -51,6 +57,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "names",
       "description": "For a field, the facts its rules may test, comma-separated; else null."
     },
     "list": {
@@ -58,6 +65,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, its list semantics (a list value's name); else null."
     },
     "form": {
@@ -65,6 +73,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, the form it is written in (a form value's name); else null."
     },
     "words": {
@@ -72,6 +81,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, the words it accepts in place of a list and what each stands for, as word: meaning separated by semicolons; null where it accepts none, and for the other kinds."
     },
     "readBy": {
@@ -79,6 +89,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "names",
       "description": "For a field, the skills that read it, comma-separated; else null."
     },
     "meaning": {
@@ -86,6 +97,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What the value means, or what the field selects."
     }
   },

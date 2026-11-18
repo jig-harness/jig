@@ -12,6 +12,7 @@ import {
   type Chapter,
   COMMAND,
   chapterFile,
+  comparisonOf,
   DATA_DIR,
   type DataFile,
   type DataValue,
@@ -157,6 +158,37 @@ function identityFindings(chapter: Chapter, values: readonly DataValue[]) {
     seen.add(shown);
   }
   return out;
+}
+
+/**
+ * A comparison the field cannot be read by: anything but exact on a field
+ * that identifies a value, which is matched and never compared, or on one
+ * that holds no text.
+ */
+function comparisonFindings(chapter: Chapter): Finding[] {
+  const file = chapterFile(chapter.id);
+  const remedy = "correct the field's comparedAs in the chapter's fields";
+  return Object.entries(chapter.fields).flatMap(([name, spec]) => {
+    const how = comparisonOf(name, spec);
+    if (how === "exact") return [];
+    if (spec.identifies)
+      return [
+        finding(
+          file,
+          `the field ${name} identifies a value, so it can only be compared as exact`,
+          remedy,
+        ),
+      ];
+    if (spec.type !== "string")
+      return [
+        finding(
+          file,
+          `the field ${name} is compared as ${how}, which only a string field can be`,
+          remedy,
+        ),
+      ];
+    return [];
+  });
 }
 
 function valueFindings(chapter: Chapter, values: readonly DataValue[]) {
@@ -369,6 +401,7 @@ function chapterOutputs(
     ],
     findings: [
       ...statusFindings(chapter, open),
+      ...comparisonFindings(chapter),
       ...valueFindings(chapter, data.values),
       ...identityFindings(chapter, data.values),
       ...markdown.findings,

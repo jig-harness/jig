@@ -19,6 +19,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "station for a station an address names, verb for a verb of jig send."
     },
     "name": {
@@ -26,6 +27,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The station as an address writes it before its @, or the verb as jig send takes it after the address."
     },
     "key": {
@@ -33,6 +35,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a station, what its address's key is: item for the tracker's item key, pull-request for a pull request's number. Null for a verb."
     },
     "stations": {
@@ -40,6 +43,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "names",
       "description": "For a verb, the stations whose addresses take it, each separated from the next by a comma and a space. Null for a station."
     },
     "person": {
@@ -47,6 +51,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a verb, whether it is a person's command, which jig send refuses in a session the line started. Null for a station."
     },
     "args": {
@@ -54,6 +59,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a verb, the arguments it takes after the verb, as its usage names them; null for a verb that takes none, and for a station."
     },
     "meaning": {
@@ -61,6 +67,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What holding the station means, or what sending the verb asks for."
     }
   },

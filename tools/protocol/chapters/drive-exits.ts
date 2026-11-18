@@ -232,6 +232,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: false,
     required: false,
     identifies: false,
+    comparedAs: "prose",
     description:
       "For a state drive.ts ends with: the stop in one phrase, as its closing report's concluded field opens with it after the pull request's name.",
   },
@@ -264,6 +265,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: false,
     required: false,
     identifies: false,
+    comparedAs: "prose",
     description:
       "For a state drive.ts ends with: the next step its closing report suggests.",
   },
