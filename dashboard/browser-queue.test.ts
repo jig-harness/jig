@@ -500,7 +500,7 @@ describe("What is coming", () => {
         );
         expect(await shown.count()).toBe(3);
         expect(
-          await page.getByRole("button", { name: "Show all 7" }).count(),
+          await page.getByRole("button", { name: "Show all 6" }).count(),
         ).toBeGreaterThan(0);
 
         refused = 8;

@@ -81,7 +81,7 @@ function pendingTarget(element: HTMLElement, key: string): HTMLElement | null {
   );
 }
 
-/** Opens the view's Show all when it holds the card; whether it was opened, for the commit it schedules to draw the card. */
+/** Opens the card's group and its Show all where they hide it; whether either was opened, for the commit it schedules to draw the card. */
 function reveal(element: HTMLElement, target: HTMLElement): boolean {
   const group = target.closest<HTMLElement>("[data-facet-group]");
   const fold = group?.querySelector<HTMLButtonElement>(
@@ -89,22 +89,15 @@ function reveal(element: HTMLElement, target: HTMLElement): boolean {
   );
   fold?.click();
   if (
-    target.closest(".groupRest") !== null &&
-    !element.classList.contains("filtering")
-  ) {
-    const more = group?.querySelector<HTMLButtonElement>(
-      "[data-group-more][aria-expanded='false']",
-    );
-    more?.click();
-    return fold != null || more != null;
-  }
-  if (target.closest(".rest") === null) return fold != null;
-  const more = element.querySelector<HTMLButtonElement>(
-    ".moreBtn[aria-expanded='false']",
+    target.closest(".groupRest") === null ||
+    element.classList.contains("filtering")
+  )
+    return fold != null;
+  const more = group?.querySelector<HTMLButtonElement>(
+    "[data-group-more][aria-expanded='false']",
   );
-  if (more === null) return fold != null;
-  more.click();
-  return true;
+  more?.click();
+  return fold != null || more != null;
 }
 
 const BEHIND_SHOW_ALL = "That card is behind Show all in this view";

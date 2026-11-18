@@ -249,8 +249,8 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .qFold > .gpanel { padding-inline-start: 0; }
 .qFixed { min-height: var(--tap); }
 .qItem { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; }
-.qItem.rest { display: none; }
-.qList.all .qItem.rest { display: grid; }
+.qItem.groupRest { display: none; }
+.qSection.all .qItem.groupRest { display: grid; }
 .ghost { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-strong); color: var(--muted); font-size: var(--small); }
 
 /* the tick strip: one row per recent tick, its own phases as a bar beside the longest shown */
@@ -392,7 +392,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   .panel { padding: 10px 12px; }
   .panelHead { margin-bottom: 4px; }
   .need .q, .tgt { font-size: 14px; }
-  .qItem.rest { display: grid; }
+  .qItem.groupRest { display: grid; }
   .moreBtn { display: none; }
   .moreBtn.deskToo { display: block; }
   .goto a, .fold summary, .foldBtn, .colophon a { min-height: 24px; }
@@ -512,7 +512,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .dd kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--r-tag); background: var(--sunk); color: var(--ink); font: 400 12px/1.5 var(--mono); text-align: center; }
 [data-card] { scroll-margin: 112px 0 72px; }
 .dd [data-card][hidden] { display: none !important; }
-.main.filtering .qItem.rest { display: grid; }
+.main.filtering .qItem.groupRest { display: grid; }
 /* the card j and k rest on: a tinted fill reaching into the gutter, an accent bar, and the bar that names its keys */
 :where([data-card]) { position: relative; }
 .dd [data-card]:focus { outline: none; }

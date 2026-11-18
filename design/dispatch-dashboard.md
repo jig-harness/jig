@@ -164,8 +164,8 @@ facet when the view contains multiple repositories.
 **What is coming.** Queue lists every target in the dispatcher's order, by
 what will happen to it. "Starts next" always leads and has no fold; held,
 reported and "Will not start" follow, each a folding heading with its count.
-"Will not start" starts folded when it holds more than five cards, and its
-heading says why in counts, the commonest reasons first ("68 assigned by
+"Will not start" starts folded when it holds more than five cards as the view
+opens, and a later refresh leaves it as it is. Its heading says why in counts, the commonest reasons first ("68 assigned by
 someone who cannot write, 2 who assigned it cannot be read again"), counting
 only the cards a filter leaves. Each card's meta line shows its repository and
 its source. Beside the text filter, Queue offers repository, source, kind
@@ -908,9 +908,10 @@ The phone excludes operator chat, command palettes and advanced filter
 composition. On the card views, repository is the editable filter. A link
 with text or other facets still narrows the view and shows those selections
 as read-only, with a Clear control. Queue's groups fold as they do on a
-computer. Each shows its first two cards until Show all, except a group that
-starts folded, which shows all of its cards once opened. Queue's grouping stays
-on the default, whatever a shared link names. It excludes session chat and steering,
+computer. Each has its own Show all past its first two cards, except a group
+that starts folded, which shows all of its cards once opened; a filter shows
+every match. Queue's grouping stays on the default, whatever a shared link
+names. It excludes session chat and steering,
 which need the workspace and its context. Its one write today is Send, which
 answers a parked decision as the person from the phone's own browser, over the
 HTTPS front, as the comment `jig send` writes, record included ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). The

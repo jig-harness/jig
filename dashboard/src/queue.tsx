@@ -1,5 +1,5 @@
 import { GitBranch } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { FollowupBadge } from "./followups.tsx";
 import { RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
@@ -23,7 +23,6 @@ import { BareWord, Glyph } from "./icon-word.tsx";
 import { GROUP_ICONS, type IconWord, iconOf, SOURCE_ICONS } from "./icons.ts";
 import { cardAttrs } from "./keys.ts";
 import { Mark } from "./marks.tsx";
-import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
 import {
   type QueueItemView,
   queueGroups,
@@ -31,6 +30,9 @@ import {
   queueSections,
 } from "./queue-view.ts";
 import type { Clock } from "./view.ts";
+
+/** Cards a group shows on a phone before its Show all. */
+const SHOWN_CLOSED = 2;
 
 function QueueItem({
   item,
@@ -44,7 +46,7 @@ function QueueItem({
 }) {
   return (
     <GutterCard
-      className={rest ? "qItem rest" : "qItem"}
+      className={rest ? "qItem groupRest" : "qItem"}
       attrs={{
         ...cardAttrs(queueCard(item)),
         ...facetAttrs({
@@ -144,10 +146,16 @@ function SectionTitle({
 function SectionCards({
   section,
   startsFolded,
+  all,
+  setAll,
 }: {
   section: QueueSectionView;
   startsFolded: boolean;
+  all: boolean;
+  setAll: (all: boolean) => void;
 }) {
+  // A group that starts folded shows all its cards once a person opens it.
+  const limited = !startsFolded && section.items.length > SHOWN_CLOSED;
   return (
     <>
       {section.note === null ? null : (
@@ -158,11 +166,22 @@ function SectionCards({
       {section.items.map((item, i) => (
         <QueueItem
           item={item}
-          rest={!startsFolded && i >= SHOWN_CLOSED}
+          rest={limited && i >= SHOWN_CLOSED}
           showHappens={section.by !== DEFAULT_QUEUE_GROUPING}
           key={item.rowKey}
         />
       ))}
+      {limited ? (
+        <button
+          className="moreBtn"
+          type="button"
+          data-group-more=""
+          aria-expanded={all}
+          onClick={() => setAll(!all)}
+        >
+          {all ? "Show fewer" : `Show all ${section.items.length}`}
+        </button>
+      ) : null}
     </>
   );
 }
@@ -178,10 +197,18 @@ function QueueSection({
   filterActive: boolean;
   filterKey: string;
 }) {
-  const cards = <SectionCards section={section} startsFolded={startsFolded} />;
+  const [all, setAll] = useState(false);
+  const cards = (
+    <SectionCards
+      section={section}
+      startsFolded={startsFolded}
+      all={all}
+      setAll={setAll}
+    />
+  );
   if (section.title === null) return cards;
   return (
-    <div data-facet-group="">
+    <div className={all ? "qSection all" : "qSection"} data-facet-group="">
       {section.fixed ? (
         <>
           <SectionTitle section={section} className="groupWord qFixed" />
@@ -203,7 +230,7 @@ function QueueSection({
   );
 }
 
-/** Whether each section starts folded, settled when the page first shows it, so a later refresh rearranges nothing under the person. */
+/** Whether each section starts folded, settled when the view first shows it, so a later refresh rearranges nothing under the person. */
 function useStartsFolded(): (section: QueueSectionView) => boolean {
   const settled = useRef(new Map<string, boolean>());
   return (section) => {
@@ -228,27 +255,11 @@ export function QueuePanel({
   /** Changes whenever the card filter does, reopening matching groups. */
   filterKey?: string;
 }) {
-  const [all, setAll, panel] = useShowAll();
   const startsFolded = useStartsFolded();
   const groups = line === null ? [] : queueGroups(line, clock);
-  const sections = queueSections(groups, grouping).map((section) => ({
-    section,
-    folded: startsFolded(section),
-  }));
-  const total = groups.reduce((sum, g) => sum + g.items.length, 0);
-  // On a phone a section shows its first cards, one that starts folded all of them once opened, and a filter every match.
-  const limited = sections.flatMap((s) => (s.folded ? [] : [s.section.items]));
-  const more =
-    !filterActive && limited.some((items) => items.length > SHOWN_CLOSED)
-      ? limited.reduce((sum, items) => sum + items.length, 0)
-      : 0;
+  const sections = queueSections(groups, grouping);
   return (
-    <section
-      className="panel pQueue"
-      id="queue"
-      aria-labelledby="h-queue"
-      ref={panel}
-    >
+    <section className="panel pQueue" id="queue" aria-labelledby="h-queue">
       <div className="panelHead">
         <h2 id="h-queue">What is coming</h2>
         <PanelHelp panel="What is coming">
@@ -257,26 +268,24 @@ export function QueuePanel({
           without starting, or never started. Open a source to see where an item
           came from.
         </PanelHelp>
-        <MoreToggle count={more} all={all} setAll={setAll} where="head" />
       </div>
-      {total > 0 ? null : (
+      {sections.length > 0 ? null : (
         <p className="emptyLine">
           {line === null
             ? "Nothing queued: no tick has read the issues or the forge."
             : "Nothing queued. No item is assigned to the factory identity; no pull request is re-armable, labelled or held."}
         </p>
       )}
-      <div className={all ? "qList all" : "qList"}>
-        {sections.map(({ section, folded }) => (
+      <div className="qList">
+        {sections.map((section) => (
           <QueueSection
             key={section.key}
             section={section}
-            startsFolded={folded}
+            startsFolded={startsFolded(section)}
             filterActive={filterActive}
             filterKey={filterKey}
           />
         ))}
-        <MoreToggle count={more} all={all} setAll={setAll} where="foot" />
       </div>
       <div className="ghost">
         <span className="mk plan" aria-hidden="true" />
