@@ -10,13 +10,11 @@
  *
  * The tick counts a comment by the user its own tracker credential acts as
  * only with the record `jig send` writes (`shared/decisions/answer-record.ts`),
- * so the comment carries that record wherever the sender may be that user: on
- * the host that owns the repository, whose tick reads with the credential a
- * send there uses, and wherever that user cannot be told (no factory identity,
- * or a machine that cannot tell whether it owns the repository), which the
- * plan's notice says. From another host that user is taken to be the
- * repository's factory identity (`dispatch.identity`), and any other user's
- * comment is the answer lines alone.
+ * so every comment carries that record, since the tick identifies itself by
+ * the tracker's viewer rather than by `dispatch.identity`. From another host
+ * a send as the repository's factory identity (`dispatch.identity`) is
+ * refused, and the plan's notice says where ownership or identity cannot be
+ * told.
  *
  * Checked before the write, beside what every answer to a need's decision is
  * checked for (`answer-station.ts`): the tracker names who wrote each
@@ -145,8 +143,6 @@ const INSTEAD =
 interface TickReading {
   /** What the plan adds about it; `null` when there is nothing to add. */
   notice: string | null;
-  /** Whether the writer may be the user the tick's own credential acts as, so the comment carries the record the tick counts it by. */
-  record: boolean;
 }
 
 const BY_RECORD =
@@ -166,7 +162,6 @@ async function readByTick(
   const { repo } = ctx.address;
   if (owner.ok && owner.value)
     return ok({
-      record: true,
       notice: `this machine owns ${repo}, so its tick reads the answers with the tracker credential a send here uses, which acts as ${viewer.name}; it counts this answer by the record the comment carries, and would not count one typed on the tracker as that user`,
     });
   const unsure = owner.ok
@@ -174,7 +169,6 @@ async function readByTick(
     : `whether this machine owns ${repo}, and so reads its answers with the tracker credential a send here uses (which acts as ${viewer.name}), cannot be told: ${owner.failure.reason}; if it does, ${BY_RECORD}`;
   if (identity === null)
     return ok({
-      record: true,
       notice: [
         unsure,
         `the repository names no factory identity (dispatch.identity), so whether ${viewer.name} is the user the tick's own tracker credential acts as on the host that owns the repository cannot be told here; if it is, ${BY_RECORD}`,
@@ -193,7 +187,7 @@ async function readByTick(
     ? refused(
         `the tracker's credential here acts as ${viewer.name}, the factory identity ${identity}, whose comments the tick never counts as an answer without the record a send from the host that owns the repository writes; ${INSTEAD}`,
       )
-    : ok({ notice: unsure, record: true });
+    : ok({ notice: unsure });
 }
 
 /** The sender an answer through `here` writes as, the user its credential acts as, with how the tick reads it; refused when the tick would not. */
@@ -224,16 +218,14 @@ async function trackerSender(
   });
 }
 
-/** The comment `chosen` writes as `sender`, with its record when `record` asks for one; refused when the tick would not count that record. */
+/** The comment `chosen` writes as `sender`, with its record; refused when the tick would not count that record. */
 function commentBody(
   request: OneAnswer,
   decision: LineDecision,
   sender: Sender,
   chosen: StationChoice,
-  record: boolean,
 ): Outcome<string, "refused"> {
-  const { lines, text, parts } = chosen;
-  if (!record) return ok(lines.join("\n"));
+  const { text, parts } = chosen;
   const body = attempt("refused", "the answer's record cannot be written", () =>
     answerComment(
       request.key,
@@ -311,17 +303,9 @@ export async function planTrackerAnswer(
   const chosen = stationChoice(ctx, request, sender, decision);
   if (!chosen.ok) return chosen;
   const { lines, detail } = chosen.value;
-  const body = commentBody(
-    request,
-    decision,
-    sender,
-    chosen.value,
-    reading.record,
-  );
+  const body = commentBody(request, decision, sender, chosen.value);
   if (!body.ok) return body;
-  const hidden = reading.record
-    ? `, with the record envelope naming ${sender.login} and this host (as a digest), the decision's digest and the option chosen in a marker, which a tracker may show as text`
-    : "";
+  const hidden = `, with the record envelope naming ${sender.login} and this host (as a digest), the decision's digest and the option chosen in a marker, which a tracker may show as text`;
   return ok({
     address: ctx.name,
     repo: ctx.address.repo,
