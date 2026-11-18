@@ -277,14 +277,18 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .loadFold .kv dt { overflow-wrap: anywhere; }
 .loadFold .kv dd + dt { margin-top: 4px; }
 @container load (min-width: 640px) {
-  .gauges { display: grid; grid-template-columns: max-content minmax(160px, 2fr) max-content minmax(0, 3fr); column-gap: 14px; }
-  .gRow { grid-column: 1 / -1; grid-template-columns: subgrid; grid-template-areas: none; }
-  .gName { grid-area: 1 / 1; }
-  .gBar { grid-area: 1 / 2; }
-  .gPct { grid-area: 1 / 3; }
-  .gReads { grid-area: 1 / 4; }
   .loadFold .kv { grid-template-columns: max-content minmax(0, 1fr); }
   .loadFold .kv dd + dt { margin-top: 0; }
+}
+@supports (grid-template-columns: subgrid) {
+  @container load (min-width: 640px) {
+    .gauges { display: grid; grid-template-columns: max-content minmax(160px, 2fr) max-content minmax(0, 3fr); column-gap: 14px; }
+    .gRow { grid-column: 1 / -1; grid-template-columns: subgrid; grid-template-areas: none; }
+    .gName { grid-area: 1 / 1; }
+    .gBar { grid-area: 1 / 2; }
+    .gPct { grid-area: 1 / 3; }
+    .gReads { grid-area: 1 / 4; }
+  }
 }
 @media (forced-colors: active) {
   .gTrack, .gFill, .gPast, .gLine { forced-color-adjust: none; }

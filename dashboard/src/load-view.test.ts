@@ -113,4 +113,17 @@ describe("the load's view", () => {
       binds: "no gauge read",
     });
   });
+
+  it("never rounds a gauge under its line up to 100%", () => {
+    const load = busyLoad();
+    const memory = load.gauges[0] as (typeof load.gauges)[0];
+    const view = loadView({
+      ...load,
+      factor: 0.998,
+      gauges: [{ ...memory, fill: 0.998 }],
+    });
+    expect(view.figure).toBe("Load 99%");
+    expect(view.gauges[0]).toMatchObject({ fill: "99%", over: false });
+    expect(loadView({ ...load, factor: 1 }).figure).toBe("Load 100%");
+  });
 });

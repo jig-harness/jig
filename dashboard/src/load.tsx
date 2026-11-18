@@ -19,9 +19,17 @@ function Gauge({ row }: { row: GaugeRow }) {
     >
       <span className="gName">
         <BareWord of={iconOf(GAUGE_ICONS, row.gauge)}>{row.name}</BareWord>
-        {row.binds ? <span className="gTag">binds</span> : null}
+        {row.binds ? (
+          <>
+            {" "}
+            <span className="gTag">binds</span>
+          </>
+        ) : null}
         {row.over ? (
-          <BareWord of={GAUGE_ICONS.over} className="gTag gOverTag" />
+          <>
+            {" "}
+            <BareWord of={GAUGE_ICONS.over} className="gTag gOverTag" />
+          </>
         ) : null}
       </span>
       <span className="gBar" role="img" aria-label={row.label}>

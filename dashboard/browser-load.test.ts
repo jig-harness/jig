@@ -130,7 +130,7 @@ describe("the load", () => {
           expect(
             await page.locator(".pLine .load .gRow .gName").allTextContents(),
           ).toEqual([
-            "Memorybinds",
+            "Memory binds",
             "Processors",
             "Test lock",
             "Disk",
@@ -274,7 +274,7 @@ describe("the load", () => {
           );
           const panel = page.locator(".pLine .load .gpanel");
           expect(await panel.textContent()).toContain(
-            "would hold the drive: processors bind: load 21.6 is over 14.4",
+            "would hold the drive: processors binds: load 21.6 on 16 cores, at its line of 0.9 per core",
           );
           expect(await panel.textContent()).toContain("Reserves · pickup");
           // Each hold's words run across the fold, not down a sliver beside its target.

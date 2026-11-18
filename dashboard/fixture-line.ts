@@ -422,7 +422,8 @@ export function overLoad(): LineLoad {
     target,
     kind,
     gauge: "processors" as const,
-    detail: "processors bind: load 21.6 is over 14.4",
+    detail:
+      "processors binds: load 21.6 on 16 cores, at its line of 0.9 per core",
     held: false,
   });
   return {

@@ -57,7 +57,9 @@ export interface LoadView {
   holds: Array<{ key: string; target: string; text: string }>;
 }
 
-const percentOf = (fill: number) => `${Math.round(fill * 100)}%`;
+/** A fill as a percent; one under its line never rounds up to "100%", which reads as at the line. */
+const percentOf = (fill: number) =>
+  `${fill < 1 ? Math.min(99, Math.round(fill * 100)) : Math.round(fill * 100)}%`;
 
 /** A share of the bar, rounded to a tenth of a percent. */
 const ofBar = (fill: number) =>

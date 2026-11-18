@@ -169,7 +169,10 @@ system's text colour and the fill is drawn in it. The launches the factor
 held or would have held and each kind's memory reservation sit under the
 gauges in one fold titled with its count: "Would have held 2 launches ·
 reservations" while the dispatcher only reports, "Held 2 launches ·
-reservations" once it enforces the load, and "no launch" when none was. A
+reservations" once it enforces the load, and "no launch" when none was;
+the fold is left out when nothing was held and no reservation is known. A
+percent under 100% never rounds up to it, so "100%" always means a gauge
+at its line. A
 stacked bar is not used (it reads as a sum), nor a dial per gauge (a row of
 dials does not fit a phone), and the gauges are not folded away. The gauge row is
 Running's own, not a shared part of the card system.
