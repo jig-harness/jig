@@ -113,7 +113,9 @@ function fake(script: Script) {
       recovered.push(head);
       return last(script.recovery ?? ["none"], recoveryAt++);
     },
-    ...(script.owned === undefined ? {} : { owned: async () => script.owned! }),
+    ...(script.owned === undefined
+      ? {}
+      : { owned: async () => script.owned === true }),
   };
   return { deps, asked, recovered, clock: () => now };
 }
