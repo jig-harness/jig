@@ -24,6 +24,7 @@ import type {
   QuotaBlock,
 } from "./types.ts";
 import { isoOf } from "../../../../../shared/time.ts";
+import { swallow } from "../../../../../shared/errors.ts";
 
 export type {
   DetectOpts,
@@ -236,12 +237,30 @@ export function prepareQuotaSpawn(
     let prepared: PreparedSpawn | null;
     try {
       prepared = adapter.prepareSpawn(argv, env);
-    } catch {
+    } catch (error) {
+      swallow(
+        error,
+        "quota pass-session preparation failed; spawning without attribution",
+      );
       continue;
     }
     if (prepared !== null) return prepared;
   }
   return null;
+}
+
+/** State the attribution a pass launch received, including any argv rewrite. */
+export function reportPreparedQuotaSpawn(
+  agent: readonly string[],
+  prepared: PreparedSpawn | null,
+): void {
+  if (prepared === null) return;
+  const amended = prepared.argv.length !== agent.length;
+  console.error(
+    amended
+      ? `pass argv amended for quota attribution: --session-id ${prepared.correlation.sessionId} (DRIVE_PR_QUOTA_NO_SPAWN_PREP=1 disables)`
+      : `pass correlated for quota attribution without amending argv: ${prepared.correlation.vendor} session ${prepared.correlation.sessionId ?? "(no exact id — a deliberately resumed/continued session)"} (DRIVE_PR_QUOTA_NO_SPAWN_PREP=1 disables)`,
+  );
 }
 
 export type QuotaPlan =

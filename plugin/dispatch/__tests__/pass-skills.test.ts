@@ -45,6 +45,45 @@ function frontmatter(skill: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+describe("a fixed served batch's prompt", () => {
+  const prompt =
+    pickupPassArgv(
+      {
+        ...record,
+        servedPerson: "someone",
+        batchItems: [
+          { key: "#1", person: "someone" },
+          { key: "#2", person: "someone" },
+        ],
+      },
+      [],
+    ).at(-1) ?? "";
+
+  it("reads the members through the proposal's fixed mode", () => {
+    expect(prompt).toContain("--fixed '#1,#2'");
+  });
+
+  it("claims the anchor only when the proposal keeps it", () => {
+    expect(prompt).toContain("If the proposal keeps #1, claim it using");
+    expect(prompt).not.toContain("Claim this served assignment");
+  });
+
+  it("settles a member's size without a question", () => {
+    expect(prompt).toContain("Ask no question about a member's size");
+  });
+
+  it("lets the first member left out be claimed when none stays", () => {
+    expect(prompt).toContain("(the first member left out when none stays)");
+  });
+});
+
+describe("a solo pickup's prompt", () => {
+  it("suggests no batch and asks nothing about one", () => {
+    const prompt = pickupPassArgv(record, []).at(-1) ?? "";
+    expect(prompt).toContain("suggest no batch");
+  });
+});
+
 describe("skills a dispatched Claude pass starts", () => {
   for (const [name, argv] of [
     ["steward", stewardPassArgv(record, [])],

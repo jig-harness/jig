@@ -598,6 +598,11 @@ make, use the entry's term instead.
   during *topic coordination*. It receives answers, issue numbers and
   demotions from the coordinating session, keeping plan-tool mechanics out
   of the person's discussion.
+- **Orchestration notebook** — the host-local record of one *topic
+  coordination*: a folder outside every repository, never committed, holding
+  the topic's current state, rewritten whole at every change, and a dated
+  journal that is only ever added to. A fresh session given only the topic
+  resumes from the state, so a handover needs no agent's private memory.
 
 - **Cause fingerprint** — a stable identity for one cause of a scheduled
   failure, built from the check or prerequisite, its scope and a normalized
@@ -2737,13 +2742,16 @@ make, use the entry's term instead.
   so the morning report still lists the workspace as dispatched.
 - **Run tab** — a terminal tab Jig opens in a workspace to run a drive or
   another stage of the line: one `drive-pr` arms a drive in, or one the
-  *dispatcher* launches into. Jig records each one it opens, and the tab
-  closes itself when its run ends with nothing for a person (converged,
-  merged, taken over, re-armable, stopped by a person); a run that parks or
-  fails keeps its tab, and the next run for the same pull request or item
-  closes it; `jig gc` closes one whose run was killed, or that nobody
-  returned to, once it has been idle past its guard. A tab a person opened
-  is never closed.
+  *dispatcher* launches into. Jig records each one it opens. A run the
+  dispatcher launched closes its tab however it ended, a park and a
+  failure included, since its closing report keeps what the tab showed, and
+  the dispatcher closes the tab of a run whose wrapper died before it could.
+  A drive armed in a tab closes it when it ends with nothing for a person
+  (converged, merged, taken over, re-armable, stopped by a person); one that
+  parks or fails keeps its tab, and the next run for the same pull request
+  or item closes it. `jig gc` closes one whose run was killed, or that
+  nobody returned to, once it has been idle past its guard. A tab a person
+  opened, or a terminal someone typed a command into, is never closed.
 - **Pull request state labels (dispatch labels)** (after their setting `dispatch.labels`) — the labels that show where a pull request stands,
   from any forge client, and through which a person steers its drive and
   the *dispatcher*: off unless a repository turns them on, all under one

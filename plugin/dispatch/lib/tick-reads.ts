@@ -32,6 +32,7 @@
  * and the runtime (`tick-apply.ts`).
  */
 import { coalesce } from "../../shared/outbound/coalesce.ts";
+import { OutboundError } from "../../shared/outbound/failure.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { listCommentsKept } from "../../shared/records/comment-pages.ts";
 import type { SharedBudget } from "../../shared/records/shared.ts";
@@ -51,7 +52,13 @@ import { forgetMergeRead } from "./merge-reads.ts";
 import { pickupReads } from "./pickup-reads.ts";
 import { type Pool, pool } from "./pool.ts";
 import type { SessionRuntime, SessionsReader } from "./runtime/port.ts";
-import { type TickBound, unlessEnded } from "./sources/bounded.ts";
+import {
+  ended,
+  passedBefore,
+  secondsLeft,
+  type TickBound,
+  unlessEnded,
+} from "./sources/bounded.ts";
 import type { ServedViews } from "./sources/served-reads.ts";
 import { failureText } from "./text.ts";
 import { type TickComments, tickComments } from "./tick-comments.ts";
@@ -218,6 +225,22 @@ function listingDeadline(bound: TickBound | undefined): {
 }
 
 /**
+ * The login the forge names, held to `bound`: a deadline that passed before
+ * the read, or while it ran (whatever the clock says of the signal's event
+ * not yet delivered), is an `unreachable` rejection, never a missing login.
+ */
+function readLogin(bound: TickBound | undefined): Promise<string | null> {
+  const passed = (what: string) =>
+    Promise.reject(new OutboundError("unreachable", what));
+  if (ended(bound)) return passed(passedBefore("the login was read"));
+  return resolveLogin(secondsLeft(bound), bound?.signal).then((login) =>
+    ended(bound)
+      ? passed("the tick's deadline passed during the login read")
+      : login,
+  );
+}
+
+/**
  * One tick's shared reads, its pool `poolSize` reads wide, its forge reads
  * kept to `bound` where the tick has one; a write the tick makes on a
  * merged pull request drops its kept marker read too.
@@ -259,7 +282,7 @@ export function tickReads(
     comments,
     login: () =>
       coalesce(singletonReads, "login", () =>
-        reads.run(() => resolveLogin()),
+        reads.run(() => readLogin(bound)),
       ) as Promise<string | null>,
     sessions: lazySessions(runtime),
     budgets: [],

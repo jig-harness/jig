@@ -9,6 +9,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "active for a value in force; tombstone for a value withdrawn, which the chapter keeps listed so its identity is never reused. It is not part of a value's identity, so withdrawing a value changes only this field."
     },
     "name": {
@@ -16,6 +17,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "The record kind's name in the records registry, which an enveloped record's kind field carries; null for a marker that is not a record."
     },
     "part": {
@@ -23,6 +25,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "marker for a hidden marker of a record kind, not-record for a marker that is not a record, envelope-field for a field of the record envelope."
     },
     "marker": {
@@ -30,6 +33,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "One hidden marker, as its comment opens after `<!-- `; what follows it is its kind's own. A kind with several markers has one value for each. For an envelope field, the field's name."
     },
     "fieldType": {
@@ -37,6 +41,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an envelope field, the JSON type of its value; null for every other value."
     },
     "fieldRequired": {
@@ -44,6 +49,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an envelope field, whether every record carries it; null for every other value."
     },
     "medium": {
@@ -51,6 +57,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "forge or tracker; null for a marker that is not a record."
     },
     "version": {
@@ -58,6 +65,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "The schema version Jig's writers write now, which its envelope's v carries; 0 for a kind whose records carry no version; null for a marker that is not a record."
     },
     "key": {
@@ -65,6 +73,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a kind whose records carry the envelope, the whole shape of its key as a regular expression; null otherwise."
     },
     "writtenBy": {
@@ -72,6 +81,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "Jig, or for a kind Jig only reads, the tool or the person that writes it; null for a marker that is not a record."
     },
     "meaning": {
@@ -79,6 +89,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What the record is for to a reader that meets it, and what that reader does with it; for a marker that is not a record, why it is not one."
     }
   },
@@ -198,7 +209,7 @@
       "version": 1,
       "key": "^answer:\\S+$",
       "writtenBy": "Jig",
-      "meaning": "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. Each person's latest answer counts."
+      "meaning": "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. The same record answers a need's decision, on a tracker item too, where it is how the dispatcher tells a person's answer from its own identity's other comments. Each person's latest answer counts."
     },
     {
       "kind": "active",

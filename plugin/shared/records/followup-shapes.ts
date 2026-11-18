@@ -13,6 +13,7 @@ const TICK_RUN_SHAPE = s.object({
   host: s.optional(s.unknown()),
   owner: s.optional(s.unknown()),
   endedAt: s.optional(s.unknown()),
+  releaseTags: s.optional(s.unknown()),
 });
 const MANUAL_RUN_SHAPE = s.object({
   run: s.literal("manual"),

@@ -138,12 +138,12 @@ export const FORGE: RecordKind[] = [
     name: "drive-answer",
     medium: "forge",
     owner: "shared/decisions/answer-record.ts",
-    at: "a comment on the pull request answering one parked item, written by `jig send` or the dispatch dashboard's Send",
+    at: "a comment on the pull request answering one parked item, written by `jig send` or the dispatch dashboard's Send, or on a tracker item answering a pickup's decision, written by `jig send`",
     markers: ["jig-send-answer"],
     version: 1,
     key: ANSWER_KEY,
     meaning:
-      "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. Each person's latest answer counts.",
+      "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. The same record answers a need's decision, on a tracker item too, where it is how the dispatcher tells a person's answer from its own identity's other comments. Each person's latest answer counts.",
   },
   plain(
     "forge",

@@ -96,19 +96,35 @@ describe("the acts of the decision classes", () => {
     ])
       expect(Object.hasOwn(CLASS_ACTS, name)).toBe(true);
     for (const key of Object.values(STATION_KEYS))
-      expect(CLASS_ACTS[key.class].act).toBe("Decide");
+      expect(CLASS_ACTS[key.class].act).toBe(
+        key.class === "release" ? "Authorize" : "Decide",
+      );
   });
 });
 
 describe("the dispatcher's framings", () => {
-  it("offer the options their key lists, ending with hold, under their key's class", () => {
+  it("uses a distinct release approval for each repository in a shared tracker", () => {
+    const digest = (repo: string) =>
+      decisionDigest(
+        frameStationDecision({ kind: "release-owed", repo, tag: "v1.2.3" })
+          .decision,
+      );
+    expect(digest("example-org/first")).not.toBe(digest("example-org/second"));
+  });
+
+  it("offer the options their key lists under their key's class", () => {
     for (const [key, entry] of Object.entries(STATION_KEYS)) {
-      expect(entry.options.at(-1)).toBe("hold");
+      expect(entry.options.at(-1)).toBe(key === "release" ? "tag" : "hold");
       expect(STATION_CLASSES[key as keyof typeof STATION_KEYS]).toBe(
         entry.class,
       );
     }
     const framed = [
+      frameStationDecision({
+        kind: "release-owed",
+        repo: "example-org/example-repo",
+        tag: "v1.2.3",
+      }),
       frameStationDecision({
         kind: "followup-stale",
         pr: 1,

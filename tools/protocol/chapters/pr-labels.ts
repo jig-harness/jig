@@ -91,6 +91,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: true,
     required: true,
     identifies: false,
+    comparedAs: "names",
     description:
       "For a state label, who adds it, comma-separated: drive, followup (the follow-up of a merged pull request) and tick (the dispatcher's tick, which corrects every state label that disagrees with the pull request's drive ledger). Null for a command label, which only a person adds.",
   },

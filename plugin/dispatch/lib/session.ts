@@ -205,6 +205,56 @@ function pickupResultLines(
   ];
 }
 
+/** What a pickup's prompt says about a fixed batch's scope. */
+function batchScopeLines(
+  record: Pick<LaunchRecord, "batchItems" | "stewardResume">,
+): string[] {
+  return [
+    ...(record.batchItems === undefined
+      ? []
+      : [
+          `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. No member may be replaced or added.`,
+          ...(record.stewardResume === undefined
+            ? [
+                `Use the first named key as the proposal anchor and pass --fixed ${shellQuote(record.batchItems.map((i) => i.key).join(","))}. Ask no question about a member's size: claim no member the proposal leaves for its own pickup, except that when fewer than two members stay you claim and work one alone as the skill says (the first member left out when none stays). Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.`,
+              ]
+            : []),
+        ]),
+  ];
+}
+
+/** The line that tells a pass its item is picked up alone, after the route line. */
+function aloneLines(
+  record: Pick<LaunchRecord, "batchItems" | "stewardResume">,
+): string[] {
+  return record.batchItems !== undefined || record.stewardResume !== undefined
+    ? []
+    : [
+        "This item is picked up on its own: run the pickup skill's batch check only to confirm that, suggest no batch and ask no question about one.",
+      ];
+}
+
+/** The claim a served assignment owes, with the person it keeps as the only assignee. */
+function servedClaimLines(
+  record: Pick<
+    LaunchRecord,
+    | "item"
+    | "batchItems"
+    | "servedPerson"
+    | "ancestorEpic"
+    | "blockingFor"
+    | "stewardResume"
+  >,
+): string[] {
+  return [
+    ...(record.servedPerson === undefined || record.stewardResume !== undefined
+      ? []
+      : [
+          `${record.batchItems === undefined ? "Claim this served assignment" : `If the proposal keeps ${record.item ?? ""}, claim it`} using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the ${record.batchItems === undefined ? "pickup" : "batch"}.`,
+        ]),
+  ];
+}
+
 /** The prompt a pickup's headless pass starts with. */
 function pickupPassPrompt(
   record: Pick<
@@ -238,28 +288,16 @@ function pickupPassPrompt(
         ? `${PICKUP_SKILL} ${record.item}`
         : `/jig:work-batch ${record.item}`,
     ),
-    ...(record.batchItems === undefined
-      ? []
-      : [
-          `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. No member may be replaced or added.`,
-          ...(record.stewardResume === undefined
-            ? [
-                "Use the first named key as the proposal anchor and every fixed key in --claimed. Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.",
-              ]
-            : []),
-        ]),
+    ...batchScopeLines(record),
     ROUTE_RULES_LINE,
+    ...aloneLines(record),
     ...(record.factoryAncestor === undefined ||
     record.stewardResume !== undefined
       ? []
       : [
           `Claim this factory-inherited assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --factory-ancestor ${shellQuote(record.factoryAncestor)}; validate the factory ancestor and assign the child to the credential identity. A refusal stops the pickup.`,
         ]),
-    ...(record.servedPerson === undefined || record.stewardResume !== undefined
-      ? []
-      : [
-          `Claim this served assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the pickup.`,
-        ]),
+    ...servedClaimLines(record),
     "",
     "jig dispatch started this headless pass for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard, and nobody can answer a question while it runs.",
     FOREGROUND_LINE,
@@ -342,6 +380,7 @@ function followupPrompt(record: LaunchRecord): string {
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "Leave routine local housekeeping (branch retention, retired workspaces and scratch notes) to periodic cleanup, even when no collector covers a leftover yet. Do not ask a person about it or treat it as an incomplete arm or a failed result. Evidence of unlanded work or an active operational problem still belongs in the follow-up.",
     "A step the merge owes that only a person can take or authorize (a live check against a real service, a rollout to another repository, an organization's setting, an operational action, a release gate that failed) is no reason to stop: report it as owed by a person, file it as an item where your authority covers filing, and count its arm settled. Filing the follow-up items you drafted needs nobody's leave either.",
+    `For a release that still owes a tag and needs a person, record "[person-owed] release <version> owed" in the release arm's evidence. Run ${jigCommand(["release-owed", record.id, record.token])} <tag> with the quoted tag from the tag plan before filing. Follow the skill's instructions for the returned status. Finish the other arms and record done when settled. The release need carries the decision on its own, so do not emit a Question line for it.`,
     `Where an arm you may carry out cannot go on without a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...framingLines(record),
     ...routineLines(record),

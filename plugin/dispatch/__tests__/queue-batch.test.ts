@@ -1,4 +1,4 @@
-import { afterAll, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -85,6 +85,96 @@ it("batches small launchable items of one area and preserves fixed served contex
       root,
     ),
   ).toHaveLength(2);
+});
+
+describe("a member of the most expensive batchable size", () => {
+  const values = {
+    do_item: { agents: { codearea_areas: { "area:tools": "tools" } } },
+  };
+  function queued(sizes: Record<string, string>) {
+    const items = Object.entries(sizes).map(
+      ([key, size]): WantedItem => ({
+        key,
+        title: "task",
+        url: null,
+        state: "Todo",
+        assignee: "alex",
+        assignedBy: "writer",
+        servedPerson: "alex",
+        queueIssue: {
+          identifier: key,
+          title: "task",
+          url: null,
+          priority: 2,
+          type: "task",
+          size,
+          createdAt: "2026-01-01",
+          state: { id: "s", name: "Todo", type: "unstarted" },
+          assignee: { id: "a", name: "alex" },
+          labels: ["area:tools"],
+          isEpic: false,
+          hasOpenChildren: false,
+          truncated: [],
+        },
+      }),
+    );
+    const actions = items.map(
+      (i): Action => ({
+        stage: "pickup",
+        target: i.key,
+        record: "tracker",
+        reason: "ready",
+        evidence: { servedPerson: "alex" },
+      }),
+    );
+    return { items, actions };
+  }
+  /** Each resulting pickup's target and the members its batch names. */
+  function pickups(
+    sizes: Record<string, string>,
+    config: Record<string, unknown> = values,
+  ) {
+    const { items, actions } = queued(sizes);
+    return batchPickups(actions, items, config, root).map((a) => [
+      a.target,
+      a.evidence.batchItems === undefined
+        ? null
+        : (JSON.parse(String(a.evidence.batchItems)) as { key: string }[]).map(
+            (m) => m.key,
+          ),
+    ]);
+  }
+
+  it("stays its own pickup while the small members form the batch", () => {
+    expect(pickups({ "#1": "medium", "#2": "small", "#3": "small" })).toEqual([
+      ["#1", null],
+      ["#2", ["#2", "#3"]],
+    ]);
+  });
+
+  it("leaves two medium items as a pickup each", () => {
+    expect(pickups({ "#1": "medium", "#2": "medium" })).toEqual([
+      ["#1", null],
+      ["#2", null],
+    ]);
+  });
+
+  it("forms no batch when fewer than two members remain", () => {
+    expect(pickups({ "#1": "medium", "#2": "small" })).toEqual([
+      ["#1", null],
+      ["#2", null],
+    ]);
+  });
+
+  it("joins the batch when every batchable size costs the same", () => {
+    const flat = {
+      ...values,
+      work_batch: { size_points: { xs: 1, small: 1, medium: 1 } },
+    };
+    expect(pickups({ "#1": "medium", "#2": "small" }, flat)).toEqual([
+      ["#1", ["#1", "#2"]],
+    ]);
+  });
 });
 
 it("reads a size store named in the configuration against the checkout's taxonomy", () => {

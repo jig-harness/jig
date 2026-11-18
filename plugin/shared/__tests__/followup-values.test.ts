@@ -64,7 +64,13 @@ function tickMarkers(): ClaimDraft[] {
   return [
     bare,
     full,
-    ended({ state: "ended", at: AT, exit: 0, outcome: "done" }),
+    ended({
+      state: "ended",
+      at: AT,
+      exit: 0,
+      outcome: "done",
+      releaseTags: ["v1.2.3"],
+    }),
     ended({ state: "ended", at: AT, exit: 1, outcome: "failed" }),
     ended({
       state: "ended",
@@ -125,9 +131,11 @@ describe("the follow-up marker's fields", () => {
 
   it("hold, on every marker a writer writes, a value of the type the table declares", () => {
     const typeOf = (value: unknown) =>
-      typeof value === "number" && Number.isInteger(value)
-        ? "integer"
-        : typeof value;
+      Array.isArray(value)
+        ? "array"
+        : typeof value === "number" && Number.isInteger(value)
+          ? "integer"
+          : typeof value;
     for (const run of Object.keys(FOLLOWUP_RUNS) as FollowupRun[])
       for (const marker of MARKERS[run]())
         for (const [field, value] of Object.entries(marker.payload))
