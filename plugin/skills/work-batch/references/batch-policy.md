@@ -141,6 +141,12 @@ bounds what one costs; the verdict keeps it from riding in on its label alone.
 The solo-only flags still apply, so the riskiest `medium` changes still go
 one per pull request.
 
+A person gives the verdict. A batch the dispatcher forms has no one to give
+it, and a question would stall the small issues beside the `medium` one, so
+the answer is fixed in advance: that size is left for its own pull request,
+and the rest go on as the batch. Fewer than two left means no batch, and each
+issue is its own pickup.
+
 ## Ranking
 
 The proposal fills the batch in rank order. An issue's score is the sum of:

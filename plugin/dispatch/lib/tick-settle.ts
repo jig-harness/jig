@@ -4,7 +4,9 @@
  * (log-ended.ts). A repository's turn logs its own records with its ledgers
  * beside them (`logRepo`); the close of the tick logs the records of every
  * repository the tick did not read, without them, and then prunes the
- * records whose rows are in the log (`settleOutcomes`).
+ * records whose rows are in the log (`settleOutcomes`). On a tick with
+ * `--apply`, each turn also has the session runtime end what an ended run
+ * left (`end-runs.ts`), once per record.
  *
  * Once the tick's exit is decided, the failure ledger (failures.ts) counts
  * what failed in a row (`settleFailures`): each repository this tick read
@@ -38,6 +40,8 @@ import { releaseOnEveryChannel } from "./notice-records.ts";
 import { stateDb } from "./state.ts";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
+import { type EndRun, endRuns } from "./end-runs.ts";
+import { timeLeftMs } from "./actions/launch.ts";
 import { aboutTargets } from "./line.ts";
 import { hasEnded } from "./log.ts";
 import { eraseStewardOutput } from "./steward.ts";
@@ -52,7 +56,7 @@ import {
   takeObserveLock,
   takeRepositoryLock,
 } from "../receipts.ts";
-import type { RepoReport } from "./types.ts";
+import type { EndRunOutcome, RepoReport } from "./types.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { repoFailure, tickFailure } from "./tick-failure.ts";
 import {
@@ -62,7 +66,35 @@ import {
   waitsOut,
 } from "./read-failures.ts";
 
-/** The ended rows of this repository's records that ended, read beside its ledgers. */
+/**
+ * The runtime's `endRun` (`end-runs.ts`) within the time the tick has left,
+ * on a tick that may act; `null` on a report, which ends nothing a run left.
+ */
+export function endRunOf(context: TickContext): EndRun | null {
+  const state = context.apply;
+  if (state === null) return null;
+  return (run) => {
+    const left = timeLeftMs(state);
+    if (left !== null && left <= 0) return null;
+    const { runtimeTimeoutMs } = state.machine;
+    const ms =
+      left === null ? runtimeTimeoutMs : Math.min(runtimeTimeoutMs, left);
+    return state.runtime.endRun(run, ms, AbortSignal.timeout(ms));
+  };
+}
+
+/** What `endRun` did with `records`' ended runs, on a tick that may act. */
+async function endEnded(
+  context: TickContext,
+  records: ReadRecord[],
+): Promise<EndRunOutcome[]> {
+  const endRun = endRunOf(context);
+  return endRun === null
+    ? []
+    : endRuns(records, endRun, context.nowMs, context.apply?.root);
+}
+
+/** The ended rows of this repository's records that ended, read beside its ledgers, and what their runs left ended. */
 export async function logRepo(
   context: TickContext,
   slug: string,
@@ -101,6 +133,11 @@ export async function logRepo(
       record: "runtime",
       reason,
     });
+  const ended = await endEnded(
+    context,
+    all.filter((r) => r.record.repo === slug),
+  );
+  if (ended.length > 0) report.endedRuns = ended;
 }
 
 /**
@@ -180,6 +217,8 @@ export async function settleOutcomes(
       merged: async () => null,
       nowIso: isoFromMs(context.nowMs),
     });
+    const ended = await endEnded(context, exclusive.records);
+    if (ended.length > 0) receipt.endedRuns = ended;
   } finally {
     exclusive.release();
   }

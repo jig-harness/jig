@@ -203,6 +203,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: true,
     required: true,
     identifies: false,
+    comparedAs: "carriers",
     description:
       "For a field, the kinds or statuses of the lines that carry it, each with always or sometimes, as `note (always), directive (sometimes)`; a line of a kind not named never carries it. Null for every other value.",
   },

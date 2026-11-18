@@ -141,11 +141,17 @@ in square brackets: `answer drive: approve [3fa9c2d1e0b4]`. A reader takes
 a trailing digest off before it reads the form. An answer naming a digest
 that is not the decision's current one is **stale**: it settles nothing and
 the decision waits, so an approval of an earlier framing never settles the
-one that replaced it. An answer naming no digest is bound by its time alone.
+one that replaced it. An answer naming no digest is bound by its time alone on a parked question;
+on a dispatcher need, a structured answer naming no digest is stale and
+settles nothing.
 Every line Jig offers to copy, and every answer `jig send` writes, carries
-the digest. On the forge, `jig send` also writes a hidden record beside
-the line, listed in [the hidden comment markers' chapter](comment-markers.md)
-as `drive-answer`.
+the digest. On the forge, and on a tracker's item when the sender may be the
+user the dispatcher's own tracker credential acts as, `jig send` also writes
+a hidden record beside the line, listed in
+[the hidden comment markers' chapter](comment-markers.md) as `drive-answer`.
+A dispatcher reads a comment by its own forge login or tracker user as an
+answer to a need's decision only with that record, naming that identity, the
+decision's key and digest and the option the line chooses.
 
 Each person's latest answer counts, its time being when its comment was
 last edited. When every person's latest answer chooses the same option with
@@ -246,6 +252,7 @@ the name `hold` had before, still chooses it.
 | Key | Class | Options | Meaning |
 | --- | --- | --- | --- |
 | `followup` | `followup-recovery` | `rerun`, `done`, `hold` | A merged pull request's follow-up whose pass ended without recording done, or whose claim no session is joined to. |
+| `release` | `release` | `gates`, `inspect`, `tag` | One untagged release, answered on its tracker item. |
 | `pickup` | `pickup-recovery` | `release`, `hold` | A pickup that stalled, stopped on a question it did not frame, or ended without moving its item on. |
 | `checkout` | `checkout-recovery` | `detach`, `hold` | A launch that waits because a checkout the workspace runtime does not list holds its branch and is in use. |
 | `drive` | `drive-recovery` | `rearm`, `hold` | A drive that stopped and handed its pull request to a person. |
@@ -263,6 +270,9 @@ the name `hold` had before, still chooses it.
 | `detach` | **Detach the checkout** | yes | The dispatcher detaches the checkout from its branch (its files and commits stay where they are), so the launch can take the branch. |
 | `rearm` | **Re-arm the drive** | — | The dispatcher re-arms the drive once on the pull request's current head, as the rearm label does. |
 | `clear` | **Clear the record** | — | The dispatcher clears the stuck launch record, as jig dispatch clear does, which frees its slot; a later tick may start its stage again. |
+| `gates` | **Re-run the failed gates** | — | The dispatcher requests another run of the failed jobs on the releasing commit once. |
+| `inspect` | **Investigate** | — | Take the tracker item and determine what is holding back the tag. |
+| `tag` | **Tag it by hand** | — | Take the tracker item and create the tag by hand after checking it is safe to release. |
 | `hold` | **I'll handle it — hide this card** | — | Nothing is done; the work stays where it is. The dispatcher hides this card for these facts and lists it again when they change. |
 
 <!-- /protocol:generated -->

@@ -6,6 +6,7 @@ import {
 import type { Ledger } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { CUT_AT_BOUND, ended, secondsLeft, type TickBound } from "./bounded.ts";
 import { combinedFailure, readFailureOf } from "../read-failures.ts";
 import type { ReadFailure, WaitingPark } from "../types.ts";
 
@@ -25,6 +26,7 @@ export async function readPark(
   slug: string,
   listing: readonly unknown[] | undefined,
   loaders: Parameters<typeof parkAnswers>[4] = {},
+  bound?: TickBound,
 ): Promise<ParkReading | undefined> {
   if (
     ledger.driver.state !== "stopped" ||
@@ -34,10 +36,16 @@ export async function readPark(
   // A thread whose read failed is kept with the failed call's class, which decides whether the tick waits it out.
   const failures = new Map<string, ReadFailure | undefined>();
   const found = await parkAnswers(pr, ledger.parked, slug, listing, {
-    threadComments: (key) =>
-      threadComments(key, undefined, (f) =>
+    // No thread is read once the tick's bound has ended; one in flight gets only the time the bound has left.
+    threadComments: (key) => {
+      if (ended(bound)) {
+        failures.set(key, CUT_AT_BOUND);
+        return Promise.resolve(null);
+      }
+      return threadComments(key, secondsLeft(bound), (f) =>
         failures.set(key, readFailureOf(f)),
-      ),
+      );
+    },
     ...loaders,
   });
   if (!("unreadable" in found) && found.unread.length > 0) {

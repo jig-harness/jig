@@ -108,6 +108,7 @@ carries a field on every marker or on some; "never" that it carries none.
 | `owner` | boolean | sometimes | never | Whether the host that took the follow-up owns the repository's board, notifications and history rows; absent where that host does not say. |
 | `outcome` | string | sometimes | always | Where the follow-up stands: one of the outcomes listed above for the marker's run. A tick's marker carries none until its host writes the end. |
 | `endedAt` | string | sometimes | never | When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome. |
+| `releaseTags` | array | sometimes | never | Up to 100 release tags the follow-up found owed, handed to the repository's owner dispatcher for tracker filing. The owner takes these only from a trusted non-owner follow-up outcome. |
 | `by` | string | sometimes | never | Who wrote the follow-up run's closing report (agent, driver, wrapper, steward or person), or none when it left none, written by its host with the outcome. The report's own text stays on that host. |
 | `cause` | string | sometimes | never | Why the follow-up run fell short, from the closing report's closed list of causes, written by its host with the outcome when the report named one. |
 

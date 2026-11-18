@@ -70,6 +70,7 @@ export type { PickupRefusal, RefusedMember };
 import type { WaitFor } from "./wait-for.ts";
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
@@ -151,6 +152,8 @@ export interface LaunchRecord {
   /** The repository's `owner/name` and its local checkout. */
   repo: string;
   repoPath: string;
+  /** False for a follow-up on a host that delegates release tracker filing to the owner. */
+  followupOwner?: false;
   /** The pull request a drive or a follow-up acts on; `null` for a pickup. */
   pr: number | null;
   /** The item a pickup starts; `null` for a drive or a follow-up. */
@@ -234,6 +237,8 @@ export interface LaunchRecord {
   endedAt?: string;
   /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
   cancelledAt?: string;
+  /** When a tick with `--apply` asked the session runtime to end what the run left (`endRun`, `end-runs.ts`); it asks once. */
+  runEndedAt?: string;
   /** For a follow-up: the machine file's `failures.rerun_died` when the record was written, kept only when it is `0`, which runs no follow-up again after a death or an unwritten result. */
   rerunDied?: number;
   /** For a follow-up: the repository's `dispatch.followup_within` when the record was written, the longest its follow-up may wait on an arm still pending (`followup-waits.ts`); absent on a record written before it was kept, read as the field's default. */
@@ -868,26 +873,40 @@ export function pruneLaunches(
       (cancelledBeforeExecution(r) && !settled.has(r.record.id))
     )
       kept.add(r.record.id);
-  const removed = records
-    .filter(({ record, state }) => {
-      const at = kept.has(record.id) ? null : finishedAt(record, state);
-      return at !== null && Number.isFinite(at) && at <= cutoff;
-    })
-    .map(({ record }) => record.id);
-  if (removed.length === 0) return removed;
+  const removed = records.filter(({ record, state }) => {
+    const at = kept.has(record.id) ? null : finishedAt(record, state);
+    return at !== null && Number.isFinite(at) && at <= cutoff;
+  });
+  if (removed.length === 0) return [];
   const db = stateDb(root);
   const remove = db.query("DELETE FROM launches WHERE id = ?");
   const removeNudges = db.query("DELETE FROM nudges WHERE record = ?");
   const removeSettled = db.query("DELETE FROM settled_ends WHERE record = ?");
+  const preserveProcessCompletion = db.query(
+    "INSERT OR IGNORE INTO process_worktree_completions (id, record, claim, exit) VALUES (?, ?, ?, ?)",
+  );
   inTransaction(db, () => {
-    for (const id of removed) {
-      remove.run(id);
-      removeNudges.run(id);
-      removeSettled.run(id);
+    for (const { record, state } of removed) {
+      if (
+        record.workspace !== null &&
+        state.kind === "ended" &&
+        state.process !== null &&
+        existsSync(record.workspace.path)
+      )
+        preserveProcessCompletion.run(
+          record.id,
+          JSON.stringify(record),
+          JSON.stringify(state.process),
+          JSON.stringify(state.exit),
+        );
+      remove.run(record.id);
+      removeNudges.run(record.id);
+      removeSettled.run(record.id);
     }
   });
-  removeUnwritten(root, removed);
-  return removed;
+  const ids = removed.map(({ record }) => record.id);
+  removeUnwritten(root, ids);
+  return ids;
 }
 
 /** The launch records whose claim ends are all written on the forge, so their pull requests need no read to be ended. */

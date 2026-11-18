@@ -25,7 +25,12 @@
  * marker an answer may carry, so the readers take it out
  * (`withoutAnswerRecord`) before they apply that rule and before they hand
  * the comment to a pass. It adds no authority: who may answer is still the
- * re-arm's rule for an author.
+ * re-arm's rule for an author. What it does tell is a sent answer from the
+ * other comments of a login: the dispatcher's readers leave out their own
+ * identity's comments except one whose record reads (`readSentAnswer`) and
+ * agrees with its answer line, which is how a person who shares that identity
+ * answers. On a tracker other than the forge the same record sits on the
+ * item's comment, with no pull request in it.
  *
  * One comment answers one key, so a card of several decisions is sent as
  * one comment per decision (`cardAnswerComments`).
@@ -36,6 +41,7 @@ import { type Envelope, decodeMarker, encode } from "../records/envelope.ts";
 import type { Writer } from "../records/writer-shape.ts";
 import { matches } from "../shapes.ts";
 import { ANSWER_PAYLOAD_SHAPE } from "../records/marker-shapes.ts";
+import { isRecord } from "../guards.ts";
 import {
   answerLine,
   type CardAnswer,
@@ -50,6 +56,8 @@ export const ANSWER_KIND = "drive-answer";
 const ANSWER_MARKER = "jig-send-answer";
 const ANSWER_OPEN = `<!-- ${ANSWER_MARKER}`;
 const ANSWER_CLOSE = "\n-->";
+/** The host a record on the forge or the tracker names: a digest, never a machine's name. */
+const HOST_DIGEST = /^sha256:[0-9a-f]{16}$/;
 
 /** What a structured answer adds to its comment: the note line and the record's payload fields. */
 export interface StructuredParts {
@@ -60,14 +68,14 @@ export interface StructuredParts {
 }
 
 /**
- * The comment that answers parked `key` of pull request `pr` with `text`,
- * as `writer` at `at`; a structured answer's note line and payload fields
- * from `structured`.
+ * The comment that answers parked `key` of pull request `pr` (`null` on a
+ * tracker's item, which has none) with `text`, as `writer` at `at`; a
+ * structured answer's note line and payload fields from `structured`.
  */
 export function answerComment(
   key: string,
   text: string,
-  pr: number,
+  pr: number | null,
   writer: Writer,
   at: string,
   structured?: StructuredParts,
@@ -81,11 +89,12 @@ export function answerComment(
   };
   const note =
     structured?.note === undefined ? "" : `\n${noteLine(key, structured.note)}`;
+  const where = pr === null ? {} : { pr };
   const payload =
     structured === undefined
-      ? { pr }
+      ? where
       : {
-          pr,
+          ...where,
           ...(structured.decision === undefined
             ? {}
             : { decision: structured.decision }),
@@ -107,6 +116,54 @@ export function withoutAnswerRecord(body: string): string {
   const start = text.indexOf(`${ANSWER_OPEN}\n`);
   const end = text.indexOf(ANSWER_CLOSE, start) + ANSWER_CLOSE.length;
   return `${text.slice(0, start)}${text.slice(end)}`.trimEnd();
+}
+
+/** Where `body`'s answer record opens, or `-1` when it has none. */
+export function answerRecordStart(body: string): number {
+  return body.indexOf(ANSWER_OPEN);
+}
+
+/** What the record of an answer `jig send` wrote says. */
+export interface SentAnswer {
+  /** The decision's key, as the record's key names it. */
+  key: string;
+  /** The login the sender wrote as. */
+  login: string;
+  /** The digest of the framing the person read; absent when the record names none. */
+  decision?: string;
+  choice?: WrittenChoice;
+}
+
+function writtenChoice(value: unknown): WrittenChoice | undefined {
+  return isRecord(value) &&
+    typeof value.option === "string" &&
+    (value.form === "approve" || value.form === "choose")
+    ? { option: value.option, form: value.form }
+    : undefined;
+}
+
+/**
+ * The record `body` carries, when it reads and names its sender and the
+ * digest of the sender's host; `null` otherwise, so a comment of any other
+ * shape is never taken for a sent answer.
+ */
+export function readSentAnswer(body: string): SentAnswer | null {
+  if (!body.includes(ANSWER_OPEN)) return null;
+  const read = decodeMarker(body, ANSWER_MARKER, ANSWER_KIND);
+  if (!read.ok || !matches(ANSWER_PAYLOAD_SHAPE, read.value.payload))
+    return null;
+  const { envelope, payload } = read.value;
+  const { login, host } = envelope.writer;
+  if (login === undefined || !HOST_DIGEST.test(host)) return null;
+  const choice = writtenChoice(payload.choice);
+  return {
+    key: envelope.key.slice("answer:".length),
+    login,
+    ...(typeof payload.decision === "string"
+      ? { decision: payload.decision }
+      : {}),
+    ...(choice === undefined ? {} : { choice }),
+  };
 }
 
 /** The record's payload parts for a card's answer: a pick's choice, digest and note; a free answer has none. */

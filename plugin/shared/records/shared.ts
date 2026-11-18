@@ -75,6 +75,8 @@ export type LaunchEnd =
        * claim lives where others read it. Absent on older ends.
        */
       by?: ReportWriter;
+      /** Release tags a non-owner follow-up hands to the repository owner. */
+      releaseTags?: string[];
       /** The report's cause, when it named one. */
       cause?: ReportCause;
     }

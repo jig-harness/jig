@@ -12,6 +12,7 @@ import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { ghConditionalGet } from "../../shared/gh-conditional.ts";
+import { failedBy, outboundFailure } from "../../shared/outbound/failure.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { PAST_DEADLINE, type Reading } from "./reading.ts";
 
@@ -53,9 +54,11 @@ async function get(reading: Reading, path: string): Promise<Got> {
   reading.forgeCall();
   const r = await ghConditionalGet(path, { timeoutSec: sec });
   if (r.ok) return ok(r.body);
-  return /HTTP 404\b/.test(r.reason)
-    ? failed("absent", r.reason)
-    : failed("unreadable", r.reason);
+  const code = /HTTP 404\b/.test(r.reason) ? "absent" : "unreadable";
+  // The call's failure class travels with the failure, for a reader that names its cause.
+  return r.failure === undefined
+    ? failed(code, r.reason)
+    : failedBy(code, r.failure, r.reason);
 }
 
 /** A response body as JSON; `undefined` for one that is not, which each reader then reports as unreadable. */
@@ -205,12 +208,31 @@ export async function readDefaultConfig(
   return ok(Buffer.from(v.content, "base64").toString("utf8"));
 }
 
-/** The login the forge client is signed in as; `null` when it cannot say, and every answer then trusts only the authors the forge vouches for. */
-export async function readLogin(reading: Reading): Promise<string | null> {
+/**
+ * The login the forge client is signed in as; `null` when the forge answered
+ * with a user document that names no login, and the read's failure, carrying
+ * the call's class, when it was not read: an answer that does not parse, is
+ * not a user document or names a malformed login is `invalid`.
+ */
+export async function readLogin(
+  reading: Reading,
+): Promise<Outcome<string | null, "absent" | "unreadable">> {
   const got = await get(reading, "user");
-  const v = got.ok ? json(got.value) : undefined;
-  const login = isRecord(v) ? text(v.login) : "";
-  return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login) ? login : null;
+  if (!got.ok) return got;
+  const unreadable = (what: string) =>
+    failedBy(
+      "unreadable" as const,
+      outboundFailure("invalid", `the forge's user answer ${what}`),
+    );
+  const v = json(got.value);
+  if (!isRecord(v)) return unreadable("is not a user document");
+  if (v.login !== undefined && v.login !== null && typeof v.login !== "string")
+    return unreadable("names a login that is not text");
+  const login = text(v.login);
+  if (login === "") return ok(null);
+  return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login)
+    ? ok(login)
+    : unreadable("names a login that is malformed");
 }
 
 /** A forge comment's fields an answer reads. */
