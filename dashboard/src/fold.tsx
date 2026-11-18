@@ -2,18 +2,18 @@
  * The page's disclosures and its hints: popovers that say what a word, a chip
  * or a panel means.
  */
-import { Collapsible } from "@base-ui/react/collapsible";
 import { Popover } from "@base-ui/react/popover";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { CopyButton } from "./copy.tsx";
-import { Glyph, SourceChip, StageChip } from "./icon-word.tsx";
-import { CONTROL_ICONS } from "./icons.ts";
+import { GutterFold } from "./gutter.tsx";
+import { SourceChip, StageChip } from "./icon-word.tsx";
 import { sourceMeaning, stageMeaning } from "./status.ts";
 import type { EvidenceRow } from "./view.ts";
 
 /** The element popups render into, so they keep the page's tokens and width rules. */
 export const PopupRoot = createContext<HTMLElement | null>(null);
 
+/** A titled fold on the cards' gutter: its words are the heading a tap opens. */
 export function Fold({
   label,
   children,
@@ -22,16 +22,9 @@ export function Fold({
   children: ReactNode;
 }) {
   return (
-    <Collapsible.Root className="fold">
-      <Collapsible.Trigger
-        className="foldBtn disclosure"
-        aria-label={label}
-        title={label}
-      >
-        <Glyph of={CONTROL_ICONS.disclosure} size={16} />
-      </Collapsible.Trigger>
-      <Collapsible.Panel className="foldPanel">{children}</Collapsible.Panel>
-    </Collapsible.Root>
+    <GutterFold label={label} head={<span className="sm">{label}</span>}>
+      {children}
+    </GutterFold>
   );
 }
 
@@ -92,14 +85,18 @@ export function Hint({
   children: ReactNode;
   /** Set both to let the caller open the hint from somewhere beyond the trigger, such as a hovered row. */
   open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  onOpenChange?: (open: boolean, reason: string) => void;
 }) {
   const [ownOpen, setOwnOpen] = useState(false);
   const open = controlledOpen ?? ownOpen;
-  const setOpen = onOpenChange ?? setOwnOpen;
+  const setOpen: (open: boolean, reason: string) => void =
+    onOpenChange ?? ((next) => setOwnOpen(next));
   const root = useContext(PopupRoot);
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root
+      open={open}
+      onOpenChange={(next, details) => setOpen(next, details.reason)}
+    >
       <Popover.Trigger
         className={className}
         openOnHover
@@ -107,7 +104,8 @@ export function Hint({
         closeDelay={HOVER_CLOSE_MS}
         aria-label={typeof trigger === "string" ? undefined : label}
         onFocus={(event) => {
-          if (event.currentTarget.matches(":focus-visible")) setOpen(true);
+          if (event.currentTarget.matches(":focus-visible"))
+            setOpen(true, "trigger-focus");
         }}
       >
         {trigger}

@@ -366,12 +366,9 @@ function move(root: HTMLElement, by: 1 | -1): void {
   if (card !== undefined) focusCard(root, card);
 }
 
-/** The card's own expand control: the one it names, else its first fold (a reply's button is not one). */
+/** The card's own expand control: the chevron in its gutter. */
 function toggleOf(card: HTMLElement): HTMLElement | null {
-  return (
-    card.querySelector<HTMLElement>("[data-card-toggle]") ??
-    card.querySelector<HTMLElement>(".foldBtn.disclosure")
-  );
+  return card.querySelector<HTMLElement>("[data-card-toggle]");
 }
 
 /** Whether Enter landed on a control inside the card, which is that control's own. */

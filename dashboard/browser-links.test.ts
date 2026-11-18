@@ -49,7 +49,7 @@ describe("tracker items", () => {
         await shows(page, ".pQueue .qItem");
         const queued = page.locator(".pQueue .qItem", { hasText: "API-80" });
         expect(await queued.locator("a.tgt").getAttribute("href")).toBe(
-          "https://tracker.example/acme/issue/API-80/backfill-the-ledger",
+          "https://issues.example/acme/issue/API-80/backfill-the-ledger",
         );
         expect(await queued.textContent()).toContain("Backfill the ledger");
         await page.goto(`${server.url}&view=history`);
@@ -60,7 +60,7 @@ describe("tracker items", () => {
           ),
         ).toEqual({
           key: "API-77",
-          href: "https://tracker.example/acme/issue/API-77/add-the-audit-export",
+          href: "https://issues.example/acme/issue/API-77/add-the-audit-export",
           title: "Add the audit export",
         });
         expect(await page.locator("body").textContent()).not.toContain(
@@ -87,7 +87,7 @@ describe("tracker items", () => {
         await shows(page, ".cell-tgt");
         const cell = page.locator(".cell-tgt", { hasText: "API-91" }).first();
         expect(await cell.locator("a.tgt").getAttribute("href")).toBe(
-          "https://tracker.example/acme/issue/API-91",
+          "https://issues.example/acme/issue/API-91",
         );
       } finally {
         await context.close();

@@ -153,7 +153,7 @@ const is = (icon: LucideIcon | null, word: string): IconWord => ({
   word,
 });
 
-const WORK_KIND_ICONS = {
+export const WORK_KIND_ICONS = {
   // A pull request is drawn by its standing (FORGE_ICONS), so it has no icon of its own.
   "pull request": is(null, "pull request, by its standing"),
   issue: is(CircleDot, "issue"),
@@ -246,7 +246,7 @@ export const CAUSE_ICONS = {
   "pickup-ended": is(RotateCw, "pickup-ended"),
   "double-claim": is(CopyX, "double-claim"),
   "assigner-cannot-write": is(UserRoundX, "assigner-cannot-write"),
-  "tracker-unreachable": is(Unplug, "tracker-unreachable"),
+  "tracker-unreachable": is(Unplug, "issues unreachable"),
   "low-quota": is(Gauge, "low-quota"),
 } satisfies Record<NeedCause, IconWord>;
 
@@ -297,7 +297,7 @@ export const ICON_SETS: readonly IconSet[] = [
     title: "What a card is about",
     container: "bare",
     where:
-      "A bare icon before the key. A pull request is drawn by its standing on the forge, below. The issue and linked-work icons are in the vocabulary for the card system's work identity; no view draws them today.",
+      "A bare icon before the key, which opens what is known of it. A pull request is drawn by its standing on the forge, below; an issue is drawn the same on GitHub Issues, Linear and Jira. Linked work follows the link icon, after the card's own key.",
     members: WORK_KIND_ICONS,
   },
   {
@@ -311,7 +311,7 @@ export const ICON_SETS: readonly IconSet[] = [
     title: "A pull request on the line",
     container: "bare",
     where:
-      "The pull request icon also carries the dispatcher's states while it holds the pull request: these, and queued, held, reported and refused with the icons of what is coming. Driving and waiting are interim icons. The card system moves these states to the status mark and the stage chip.",
+      "Inside a pull request's popover, beside where the dispatcher holds it: these, and queued, held, reported and refused with the icons of what is coming. The pull request's own icon shows only its standing on the forge; on the card, the status mark and the stage chip say where the dispatcher holds it.",
     members: LINE_ICONS,
   },
   {

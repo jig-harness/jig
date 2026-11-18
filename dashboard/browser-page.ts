@@ -195,7 +195,7 @@ export function shortControls(page: Page): Promise<string[]> {
         if (element.classList.contains("clip")) return false;
         if (element.getAttribute("aria-hidden") === "true") return false;
         const box = element.getBoundingClientRect();
-        const compact = element.matches(".disclosure, .prState, .copy");
+        const compact = element.matches(".disc, .prState, .copy");
         return (
           box.width > 1 &&
           box.height > 1 &&

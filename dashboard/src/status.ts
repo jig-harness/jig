@@ -186,7 +186,7 @@ export const TERMS: Array<{ word: string; meaning: string }> = [
 /** What each stage does, for the popover its chip opens. */
 const STAGE_MEANINGS: Record<Stage, string> = {
   pickup:
-    "Starting a tracker item assigned to the factory identity: one workspace and one do-item session.",
+    "Starting an issue assigned to the factory identity: one workspace and one do-item session.",
   rearm:
     "Restarting a stopped drive, the unattended review loop on a pull request, on an account with a free slot.",
   takeover:
@@ -220,8 +220,7 @@ const SOURCE_MEANINGS: Record<string, string> = {
   "label drive":
     "A pull request carrying the drive label, which asks the dispatcher to arm a drive on it.",
   held: "Kept off by a hold label or behind a serialized leader: no stage starts on it while that stands.",
-  assigned:
-    "A tracker item assigned to the factory identity, waiting for a pickup.",
+  assigned: "An issue assigned to the factory identity, waiting for a pickup.",
   merged: "A merged pull request waiting for its follow-up session.",
 };
 

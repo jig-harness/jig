@@ -50,10 +50,10 @@ describe("the closing report", () => {
         PHONE,
       );
       try {
-        await shows(page, ".rowExpand");
+        await shows(page, ".row .disc");
         await page
           .locator(".row", { hasText: "PR #92" })
-          .locator(".rowExpand")
+          .locator(".disc")
           .click();
         await page.getByRole("button", { name: "All runs of PR #92" }).click();
         await shows(page, ".workRuns");

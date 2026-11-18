@@ -150,7 +150,7 @@ function states(
         );
   if (alias !== undefined)
     return invalid(
-      `dispatch.${field} cannot list ${alias}, which shares the '${tracker.states.pr_open}' tracker state name with pr_open; items there have a pull request open and are never pickups`,
+      `dispatch.${field} cannot list ${alias}, which shares the '${tracker.states.pr_open}' state name with pr_open; items there have a pull request open and are never pickups`,
     );
   return ok(value as string[]);
 }

@@ -148,7 +148,7 @@ export async function assignPickup(
   } catch (error) {
     return failed(
       "refused",
-      `the tracker did not take the assignment of ${key} to ${identity}${movedNote(moved)}: ${failureText(error)}`,
+      `the issue service did not take the assignment of ${key} to ${identity}${movedNote(moved)}: ${failureText(error)}`,
       error,
     );
   }

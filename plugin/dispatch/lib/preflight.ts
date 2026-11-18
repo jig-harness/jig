@@ -31,6 +31,7 @@
  * `preflight` in the machine file names the checks (`preflight-config.ts`);
  * `[]` turns them off.
  */
+import { issueService } from "../../shared/tracker-product.ts";
 import { resolve } from "node:path";
 import { actOfNeed } from "../../shared/acts.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -253,7 +254,7 @@ export function trackerTargetOf(
 
 /** What a launch held on every account it could bill waits on. */
 export function heldDetail(held: ReadonlyMap<string, string>): string {
-  return `the tracker preflight holds it on ${[...held]
+  return `the issue preflight holds it on ${[...held]
     .map(([account, reason]) => `${account} (${reason})`)
     .join(", ")}`;
 }
@@ -278,6 +279,7 @@ async function spawnTrackerProbe(
   target: TrackerTarget,
   timeoutSec: number,
 ): Promise<TrackerAnswer> {
+  const service = issueService(target.tracker.split(":")[0]);
   // The child's own deadline ends the tracker's request first, so its answer names the cause.
   const deadlineMs = Math.max(1_000, timeoutSec * 1_000 - 2_000);
   const command = [
@@ -306,7 +308,7 @@ async function spawnTrackerProbe(
     const failure = {
       ok: false,
       kind: "unreachable",
-      reason: probeFailure("the tracker probe", done),
+      reason: probeFailure(`the probe of ${service}`, done),
     } as const;
     if (done.code !== 0) return failure;
     return answerOf(lastLine(done.stdout)) ?? failure;
@@ -314,7 +316,7 @@ async function spawnTrackerProbe(
     return {
       ok: false,
       kind: "unreachable",
-      reason: `the tracker probe could not run: ${failureText(error)}`,
+      reason: `the probe of ${service} could not run: ${failureText(error)}`,
     };
   }
 }
@@ -417,7 +419,7 @@ function hostNeed(
     title: null,
     workspace: null,
     since: since ?? nowIso,
-    reason: `account ${account} cannot reach the tracker, so its ${at.stages.join(" and ")} launches in ${at.repos.join(", ")} are held: ${answers.join("; ")}`,
+    reason: `account ${account} cannot reach the issues of ${at.repos.join(", ")}, so its ${at.stages.join(" and ")} launches there are held: ${answers.join("; ")}`,
     question: null,
     decisions: [],
     notified: null,
