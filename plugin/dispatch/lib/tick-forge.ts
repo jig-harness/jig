@@ -68,6 +68,8 @@ import { currentMs } from "../../shared/time.ts";
 export interface ForgeRead {
   /** Whether the pull requests read in full. */
   ok: boolean;
+  /** Whether the open listing itself read, even when a later follow-up read did not. */
+  openReadable: boolean;
   open: ListedPr[];
   /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
   read: Set<number>;
@@ -130,6 +132,7 @@ export async function readForge(
       : prs;
   const out: ForgeRead = {
     ok: false,
+    openReadable: false,
     open: [],
     read: new Set(),
     scoped: labels?.onlyLabeled === true,
@@ -182,6 +185,7 @@ export async function readForge(
       return out;
     }
     out.open = open.value;
+    out.openReadable = true;
     const texts = queried.ok ? queried.value.open.map(linkText) : [null];
     if (texts.every((t): t is PrLinkText => t !== null)) out.linkTexts = texts;
     remember(out.open);

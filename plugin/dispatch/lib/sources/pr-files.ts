@@ -23,6 +23,39 @@ interface Entry {
   snapshot: Snapshot | null;
 }
 
+/** Stored reads are process-independent JSON: validate them before a cache hit can use them. */
+function entryOf(value: unknown): Entry | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
+  const entry = value as Record<string, unknown>;
+  if (
+    typeof entry.attemptedAtMs !== "number" ||
+    !Number.isFinite(entry.attemptedAtMs)
+  )
+    return null;
+  if (entry.snapshot === null)
+    return { attemptedAtMs: entry.attemptedAtMs, snapshot: null };
+  if (typeof entry.snapshot !== "object" || Array.isArray(entry.snapshot))
+    return null;
+  const snapshot = entry.snapshot as Record<string, unknown>;
+  if (
+    (typeof snapshot.comparison !== "string" && snapshot.comparison !== null) ||
+    !Array.isArray(snapshot.files) ||
+    !snapshot.files.every((file) => typeof file === "string") ||
+    typeof snapshot.readAtMs !== "number" ||
+    !Number.isFinite(snapshot.readAtMs)
+  )
+    return null;
+  return {
+    attemptedAtMs: entry.attemptedAtMs,
+    snapshot: {
+      comparison: snapshot.comparison,
+      files: snapshot.files,
+      readAtMs: snapshot.readAtMs,
+    },
+  };
+}
+
 interface FilesEvidence {
   pr: number;
   readAt: string;
@@ -50,11 +83,20 @@ export interface FilesObservation {
   files(pr: number): Promise<Reading>;
 }
 
-/** A fallback listing's comparison snapshot can lag a base push, so reuse requires the live tip too. */
+/**
+ * A complete listing includes the live base tip. A fallback listing still
+ * supplies the PR's own comparison, which is sufficient to bound reads until
+ * the next complete listing refreshes the live-tip witness.
+ */
 function comparison(pr: ListedPr): string | null {
   const { headRefOid, baseRefName, baseRefOid, baseTipOid } = pr;
-  if (!headRefOid || !baseRefName || !baseRefOid || !baseTipOid) return null;
-  return JSON.stringify([headRefOid, baseRefName, baseRefOid, baseTipOid]);
+  if (!headRefOid || !baseRefName || !baseRefOid) return null;
+  return JSON.stringify([
+    headRefOid,
+    baseRefName,
+    baseRefOid,
+    baseTipOid ?? null,
+  ]);
 }
 
 function fileEvidence(
@@ -113,7 +155,7 @@ export async function observePrFiles(
     return {
       pr,
       key,
-      entry: store.get<Entry>(key),
+      entry: entryOf(store.get<unknown>(key)),
       comparison: comparison(pr),
     };
   });

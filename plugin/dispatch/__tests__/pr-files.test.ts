@@ -149,7 +149,7 @@ it("reuses matching comparisons when the optional read budget is low", async () 
   ]);
 });
 
-it("reads again when the fallback listing has no live base tip", async () => {
+it("reuses a fallback listing's stable comparison until a complete listing refreshes it", async () => {
   const store = cache();
   const { baseTipOid: _missing, ...fallback } = pr(1);
   const open = [fallback];
@@ -173,8 +173,29 @@ it("reads again when the fallback listing has no live base tip", async () => {
   );
   expect(after.evidence[0]).toMatchObject({
     pr: 1,
-    status: "fresh",
-    files: ["after"],
+    status: "cached",
+    files: ["before"],
   });
-  expect(await after.files(1)).toEqual(ok(["after"]));
+  expect(await after.files(1)).toEqual(ok(["before"]));
+});
+
+it("treats malformed persisted cache entries as a fresh read", async () => {
+  const store = cache();
+  store.set("forge:pr-files:owner/repo:1", {
+    attemptedAtMs: "never",
+    snapshot: { comparison: "old", files: [], readAtMs: "also never" },
+  });
+  const observed = await observePrFiles(
+    "owner/repo",
+    [pr(1)],
+    100,
+    null,
+    undefined,
+    store,
+    async () => ok(["fresh"]),
+  );
+  expect(observed.evidence[0]).toMatchObject({
+    status: "fresh",
+    files: ["fresh"],
+  });
 });
