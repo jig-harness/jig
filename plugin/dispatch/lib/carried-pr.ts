@@ -60,7 +60,7 @@ export type Carriage =
   | { kind: "stall"; note: string };
 
 /** The drive of a pull request among `drives`, the ones `read` holds the ledgers of. */
-export function carrierDrive(
+function carrierDrive(
   pr: number,
   drives: readonly DrivenPr[],
   read: ReadonlySet<number>,
