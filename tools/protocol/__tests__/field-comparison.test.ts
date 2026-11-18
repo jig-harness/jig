@@ -140,6 +140,13 @@ describe("a prose field", () => {
     expect(problems(null, "words", "prose")).toEqual([changed(null, "words")]);
   });
 
+  test("keeps a null null, and an empty text from becoming one, in both directions", () => {
+    expect(problems(null, "", "prose")).toEqual([changed(null, "")]);
+    expect(problems(null, "  ", "prose")).toEqual([changed(null, "  ")]);
+    expect(problems("", null, "prose")).toEqual([changed("", null)]);
+    expect(problems("  ", null, "prose")).toEqual([changed("  ", null)]);
+  });
+
   test("keeps a reworded meaning passing, and a meaning another value holds failing", () => {
     const two = (second: string) =>
       dataOf(
@@ -209,17 +216,85 @@ describe("a field listing what carries a value", () => {
     ).toEqual([REQUIRED]);
   });
 
-  test("keeps that break when the same change declares the field exact", () => {
+  test("refuses declaring the field exact, which would drop that break from the next baseline", () => {
     const base = dataOf(chapterWith("tick (sometimes)", "carriers"));
     expect(
       compare(base, withNew("tick (sometimes)", "tick (always)", "exact")),
-    ).toEqual([REQUIRED]);
+    ).toContain(
+      "the field extra is now compared as exact, and the base compares it as carriers",
+    );
+  });
+
+  test("keeps the break on a baseline that already holds the field as carriers", () => {
+    const base = withNew("tick (sometimes)", "tick (sometimes)", "carriers");
+    expect(
+      compare(
+        base,
+        dataOf(
+          fixtureChapter({
+            fields: { ...FIELDS, extra: textField("carriers") },
+            values: [
+              { ...ALPHA, extra: "tick (sometimes)" },
+              {
+                name: "BETA",
+                code: 2,
+                meaning: "new",
+                extra: "tick (sometimes)",
+              },
+              {
+                name: "GAMMA",
+                code: 3,
+                meaning: "newer",
+                extra: "tick (always)",
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toEqual([
+      'the new value name "GAMMA", code 3 is required of every writer',
+    ]);
+  });
+
+  test("does not take a carrier for new because no row names it, when a value of the base is identified by it", () => {
+    const base = dataOf(
+      fixtureChapter({
+        fields: { ...FIELDS, extra: textField("carriers") },
+        values: [
+          { ...ALPHA, extra: "note (always)" },
+          {
+            name: "tick",
+            code: 2,
+            meaning: "a kind with no field rows",
+            extra: null,
+          },
+        ],
+      }),
+    );
+    const now = dataOf(
+      fixtureChapter({
+        fields: { ...FIELDS, extra: textField("carriers") },
+        values: [
+          { ...ALPHA, extra: "note (always)" },
+          {
+            name: "tick",
+            code: 2,
+            meaning: "a kind with no field rows",
+            extra: null,
+          },
+          { name: "BETA", code: 3, meaning: "new", extra: "tick (always)" },
+        ],
+      }),
+    );
+    expect(compare(base, now)).toEqual([
+      'the new value name "BETA", code 3 is required of every writer',
+    ]);
   });
 
   test("reads carriers it cannot parse on a new value as a break", () => {
     const base = dataOf(chapterWith("tick (sometimes)", "carriers"));
     expect(
-      compare(base, withNew("tick (sometimes)", "tick(always)", "exact")),
+      compare(base, withNew("tick (sometimes)", "tick(always)", "carriers")),
     ).toEqual([REQUIRED]);
   });
 

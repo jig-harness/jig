@@ -253,6 +253,10 @@ function fieldChange(name: string, was: FieldSpec, is?: FieldSpec) {
     return `the field ${name} changed type from ${describeType(was)} to ${describeType(is)}`;
   if (!was.required && is.required)
     return `the field ${name} changed from optional to required`;
+  // Carriers are the one comparison that says which new values oblige a
+  // writer, so tightening it away would drop that along with the looseness.
+  if (was.comparedAs === "carriers" && is.comparedAs !== "carriers")
+    return `the field ${name} is now compared as ${is.comparedAs ?? "exact"}, and the base compares it as carriers`;
   if (
     was.comparedAs !== undefined &&
     is.comparedAs !== was.comparedAs &&
@@ -384,11 +388,23 @@ function changedFields(view: ValueView, self: DataValue, v: DataValue) {
   );
 }
 
-/** Every carrier the base's values name in a field. */
+/**
+ * Every carrier the base may already have: the ones its values name in a
+ * field, and every text a value of the base is identified by, since a
+ * record kind can be published without a row that lists it. A name shared
+ * by two record families counts as known, so a collision reads as a break
+ * to raise the version for and never as a missed one.
+ */
 function knownCarriers(base: DataFile, field: string): Set<string> {
-  return new Set(
-    base.values.flatMap((v) => [...(carriedMap(v[field])?.keys() ?? [])]),
-  );
+  const identity = Object.entries(base.fields)
+    .filter(([, spec]) => spec.identifies)
+    .map(([name]) => name);
+  return new Set([
+    ...base.values.flatMap((v) => [...(carriedMap(v[field])?.keys() ?? [])]),
+    ...base.values.flatMap((v) =>
+      identity.map((f) => v[f]).filter((x) => typeof x === "string"),
+    ),
+  ]);
 }
 
 /**
@@ -448,7 +464,8 @@ function sameBehaviour(
   known: ReadonlySet<string>,
 ): boolean {
   if (was === is) return true;
-  if (how === "prose") return states(was) === states(is);
+  if (how === "prose")
+    return (was === null) === (is === null) && states(was) === states(is);
   if (how === "names") return keepsNames(was, is);
   if (how === "carriers") return keepsCarriers(was, is, known);
   return false;
