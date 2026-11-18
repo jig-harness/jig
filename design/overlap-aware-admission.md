@@ -22,9 +22,10 @@ for each item that waits, what it waits on.
 
 This is the design of [plan.md](plan.md) item 57. The tracker footprint
 record, its adapter interface, the pickup, scout and filing writers, the
-merge evidence for conflict edges and the changed-files read of every open
-pull request are built; admission, the planner's writer and the remaining
-build steps are open.
+merge evidence for conflict edges, the changed-files read of every open pull
+request, and the conflict rates with the tick's daily refresh and their reader
+are built; admission, the planner's writer and the remaining build steps are
+open.
 It builds on the change that lets a plan-less epic's ready children start
 in parallel up to a width per epic (#1178), and on that change's decision
 record: admission is parallel by default, and overlap is a cost weighed
