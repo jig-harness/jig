@@ -184,6 +184,13 @@
       "The end of a run's vendor transcript, at most 2 MiB with credentials redacted, kept for a pickup's or a follow-up's run that left no closing report, and what was copied or why nothing was. The steward reads its excerpt to record the run's cause, and a person reads it from the path the run's outcome row names. It is removed seven days after the steward's cause is applied, and at the latest after the machine file's receipts_days."
     ],
     [
+      "dispatch-conflict-rates",
+      "dispatch/lib/conflict-rates.ts",
+      "~/.local/state/jig/dispatch/conflict-rates/<owner>%2F<name>.json, .cohort.json, .refresh.json, <16 hex>.lock",
+      1,
+      "A repository's conflict rates, the share of each path's observed merged pull requests of the window that met a conflict before they merged, kept for overlap-aware admission, with the forge's listing of merged pull requests kept for the next refresh and when the tick last refreshed them. Refreshed at most once a day after the act phase; a refresh that does not end with a whole new file keeps the previous one."
+    ],
+    [
       "gc-receipt",
       "gc/receipts.ts",
       "~/.local/state/jig/gc/<date>/<run id>.json",

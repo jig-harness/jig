@@ -83,7 +83,12 @@ the report, the areas of the
 [change-area catalog](../change-areas/README.md#the-catalog) a hotspot lies
 in alone, as the `serialize: true` lines a person would add so the
 [dispatcher](../../README.md#the-dispatcher) drives their pull requests one
-at a time; it writes nothing. The
+at a time; it writes nothing. With `--rates` it prints, for each path, how
+many merged pull requests of the range changed it and how many of those met
+a conflict before they merged (`merge-conflict-rates/v1` JSON), taking the
+merged pull requests from the forge in one bounded listing; the dispatcher
+refreshes them once a day for each repository it starts pickups in.
+The
 [agent procedure](SKILL.md#where-past-merges-conflicted-the-history-report)
 has the flags and the causes, and
 [the commands that pass the hotspots on](SKILL.md#hotspots-into-the-learning-loop).
