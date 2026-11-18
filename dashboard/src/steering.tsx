@@ -102,7 +102,7 @@ function reveal(element: HTMLElement, target: HTMLElement): boolean {
   const more = element.querySelector<HTMLButtonElement>(
     ".moreBtn[aria-expanded='false']",
   );
-  if (more === null) return false;
+  if (more === null) return fold != null;
   more.click();
   return true;
 }

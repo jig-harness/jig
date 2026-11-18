@@ -70,14 +70,42 @@ function longQueue(): LineQueued[] {
   return [...starts, ...held, ...reported, ...never];
 }
 
-/** Answers the page's reads with the long queue. */
-async function withLongQueue(page: Page): Promise<void> {
+/** Answers the page's reads with the queue `queue` gives at that moment. */
+async function withQueue(page: Page, queue: () => LineQueued[]): Promise<void> {
   await page.route("**/state?*", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
-    body.value.line.queue = longQueue();
+    body.value.line.queue = queue();
     await route.fulfill({ json: body });
   });
+}
+
+const withLongQueue = (page: Page) => withQueue(page, longQueue);
+
+/** Some refused items, each its own target. */
+function refusedItems(count: number): LineQueued[] {
+  return Array.from({ length: count }, (_, i) =>
+    queued({
+      source: "assigned",
+      group: "never",
+      repo: repoAt(i),
+      item: `NEV-${i}`,
+      title: `Refused item ${i}`,
+      why: "assigned by contractor-c, who cannot write",
+    }),
+  );
+}
+
+/** Jumps to a card from the palette and waits for it to take focus. */
+async function jumpTo(page: Page, target: string): Promise<void> {
+  await page.keyboard.press("Control+k");
+  await page.locator(".paletteField").fill(target);
+  await page.keyboard.press("Enter");
+  await until(
+    `${target} has focus`,
+    async () =>
+      (await page.locator(":focus").getAttribute("aria-label")) === target,
+  );
 }
 
 /** Every card's key, in the page's order, folded ones included. */
@@ -289,6 +317,151 @@ describe("What is coming", () => {
         await page.getByRole("heading", { name: /^Starts next/ }).waitFor();
         expect(new URL(page.url()).searchParams.has("group-by")).toBe(false);
         expect(await cardOrder(page)).toEqual(order);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a palette jump reaches a card in a folded group, under a filter or after Show all",
+    async () => {
+      const server = await served("queue");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=queue`,
+        LAPTOP,
+      );
+      try {
+        await withLongQueue(page);
+        await page.reload();
+        await page
+          .locator('[data-facet="repo"]')
+          .getByRole("button", { name: /example-org\/api/ })
+          .click();
+        await until(
+          "the filter has narrowed the cards",
+          async () =>
+            (await page.locator(".pQueue .qItem:visible").count()) < 80,
+        );
+        await jumpTo(page, "NEV-69");
+        expect(new URL(page.url()).searchParams.has("facet-repo")).toBe(false);
+        const never = page.getByRole("button", {
+          name: "Will not start group",
+        });
+        expect(await never.getAttribute("aria-expanded")).toBe("true");
+
+        await jumpTo(page, "PR #202");
+        const held = page.getByRole("button", {
+          name: "Held behind a serialized leader group",
+        });
+        await held.click();
+        expect(await held.getAttribute("aria-expanded")).toBe("false");
+        await jumpTo(page, "PR #202");
+        expect(await held.getAttribute("aria-expanded")).toBe("true");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "the text filter finds the same cards under every grouping",
+    async () => {
+      const server = await served("queue");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=queue&q=starts+next`,
+        LAPTOP,
+      );
+      try {
+        await withLongQueue(page);
+        await page.reload();
+        const shown = page.locator(".pQueue .qItem:visible");
+        await until(
+          "the filter applies",
+          async () => (await shown.count()) > 0,
+        );
+        expect(await shown.count()).toBe(4);
+        await groupBy(page, "repository").click();
+        await page
+          .getByRole("heading", { name: /^example-org\/api/ })
+          .waitFor();
+        expect(await shown.count()).toBe(4);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a read that lengthens the refused group leaves it as the person has it",
+    async () => {
+      const server = await served("queue");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=queue`,
+        LAPTOP,
+      );
+      try {
+        let count = 5;
+        await withQueue(page, () => refusedItems(count));
+        await page.clock.install();
+        await page.reload();
+        const never = page.getByRole("button", {
+          name: "Will not start group",
+        });
+        await never.waitFor();
+        expect(await never.getAttribute("aria-expanded")).toBe("true");
+        count = 6;
+        await page.clock.fastForward(60_000);
+        await until(
+          "the sixth card has arrived",
+          async () => (await page.locator(".pQueue .qItem").count()) === 6,
+        );
+        expect(await never.getAttribute("aria-expanded")).toBe("true");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a phone offers Show all only where it would show more, and an opened refused group shows all of it",
+    async () => {
+      const server = await served("queue");
+      const context = await requireBrowser().newContext({
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+      });
+      const page = await context.newPage();
+      try {
+        await withQueue(page, () => [
+          ...longQueue().slice(0, 2),
+          ...refusedItems(8),
+        ]);
+        await page.goto(`${server.url}&view=queue`);
+        const never = page.getByRole("button", {
+          name: "Will not start group",
+        });
+        await never.waitFor();
+        expect(
+          await page.getByRole("button", { name: /^Show all/ }).count(),
+        ).toBe(0);
+        await never.tap();
+        await until(
+          "the opened group shows its cards",
+          async () =>
+            (await page.locator(".pQueue .qItem:visible").count()) === 10,
+        );
       } finally {
         await context.close();
       }

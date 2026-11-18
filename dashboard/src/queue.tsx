@@ -1,4 +1,5 @@
 import { GitBranch } from "lucide-react";
+import { useState } from "react";
 import { FollowupBadge } from "./followups.tsx";
 import { RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
@@ -38,7 +39,7 @@ function QueueItem({
 }: {
   item: QueueItemView;
   rest: boolean;
-  /** Whether the card says what will happen to it, where no heading does. */
+  /** Whether the card shows what will happen to it, where no heading does; the filter reads it either way. */
   showHappens: boolean;
 }) {
   return (
@@ -72,14 +73,12 @@ function QueueItem({
             <span className="br" />
             <RepoLink repo={item.repo} url={item.url} />
             <SourceHint source={item.source} />
-            {showHappens ? (
-              <BareWord
-                of={iconOf(GROUP_ICONS, item.group)}
-                className="sm qHappens"
-              >
-                {item.happens}
-              </BareWord>
-            ) : null}
+            <BareWord
+              of={iconOf(GROUP_ICONS, item.group)}
+              className={showHappens ? "sm qHappens" : "sm qHappens vh"}
+            >
+              {item.happens}
+            </BareWord>
             <FollowupBadge label={item.followup} />
           </div>
           {item.title === null ? null : <div className="sm">{item.title}</div>}
@@ -153,7 +152,7 @@ function SectionCards({ section }: { section: QueueSectionView }) {
       {section.items.map((item, i) => (
         <QueueItem
           item={item}
-          rest={i >= SHOWN_CLOSED}
+          rest={!section.startsFolded && i >= SHOWN_CLOSED}
           showHappens={section.by !== DEFAULT_QUEUE_GROUPING}
           key={item.rowKey}
         />
@@ -171,6 +170,8 @@ function QueueSection({
   filterActive: boolean;
   filterKey: string;
 }) {
+  // Only the first read folds a group: a later one must not close it on the person.
+  const [startsFolded] = useState(section.startsFolded);
   if (section.title === null) return <SectionCards section={section} />;
   return (
     <div data-facet-group="">
@@ -183,7 +184,7 @@ function QueueSection({
         <GutterFold
           className="qFold"
           label={`${section.title} group`}
-          defaultOpen={filterActive || !section.startsFolded}
+          defaultOpen={filterActive || !startsFolded}
           resetKey={filterKey}
           keepMounted
           head={<SectionTitle section={section} />}
@@ -213,8 +214,11 @@ export function QueuePanel({
   const groups = line === null ? [] : queueGroups(line, clock);
   const sections = queueSections(groups, grouping);
   const total = groups.reduce((sum, g) => sum + g.items.length, 0);
-  // On a phone each section shows its first cards, so Show all has work only past them.
-  const more = sections.some((s) => s.items.length > SHOWN_CLOSED) ? total : 0;
+  // On a phone a section shows its first cards, and one that starts folded shows all of them once opened.
+  const limited = sections.filter((s) => !s.startsFolded);
+  const more = limited.some((s) => s.items.length > SHOWN_CLOSED)
+    ? limited.reduce((sum, s) => sum + s.items.length, 0)
+    : 0;
   return (
     <section
       className="panel pQueue"

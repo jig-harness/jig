@@ -184,16 +184,29 @@ export interface FilterProjection {
   active: boolean;
 }
 
+function queryWords(filter: CardFilter): string[] {
+  return filter.query.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Whether a filter narrows a view with these facets, known as soon as the filter changes. */
+export function filterIsActive(
+  filter: CardFilter,
+  facets: readonly Facet[],
+): boolean {
+  return (
+    queryWords(filter).length > 0 ||
+    facets.some((facet) => Boolean(filter.values[facet]?.length))
+  );
+}
+
 /** Count each candidate against the text and every other facet so its chip describes what it can add. */
 export function projectFilters(
   cards: readonly FacetCard[],
   filter: CardFilter,
   facets: readonly Facet[],
 ): FilterProjection {
-  const words = filter.query.toLowerCase().split(/\s+/).filter(Boolean);
-  const active =
-    words.length > 0 ||
-    facets.some((facet) => Boolean(filter.values[facet]?.length));
+  const words = queryWords(filter);
+  const active = filterIsActive(filter, facets);
   const counts: FilterProjection["counts"] = {};
   const byFacet = new Map(
     facets.map((facet) => [

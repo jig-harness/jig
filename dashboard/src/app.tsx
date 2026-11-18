@@ -16,7 +16,12 @@ import { tabCounts } from "./cards.ts";
 import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
 import { KeyBar } from "./key-bar.tsx";
 import { FacetControls } from "./facet-controls.tsx";
-import { EMPTY_CARD_FILTER, type QueueGrouping } from "./facets.ts";
+import {
+  EMPTY_CARD_FILTER,
+  facetsFor,
+  filterIsActive,
+  type QueueGrouping,
+} from "./facets.ts";
 import { Fold, Hint, PopupRoot } from "./fold.tsx";
 import { clock as clockLabel, hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
@@ -394,7 +399,7 @@ function Page({
               filter={filter}
               setFilter={setFilter}
               theme={theme}
-              filterActive={steer.filterResults.active}
+              filterActive={filterIsActive(steer.cardFilter, facetsFor(tab))}
               filterKey={JSON.stringify(steer.cardFilter)}
               grouping={grouping}
             />

@@ -908,8 +908,9 @@ The phone excludes operator chat, command palettes and advanced filter
 composition. On the card views, repository is the editable filter. A link
 with text or other facets still narrows the view and shows those selections
 as read-only, with a Clear control. Queue's groups fold as they do on a
-computer, each showing its first two cards until Show all, and its grouping
-stays on the default, whatever a shared link names. It excludes session chat and steering,
+computer. Each shows its first two cards until Show all, except a group that
+starts folded, which shows all of its cards once opened. Queue's grouping stays
+on the default, whatever a shared link names. It excludes session chat and steering,
 which need the workspace and its context. Its one write today is Send, which
 answers a parked decision as the person from the phone's own browser, over the
 HTTPS front, as the comment `jig send` writes, record included ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). The
