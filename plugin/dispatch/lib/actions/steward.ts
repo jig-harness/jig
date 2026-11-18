@@ -46,7 +46,8 @@ import { unreportedRuns } from "../steward-causes.ts";
 import type { StationContext } from "../line-station.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import type { RepoObservation, Tracked } from "../tick-observe.ts";
+import type { RepoObservation } from "../tick-observe.ts";
+import type { Tracked } from "../tick-tracker.ts";
 import type { Action, LaunchOutcome, RepoReport } from "../types.ts";
 import {
   admitAccount,
@@ -315,13 +316,13 @@ function backlogInput(
   queue: PoolIssue[],
   judged: ReadonlySet<string>,
 ): BacklogInput {
-  const { opened, forge } = observation;
+  const { opened } = observation;
   const labels = parseTrackerLabels(opened.values);
   return {
     slug: opened.repo.slug,
     actions: opened.report.actions,
     running: opened.report.running,
-    drives: forge.drives,
+    drives: observation.drives,
     held: observation.held,
     queue,
     records: state.records,
@@ -350,7 +351,7 @@ async function digestOf(
   backlog: Backlog,
   queue: PoolIssue[],
 ): Promise<Outcome<StewardDigest, QueueFailure>> {
-  const { opened, forge } = observation;
+  const { opened } = observation;
   const { repo } = opened;
   const targets = await collectStewardEvidence(
     state.records,
@@ -362,7 +363,7 @@ async function digestOf(
     version: 1,
     repo: repo.slug,
     backlog: backlog.members,
-    drives: forge.drives.map((pr) => ({
+    drives: observation.drives.map((pr) => ({
       ...pr,
       evidence: { ...pr.evidence, stewardFacts: factsOf(pr) },
     })),

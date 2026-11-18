@@ -79,7 +79,7 @@ function applyNeed(
   digest: StewardDigest,
 ): void {
   const prior = digest.drives.find((p) => `PR #${p.number}` === record.target);
-  const current = observation.forge.drives.find(
+  const current = observation.drives.find(
     (p) => `PR #${p.number}` === record.target,
   );
   if (prior && (!current || !sameFacts(factsOf(prior), factsOf(current))))
@@ -136,7 +136,7 @@ function applyRearm(
   digest: StewardDigest,
   records: KeptStewardRecord[],
 ): void {
-  const pr = observation.forge.drives.find(
+  const pr = observation.drives.find(
     (p) => `PR #${p.number}` === record.target,
   );
   const duplicate = duplicateRearm(records, kept, record);

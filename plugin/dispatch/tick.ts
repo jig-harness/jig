@@ -4,10 +4,18 @@
  * (the dispatch section from the default branch, the tracker, the forge's
  * pull requests and their drive ledgers, the runtime's sessions), each
  * repository under its observe lock and every read through one bounded pool
- * (lib/pool.ts). The act phase, under the act lock, then takes the
+ * (lib/pool.ts). Its reads of the forge and the tracker go through the
+ * tick's world view (lib/world-view.ts), which a caller of `runTick` can
+ * supply (`TickOptions.world`) and which otherwise reads them directly;
+ * this host's launch records, the machine view, are read beside it and
+ * never written into a fact it returned. The act phase, under the act lock, then takes the
  * repositories one at a time in this tick's rotated order: plan wanted minus
  * running, report, and with `--apply` launch; then the tick writes its
- * receipt. Without `--apply` a tick starts nothing: it reports what it
+ * receipt. Once every lock is given up, an applying tick refreshes the
+ * conflict rates of one repository it launches pickups for whose refresh is
+ * due, each at most once a day and under a deadline
+ * (lib/conflict-rates-refresh.ts), so a slow replay delays no launch and
+ * holds the next tick back by one refresh at most. Without `--apply` a tick starts nothing: it reports what it
  * would start, and why. With it, the re-arms and takeovers a repository's
  * machine-file entry enables are launched within each account's cap
  * (actions/drive.ts), its follow-ups as headless passes the same way
@@ -87,7 +95,11 @@ import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
-import { prepareTrackers } from "./lib/tick-trackers.ts";
+import { tickWorld, worldOf } from "./lib/world-view.ts";
+import {
+  type ActedRepository,
+  refreshEligible,
+} from "./lib/conflict-rates-refresh.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
@@ -105,7 +117,7 @@ import {
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
-import { boundAt } from "./lib/sources/bounded.ts";
+import { boundAt, heldTo } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
@@ -224,6 +236,7 @@ async function startTick(
   // One bound for every read the tick makes, from the launcher's deadline; none when no launcher bounds it.
   const bound = boundAt(deadlineOf(machine, startedMs));
   const read = await readLaunches();
+  const reads = tickReads(runtime, options.poolSize, bound);
   const receipt: TickReceipt = {
     version: 1,
     runId,
@@ -248,7 +261,8 @@ async function startTick(
     lineInputs: new Map(),
     reflections: [],
     pending: [],
-    reads: tickReads(runtime, options.poolSize, bound),
+    reads,
+    world: tickWorld(options, reads, bound),
     rerunsHeld: rerunsHeld(),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };
@@ -320,10 +334,19 @@ async function observeAll(
       }
     }),
   );
-  await prepareTrackers(
-    prepared.map(({ opened }) => opened),
-    context,
-  );
+  try {
+    await heldTo(
+      () =>
+        worldOf(context).gatherQueues(
+          prepared.map(({ opened }) => opened),
+          context,
+        ),
+      context.bound,
+    );
+  } catch (error) {
+    // A view that never answered at the tick's deadline leaves each repository to read its own queues.
+    if (context.bound?.signal.aborted !== true) throw error;
+  }
   await Promise.all(
     prepared.map(async (opened) => {
       try {
@@ -789,12 +812,70 @@ async function runTickWithCaller(
   }
 }
 
-/** The tick under its observe and act locks: every repository read, then acted on and closed. */
+/** What the act phase leaves for the work that runs after it. */
+interface Acted {
+  started?: StartedTick;
+  observe?: ObservedAll;
+}
+
+/** The tick under its locks, then, with every lock given up, what runs after the act phase. */
 async function lockedTick(
   options: TickOptions,
   timer: PhaseTimer<TickPhase>,
   tick: { acting: boolean; upgrade?: ScheduledUpgrade },
   runId: string,
+): Promise<TickResult> {
+  const acted: Acted = {};
+  const result = await underLocks(options, timer, tick, runId, acted);
+  if (acted.started !== undefined && acted.observe !== undefined)
+    await afterAct(acted.started, acted.observe, runId);
+  return result;
+}
+
+/**
+ * The work after the act phase, once its receipt is written and its locks
+ * are given up, so nothing here delays a launch: the daily
+ * refresh of the acted-on repositories' conflict rates. A defect here stops
+ * this work only; the tick's receipt and exit stand.
+ */
+async function afterAct(
+  started: StartedTick,
+  observe: ObservedAll,
+  runId: string,
+): Promise<void> {
+  const { context } = started;
+  const repos: ActedRepository[] = [...observe.observed.values()].flatMap(
+    (o) =>
+      "opened" in o
+        ? [
+            {
+              slug: o.opened.repo.slug,
+              path: o.opened.repo.path,
+              listed: o.opened.listed,
+              stages: [...o.opened.stages],
+            },
+          ]
+        : [],
+  );
+  const run = context.options.afterAct ?? refreshEligible;
+  try {
+    await run(repos, {
+      apply: context.apply !== null,
+      deadlineMs: deadlineOf(context.options.machine, context.startedMs),
+      caller: `tick:${runId}`,
+    });
+  } catch (error) {
+    logDefect("the work after the act phase", defectOf("after", error), error);
+  }
+}
+
+/** The tick under its observe and act locks: every repository read, then acted on and closed. */
+async function underLocks(
+  options: TickOptions,
+  timer: PhaseTimer<TickPhase>,
+  tick: { acting: boolean; upgrade?: ScheduledUpgrade },
+  runId: string,
+  acted: Acted,
 ): Promise<TickResult> {
   const started = await timer.time("start", () => startTick(options, runId));
   // The scheduled upgrade is taken once, so a throw after this carries it.
@@ -833,7 +914,10 @@ async function lockedTick(
     }
     tick.acting = true;
     try {
-      return await actAndClose(started, observe, locks, timer);
+      const closed = await actAndClose(started, observe, locks, timer);
+      acted.started = started;
+      acted.observe = observe;
+      return closed;
     } finally {
       act.release();
     }

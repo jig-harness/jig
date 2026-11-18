@@ -99,6 +99,7 @@ export async function observeOpenedTurn(
       nowMs: context.nowMs,
       records: allRecords(context),
       reads: context.reads,
+      world: context.world,
       ...(bound === undefined ? {} : { bound }),
     },
     timer,
@@ -119,7 +120,7 @@ export async function observeOpenedTurn(
       : [];
   // Observations belong to the tick even when a later phase fails.
   context.lineInputs.set(path, {
-    ...lineInputOf(forge.drives, forge, tracked, sessions, {
+    ...lineInputOf(observation.drives, forge, tracked, sessions, {
       slug: opened.repo.slug,
       branchPattern: branchPattern(opened.values),
     }),
@@ -136,12 +137,11 @@ export async function actTurn(
   const { turn, opened, observation } = observed;
   const { timer } = turn;
   const { report } = opened;
-  const { forge } = observation;
   if (context.apply !== null)
     await timer.time("apply", () => recoverLedgers(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
   await timer.time("log", () =>
-    logRepo(context, opened.repo.slug, report, forge.drives),
+    logRepo(context, opened.repo.slug, report, observation.drives),
   );
   // The labels are projected before the notices go out, so a failure alert is judged against the rows the projection leaves.
   const project = () =>

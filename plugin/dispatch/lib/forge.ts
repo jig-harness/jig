@@ -42,12 +42,19 @@ import { checksFail } from "./automation.ts";
 import {
   type CausedFailure,
   failedBy,
+  outboundFailure,
+  outboundOf,
   type OutboundFailure,
 } from "../../shared/outbound/failure.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
 import { currentMs, parseMs } from "../../shared/time.ts";
-import { ended, secondsLeft, type TickBound } from "./sources/bounded.ts";
+import {
+  ended,
+  passedRead,
+  secondsLeft,
+  type TickBound,
+} from "./sources/bounded.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
 const PR_LIMIT = 1000;
@@ -213,10 +220,7 @@ export async function pullRequestFiles(
 ): Promise<Outcome<string[], "unreadable">> {
   const files: string[] = [];
   for (let page = 1; ; page++) {
-    if (ended(bound))
-      return unreadable(
-        `PR #${pr}'s file listing stopped at the tick's deadline`,
-      );
+    if (ended(bound)) return passedRead(`PR #${pr}'s file listing`);
     const read = await ghJson(
       [
         "api",
@@ -226,16 +230,26 @@ export async function pullRequestFiles(
       undefined,
       secondsLeft(bound),
     );
-    if (!read.ok) return read;
+    if (!read.ok)
+      return outboundOf(read.failure) === null
+        ? invalidFiles(read.failure.reason, read.failure.cause)
+        : read;
     const listed = pageFileNames(read.value, pr);
     if (!listed.ok) return listed;
     files.push(...listed.value.names);
     if (listed.value.count < FILES_PAGE) return ok(files);
     if (page * FILES_PAGE >= FILES_LIMIT)
-      return unreadable(
+      return invalidFiles(
         `PR #${pr} changes ${FILES_LIMIT} or more files, more than the forge lists`,
       );
   }
+}
+
+function invalidFiles(
+  reason: string,
+  cause?: unknown,
+): Outcome<never, "unreadable"> {
+  return failedBy("unreadable", outboundFailure("invalid", reason, { cause }));
 }
 
 /** The names one page of a file listing holds, and how many files it listed. */
@@ -244,12 +258,14 @@ function pageFileNames(
   pr: number,
 ): Outcome<{ names: string[]; count: number }, "unreadable"> {
   if (!Array.isArray(out))
-    return unreadable(`PR #${pr}'s file listing is not a list`);
+    return invalidFiles(`PR #${pr}'s file listing is not a list`);
+  if (out.length > FILES_PAGE)
+    return invalidFiles(`PR #${pr}'s file listing exceeds its page size`);
   const names: string[] = [];
   for (const f of out) {
     const one = fileNames(f);
     if (one === null)
-      return unreadable(`PR #${pr}'s file listing is unreadable`);
+      return invalidFiles(`PR #${pr}'s file listing is unreadable`);
     names.push(...one);
   }
   return ok({ names, count: out.length });
@@ -275,6 +291,9 @@ export interface ListedPr {
   headRefOid?: string;
   /** An open pull request's base branch. */
   baseRefName?: string;
+  /** The forge's comparison base snapshot and, in the batched listing, the live tip. */
+  baseRefOid?: string;
+  baseTipOid?: string;
   /** An open pull request's mergeability with its base: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while the forge computes it. */
   mergeable?: string;
   /** Its labels' names, when the read asked for them. */
@@ -310,6 +329,7 @@ const CHECKS = "statusCheckRollup";
 const OPEN_FIELDS = [
   "headRefOid",
   "baseRefName",
+  "baseRefOid",
   "mergeable",
   "author",
   "isDraft",
@@ -376,6 +396,8 @@ function listedPr(
     ...text("mergedAt"),
     ...text("headRefOid"),
     ...text("baseRefName"),
+    ...text("baseRefOid"),
+    ...text("baseTipOid"),
     ...text("mergeable"),
     ...text("updatedAt"),
     ...(read.labels ? text("body") : {}),

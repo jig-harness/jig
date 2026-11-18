@@ -104,6 +104,7 @@ export interface Contention {
 export interface ContentionReads {
   /** The catalog's text on the default branch; `null` when the branch has no such file. */
   catalog: (path: string) => Promise<Outcome<string | null>>;
+  /** A deferred file read leaves the drive unplaced without failing the tick. */
   files: (pr: number) => Promise<Outcome<string[]>>;
   threads: (pr: number) => Promise<Outcome<number>>;
 }
@@ -274,7 +275,8 @@ async function placeDrives(
       read = failed("unreadable", failureText(error), error);
     }
     if (!read.ok) {
-      causes.push(readFailureOf(read.failure));
+      if (read.failure.code !== "deferred")
+        causes.push(readFailureOf(read.failure));
       unread.set(
         drive.number,
         `its changed files do not read, so whether it touches a serialized area cannot be told this tick: ${read.failure.reason}`,

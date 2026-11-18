@@ -40,7 +40,7 @@
  * listing holds), is a failure value: the tick then reads the same facts one
  * by one, as it would without this.
  */
-import { isRecord } from "../../shared/guards.ts";
+import { isRecord, valueAt } from "../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import {
@@ -53,7 +53,7 @@ import {
 } from "../../shared/outbound/paging.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { failedBy, outboundOf } from "../../shared/outbound/failure.ts";
-import { ghRunFailure } from "../../shared/outbound/github.ts";
+import { graphqlAnswer } from "../../shared/outbound/github.ts";
 import { checksFail } from "./automation.ts";
 import {
   cutRead,
@@ -83,6 +83,7 @@ const COMMENTS_QUERY_NAME = "DispatchComments";
 
 /** What the queries read of a pull request's comments: one page, and whether there are more. */
 const COMMENTS = `comments(first: ${ITEMS}) {
+          totalCount
           pageInfo { hasNextPage }
           nodes { databaseId fullDatabaseId url createdAt updatedAt authorAssociation body author { __typename login } }
         }`;
@@ -95,9 +96,10 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
     pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number url title body headRefName isCrossRepository createdAt headRefOid baseRefName mergeable isDraft updatedAt
+        number url title body headRefName isCrossRepository createdAt headRefOid baseRefName baseRefOid mergeable isDraft updatedAt
         author { __typename login }
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
+        baseRef { target { oid } }
         headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
         reviewThreads(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { isResolved } }
         closingIssuesReferences(first: ${CLOSING}) { pageInfo { hasNextPage } nodes { number repository { nameWithOwner } } }
@@ -270,11 +272,7 @@ function partial(reason: string): Read<never> {
   return failed("unreadable", reason);
 }
 
-function field(value: unknown, ...path: string[]): unknown {
-  let at = value;
-  for (const key of path) at = isRecord(at) ? at[key] : undefined;
-  return at;
-}
+const field = valueAt;
 
 const text = (v: unknown): v is string => typeof v === "string";
 
@@ -306,9 +304,18 @@ function commentId(node: Record<string, unknown>): number | null {
 
 /** One comment of the query in the comment listing's shape; `null` when it carries no id. */
 export function restComment(node: unknown): Record<string, unknown> | null {
-  if (!isRecord(node)) return null;
+  if (
+    !isRecord(node) ||
+    !text(node.body) ||
+    !text(node.authorAssociation) ||
+    (node.author !== null &&
+      (!isRecord(node.author) ||
+        !text(node.author.login) ||
+        !text(node.author.__typename)))
+  )
+    return null;
   const id = commentId(node);
-  if (id === null) return null;
+  if (id === null || !Number.isSafeInteger(id) || id <= 0) return null;
   return {
     id,
     user: { login: listingLogin(node.author) },
@@ -411,6 +418,7 @@ export function listedPullRequest(
   )
     return partial(`PR #${node.number} has unreadable labels`);
   const author = listedAuthor(node.author);
+  const baseTip = field(node, "baseRef", "target", "oid");
   return ok({
     number: node.number,
     ...strings(
@@ -423,10 +431,12 @@ export function listedPullRequest(
         "createdAt",
         "headRefOid",
         "baseRefName",
+        "baseRefOid",
         "mergeable",
         "updatedAt",
       ].map((k) => [k, k] as const),
     ),
+    ...(text(baseTip) ? { baseTipOid: baseTip } : {}),
     ...(typeof node.isDraft === "boolean" ? { isDraft: node.isDraft } : {}),
     ...(typeof node.isCrossRepository === "boolean"
       ? { isCrossRepository: node.isCrossRepository }
@@ -455,27 +465,27 @@ function configOf(repository: unknown): Read<string | null> {
 }
 
 /** One query's answer, run in `cwd` where it names the repository by the checkout. */
-async function graphql(args: string[], cwd?: string): Promise<Asked<unknown>> {
-  const began = currentMs();
-  const r = await ghCall(["api", "graphql", ...args], {
-    stderr: "pipe",
-    env: ghRepoEnv(),
-    ...(cwd === undefined ? {} : { cwd }),
-  });
-  const failure = ghRunFailure(r, currentMs() - began);
-  if (failure !== null) {
-    const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    return failedBy(
-      failure.code === "too-costly" ? "too-costly" : "unreadable",
-      failure,
-      `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-    );
-  }
-  try {
-    return ok(JSON.parse(r.stdout));
-  } catch (error) {
-    return failed("unreadable", "the query's answer is not JSON", error);
-  }
+async function graphql(
+  args: string[],
+  cwd?: string,
+  repository?: string,
+): Promise<Asked<unknown>> {
+  const answer = await graphqlAnswer(() =>
+    ghCall(["api", "graphql", ...args], {
+      stderr: "pipe",
+      env: {
+        ...ghRepoEnv(),
+        // Name the repository for governed quota routing and stored-login wrappers.
+        ...(repository === undefined ? {} : { GH_REPO: repository }),
+      },
+      ...(cwd === undefined ? {} : { cwd }),
+    }),
+  );
+  if (!answer.ok) return answer;
+  const errors = field(answer.value, "errors");
+  if (Array.isArray(errors) && errors.length > 0)
+    return partial("the query returned GraphQL errors");
+  return answer;
 }
 
 /** One page of the repository's query, as the forge answered it in the checkout at `path`. */
@@ -506,7 +516,10 @@ function addComments(
   const whole =
     field(connection, "pageInfo", "hasNextPage") === false &&
     Array.isArray(all) &&
-    mapped.every((c) => c !== null);
+    field(connection, "totalCount") === all.length &&
+    all.length <= ITEMS &&
+    mapped.every((c) => c !== null) &&
+    new Set(mapped.map((c) => c?.id)).size === all.length;
   if (whole) read.comments.set(number, mapped as Record<string, unknown>[]);
   else read.overflow.push(number);
 }
@@ -638,14 +651,18 @@ function commentsQuery(prs: readonly number[]): string {
 
 /** The comments query as the forge answers it. */
 const comments: AskComments = (owner, name, prs) =>
-  graphql([
-    "-f",
-    `query=${commentsQuery(prs)}`,
-    "-f",
-    `owner=${owner}`,
-    "-f",
-    `name=${name}`,
-  ]);
+  graphql(
+    [
+      "-f",
+      `query=${commentsQuery(prs)}`,
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${name}`,
+    ],
+    undefined,
+    `${owner}/${name}`,
+  );
 
 /**
  * The comments of the pull requests `prs` of `slug`, read at most `PAGE`
@@ -689,6 +706,8 @@ async function readChunks(
   };
   if (prs.some((n) => !Number.isSafeInteger(n) || n <= 0))
     return partial("a pull request number is not a whole number");
+  if (prs.length > PR_LIMIT)
+    return partial("too many pull requests for one comments read");
   for (let at = 0; at < prs.length; ) {
     // The query that read says how many it read: a smaller one reads fewer.
     let chunk: readonly number[] = [];
