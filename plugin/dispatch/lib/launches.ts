@@ -127,7 +127,15 @@ export function isInteractive(
  * stopped, or a follow-up a rate limit or an arm still pending stopped, to
  * be started again once its time has come (`waitsUntil`, `waitsFor`).
  */
-export type SessionResult = "done" | "failed" | "waits";
+export type RecordedResult = "done" | "failed" | "waits";
+
+/**
+ * A recorded answer as every reader takes it: a `failed` that carries the
+ * decision the pass framed for a person (`failed --decision`) is `parked`,
+ * an end that waits on that person rather than a failure
+ * (`launch-result.ts`).
+ */
+export type SessionResult = RecordedResult | "parked";
 
 /** The runtime's answer to one `launch` call for the record. */
 export interface LaunchAttempt {
@@ -316,7 +324,7 @@ export type LaunchState =
 export interface ReadRecord {
   record: LaunchRecord;
   state: LaunchState;
-  /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
+  /** A pickup's session's or a follow-up pass's recorded answer, as a reader takes it; `null` when none. */
   result: SessionResult | null;
   next?: NextOwner | null;
   /** For a `waits` result, when the pickup or the follow-up may start again (ISO 8601). */
@@ -325,7 +333,7 @@ export interface ReadRecord {
   waitsFor?: WaitFor;
   /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
   refusal?: PickupRefusal | null;
-  /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
+  /** The framed decision the pass recorded when it stopped for a person, its result read as `parked`; absent otherwise. */
   framed?: FramedResult;
   /** When the pass's result or the stage's exit could not be written on this host (`unwritten-result.ts`); absent otherwise. */
   unwritten?: string;
@@ -527,7 +535,7 @@ export interface LaunchRow {
   /** What a `waits` result waits for, as JSON (`wait-for.ts`). */
   result_wait?: string | null;
   refusal?: string | null;
-  /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
+  /** A pass's framed decision, kept beside its `failed` result, which reads as `parked` (`framed-result.ts`). */
   result_decision?: string | null;
   report?: string | null;
   sessions?: string | null;
@@ -595,7 +603,11 @@ function answerOf(
   root: string,
 ): Omit<ReadRecord, "record" | "state"> {
   return {
-    result: asResult(row.result, row.result_until ?? null),
+    result: asResult(
+      row.result,
+      row.result_until ?? null,
+      row.result_decision ?? null,
+    ),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),

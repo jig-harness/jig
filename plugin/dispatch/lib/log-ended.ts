@@ -30,6 +30,7 @@ import {
 } from "./launches.ts";
 import { endedRow, endTime, hasEnded, insertRow } from "./log.ts";
 import { waitsOf } from "./pickup-refusal.ts";
+import { framedOf } from "./framed-result.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import type { DrivenPr } from "./types.ts";
 
@@ -105,21 +106,27 @@ export async function logEnded(
       inTransaction(db, () => {
         const current = db
           .query(
-            "SELECT result, result_next, result_until, result_wait, report FROM launches WHERE id = ?",
+            "SELECT result, result_next, result_until, result_wait, result_decision, report FROM launches WHERE id = ?",
           )
           .get(record.id) as {
           result: string | null;
           result_next: string | null;
           result_until: string | null;
           result_wait: string | null;
+          result_decision: string | null;
           report: string | null;
         } | null;
         if (current === null)
           throw new Defect("the launch record disappeared before logging");
         const fresh = {
           ...r,
-          result: asResult(current.result, current.result_until),
+          result: asResult(
+            current.result,
+            current.result_until,
+            current.result_decision,
+          ),
           ...waitsOf(current),
+          ...framedOf(current.result_decision),
           next: readNext(current.result_next),
           report: readKeptReport(current.report),
         };

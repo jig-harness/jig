@@ -506,7 +506,8 @@ function endedWhy(
 
 /**
  * The question a failed follow-up's pass stopped on: its launch record's
- * trailing question, else its closing report's, else its outcome record's; `null` when neither keeps one, or when the
+ * trailing question, else its closing report's, else, for a pass parked on
+ * the decision it framed, that decision's, else its outcome record's; `null` when none keeps one, or when the
  * host could not write the pass's result, whose question is the host's.
  */
 function questionFor(
@@ -517,6 +518,9 @@ function questionFor(
   return (
     questionOf(found?.state) ??
     found?.report?.report.question ??
+    (found?.result === "parked"
+      ? found.framed?.decision.call.question
+      : undefined) ??
     kept?.question ??
     null
   );

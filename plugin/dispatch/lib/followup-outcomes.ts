@@ -149,11 +149,34 @@ export function askedBy(r: ReadRecord): Asked {
   };
 }
 
-/** How an ended follow-up record ended: its session's recorded result, else failed; `null` while it holds, or for a retry (a startup that never began, a first death). */
-export function outcomeOf(r: ReadRecord): TickOutcome | null {
+/** How an ended follow-up ended, as a reader that counts its ends takes it. */
+export type FollowupEnd = "done" | "waits" | "parked" | "failed";
+
+/**
+ * How an ended follow-up record ended: its session's recorded result, a
+ * wait (`waits`) or a stop on the decision it framed for a person
+ * (`parked`) apart from a failure, and an end with no result `failed`;
+ * `null` while it holds, or for a retry (a startup that never began, a
+ * first death).
+ */
+export function followupEnd(r: ReadRecord): FollowupEnd | null {
   if (retryableFollowup(r)) return null;
   if (r.state.kind !== "ended" && r.state.kind !== "died") return null;
-  return r.result === "done" ? "done" : "failed";
+  return r.result ?? "failed";
+}
+
+/**
+ * The outcome the follow-up's marker and its outcome record carry
+ * (`followupEnd`, in the marker's closed words): `done`, else `failed`. A
+ * wait or a park stays `failed` there, so a host that reads the marker, on
+ * any release, holds the follow-up rather than starting it again; the wait
+ * releases it at its time (`followup-waits.ts`), and the park waits for the
+ * person's answer.
+ */
+export function outcomeOf(r: ReadRecord): TickOutcome | null {
+  const end = followupEnd(r);
+  if (end === null) return null;
+  return end === "done" ? "done" : "failed";
 }
 
 /** Whether the written outcome belongs to an attempt later than `record`. */

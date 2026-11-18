@@ -1242,7 +1242,8 @@ jig dispatch --apply [--repo <path>]...           # start what the machine file 
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
-jig dispatch result <record> <token> waits --until <time>  # a pickup or follow-up a rate limit stopped
+jig dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]  # a pickup or follow-up a rate limit stopped, or a follow-up whose arm is still pending
+jig dispatch result <record> <token> failed --decision <file>  # a pass that stopped on the decision it framed for a person
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
 jig dispatch report <record> <token> <file>       # a pass's closing report (dispatched-sessions.md)
@@ -1382,6 +1383,22 @@ runtime reports that agent finished or gone. It ends with its result, or
 as failed when none was recorded, since a session that stopped on a
 question or a crash records none; a pickup's record is read beside the
 item's state.
+
+Every reader (the tick, the outcome log, the dashboard, the steward and a
+follow-up's outcome) takes a recorded answer as one of these launch
+results: `done`; `waits`, a pass that recorded a wait (a rate limit's
+reset, or a follow-up's arm still pending) and starts again once its time
+has come; `parked`, a pass that recorded `failed --decision <file>` and so
+stopped on the decision it framed for a person; and `failed`, a pass that
+recorded `failed` with neither, or ended with none. Neither `waits` nor
+`parked` counts as a failure. The `launches` table keeps only `done` and
+`failed`: `waits` is kept as `failed` with the time in `result_until`, and
+`parked` as `failed` with the decision in `result_decision`, so a host
+that rolls back to a release that knows neither reads a failed pass, which
+it holds for a person rather than starting it again. Reading the result
+from those columns, never from a migration, covers rows written before the
+distinction too. A follow-up's marker and its outcome record keep their
+closed words, `done` and `failed`, for the same reason.
 
 ### The session runtime interface
 
@@ -1701,7 +1718,10 @@ person settles it.
 A pass that stops for a person also frames what it asks: it records
 `failed` with a `parked-decision/v1` record (`jig dispatch result … failed
 --decision <file>`), checked as a park's decision is and kept with the
-result and its digest, and the need it raises carries that decision. For
+result and its digest, and the need it raises carries that decision. Every
+reader takes that result as `parked` (see the launch results, below), its
+ended row classed parked for a person with a repository maintainer and the
+act the decision's class asks for as its next owner. For
 the needs the tick detects itself (a failed follow-up, a stalled pickup, a
 checkout an unlisted tree holds, a drive the ledger handed to a person, a
 stuck launch record) the tick frames the decision from the facts that
@@ -2308,12 +2328,13 @@ replaced by a takeover is stalled, not refused.
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | converged           | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done`                                                                                         |
 | merged              | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge                                                          |
-| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood                                                  |
-| parked for a person | a park (exit `8`); a follow-up pass that stopped on a question for a person                                                                                                           |
+| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood; a pass that recorded `waits` on a rate limit    |
+| parked for a person | a park (exit `8`); a pickup or follow-up pass that stopped on a question for a person, or recorded the launch result `parked`                                                         |
+| arm pending         | a follow-up pass that recorded the launch result `waits` on an arm still pending                                                                                                      |
 | stalled             | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over`                                                         |
 | died                | a process gone without an exit; an interactive session that ended with no result                                                                                                      |
 | refused             | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
-| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`; a recorded result `failed`                                                             |
+| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`; the launch result `failed`                                                             |
 | double claim        | used by event rows only                                                                                                                                                               |
 | unknown             | anything not placed above, with its last state                                                                                                                                        |
 

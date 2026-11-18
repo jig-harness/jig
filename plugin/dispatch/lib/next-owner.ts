@@ -6,7 +6,9 @@ import {
 } from "../../shared/address.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
-import type { LaunchAction } from "./launches.ts";
+import { actOfClass } from "../../shared/acts.ts";
+import type { FramedResult } from "./framed-result.ts";
+import type { LaunchAction, SessionResult } from "./launches.ts";
 
 export type NextOwner =
   | { address: string }
@@ -69,6 +71,48 @@ export function derivedNext(
   if (cls === "merged")
     return { none: "this drive ended after the pull request merged" };
   return { none: `no handoff was recorded: ${reason}` };
+}
+
+/**
+ * The handoff of a pass parked on the decision it framed: the person who
+ * answers it, and the act its class asks for (`actOfClass`) with its
+ * question.
+ */
+export function parkedNext(framed: FramedResult): NextOwner {
+  const { decision } = framed;
+  return {
+    person: "repository maintainer",
+    act: `${actOfClass(decision.class)} (${decision.class}): ${decision.call.question}`,
+  };
+}
+
+/** What an ended pickup or follow-up recorded, as its ended row's handoff reads it. */
+export interface EndedAnswer {
+  result: SessionResult | null;
+  /** The handoff the session recorded with its result. */
+  next: NextOwner | null;
+  framed?: FramedResult | undefined;
+  class: string;
+  reason: string;
+}
+
+/**
+ * An ended row's handoff: a parked pass's is the person and act its
+ * decision names, a pickup's done or waiting one the handoff it recorded
+ * (`null` when it recorded none), and any other the line's (`derivedNext`).
+ */
+export function endedNext(
+  stage: LaunchAction,
+  ended: EndedAnswer,
+): NextOwner | null {
+  if (ended.result === "parked" && ended.framed !== undefined)
+    return parkedNext(ended.framed);
+  if (
+    stage === "pickup" &&
+    (ended.result === "done" || ended.result === "waits")
+  )
+    return ended.next;
+  return derivedNext(stage, ended.class, ended.reason);
 }
 
 /** Text form shared by the operator's answer and the outcome's readers. */

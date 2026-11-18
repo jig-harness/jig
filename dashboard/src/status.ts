@@ -88,6 +88,7 @@ export type RecordedSet =
 const RECORDED: Record<RecordedSet, Record<string, RoleKey>> = {
   "outcome class": {
     "parked for a person": "needs",
+    "arm pending": "held",
     converged: "well",
     merged: "well",
     "gates failed": "badly",

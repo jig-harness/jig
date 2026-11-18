@@ -5,7 +5,7 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pass that recorded `waits` has `result` `failed`, the time it waits until in `result_until` and what it waits for (a rate limit, or a follow-up's arm still pending) in `result_wait`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
+ * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pass that recorded `waits` has `result` `failed`, the time it waits until in `result_until` and what it waits for (a rate limit, or a follow-up's arm still pending) in `result_wait`; a pass that recorded `failed --decision` has the decision in `result_decision`, and reads as `parked` (`launch-result.ts`); a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -562,6 +562,7 @@ const AFTER_STAGE_COLUMNS: KnownColumns = {
     "exit",
     "result",
     "result_until",
+    "result_decision",
     "report",
   ],
   thread_samples: ["launch", "round", "threads", "at"],
