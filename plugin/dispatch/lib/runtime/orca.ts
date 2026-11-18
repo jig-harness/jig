@@ -35,6 +35,10 @@
  *
  * `retire` reads the notices workspace's card again under the comment lock
  * and removes it with `orca worktree rm --delete-branch` (`orca-retire.ts`).
+ *
+ * `endRun` closes the run tabs recorded for a launch record that ended,
+ * whose wrapper died before it could, by the run-tab idle checks
+ * (`orca-end-run.ts`).
  */
 import { realpathSync } from "node:fs";
 import {
@@ -54,6 +58,7 @@ import {
   openPullRequestWorkspace,
 } from "./orca-open.ts";
 import { verifyPullRequestWorkspace } from "./orca-pr-workspace.ts";
+import { orcaEndRun } from "./orca-end-run.ts";
 import { orcaRetire } from "./orca-retire.ts";
 import { orcaSteer } from "./orca-steer.ts";
 import {
@@ -469,6 +474,17 @@ export function orcaRuntime(
           timeoutMs ?? deadlines.runtimeTimeoutMs,
           deadlines.runtimeTimeoutMs,
         ),
+      ),
+    endRun: (ended, timeoutMs, signal) =>
+      orcaEndRun(
+        ended,
+        orcaCommandOrInstalled(process.env),
+        Math.min(
+          timeoutMs ?? deadlines.runtimeTimeoutMs,
+          deadlines.runtimeTimeoutMs,
+        ),
+        undefined,
+        signal,
       ),
   };
 }

@@ -4,7 +4,7 @@
       "dispatch-launch",
       "dispatch/lib/launches.ts",
       "launches",
-      "One session the dispatcher started: its stage, its pull request or item, its account, the wrapper's claim, its exit and its result, each column written once by one writer. The tick reads it to know what holds a stage and an account's slot."
+      "One session the dispatcher started: its stage, its pull request or item, its account, the wrapper's claim, its exit and its result. A secondary host records release tags owed by a follow-up on its launch and shares them with the launch's outcome. The tick reads this record to know what holds a stage and an account's slot."
     ],
     [
       "dispatch-pickup-claim",
@@ -113,6 +113,12 @@
       "dispatch/lib/merge-facts.ts",
       "merge_facts",
       "Immutable directly verified merge times, integration bases and complete changed files for execution-plan conflict edges, kept independently of the mutable follow-up marker cache. Current pull-request associations are read again each tick and never kept here."
+    ],
+    [
+      "dispatch-release-need",
+      "dispatch/lib/release-needs.ts",
+      "release_needs",
+      "The follow-up that reserved tracker filing for a release, the issue that carries it, the observed tag state, and whether the dispatcher claimed its one authorized rerun."
     ],
     [
       "dispatch-pickup-read",
