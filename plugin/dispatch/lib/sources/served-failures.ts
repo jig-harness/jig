@@ -41,7 +41,20 @@ export function readFailureRow(
 }
 
 /**
- * An item's read failed: the claims below it are unknown. A thrown failure
+ * The row a served queue whose items in progress were not read leaves: what
+ * goes unchecked while its claims are unknown. The failure that stopped the
+ * read is the queue's own row or the record's, so this row fails nothing.
+ */
+export function claimsUnreadRow(identity: string, why: string): Unplaced {
+  return {
+    target: `the items ${identity} claimed`,
+    record: "tracker",
+    reason: `the items ${identity} claimed could not be read, so stalls, double claims and the questions of started pickups are not checked: ${why}`,
+  };
+}
+
+/**
+ * An item's read failed: the items below it are unknown. A thrown failure
  * fails the record, with its class; an item no read threw for (an answer that
  * names no assigner, a read the tracker cut short, a missing description) is
  * its row alone. A cause is passed only when a read threw, so a rejection

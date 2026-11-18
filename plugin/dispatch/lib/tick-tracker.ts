@@ -50,6 +50,8 @@ export interface Tracked {
   pickups: WantedItem[];
   /** `null` when the claimed items could not be read. */
   claimed: ClaimedItem[] | null;
+  /** Some wanted item was not read (a served item, merge proof, or a failed record): the pickups are not all known. */
+  partial?: true;
   /** The tracker opened for the read, for the pickups' fresh reads; `null` when none was. */
   tracker: Tracker | null;
 }
@@ -260,7 +262,10 @@ export async function readTracker(
       !lowBudget(await reads.budget()),
       bound,
     );
-    if (reading.read.ok) tracked.claimed = reading.claimed;
+    // The reading leaves its claims unknown itself; a failed item read
+    // leaves them known and only the pickups partial.
+    tracked.claimed = reading.claimed;
+    if (!reading.read.ok || reading.partial === true) tracked.partial = true;
   } catch (error) {
     report.records.push(trackerFailure(where, error));
   }

@@ -100,6 +100,11 @@ export interface TrackerReading {
    * to watch; `null` when they could not be read (named in `unplaced`).
    */
   claimed: ClaimedItem[] | null;
+  /**
+   * A served queue's item, or a queue the rate limit stopped part way, was
+   * not read: the wanted items are not all known, though the claims may be.
+   */
+  partial?: true;
 }
 
 /**
@@ -725,12 +730,11 @@ export async function readPickups(
       ),
     ],
     unplaced: onceEach([...factory.unplaced, ...extra.unplaced]),
-    // A queue the rate limit stopped part way, or one that failed to read,
-    // was not read whole: its claims are not known, so no ended pickup is released or judged on it.
+    // A queue whose items in progress were not read leaves its claims
+    // unknown, so none is judged on it. An item below the queue that did
+    // not read leaves the claims known and only the wanted items partial.
     claimed:
-      factory.claimed === null ||
-      extra.limitedUntil !== undefined ||
-      extra.incomplete === true
+      factory.claimed === null || extra.claimsUnknown === true
         ? null
         : [
             ...new Map(
@@ -738,6 +742,9 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
+    ...(extra.limitedUntil !== undefined || extra.incomplete === true
+      ? { partial: true as const }
+      : {}),
   };
 }
 

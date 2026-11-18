@@ -74,6 +74,7 @@ export function planObserved(
     section,
     pickups: tracked.pickups,
     claimed: tracked.claimed,
+    ...(tracked.partial === true ? { partial: true as const } : {}),
     drives: observation.drives,
     merged: forge.merged,
     sessions,
@@ -99,7 +100,7 @@ export function planObserved(
       scope: tracked.issueRepository ?? repo.slug,
       pickups: tracked.pickups,
       unplaced: report.unplaced,
-      trackerComplete: tracked.claimed !== null,
+      trackerComplete: tracked.claimed !== null && tracked.partial !== true,
       nowMs: context.nowMs,
       enforce: context.options.machine?.priorities?.enforce === true,
       ...deadlineField(context),
@@ -201,13 +202,16 @@ export function afterWait(
  * Plan one repository's tick into its report, with this machine's launch
  * records read beside the sessions; then keep the idle clock and release
  * the ended pickups whose item left the dispatch states, when the claimed
- * items were read whole.
+ * items were read. With `partial`, an item the read left out may still be
+ * wanted, so only a claimed item back in the dispatch states releases its record.
  */
 function planRepo(
   context: TickContext,
   repo: string,
   report: RepoReport,
-  input: Omit<PlanInput, "launches" | "idleSince" | "nowMs" | "outcomes">,
+  input: Omit<PlanInput, "launches" | "idleSince" | "nowMs" | "outcomes"> & {
+    partial?: true;
+  },
 ): void {
   const { nowMs } = context;
   const records = settleRecords(context, repo, input.sessions, nowMs);
@@ -281,6 +285,7 @@ function planRepo(
     new Set(input.pickups.map((p) => p.key)),
     undefined,
     new Set(input.claimed.filter((c) => c.served === true).map((c) => c.key)),
+    input.partial === true,
   );
 }
 

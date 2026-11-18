@@ -30,7 +30,12 @@ import type {
 import { metadata, type Metadata } from "./served-metadata.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
-import { itemFailed, limitedRow, readFailureRow } from "./served-failures.ts";
+import {
+  claimsUnreadRow,
+  itemFailed,
+  limitedRow,
+  readFailureRow,
+} from "./served-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -83,8 +88,10 @@ export interface ServedReading {
   claimed: ClaimedItem[];
   /** The tracker refused the reads for its rate limit: until when, in ISO 8601. */
   limitedUntil?: string;
-  /** A served identity's queue, or an item in it, failed to read for another reason: the claims are not known. */
+  /** A served identity's queue, or an item in it, failed to read for another reason: the wanted items are not all known. */
   incomplete?: boolean;
+  /** A served identity's queue itself was not read (it failed, or the rate limit stopped it): its claims are not known. */
+  claimsUnknown?: true;
   /** What each read that fails the record raised: a queue's, or an item's a failed call stopped, so every class reaches the record. */
   failures?: unknown[];
 }
@@ -143,8 +150,10 @@ interface PersonReading {
   limited: { error: TrackerRateLimited; view: ServedView | null } | null;
   /** What failed each read that fails the record: the scope's cause or the error thrown. */
   failures: unknown[];
-  /** An item's read failed, so the claims below it are unknown. */
+  /** An item's read failed, so the items below it are unknown. */
   partial: boolean;
+  /** Why the queue's items in progress were not read, so its claims are unknown; `null` when they were. */
+  claimsUnread: string | null;
 }
 
 /** A served item in progress, as the claim dispatch monitors. */
@@ -175,6 +184,7 @@ async function readPerson(
     limited: null,
     failures: [],
     partial: false,
+    claimsUnread: null,
   };
   let view: ServedView | null = null;
   try {
@@ -190,6 +200,12 @@ async function readPerson(
         ),
       );
     }
+    // A queue read the limit stopped or that failed leaves only a kept
+    // reading's items in progress, which may no longer hold.
+    if (view.limited !== null)
+      got.claimsUnread = `the tracker is rate limited until ${isoFromMs(view.limited.resetAt)}`;
+    else if (view.unavailable !== undefined)
+      got.claimsUnread = view.unavailable;
     const progress = view.progress();
     got.claimed = progress.map(servedClaim);
     // Claims are monitored either way; an invalid scope only starts nothing.
@@ -202,6 +218,11 @@ async function readPerson(
       got,
     );
   } catch (error) {
+    // Thrown before the queue's items in progress were read: its claims are unknown.
+    if (view === null)
+      got.claimsUnread = isRateLimited(error)
+        ? `the tracker is rate limited until ${isoFromMs(error.resetAt)}`
+        : failureText(error);
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
       got.failures.push(error);
@@ -284,6 +305,10 @@ export async function readServedPickups(
     );
     out.claimed.push(...got.claimed);
     out.unplaced.push(...got.unplaced);
+    if (got.claimsUnread !== null) {
+      out.claimsUnknown = true;
+      out.unplaced.push(claimsUnreadRow(identity, got.claimsUnread));
+    }
     candidates.push(...got.candidates);
     noteFailure(out, got);
     limited ??= got.limited;
