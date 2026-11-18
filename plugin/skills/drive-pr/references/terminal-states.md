@@ -1630,7 +1630,7 @@ false "green":
   workflows that run on label events, the drive watches the verified head
   while it still holds its locks (`lib/driver/converged-ci.ts`): a
   cancellation goes to the recovery above; a failure in a first attempt a
-  label write started is re-run once with `gh run rerun --failed`, claimed
+  label write started has its failed jobs re-run once, claimed
   in `cancelled_ci_label_rerun`; a failure no label write started, a
   failing commit status, a second failure, a refused re-run, or CI not
   settled within `DRIVE_PR_CONVERGED_CI_MINUTES` (30) parks `converged-ci`,
