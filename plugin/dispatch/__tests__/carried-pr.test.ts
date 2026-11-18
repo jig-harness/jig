@@ -274,7 +274,11 @@ describe("a claimed item an open pull request carries", () => {
   });
 
   it("does not read an item already in pr_open as carried, whichever pull request links it", () => {
-    const named = { ...stalled([pr()], [LIVE]), prOpen: () => "In Progress" };
+    const other = pr({ headRefName: "someone-elses-fix", closing: [] });
+    const named = {
+      ...stalled([other], [{ ...LIVE, head: "someone-elses-fix" }]),
+      prOpen: () => "In Progress",
+    };
     const plan = planPickups(input(named));
     expect(plan.quiet).not.toContainEqual(
       expect.objectContaining({ class: "claimed-carried" }),
