@@ -554,7 +554,8 @@ export function stateDbFailure(error: unknown): string | null {
  * its own launch row, which it reads whole, with the `exit` it writes; the
  * earlier follow-up launches of its pull request it reads a wait from; the
  * thread samples, waiting episodes and claimed items read with its record;
- * the claim ends it settles; and a steward run's submitted flag.
+ * the claim ends it settles; a steward run's submitted flag; and the log
+ * rows a report it records rewrites (`refreshEnded`).
  */
 const AFTER_STAGE_COLUMNS: KnownColumns = {
   launches: [
@@ -588,6 +589,7 @@ const AFTER_STAGE_COLUMNS: KnownColumns = {
   pickup_claims: ["launch", "item"],
   settled_ends: ["record", "at"],
   steward_runs: ["id", "submitted"],
+  log: ["key", "seq", "cause", "report_by", "row"],
 };
 
 let afterStage = false;

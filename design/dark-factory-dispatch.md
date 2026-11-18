@@ -1397,8 +1397,9 @@ results: `done`; `waits`, a pass that recorded a wait (a rate limit's
 reset, or a follow-up's arm still pending) and starts again once its time
 has come; `parked`, a pass that recorded `failed --decision <file>` and so
 stopped on the decision it framed for a person; and `failed`, a pass that
-recorded `failed` with neither, or ended with none. Neither `waits` nor
-`parked` counts as a failure. The `launches` table keeps only `done` and
+recorded `failed` with neither, or ended with none. A `waits` on a pending arm and a
+`parked` do not count as a failure; a `waits` on a rate limit is logged
+as a quota wall. The `launches` table keeps only `done` and
 `failed`: `waits` is kept as `failed` with the time in `result_until`, and
 `parked` as `failed` with the decision in `result_decision`, so a host
 that rolls back to a release that knows neither reads a failed pass, which

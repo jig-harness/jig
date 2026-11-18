@@ -59,7 +59,7 @@ export function framedResultOf(
 }
 
 /** A kept decision as a reader takes it; `null` for none, or one that does not read. */
-function readFramedResult(
+export function readFramedResult(
   json: string | null | undefined,
 ): FramedResult | null {
   if (json == null) return null;

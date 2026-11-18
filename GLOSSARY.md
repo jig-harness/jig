@@ -2407,7 +2407,9 @@ make, use the entry's term instead.
   person; and `failed`, any other end, or none recorded. `waits` and
   `parked` are kept as `failed` beside the wait's time or the decision, so
   a release that knows neither holds such a pass for a person rather than
-  starting it again; neither counts as a failure on this release.
+  starting it again; a pending *follow-up arm* and a parked decision do
+  not count as a failure on this release, and a rate-limit wait is logged
+  as a quota wall.
 - **Stuck launch record** — a *launch record* still pending that no tick
   launches again: every launch it is allowed (two) ended as not started or
   unanswered with at least one unanswered, a follow-up's replay can never be

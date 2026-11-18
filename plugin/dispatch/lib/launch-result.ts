@@ -6,7 +6,7 @@ import { isMapping } from "../../shared/config-layers.ts";
 import { endedNext, type NextOwner } from "./next-owner.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { inTransaction, stateDb } from "./state.ts";
-import type { FramedResult } from "./framed-result.ts";
+import { type FramedResult, readFramedResult } from "./framed-result.ts";
 import { storedEndedRow } from "./closing-report-store.ts";
 import { currentIso } from "../../shared/time.ts";
 import { testLockNote } from "./test-lock-note.ts";
@@ -21,15 +21,18 @@ import { RATE_LIMIT_WAIT, type WaitFor } from "./wait-for.ts";
  * holds until a person settles it rather than starting it again; this one
  * reads each apart from a failure, rows written before it knew them
  * included. `failed` stays for a pass that recorded it with no wait and no
- * framed decision.
+ * framed decision, and for a row whose `result_until` is not a time or
+ * whose `result_decision` is not a readable decision.
  */
 export function asResult(
   value: string | null,
   until: string | null = null,
   decision: string | null = null,
 ): SessionResult | null {
-  if (value === "failed" && until !== null) return "waits";
-  if (value === "failed" && decision !== null) return "parked";
+  if (value === "failed" && until !== null && !Number.isNaN(Date.parse(until)))
+    return "waits";
+  if (value === "failed" && readFramedResult(decision) !== null)
+    return "parked";
   return value === "done" || value === "failed" ? value : null;
 }
 

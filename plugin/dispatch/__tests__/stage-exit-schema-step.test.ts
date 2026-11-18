@@ -47,6 +47,15 @@ const RENAMED: readonly Migration[] = [
   },
 ];
 
+/** A newer schema whose step that was not additive renames a log column a deadline report rewrites. */
+const LOG_RENAMED: readonly Migration[] = [
+  ...MIGRATIONS,
+  {
+    additive: false,
+    sql: "ALTER TABLE log RENAME COLUMN report_by TO reported_by;",
+  },
+];
+
 let current: World | null = null;
 afterEach(() => {
   if (current !== null) closeStateDb(dispatchState(current));
@@ -243,5 +252,24 @@ describe("a stage's exit across a state schema step that was not additive", () =
         id,
       ),
     ).toEqual({ ended: null });
+  }, 60_000);
+
+  it("refused after the stage ran, by a newer schema without a log column a report rewrites, is not taken for a compatible one", async () => {
+    const w = world();
+    current = w;
+    const id = "20261114T160000Z-aaaaaaa5";
+    earlierRecord(w, { id, account: "a", token: "the-token" });
+    writeFileSync(join(w.dir, "drive-hold"), "");
+    writeFileSync(join(w.dir, "drive-exit"), String(DRIVE_EXIT.STALLED));
+    const finished = startWrapper(w, id);
+    await waitFor("the stage's child", () => childRegistered(w, id));
+    moveTo(w, LOG_RENAMED);
+    rmSync(join(w.dir, "drive-hold"));
+    const r = await finished();
+    expectSpawnExit(r, DRIVE_EXIT.STALLED);
+    expect(r.stderr).toContain(
+      `jig dispatch run: the stage ran and ended (exit ${DRIVE_EXIT.STALLED}), and its exit is not recorded: `,
+    );
+    expect(r.stderr).toContain("it lacks log.report_by");
   }, 60_000);
 });
