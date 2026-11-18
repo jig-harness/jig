@@ -17,8 +17,12 @@ export interface ReleasingCommit {
 export function releasingCommit(
   root: string,
   tag: string,
+  knownBranch?: string,
 ): ReleasingCommit | null {
-  const branch = integrationBranch(root, process.env, null);
+  const branch =
+    knownBranch ??
+    process.env.JIG_RELEASE_INSPECTION_BRANCH ??
+    integrationBranch(root, process.env, null);
   if (branch === null) return null;
   const ref = remoteRef(root, branch);
   const config = configAtBase(root, ref);

@@ -23,7 +23,16 @@ import {
 } from "./sources/bounded.ts";
 import { currentMs } from "../../shared/time.ts";
 import type { RepoTarget } from "./types.ts";
-import { integrationBranch } from "../../skills/changelog/scripts/branches.ts";
+import { resolve } from "node:path";
+
+const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
+const BRANCHES = resolve(
+  import.meta.dir,
+  "../../skills/changelog/scripts/branches.ts",
+);
+const INTEGRATION_BRANCH_INSPECTION = `import { integrationBranch } from ${JSON.stringify(BRANCHES)};
+const root = process.env.JIG_RELEASE_INSPECTION_ROOT;
+process.stdout.write(JSON.stringify(root === undefined ? null : integrationBranch(root)) + "\\n");`;
 
 const refused = (why: string) => failed("refused", why);
 
@@ -109,19 +118,23 @@ function isReleasingCommit(value: unknown): value is ReleasingCommit {
 async function inspectReleasingCommit(
   repo: RepoTarget,
   tag: string,
+  branch: string,
   bound: TickBound | undefined,
 ): Promise<Outcome<ReleasingCommit | null, "refused">> {
   const reply = await bounded(
     (onSpawn) =>
       run(
         [
-          "bun",
+          process.execPath,
+          "--no-env-file",
+          `--config=${BUNFIG}`,
           `${import.meta.dir}/releasing-commit-inspect.ts`,
           repo.path,
           tag,
         ],
         {
           cwd: repo.path,
+          env: { ...process.env, JIG_RELEASE_INSPECTION_BRANCH: branch },
           stderr: "pipe",
           timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
           onSpawn,
@@ -145,6 +158,49 @@ async function inspectReleasingCommit(
   return parsed.value === null || isReleasingCommit(parsed.value)
     ? ok(parsed.value)
     : refused("the release inspection returned an invalid commit");
+}
+
+/** Read the integration branch in the bounded child: its fallback may use synchronous Git or forge reads. */
+async function inspectIntegrationBranch(
+  repo: RepoTarget,
+  bound: TickBound | undefined,
+): Promise<Outcome<string | null, "refused">> {
+  const reply = await bounded(
+    (onSpawn) =>
+      run(
+        [
+          process.execPath,
+          "--no-env-file",
+          `--config=${BUNFIG}`,
+          "-e",
+          INTEGRATION_BRANCH_INSPECTION,
+        ],
+        {
+          cwd: repo.path,
+          env: { ...process.env, JIG_RELEASE_INSPECTION_ROOT: repo.path },
+          stderr: "pipe",
+          timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
+          onSpawn,
+        },
+      ),
+    bound,
+  );
+  const failure = ghRunFailure(reply);
+  if (failure !== null)
+    return failedBy(
+      "refused",
+      failure,
+      "the integration branch could not be identified",
+    );
+  const parsed = attempt(
+    "refused",
+    "the integration branch response is unreadable",
+    (): unknown => JSON.parse(reply.stdout),
+  );
+  if (!parsed.ok) return parsed;
+  return parsed.value === null || isString(parsed.value)
+    ? ok(parsed.value)
+    : refused("the release inspection returned an invalid integration branch");
 }
 
 export async function taggedReleases(
@@ -222,12 +278,14 @@ export async function rerunReleaseGates(
     recordTagged(repo.slug, [tag], root);
     return refused(`release ${tag} already has its tag`);
   }
-  const branch = integrationBranch(repo.path);
+  const branchRead = await inspectIntegrationBranch(repo, bound);
+  if (!branchRead.ok) return branchRead;
+  const branch = branchRead.value;
   if (branch === null)
     return refused(`the integration branch for ${tag} could not be identified`);
   const refreshed = await refreshIntegration(repo, branch, bound);
   if (!refreshed.ok) return refreshed;
-  const current = await inspectReleasingCommit(repo, tag, bound);
+  const current = await inspectReleasingCommit(repo, tag, branch, bound);
   if (!current.ok) return current;
   if (current.value === null)
     return refused(`the releasing commit for ${tag} could not be identified`);
