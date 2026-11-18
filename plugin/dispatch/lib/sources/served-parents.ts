@@ -106,6 +106,26 @@ async function rowBody(
     : { updatedAt: issue.updatedAt ?? "", ...carried };
 }
 
+/** The issue read whole, once per check where `reads` bounds it; `null` when the tracker has none by that key. */
+async function readFull(
+  tracker: Tracker,
+  issue: PoolIssue,
+  reads: ParentReads,
+  readAt: number | undefined,
+): Promise<Body | null> {
+  const read = () => tracker.getIssue(issue.identifier);
+  const full = await (reads.once === undefined
+    ? read()
+    : reads.once(`issue ${issue.identifier} ${issue.updatedAt ?? ""}`, read));
+  if (full === null || full.identifier !== issue.identifier) return null;
+  return {
+    updatedAt: issue.updatedAt ?? "",
+    readAt,
+    description: full.description,
+    parent: full.parent?.identifier ?? null,
+  };
+}
+
 async function body(
   tracker: Tracker,
   issue: PoolIssue,
@@ -121,17 +141,8 @@ async function body(
   if (carried !== null)
     return remember(cache, key, { ...carried, readAt }, kept, issue);
   if (kept !== null) return kept;
-  const read = () => tracker.getIssue(issue.identifier);
-  const full = await (reads.once === undefined
-    ? read()
-    : reads.once(`issue ${issue.identifier} ${issue.updatedAt ?? ""}`, read));
-  if (full === null || full.identifier !== issue.identifier) return null;
-  const value = {
-    updatedAt: issue.updatedAt ?? "",
-    readAt,
-    description: full.description,
-    parent: full.parent?.identifier ?? null,
-  };
+  const value = await readFull(tracker, issue, reads, readAt);
+  if (value === null) return null;
   return remember(cache, key, value, null, issue);
 }
 

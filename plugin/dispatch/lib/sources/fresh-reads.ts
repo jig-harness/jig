@@ -105,6 +105,35 @@ function readsNarrower(error: unknown): boolean {
   return code === "not-found" || code === "too-costly";
 }
 
+/** What one way made of a batch: its rows (`null` where a narrower read may answer), or the failure that refuses every key. */
+type Attempt = { rows: Map<string, Row> | null } | { error: unknown };
+
+async function attempt(
+  way: Way,
+  tracker: Tracker,
+  keys: string[],
+  signal: AbortSignal | undefined,
+): Promise<Attempt> {
+  try {
+    return { rows: await way(tracker, keys, signal) };
+  } catch (error) {
+    return signal?.aborted !== true && readsNarrower(error)
+      ? { rows: null }
+      : { error };
+  }
+}
+
+/** Resolve each key the rows answered; the rest are returned, still waiting. */
+function answered(batch: Batch, rows: Map<string, Row>): Batch {
+  const unanswered: Batch = new Map();
+  for (const [key, waiter] of batch) {
+    const row = rows.get(key);
+    if (row === undefined) unanswered.set(key, waiter);
+    else waiter.resolve(row);
+  }
+  return unanswered;
+}
+
 /**
  * Settle the batch by the first way that answers it: native rows, the
  * tracker's batched pool read, else each key alone, which also reads a key a
@@ -119,22 +148,13 @@ async function settle(
 ): Promise<void> {
   const keys = [...batch.keys()];
   for (const way of [readNative, readPooled]) {
-    let rows: Map<string, Row> | null;
-    try {
-      rows = await way(tracker, keys, signal);
-    } catch (error) {
-      if (signal?.aborted !== true && readsNarrower(error)) continue;
-      for (const waiter of batch.values()) waiter.reject(error);
+    const outcome = await attempt(way, tracker, keys, signal);
+    if ("error" in outcome) {
+      for (const waiter of batch.values()) waiter.reject(outcome.error);
       return;
     }
-    if (rows === null) continue;
-    const unanswered: Batch = new Map();
-    for (const [key, waiter] of batch) {
-      const row = rows.get(key);
-      if (row === undefined) unanswered.set(key, waiter);
-      else waiter.resolve(row);
-    }
-    await readEach(tracker, unanswered, signal);
+    if (outcome.rows === null) continue;
+    await readEach(tracker, answered(batch, outcome.rows), signal);
     return;
   }
   await readEach(tracker, batch, signal);
