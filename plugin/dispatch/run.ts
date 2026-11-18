@@ -537,25 +537,24 @@ function sessionOf(record: LaunchRecord, ran: Ran): string | null {
 
 /**
  * Wall an account before releasing the slot held by an unstarted session:
- * until the reset its usage notice states, else `wall_backoff` from now.
+ * until the reset its usage notice states, else `wall_backoff` from now. The
+ * notice is read before the write, so only the write's failure is the
+ * wall's to absorb.
  */
 function recordStartupWall(
   record: LaunchRecord,
   startup: string,
   output: string,
 ): boolean {
+  const now = currentMs();
+  const notice = startup === "quota" ? startupReset(output, now) : null;
   try {
-    const now = currentMs();
-    const reset = startup === "quota" ? startupReset(output, now) : null;
     writeWall({
       account: record.account,
       vendor: record.vendor,
       configDir: record.configDir,
-      resetAt: reset ?? isoFromMs(now + record.wallBackoffMs),
-      source:
-        reset === null
-          ? `session could not start (${startup}); wall_backoff`
-          : `session could not start (${startup}); the usage notice's reset`,
+      resetAt: notice?.resetAt ?? isoFromMs(now + record.wallBackoffMs),
+      source: startupWallSource(startup, notice),
     });
     return true;
   } catch (error) {
@@ -565,6 +564,18 @@ function recordStartupWall(
     );
     return false;
   }
+}
+
+/** Where a startup wall's reset came from: the notice's reset, or the backoff, naming a notice clause that did not read. */
+function startupWallSource(
+  startup: string,
+  notice: ReturnType<typeof startupReset>,
+): string {
+  if (notice?.resetAt != null)
+    return `session could not start (${startup}); the usage notice's reset`;
+  if (notice?.clause != null)
+    return `session could not start (${startup}); the notice's "${notice.clause.slice(0, 80)}" did not read; wall_backoff`;
+  return `session could not start (${startup}); wall_backoff`;
 }
 
 /** Keep the wrapper's explanation or transcript before publishing the exit. */
@@ -603,7 +614,7 @@ function recordFinishedExit(
       startup !== undefined &&
       !recordStartupWall(record, startup, startupOutputOf(ran));
     // The report before the exit: a tick that reads the exit reads its report too.
-    recordAndSay(id, isDrive(record), startup);
+    recordAndSay(id, record.action, startup);
     const session = sessionOf(record, ran);
     settlePassReport(record, ran, startup, session);
     recordExit(id, {
@@ -641,7 +652,7 @@ async function finishRun(
     );
     // The driver's report is kept all the same: it never touches the exit.
     if (isDrive(record)) {
-      recordAndSay(id, true, undefined);
+      recordAndSay(id, record.action, undefined);
       printKeptReport(id);
     }
     return code ?? 1;

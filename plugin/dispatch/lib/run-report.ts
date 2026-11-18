@@ -10,10 +10,10 @@
  *   (`shared/driver-report.ts`), checks it again, records it under the
  *   record and removes the file. A drive that ended without writing one
  *   leaves no report (`by: none`).
- * - **A pass that could not start** (`by: wrapper`): a follow-up the wrapper
- *   classifies as unstarted (`session-startup.ts`), with cause `usage-limit`
- *   for a vendor usage notice and `startup` otherwise, unless the pass
- *   recorded a report of its own.
+ * - **A pass that could not start** (`by: wrapper`): a follow-up, pickup or
+ *   steward pass the wrapper classifies as unstarted (`session-startup.ts`),
+ *   with cause `usage-limit` for a vendor usage notice and `startup`
+ *   otherwise, unless the pass recorded a report of its own.
  *
  * Whatever report the record keeps once the run ended, the wrapper prints
  * as its last lines, so a person watching the run reads it there too.
@@ -32,6 +32,8 @@ import {
   readKeptReport,
   recordReport,
 } from "./closing-report-store.ts";
+import { isDrive, type LaunchAction } from "./launches.ts";
+import { startupNext } from "./session-startup.ts";
 import { stateDb } from "./state.ts";
 
 /** The file the wrapper names for a drive's closing report: in the run's own state directory. */
@@ -90,17 +92,17 @@ function withRemoval(path: string, lines: string[]): string[] {
 }
 
 /** The report the wrapper records for a pass that could not start. */
-function startupReport(startup: "quota" | "unstarted"): ClosingReport {
+function startupReport(
+  action: LaunchAction,
+  startup: "quota" | "unstarted",
+): ClosingReport {
   return {
     schema: CLOSING_REPORT_SCHEMA,
     concluded:
       startup === "quota"
-        ? "The pass could not start: its account met a usage limit, and the account backs off."
+        ? "The pass could not start: its account met a usage limit, and the account is walled."
         : "The pass could not start: it exited at once, without a result or a transcript, and its account backs off.",
-    suggested_next: {
-      step: "The tick starts it again once the account's backoff ends.",
-      owner: "line",
-    },
+    suggested_next: startupNext(action, startup),
     cause: startup === "quota" ? "usage-limit" : "startup",
   };
 }
@@ -137,14 +139,14 @@ function keptReport(id: string, root = stateRoot()): KeptReport | null {
  */
 function recordRunReport(
   id: string,
-  drive: boolean,
+  action: LaunchAction,
   startup: "quota" | "unstarted" | undefined,
   root = stateRoot(),
 ): string[] {
   try {
-    if (drive) return takeDriverReport(id, root);
+    if (isDrive({ action })) return takeDriverReport(id, root);
     if (startup !== undefined && keptReport(id, root) === null)
-      recordReport(id, startupReport(startup), "wrapper", root);
+      recordReport(id, startupReport(action, startup), "wrapper", root);
     return [];
   } catch (error) {
     return [
@@ -156,10 +158,10 @@ function recordRunReport(
 /** `recordRunReport`, each line it returns printed on the wrapper's error output. */
 export function recordAndSay(
   id: string,
-  drive: boolean,
+  action: LaunchAction,
   startup: "quota" | "unstarted" | undefined,
 ): void {
-  for (const line of recordRunReport(id, drive, startup))
+  for (const line of recordRunReport(id, action, startup))
     console.error(`jig dispatch run: ${line}`);
 }
 

@@ -13,4 +13,6 @@ release: patch
   (`resets Nov 13, 11am (Europe/Amsterdam)`), and `dispatch.wall_backoff`
   applies only when that reset cannot be read. A pickup stopped this way is
   picked up again on another account, or on its own once the wall lifts,
-  with no person asked. **Consumer action:** none.
+  with no person asked. A pickup or steward pass that stops at startup with
+  no usage notice now backs its account off for `dispatch.wall_backoff`, as
+  a follow-up's already did. **Consumer action:** none.

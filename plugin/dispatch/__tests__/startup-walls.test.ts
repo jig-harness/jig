@@ -7,7 +7,11 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_AHEAD_MS, noticeReset } from "../lib/notice-reset.ts";
-import { failedStartup, startupReset } from "../lib/session-startup.ts";
+import {
+  failedStartup,
+  startupNext,
+  startupReset,
+} from "../lib/session-startup.ts";
 import { readRecord } from "../lib/launches.ts";
 import { wallOf } from "../lib/walls.ts";
 import { isoFromMs } from "../../shared/time.ts";
@@ -73,10 +77,16 @@ describe("the reset a usage notice states", () => {
         "starting\nYou've hit your weekly limit · resets Nov 13, 11am (UTC)\n",
         nowMs,
       ),
-    ).toBe("2026-11-13T11:00:00.000Z");
-    expect(startupReset("the docs say resets Nov 13, 11am (UTC)", nowMs)).toBe(
-      null,
-    );
+    ).toEqual({
+      clause: "resets Nov 13, 11am (UTC)",
+      resetAt: "2026-11-13T11:00:00.000Z",
+    });
+    expect(
+      startupReset("You've hit your limit · resets whenever", nowMs),
+    ).toEqual({ clause: "resets whenever", resetAt: null });
+    expect(
+      startupReset("the docs say resets Nov 13, 11am (UTC)", nowMs),
+    ).toBeNull();
   });
 });
 
@@ -119,6 +129,18 @@ describe("which stages recognise a startup", () => {
       ).toBeUndefined();
     },
   );
+});
+
+describe("who takes a pass that could not start on", () => {
+  it("hands a pickup with no usage notice to a person, and every other start to the line", () => {
+    expect(startupNext("pickup", "unstarted")).toMatchObject({
+      owner: "person",
+      act: "Decide",
+    });
+    expect(startupNext("pickup", "quota").owner).toBe("line");
+    expect(startupNext("followup", "unstarted").owner).toBe("line");
+    expect(startupNext("steward", "quota").owner).toBe("line");
+  });
 });
 
 let current: World | null = null;

@@ -20,7 +20,8 @@ import {
   forEachDirEntry,
   readBoundedTail,
 } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
-import type { LaunchRecord, ReadRecord } from "./launches.ts";
+import type { SuggestedNext } from "../../shared/closing-report.ts";
+import type { LaunchAction, LaunchRecord, ReadRecord } from "./launches.ts";
 import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { questionOf } from "./session.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -111,15 +112,21 @@ function quotaNotice(output: string): string | null {
 }
 
 /**
- * The reset the vendor's usage notice in a startup's output states, at or
- * after `nowMs` (`notice-reset.ts`); `null` when there is no notice or its
- * reset does not read.
+ * The vendor's usage notice in a startup's output: its `resets …` clause,
+ * and the reset it states at or after `nowMs` (`notice-reset.ts`), `null`
+ * when that does not read; `null` when the output holds no notice.
  */
-export function startupReset(output: string, nowMs: number): string | null {
+export function startupReset(
+  output: string,
+  nowMs: number,
+): { clause: string; resetAt: string | null } | null {
   const clause = quotaNotice(output);
   if (clause === null) return null;
   const at = noticeReset(clause, Temporal.Instant.fromEpochMilliseconds(nowMs));
-  return at === null ? null : isoFromMs(at.epochMilliseconds);
+  return {
+    clause,
+    resetAt: at === null ? null : isoFromMs(at.epochMilliseconds),
+  };
 }
 
 /**
@@ -154,6 +161,31 @@ export function failedStartup(
   )
     return;
   return quotaNotice(output) === null ? "unstarted" : "quota";
+}
+
+/**
+ * Who takes a pass that could not start on from here: the tick, once the
+ * account's wall lifts or its backoff ends; except a pickup that stopped with
+ * no usage notice, which no rule starts again (`pickup-hold.ts`), so a person
+ * picks its item up again or releases it.
+ */
+export function startupNext(
+  action: LaunchAction,
+  startup: "quota" | "unstarted",
+): SuggestedNext {
+  if (action === "pickup" && startup === "unstarted")
+    return {
+      step: "A person picks the item up again or releases it: no rule starts a pickup that stopped at startup without a usage notice.",
+      owner: "person",
+      act: "Decide",
+    };
+  return {
+    step:
+      startup === "quota"
+        ? "The dispatcher starts it again once the account's wall lifts."
+        : "The dispatcher starts it again once the account's backoff ends.",
+    owner: "line",
+  };
 }
 
 /** Persisted startup evidence permits only the follow-up attempt that never began to retry. */
