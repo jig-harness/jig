@@ -174,7 +174,7 @@ function git(root: string, args: string[], timeout = GIT_TIMEOUT_MS): string {
 }
 
 /** A file at a revision; null when the revision's tree has no such file. */
-function fileAt(root: string, rev: string, path: string): string | null {
+export function fileAt(root: string, rev: string, path: string): string | null {
   if (!git(root, ["ls-tree", "--name-only", rev, "--", path]).trim())
     return null;
   return git(root, ["show", `${rev}:${path}`]);

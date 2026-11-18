@@ -15,6 +15,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "registry for the kind the records are kept as in the records registry, record for a record kind a pass submits, field for a field of a record, cause for a cause a cause record names, and limit for a bound of a submission or its strings."
     },
     "record": {
@@ -22,6 +23,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "The record kind a field or a cause belongs to (rearm, resume, need, facet, order or cause), and a record kind's own name; null for the registry's kind, a field every kind carries and a bound."
     },
     "name": {
@@ -29,6 +31,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The registry's kind's name, a record kind's name, a field's name (a kind's own field as `<kind>.<field>`, such as `rearm.target`; a field every kind carries by its name alone), a cause, or a bound's name. Unique among the values of one kind."
     },
     "type": {
@@ -36,6 +39,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, the JSON type of its value (string, string[] for a list of strings, or integer or string); null for every other value."
     },
     "version": {
@@ -43,6 +47,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For the registry's kind, the version of its records; null otherwise."
     },
     "limit": {
@@ -50,6 +55,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a bound, its value; null otherwise."
     },
     "meaning": {
@@ -57,6 +63,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What it means to a reader that meets it, and what that reader does with it."
     }
   },
@@ -66,7 +73,7 @@
       "record": null,
       "name": "dispatch-steward-record",
       "type": null,
-      "version": 38,
+      "version": 40,
       "limit": null,
       "meaning": "The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply."
     },

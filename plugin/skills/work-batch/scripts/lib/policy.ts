@@ -306,6 +306,23 @@ export function sizePointsMismatch(
 }
 
 /**
+ * The sizes whose issues need a verdict before they stay in a batch: the most
+ * expensive batchable size (`medium` by default), the size whose label is
+ * least reliable in both directions. A person gives the verdict; a batch the
+ * dispatcher forms has nobody to give it, so it leaves these sizes out. None
+ * when every batchable size costs the same.
+ */
+export function verdictSizes(
+  policy: Pick<WorkBatchSettings, "sizePoints">,
+): string[] {
+  const sizes = Object.keys(policy.sizePoints);
+  const points = sizes.map((s) => policy.sizePoints[s] ?? 0);
+  const max = Math.max(...points);
+  if (points.every((p) => p === max)) return [];
+  return sizes.filter((s) => policy.sizePoints[s] === max);
+}
+
+/**
  * Validate the `work_batch` section of a parsed overlay against the
  * repository's batchable sizes. Throws, naming the field, on a wrong type, an
  * unknown field, or size points whose keys are not exactly the batchable

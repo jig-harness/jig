@@ -19,7 +19,6 @@ import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { assignPickup } from "../../dispatch/lib/requests.ts";
 import { readSection, trackerConfigOf } from "../../dispatch/lib/section.ts";
-import { failureText } from "../../dispatch/lib/text.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type {
@@ -29,14 +28,13 @@ import type {
 import { type RepoTracker, readPickup } from "../../ask/lib/pickup.ts";
 import { readDefaultConfig } from "../../ask/lib/forge.ts";
 import { formatAddress } from "../../shared/address.ts";
-import { within } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import {
   NEXT_TICK,
   type Planned,
   refused,
   type TickReader,
-  writerLogin,
+  trackerWriter,
 } from "./plan.ts";
 
 /** The tick reading an assignment, under the pickup stage. */
@@ -110,21 +108,9 @@ export async function planAssign(
   const address = { ...written.address, key };
   const ctx: AskContext = { ...written, address, name: formatAddress(address) };
   const tracker = openTracker(tracked.config, tracked.root);
-  let viewer: string | null = null;
-  try {
-    viewer =
-      (
-        await within(ctx.reading.sourceSec(), (signal) =>
-          tracker.viewer(signal),
-        )
-      )?.value.name ?? null;
-  } catch (error) {
-    return refused(
-      `the tracker did not name the user it acts as here: ${failureText(error)}`,
-    );
-  }
-  const login = writerLogin(viewer, as, "the tracker");
-  if (!login.ok) return login;
+  const writer = await trackerWriter(tracker, ctx.reading.sourceSec(), as);
+  if (!writer.ok) return writer;
+  const login = writer.value.login;
   const { answer, issue } = await readPickup(ctx, tracked);
   if (!answer.found || issue === null) return refused(answer.stateDetail);
   if (answer.state !== "not assigned")
@@ -158,7 +144,7 @@ export async function planAssign(
     address: ctx.name,
     repo,
     verb: "assign",
-    writesAs: `${login.value}, the user the tracker's credential acts as here`,
+    writesAs: `${login}, the user the tracker's credential acts as here`,
     record: `${key} assigned to ${identity}${
       move === null
         ? `, in ${issue.state.name}, a dispatch state`

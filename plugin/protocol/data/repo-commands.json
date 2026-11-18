@@ -9,6 +9,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "command for a setting whose value is a command Jig runs, exit for an exit besides 0 that the command's caller tells apart from a failure."
     },
     "name": {
@@ -16,6 +17,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "For a command, its setting; for an exit, the setting of the command that exits with it and the code, as <setting>:<code>."
     },
     "setting": {
@@ -23,6 +25,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "The setting's path in .config/jig.yaml, as the configuration schema names it: for an exit, the setting of the command that exits with it."
     },
     "exit": {
@@ -30,6 +33,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an exit, its code; null for a command."
     },
     "runBy": {
@@ -37,6 +41,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "names",
       "description": "For a command, the skills and components that run it, comma-separated; null for an exit."
     },
     "shell": {
@@ -44,6 +49,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a command, whether its value is one command line Jig hands to the platform's shell (sh, or cmd.exe on Windows); false for words run without one. Null for an exit."
     },
     "given": {
@@ -51,6 +57,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a command, what it is given: its standard input, its arguments and where it runs; null for an exit."
     },
     "answers": {
@@ -58,6 +65,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a command, what it answers with on success, exit 0; null for an exit."
     },
     "commandStore": {
@@ -65,6 +73,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a command, whether it runs under the command store's rules: read from the default branch alone, run without the tracker and forge tokens, and failed past 65536 bytes of standard output; null for an exit."
     },
     "deadlineSec": {
@@ -72,6 +81,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a command, the seconds its caller lets one run take before stopping it and failing the run; null where the caller sets no deadline of its own, and for an exit."
     },
     "deadlineChangedBy": {
@@ -79,6 +89,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "The environment variable, or the setting of .config/jig.yaml, that changes deadlineSec; null where deadlineSec is."
     },
     "meaning": {
@@ -86,6 +97,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a command, what the repository supplies it for; for an exit, what the caller does when the command exits with it."
     }
   },

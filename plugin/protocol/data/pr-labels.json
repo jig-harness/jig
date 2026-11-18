@@ -9,6 +9,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "state for a label that shows where a pull request's drive or follow-up stands, command for a label a person adds for the dispatcher to act on."
     },
     "name": {
@@ -16,6 +17,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The label's name without the repository's prefix (dispatch.labels.prefix, jig: by default): a pull request carries the prefix followed by this name."
     },
     "writers": {
@@ -23,6 +25,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "names",
       "description": "For a state label, who adds it, comma-separated: drive, followup (the follow-up of a merged pull request) and tick (the dispatcher's tick, which corrects every state label that disagrees with the pull request's drive ledger). Null for a command label, which only a person adds."
     },
     "meaning": {
@@ -30,6 +33,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What the label says, as the label setup gives it as the label's description on the forge."
     }
   },

@@ -185,6 +185,7 @@ it("tells the pass a step owed by a person is no reason to stop, and runs one th
   const told = claudeRuns(w).at(-1)?.argv.at(-1) ?? "";
   expect(told).toContain("is no reason to stop: report it as owed by a person");
   expect(told).toContain("- person-owed: ");
+  expect(told).toContain("[person-owed] release <version> owed");
   expect(told).toContain("- drafted-items: ");
   await released(w, first, "stopped on a routine question (person-owed)");
 

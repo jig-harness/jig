@@ -711,6 +711,16 @@ context labels from `review`, the labels that name an area from
 | `work_batch.ranking.provenance` | whole number ≥ 0 | `3` | work-batch | The score of the follow-up label (`issue_tracker.labels.followup`) |
 | `work_batch.ranking.shared_area_label` | whole number ≥ 0 | `1` | work-batch | The score of each shared area label an issue carries |
 
+`dispatch` reads `work_batch.size_points`, `point_budget`, `max_items` and
+`solo_flags` to form fixed batches of served items. The most expensive
+batchable size (`medium` by default; none when every size costs the same) needs
+a person's verdict to stay in a batch, so it never joins a fixed batch: such an
+item is picked up on its own, with no question, and the other items go on as
+the batch. When fewer than two remain, each is its own pickup. A member that
+reaches that size after the batch is formed, or whose size no longer fits a
+batch, is left out the same way by the batch's pass. A run with a person at the
+keyboard still asks for the verdict.
+
 An unknown field in `work_batch` or `work_batch.ranking` is refused. The
 [work-batch README](skills/work-batch/README.md) explains the budget, the
 ranking and the solo-only flags.
@@ -1313,7 +1323,7 @@ command can be registered as a collection kind.
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
-| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root. A root that does not exist on the machine that runs the audit is not reported: a repository names the roots of every machine it is worked on. The agent tool's directory in the primary checkout (`.claude/worktrees`) is inspected whatever this lists, and needs no entry | audit, gc, drive-pr |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root. A root that does not exist on the machine that runs the audit is not reported: a repository names the roots of every machine it is worked on. The agent tool's directory in the primary checkout (`.claude/worktrees`) is inspected whatever this lists, and needs no entry. The process opener's clone-specific root under `$JIG_HOME/worktrees` is also derived and inspected whenever present, even after switching runtimes | audit, gc, drive-pr |
 | `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
 | `gc.regenerable_paths` | distinct literal relative path list | `[.fallow]`; ignored paths that can be rebuilt, relative to each worktree. A path covers itself and its descendants only, never a similarly named sibling or a symbolic link. Trailing `/` is optional. No absolute paths, traversal, glob characters or `.context/` content outside `.context/scratch/`; Git metadata is refused. An explicit list replaces the default; `[]` disables it. The receipt names each path with rule `regenerable-path` | audit, gc |
 
