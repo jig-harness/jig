@@ -78,8 +78,12 @@ and the follow-ups' own lane's), the account whose
 turn is next), so acts never overlap, and the admission order is the one the
 tick would take with no observe phase in front of it. Last, the tick closes: it settles what the
 repositories it did not read still owe, copies the outcome log, writes the
-dashboard's line and writes its receipt. Each phase lives in its own module
-under `plugin/dispatch/lib/`.
+dashboard's line and writes its receipt. Once it has given up every lock, an
+applying tick refreshes the conflict rates of each repository it starts
+pickups in, at most once a day and under a deadline, so a slow replay delays
+no launch and no other tick
+([overlap-aware-admission.md § The conflict history report feeds it](overlap-aware-admission.md#the-conflict-history-report-feeds-it)).
+Each phase lives in its own module under `plugin/dispatch/lib/`.
 
 The [dispatcher](../plugin/README.md#the-dispatcher) owns these parts of
 the tick. The observe phase reads the served people's assigned items
@@ -125,6 +129,7 @@ flowchart TD
   LOOP -->|every repository planned| X[apply across all repositories, one launch group at a time:<br/>end own claims, then the rearm, pickup and follow-up stages,<br/>then each repository's finish: steer, notify, state labels]
   X -->|all launches and closes done: give up the observe locks| CL[close: log rows for repositories not read, prune records]
   CL --> E[copy the outcome log to month files, write the line,<br/>write the receipt, prune receipts, release the act lock]
+  E --> RR[every lock given up: refresh the conflict rates that are due,<br/>at most once a day each, under a deadline]
 ```
 
 **The locks, and their order.** A tick takes each repository's observe
