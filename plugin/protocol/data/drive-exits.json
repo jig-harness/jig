@@ -9,6 +9,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The state's name as a drive-status.ts --json report's state field carries it, or the name of a class of states, a withdrawn code or an exit with no report."
     },
     "kind": {
@@ -16,6 +17,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "state, class-label, tombstone, driver-only or helper, as the code names its categories."
     },
     "exit": {
@@ -23,6 +25,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The code this entry holds in the drive's numbering."
     },
     "driveStatusExit": {
@@ -30,6 +33,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "The code drive-status.ts exits with for it; null when drive-status.ts never does. Not part of identity: a withdrawn code keeps its row with this null."
     },
     "driveExit": {
@@ -37,6 +41,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "The code drive.ts ends with for it; null when drive.ts never does."
     },
     "endsDrive": {
@@ -44,6 +49,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "Whether it ends the drive without the caller re-arming it on its own; null for a withdrawn code."
     },
     "meaning": {
@@ -51,6 +57,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What it means to a reader that branches on it, and what that reader does next."
     },
     "stop": {
@@ -58,6 +65,7 @@
       "nullable": false,
       "required": false,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a state drive.ts ends with: the stop in one phrase, as its closing report's concluded field opens with it after the pull request's name."
     },
     "cause": {
@@ -65,6 +73,7 @@
       "nullable": false,
       "required": false,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a state drive.ts ends with short of its goal: the closing report's cause, one of the closed list of causes."
     },
     "nextOwner": {
@@ -72,6 +81,7 @@
       "nullable": false,
       "required": false,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a state drive.ts ends with: who takes the next step its closing report suggests, line, person or none."
     },
     "nextAct": {
@@ -79,6 +89,7 @@
       "nullable": false,
       "required": false,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "When the next step is a person's: what the person does, one of Merge, Decide, Authorize, Reply, Do or Investigate."
     },
     "nextStep": {
@@ -86,6 +97,7 @@
       "nullable": false,
       "required": false,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "For a state drive.ts ends with: the next step its closing report suggests."
     }
   },

@@ -32,6 +32,8 @@ export interface WorktreeEvidence {
    * than waiting for the opener to share session admission.
    */
   coordinated?: boolean;
+  /** The shared-admission opener registered an owner, whose launches all ended. */
+  processOwned?: boolean;
   /**
    * An agent tool made the worktree inside the clone (`.claude/worktrees`)
    * for one subagent, whose session ends with its parent's: no process in it
@@ -67,6 +69,7 @@ export function localWorktreeVeto(
 }
 /** What stands in for session admission, as the evidence says. */
 function coordination(facts: WorktreeEvidence): Coordination {
+  if (facts.processOwned === true) return "process";
   if (facts.coordinated === true) return "runtime";
   return facts.agentTool === true ? "agent-tool" : null;
 }
@@ -98,7 +101,7 @@ function withoutRequest(
     return live("branch without a pull request is ahead of the base");
   // An agent tool's subagent ends with its session, so a clean tree with no
   // commit of its own past the idle guard holds nothing the base lacks.
-  if (coordinated === "agent-tool")
+  if (coordinated === "agent-tool" || coordinated === "process")
     return candidate(
       "worktree without a pull request holds no commit the base lacks",
       coordinated,
@@ -122,8 +125,13 @@ function mergedCoverage(
     : live("commits are outside remote branches and merged pull request heads");
 }
 /** What stands in for session admission: a runtime's registry, an agent tool's lifetime, or nothing. */
-type Coordination = "runtime" | "agent-tool" | null;
+type Coordination = "runtime" | "agent-tool" | "process" | null;
 function candidate(reason: string, coordinated: Coordination): Proof {
+  if (coordinated === "process")
+    return {
+      state: "dead",
+      reason: `${reason}; shared admission owner has only ended launches and dead recorded processes`,
+    };
   if (coordinated === "runtime")
     return {
       state: "dead",

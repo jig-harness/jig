@@ -19,6 +19,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "record for a claim's kind in the records registry, marker for one of its hidden markers, field for a field of its record, and value for a closed value of one of the launch claim's fields."
     },
     "claim": {
@@ -26,6 +27,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The registered name of the claim's kind the value belongs to: drive-takeover-claim, dispatch-launch-claim or drive-merge-ready."
     },
     "name": {
@@ -33,6 +35,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The kind's registered name, one hidden marker as its comment opens after `<!-- `, a field's name (a field of a launch's end as `end.<field>`), or a closed value as `<field>.<value>` (`action.rearm`)."
     },
     "type": {
@@ -40,6 +43,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, the JSON type of its value (string, integer, boolean, object, or string[] for a list of strings); null for every other value."
     },
     "nullable": {
@@ -47,6 +51,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, whether null is a value it may carry; null for every other value."
     },
     "carried": {
@@ -54,6 +59,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, which of the kind's claims carry it: always, sometimes, or for a field of a launch's end every end, every ended end, every died end, some ended ends or some died ends. Null for every other value."
     },
     "version": {
@@ -61,6 +67,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a record, the version Jig's writers write now, which its envelope's v carries; null otherwise."
     },
     "key": {
@@ -68,6 +75,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a record, the whole shape of its envelope's key as a regular expression; null otherwise."
     },
     "meaning": {
@@ -75,6 +83,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What it means to a reader that meets it, and what that reader does with it."
     }
   },
