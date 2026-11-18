@@ -149,6 +149,10 @@ export async function observeContention(
         detail: `the changed files of PR #${file.pr} could not be read: ${file.reason}`,
         failure: file.failure,
       });
+  // A complete open listing is enough to observe changed files, but it is
+  // not enough to settle serialization after any later forge read failed.
+  // In particular, retaining an empty drive set here would end live holds.
+  if (!forge.ok) return { serialized: UNREAD_CONTENTION, prFiles };
   const path = configuredCatalog(values);
   if (skipped !== null && path !== null)
     return {

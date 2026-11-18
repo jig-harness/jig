@@ -9,6 +9,8 @@ import { ended, heldRead, passedRead, type TickBound } from "./bounded.ts";
 
 /** The most pull requests a repository reads fresh in one tick, even if every read fails. */
 const FRESH_LIMIT = 8;
+/** Temporal.Instant accepts epoch milliseconds only in this inclusive range. */
+const EPOCH_MS_LIMIT = 8_640_000_000_000_000;
 
 type Reading = Outcome<string[], "unreadable" | "deferred">;
 
@@ -23,16 +25,20 @@ interface Entry {
   snapshot: Snapshot | null;
 }
 
+function epochMs(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Math.abs(value) <= EPOCH_MS_LIMIT
+  );
+}
+
 /** Stored reads are process-independent JSON: validate them before a cache hit can use them. */
 function entryOf(value: unknown): Entry | null {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return null;
   const entry = value as Record<string, unknown>;
-  if (
-    typeof entry.attemptedAtMs !== "number" ||
-    !Number.isFinite(entry.attemptedAtMs)
-  )
-    return null;
+  if (!epochMs(entry.attemptedAtMs)) return null;
   if (entry.snapshot === null)
     return { attemptedAtMs: entry.attemptedAtMs, snapshot: null };
   if (typeof entry.snapshot !== "object" || Array.isArray(entry.snapshot))
@@ -42,8 +48,7 @@ function entryOf(value: unknown): Entry | null {
     (typeof snapshot.comparison !== "string" && snapshot.comparison !== null) ||
     !Array.isArray(snapshot.files) ||
     !snapshot.files.every((file) => typeof file === "string") ||
-    typeof snapshot.readAtMs !== "number" ||
-    !Number.isFinite(snapshot.readAtMs)
+    !epochMs(snapshot.readAtMs)
   )
     return null;
   return {
@@ -84,13 +89,13 @@ export interface FilesObservation {
 }
 
 /**
- * A complete listing includes the live base tip. A fallback listing still
- * supplies the PR's own comparison, which is sufficient to bound reads until
- * the next complete listing refreshes the live-tip witness.
+ * Current serialization evidence needs the live base tip. A fallback listing
+ * can still be read and reported, but cannot establish a cache hit because
+ * its base snapshot may stay unchanged while the live base branch advances.
  */
 function comparison(pr: ListedPr): string | null {
   const { headRefOid, baseRefName, baseRefOid, baseTipOid } = pr;
-  if (!headRefOid || !baseRefName || !baseRefOid) return null;
+  if (!headRefOid || !baseRefName || !baseRefOid || !baseTipOid) return null;
   return JSON.stringify([
     headRefOid,
     baseRefName,

@@ -149,7 +149,7 @@ it("reuses matching comparisons when the optional read budget is low", async () 
   ]);
 });
 
-it("reuses a fallback listing's stable comparison until a complete listing refreshes it", async () => {
+it("does not reuse a fallback listing without a live base-tip witness", async () => {
   const store = cache();
   const { baseTipOid: _missing, ...fallback } = pr(1);
   const open = [fallback];
@@ -173,10 +173,10 @@ it("reuses a fallback listing's stable comparison until a complete listing refre
   );
   expect(after.evidence[0]).toMatchObject({
     pr: 1,
-    status: "cached",
-    files: ["before"],
+    status: "fresh",
+    files: ["after"],
   });
-  expect(await after.files(1)).toEqual(ok(["before"]));
+  expect(await after.files(1)).toEqual(ok(["after"]));
 });
 
 it("treats malformed persisted cache entries as a fresh read", async () => {
@@ -184,6 +184,31 @@ it("treats malformed persisted cache entries as a fresh read", async () => {
   store.set("forge:pr-files:owner/repo:1", {
     attemptedAtMs: "never",
     snapshot: { comparison: "old", files: [], readAtMs: "also never" },
+  });
+  const observed = await observePrFiles(
+    "owner/repo",
+    [pr(1)],
+    100,
+    null,
+    undefined,
+    store,
+    async () => ok(["fresh"]),
+  );
+  expect(observed.evidence[0]).toMatchObject({
+    status: "fresh",
+    files: ["fresh"],
+  });
+});
+
+it("treats out-of-range persisted timestamps as a fresh read", async () => {
+  const store = cache();
+  store.set("forge:pr-files:owner/repo:1", {
+    attemptedAtMs: 100,
+    snapshot: {
+      comparison: JSON.stringify(["head", "main", "snapshot", "tip"]),
+      files: [],
+      readAtMs: 1e100,
+    },
   });
   const observed = await observePrFiles(
     "owner/repo",
