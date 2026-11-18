@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { stateDb } from "../../dispatch/lib/state.ts";
 import { gitEnvironment } from "../git.ts";
 
 export const FIXTURE_REMOTE = "fakeforge:acme/app.git";
@@ -48,4 +49,38 @@ export function setupWorktreeFixture(root: string) {
   command(["git", "config", "user.name", "Test"]);
   command(["git", "config", "core.sshCommand", ssh]);
   return { repo, user, bin, env, command };
+}
+
+/** Seed completion evidence a collector must retire with its worktree. */
+export function preserveCompletion(fixture: {
+  repo: string;
+  tree: string;
+  env: NodeJS.ProcessEnv;
+}): () => unknown[] {
+  const record = {
+    version: 1,
+    id: "20261115T000000Z-aaaaaaaa",
+    token: "token",
+    action: "pickup",
+    repo: "acme/app",
+    repoPath: fixture.repo,
+    item: "#1",
+    pr: null,
+    account: "account",
+    vendor: "codex",
+    configDir: fixture.repo,
+    wallBackoffMs: 1000,
+    replaces: null,
+    facts: "",
+    createdAt: "2026-11-15T00:00:00.000Z",
+    workspace: { id: fixture.tree, path: fixture.tree },
+    attempts: [],
+  };
+  const db = stateDb(
+    join(fixture.env.HOME as string, ".local", "state", "jig", "dispatch"),
+  );
+  db.query(
+    "INSERT INTO process_worktree_completions (id, record, claim, exit) VALUES (?, ?, ?, ?)",
+  ).run(record.id, JSON.stringify(record), "{}", "{}");
+  return () => db.query("SELECT id FROM process_worktree_completions").all();
 }

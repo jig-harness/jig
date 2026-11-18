@@ -41,12 +41,14 @@ import {
   ledgerFromState,
 } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { freshState } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
+import { releaseTrackerAnswer } from "./fixtures/release-fake.ts";
 import { orcaInstalledName } from "../../shared/orca.ts";
 import { footprintBatch } from "./footprint-fake.ts";
 
 export const SLUG = "example-org/example-repo";
 const JIG = resolve(import.meta.dir, "../../jig.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
+const RELEASE_FAKE = resolve(import.meta.dir, "fixtures/release-forge-fake.ts");
 const QUERY_FAKE = resolve(
   import.meta.dir,
   "fixtures",
@@ -82,10 +84,17 @@ if (fs.existsSync(F + "/forge-fails.json")) {
   const rule = JSON.parse(fs.readFileSync(F + "/forge-fails.json", "utf8")).find((r) => args.join(" ").includes(r.match));
   if (rule !== undefined) { process.stderr.write(rule.stderr + "\\n"); process.exit(1); }
 }
+// One call held for gh-hold.json's \`ms\` before it is answered, each whose arguments contain its \`match\`: a read still in flight when the tick's deadline passes.
+if (fs.existsSync(F + "/gh-hold.json")) {
+  const hold = JSON.parse(fs.readFileSync(F + "/gh-hold.json", "utf8"));
+  if (args.join(" ").includes(hold.match)) Bun.sleepSync(hold.ms);
+}
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
 // The repository's labels as labels-repo.json lists them: a name alone is a label with no description.
 const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])
   .map((l) => (typeof l === "string" ? { name: l, description: "", color: "ededed" } : l));
+const release = require(${JSON.stringify(RELEASE_FAKE)}).releaseForgeAnswer(F, args);
+if (release !== undefined) out(release);
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchRepository"))) {
   const answer = require(${JSON.stringify(QUERY_FAKE)}).repositoryQuery(F, args, process.cwd());
   if (answer === null) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
@@ -738,6 +747,8 @@ export function world(): World {
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
     // This world scripts whole readings, not an update stream. Declare that
     // its probe cannot establish completeness, so each tick takes that reading.
+    const release = releaseTrackerAnswer(op, v, issues, SLUG);
+    if (release !== undefined) return release;
     if (op === "TrackerDispatchChanges")
       return { repository: { issues: conn([], "unmodelled-changes") } };
     if (op === "TrackerDispatchIssues")

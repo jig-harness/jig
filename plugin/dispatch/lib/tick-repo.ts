@@ -35,6 +35,14 @@ import {
   openRepo,
   type RepoObservation,
 } from "./tick-observe.ts";
+import { observeReleaseTags } from "./release-gates.ts";
+import { releaseStationOn } from "./release-handoff.ts";
+import {
+  adoptReleaseHandoffs,
+  releaseNeedActions,
+  releaseNeeds,
+} from "./release-needs.ts";
+import { readFailureOf } from "./read-failures.ts";
 import { planObserved } from "./tick-plan.ts";
 import { logRepo } from "./tick-settle.ts";
 import { sharedReport } from "./tick-shared.ts";
@@ -118,6 +126,22 @@ export async function observeOpenedTurn(
           ),
         )
       : [];
+
+  if (releaseStationOn(opened)) {
+    const tags = await timer.time("forge", () =>
+      observeReleaseTags(opened.repo, context.nowMs, bound),
+    );
+    if (!tags.ok) {
+      const failure = readFailureOf(tags.failure);
+      opened.report.records.push({
+        record: "forge",
+        source: `gh ${opened.repo.slug} release tags`,
+        ok: false,
+        detail: `Keeping the previous release tag reading: ${tags.failure.reason}`,
+        ...(failure === undefined ? {} : { failure }),
+      });
+    }
+  }
   // Observations belong to the tick even when a later phase fails.
   context.lineInputs.set(path, {
     ...lineInputOf(observation.drives, forge, tracked, sessions, {
@@ -140,6 +164,13 @@ export async function actTurn(
   if (context.apply !== null)
     await timer.time("apply", () => recoverLedgers(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
+  if (releaseStationOn(opened))
+    await timer.time("plan", () => {
+      adoptReleaseHandoffs(opened.repo.slug, observation.forge.merged);
+      report.actions.push(
+        ...releaseNeedActions(releaseNeeds(opened.repo.slug)),
+      );
+    });
   await timer.time("log", () =>
     logRepo(context, opened.repo.slug, report, observation.drives),
   );

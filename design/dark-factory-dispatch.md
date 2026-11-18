@@ -1408,6 +1408,7 @@ The tick reaches the runtime only through these methods:
 | `notify(target, message)`                            | a message that reaches a person; its receipt carries the target's comment as written                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `steer(session, nudge)`                              | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send                                                                                                                                                                                                                                                                                                                         |
 | `retire(workspace, expected)`                        | the repository's notices workspace removed with its terminals and branch, once a re-read just before, under the comment lock, finds the comment and unread mark the tick decided on                                                                                                                                                                                                                                                                                                          |
+| `endRun(run)`                                        | what a run left, once a tick with `--apply` finds it ended, for a wrapper that died before closing what it opened: on Orca, the run's recorded tab closed by the run-tab idle checks; it never ends a process                                                                                                                                                                                                                                                                                                              |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
 `steer` included, runs under a deadline and is cancelled past it: its
@@ -1485,10 +1486,12 @@ agent launch --retry-launch` retries by a key the adapter passes it,
   (`plugin/shared/orca-tabs.ts`): its handle and the PID and start of the
   login shell Orca reports for it. The wrapper closes it through `orca
 terminal close --terminal` (never the whole tab, so a pane a person added
-  beside it stays) once the stage ends with nothing for a person,
-  while the shell is still alive (Orca no longer closes a tab whose shell
-  has exited by its handle), and a launch closes the earlier idle run tabs
-  of its pull request or item in the workspace;
+  beside it stays) on every exit it records, a park and a failure
+  included, while the shell is still alive (Orca no longer closes a tab
+  whose shell has exited by its handle); the tab's record names the launch
+  record, so `endRun` closes the tab of a run whose wrapper died first; and
+  a launch closes the earlier idle run tabs of its pull request or item in
+  the workspace;
 - `notify` as a workspace marked unread with the message as its comment
   (`orca worktree set --comment <message> --unread`, the comment read
   first and read back with `orca worktree show`), appended to the comment while the workspace

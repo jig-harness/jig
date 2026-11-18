@@ -5,9 +5,11 @@
  * and fails a change that breaks a stable chapter without raising its
  * version: a value the base has and the new data lacks, a value whose
  * meaning changed to another value's, a field removed or retyped, a field
- * new and required or made required. A chapter the base lists as stable
- * stays stable: marking it provisional, or removing it, also needs its
- * version raised and a change note marked breaking that names its file.
+ * new and required or made required, a value's field changed in a way its
+ * declared comparison refuses, a comparison loosened. A chapter the base
+ * lists as stable stays stable: marking it provisional, or removing it, also
+ * needs its version raised and a change note marked breaking that names its
+ * file.
  *
  * Which chapters the base lists, and their status, are read from the base's
  * data files, which the base's own gate held equal to its chapter list.
@@ -26,12 +28,14 @@ import {
 } from "../../plugin/skills/changelog/scripts/notes-dir.ts";
 import { spawnSync } from "../../plugin/shared/guarded-git-spawn.ts";
 import {
+  carriedMap,
   type Chapter,
   chapterFile,
   DATA_DIR,
   type DataFile,
   type DataValue,
   dataFile,
+  type FieldComparison,
   type FieldSpec,
   type Scalar,
   type Withdrawn,
@@ -249,6 +253,16 @@ function fieldChange(name: string, was: FieldSpec, is?: FieldSpec) {
     return `the field ${name} changed type from ${describeType(was)} to ${describeType(is)}`;
   if (!was.required && is.required)
     return `the field ${name} changed from optional to required`;
+  // Carriers are the one comparison that says which new values oblige a
+  // writer, so tightening it away would drop that along with the looseness.
+  if (was.comparedAs === "carriers" && is.comparedAs !== "carriers")
+    return `the field ${name} is now compared as ${is.comparedAs ?? "exact"}, and the base compares it as carriers`;
+  if (
+    was.comparedAs !== undefined &&
+    is.comparedAs !== was.comparedAs &&
+    is.comparedAs !== "exact"
+  )
+    return `the field ${name} is now compared as ${is.comparedAs}, and the base compares it as ${was.comparedAs}`;
   return null;
 }
 
@@ -327,8 +341,9 @@ function identityProblems(view: ValueView): string[] {
 }
 
 /**
- * Every other published field of a value still listed is what a reader
- * branches on: changing one the base gave it is a break. A withdrawal to a
+ * Every other published field of a value still listed holds what its
+ * comparison says: changing one the base gave it in a way that comparison
+ * refuses is a break. A withdrawal to a
  * tombstone is the one exception, and only as a withdrawal: the value was
  * not a tombstone in the base, and each field it changes is its `kind` or
  * is emptied to null (a withdrawn value asserts nothing a reader branches
@@ -340,7 +355,7 @@ function behaviourProblems(view: ValueView): string[] {
     const self = view.before.get(k);
     if (self === undefined) continue;
     const withdrawing = v.kind === TOMBSTONE && self.kind !== TOMBSTONE;
-    for (const [field, spec] of changedFields(view.base, self, v)) {
+    for (const [field, spec] of changedFields(view, self, v)) {
       if (withdrawing && withdrawalMay(field, spec, v)) continue;
       out.push(
         `the value ${view.show(v)} changed its ${field} from ${JSON.stringify(self[field])} to ${JSON.stringify(v[field] ?? null)}`,
@@ -350,45 +365,60 @@ function behaviourProblems(view: ValueView): string[] {
   return out;
 }
 
-/** The published, non-identifying fields of a value that differ from the base's. */
-function changedFields(base: DataFile, self: DataValue, v: DataValue) {
-  return Object.entries(base.fields).filter(
+/**
+ * The comparison a field is held to: the base's, so that declaring a looser
+ * one excuses nothing in the same change. A base whose data file declares
+ * none has nothing to hold, and the declaration made now stands.
+ */
+const comparisonHeld = (was: FieldSpec, is?: FieldSpec): FieldComparison =>
+  was.comparedAs ?? is?.comparedAs ?? "exact";
+
+/** The published, non-identifying fields of a value that break the base's promise. */
+function changedFields(view: ValueView, self: DataValue, v: DataValue) {
+  return Object.entries(view.base.fields).filter(
     ([field, spec]) =>
       !spec.identifies &&
-      field !== "meaning" &&
       self[field] !== undefined &&
-      !sameBehaviour(field, self[field], v[field] ?? null),
+      !sameBehaviour(
+        comparisonHeld(spec, view.now.fields[field]),
+        self[field],
+        v[field] ?? null,
+        knownCarriers(view.base, field),
+      ),
   );
 }
 
 /**
- * The runs a payload field's `carriedBy` names, each with `always` or
- * `sometimes` (`tick (always), manual (sometimes)`); an empty text names
- * none; null when the text is not that shape, which is then compared as
- * written.
+ * Every carrier the base may already have: the ones its values name in a
+ * field, and every text a value of the base is identified by, since a
+ * record kind can be published without a row that lists it. A name shared
+ * by two record families counts as known, so a collision reads as a break
+ * to raise the version for and never as a missed one.
  */
-function carriedMap(text: Scalar | undefined): Map<string, string> | null {
-  if (typeof text !== "string") return null;
-  const runs = new Map<string, string>();
-  if (text === "") return runs;
-  for (const part of text.split(", ")) {
-    const m = /^(\S+) \((always|sometimes)\)$/.exec(part);
-    if (m === null || runs.has(m[1] as string)) return null;
-    runs.set(m[1] as string, m[2] as string);
-  }
-  return runs;
+function knownCarriers(base: DataFile, field: string): Set<string> {
+  const identity = Object.entries(base.fields)
+    .filter(([, spec]) => spec.identifies)
+    .map(([name]) => name);
+  return new Set([
+    ...base.values.flatMap((v) => [...(carriedMap(v[field])?.keys() ?? [])]),
+    ...base.values.flatMap((v) =>
+      identity.map((f) => v[f]).filter((x) => typeof x === "string"),
+    ),
+  ]);
 }
 
 /**
- * Whether a field's new content keeps what a reader relied on. Which runs
- * carry a payload field is compared by run, not as text: a run that
- * always carried it still does, and any other run may start or stop
- * carrying it only as `sometimes`, so the order the runs are written in
- * does not matter.
+ * What carries a value is compared by carrier, not as text: one that always
+ * carried it still does, and one the base's values name may start or stop
+ * carrying it only as `sometimes`, so the order they are written in does not
+ * matter. A carrier no value of the field names yet, a new kind of line, has
+ * no writer or reader to break and may join as `always`.
  */
-function sameBehaviour(field: string, was: Scalar, is: Scalar): boolean {
-  if (was === is) return true;
-  if (field !== "carriedBy") return false;
+function keepsCarriers(
+  was: Scalar,
+  is: Scalar,
+  known: ReadonlySet<string>,
+): boolean {
   const before = carriedMap(was);
   const after = carriedMap(is);
   if (before === null || after === null) return false;
@@ -400,24 +430,73 @@ function sameBehaviour(field: string, was: Scalar, is: Scalar): boolean {
     )
       return false;
   return [...after].every(
-    ([run, how]) => before.has(run) || how === "sometimes",
+    ([run, how]) => before.has(run) || how === "sometimes" || !known.has(run),
   );
+}
+
+/** The names a comma-separated list holds; null for a value that is no text. */
+function namesIn(text: Scalar): Set<string> | null {
+  if (typeof text !== "string") return null;
+  return new Set(
+    text
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+}
+
+/** Whether every name of the base's list is still listed: a list only widens. */
+function keepsNames(was: Scalar, is: Scalar): boolean {
+  const before = namesIn(was);
+  const after = namesIn(is);
+  if (before === null || after === null) return false;
+  return [...before].every((name) => after.has(name));
+}
+
+/** Whether a prose field says something: its words may change, this may not. */
+const states = (text: Scalar) => text !== null && String(text).trim() !== "";
+
+/** Whether a field's new content keeps what a reader relied on, read as its comparison says. */
+function sameBehaviour(
+  how: FieldComparison,
+  was: Scalar,
+  is: Scalar,
+  known: ReadonlySet<string>,
+): boolean {
+  if (was === is) return true;
+  if (how === "prose")
+    return (was === null) === (is === null) && states(was) === states(is);
+  if (how === "names") return keepsNames(was, is);
+  if (how === "carriers") return keepsCarriers(was, is, known);
+  return false;
+}
+
+/** Whether a carrier the base's values name must now always carry this new value. */
+function obligesKnownCarrier(view: ValueView, v: DataValue): boolean {
+  return Object.entries(view.now.fields).some(([field, spec]) => {
+    const was = view.base.fields[field];
+    const how = was === undefined ? spec.comparedAs : comparisonHeld(was, spec);
+    if (how !== "carriers") return false;
+    const carriers = carriedMap(v[field]);
+    // Text that cannot be read cannot show it obliges no one.
+    if (carriers === null) return (v[field] ?? null) !== null;
+    const known = knownCarriers(view.base, field);
+    return [...carriers].some(
+      ([carrier, carried]) => carried === "always" && known.has(carrier),
+    );
+  });
 }
 
 /**
  * A value the base lacks that obliges every writer from now on: an
- * envelope field every record must carry, or a payload field some run's
- * marker always carries. Adding it is the "new and required" break the
- * outer fields already name.
+ * envelope field every record must carry, or a field a carrier the base
+ * already names always carries. Adding it is the "new and required" break
+ * the outer fields already name.
  */
 function obligingNewValues(view: ValueView): string[] {
   return [...view.after]
     .filter(([k]) => !view.before.has(k))
-    .filter(
-      ([, v]) =>
-        v.fieldRequired === true ||
-        [...(carriedMap(v.carriedBy)?.values() ?? [])].includes("always"),
-    )
+    .filter(([, v]) => v.fieldRequired === true || obligesKnownCarrier(view, v))
     .map(
       ([, v]) => `the new value ${view.show(v)} is required of every writer`,
     );

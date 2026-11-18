@@ -176,6 +176,16 @@ const text = (description: string, nullable = true): FieldSpec => ({
   description,
 });
 
+const prose = (description: string): FieldSpec => ({
+  ...text(description),
+  comparedAs: "prose",
+});
+
+const names = (description: string): FieldSpec => ({
+  ...text(description),
+  comparedAs: "names",
+});
+
 const FIELDS: Readonly<Record<string, FieldSpec>> = {
   kind: {
     type: "string",
@@ -195,13 +205,13 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
   },
   holds: text("For a fact, what the item or change holds for it; else null."),
   ruleValue: text("For a fact, what a rule lists for it; else null."),
-  compared: text(
+  compared: prose(
     "For a fact, how a rule's value is compared with the item's; else null.",
   ),
   comparison: text(
     "For a fact, the comparison's name, for a program that evaluates a rule: equal-ignoring-case (equal after trimming white space and folding case), contained-ignoring-case (the rule's value is a substring of the item's, case folded) or glob (the change-area catalog's glob claims the path); else null.",
   ),
-  facts: text(
+  facts: names(
     "For a field, the facts its rules may test, comma-separated; else null.",
   ),
   list: text(
@@ -213,7 +223,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
   words: text(
     "For a field, the words it accepts in place of a list and what each stands for, as word: meaning separated by semicolons; null where it accepts none, and for the other kinds.",
   ),
-  readBy: text(
+  readBy: names(
     "For a field, the skills that read it, comma-separated; else null.",
   ),
   meaning: text("What the value means, or what the field selects.", false),

@@ -7,7 +7,6 @@
  * column reads as `orca-card`'s.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +15,7 @@ import type {
   DeliveryOutcome,
   NotificationChannel,
 } from "../../chat/channel.ts";
+import { closeDatabase, openDatabase } from "../../shared/records/db.ts";
 import type { ApplyState } from "../lib/actions/launch.ts";
 import { applyNotices, type Cause } from "../lib/actions/notify.ts";
 import {
@@ -275,34 +275,19 @@ describe("the `channel` column", () => {
   it("reads a record written before channels as `orca-card`'s", () => {
     const root = mkdtempSync(join(tmpdir(), "jig-notices-migrate-"));
     roots.push(root);
-    stateDb(root);
-    closeStateDb(root);
-    // The version just before the channel column's migration; later migrations are undone too.
+    const path = statePath(root);
+    // Build the schema that existed immediately before the channel column.
     const before = MIGRATIONS.findIndex((m) =>
       m.sql.includes("ADD COLUMN channel"),
     );
-    const old = new Database(statePath(root));
-    old.run("DROP TABLE overlap_waits");
-    old.run("DROP TABLE overlap_hotspots");
-    old.run("DROP TABLE merge_facts");
-    old.run("DROP TABLE allocation_charge");
-    old.run("DROP TABLE allocation_week");
-    old.run("DROP TABLE allocation_lane_epoch");
-    old.run("DROP TABLE allocation_ranking");
-    old.run("ALTER TABLE launches DROP COLUMN sessions");
-    old.run("ALTER TABLE launches DROP COLUMN result_wait");
-    old.run("DROP INDEX steward_records_run_effect");
-    old.run("DROP INDEX notices_channel_key");
-    old.run("ALTER TABLE notices DROP COLUMN channel");
-    old.run(`PRAGMA user_version = ${before}`);
-    old.run("DELETE FROM db_migrations WHERE version > ?", [before]);
-    old.run("UPDATE db_meta SET version = ?", [before]);
-    old
+    const old = openDatabase({ path, migrations: MIGRATIONS.slice(0, before) });
+    if (!old.ok) throw new Error(old.failure.reason);
+    old.value
       .query(
         "INSERT INTO notices (repo, key, target, workspace, at, lasting) VALUES (?, ?, 'PR #7', '/ws', '2026-11-01T10:00:00.000Z', 0)",
       )
       .run(SLUG, KEY);
-    old.close();
+    closeDatabase(path);
 
     const db = stateDb(root);
     expect(db.query("SELECT channel, key FROM notices").all()).toEqual([

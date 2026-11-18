@@ -45,7 +45,7 @@ and confirm `jig install gc --repo <repository> --yes`, even without changing
 its repository configuration: older installed bounds deliberately grant no
 authority for that new default. A confirmed `worktrees` kind
 covers the agent tool's directory in the clone's primary checkout
-([below](#worktrees-an-agent-tool-makes)) as well as the confirmed roots. Git hooks and the file-system
+([below](#worktrees-an-agent-tool-makes)) and the process opener's derived runs root ([below](#worktrees-the-process-opener-makes)), as well as the confirmed roots. Git hooks and the file-system
 monitor are disabled for these calls; transport and credential settings the
 user configured (an SSH command, a credential helper) apply as they do to the
 user's own fetches. See
@@ -55,7 +55,7 @@ user's own fetches. See
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `tool-state` | Runs drive-pr's state reaper in report mode for each configured clone: the files a clone keeps beside the drive's database that the reaper would retire. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the reaper's lock excludes only other reapers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Registered test scopes can be collected only when their persistent registration proves every holder gone; incomplete registrations and other scratch remain report-only.                                                                                                                                                                                                                                                                                                                  |
-| `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded, except the worktrees an agent tool makes inside the clone ([below](#worktrees-an-agent-tool-makes)). Ignored local content needs preservation evidence unless a rule accounts for it ([below](#ignored-content)); the receipt lists every path set aside and the rule that set it aside. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); an agent tool's worktree is marked `runtime: agent-tool` and collected with git; any other eligible worktree remains report-only until the opener shares session admission. |
+| `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded, except the worktrees an agent tool makes inside the clone ([below](#worktrees-an-agent-tool-makes)) and the process opener's runs root. Ignored local content needs preservation evidence unless a rule accounts for it ([below](#ignored-content)); the receipt lists every path set aside and the rule that set it aside. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); an agent tool's worktree is marked `runtime: agent-tool` and collected with git; a process opener's worktree is marked `runtime: process` and collected with git under shared session admission; any other eligible worktree remains report-only. |
 | `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. Removes the one-time archives of collected worktrees' ignored content past the same retention.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `orca-terminals` | Machine kind, planned when the machine entry names Orca's command (`orca.command`); closes [run tabs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) whose run was killed before it closed its own tab, and parked run tabs nobody returned to ([below](#run-tabs)). |
 
@@ -66,8 +66,8 @@ creator's [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSA
 (`shared/liveness.ts`). An abandoned admission token blocks collection and
 needs inspection; it is never stolen on age, and the refusal names its
 creator and why that creator counts as gone.
-Worktree openers have not adopted that protocol, so clean or merged worktrees
-are reported only, except those a workspace runtime manages and those an
+The process worktree opener uses the same protocol. Other worktree openers
+remain report-only, except those a workspace runtime manages and those an
 agent tool makes.
 
 The process-holder check asks `lsof` which processes have files open under
@@ -243,6 +243,37 @@ process in it) is never changed. When it is on a branch, the reason names
 the branch and the command that releases it while keeping every file and
 commit: `git -C <tree> switch --detach`.
 
+### Worktrees the process opener makes
+
+The shared opener (`shared/workspace-open.ts`) gives Orca and the process
+opener the same branch selection, upstream repair, expected-head check and
+once-per-checkout create hook. The process opener (`shared/process-worktree.ts`)
+creates plain git worktrees under `$JIG_HOME/worktrees/<repository>/`, where
+`JIG_HOME` defaults to `~/.jig` and the repository directory name includes a
+digest of the clone's absolute path. Git's primary checkout is never removed.
+
+From before creation or reattachment until the launch record names the
+checkout, the opener holds shared `worktrees` admission. Before its create
+hook runs it writes `jig-process-owner.json` in the worktree's Git directory:
+the repository, branch, launch ids and recorded process identities. A caller
+publishes its launch's checkout before the opener releases admission.
+
+The collector includes the runs root even when the host uses another runtime.
+A process owner is collectible only when every launch it names, and every
+other launch naming the checkout, has a readable recorded exit and every
+recorded wrapper, supervisor and child identity is dead. Missing or malformed
+records keep the checkout. A process-owned checkout also listed by Orca is kept
+as unverified until its runtime ownership is reconciled, so neither runtime's
+session evidence can be skipped. Git, pull request, ignored-content, process-holder
+and idleness checks still apply. A checkout without a pull request may be
+collected only when its commits are already on the base branch.
+
+Collection holds exclusive admission through its final proof, the base
+branch's remove hook, reflection parking and `git worktree remove`. After
+the hook and immediately before removal it reads the owner, launches,
+processes and checkout identity again. A launch admitted before collection
+therefore keeps the tree; no opener can enter during collection.
+
 ### Detached worktrees
 
 A worktree on a branch is judged by the pull requests the forge lists for
@@ -277,11 +308,14 @@ it is judged as a tree without a pull request.
 
 ### Run tabs
 
-A run Jig starts in an Orca terminal tab closes its own tab when it ends
-with nothing left for a person, and records the tab under
-`~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`). A run
-killed before its end leaves the tab and its record
-behind, and a tab parked for a person stays until someone closes it. The
+A run Jig starts in an Orca terminal tab records the tab under
+`~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`), and
+closes it when it ends: a run the dispatcher launched on every exit, and a
+drive armed in a tab when it ends with nothing left for a person. A
+dispatched run whose wrapper died has its tab closed by a later dispatcher
+tick with `--apply`, while nothing runs in it. A run killed before
+its end that nothing closed leaves the tab and its record behind, and a
+tab a drive parked for a person stays until someone closes it. The
 `orca-terminals` kind joins those records to `orca terminal list --json`,
 read with the machine entry's `orca.command`, and proves each tab:
 

@@ -67,6 +67,9 @@ function runOfSays(s: ClaimSays): FollowupMarker["run"] {
     ...(s.host === null ? {} : { host: s.host }),
     ...(s.owner === null ? {} : { owner: s.owner }),
     ...(outcome === null ? {} : { outcome }),
+    ...(s.end?.state !== "ended" || s.end.releaseTags === undefined
+      ? {}
+      : { releaseTags: s.end.releaseTags }),
   };
 }
 

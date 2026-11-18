@@ -13,18 +13,12 @@
  */
 import { recordOf, textOf, OrcaError, orcaErrorText } from "./envelope.ts";
 import {
-  assertBranchName,
   assertLinkedWorktree,
   type BranchAction,
   branchesWithPrefix,
-  decideBranchAction,
-  defaultBase,
-  ensureUpstreamTracking,
   findGitWorktree,
-  probeBranch,
-  refreshBaseRef,
 } from "./git.ts";
-import { ensureCreateHook, gitDirOf } from "./hooks.ts";
+import { attachWorkspace, openWorkspace } from "../workspace-open.ts";
 import { releaseHiddenHolder } from "./holder.ts";
 import { type OpenPort, orcaResult } from "./port.ts";
 import { output } from "./runner.ts";
@@ -244,21 +238,6 @@ export function chooseBranch(
   return only;
 }
 
-/** Where the new checkout starts: origin's copy, the local branch, or the refreshed base (the clone's `origin/HEAD` when `base` is absent). */
-function startRef(
-  port: OpenPort,
-  repo: OrcaRepo,
-  base: string | undefined,
-  branch: string,
-  start: Start,
-): string {
-  if (start === "create-from-origin") return `origin/${branch}`;
-  if (start === "use-local") return branch;
-  const from = base ?? defaultBase(port.host, repo.path);
-  refreshBaseRef(port.host, repo.path, from);
-  return from;
-}
-
 /** What a new worktree is created with, beyond its branch. */
 export interface CreateOptions {
   /** What a new branch is cut from; the clone's `origin/HEAD` when absent. */
@@ -307,13 +286,9 @@ function createWorktree(
   repo: OrcaRepo,
   options: CreateOptions,
   branch: string,
+  from: string,
+  start: Start,
 ): OrcaWorktree {
-  const action = decideBranchAction(probeBranch(port.host, repo.path, branch));
-  if (action.kind === "refuse-diverged")
-    throw new OrcaError(
-      `${branch} has ${action.ahead.length} commit(s) origin lacks; reconcile the branch with origin before opening it`,
-    );
-  const from = startRef(port, repo, options.base, branch, action.kind);
   const what = "orca worktree create";
   const created = worktreeOf(
     recordOf(
@@ -336,7 +311,7 @@ function createWorktree(
     port,
     { ...created, branch: checkedOutBranch(port, created.path, what) },
     branch,
-    action.kind,
+    start,
   );
   const listed = findGitWorktree(port.host, repo.path, branch);
   if (listed === null || !sameText(listed, created.path))
@@ -378,10 +353,17 @@ export function attachBranch(
   branch: string,
   options: CreateOptions = {},
 ): { worktree: OrcaWorktree; reattached: boolean } {
-  const found = existingWorktree(port, repo, branch);
-  const worktree = found ?? createWorktree(port, repo, options, branch);
-  ensureUpstreamTracking(port.host, repo.path, branch);
-  return { worktree, reattached: found !== null };
+  return attachWorkspace(
+    port,
+    repo.path,
+    branch,
+    {
+      existing: (name) => existingWorktree(port, repo, name),
+      create: (name, from, start) =>
+        createWorktree(port, repo, options, name, from, start),
+    },
+    options.base,
+  );
 }
 
 export interface OpenBranchOptions extends CreateOptions {
@@ -412,36 +394,16 @@ export function openBranch(
   port: OpenPort,
   options: OpenBranchOptions,
 ): OpenedBranch {
-  assertBranchName(port.host, options.branch);
   const repo =
     typeof options.repo === "string"
       ? repoOf(port, options.repo)
       : options.repo;
-  const { worktree, reattached } = attachBranch(
-    port,
+  return {
     repo,
-    options.branch,
-    options,
-  );
-  if (options.expectedHead !== undefined) {
-    const head = port.host.run([
-      "git",
-      "-C",
-      worktree.path,
-      "rev-parse",
-      "HEAD",
-    ]);
-    if (head.status !== 0)
-      throw new OrcaError(
-        `cannot read HEAD in ${worktree.path} (exit ${head.status}): ${output(head)}`,
-      );
-    if (head.stdout.trim() !== options.expectedHead)
-      throw new OrcaError(
-        `${worktree.path} does not match the pull request head ${options.expectedHead}; reconcile the checkout before driving it`,
-      );
-  }
-  const hookRan =
-    options.createHook !== false &&
-    ensureCreateHook(port, worktree.path, gitDirOf(port, worktree.path));
-  return { repo, worktree, reattached, hookRan };
+    ...openWorkspace(port, repo.path, options, {
+      existing: (branch) => existingWorktree(port, repo, branch),
+      create: (branch, from, start) =>
+        createWorktree(port, repo, options, branch, from, start),
+    }),
+  };
 }
