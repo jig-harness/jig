@@ -8,7 +8,7 @@ import { sessionResultClass } from "./session-result-class.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { type FramedResult, readFramedResult } from "./framed-result.ts";
 import { storedEndedRow } from "./closing-report-store.ts";
-import { currentIso } from "../../shared/time.ts";
+import { currentIso, parseMs } from "../../shared/time.ts";
 import { testLockNote } from "./test-lock-note.ts";
 import { RATE_LIMIT_WAIT, type WaitFor } from "./wait-for.ts";
 
@@ -29,7 +29,7 @@ export function asResult(
   until: string | null = null,
   decision: string | null = null,
 ): SessionResult | null {
-  if (value === "failed" && until !== null && !Number.isNaN(Date.parse(until)))
+  if (value === "failed" && until !== null && !Number.isNaN(parseMs(until)))
     return "waits";
   if (value === "failed" && readFramedResult(decision) !== null)
     return "parked";

@@ -131,7 +131,11 @@ function prNumber(target: string): number | null {
 
 /** The stage a cause is about. */
 function needStage(cause: NeedCause): LineNeed["stage"] {
-  if (cause === "followup-failed" || cause === "followup-stale")
+  if (
+    cause === "followup-failed" ||
+    cause === "followup-stale" ||
+    cause === "release-owed"
+  )
     return "followup";
   if (cause === "nudge-unanswered") return "steer";
   if (

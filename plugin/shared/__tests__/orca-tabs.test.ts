@@ -17,6 +17,7 @@ import {
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import type { OrcaRunner } from "../orca.ts";
 import {
+  closeLaunchTabs,
   closePreviousTabs,
   closeRunTab,
   endOwnTab,
@@ -127,6 +128,23 @@ describe("recording a tab", () => {
       }),
     });
     expect(readRunTabs(root).map((t) => t.handle)).toEqual(["term_new"]);
+  });
+
+  test("records the launch record a dispatched run's tab runs", async () => {
+    await recordRunTab(
+      {
+        orca: "orca",
+        result: CREATED,
+        worktree: tree,
+        subject: prSubject(42),
+        title: "jig dispatch · rearm #42",
+        launch: "20261118T062126Z-20a068a4",
+      },
+      { root, table: async () => [row(SHELL, 1)], now: () => 0 },
+    );
+    expect(readRunTabs(root).map((t) => t.launch)).toEqual([
+      "20261118T062126Z-20a068a4",
+    ]);
   });
 
   test("a shell missing from the process table leaves the tab unrecorded", async () => {
@@ -282,6 +300,65 @@ describe("closing a subject's earlier tabs", () => {
         .map((t) => t.handle)
         .sort(),
     ).toEqual(["term_new", "term_other_pr", "term_other_tree"]);
+  });
+});
+
+describe("closing the tabs of a run whose wrapper died", () => {
+  test("closes only the launch's own tabs, through the caller's Orca command", async () => {
+    write(
+      tab({ handle: "term_run", launch: "run-1", orca: "/elsewhere/orca" }),
+    );
+    write(tab({ handle: "term_other_run", launch: "run-2" }));
+    write(tab({ handle: "term_armed" }));
+    const commands: string[] = [];
+    const orca = fakeOrca();
+    const ended = await closeLaunchTabs("run-1", "orca-ide", {
+      root,
+      orca: async (command, args, timeoutSec) => {
+        commands.push(command);
+        return orca.runner(command, args, timeoutSec);
+      },
+      table: async () => [row(SHELL, 1)],
+    });
+    expect(ended.map((e) => [e.tab.handle, e.outcome])).toEqual([
+      ["term_run", "closed"],
+    ]);
+    expect(commands).toEqual(["orca-ide"]);
+    expect(orca.calls.map((args) => args[3])).toEqual(["term_run"]);
+    expect(
+      readRunTabs(root)
+        .map((t) => t.handle)
+        .sort(),
+    ).toEqual(["term_armed", "term_other_run"]);
+  });
+
+  test("leaves a tab someone typed into, and finds nothing for a launch it never recorded", async () => {
+    write(tab({ handle: "term_run", launch: "run-1" }));
+    const orca = fakeOrca();
+    const deps = {
+      root,
+      orca: orca.runner,
+      table: async () => [row(SHELL, 1), row(5000, SHELL)],
+    };
+    expect(
+      (await closeLaunchTabs("run-1", "orca", deps)).map((e) => e.outcome),
+    ).toEqual(["busy"]);
+    expect(await closeLaunchTabs("run-9", "orca", deps)).toEqual([]);
+    expect(orca.calls).toEqual([]);
+    expect(readRunTabs(root)).toHaveLength(1);
+  });
+
+  test("calls Orca for none once its time is spent", async () => {
+    write(tab({ handle: "term_run", launch: "run-1" }));
+    const orca = fakeOrca();
+    const ended = await closeLaunchTabs(
+      "run-1",
+      "orca",
+      { root, orca: orca.runner, table: async () => [row(SHELL, 1)] },
+      0,
+    );
+    expect(ended.map((e) => e.outcome)).toEqual(["out of time"]);
+    expect(orca.calls).toEqual([]);
   });
 });
 

@@ -149,9 +149,9 @@ Every session the dispatcher started leaves one row in the
 repository, the account, the model, how long the session ran and how it
 ended. How it ended is one class from a closed list: converged, merged, a
 usage limit, parked for a person, waiting on a pending step, stalled, died,
-refused, or gates failed. A follow-up waiting on a step still pending, or a
-session that stopped on a question for a person, never counts as a failure;
-a wait on a rate limit is logged as a usage limit.
+refused, or gates failed. A follow-up waiting on a pending step, or a session
+that stopped on a question for a person, never counts as a failure. A wait on
+a rate limit is logged as a usage limit.
 The log records a stop no class fits as unknown, and never drops it.
 
 One dashboard opens on the pull requests ready to merge, or on what needs a
