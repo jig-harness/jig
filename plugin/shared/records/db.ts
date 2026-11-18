@@ -388,6 +388,22 @@ function missingColumns(db: Database, columns: KnownColumns): string[] {
   return missing;
 }
 
+/** Why a newer-schema database cannot serve a caller of `columns`, or `null` when it can. */
+function knownColumnsRefusal(
+  conn: Database,
+  spec: DatabaseSpec,
+  columns: KnownColumns,
+  reason: string,
+): Outcome<never, OpenCode> | null {
+  const verified = verifyMigrations(conn, spec, userVersion(conn));
+  if (!verified.ok)
+    return failed("newer-schema", `${reason}; ${verified.failure.reason}`);
+  const missing = missingColumns(conn, columns);
+  return missing.length === 0
+    ? null
+    : failed("newer-schema", `${reason}; it lacks ${missing.join(", ")}`);
+}
+
 /**
  * The database at `spec.path` for a caller that reads and writes only
  * `columns`: opened as `openDatabase` opens it, and, where that refuses a
@@ -406,35 +422,16 @@ export function openKnownColumns(
   const held = cached(spec.path);
   let db: Database | undefined;
   try {
-    db = held ?? new Database(spec.path);
-    if (held === null) {
-      db.run(`PRAGMA busy_timeout = ${spec.busyMs ?? BUSY_MS}`);
-      db.run("PRAGMA foreign_keys = ON");
-    }
+    db = held ?? openRaw(spec);
     const conn = db;
-    const refused = conn.transaction((): Outcome<never, OpenCode> | null => {
-      const verified = verifyMigrations(conn, spec, userVersion(conn));
-      if (!verified.ok)
-        return failed(
-          "newer-schema",
-          `${opened.failure.reason}; ${verified.failure.reason}`,
-        );
-      const missing = missingColumns(conn, columns);
-      return missing.length === 0
-        ? null
-        : failed(
-            "newer-schema",
-            `${opened.failure.reason}; it lacks ${missing.join(", ")}`,
-          );
-    })();
+    const refused = conn.transaction(() =>
+      knownColumnsRefusal(conn, spec, columns, opened.failure.reason),
+    )();
     if (refused !== null) {
       if (held === null) db.close();
       return refused;
     }
-    if (held === null) {
-      const id = fileId(spec.path);
-      if (id !== null) connections.set(spec.path, { db, ...id });
-    }
+    if (held === null) cacheConnection(spec.path, db);
     return ok(db);
   } catch (error) {
     if (held === null) db?.close();
@@ -444,6 +441,20 @@ export function openKnownColumns(
       error,
     );
   }
+}
+
+/** A connection to the database file with this process's usual pragmas. */
+function openRaw(spec: DatabaseSpec): Database {
+  const db = new Database(spec.path);
+  db.run(`PRAGMA busy_timeout = ${spec.busyMs ?? BUSY_MS}`);
+  db.run("PRAGMA foreign_keys = ON");
+  return db;
+}
+
+/** Keeps `db` as the process's connection to `path`, when the file has an identity. */
+function cacheConnection(path: string, db: Database): void {
+  const id = fileId(path);
+  if (id !== null) connections.set(path, { db, ...id });
 }
 
 /**

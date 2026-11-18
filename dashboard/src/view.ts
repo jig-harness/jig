@@ -190,6 +190,32 @@ function systemName(system: string): string {
   return `${system.charAt(0).toUpperCase()}${system.slice(1)}`;
 }
 
+/** What a rate limit says: which system's quota, and whose share it is. */
+function rateLimitCause(
+  quota: { system?: unknown; share?: unknown } | undefined,
+  at: string,
+): string {
+  if (quota === undefined || typeof quota.system !== "string")
+    return `Rate limit holds it${at}`;
+  const system = systemName(quota.system);
+  return quota.share === true
+    ? `${system} quota paused${at}, dispatcher's share spent`
+    : `${system} quota spent${at}`;
+}
+
+/** The step that was refused, with the failure's class in words where it has them. */
+function classCause(
+  refusal: NonNullable<LineRepo["refusal"]>,
+  step: string,
+): string {
+  const failure = refusal.failure;
+  const words =
+    refusal.step === "time" || failure === undefined
+      ? undefined
+      : CLASS_WORDS[String(failure.class)];
+  return words === undefined ? step : `${step} (${words})`;
+}
+
 /**
  * A refusal the line keeps in parts, as one short line: what stopped the
  * read, when it clears where that is known, and the tick the shown data is
@@ -209,22 +235,10 @@ function refusalLine(
   const failure = refusal.failure;
   const resumes = Date.parse(failure?.until ?? "");
   const at = Number.isNaN(resumes) ? "" : ` until ${clock(resumes, timeZone)}`;
-  const quota = failure?.quota;
-  let cause: string;
-  if (failure?.class === "rate-limited")
-    cause =
-      quota === undefined || typeof quota.system !== "string"
-        ? `Rate limit holds it${at}`
-        : quota.share === true
-          ? `${systemName(quota.system)} quota paused${at}, dispatcher's share spent`
-          : `${systemName(quota.system)} quota spent${at}`;
-  else {
-    const words =
-      refusal.step === "time" || failure === undefined
-        ? undefined
-        : CLASS_WORDS[String(failure.class)];
-    cause = words === undefined ? step : `${step} (${words})`;
-  }
+  const cause =
+    failure?.class === "rate-limited"
+      ? rateLimitCause(failure.quota, at)
+      : classCause(refusal, step);
   return `${cause}; showing ${clock(readMs, timeZone)} data`;
 }
 
