@@ -534,7 +534,9 @@ describe("a batch as one piece of work", () => {
 
   it("keeps each member's own wait when a batch's placement is stored", () => {
     const promoted: Wait = { sinceMs: 3, tier3SinceMs: 4, promotedMs: 9 };
-    const batch = { wait: promoted } as Parameters<typeof memberWait>[0];
+    const batch = { wait: promoted, raw: 3 } as Parameters<
+      typeof memberWait
+    >[0];
     // A joins B's batch: B's old promotion is not copied onto the new member.
     expect(memberWait(batch, promoted, promoted, NOW)).toEqual(promoted);
     // Its own tier-3 timer starts now, not at the batch's older start.
@@ -548,6 +550,9 @@ describe("a batch as one piece of work", () => {
     expect(memberWait(batch, joined as Wait, promoted, NOW + 60_000)).toEqual(
       joined,
     );
+    // A member whose own placement is below tier 3 starts no tier-3 timer.
+    const calm = { wait: promoted, raw: 1 } as Parameters<typeof memberWait>[0];
+    expect(memberWait(calm, undefined, promoted, NOW)?.tier3SinceMs).toBeNull();
     // A promotion the batch gained this tick is every member's.
     const fresh = { sinceMs: 3, tier3SinceMs: 4, promotedMs: NOW };
     const gained = { wait: fresh } as Parameters<typeof memberWait>[0];

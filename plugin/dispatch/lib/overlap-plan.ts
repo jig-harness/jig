@@ -263,8 +263,8 @@ function pickupsInFlight(
  * The wait one member of a placed batch keeps: its own recorded history, with
  * the batch's tier-3 start and promotion added only where the batch gained
  * them this tick, so joining a promoted member's batch never promotes another.
- * A member joining a batch already in tier 3 starts its own tier-3 timer now,
- * never the batch's older one and never none.
+ * A member joining a batch already in tier 3 starts its own tier-3 timer now
+ * only when its placement is itself raw tier 3, never the batch's older one.
  */
 export function memberWait(
   p: Placed,
@@ -279,7 +279,9 @@ export function memberWait(
       own?.tier3SinceMs ??
       (before?.tier3SinceMs == null || p.wait.tier3SinceMs === null
         ? p.wait.tier3SinceMs
-        : nowMs),
+        : p.raw === 3
+          ? nowMs
+          : null),
     promotedMs:
       own?.promotedMs ??
       (before?.promotedMs == null ? p.wait.promotedMs : null),
@@ -299,7 +301,7 @@ function loadWaits(slug: string, notes: string[]): Map<string, Wait> {
 /**
  * Keep the walk's waits, by a tick that applies, and remove the rows of the
  * pickups that started or are no longer wanted, when the tracker's read was
- * whole.
+ * whole: a partial read may have left a still-wanted pickup out.
  */
 function storeWaits(
   context: TickContext,
@@ -318,7 +320,7 @@ function storeWaits(
       .map((r) => r.target),
   );
   const wanted =
-    tracked.claimed === null
+    tracked.claimed === null || tracked.partial === true
       ? null
       : new Set(
           tracked.pickups.map((p) => p.key).filter((k) => !started.has(k)),
