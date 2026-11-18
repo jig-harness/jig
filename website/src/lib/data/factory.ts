@@ -172,13 +172,6 @@ export const NOT_BUILT: Record<string, Actor[]> = {
       note: "would change “a person merges”; decided on its own",
     },
   ],
-  b7: [
-    {
-      kind: "todo",
-      item: "17",
-      text: "a follow-up skill for every repository",
-    },
-  ],
 };
 
 /**
@@ -299,7 +292,7 @@ function actorFromMatch(m: RegExpMatchArray): Actor {
     return {
       kind: "tool",
       name: "repository follow-up",
-      note: "supplied by the repository; started by a person or the dispatcher",
+      note: "the plugin's followup skill unless the repository names its own; started by a person or the dispatcher",
       href: "/factory/line/#line",
     };
   if (m[0] === "[dispatcher]")

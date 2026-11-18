@@ -13,7 +13,7 @@
  * count as a choice (`freeChoiceFault`).
  */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { normalizeAnswerText } from "../../shared/decisions/answer-normalize.ts";
+import { optionNameMatches } from "../../shared/decisions/answer-normalize.ts";
 import { answerTextFault } from "../../shared/decisions/answer-text.ts";
 import { optionDetails } from "../../shared/decisions/model.ts";
 import type { ParkedOption } from "../../shared/decisions/park.ts";
@@ -65,6 +65,7 @@ function readBack(
   text: string,
   login: string,
   parts?: StructuredParts,
+  dispatcherFramed = false,
 ): AnswerChoice | undefined {
   const at = isoFromMs(
     Math.max(currentMs(), parseMs(item.at ?? "") + 1000 || 0),
@@ -81,6 +82,7 @@ function readBack(
     item,
     { author: login, association: "OWNER", at, url: "", body },
     "conversation",
+    dispatcherFramed,
   )?.choice;
 }
 
@@ -95,8 +97,9 @@ export function freeChoiceFault(
   item: ParkedItem,
   text: string,
   login: string,
+  dispatcherFramed = false,
 ): string | null {
-  const read = readBack(item, text, login);
+  const read = readBack(item, text, login, undefined, dispatcherFramed);
   return read === undefined
     ? null
     : `the drive's readers would count "${text}" as choosing ${read.option}, which jig send writes only bound to the framing you read: send it as --approve or --choose with --decision, after a --dry-run shows the option and its digest`;
@@ -106,6 +109,7 @@ export function freeChoiceFault(
 function optionOf(
   item: ParkedItem,
   form: StructuredForm,
+  dispatcherFramed: boolean,
 ): Outcome<{ option: ParkedOption; recommended: boolean }, "refused"> {
   const reading = decisionReading(item);
   if (!("decision" in reading)) return refusedHere(noDecision(item, reading));
@@ -114,9 +118,8 @@ function optionOf(
   const matches =
     form.kind === "approve"
       ? options.filter((o) => o.id === recommended)
-      : options.filter(
-          (o) =>
-            normalizeAnswerText(o.name) === normalizeAnswerText(form.option),
+      : options.filter((o) =>
+          optionNameMatches(o, form.option, dispatcherFramed),
         );
   const option = matches.length === 1 ? matches[0] : undefined;
   if (option === undefined)
@@ -138,8 +141,9 @@ export function resolveChoice(
   form: StructuredForm,
   note: string | undefined,
   login: string,
+  dispatcherFramed = false,
 ): Outcome<Resolved, "refused"> {
-  const found = optionOf(item, form);
+  const found = optionOf(item, form, dispatcherFramed);
   if (!found.ok) return found;
   const { option, recommended } = found.value;
   const choice = {
@@ -155,7 +159,7 @@ export function resolveChoice(
     ...(item.digest === undefined ? {} : { decision: item.digest }),
     ...(note === undefined ? {} : { note }),
   };
-  const read = readBack(item, text, login, parts);
+  const read = readBack(item, text, login, parts, dispatcherFramed);
   if (
     read === undefined ||
     read.option !== option.name ||

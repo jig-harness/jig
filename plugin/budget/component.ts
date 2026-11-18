@@ -1,7 +1,11 @@
 /** Read-only operation and caller totals from the machine's cost ledger. */
 import type { CommandComponent } from "../runtime/component.ts";
 import { ExitError } from "../shared/cli.ts";
-import { ledgerReport, type LedgerRow } from "../shared/outbound/ledger.ts";
+import {
+  ledgerReport,
+  type LedgerRow,
+  UNATTRIBUTED,
+} from "../shared/outbound/ledger.ts";
 import { currentMs, isoFromMs } from "../shared/time.ts";
 import {
   command,
@@ -49,6 +53,7 @@ function budgetGroups(
       continue;
     }
     known.requests += row.requests;
+    known.notModified = (known.notModified ?? 0) + (row.notModified ?? 0);
     known.cost += row.cost;
     known.unknownCost += row.unknownCost;
     known.estimated += row.estimated;
@@ -65,11 +70,13 @@ function budgetGroups(
       unit: row.unit,
       [group]: row[group],
       requests: row.requests,
+      notModified: row.notModified ?? 0,
       cost: row.cost,
       unknownCost: row.unknownCost,
       estimated: row.estimated,
       durationMs: row.durationMs,
       failures: row.failures,
+      unattributed: row[group] === UNATTRIBUTED,
     }))
     .sort((a, b) => a.system.localeCompare(b.system) || b.cost - a.cost);
 }
@@ -84,9 +91,14 @@ function costLine(
   row: BudgetTotals[number],
   group: "operation" | "caller",
 ): string {
+  if (row.unattributed)
+    return `  ${row.system} ${row.credential} unattributed: ${row.cost} ${row.unit} the reported balance shows spent that no counted call explains`;
   const estimated = row.estimated ? " (includes estimates)" : "";
   const unknown = row.unknownCost ? `, ${row.unknownCost} unknown cost` : "";
-  return `  ${row.system} ${row.credential} ${row[group]}: ${row.requests} requests, ${row.cost} ${row.unit}${estimated}${unknown}, ${row.durationMs} ms`;
+  const notModified = row.notModified
+    ? ` (${row.notModified} answered 304 Not Modified)`
+    : "";
+  return `  ${row.system} ${row.credential} ${row[group]}: ${row.requests} requests${notModified}, ${row.cost} ${row.unit}${estimated}${unknown}, ${row.durationMs} ms`;
 }
 
 function printGroup(

@@ -1,220 +1,30 @@
 #!/usr/bin/env bun
+import {
+  summaryEntryKey,
+  headingEntryKey,
+  entryHeadings,
+  hasEntry,
+} from "./lib/deferred-identity.ts";
+export { summaryEntryKey, headingEntryKey, entryHeadings, hasEntry };
+import { deferBatchCommand } from "./lib/defer-batch-command.ts";
 import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
 /**
- * Find-or-create the per-PR+Type BATCH follow-up issue for a deferred review
- * finding, append the finding as a self-contained entry, and print the issue
- * link for the `**deferred**` reply — the mechanized path behind
- * references/deferral-protocol.md § Batching is the default.
- *
- * Batching is the protocol's default because filing a fresh issue per finding
- * is the path of least resistance mid-round, and left to that path almost
- * nothing gets batched. This script makes the batch cheaper than a fresh issue
- * — one command, no Linear UI, an idempotent append.
+ * File deferred findings through the configured tracker interface. One open
+ * backlog batch per repository, pull request and type holds their entries,
+ * highest priority and union of categories. Native related links preserve the
+ * originating issue and its epic; a new batch never receives a parent.
  *
  * Usage:
- *   defer-batch.ts [--batch] <PR#> <type> \
- *     (--thread-url <url> | --comment-url <url> --fingerprint <marker-safe>) \
- *     --reason <text> \
- *     --severity <blocker|high|medium|low|unknown> --category <cat|unknown> \
- *     --originating <TEAM-1234|none> [--team <KEY>] \
- *     [--fix <text>] [--size xs|small] [--repo-label <name>] \
- *     [--labels a,b] [--no-parent --no-parent-reason <text>] \
- *     [--repo-slug owner/name] [--dry-run]   < finding.txt
+ *   defer-batch.ts <PR> <type> --thread-url <url> --reason <text>
+ *     --severity <severity> --category <category> --originating <key|none>
+ * Read the finding from stdin. For a summary finding, replace --thread-url
+ * with --comment-url <url> --fingerprint <key>. --dry-run writes nothing.
  *
- *   `--severity` is REQUIRED, matching `--reason`/`--originating` — the bug
- *   this closes (follow-up issues filed with no Linear priority) is severity
- *   being silently dropped, so an optional flag would just reproduce the same
- *   failure with an escape hatch. It sets
- *   the batch's Linear `priority` field (see `SEVERITY_TO_PRIORITY`) on both
- *   the CREATE and APPEND paths, escalating an existing batch's priority but
- *   never downgrading it. Same vocabulary and flag name as
- *   `triage-ladder.ts --severity`, imported from `./lib/ladder.ts` rather than
- *   re-pinned.
- *
- *   `--category` is REQUIRED, matching `--severity` — mirrors
- *   `triage-ladder.ts`'s own requirement: an omitted flag is
- *   indistinguishable from an explicit `unknown` and could silently discard a
- *   real parsed value. It is recorded in the entry text only
- *   (`**Category**: <token>`) — it has no Linear label side-effect.
- *   When reviewer emission is available, pass `unknown` explicitly only for
- *   a finding whose reviewer genuinely emitted no `🏷️ category:` tag — never
- *   as a stand-in for an omitted flag.
- *
- *   `--dry-run` previews without writing, and resolves and validates every
- *   label first — a preview that skipped that printed "would create" for a
- *   command the real run aborts.
- *
- *   <type> is the Type-group label the batched findings share, from the
- *   repository's declared taxonomy (bug, feature, infra, docs, chore) — one of
- *   the key's components, with the repository label and PR number.
- *   The reviewer's FINDING text is read from STDIN, never from an argument:
- *   review text routinely contains backticks/$( )/$VAR that a shell argument
- *   would evaluate or drop before the script runs (the same reason reply bodies use stdin). Use a quoted heredoc (<<'EOF') or a file.
- *
- *   `--thread-url` must be a review-thread permalink on THIS repository and
- *   THIS PR. A summary-only finding instead uses `--comment-url` for the PR
- *   conversation-comment permalink plus the reviewer's stable marker-safe
- *   `--fingerprint`. The source is both the audit backlink and the basis of
- *   the idempotency key, so a URL from anywhere else files the entry under a
- *   key no later run for the real finding can match. `--reason`, `--fix` and
- *   `--no-parent-reason` are rendered as raw Markdown and must be SINGLE
- *   LINES — a newline in one forges the `### <url>` heading that keys the
- *   append, which would report a later real deferral as already present.
- *
- * Behaviour:
- *   - FIND: searches open issues whose DESCRIPTION carries the key marker
- *     `<!-- defer-batch-key: repo=<repo> pr=<N> type=<type> -->` on a line of
- *     its own, above `## Entries` — keyed on the MARKER, deliberately not on
- *     `pr-followup`, because filtering by that label made a batch missing it
- *     invisible and the helper then minted a second issue under a key that
- *     already had one; it is a run-independent mandatory label, so the batch
- *     is found and the label reconciled onto it. The key is in the description
- *     rather than the title, so a batch may be retitled to say what it
- *     contains without a later round losing it and minting a duplicate, and it
- *     carries the repository, so another consumer's PR of the same number and
- *     Type does not collide, whatever its labels say. A candidate whose
- *     TYPE or REPO LABEL disagrees with its own marker aborts the run as
- *     mislabelled. An API failure
- *     ABORTS — it is never read as "not found", because create-on-error is how
- *     duplicate batch keys are minted . A TRUNCATED page aborts for the same reason: a batch sitting
- *     past the requested page reads as absent, and the helper would mint a
- *     second issue under the key it exists to keep unique — so every Linear
- *     connection this script reads is checked for `hasNextPage` and refuses
- *     rather than acting on a partial view. Two open issues under one key is
- *     a pre-existing defect: the oldest wins the append and the others are
- *     named on stderr. Find-then-create is likewise not atomic and Linear has
- *     no unique-key constraint, so two runs that both saw no candidate both
- *     create. That cannot be PREVENTED here for the same reason the append
- *     race cannot, but it is NOTICED: a create re-queries the key afterwards
- *     and names any duplicate loudly, so the run that made the mess reports it
- *     rather than leaving it for whoever reads the tracker next. Merging them
- *     stays a human call — closing someone else's issue is not a deferral
- *     helper's decision.
- *   - CREATE (when absent): the protocol's SEED title, which nothing later
- *     reads (the key is the description marker, written first in the
- *     scaffold); labels = `pr-followup` +
- *     <type> + size (default `small`) + consumer-configured repo label +
- *     the originating issue's inherited context labels (`agent:*`,
- *     `domain:*`, `codearea:*`) + `--labels` extras; parent = the originating
- *     issue's own parent (one level up, per the protocol — `--no-parent`
- *     for the domain-mismatch judgment, which requires `--no-parent-reason`
- *     because the protocol files a parentless follow-up only with the
- *     mismatch stated in its description); on the protocol's PARENTLESS rows,
- *     the originating issue's project and milestone, so the follow-up stays
- *     in its planning context; a `related` link back to the originating
- *     issue — unless the originating issue is ITSELF an epic (it carries the
- *     workspace's `epic` flag label — that label and nothing else, since a
- *     child-bearing issue is usually a mid-tree grouping with a real epic
- *     parent), which is a row of the
- *     protocol's table in its own right: that batch is filed PARENTLESS with
- *     the originating issue's project and milestone, so a nested epic's batch
- *     is not silently hung off the grandparent. Any required label the
- *     workspace cannot resolve aborts the
- *     create, as does a `<type>` outside the repository's DECLARED Type
- *     taxonomy (`BATCH_TYPES`, loaded from consumer configuration) or a `<type>`/`--size`/`--repo-label` that is not actually
- *     in Linear's Type/Size/Repo group — the two answer different questions,
- *     "is it one of ours" and "is it a Type at all" — a `--labels` extra that sits
- *     in one of those single-valued groups (it would file two Size labels on
- *     one issue), and a create with no `agent:*`/`domain:*`/`codearea:*`
- *     label to apply — a batch issue filed without its mandatory groups is
- *     tracker noise with provenance. The Context check is the PREFIX filter,
- *     not a count of labels supplied: `--labels manual-ops` supplies a label
- *     without supplying a context one.
- *   - APPEND: adds the entry (source-backed identity heading, quoted finding, reason,
- *     optional fix sketch) to the description. Idempotent on the entry's
- *     HEADING LINE (`### <key>`), not on a substring search for the URL: one
- *     thread URL is a prefix of another (`…_r1` inside `…_r10`) and a URL
- *     quoted inside a neighbouring finding matches too, either of which
- *     reports `alreadyPresent` for a finding never recorded. The
- *     read-modify-write is not atomic and Linear takes a WHOLE description,
- *     so a concurrent writer's replacement can erase this entry. `labelIds` is
- *     a whole-set replacement for the same reason, so a concurrent run can
- *     equally erase the labels this one added. BOTH effects are therefore
- *     VERIFIED by re-reading the issue after the write and rebuilding from
- *     what is live — the description re-appended, the label set re-UNIONed
- *     against the latest read rather than a stale snapshot — up to a small
- *     retry bound, aborting rather than reporting success if either did not
- *     survive. Without that, the loser of the race printed a ready
- *     `**deferred**` reply, and `labelsAdded` claimed a reconciliation that
- *     never persisted.
- *
- *     What is verified is the CLAIM the reply makes, not this run's own
- *     edits: the entry is checked even when it was already present and this
- *     run appended nothing (a concurrent replacement can erase a PRE-EXISTING
- *     entry), and the label check is the whole batch contract via
- *     `batchContractHolds` rather than just the labels this run added (a
- *     replacement can drop a mandatory label that predates the run, which a
- *     "did my additions land" test never asks about). The verification
- *     therefore runs even on the nothing-to-write path, since that path still
- *     prints a ready reply.
- *
- *     That verification NARROWS the race; it does not close it, and it must
- *     not be read as a guarantee. The interleaving A-write → A-verify →
- *     B-write(stale) → B-verify passes on both sides while B has already
- *     erased A's entry. Closing it needs compare-and-swap or a lock, and
- *     Linear's API offers neither — `issueUpdate` has no conditional form,
- *     and a filesystem lock would only serialize runs on ONE machine, which
- *     is a guarantee this script cannot make about where it is invoked from.
- *     What the verification does buy is that the COMMON interleavings become
- *     a loud abort instead of a silent loss. The residual is a genuinely
- *     concurrent second writer on the same PR+Type batch.
- *   - RECONCILE (on every append, not only at create): the batch is brought
- *     back to the contract each run, because create is several effects and
- *     only the first is retried by find-or-create. Missing CONTEXT labels
- *     (`inherited` + `--labels`) are added ONLY once ownership is settled —
- *     an incoming `agent:`/`domain:` set that shares NO label at all with the
- *     batch's own aborts before reconciliation runs at all
- *     (`ownerDomainMismatches`), per the protocol's different-owner rule
- *     (lines 105-108); any overlap counts as shared ownership, since both
- *     groups are multi-valued (`pick: "1-3"`) and ordinary triage can add a
- *     second label to an already-filed batch. `codearea:*` is exempt from
- *     that check and reconciles additively regardless. A single-valued group (Type/Size)
- *     that is ABSENT is filled, while a differing SIZE is kept and reported —
- *     the group is satisfied, both values are legitimate, and adding the
- *     second label would violate the taxonomy in the name of repairing it. A
- *     differing Type aborts instead, per FIND above; Repo never reaches here;
- *     and MORE THAN ONE label in any single-valued group aborts, since that
- *     group is then not satisfied at all and which value governs is
- *     undecidable. Reconciliation is deliberately scoped to what has a
- *     RUN-INDEPENDENT correct value — the mandatory label groups, and a
- *     `related` link to this run's originating issue, which is additive —
- *     `pr-followup` included, since a batch that lost it stops being
- *     discoverable at all. It
- *     does NOT touch the batch's PLACEMENT (parent epic, project, milestone):
- *     those are single-valued and belong to whichever originating issue filed
- *     the batch FIRST, so a later run's originating issue is not authoritative
- *     over them and repairing them would reparent the batch under whichever
- *     epic happened to defer last. A
- *     missing `related` link back to the originating issue is created —
- *     without which an `issueRelationCreate` that failed after a successful
- *     create left the batch permanently unlinked, since the next run takes
- *     the append branch and nothing there retried it. The Context group FAILS
- *     CLOSED here exactly as at create: a batch with no context label that
- *     this run cannot repair aborts rather than warning, because the operator
- *     can re-run with `--labels` — the refusal is retryable, whereas a warning
- *     ships a `**deferred**` reply for a batch that still violates the
- *     contract.
- *   - DRY-RUN reports what each path WOULD do and returns `dryRun: true` from
- *     both, never the ordinary success output — that output carries a ready
- *     `**deferred**` reply, and a caller acting on it resolves a thread whose
- *     finding was never persisted.
- *
- * Every mutation's `success` is CHECKED. Linear returns `success: false`
- * without a top-level GraphQL error, so discarding it reports a persisted
- * entry that does not exist — and the caller resolves the review thread with
- * no tracked finding behind it.
- *
- * Output (stdout, JSON): { identifier, url, title, created, appended,
- * alreadyPresent, labelsAdded, relatedLinked } — plus a ready-to-adapt
- * `**deferred**` reply line on stderr. Exit 0 on success, 2 on usage, 1 on
- * API/env failure.
- *
- * Auth: LINEAR_API_TOKEN (the repo's script-side convention —
- * consumer environment), with
- * LINEAR_API_KEY accepted as a fallback (the name many environments export). Calls are bounded at 30s each, mirroring GH_CALL_TIMEOUT.
- *
- * On Windows, invoke through the runtime (`bun defer-batch.ts …`) — a shebang
- * only carries the POSIX direct-execution path.
+ * The command boundary in lib/defer-batch-command.ts validates inputs and
+ * delegates to the governed tracker adapter. Its JSON result names the issue,
+ * whether it was created and whether the finding was already present.
+ * Existing exported Linear helpers remain available to their callers; they
+ * do not supply the command-line filing path.
  */
 
 import {
@@ -253,28 +63,11 @@ import {
   scaffoldPortion,
 } from "./lib/batch-description.ts";
 
-const LINEAR_API = "https://api.linear.app/graphql";
-const LINEAR_TIMEOUT_MS = 30_000;
-
+import type { LinearClient } from "../../do-item/scripts/lib/tracker/linear-deferral.ts";
+export type { LinearClient } from "../../do-item/scripts/lib/tracker/linear-deferral.ts";
 /**
- * How long the WHOLE run may spend on Linear calls before it is aborted
- * outright, rather than left to the retry loop's attempt count alone.
- *
- * `APPEND_ATTEMPTS` bounds the number of attempts, not the duration of any one
- * awaited `linear(...)` call — a stalled request could otherwise pin the
- * unattended drive loop forever. `LINEAR_TIMEOUT_MS` already caps a single
- * `fetch`, but that cap lived only inside `makeClient`, one implementation of
- * the `LinearClient` port; nothing in the PORT's own type required it, so a
- * test double (or a future client) had no obligation to honor any bound at all,
- * and no caller could bound the loop AS A WHOLE rather than call-by-call.
- * Threading a caller-supplied deadline through the port makes the guarantee
- * part of the CONTRACT every implementation must honor — `makeClient` combines
- * it with its own per-call timeout via `AbortSignal.any`, and `appendWithRetry`
- * checks it directly so a stalled or endlessly-retried run aborts instead of
- * blocking past this ceiling. Generous relative to `LINEAR_TIMEOUT_MS` *
- * `APPEND_ATTEMPTS` (30s × 3 = 90s of pure call time) to leave room for the
- * `RETRY_MAX_MS`-bounded backoff between attempts and the label/relation calls
- * outside the retry loop.
+ * Bound the whole workflow, including retries and backoff. The adapter also
+ * caps each request, while the workflow checks this signal before each call.
  */
 export const RUN_DEADLINE_MS = 5 * 60_000;
 
@@ -498,114 +291,6 @@ export function commentUrlPattern(repoSlug: string, pr: string): RegExp {
  * sync with `MARKER_SAFE_FINGERPRINT` by hand if that shape ever changes.
  */
 export const FINDING_FINGERPRINT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-/** Stable, non-linkified heading key for one finding in a sticky comment. */
-export function summaryEntryKey(
-  commentUrl: string,
-  fingerprint: string,
-): string {
-  const match = /#issuecomment-([0-9]+)$/.exec(commentUrl);
-  if (match === null) {
-    throw new Error(`cannot derive a summary entry key from '${commentUrl}'`);
-  }
-  return `ai-review-backlog:issuecomment-${match[1]}:${fingerprint}`;
-}
-
-/**
- * Append `entry` to `description`, idempotently keyed on the entry's HEADING
- * LINE: a re-run after a crash mid-round must not duplicate the entry.
- *
- * The key is a whole trimmed line equal to `### <url>`, not a substring search
- * for the URL. A substring is not evidence the thread has an entry, in two
- * measured ways: one thread URL is a PREFIX of another (`…#discussion_r1` sits
- * inside `…#discussion_r10`), and a URL quoted inside a neighbouring finding's
- * text matches too. Either reports `alreadyPresent` for a finding that was
- * never recorded, and the caller then resolves the review thread with nothing
- * tracking it.
- */
-/**
- * The exact idempotency key an entry heading names, or null if the line is not one.
- *
- * MEASURED: Linear rewrites a bare
- * URL into a markdown link when it stores a description, so the heading this
- * script WRITES is not the heading it reads back —
- * `### https://…#discussion_r1` returns as
- * `### [https://…#discussion_r1](<https://…#discussion_r1>)`. An exact
- * line-equality key therefore never matched after a round trip: every append
- * failed its own post-write verification, the retry loop re-appended, and the
- * issue ended up with the same entry three times before the run aborted.
- *
- * Parsing the URL out and comparing it EXACTLY keeps the property the
- * line-equality key was chosen for — a thread URL that merely prefixes another
- * (`…_r1` inside `…_r10`) still does not match, and a URL quoted inside a
- * neighbouring finding is not on a `###` line at all.
- */
-export function headingEntryKey(line: string): string | null {
-  // 0-3 leading spaces, per CommonMark: that is the range which still parses
-  // as a heading. FOUR or more makes it an indented CODE BLOCK, so a Markdown
-  // example inside a description would otherwise be read as a real entry and
-  // make the helper skip the append — resolving the thread with nothing
-  // tracking it (a legal-but-unexpected indentation must never read as a
-  // real entry). A bare `trim()` erased that distinction.
-  const heading = /^ {0,3}### (.*)$/.exec(line.trimEnd());
-  if (heading === null) return null;
-  const rest = (heading[1] ?? "").trim();
-  const link = /^\[([^\]]*)\]\(<?([^)>]*)>?\)$/.exec(rest);
-  return link ? link[2] || link[1] || "" : rest;
-}
-
-/**
- * The entry headings a description actually contains, skipping anything inside
- * a FENCED code block.
- *
- * CommonMark renders a `### …` line inside ``` or ~~~ as code, not a heading,
- * so counting one as a real entry makes the append skip a finding that was
- * never recorded — the thread then resolves with nothing tracking it. Same
- * failure the indented-code-block bound closed; this is its sibling, and the
- * two together are what "a heading is a heading" actually means here.
- */
-export function entryHeadings(description: string): string[] {
-  const found: string[] = [];
-  // CommonMark's fence rules in full, rather than one clause per round:
-  //  - an opener is 3+ backticks or tildes at 0-3 spaces of indent;
-  //  - a BACKTICK opener may not carry a backtick in its info string;
-  //  - a closer must use the SAME character, be at least as LONG as the
-  //    opener, and carry nothing but whitespace after it.
-  // The length rule is why the opener's length is kept: after a ```` opener a
-  // ``` line is NOT a close, and treating it as one exposes the code beneath
-  // as headings again.
-  let fence: { char: string; len: number } | null = null;
-  for (const line of description.split("\n")) {
-    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-    let consumed = false;
-    if (marker !== null) {
-      const fenceText = marker[1] ?? "";
-      const char = fenceText.charAt(0);
-      const len = fenceText.length;
-      const info = marker[2] ?? "";
-      if (fence === null) {
-        if (char !== "`" || !info.includes("`")) {
-          fence = { char, len };
-          consumed = true;
-        }
-        // else: not a legal opener, so fall through and read it as content
-      } else {
-        if (char === fence.char && len >= fence.len && info.trim() === "") {
-          fence = null;
-        }
-        consumed = true; // either the close, or a line inside the fence
-      }
-    }
-    if (consumed || fence !== null) continue;
-    const key = headingEntryKey(line);
-    if (key !== null) found.push(key);
-  }
-  return found;
-}
-
-export function hasEntry(description: string, entryKey: string): boolean {
-  return entryHeadings(description).includes(entryKey);
-}
 
 export function appendEntry(
   description: string,
@@ -1057,66 +742,6 @@ export function hasRelationTo(
   );
 }
 
-/**
- * The `signal` is REQUIRED, not optional — see `RUN_DEADLINE_MS`'s own doc.
- * A caller-supplied deadline that an implementation is free to ignore is no
- * guarantee at all, so it is part of the port's own type, not bolted on
- * per-call. This does NOT, by itself, force every existing test double to
- * accept it: TypeScript's function-type assignability allows a
- * fewer-parameter function to stand in for a type expecting more (the
- * caller may pass extra arguments; JS ignores them), so a 2-arg fake typed
- * as `LinearClient` still type-checks and simply never sees `signal`. The
- * actual enforcement is `appendWithRetry`'s own `checkDeadline` (below),
- * which does not trust an implementation to honor the signal at all — it
- * checks `signal.aborted` itself before making any call. `makeClient`'s real
- * implementation additionally races the signal against `fetch` via
- * `AbortSignal.any`, so a REAL client does cancel the in-flight request; a
- * test double that ignores `signal` merely resolves as if the deadline had
- * not fired, which `checkDeadline` still catches on the next loop check.
- */
-export type LinearClient = (
-  query: string,
-  variables: Record<string, unknown>,
-  signal: AbortSignal,
-) => Promise<Record<string, unknown>>;
-
-function makeClient(token: string): LinearClient {
-  return async (query, variables, signal) => {
-    let resp: Response;
-    try {
-      resp = await fetch(LINEAR_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: token },
-        body: JSON.stringify({ query, variables }),
-        // Whichever fires first: this one call's own LINEAR_TIMEOUT_MS cap,
-        // or the caller's run-wide deadline — so a single stalled request is
-        // bounded even when the deadline still has room left, AND the loop
-        // as a whole cannot outlast the deadline by retrying calls that each
-        // individually look fine.
-        signal: AbortSignal.any([
-          AbortSignal.timeout(LINEAR_TIMEOUT_MS),
-          signal,
-        ]),
-      });
-    } catch (e) {
-      throw new Error(
-        `Linear API unreachable: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
-    if (!resp.ok) {
-      throw new Error(`Linear API HTTP ${resp.status}`);
-    }
-    const json = (await resp.json()) as {
-      data?: Record<string, unknown>;
-      errors?: unknown;
-    };
-    if (json.errors) {
-      throw new Error(`Linear API error: ${JSON.stringify(json.errors)}`);
-    }
-    return json.data ?? {};
-  };
-}
-
 /** Refuse to act on a page the API truncated — see `isComplete`. */
 function assertComplete(pageInfo: PageInfo | undefined, what: string): void {
   if (!isComplete(pageInfo)) {
@@ -1302,14 +927,6 @@ const FIND_BATCHES = `query($search: String!) { issues(first: 50, filter: {
        relations(first: 50) { pageInfo { hasNextPage } nodes { type issue { id } relatedIssue { id } } }
        inverseRelations(first: 50) { pageInfo { hasNextPage } nodes { type issue { id } relatedIssue { id } } }
      } } }`;
-
-const USAGE = `usage: defer-batch.ts [--batch] <PR#> <type> (--thread-url <url> | --comment-url <url> --fingerprint <marker-safe>) --reason <text> \\
-         --severity <blocker|high|medium|low|unknown> --category <cat|unknown> \\
-         --originating <TEAM-1234|none> [--team <KEY>] [--fix <text>] \\
-         [--size xs|small] [--repo-label <name>] [--repo-slug owner/name] \\
-         [--labels a,b] [--no-parent --no-parent-reason <text>] [--dry-run] \\
-         < finding.txt
-The reviewer's finding is read from stdin (quoted heredoc or file) — never an argument.`;
 
 /**
  * Every option that takes a value. An unrecognised `--flag` is REJECTED rather
@@ -1864,7 +1481,7 @@ export async function appendWithRetry(
   // Checked before any call an attempt would make, not only relied on to
   // cancel an in-flight `fetch` — see `RUN_DEADLINE_MS`'s own doc. A test
   // double standing in for `LinearClient` is not obliged to honor the signal
-  // it is handed (only `makeClient`'s real implementation races it against
+  // it is handed (only the adapter client's real implementation races it against
   // `fetch`), so an explicit check here is what makes the deadline's effect
   // on the LOOP verifiable without a real network call. Called BOTH at the
   // top of each attempt and right after the retry pause: `sleep` itself can
@@ -2293,30 +1910,7 @@ export async function appendWithRetry(
 
 async function main(): Promise<number> {
   if (consumerError !== undefined) fail(2, `defer-batch: ${consumerError}`);
-  const parsed = parseArgs(process.argv.slice(2));
-  if (typeof parsed === "string") fail(2, `defer-batch: ${parsed}`, "", USAGE);
-  const args = parsed;
-
-  const finding = (await readStdinAll()).trim();
-  if (finding === "") {
-    fail(2, "defer-batch: the finding body on stdin was empty", "", USAGE);
-  }
-
-  // UNSET and EMPTY both fall through — the same `${VAR:-…}` semantics
-  // shared/cli.ts's envOrDefault documents (an empty export from optional
-  // templating must not shadow the fallback name).
-  const token =
-    [process.env.LINEAR_API_TOKEN, process.env.LINEAR_API_KEY].find(
-      (v) => v !== undefined && v !== "",
-    ) ?? "";
-  if (token === "") {
-    fail(
-      1,
-      "defer-batch: LINEAR_API_TOKEN (or LINEAR_API_KEY) is required — the batch issue lives in Linear.",
-    );
-  }
-  const linear = makeClient(token);
-  return runDeferBatch(linear, args, finding);
+  return deferBatchCommand(process.argv.slice(2), await readStdinAll());
 }
 
 /**
@@ -2853,7 +2447,7 @@ export async function runDeferBatch(
           description: desc,
           labelIds,
           priority: SEVERITY_TO_PRIORITY[args.severity],
-          ...(parentId !== undefined ? { parentId } : {}),
+
           ...(projectId !== undefined ? { projectId } : {}),
           ...(projectMilestoneId !== undefined ? { projectMilestoneId } : {}),
         },

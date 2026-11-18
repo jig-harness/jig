@@ -135,3 +135,10 @@ export function ended(bound: FacetBound | undefined): boolean {
     (bound.signal.aborted || currentMs() >= bound.deadline)
   );
 }
+
+/** The fractional seconds a command may use without outliving this tick's deadline. */
+export function secondsLeft(bound: FacetBound | undefined): number | undefined {
+  return bound === undefined
+    ? undefined
+    : Math.max(0.001, (bound.deadline - currentMs()) / 1000);
+}

@@ -1,7 +1,7 @@
 /**
  * What a tick's reads keep for the next tick: assignment metadata, which a
- * changed tracker timestamp invalidates, and the page size a forge query
- * read at (`tick-reads.ts`).
+ * changed tracker timestamp invalidates, the page size a forge query read
+ * at (`tick-reads.ts`), and open pull requests' changed files.
  */
 import { swallow } from "../../shared/errors.ts";
 import { stateDb } from "./state.ts";
@@ -11,8 +11,11 @@ export interface PickupReads {
   set(key: string, value: unknown): void;
 }
 
-/** Cache failures cost a fresh tracker read; they never authorize a launch. */
-export const pickupReads: PickupReads = {
+/** Cache failures cost a fresh read; they never authorize a launch. */
+export const pickupReads: PickupReads & {
+  /** Drop retired keys within an ASCII prefix from a complete population read. */
+  prune(prefix: string, liveKeys: readonly string[]): void;
+} = {
   get<T>(key: string): T | null {
     try {
       const row = stateDb()
@@ -32,6 +35,19 @@ export const pickupReads: PickupReads = {
         .run(key, JSON.stringify(value));
     } catch (error) {
       swallow(error, "write pickup cache");
+    }
+  },
+  prune(prefix, liveKeys) {
+    try {
+      stateDb()
+        .query(
+          `DELETE FROM pickup_reads
+           WHERE key >= ? AND key < ?
+           AND key NOT IN (SELECT value FROM json_each(?))`,
+        )
+        .run(prefix, `${prefix}\uffff`, JSON.stringify(liveKeys));
+    } catch (error) {
+      swallow(error, "prune closed pull request file readings");
     }
   },
 };

@@ -1,0 +1,270 @@
+{
+  "dispatchTables": [
+    [
+      "dispatch-launch",
+      "dispatch/lib/launches.ts",
+      "launches",
+      "One session the dispatcher started: its stage, its pull request or item, its account, the wrapper's claim, its exit and its result, each column written once by one writer. The tick reads it to know what holds a stage and an account's slot."
+    ],
+    [
+      "dispatch-process-worktree-completion",
+      "dispatch/lib/launches.ts",
+      "process_worktree_completions",
+      "The record, claim and exit of a pruned launch whose process-owned checkout still exists, kept so the checkout's later collection proof can read what ran in it."
+    ],
+    [
+      "dispatch-pickup-claim",
+      "dispatch/lib/pickup-claim.ts",
+      "pickup_claims",
+      "The items a dispatched pickup claimed, joined to its launch record when the claim lands, so the tick knows an item in progress is that pickup's however soon the pass ends."
+    ],
+    [
+      "dispatch-thread-sample",
+      "dispatch/lib/expectations.ts",
+      "thread_samples",
+      "A drive's count of unresolved review threads at each round the tick saw, from which the tick reports a drive whose threads stopped falling as drifting."
+    ],
+    [
+      "dispatch-waiting-episode",
+      "dispatch/lib/session-walls.ts",
+      "waiting_episodes",
+      "A session waiting at its account's usage limit: the wall's reset, and whether the session's last record is still the wall. The tick nudges the session once the reset has passed."
+    ],
+    [
+      "dispatch-notice",
+      "dispatch/lib/actions/notify.ts",
+      "notices",
+      "A notification the dispatcher sent a person, by its cause, so it is sent once and again only on its cadence while the cause stands."
+    ],
+    [
+      "dispatch-notices-content",
+      "dispatch/lib/actions/notices-content.ts",
+      "notices_content",
+      "The exact content the dispatcher wrote into a notices workspace, so that the tick retires only what it wrote itself, never a person's text."
+    ],
+    [
+      "dispatch-notices-read",
+      "dispatch/lib/actions/retire-notices.ts",
+      "notices_read",
+      "When the tick first found the repository's notices workspace read, so it removes the workspace once it has stayed read long enough."
+    ],
+    [
+      "dispatch-nudge",
+      "dispatch/lib/actions/steer.ts",
+      "nudges",
+      "A nudge to a session that waits after its account's wall reopened, one per session and waiting episode, pending until it is sent, so no episode is nudged twice."
+    ],
+    [
+      "dispatch-followup-outcome",
+      "dispatch/lib/followup-outcomes.ts",
+      "followup_outcomes",
+      "How a merged pull request's follow-up the tick started ended, done or failed, with its launch record and the question it stopped on. It outlives the launch record, so a record that expires never turns a done follow-up into a failure."
+    ],
+    [
+      "dispatch-followup-release",
+      "dispatch/lib/followup-releases.ts",
+      "followup_releases",
+      "That the tick released a stale follow-up claim, pending until the forge deleted the marker, so one pull request's claim is released once and a claim that goes stale again reaches a person instead."
+    ],
+    [
+      "dispatch-idle",
+      "dispatch/lib/idle.ts",
+      "idle",
+      "Since when a claimed item has had no running session, from which the tick reports a stalled pickup; it never relaunches one from it."
+    ],
+    [
+      "dispatch-hold",
+      "dispatch/lib/serial-holds.ts",
+      "holds",
+      "A pull request held behind another in a serialized change area, from the tick that first held it, so the outcome log says how long contended work waited."
+    ],
+    [
+      "dispatch-outcome",
+      "dispatch/lib/log.ts",
+      "log",
+      "The outcome log: one row per launch that ended and per cause the tick observed, which nothing removes. People, `jig dispatch dashboard` and `jig dispatch log` read it; the tick never plans from it."
+    ],
+    [
+      "dispatch-log-cursor",
+      "dispatch/lib/log-export.ts",
+      "log_export",
+      "The last outcome-log row a tick copied to the monthly text files, so the next tick copies only the rows after it."
+    ],
+    [
+      "dispatch-tick-line",
+      "dispatch/lib/line-store.ts",
+      "tick_line",
+      "The newest tick's line and receipt: what `jig dispatch dashboard` shows above the log, and what `jig dispatch line --json` answers with."
+    ],
+    [
+      "dispatch-settled-end",
+      "dispatch/lib/launches.ts",
+      "settled_ends",
+      "The launch records whose claim ends are all written on the forge, so the tick needs no read of their pull requests to end them."
+    ],
+    [
+      "dispatch-reflection-finding",
+      "dispatch/lib/reflection-findings.ts",
+      "reflection_findings",
+      "A recurring class of finding the reflection route made, one per repository, stage, class and week, pending until the store reports it stored, so a retry sends the same event and none is sent twice."
+    ],
+    [
+      "dispatch-merge-read",
+      "dispatch/lib/merge-reads.ts",
+      "merge_reads",
+      "The follow-up markers a merged pull request carried when a tick last read them, beside its `updatedAt`, so the tick reuses them rather than listing the comments again while nothing changed."
+    ],
+    [
+      "dispatch-conflict-merge-read",
+      "dispatch/lib/merge-facts.ts",
+      "merge_facts",
+      "Immutable directly verified merge times, integration bases and complete changed files for execution-plan conflict edges, kept independently of the mutable follow-up marker cache. Current pull-request associations are read again each tick and never kept here."
+    ],
+    [
+      "dispatch-pickup-read",
+      "dispatch/lib/pickup-reads.ts",
+      "pickup_reads",
+      "What a tick's reads keep for the next tick: an item's assignment, which a changed tracker timestamp invalidates, and the page size a forge query read at."
+    ],
+    [
+      "dispatch-load-sample",
+      "dispatch/lib/load-samples.ts",
+      "load_samples",
+      "The memory each running session's processes used, sampled each tick, from which the dispatcher reserves memory for the next launch of the same kind."
+    ],
+    [
+      "dispatch-failure",
+      "dispatch/lib/failures.ts",
+      "failures",
+      "What failed in a row, by key (a label, a notice, a nudge, a claim's end, …), so the tick backs off an action that keeps failing and tells a person once the count passes `failures.notify_after`. It never says what to do."
+    ],
+    [
+      "dispatch-station-answer",
+      "dispatch/lib/station-answer-store.ts",
+      "station_answers",
+      "A person's answer to a need's decision that the tick acted on, claimed before the step runs so the step runs once, with how the step ended and the answer a later launch carries."
+    ],
+    [
+      "dispatch-steward-run",
+      "dispatch/lib/steward.ts",
+      "steward_runs",
+      "A steward pass the tick launched: the digest it was handed, its hash and when it started, and whether its one submission has been made."
+    ],
+    [
+      "dispatch-steward-record",
+      "dispatch/lib/steward.ts",
+      "steward_records",
+      "The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply."
+    ],
+    [
+      "dispatch-allocation-charge",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_charge",
+      "One immutable charge per successful pickup claim, keyed by claim id and written in the claim's transaction: its priority lane, its allocation owner at each level, the lane weights read and the peripheral share recorded. A replayed claim counts once. The ranker derives the week's counters from these rows."
+    ],
+    [
+      "dispatch-allocation-week",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_week",
+      "A completed week's allocation counters (N, P, the opening debt D0, the floor entitlement F) and the next week's opening debt, written once by the first tick of the next week and never rewritten."
+    ],
+    [
+      "dispatch-allocation-lane-epoch",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_lane_epoch",
+      "Each weighted lane's transition between having ready work in any repository the host owns and having none, recorded once a tick with the snapshots' hash; a lane's latest ready transition this week is its epoch, and the newest row's sequence is the revision the ranker's input hash carries. Rows before the previous week are removed, except each lane's newest."
+    ],
+    [
+      "dispatch-allocation-ranking",
+      "dispatch/lib/allocation-store.ts",
+      "allocation_ranking",
+      "A repository's newest report-only ranking: the ranker's input and output and each item's lane and owners, replaced by each tick. The claim path charges a claimed item with the lane it read here, and the priorities skill re-ranks its input to show a shortlist diff."
+    ]
+  ],
+  "plainMachine": [
+    [
+      "dispatch-transcript-copy",
+      "dispatch/lib/transcript-copy.ts",
+      "~/.local/state/jig/dispatch/runs/<record>/transcript.jsonl, copy.json",
+      1,
+      "The end of a run's vendor transcript, at most 2 MiB with credentials redacted, kept for a pickup's or a follow-up's run that left no closing report, and what was copied or why nothing was. The steward reads its excerpt to record the run's cause, and a person reads it from the path the run's outcome row names. It is removed seven days after the steward's cause is applied, and at the latest after the machine file's receipts_days."
+    ],
+    [
+      "gc-receipt",
+      "gc/receipts.ts",
+      "~/.local/state/jig/gc/<date>/<run id>.json",
+      1,
+      "One `jig gc` run's receipt: each resource it looked at, what it did with it and why, and how the run ended."
+    ],
+    [
+      "gc-admission",
+      "shared/gc-lock.ts",
+      "~/.local/state/jig/gc-locks/<kind>/writer, reader-<pid>-<id>, install/writer-takeover.<hash>.lock",
+      0,
+      "Admission between the processes that create resources and the collector that removes them: a creator's token keeps the collector off what it is creating, and the collector's writer file holds new creators back while it collects."
+    ],
+    [
+      "gc-scratch-owner",
+      "shared/scratch-owner.ts",
+      "<scratch folder>/.jig-scratch-owner.json",
+      1,
+      "The process that owns a scratch folder, so the collector removes the folder only once that owner is gone; an owner it cannot verify keeps the folder."
+    ],
+    [
+      "gc-machine-entry",
+      "gc/install.ts",
+      "~/.jig/jig.yaml, its gc section",
+      0,
+      "What `jig gc install` was asked to do on this machine: the collector's settings in the user file."
+    ],
+    [
+      "test-fixture-membership",
+      "shared/test-fixture-registry.ts",
+      "~/.local/state/jig/test-fixtures-v1/<tree>/nodes/<node>.json and <node>.claim, scope-<hash>.json and private startup configurations",
+      1,
+      "The scratch a working tree's test runs created, and the runs it belongs to, so the collector removes it only once its runs are proved finished."
+    ],
+    [
+      "test-fixture-inventory-cursor",
+      "shared/test-fixture-registry.ts",
+      "~/.local/state/jig/test-fixtures-v1.cursor",
+      0,
+      "Where gc's last bounded page of the fixture registry stopped, so the next collecting run resumes after it."
+    ],
+    [
+      "upgrade-setting",
+      "runtime/upgrade-record.ts",
+      "~/.jig/jig.yaml, its upgrade section",
+      0,
+      "Whether and how often the scheduled upgrade runs on this machine (`upgrade: off`, or `every` and `enabled`), which `jig install --no-upgrade` writes."
+    ],
+    [
+      "upgrade-stamp",
+      "runtime/upgrade-stamp.ts",
+      "~/.local/state/jig/upgrade/last.json",
+      1,
+      "The scheduled upgrade's latest attempt: when it started, what it came to and the process that made it. A stamp younger than the interval, or a running one whose holder lives, withholds the next attempt; `jig doctor` fails while the latest attempt failed."
+    ],
+    [
+      "upgrade-claim-lock",
+      "runtime/scheduled-upgrade.ts",
+      "~/.local/state/jig/upgrade/claim.<hash>.lock",
+      0,
+      "The lock under which a scheduled upgrade reads the stamp and claims its interval, so two timers that fire at once upgrade once."
+    ],
+    [
+      "scheduled-job",
+      "runtime/scheduler.ts",
+      "a systemd user timer, a launchd job or a crontab line per component job, and its launcher copy under ~/.local/state/jig/<component>/launcher/ (the dispatcher's change probe: ~/.local/state/jig/dispatch/probe/launcher/)",
+      0,
+      "A component's job in the platform's scheduler and the launcher copy it runs, which `jig install` writes and `jig uninstall` removes."
+    ],
+    [
+      "path-command",
+      "runtime/path-command.ts",
+      "~/.local/bin/jig, and its launcher copy under ~/.local/state/jig/launcher/",
+      0,
+      "The `jig` command on `PATH` and its launcher copy. A file at that path without the command's marker line was not written by `jig install`, and is never replaced or removed."
+    ]
+  ]
+}

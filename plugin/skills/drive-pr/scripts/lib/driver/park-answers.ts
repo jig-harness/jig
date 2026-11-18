@@ -2,6 +2,9 @@
 import { ghCall, ghRepoEnv } from "../proc.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { swallow } from "../../../../../shared/errors.ts";
+import { currentMs } from "../../../../../shared/time.ts";
+import type { OutboundFailure } from "../../../../../shared/outbound/failure.ts";
+import { ghRunFailure } from "../../../../../shared/outbound/github.ts";
 import type { ParkedItem } from "../state/schema.ts";
 import type { PendingAnswer, PendingVerdict } from "../state/pass-handoff.ts";
 import {
@@ -28,11 +31,17 @@ function json(value: string): unknown {
 const THREAD_QUERY =
   "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(first:100){pageInfo{hasNextPage} nodes{url author{login} authorAssociation createdAt lastEditedAt body}}}}}";
 
-/** An incomplete thread can hide a dispute, so never certify its answers. */
+/**
+ * A review thread's comments; `null` when they did not read, the failed
+ * call's class told to `failed`. An incomplete thread can hide a dispute,
+ * so never certify its answers.
+ */
 export async function threadComments(
   key: string,
   timeoutSec?: number,
+  failed?: (failure: OutboundFailure) => void,
 ): Promise<CommentLike[] | null> {
+  const began = currentMs();
   const res = await ghCall(
     ["api", "graphql", "-f", `query=${THREAD_QUERY}`, "-f", `id=${key}`],
     {
@@ -41,7 +50,11 @@ export async function threadComments(
       ...(timeoutSec === undefined ? {} : { timeoutSec }),
     },
   );
-  if (res.code !== 0) return null;
+  if (res.code !== 0) {
+    const failure = ghRunFailure(res, currentMs() - began);
+    if (failure !== null) failed?.(failure);
+    return null;
+  }
   let comments = json(res.stdout);
   for (const key of ["data", "node", "comments"])
     comments = isRecord(comments) ? comments[key] : undefined;
@@ -62,6 +75,10 @@ export async function threadComments(
   }));
 }
 
+/**
+ * The pull request's conversation, read fresh (`paged-read.ts`): what it
+ * says re-arms a drive on a person's answer or reverses a provisional ruling.
+ */
 export async function prComments(
   pr: string,
   repo = "{owner}/{repo}",

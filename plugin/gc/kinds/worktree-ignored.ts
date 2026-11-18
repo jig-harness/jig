@@ -1,7 +1,7 @@
 /**
  * Which of a worktree's ignored content a rule accounts for. Ignored content
  * is the one part of a worktree git cannot give back, so only content
- * marked as rebuildable or disposable where it is written is set aside, each
+ * marked or declared as rebuildable or disposable is set aside, each
  * path with the rule that set it aside; everything else stays `other`, which
  * vetoes collection unless it is preserved first.
  */
@@ -15,10 +15,12 @@ import {
   SCRATCH_DIR,
 } from "../../shared/disposable-mark.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
 
 /**
  * The rule that set an ignored path aside:
+ * - `regenerable-path`: a literal path the repository declares regenerable;
  * - `cache-tag`: under a directory holding a `CACHEDIR.TAG` with its
  *   signature, the mark Jig's working directories and other tools' caches
  *   carry;
@@ -29,6 +31,7 @@ import { currentMs } from "../../shared/time.ts";
  * - `empty`: a directory with nothing in it.
  */
 export type SetAsideRule =
+  | "regenerable-path"
   | "cache-tag"
   | "jig-scratch"
   | "drive-handoff"
@@ -40,7 +43,7 @@ export interface SetAside {
 /**
  * Ignored paths by what accounts for them: `rebuildable`, a detected package
  * manager's dependency directory, rebuilt from a tracked lockfile;
- * `setAside`, content marked disposable where it is written; `other`,
+ * `setAside`, content marked or declared disposable; `other`,
  * everything else, which no rule accounts for.
  */
 export interface IgnoredContent {
@@ -183,6 +186,7 @@ interface Scan {
   inputs: boolean;
   deadline: number;
   marks: Map<string, SetAsideRule | null>;
+  regenerable: readonly string[];
 }
 function empty(): IgnoredContent {
   return { rebuildable: [], setAside: [], other: [] };
@@ -241,12 +245,34 @@ function readableEntry(
     return ok({ ...empty(), other: [entry] });
   }
 }
+/** A declared root and every ancestor must be real directories, never links. */
+function declaredEntry(scan: Scan, entry: string): boolean {
+  const path = entry.replace(/\/$/, "");
+  if (
+    !scan.regenerable.some(
+      (root) => path === root || path.startsWith(`${root}/`),
+    )
+  )
+    return false;
+  const parts = path.split("/");
+  for (let depth = 1; depth <= parts.length; depth++) {
+    const stat = lstatSync(join(scan.root, ...parts.slice(0, depth)));
+    if (stat.isSymbolicLink() || (depth < parts.length && !stat.isDirectory()))
+      return false;
+  }
+  return true;
+}
 /** One ignored entry, `/`-terminated when it is a directory. */
 function classifyEntry(
   scan: Scan,
   entry: string,
   checkAncestors: boolean,
 ): Outcome<IgnoredContent, "timed-out"> {
+  if (declaredEntry(scan, entry))
+    return ok({
+      ...empty(),
+      setAside: [{ path: entry, rule: "regenerable-path" }],
+    });
   const dependency = scan.inputs
     ? dependencyEntry(scan.root, entry, scan.deadline)
     : ok(false);
@@ -275,9 +301,10 @@ function classifyEntry(
  * directories count wherever they sit (a monorepo's nested `node_modules`
  * too), rebuildable from the root's `package.json` and the lockfile
  * `detectPackageManager` found; only a real directory counts, so an ignored
- * file or link named `node_modules` stays local state. A mark counts only as
+ * file or link named `node_modules` stays local state. A declaration covers
+ * only its literal path and descendants, without following links. A mark counts only as
  * the writer leaves it: a tool's cache by the tag it writes inside its
- * directory, never by its name or its own `.gitignore`, and Jig's own working files
+ * directory, never by its own `.gitignore`, and Jig's own working files
  * by `.context/scratch/`, a tag, or a handoff's machine block. A link is
  * never followed. The walk fails `timed-out` once `deadline` passes.
  */
@@ -285,12 +312,14 @@ export function classifyIgnored(
   root: string,
   paths: string[],
   deadline = currentMs() + 30_000,
+  regenerable: readonly string[] = DEFAULT_REGENERABLE_PATHS,
 ): Outcome<IgnoredContent, "timed-out"> {
   const scan: Scan = {
     root,
     inputs: rebuildInputs(root),
     deadline,
     marks: new Map(),
+    regenerable,
   };
   const content = empty();
   for (const path of paths) {

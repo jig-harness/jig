@@ -532,6 +532,7 @@ it("names the deadline when a later wave of admission probes cannot start", asyn
   s.table = accounts.map((account) => ({
     account,
     held: 0,
+    weight: { configured: 100, reason: "default" },
     wall: null,
     wallUnrecorded: false,
   }));

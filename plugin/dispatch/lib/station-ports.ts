@@ -16,6 +16,7 @@ import {
   CANONICAL_STATES,
   type CanonicalState,
   type Tracker,
+  type TrackerUser,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { treeDrivers } from "../../skills/drive-pr/scripts/lib/state/tree-drivers.ts";
 import { conversationOf } from "../../skills/drive-pr/scripts/lib/driver/park-answers.ts";
@@ -27,7 +28,7 @@ import {
 import { type OpenPort, orcaAnswer } from "../../shared/orca-workspace/port.ts";
 import { localContext, withLimit } from "../../shared/orca-workspace/runner.ts";
 import { supervisedHook } from "../../shared/orca-workspace/supervised-hook.ts";
-import { listComments } from "../../shared/records/forge-claims.ts";
+import { listCommentsKept } from "../../shared/records/comment-pages.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { stateRoot } from "../receipts.ts";
 import { readMarkers } from "./followup-marker.ts";
@@ -46,6 +47,7 @@ import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
 import type { StationPorts } from "./station-answers.ts";
 import { retryable } from "./stuck-launches.ts";
+import { readTrackerAnswers } from "./tracker-answers.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
 import type { WorkLinks } from "./work-links.ts";
@@ -396,13 +398,29 @@ async function clearRecord(
 
 /** The ports of one repository's tick. */
 export function stationPorts(inputs: StationInputs): StationPorts {
+  // The tracker's own user, asked once for the tick's every tracker need.
+  let me: Promise<TrackerUser> | undefined;
+  // A read that failed or was cancelled is asked again by the next need.
+  const self = (tracker: Tracker, signal: AbortSignal) => {
+    if (me !== undefined) return me;
+    const asked = tracker.viewer(signal);
+    me = asked;
+    asked.catch(() => {
+      if (me === asked) me = undefined;
+    });
+    return asked;
+  };
   return {
     self: inputs.login,
     issueRepository: inputs.issueRepository,
     async comments(repo, number) {
-      const listed = await listComments({ repo, number }, { timeoutSec: 60 });
+      const listed = await listCommentsKept(
+        { repo, number },
+        { timeoutSec: 60 },
+      );
       return listed.ok ? ok(conversationOf(listed.value)) : listed;
     },
+    trackerComments: (item) => readTrackerAnswers(inputs.tracker, item, self),
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
     releasePickup: (item, record = null) => releasePickup(inputs, item, record),

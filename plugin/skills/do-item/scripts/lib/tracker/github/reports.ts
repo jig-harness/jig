@@ -30,6 +30,7 @@ import { checkPoolQuery, inWindow } from "../requests.ts";
 import { epicTypesOfLabel } from "../../../../../../shared/tracker-labels.ts";
 import type { Client, IssueListing } from "./client.ts";
 import { dispatchSource } from "./dispatch-source.ts";
+import { changeProbe } from "./dispatch-reads.ts";
 import { STATE_TYPES } from "./model.ts";
 import {
   ancestorFields,
@@ -65,6 +66,7 @@ type ReportOps = Pick<
   | "openPopulation"
   | "facetReport"
   | "dispatchSource"
+  | "changedSince"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -327,6 +329,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   }
 
   return {
+    changedSince: changeProbe(client),
     dispatchSource: dispatchSource(client, (raw, signal) =>
       pool(parseIssue(raw, ctx), raw, signal),
     ),
@@ -455,13 +458,13 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       return out;
     },
 
-    async issueComments(key) {
+    async issueComments(key, signal) {
       if (!/^#[1-9]\d*$/.test(key))
         throw new TrackerRequestError(
           "invalid",
           `not an issue key of ${home.owner}/${home.name}: ${key}`,
         );
-      const { id, comments } = await readers.comments(key);
+      const { id, comments } = await readers.comments(key, signal);
       return {
         uuid: id,
         comments: comments.map((c): CommentFact => ({ ...c })),

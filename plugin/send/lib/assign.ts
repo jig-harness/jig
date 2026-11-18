@@ -113,8 +113,11 @@ export async function planAssign(
   let viewer: string | null = null;
   try {
     viewer =
-      (await within(ctx.reading.sourceSec(), () => tracker.viewer()))?.value
-        .name ?? null;
+      (
+        await within(ctx.reading.sourceSec(), (signal) =>
+          tracker.viewer(signal),
+        )
+      )?.value.name ?? null;
   } catch (error) {
     return refused(
       `the tracker did not name the user it acts as here: ${failureText(error)}`,

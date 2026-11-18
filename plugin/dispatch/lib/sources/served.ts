@@ -1,3 +1,11 @@
+import type { PlanMergeReader } from "./plan-merges.ts";
+import { anyWorking } from "./served-occupancy.ts";
+import {
+  attachAdmissions,
+  withOccupancySetup,
+  occupancySlots,
+  occupancyMetadata,
+} from "./served-occupancy.ts";
 /**
  * Served assignments, inherited through epics, with metadata kept at
  * updatedAt. The tracker is read through the tick's view of the person's
@@ -6,7 +14,15 @@
  * read the tracker's rate limit refuses stops the walk, which reports the
  * limit once rather than one unplaced row per item.
  */
+import { finishAdmission, type Candidate } from "./served-admission.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
+import {
+  personRoots,
+  personView,
+  readyForWalk,
+  carriedRelations,
+  pulledNodes,
+} from "./served-walk-inputs.ts";
 import type {
   PoolIssue,
   Tracker,
@@ -32,11 +48,9 @@ import {
 } from "./served-pull.ts";
 import {
   childPlanHold,
-  type PassedChild,
   type PassOver,
   parkedOnPerson,
-  serializeEpics,
-  summarizeEpics,
+  takeUnreadSlot,
   type EpicWalk,
   type Serial,
 } from "./served-epics.ts";
@@ -47,32 +61,22 @@ import {
   type UnlabeledMode,
   unlabeledOutcome,
 } from "./served-repo.ts";
-import { planKeys, servedPlan, type ServedPlan } from "./served-plan.ts";
+import { freshAuthority } from "./served-authority.ts";
 import {
-  type ServedView,
-  type ServedViews,
-  sharedView,
-} from "./served-reads.ts";
+  childMergeEvidence,
+  planKeys,
+  servedPlan,
+  type ServedPlan,
+} from "./served-plan.ts";
+import type { ServedView, ServedViews } from "./served-reads.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { pickupReads, type PickupReads } from "../pickup-reads.ts";
-import {
-  PERSON_HOLD,
-  queueHold,
-  rankQueue,
-  type QueueItem,
-} from "../queue-rank.ts";
+import { PERSON_HOLD, queueHold } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
 
-interface Candidate extends QueueItem {
-  identity: string;
-  by: string;
-  ancestor?: string | undefined;
-  blockingFor?: string | undefined;
-  serial?: Serial | undefined;
-}
 export interface ServedReading {
   wanted: WantedItem[];
   unplaced: Unplaced[];
@@ -85,6 +89,7 @@ export interface ServedReading {
   failures?: unknown[];
 }
 export interface ServedPolicy {
+  mergeEvidence?: PlanMergeReader | undefined;
   hitl?: string;
   manualOps?: string;
   executionPlanBlock?: string;
@@ -96,12 +101,21 @@ export interface ServedPolicy {
   trackerNamespace?: string;
 }
 export interface ServedOptions extends ServedPolicy {
+  /** Factory roots already authorized by its bounded assignment read. */
+  factory?: {
+    identity: string;
+    roots: PoolIssue[];
+    view?: ServedView | undefined;
+    eligible?: ReadonlySet<string>;
+  };
   cache?: PickupReads;
   nowMs: number;
   headroom: boolean;
   bound?: import("./tracker-facets.ts").FacetBound;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
+  /** `dispatch.epic_width`: how many children of an epic with no execution plan are under way at once. */
+  epicWidth?: number;
   /** Why this machine's launch records keep an item from starting, so it takes no epic's slot. */
   passOver?: PassOver;
 }
@@ -115,8 +129,10 @@ const itemOf = (i: PoolIssue) => ({
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
-  /** The one-at-a-time constraint of each child of an epic with no execution plan, whoever reaches the child first. */
+  /** The width constraint of each child of an epic with no execution plan, whoever reaches the child first. */
   serials: Map<string, Serial>;
+  /** Items whose failed read is already recorded, so a later visit does not report it again. */
+  reported: Set<string>;
 }
 
 /** What one served identity's queue gave: its claims, its holds and candidates, and the limit that stopped it. */
@@ -162,7 +178,7 @@ async function readPerson(
   };
   let view: ServedView | null = null;
   try {
-    view = await sharedView(options.views, tracker, identity, options, cache);
+    view = await personView(tracker, identity, options, cache);
     if (view.limited !== null) got.limited = { error: view.limited, view };
     if (view.unavailable !== undefined) {
       got.failures.push(view.unavailableCause ?? view.unavailable);
@@ -182,10 +198,7 @@ async function readPerson(
     // keeps what the earlier ones placed.
     await walk(
       { tracker, identity, options, cache, view, seen, ...shared },
-      [
-        ...view.open().map((h) => h.issue),
-        ...progress.filter((i) => i.isEpic && i.hasOpenChildren),
-      ],
+      personRoots(view, identity, options.factory, progress),
       got,
     );
   } catch (error) {
@@ -216,11 +229,26 @@ export async function readServedPickups(
 ): Promise<ServedReading> {
   options =
     options.views === undefined ? { ...options, views: new Map() } : options;
+  if (
+    options.factory !== undefined &&
+    people.some(
+      (p) =>
+        p.tracker[tracker.adapter as keyof ServedPerson["tracker"]] ===
+        options.factory?.identity,
+    )
+  ) {
+    const { factory: _factory, ...withoutFactory } = options;
+    options = withoutFactory;
+  }
   const cache = cacheForTracker(tracker, options.cache ?? pickupReads);
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
-  const shared: EpicState = { walks: [], serials: new Map() };
+  const shared: EpicState = {
+    walks: [],
+    serials: new Map(),
+    reported: new Set(),
+  };
   let limited: PersonReading["limited"] = null;
   if (options.repoScope?.invalid !== undefined)
     out.unplaced.push({
@@ -228,7 +256,21 @@ export async function readServedPickups(
       record: "tracker",
       reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope.invalid}`,
     });
-  for (const person of people) {
+  const identities = [...people];
+  if (
+    options.factory !== undefined &&
+    !identities.some(
+      (p) =>
+        p.tracker[tracker.adapter as keyof ServedPerson["tracker"]] ===
+        options.factory?.identity,
+    )
+  )
+    identities.push({
+      name: options.factory.identity,
+      forge: [],
+      tracker: { [tracker.adapter]: options.factory.identity },
+    });
+  for (const person of identities) {
     const identity =
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
     if (identity === undefined) continue;
@@ -250,47 +292,25 @@ export async function readServedPickups(
     out.unplaced.push(limitedRow(tracker, limited.error, limited.view));
     out.limitedUntil = isoFromMs(limited.error.resetAt);
   }
-  for (const c of candidates) {
-    const serial = shared.serials.get(c.issue.identifier);
-    if (c.serial === undefined && serial !== undefined) c.serial = serial;
-  }
-  const passed = new Map<string, PassedChild>();
-  const ranked = serializeEpics(
-    rankQueue(candidates),
-    out.unplaced,
-    options.passOver,
-    passed,
-  );
-  summarizeEpics(
-    shared.walks,
-    new Set(
-      ranked.map((c) => c.issue.identifier).filter((key) => !passed.has(key)),
-    ),
-    out.unplaced,
-    passed,
-  );
-  out.wanted = ranked.map((c) => ({
-    key: c.issue.identifier,
-    title: c.issue.title,
-    url: c.issue.url,
-    state: c.issue.state.name,
-    assignee: c.identity,
-    assignedBy: c.by,
-    servedPerson: c.identity,
-    queueIssue: c.issue,
-    ...(c.issue.updatedAt === undefined
-      ? {}
-      : { updatedAt: c.issue.updatedAt }),
-    queueRank: {
-      unblocks: c.unblocks,
-      ...(c.epicOrder === undefined ? {} : { epicOrder: c.epicOrder }),
-    },
-    ...(c.ancestor === undefined ? {} : { ancestorEpic: c.ancestor }),
-    ...(c.blockingFor === undefined
-      ? {}
-      : { blockingFor: c.blockingFor, batchAllowed: false }),
-  }));
+  finishAdmission(candidates, shared, out, options);
   return out;
+}
+
+/** The parent hold of a pulled item, read with no cache of the tick's own. */
+function freshParentHold(
+  tracker: Tracker,
+  issue: PoolIssue,
+  policy: ServedPolicy,
+): Promise<string | null> {
+  const none = { get: () => null, set: () => undefined };
+  return servedParentHold(
+    tracker,
+    issue,
+    none,
+    policy.executionPlanBlock,
+    undefined,
+    policy.mergeEvidence,
+  );
 }
 
 /** Launch-time revalidation; do-item's serialized claim repeats the ancestry and writer checks at the write. */
@@ -322,12 +342,7 @@ export async function freshServedPickup(
     if (unlabeled === "hold") return NEEDS_REPOSITORY_LABEL;
     if (unlabeled === "leave")
       return "no repository label places it, and this repository is not its team's default";
-    const parentHold = await servedParentHold(
-      tracker,
-      issue,
-      { get: () => null, set: () => undefined },
-      policy.executionPlanBlock,
-    );
+    const parentHold = await freshParentHold(tracker, issue, policy);
     if (parentHold !== null) return parentHold;
     const held = queueHold(
       {
@@ -380,9 +395,10 @@ interface WalkContext {
   seen: Set<string>;
   walks: EpicWalk[];
   serials: Map<string, Serial>;
+  reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
-interface Found {
+export interface Found {
   unplaced: Unplaced[];
   candidates: Candidate[];
   pending: Pending[];
@@ -393,10 +409,9 @@ interface Found {
 }
 
 /**
- * Visit the roots, then each generation of children, every node of a
- * generation at once so the reads they ask for leave together; what each
- * found is merged in node order into `all`. A rate-limited read ends the walk,
- * leaving what the earlier generations found in `all`.
+ * Visit the roots, then each generation of children at once so their reads
+ * leave together, merging each node's finds in order into `all`. A
+ * rate-limited read ends the walk with the earlier generations' finds in `all`.
  */
 async function walk(
   ctx: WalkContext,
@@ -509,36 +524,75 @@ async function enqueueChildren(
   let serial: Serial | undefined;
   let selection: ServedPlan;
   try {
-    const live = await childStates(ctx, children, meta);
+    const planned = servedPlan(
+      meta.description ?? "",
+      issue.identifier,
+      {},
+      options.executionPlanBlock,
+    ).present;
+    const live = await childStates(
+      ctx,
+      children,
+      meta,
+      found,
+      planned ? undefined : unread,
+    );
     selection = servedPlan(
       meta.description ?? "",
       issue.identifier,
       live,
       options.executionPlanBlock,
+      await childMergeEvidence(ctx.tracker, meta.description, options),
     );
     const parked = selection.present
       ? []
       : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
-    const busy = children.find(
-      (c) => c.state.type === "started" && !parked.includes(c),
+    const busy = await occupancySlots(
+      children,
+      unread,
+      async (branch) => {
+        const info = await occupancyMetadata(
+          ctx.tracker,
+          branch,
+          ctx.cache,
+          ctx.view,
+        );
+        return readChildren(ctx, info, found);
+      },
+      (branch) => parkedOnPerson(branch, ctx.tracker, options),
+      (child, error) => {
+        unreadable(
+          child,
+          error === undefined
+            ? "the nested occupancy cannot be read completely"
+            : failureText(error),
+          found,
+          error === undefined ? [] : [error],
+        );
+      },
+      {
+        recursive: !selection.present,
+        failed: (error) => itemFailed(found, error),
+      },
     );
     ctx.walks.push({
       key: issue.identifier,
       children: children.map((c) => c.identifier),
       unread,
-      working: busy !== undefined,
+      working: anyWorking(children, parked, busy),
       parked: parked.map((c) => c.identifier),
     });
     serial = selection.present
       ? undefined
-      : { epic: issue.identifier, busy: busy?.identifier, unread: unread[0] };
+      : { epic: issue.identifier, busy, unread };
   } catch (error) {
     // Setup failed: no sibling starts on a guess, and a directly assigned child is held too.
     for (const kept of meta.children)
       ctx.serials.set(kept.identifier, {
         epic: issue.identifier,
-        busy: undefined,
-        unread: meta.children[0]?.identifier ?? issue.identifier,
+        busy: [],
+        unread: [],
+        unknown: meta.children[0]?.identifier ?? issue.identifier,
       });
     throw error;
   }
@@ -552,16 +606,15 @@ async function enqueueChildren(
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
-      planHold: childPlanHold(selection, child.identifier, unread),
+      planHold: childPlanHold(selection, child.identifier),
     });
   }
 }
 
 /**
- * Whether the walk passes this node by: already seen, nothing to start and no
- * epic to walk, another repository's item, or an item no label places that
- * the team's default repository starts (an epic is still walked, its
- * children carry their own labels).
+ * Whether the walk passes this node by: seen, nothing to start and no epic to
+ * walk, another repository's item, or one no label places that the default
+ * repository starts (an epic is still walked; its children carry labels).
  */
 function leavesNode(
   issue: PoolIssue,
@@ -572,8 +625,7 @@ function leavesNode(
   const walkedEpic = issue.isEpic && issue.hasOpenChildren && !closed(issue);
   if (
     seen.has(issue.identifier) ||
-    (!ready(issue, tracker.stateName("blocked", issue.nativeType ?? null)) &&
-      !walkedEpic)
+    (!readyForWalk(issue, tracker, options) && !walkedEpic)
   )
     return true;
   return (
@@ -619,7 +671,8 @@ async function visitNode(
   } catch (error) {
     if (isRateLimited(error)) throw error;
     if (ctx.view.scope !== undefined && isUnavailable(error)) throw error;
-    unreadable(issue, failureText(error), found, [error]);
+    if (!ctx.reported.has(issue.identifier))
+      unreadable(issue, failureText(error), found, [error]);
   }
   return found;
 }
@@ -648,7 +701,7 @@ async function placeNode(
   const { tracker, identity, options, cache, view } = ctx;
   const { issue, ancestor } = node;
   const unplace = unplacer(issue, options.trackerNamespace, found);
-  const carried = view.held(issue.identifier)?.relations ?? null;
+  const carried = carriedRelations(view, issue.identifier);
   const meta = await metadata(tracker, issue, identity, cache, carried, view);
   // A kept no-assigner answer is reported as the item's unreadable row.
   if (meta.noAssigner !== undefined)
@@ -664,6 +717,10 @@ async function placeNode(
     carried ?? meta.relations,
   );
   const candidate = candidateOf(node, meta, identity, open);
+  candidate.factory = options.factory?.identity === identity;
+  const read = view.held(issue.identifier);
+  if (read !== undefined && read.parent !== undefined)
+    candidate.queueRead = { relations: read.relations, parent: read.parent };
   const held = await heldReason(ctx, node, candidate, open, found);
   if (held !== null) return void unplace(held);
   if (meta.children.length > 0)
@@ -700,7 +757,7 @@ async function placeLeaf(
   const { tracker, options, cache, view } = ctx;
   const { issue } = candidate;
   if (
-    !ready(issue, tracker.stateName("blocked", issue.nativeType ?? null)) ||
+    !readyForWalk(issue, tracker, options) ||
     otherRepoLabel(issue.labels, options.repoScope) !== null
   )
     return;
@@ -718,9 +775,20 @@ async function placeLeaf(
     cache,
     options.executionPlanBlock,
     view,
+    options.mergeEvidence,
   );
-  if (parentHold !== null) unplace(parentHold);
-  else found.candidates.push(candidate);
+  if (parentHold !== null) return void unplace(parentHold);
+  const admissionHold = await attachAdmissions(
+    ctx,
+    candidate,
+    found,
+    (parent, meta) =>
+      withOccupancySetup(found, (setup) =>
+        enqueueChildren(ctx, parent, undefined, meta, candidate, setup),
+      ),
+  );
+  if (admissionHold !== null) return void unplace(admissionHold);
+  found.candidates.push(candidate);
 }
 
 function nodeHold(
@@ -743,11 +811,13 @@ function nodeHold(
     : null;
 }
 
-/** The live state of an epic's children and the issues its plan names, read together. */
+/** The live state of an epic's children and the issues its plan names, read together; `unread` is set for an epic with no plan, where an unreadable child takes one slot. */
 async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
   meta: Metadata,
+  found: Found,
+  unread?: string[],
 ): Promise<Record<string, LiveIssue>> {
   const { tracker, identity, options, cache, view } = ctx;
   const live: Record<string, LiveIssue> = {};
@@ -762,7 +832,9 @@ async function childStates(
         children.find((c) => c.identifier === key) ?? (await view.pool(key)),
     ),
   );
-  const infos = await Promise.all(
+  // Every read settles, and each failure is recorded as observed, before a
+  // wall rejects: a sibling's slower failure is not lost to a faster limit.
+  const settledInfos = await Promise.allSettled(
     read.map((child) =>
       child === null || child.truncated.length
         ? null
@@ -773,8 +845,32 @@ async function childStates(
             cache,
             view.held(child.identifier)?.relations ?? null,
             view,
-          ),
+          ).catch((error: unknown) => {
+            // An epic with a plan keeps the failure: its consistency needs this read.
+            if (unread === undefined) return Promise.reject(error);
+            return takeUnreadSlot(unread, child.identifier, error, (e) => {
+              // Recorded when observed: a later visit may never happen.
+              if (ctx.reported.has(child.identifier)) return;
+              ctx.reported.add(child.identifier);
+              unreadable(child, failureText(e), found, [e]);
+            });
+          }),
     ),
+  );
+  // A rate limit outranks an ordinary failure, whichever child rejected first:
+  // only the limit carries the reset time the walk must stop on.
+  const rejected = settledInfos.filter(
+    (r): r is PromiseRejectedResult => r.status === "rejected",
+  );
+  const wall = rejected.find((r) => isRateLimited(r.reason)) ?? rejected.at(0);
+  if (wall !== undefined) {
+    // Only the selected wall propagates: every other ordinary failure is kept as this node's.
+    for (const r of rejected)
+      if (r !== wall && !isRateLimited(r.reason)) itemFailed(found, r.reason);
+    return Promise.reject(wall.reason);
+  }
+  const infos = settledInfos.map((r) =>
+    r.status === "fulfilled" ? r.value : null,
   );
   const blockersOf = new Map<string, string[]>();
   keys.forEach((key, i) => {
@@ -802,71 +898,6 @@ async function childStates(
   return live;
 }
 
-async function freshAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  ancestor?: string,
-): Promise<string | null> {
-  return ancestor === undefined
-    ? directAuthority(tracker, issue, identity)
-    : inheritedAuthority(tracker, issue, identity, ancestor);
-}
-
-async function directAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-): Promise<string | null> {
-  const user = await tracker.user(identity);
-  if (issue.assignee?.id !== user.id) return "the served assignment changed";
-  if (!(await tracker.assignedBy(issue.identifier, identity)).trusted)
-    return "the assigner cannot write";
-  return null;
-}
-
-async function inheritedAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  ancestor: string,
-): Promise<string | null> {
-  if (issue.assignee !== null)
-    return "the inherited item has acquired an assignee";
-  const user = await tracker.user(identity);
-  const seen = new Set<string>();
-  let current: PoolIssue | null = issue;
-  for (;;) {
-    if (current === null || current.truncated.length)
-      return "the inherited ancestry cannot be read completely";
-    if (seen.has(current.identifier) || seen.size >= 100)
-      return "the inherited ancestry is cyclic or too deep";
-    seen.add(current.identifier);
-    if (current.identifier === ancestor)
-      return ancestorChanged(tracker, current, user.id, identity);
-    if (current.assignee !== null)
-      return "the inherited ancestry assignment changed";
-    const full = await tracker.getIssue(current.identifier);
-    if (full === null || full.parent === null)
-      return "the inherited ancestor is no longer live";
-    current = await tracker.poolIssue(full.parent.identifier);
-  }
-}
-
-async function ancestorChanged(
-  tracker: Tracker,
-  ancestor: PoolIssue,
-  userId: string,
-  identity: string,
-): Promise<string | null> {
-  if (
-    ancestor.assignee?.id !== userId ||
-    !(await tracker.assignedBy(ancestor.identifier, identity)).trusted
-  )
-    return "the inherited assignment changed";
-  return null;
-}
-
 function candidateOf(
   node: Pending,
   meta: Metadata,
@@ -886,10 +917,7 @@ function candidateOf(
   };
 }
 
-/**
- * Why a node starts nothing now. A node held only by open blockers queues
- * the blockers it may pull forward, so the item waits on work that runs.
- */
+/** Why a node starts nothing now; one held only by open blockers queues the blockers it may pull forward. */
 async function heldReason(
   ctx: WalkContext,
   node: Pending,
@@ -899,7 +927,7 @@ async function heldReason(
 ): Promise<string | null> {
   const { tracker, options, cache, view } = ctx;
   const held = queueHold(candidate, options);
-  if (held === null || open.length === 0) return held;
+  if (held === null || open.length === 0 || candidate.factory) return held;
   if (queueHold({ ...candidate, blockers: [] }, options) !== null) return held;
   // An item behind its epic's human gate authorizes no work, its blockers' included: the served item and each pulled item between.
   const parentHold = await servedParentHold(
@@ -908,6 +936,7 @@ async function heldReason(
     cache,
     options.executionPlanBlock,
     view,
+    options.mergeEvidence,
   );
   if (parentHold !== null) return parentHold;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
@@ -921,16 +950,7 @@ async function heldReason(
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
     return `${pull.reason}; this tracker cannot assign a blocker on its own, so a person assigns it`;
-  for (const blocker of pull.pulled)
-    if (!ctx.seen.has(blocker.identifier))
-      found.pending.push({
-        issue: blocker,
-        ancestor: pull.origin.rootAncestor,
-        by: candidate.by,
-        epicOrder: undefined,
-        planHold: undefined,
-        pull: pull.origin,
-      });
+  found.pending.push(...pulledNodes(pull, ctx.seen, candidate.by));
   return pull.reason;
 }
 
@@ -955,12 +975,7 @@ async function freshPulledAuthority(
     return `${blockingFor}, which it blocks, is no longer open and not started`;
   if (queueHold({ issue: origin, blockers: [], unblocks: 0 }, policy) !== null)
     return `${blockingFor}, which it blocks, needs a person to start`;
-  const originHold = await servedParentHold(
-    tracker,
-    origin,
-    { get: () => null, set: () => undefined },
-    policy.executionPlanBlock,
-  );
+  const originHold = await freshParentHold(tracker, origin, policy);
   if (originHold !== null) return `${blockingFor}: ${originHold}`;
   const authority = await freshAuthority(tracker, origin, identity, ancestor);
   if (authority !== null) return `${blockingFor}: ${authority}`;
@@ -974,12 +989,7 @@ async function freshPulledAuthority(
         blockedState: (item) =>
           tracker.stateName("blocked", item.nativeType ?? null),
       }) === null &&
-      (await servedParentHold(
-        tracker,
-        item as PoolIssue,
-        { get: () => null, set: () => undefined },
-        policy.executionPlanBlock,
-      )) === null
+      (await freshParentHold(tracker, item as PoolIssue, policy)) === null
     );
   };
   return (await blocksWithin(tracker, blockingFor, issue.identifier, through))

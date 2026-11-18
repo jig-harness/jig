@@ -31,6 +31,8 @@ export interface LineLinks {
 
 /** One option of a framed decision, as the drive recorded it. */
 export interface LineOption {
+  /** Its stable typed identity; absent from a line recorded before option IDs were kept. */
+  id?: string;
   details?: import("../../shared/decisions/model.ts").OptionDetail[];
   name: string;
   /** Its `Changes:`; `null` when the record gives none. */
@@ -73,8 +75,12 @@ export interface LineDecision {
   answers?: import("../../shared/decision-card.ts").ShownAnswer[];
   /** Why those answers do not settle it; absent when it has none. */
   answerState?: import("../../shared/decision-card.ts").AnswerState;
+  /** For a need's decision: why its answers could not be read this tick; absent when they were. */
+  unread?: string;
   /** For a need's decision: the answer the tick acted on, once, and how its step went (`null` while it has not written it); absent when no answer counted. */
   acted?: {
+    /** The counted comment URL and time, to match a posted answer to its outcome. */
+    answer?: string;
     option: string;
     author: string;
     outcome: "done" | "refused" | "held" | null;
@@ -103,6 +109,8 @@ export interface LineNotified {
   at: string | null;
   outcome: NotifyOutcome["outcome"];
   workspace: string | null;
+  /** Why it has not reached a person, for a notice that waits or was lost (held for room in the comment, its destination unreachable); absent otherwise. */
+  detail?: string;
 }
 
 /**
@@ -139,8 +147,10 @@ export interface LineNeed {
   since: string;
   /** The tick's reason, verbatim. */
   reason: string;
-  /** The question a stage stopped on for a person, such as a follow-up's `Question:` line; `null` when it stated none. A park's questions are its decisions'. */
+  /** The question a stage stopped on for a person: its run's closing report's `question`, else its `Question:` line, as a follow-up's or a pickup's; `null` when it stated none. A park's questions are its decisions'. */
   question?: string | null;
+  /** What the run the need is about concluded, from its closing report, shown beside the question as context; absent when the run left no report. */
+  concluded?: string | null;
   /** For a park: the decisions still unanswered, oldest first. */
   decisions: LineDecision[];
   notified: LineNotified | null;
@@ -162,6 +172,8 @@ export interface LineWall {
 
 /** One account on this machine. */
 export interface LineAccount {
+  /** Absent on snapshots written before host-local weights were supported. */
+  weight?: { configured: number | null; effective: number; reason: string };
   name: string;
   vendor: string;
   /** Sessions the dispatcher may hold on it at once. */
@@ -279,14 +291,14 @@ export interface LineQueued {
 export interface LineRepo {
   /** `null` when the forge could not say which repository the path is. */
   slug: string | null;
-  /** The slug this path last had, kept while reports find none, so a repeated failure still recovers it. */
+  /** The slug this path last had, kept while reports find none, so a repeated failure still recovers it. On an entry that read nothing and kept an earlier part, the slug that part is under, whatever slug the newest attempt found. */
   lastSlug?: string;
   path: string;
   /** The stages the machine file enables for it. */
   stages: string[];
   /** Its configured tracker (`issue_tracker.adapter`: `github`, `linear`, `jira`, …; GitHub when the configuration names none); `null` when its tracker configuration does not read; absent from a line written before it was kept, and when the tick could not open the repository. */
-  tracker?: { adapter: string } | null;
-  /** Why nothing could be dispatched for it; `null` when it was read. */
+  tracker?: { adapter: string; repository?: string } | null;
+  /** Why nothing could be dispatched for it at the newest tick that tried; `null` when it was read. Beside an earlier tick's `runId` when that tick's part of the line was kept because this one could not identify the repository. */
   refused: string | null;
   /** The records that did not read at the newest tick. */
   failedReads: Array<{ record: string; source: string; detail: string }>;
@@ -298,8 +310,12 @@ export interface LineRepo {
   readyOmitted?: number;
   /** The tick that last read it: this line's own, or an earlier one whose part of the line (its needs, queue, sessions and Ready cards) the ticks since kept because they did not read it. Absent from a line written before parts were kept. */
   runId?: string;
-  /** When that tick started. Absent from a line written before parts were kept. */
+  /** When that tick started. Absent from a line written before parts were kept, and from an entry that no tick has read. */
   readAt?: string;
+  /** Set when the newest tick that tried got no further than opening the repository (`refused` says why), so it brought no part of the line, even with a slug. */
+  unobserved?: true;
+  /** When the newest tick that tried started, read or refused: what ticks that write out of order are ordered by, apart from `readAt`. Set only on an entry that kept an earlier tick's part. */
+  triedAt?: string;
 }
 
 /**
@@ -375,6 +391,8 @@ export interface LineTick {
   lowBudget: string[] | null;
   /** The defects it recorded: its own, its repositories' and their stages'. */
   defects: number;
+  /** The repositories it reported on and got no further than opening, as `repos` names them; a repository a defect stopped later read what its earlier phases did. Absent from an entry written before refusals were kept. */
+  refused?: string[];
 }
 
 /** The host's gauges the load factor reads (`load.ts`). */
@@ -458,6 +476,8 @@ export interface LineSnapshot {
   lastAccount: string | null;
   sessions: LineSession[];
   needs: LineNeed[];
+  /** Decisions answered with hold, still visible until their facts change; absent in older snapshots. */
+  answeredHolds?: Array<{ repo: string; target: string; why: string }>;
   queue: LineQueued[];
   /** The converged pull requests the board read placed, Ready to merge first in its order; absent from a line written before the board read. */
   ready?: LineReady[];
@@ -515,6 +535,10 @@ export interface RowsAnswer {
     stage: string[];
     account: string[];
     class: string[];
+    /** The closing-report causes the window's ended rows name. */
+    cause: string[];
+    /** Who wrote the window's ended rows' closing reports (`none` for a run that left none). */
+    by: string[];
   };
   /** Bad classes that recur per repository and stage, over the seven host days to now, whatever the window. */
   recurring: RecurringClass[];

@@ -38,10 +38,12 @@ describe("timeline reads preserve their failure cause", () => {
     response("{invalid");
     const result = await readTimeline("123");
     expect(result.ok).toBe(false);
-    if (!result.ok)
+    if (!result.ok) {
+      expect(result.failure.code).toBe("malformed");
       expect(result.failure.reason).toContain(
         "timeline JSON could not be decoded",
       );
+    }
     expect(await timelineEvents("123")).toBeNull();
   });
   it("names an invalid response shape", async () => {
@@ -49,7 +51,7 @@ describe("timeline reads preserve their failure cause", () => {
     expect(await readTimeline("123")).toEqual({
       ok: false,
       failure: {
-        code: "unreadable",
+        code: "malformed",
         reason: "PR #123 timeline response is not a list of pages",
       },
     });

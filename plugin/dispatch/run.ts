@@ -80,6 +80,12 @@
  * backs off and its claim is released for retry. A recognized vendor usage
  * notice identifies a quota wall; otherwise its cause stays unknown. An
  * unreadable transcript scan withholds that classification.
+ * Before it records the exit of a pass that left no closing report, the
+ * wrapper records what it saw as the report, `by: wrapper` (a pass that
+ * could not start, one it stopped at its deadline, any steward pass), or,
+ * for a pickup's or a follow-up's pass it cannot explain, copies the end of
+ * its transcript for the steward (`lib/end-report.ts`); a Codex pass's
+ * transcript is found by the session id it printed, which the exit keeps.
  * Once the exit is recorded, the wrapper writes the
  * launch's end onto the shared claim this host made for it (a drive's launch
  * claim, a follow-up's marker; `lib/shared-launches.ts`'s `settleAtExit`), so
@@ -136,6 +142,12 @@ import {
   recordExit,
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
+import {
+  driverReportFile,
+  printKeptReport,
+  recordAndSay,
+} from "./lib/run-report.ts";
+import { DRIVER_REPORT_VARIABLE } from "../shared/driver-report.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
 import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
 import { defectLine } from "../shared/pr-labels/write.ts";
@@ -147,9 +159,13 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
-import { newerStateRefusal } from "./lib/state.ts";
+import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
+import { writeUnwritten } from "./lib/unwritten-result.ts";
+import { stateRoot } from "./receipts.ts";
 import { writeWall } from "./lib/walls.ts";
 import { failedStartup } from "./lib/session-startup.ts";
+import { settleUnreported } from "./lib/end-report.ts";
+import { codexSessionIn } from "./lib/transcript-copy.ts";
 import {
   currentIso,
   currentMs,
@@ -443,6 +459,9 @@ async function executeStage(
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
       JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
+      ...(isDrive(record)
+        ? { [DRIVER_REPORT_VARIABLE]: driverReportFile(id) }
+        : {}),
     },
     { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );
@@ -504,6 +523,13 @@ function startupOf(record: LaunchRecord, ran: Ran) {
   );
 }
 
+/** The session id a Codex pass printed at its start; Claude Code's is the one the tick minted (`sessionId`). */
+function sessionOf(record: LaunchRecord, ran: Ran): string | null {
+  return record.vendor === "codex" && ownPass(record)
+    ? codexSessionIn(ran.head)
+    : null;
+}
+
 /** Back off an account before releasing the slot held by an unstarted session. */
 function recordStartupWall(record: LaunchRecord, startup: string): boolean {
   try {
@@ -524,40 +550,91 @@ function recordStartupWall(record: LaunchRecord, startup: string): boolean {
   }
 }
 
+/** Keep the wrapper's explanation or transcript before publishing the exit. */
+function settlePassReport(
+  record: LaunchRecord,
+  ran: Ran,
+  startup: "quota" | "unstarted" | undefined,
+  session: string | null,
+): void {
+  settleUnreported(
+    record,
+    {
+      code: ran.code,
+      signal: ran.signal,
+      ...(startup === undefined ? {} : { startup }),
+      timedOut: ran.timedOut === true,
+      ...(ran.output === undefined ? {} : { output: ran.output }),
+    },
+    record.sessionId ?? session,
+  );
+}
+
+/** Publish the report and exit together, preserving evidence if the state store fails. */
+function recordFinishedExit(
+  id: string,
+  record: LaunchRecord,
+  ran: Ran,
+  wallUnrecorded: boolean,
+): void {
+  const { code, signal } = ran;
+  try {
+    // Every read of the state database sits inside the boundary that keeps the
+    // exit evidence, so a database that refuses reads still leaves it.
+    const startup = startupOf(record, ran);
+    const startupWallUnrecorded =
+      startup !== undefined && !recordStartupWall(record, startup);
+    // The report before the exit: a tick that reads the exit reads its report too.
+    recordAndSay(id, isDrive(record), startup);
+    const session = sessionOf(record, ran);
+    settlePassReport(record, ran, startup, session);
+    recordExit(id, {
+      at: currentIso(),
+      code,
+      signal,
+      ...(wallUnrecorded || startupWallUnrecorded
+        ? { wallUnrecorded: true as const }
+        : {}),
+      ...(startup === undefined ? {} : { startup }),
+      ...(session === null ? {} : { session }),
+      ...saidOf(record, ran),
+      ...usageOf(record, ran),
+    });
+  } catch (error) {
+    const why = stateDbFailure(error);
+    if (!isDrive(record) && why !== null)
+      writeUnwritten(stateRoot(), id, record.token, "exit", why);
+    throw error;
+  }
+}
+
 /** Publish a finished stage's exit, unless its processes may still run. */
 async function finishRun(
   id: string,
   record: LaunchRecord,
   ran: Ran,
 ): Promise<number> {
-  const { code, signal } = ran;
+  const { code } = ran;
   if (ran.unconfirmed || (await driverCleanupUncertain(record, ran))) {
     uncertainStage(id);
     // Unconfirmed cleanup keeps the account slot until reconciliation or clearance.
     console.error(
       "jig dispatch run: the pass's process tree could not be shown to have ended; no exit is recorded",
     );
+    // The driver's report is kept all the same: it never touches the exit.
+    if (isDrive(record)) {
+      recordAndSay(id, true, undefined);
+      printKeptReport(id);
+    }
     return code ?? 1;
   }
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
-  const startup = startupOf(record, ran);
-  const startupWallUnrecorded =
-    startup !== undefined && !recordStartupWall(record, startup);
-  recordExit(id, {
-    at: currentIso(),
-    code,
-    signal,
-    ...(wallUnrecorded || startupWallUnrecorded
-      ? { wallUnrecorded: true as const }
-      : {}),
-    ...(startup === undefined ? {} : { startup }),
-    ...saidOf(record, ran),
-    ...usageOf(record, ran),
-  });
+  recordFinishedExit(id, record, ran, wallUnrecorded);
   await endSharedClaim(id);
   await labelFollowup(id);
+  printKeptReport(id);
   if (isInteractive(record)) await closeTabIfDone(record, code);
   return code ?? 1;
 }

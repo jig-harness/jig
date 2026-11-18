@@ -1,5 +1,6 @@
 /** A stored framing's identity, independent of object insertion order. */
 import { createHash } from "node:crypto";
+import { DECISION_LIMITS } from "./decision-values.ts";
 import type { ParkedDecision } from "./park.ts";
 
 function canonical(value: unknown): string {
@@ -18,7 +19,7 @@ export function decisionDigest(decision: ParkedDecision): string {
   return createHash("sha256")
     .update(canonical(decision))
     .digest("hex")
-    .slice(0, 12);
+    .slice(0, DECISION_LIMITS.digest.value);
 }
 
 export {

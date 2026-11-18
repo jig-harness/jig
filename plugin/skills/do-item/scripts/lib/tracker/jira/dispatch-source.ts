@@ -11,6 +11,9 @@ import { parseIssue, record, str } from "./read.ts";
 import { relationsOf } from "./relations.ts";
 import { JiraApiError, searchPages } from "./transport.ts";
 
+/** The fields every native dispatch reading of an issue asks for. */
+export const DISPATCH_FIELDS: readonly string[] = ["*all"];
+
 export function dispatchSource(
   client: Client,
   project: (
@@ -27,7 +30,7 @@ export function dispatchSource(
   const demand = demandOf(requirements);
   async function search(
     jql: string,
-    fields: readonly string[] = ["*all"],
+    fields: readonly string[] = DISPATCH_FIELDS,
     signal?: AbortSignal,
   ): Promise<unknown[]> {
     refuseStopped(signal);
@@ -123,7 +126,7 @@ export function dispatchSource(
           {
             method: "GET",
             path: `issue/${encodeURIComponent(key)}`,
-            query: { fields: "*all" },
+            query: { fields: DISPATCH_FIELDS.join(",") },
           },
           signal,
         );

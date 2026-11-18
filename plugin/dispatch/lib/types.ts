@@ -9,6 +9,7 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { NoticeFields } from "../../chat/channel.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
+import type { TickOutcome } from "../../shared/records/followup-values.ts";
 import type { FailureClass } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
@@ -36,7 +37,7 @@ export interface DispatchSection {
   identity: string | null;
   /** The canonical states that mean "ready to pick up". */
   states: string[];
-  /** The command a follow-up runs; `null` = no follow-ups. */
+  /** The command a follow-up runs; `null` = no follow-ups. As read from the file, the repository's own; the tick puts the default (`followupCommandOn`) in its place where the host runs the stage. */
   followupCommand: string | null;
   /** How long a claimed item may have no running session before it is reported stalled. */
   stalledAfterMs: number;
@@ -50,7 +51,7 @@ export interface DispatchSection {
   pickupWithinMs: number;
   /** The deadline a pickup's headless pass runs under (`pickup_deadline`), after which its wrapper stops it. */
   pickupDeadlineMs: number;
-  /** How long a follow-up may run before it has ended. */
+  /** How long a follow-up may run before it has ended, and how long one may wait on an arm still pending before it is a person's. */
   followupWithinMs: number;
   /** How old a follow-up claim with no done mark and no session joined to it may grow before the tick releases it, once (`followup_stale_after`). */
   followupStaleAfterMs: number;
@@ -64,6 +65,8 @@ export interface DispatchSection {
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */
   adopt: AdoptRule;
+  /** How many children of an epic with no execution plan are under way at once (`epic_width`). */
+  epicWidth: number;
   /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
   pool?: {
     states: import("../../skills/do-item/scripts/lib/tracker/port.ts").CanonicalState[];
@@ -123,6 +126,8 @@ export interface WantedItem {
   pooled?: true;
   servedPerson?: string;
   ancestorEpic?: string;
+  /** Factory-assigned epic whose authority an unassigned child inherits. */
+  factoryAncestor?: string;
   /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
   blockingFor?: string;
   batchAllowed?: boolean;
@@ -138,11 +143,14 @@ import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
 /** How a pickup that needs nothing reads: the repository's start rules refused its claim, its claimed item is idle but not yet stalled, or a served person started the item themselves. */
 export type PickupClass =
+  | "pickup-ended"
   | "pickup-refused"
   | "claimed-idle"
   | "claimed"
   | "claimed-by-person"
-  | "claimed-pr-open";
+  | "claimed-pr-open"
+  /** Under the host's `priorities.enforce`: a pickup whose priority lane is out of rotation (`priorities-order.ts`). */
+  | "lane-paused";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -240,6 +248,8 @@ export interface DrivenPr {
   labels?: string[];
   /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
   readFailed?: true;
+  /** For a `readFailed` ledger a failed call caused: that call's failure class, which decides whether the read is waited out. */
+  failure?: ReadFailure;
   /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
   heads?: RearmHeads;
 }
@@ -288,7 +298,7 @@ export interface FollowupMarker {
         host?: string;
         /** Whether that host says it owns the repository. */
         owner?: boolean;
-        outcome?: "done" | "failed";
+        outcome?: TickOutcome;
       }
     | { kind: "manual"; done: boolean }
     | { kind: "unreadable"; reason: string };
@@ -296,7 +306,8 @@ export interface FollowupMarker {
 
 /** A merged pull request with its follow-up markers, or why they could not be read. */
 export type MarkedPr = MergedPr & {
-  markers: FollowupMarker[] | { unreadable: string };
+  /** Where they did not read: why, and the failed call's class where a call failed. */
+  markers: FollowupMarker[] | { unreadable: string; failure?: ReadFailure };
 };
 
 /** A record the tick could not read, or a part of one it cannot place. */
@@ -680,7 +691,13 @@ export interface PreflightHold {
 }
 
 export interface RepoReport {
-  steward?: { status: string; hash?: string; records?: number };
+  /** The steward on this tick: what it did, and for a pass the judgment backlog started or did not start, why (`trigger`). */
+  steward?: {
+    status: string;
+    hash?: string;
+    records?: number;
+    trigger?: "empty" | "judged" | "budget" | "started";
+  };
   path: string;
   slug: string | null;
   /** Set when the repository could not be dispatched at all, or a defect stopped its turn. */
@@ -721,14 +738,20 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** Changed-file evidence for every open pull request, including aged or unread comparisons. */
+  prFiles?: import("./sources/pr-files.ts").PrFileSummary[];
   /** The board read's part: its converged pull requests placed in Ready to merge or wherever their reason says, or why it did not read; absent when it did not run. */
   board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
   shared?: SharedReport;
+  /** The ranking of declared priorities on the owner host (`tick-priorities.ts`), or why it could not be made; dispatch's selection reads it only under the host's `priorities.enforce`, which orders the pickups by it. */
+  priorities?:
+    | import("./tick-priorities.ts").PrioritiesReport
+    | { failed: string };
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;
-    /** `answered-hold`: a need a person answered Leave it to me, kept off Needs you for its facts (`station-answers.ts`). */
+    /** `answered-hold`: a need a person answered with the hold option, kept off Needs you for its facts (`station-answers.ts`). */
     class: LedgerClass | PickupClass | FollowupClass | "answered-hold";
     why: string;
   }>;

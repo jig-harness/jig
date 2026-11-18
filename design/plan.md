@@ -173,6 +173,44 @@ consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.
 
+### 56. The epic planner: every epic planned, and its plan kept current
+
+An epic's children run in parallel only when the epic carries an
+execution plan, the block the pickup and the dispatcher read, and nothing
+in Jig writes one: of 51 open epics on 2026-11-14, one had a plan and 17
+had no children. A consumer repository operates a planner on one tracker.
+[design/epic-planner.md](epic-planner.md) has how it moves into Jig and
+what is reshaped on the way: every read and write through the tracker
+interface, each dependency recorded as a native relation first
+([ADR-0015](../docs/adr/ADR-0015-relationships-live-in-the-tracker.md)),
+plans parallel by default, holds and order stated as relation statements,
+and a plan kept current, its mechanical edits applied and its judgment
+edits approved. What it will build, one pull request per step:
+
+- **The tracker interface removes a relation**, on GitHub Issues, Linear
+  and Jira.
+- **The planner moves in** as `/jig:plan-epic`, with its tests, and the
+  consumer's copy is deleted in the same rollout.
+- **Filing hands its epic to the planner**: `/jig:file-issue`'s split ends
+  with a plan run on the epic.
+- **Relation statements**: the holds and order a view renders, computed by
+  the planner.
+- **Footprints**: each step's expected paths, written where overlap-aware
+  admission keeps them.
+- **Keeping a plan current**: a changed epic re-planned with the same split,
+  and a dispatched pass's approval asked as one parked decision.
+- **The doctrine**: M6 states an acceptance stage, a plan's claims checked
+  against the code before building, and the execution plan as an
+  invariant, with templates, the block's schema and audit criteria.
+
+Done when one real epic is planned and then picked up on the plugin on
+GitHub Issues and on Linear, the Jira adapter's recorded answers pass the
+same tests, every dependency is a native relation, and
+its children start in parallel where nothing orders them; a child added
+after the plan is either added by the next run or reported, never left
+waiting unseen; the consumer's copy is gone; and a re-audit of Jig scores
+M6's new criteria.
+
 ### 50. What the line hands a person: each class of need settled at its source
 
 Most of what the dispatcher hands a person is not a decision: a flaky
@@ -187,7 +225,6 @@ by a person's answer to a framed decision, or by a person alone. It builds
 on item 46's framed needs and answers. What it will build, one pull request
 per issue in the design's order:
 
-- **CI repair.** The repair passes become `drive.ci_repair_rounds`.
 - **Host faults.** One host need per cause (`failures.group`); a
   follow-up's run again also covers a failed result write and waits for the
   host's health check (`failures.rerun_died`); a tracker credential probe
@@ -216,6 +253,10 @@ per issue in the design's order:
   rescue branch (`rescue_unpushed`).
 - **Follow-ups.** The routine question classes as configuration
   (`dispatch.followup_routine`).
+- **The Protocol.** The causes of a need, the act each asks for and the
+  classes they group into, added to the
+  [needs and structured answers chapter](../plugin/protocol/needs-and-answers.md)
+  once their table settles.
 
 Done when each build-order issue's acceptance holds, staged in tests where
 the case is rare, and on a dispatch host over a week: a drive whose only
@@ -251,11 +292,6 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **GitHub in the budget record**: its hourly and secondary limits beside
-  the trackers', every forge call admitted against them.
-- **Reuse**: answers cached by update time or the system's validator,
-  identical reads in a run sent once and reads by key in one request,
-  through the shared library that the existing queue snapshots adopt.
 - **Gates and a review lens**: no call leaves by another door than a
   transport, no query selects a list without a page size or passes its
   declared cost ceiling, and a change to an integration is reviewed
@@ -285,14 +321,12 @@ every open pull request's changed files read through the forge's governed
 transport, an overlap cost in expected conflict-resolution rounds that
 orders colliding work behind work that does not collide without ever
 leaving a slot idle, an overlap bound per file that replaces the per-epic
-width and, like the cost, only orders, merge evidence that releases a plan's conflict edges (#725),
+width and, like the cost, only orders,
 validation capacity as a gauge of the load factor, and the reason shown for
 each item that waits. What it will build, one pull request per step, is the
-design's build order: the record, its writers, conflict-edge evidence, the
-changed-files read, conflict rates from `history.ts`, overlap reported,
+design's remaining build order: conflict rates from `history.ts`, overlap reported,
 serialized areas holding pickups, validation capacity, then overlap
-admission. The steps are filed once the
-design merges.
+admission. The planner's footprint writer is part of #1180.
 
 Done when, on a dispatch host over a week with `load.enforce` on: no pass
 times out waiting for the test lock; every item that waits names its reason: overlap, the overlap
@@ -481,8 +515,8 @@ tick frames for a cause it detects (a failed follow-up, a stalled pickup, a
 checkout an unlisted tree holds, a drive handed to a person, a stuck launch
 record) with options it carries out once on a person's answer, sent through
 `jig send` to the follow-up's, the pickup's or the drive's station; and the
-same forms for a loosened ratchet's evidence, a pickup only a person may
-start and answers on a tracker other than the forge. One pull request per
+same forms for a loosened ratchet's evidence and a pickup only a person
+may start. One pull request per
 step, in the design's order; the first moves the shared
 model.
 
@@ -504,24 +538,31 @@ waited.
 
 ### 58. Declared priorities, a progress review and the overview
 
-A person sees individual failures without seeing whether their goals are
-advancing. [The design](priorities-and-overview.md) defines one priorities record
-at site, repository and individual levels. A reproducible shortlist carries
-each epic's rank to its children. A progress review proposes systematic fixes
-and never acts, and an overview joins the facts inside the existing dashboard.
-Urgent issues stay visible, assigned bugs retain their priority, and a
-minimum share keeps peripheral goals moving. The overview pairs each issue
-with its pull request and shows the decisions owed, with confirmed actions
-made by the person's browser, phone unlock and no phone merge.
+A person can see each failure on its own, but not whether the team's goals
+are moving. With this item, a team writes its goals down once, and Jig
+ranks the open work against them. Urgent issues always come first, and
+high-priority bugs come next. The team's core goals, tactical goals,
+peripheral goals and other bugs share the remaining starts by weight; work
+outside those lanes stays visible but unallocated. A small weekly floor keeps
+the peripheral goals moving. The
+same inputs always give the same ranked list. A person picks from that
+list, and Jig reports the list before it lets the list decide what starts.
 
-The person reviews the design before implementation. Build the record and
-ranker, then trial the progress review on Jig and a consumer repository,
-then the overview after its visual design round. Browser actions wait for
-the browser write path to merge and for device probes; site-level records arrive with
-the optional hub. Done when equal input snapshots reproduce the shortlist
-and every Urgent issue appears in each review. The overview must explain
-progress and waiting from structured facts, and browser actions must preserve
-the person's authority. The trial precedes new M9 audit criteria.
+A scheduled review reads what the dispatcher and its sessions did, and
+proposes fixes for problems that repeat. It never acts on its own. One
+overview in Jig's dashboard shows the goals, each group of issues beside
+its pull requests, what is running and what waits for a person. A person
+confirms each action from the overview in their own browser. A phone can do
+every action except a merge; its optional local unlock is on by default.
+
+[The design](priorities-and-overview.md) says how it works. The goals file and the ranking
+come first, as a report. Then a host can opt in to let the ranking decide
+what starts. The review runs as a trial on Jig and one other repository,
+then the overview and its actions follow. Done when the same inputs always
+give the same list, and every review lists every Urgent issue. The overview
+must explain progress and waiting from recorded facts.
+
+Its build steps are issues under epic #1177, in the design's order.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
@@ -570,10 +611,17 @@ line spends. Jig stays whole without Orca:
 every view works in any browser, the machines reach each other through
 the hub where a person runs one, and each
 thing Orca adds has a Herdr or plain-text equivalent. Every write is the
-person's, made with their own credential, and the dashboard writes nothing until
-item 40 settles how a comment a pass posts under the person's login is
-told from the person's own; each commit then asks for proof that a person
-is present. Nothing of it is built. Built in stages, one pull request per
+person's, made with their own credential. A card's Send answers a parked
+decision from the person's browser with a token kept there, the host
+serving no write route and the dispatcher relaying nothing; every other
+act the page makes goes from the person's browser straight to the forge or
+tracker with the person's own token, after the physical-device probes pass
+([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md),
+[ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)),
+needing only the proof its class asks for. A commit the host makes waits
+until item 40 settles how a comment a pass posts
+under the person's login is told from the person's own, and each such
+commit then asks for proof that a person is present. Only the card's Send is built; the rest is built in stages, one pull request per
 step: the per-pull-request status on the dashboard that exists (rounds and
 resolved parks in the drive ledger, item 36's board read, the phone
 measurement fixture, Ready to merge and placement with the marks, a line one
@@ -629,10 +677,6 @@ order, after `jig gc`'s fixes (#990, #991):
   from `drive.ts` at its stop, built on its passes' round reports. It is
   kept on the launch record and the outcome log, and shown on the dashboard
   and by `jig ask`.
-- **The steward's `cause` record** for a run that left no report, read from
-  an excerpt of its transcript, whose copy is kept only for such runs and
-  until seven days after the cause is applied, and at the latest until the
-  receipts retention ends.
 - **Tabs close on every exit**, a park and a failure included, once the
   report and the cause record hold what a tab showed; the tick ends what a
   run whose wrapper died left (`endRun`).
@@ -657,58 +701,49 @@ attached to a run and took one over without Orca.
 
 ### 34. Jig in the Orca ecosystem
 
-Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
-on their own (the workspace tool behind the launcher, `do-item`'s board
-updates and workspace names, the dispatcher's session runtime, and a
-plugin Orca loads that wakes the dispatcher when an agent's status
-changes), and the rest of the execution line meets it only in part:
-collection through Orca still races an agent started between its last
-registry read and the removal, and the dispatcher cannot read an account's
-usage from Orca's command line. [design/orca-integration.md](orca-integration.md)
-has how it works, in classes built in order. Still open, on Orca 1.4.248's
-plugin hooks: the launch guard, in which `jig gc` takes its admission in a
-launch guard record before its last registry read and the plugin's
-`agent.launch.before` hook, reading that record without an awaited call,
-refuses a launch into a worktree gc holds; a spike on binding a launch to
-its account through the same hook; the plugin's status bar item; and the
-Jig panel, which stays the person's inbox, with an answer box and, on a
-merge-now entry, a button that runs the pinned merge command as the
-person. The board and each piece of work open in the dashboard (item 42), which
-the plugin's "Open the dashboard" command opens in Orca's own browser. Orca
-stays optional: every view of the dashboard works in any browser,
-and each thing the plugin adds has a Herdr or plain-text equivalent. Also
-open: what Jig asks of Orca (usage per account
-from the command line; a phone push only when an agent needs input; a hook
-before a workspace's removal; filed by a person, each with its pull request
-offered). One pull request per step, in the design's order.
+Jig's tooling reaches [Orca](https://www.onorca.dev) in the workspace tool
+behind the launcher, `do-item`'s board updates and workspace names, the
+dispatcher's session runtime, and a plugin Orca loads: it wakes the
+dispatcher when an agent's status changes, refuses a launch into a worktree
+`jig gc` is removing, shows the dispatch line in Orca's status bar, and
+opens a panel on the person's inbox, where a park is answered.
+[design/orca-integration.md](orca-integration.md) has how it works, in
+classes built in order. Still open, one pull request per step, in
+parallel where nothing orders them: the
+dispatcher's account cap reading each account's usage from
+`orca account usage --json`, once Orca offers it
+([#1307](https://github.com/jig-harness/jig/issues/1307)); and, in the
+panel, picking a parked decision's answer as the dashboard does
+([jig-harness/orca-plugin#21](https://github.com/jig-harness/orca-plugin/issues/21))
+and a merge button on a merge-now entry that runs the pinned merge command
+as the person
+([#1308](https://github.com/jig-harness/jig/issues/1308)). The board and
+each piece of work open in the dashboard (item 42), which item 42's
+"Open the dashboard" command for the plugin will open in Orca's own
+browser. Orca stays
+optional: every view of the dashboard works in any browser, and each thing
+the plugin adds has a Herdr or plain-text equivalent. Also open: what Jig
+asks of Orca, filed by a person, each with its pull request offered: usage
+per account from the command line, an account named for each agent
+launch, a phone
+push only when an agent needs input, and a hook before a workspace's
+removal.
 
-Done when a launch Orca makes into a worktree `jig gc` is collecting is
-refused by the plugin's guard whenever the hook runs and reads the record
-(a hook that throws, runs past its deadline or whose worker is down lets the
-launch through, and a fresh heartbeat does not promise otherwise; tests cover
-each of those cases and an admission abandoned after gc submitted its
-removal), a launch the guard let through just before gc's admission
-keeps that worktree, and with a stale heartbeat gc collects as before and
-its receipt says the collection was unguarded; the plugin's status bar
-flags a tick older than twice the interval; the panel's inbox lists the
-needs, with their decisions, that the dashboard's Now view lists for the
-same tick; the dispatcher's account cap reads `orca
-account usage --json` where Orca has it; and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
-under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
-the first event after a minute of quiet starts it at once, an event during
-a running tick or the minute after a start waits for one trailing tick
-that starts once the running tick has finished and a minute has passed
-since the last start, and either stays pending while a tick's lock refuses it and survives an event that arrives while that tick
-processes the repository.
+Done when the dispatcher's account cap reads `orca account
+usage --json` where Orca has it, an `unavailable` row holding its account;
+the panel shows a parked decision's options and choice as `jig ask` and
+the dashboard do, and a Send settles it; and a merge-now entry in the
+panel runs its pinned merge command on a person's click and on nothing
+else, a command that fails the strict forms runs nothing and says why, and
+an entry in another lane shows no button.
 
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, the hub for a team on several hosts, the Protocol
-that readers outside the skills can trust, the line in a team's chat, work that
+second team adopt Jig, the hub for a team on several hosts, the line in a
+team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
-measurement. Last come the developer machine and its runtimes, and the runs
-a person owes.
+measurement. Last come the developer machine and the runs a person owes.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -776,72 +811,78 @@ one host only, nobody outside a host learns that it stopped, and a person
 with several machines has a dashboard per machine.
 [design/control-plane.md](control-plane.md) has how it works and
 [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-the decision. What it will build: the hub, `jig hub serve` in
-`plugin/hub/`, one process with one SQLite database that enrolled hosts call
-over HTTPS and that calls no host; enrollment by device grant, with a
+the decision. What it will build: the hub, a portable core that reaches
+storage, request serving, scheduling, outbound calls and observability only
+through small ports, with no subprocess, no Bun- or Node-only module and no
+local file in it, which a gate holds; its state partitioned per repository
+and per host, sized for about 50 hosts, 30 repositories, 500 open items
+and 10,000 deliveries a day; a process adapter first (`jig hub serve` in
+`plugin/hub/`, Bun with SQLite, in a container under its own OS user on a
+machine that runs sessions) and a Cloudflare adapter second (Workers with
+one Durable Object per partition, alarms and cron triggers); storage
+through Drizzle in SQLite's SQL, JSON functions included, with a
+PostgreSQL adapter built, with rework, when a team needs it; errors as
+`Outcome` values with a defect boundary per unit of work (ADR-0012 kept);
+an observability port with M11's typed events, wired metrics, a health
+answer and the dashboard, an OTLP collector and an external heartbeat as
+optional settings checked when set (an exception to M11's external-monitor invariant that the hosts' own need on an unreachable hub stands in for). Enrolled hosts call it
+over HTTPS and it calls no host; enrollment is by device grant, with a
 credential per host; a host protocol of `hello`, `changes`, `read` with a
-`notOlderThan` bound, `report`, claims with leases and, last, `offers`,
-versioned by named capabilities; one read of the forge and the tracker for
-every enrolled host, polling first with conditional requests, webhooks as
-hints where the hub can receive them, and a budget per credential for every
-bucket it spends; claims with leases in front of the forge and tracker
-claims, which stay the fences, so a silent host's work is granted to
-another host and a pickup is claimed before its session opens; a silent
-host noticed; the owner of each repository named by the hub, under a lease
-of its own; the source feed of every host served to the dispatch
-dashboard, its only way to show several hosts; and offers to a host with
-free slots, ordered by an offer policy declared as data (an ordered list
-of named rankers, a `command` ranker for a team's own strategy, and named
-policies a repository chooses among). No level of use requires it: the skills never call it,
-and a host whose hub does not answer reads and claims by itself. Built in
-stages, one pull request per step: seams in the dispatcher first, each
-worth building alone (one shared records implementation chosen by
-`records.shared`, the world view apart from the machine view, a pickup
-claim, the GraphQL budget gated); then the hub that reads once; then claims
-with leases and the silent host; then one view of every host; then offers,
-once ADR-0016 is approved. Each stage after the seams is planned in detail,
-and built or not, by the person who asked for the hub once the stage before
-it is in use.
+`notOlderThan` bound, `report`, `health`, claims with leases and, last,
+`offers`, versioned by named capabilities. The forge's and the tracker's
+signed webhooks are its main feed (through a GitHub App of its own and
+a Linear OAuth application acting as itself), with only `/webhooks/`
+public, through a tunnel on the process adapter; deliveries for one target
+coalesced into one read; open pull requests with a drive re-validated
+every 10 minutes and the rest by an hourly reconciliation sweep with
+conditional requests, which counts drift; enrolled dispatchers read its
+world view and nothing else but a fence's read-back and the forge check,
+at use, of a fact that gates a write, and read for themselves when it does
+not answer; a change feed (a version per target and the kinds that moved)
+that dispatchers wait on instead of polling, and drive passes too if the
+measurement shows drive polling at 15% or more of the busiest shared
+credential's spend; hosts pin
+the hub's identity at enrollment, keep their own credentials, and the hub
+hands out none. Then claims with leases in front of
+the forge and tracker claims, which stay the fences, so a silent host's
+work is granted to another host and a pickup is claimed before its session
+opens; a silent host noticed; the owner of each repository named by the
+hub, under a lease of its own; the source feed of every host served to the
+dispatch dashboard, its only way to show several hosts; and offers to a host
+with free slots, ordered by an offer policy declared as data (an ordered
+list of named rankers, a `command` ranker for a team's own strategy on the
+process adapter, and named policies a repository chooses among). No level
+of use requires it: the skills never call it (bar an enrolled drive's optional watch call), and a host whose hub does not
+answer reads and claims by itself. Built in waves, one pull request per
+step: seams in the dispatcher first, each worth building alone (one shared
+records implementation chosen by `records.shared`, the world view apart
+from the machine view, a pickup claim, the GraphQL budget gated); then,
+once a week of the cost ledger taken after
+[#1432](https://github.com/jig-harness/jig/pull/1432) and
+[#1436](https://github.com/jig-harness/jig/issues/1436) land, splitting
+dispatcher from session reads and counting real multi-host deployments,
+shows the dispatcher's reads and drive passes' polling are at least a third
+of a shared credential's spend, the first wave: the portable core and its
+gate, the process adapter and container image, webhook intake with
+signatures, the world view and the sweep, enrollment and reporting, the
+change feed with the dispatchers on it (and the drive passes, on that
+condition), observability,
+and one dashboard across hosts; then the Cloudflare adapter; then claims and owner leases with
+the silent host; the chat bridge inside the hub;
+offers; and the PostgreSQL adapter on demand. Each wave after the first is
+planned in detail, and built or not, by the person who asked for the hub
+once the wave before it is in use.
 
-Done when, for the first stage, two hosts dispatching the same repositories
-through one hub spend together about what one host spends alone, and
-stopping the hub during a tick costs that tick only a note on its receipt.
-From the second stage a stopped hub also suspends the owner duties a host
-cannot do without its lease, the one exception to a host working as it does
-today.
-
-### 53. The Jig Protocol: chapters generated from the code and held to it by a gate
-
-Jig's parts, and programs outside its skills (the dispatch dashboard's page,
-the Orca plugin, the planned hub, a repository's follow-up command, a second
-agent harness), agree on contracts: a drive's end states and exit codes, the
-records Jig writes, the labels and comment markers it reads, the commands a
-repository supplies. Each is defined once in code and restated by hand in
-several documents, which drift wherever no test ties them to the code.
-[design/protocol.md](protocol.md) has how it works and
-[ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md)
-the decision. What it will build: the [Jig Protocol](../GLOSSARY.md), a
-kind of document in `plugin/protocol/`, one chapter per contract, each
-stable or provisional (naming the plan item that still moves it); a
-generator, `tools/protocol/generate.ts`, that writes each chapter's values
-and their meanings from the code's own tables, with a data file per chapter
-and JSON Schemas for the shapes outside readers parse, held to the code by
-its `--check` in the generated-file inventory; the skills' restatements
-turned into links, or kept as held restatements the gate checks; and the
-chapters rendered on the site. Built in steps, one pull request each;
-built so far: the generator, its gate, the chapter on the drive's end
-states and exit codes, and the chapters on the drive mailbox, on the
-pull-request labels and on the commands a repository supplies
-([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
-for the chapters at `/protocol/`.
-Open, in order: the other stable chapters, their schemas, their
-restatements as links and the provisional chapters.
-
-Done when every stable and provisional chapter of the design is generated
-and gated, the site renders the chapters, and the
-documents programs outside the skills are pointed to link to the chapters
-instead of restating them, and a change that makes a chapter disagree with
-the code fails `bun run gates`.
+Done when, for the first wave, on about 5 hosts dispatching the same
+repositories through one hub, the hub's GitHub spend over 7 days, per
+repository per day and REST and GraphQL apart, is at most 1.2 times what
+one host spends reading them alone (0.3 to 0.5 expected), the hosts' own
+dispatcher reads that spend a forge limit are about zero, a dropped
+webhook delivery is found within its freshness bound and counted as
+drift, and stopping the hub during a tick costs that tick only a note on
+its receipt. The claims wave's load test proves 50 hosts. From the claims wave a stopped hub also
+suspends the owner duties a host cannot do without its lease, the one
+exception to a host working as it does today.
 
 ### 54. The line in a team's chat
 
@@ -1097,9 +1138,7 @@ the changelog by hand.
 ### 12. More tracker adapters
 
 A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
-It waits on the open decisions below. For every adapter to work end to end,
-the deferral step (item 10) uses the [tracker interface](../GLOSSARY.md)'s
-operations.
+It waits on the open decisions below.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 
@@ -1130,94 +1169,6 @@ Done when a task-typed issue reaches its pull request with the depth its
 row gives, a feature keeps every gate it has today, and the three former
 conditions have no reader outside the table.
 
-### 29. The spec a work item links
-
-A work item carries or links its requirements, and the link is prose:
-`do-item` hands the agent the body, the reviewer is told to check "the
-acceptance criteria" wherever they are, and the pull request never says
-which were met. [design/spec-link.md](spec-link.md) has how it works, on
-the [spec ecosystems research note](spec-ecosystems-research.md): a
-read-only resolver with one adapter per layout (the item's own body first,
-then the common repository layouts by convention, then the tracker's
-attachments) that returns requirements,
-acceptance criteria and tasks with their ids; the result handed to the
-implementing agent and the reviewer; a pull-request section accounting for
-every criterion as met with an evidence record (item 28), deferred to a
-filed item, or not applicable. The delivery loop writes no spec and
-dictates no format.
-What it will build, one pull request per step:
-
-- **The repository adapters**, two or three layouts per pull request, each
-  with its fixture folder; M6's audit criterion with the last of them.
-- **`do-item` reads and requires**: the `spec` pre-scout by work type
-  (item 27), the delegation prompt and the reviewer's list, the policy
-  refusal for an unaccounted criterion, the recommended-skills page naming
-  the spec-writing tools with the adapter that reads each.
-- **The required check** that refuses an unlinked pull request or an
-  unaccounted criterion, honouring an exception only when a member of
-  `specs.exception_approvers` other than the author and the implementing
-  agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
-  still on, reading its script and policy from the base branch rather than
-  the head, with a workflow template and the setup that makes it required.
-- **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
-- **The tracker source**: the documents and attachments the tracker
-  interface lists on the item.
-- **A verification section**: the commands a work item lists under
-  `Verification`, fenced blocks included, handed to the implementer and
-  recorded as evidence records the pull request's acceptance section cites.
-
-Done when a feature whose body links a spec in any supported layout
-reaches its pull request with every acceptance criterion accounted for,
-one with none stops, saying so, before any code is written, and the stance (a work
-item links its requirements; the delivery loop writes no spec) is a decision record.
-
-### 31. Routing work to an agent, a model and an effort
-
-`do-item` chooses which agent implements an issue, from the change-area
-catalog, the issue's labels and its title (`determine_agent.ts`), but
-nothing chooses the model or the effort that agent runs on, and nothing
-records why: a bug fix in one file and an epic's architecture spike are
-implemented on whatever model the session runs, the one the launcher's
-settings or a person picked. [design/agent-routing.md](agent-routing.md)
-has how it works, decided in
-[ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md): a
-route (agent, complexity tier, effort) for the implementer, derived from
-the work type (item 27), the size and flag labels and the catalog's flags and
-mandatory reviews, by rules as data with defaults a repository overrides;
-complexity tiers, simple, standard and complex, from the type, the
-size and the flags a repository marks complex at any size
-(`routing.complex_flags`), each mapped to a model per vendor with Claude's
-and OpenAI's defaults (simple and standard on `sonnet` or `terra`, complex
-on `opus` or `sol`); raises that move the effort up, and only a configured
-complex flag that sets the tier; the strictest value on every
-conflict; a pinned agent keeping its pin; the reason, the source and
-whether it was applied on the pull request, where the drive's loop-cost
-report joins them to the outcome; a person's choice always winning; opt-in
-until a repository declares its rules; no model asked to route, and no
-model or tier written on an issue. The design
-is written and decided, and its first two steps are built:
-`determine_route.ts` derives the route from the `routing` section and its
-defaults, on the complexity tiers with Claude's and OpenAI's families
-known (`plugin/shared/model-families.ts`, which the loader checks every
-`routing.models` row against), and `do-item` prints it and forwards
-nothing. What stays open is the rest of the build, its own epic, one pull
-request per step:
-
-- **The record**: the `## Route` section written and parsed from
-  `plugin/shared/`, and the loop-cost report reading it.
-- **M0's declaration point**: the policy's invariant and table, and the
-  criterion's statement.
-- **`do-item` forwards**, behind a declared `routing` section: the model
-  and effort to the subagent tool, the launcher's `route:` prompt line
-  honoured, the pinned agent kept.
-- **`work-batch` and the audit criterion** at M0 Standard.
-
-The build epic is done when an S bug routes standard and the same bug
-labelled `has-migration` routes complex, a flagged bug is delegated on a higher effort
-than an unflagged one with the `## Route` section saying why, a `route: yours` prompt
-delegates with nothing forwarded, and a loop-cost report shows the route
-beside the rounds.
-
 ### 23. Seed review lenses
 
 `review` runs [review lenses](../GLOSSARY.md) from one file each, and
@@ -1236,23 +1187,6 @@ Done when `review` runs every seed lens a diff triggers and says why it
 skipped the others, each seed lens's eval fixtures have passed live, and the
 tallying script turns a fixture set of threads into one parity row per lens
 version.
-
-### 30. Scanner findings block convergence
-
-`resolve-review-comments` lists the findings a static-analysis app reports as
-check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
-to work them, but the drive's verdict reads threads and summary comments
-only, so a drive with annotations as its only findings can end `CONVERGED`
-without starting a round. What it will
-build: the annotation listing as a third source of open work beside threads
-and summary findings, read by `drive-status`, `round-plan` and `converge`,
-so the verdict withholds `CONVERGED` while a scanner check is running on the
-head or lists a finding no round has answered; a way to record a finding
-that stands (rejected, won't fix, deferred) against the head so it stops
-counting; and the dismissal in the tool for the apps that expose one
-(SonarQube Cloud's issue transitions), as an adapter beside the listing.
-Done when a pull request whose scanner check holds a warning does not
-converge until a round fixes it or records why it stands.
 
 ### 25. Dependency-review feedback
 
@@ -1313,12 +1247,6 @@ Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion.
-- **M6 and M7**:
-  - an acceptance stage;
-  - plan claims checked against the code before building;
-  - the execution-plan format the pickup skill reads;
-  - a skill that runs the post-merge stage M7 states, for any repository (the
-    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
@@ -1331,21 +1259,6 @@ a re-audit of Jig scores them.
 
 Move into configuration when a consumer needs them:
 
-- the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
-  with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues,
-  the default tracker, cannot defer a finding. Moving it onto the interface makes it work on
-  every adapter; revisit for GitHub Issues what the step relies on that
-  GitHub lacks or spells differently: label groups (GitHub labels have none,
-  so the type and repository groups become configured label lists), its
-  `--originating` and `--team` keys (validated through the adapter's key
-  shape, `keys.ts`), the conditional description edits that keep concurrent
-  deferrals from losing an entry (the interface may need a compare-and-set
-  update, or a comment per entry where the tracker cannot compare), and
-  GitHub's secondary rate limit on writes when a review defers many
-  findings at once. Done when a deferral round files and appends its
-  findings on both adapters, with the fake-tracker tests both adapters'
-  tests use;
 - the git remote: the delivery skills read it from `repository.remote`
   (default `origin`), but `review`, `review-reflections`, `reflect`,
   `code-stats`, `changelog` and the audit's `config-fit.ts` still read
@@ -1467,22 +1380,6 @@ Done when a working repository's weekly sweep is the installed `jig gc`
 job, its own reapers and installers are gone, and the report names each
 resource's proof before anything is collected.
 
-### 19. Herdr as the primary workspace runtime
-
-[Herdr](https://herdr.dev) is the workspace runtime Jig's tooling targets
-first ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-The [Herdr workspace tool](../tools/herdr/README.md), the launcher's `herdr`
-provider and M12's worktree lifecycle in Herdr are in place. What is left
-waits on a consumer repository that runs its agents in Herdr; the hosts
-that run Jig's own line run Orca. Done when:
-
-- each consumer repository's own Herdr launch and worktree commands call the
-  workspace tool, and their copies of what it does are deleted, keeping only
-  the repository's own setup as its `.config/worktree-hooks/create`;
-- `drive-pr`, `do-item` and `review`'s reading of a delegated agent's output
-  are run in a Herdr workspace on macOS and on Linux, and what differs is
-  fixed or written down.
-
 ### 7. The Notion store, run against Notion
 
 The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
@@ -1537,9 +1434,10 @@ conditions for considering a tap without adopting one ahead of that evidence.
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from
   the stack-specific checks it carries.
-- **Tracker planning.** Epic planning and prioritisation as skills on the
-  tracker interface, where the procedure is generic rather than one
-  organization's workflow.
+- **Tracker planning.** Prioritisation, the epic acceptance review, a
+  review-debt report and a skill that applies approved learnings, as skills
+  on the tracker interface, where the procedure is generic rather than one
+  organization's workflow. Epic planning is item 56.
 - **A forge interface.** GitHub is the only forge: the skills that work on
   pull requests call `gh` directly. An interface on the tracker's model (pull
   requests, review threads, checks and required checks, labels and comments),
@@ -1595,7 +1493,7 @@ conditions for considering a tap without adopting one ahead of that evidence.
     M12's mappings how a repository's `orca.yaml` setup script and Orca's
     branch-prefix setting approximate them, once validated in a consumer;
   - the drive, pickup and review skills checked inside Orca worktrees on a
-    server, as item 19 does for Herdr;
+    server, as [#1310](https://github.com/jig-harness/jig/issues/1310) does for Herdr;
   - the tool and the launcher's Orca provider on Windows: the tool drives
     its host with `sh`, `test` and `mkdir` and, on this machine, supervises
     its hooks through `/proc` or `ps`

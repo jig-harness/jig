@@ -3,6 +3,7 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { processWorktreeIdle } from "../process-worktrees.ts";
 import type { Proof } from "../types.ts";
 import {
+  runtimeWorktreeProof,
   unchangedSinceProof,
   worktreeIdentity,
   worktreeProof,
@@ -43,4 +44,21 @@ export async function ownedCheckoutProof(
     return ok({ proof: result.value, identity: null });
   const same = await unchangedSinceProof(path, seen.value);
   return same.ok ? ok({ proof: result.value, identity: seen.value }) : same;
+}
+
+/** Proof for a checkout Orca manages: the identity is read before the proof, so its own reads run inside it. */
+export async function managedCheckoutProof(
+  path: string,
+  policy: WorktreePolicy,
+  idleDays: number,
+  orca: string,
+): Promise<Outcome<{ proof: Proof; identity: WorktreeIdentity | null }>> {
+  const seen = await worktreeIdentity(path);
+  if (!seen.ok) return seen;
+  const proof = await runtimeWorktreeProof(path, policy, idleDays, { orca });
+  if (!proof.ok) return proof;
+  if (proof.value.state !== "dead")
+    return ok({ proof: proof.value, identity: null });
+  const same = await unchangedSinceProof(path, seen.value);
+  return same.ok ? ok({ proof: proof.value, identity: seen.value }) : same;
 }

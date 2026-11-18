@@ -35,6 +35,13 @@ export function passOutput(
   };
 }
 
+/** Whether a pass's output carries its vendor's usage-limit notice on a line of its own. */
+export function reportsUsageLimit(output: string): boolean {
+  return /^\s*you(?:'|’)ve hit your (?:session |weekly |usage )?limit\s*·\s*resets[^\r\n]+$/im.test(
+    output,
+  );
+}
+
 /** Closed descriptions keep untrusted output out of the outcome log's reason. */
 export function stewardNoSubmitCause(output: string): string {
   if (
@@ -43,12 +50,7 @@ export function stewardNoSubmitCause(output: string): string {
     )
   )
     return "output reports a refused skill invocation";
-  if (
-    /^\s*you(?:'|’)ve hit your (?:session |weekly |usage )?limit\s*·\s*resets[^\r\n]+$/im.test(
-      output,
-    )
-  )
-    return "output reports a vendor usage limit";
+  if (reportsUsageLimit(output)) return "output reports a vendor usage limit";
   if (
     /bunfig\.toml/.test(output) &&
     /ENOENT|Cannot find config file|no such file/i.test(output)

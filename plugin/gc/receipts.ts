@@ -104,7 +104,13 @@ export function receiptPaths(root = stateRoot()): string[] {
         .sort(),
     );
 }
-const KIND_NAMES = ["scratch", "worktrees", "tool-state", "receipts"];
+const KIND_NAMES = [
+  "scratch",
+  "worktrees",
+  "tool-state",
+  "receipts",
+  "orca-terminals",
+];
 /** Retention orders these as text, which is chronological only in this form. */
 function isDate(value: unknown): boolean {
   return (

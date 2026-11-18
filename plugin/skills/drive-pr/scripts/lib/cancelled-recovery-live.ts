@@ -2,9 +2,19 @@
 import {
   observeCancellation,
   claimCancellation,
+  extendCancellation,
   readCancellation,
+  releasePendingGrant,
+  labelReruns,
+  claimLabelRerun,
 } from "./cancelled-recovery-state.ts";
-import { recoverCancelled, type RecoveryDeps } from "./cancelled-recovery.ts";
+import { labelWriteTimes } from "./label-cancelled-runs.ts";
+import { readTimeline } from "./pr-timeline.ts";
+import {
+  recoverCancelled,
+  RERUN_OPTION,
+  type RecoveryDeps,
+} from "./cancelled-recovery.ts";
 import { checkRuns } from "./ci-hold-state.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
@@ -26,10 +36,14 @@ import { parsePrSnapshot } from "./ci-hold.ts";
 import { workflowRunsFor, withoutSuperseded } from "./status/workflow-runs.ts";
 import { currentIso, currentMs } from "../../../../shared/time.ts";
 
-const live: RecoveryDeps = {
+const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites"> = {
   now: currentMs,
   observe: observeCancellation,
   claim: claimCancellation,
+  extend: extendCancellation,
+  releaseGrant: releasePendingGrant,
+  labelReruns,
+  claimLabelRerun,
   async confirm(pr, head) {
     const read = await ghCall([
       "pr",
@@ -60,44 +74,11 @@ const live: RecoveryDeps = {
       return false;
     }
   },
-  rerunnable: rerunnableRuns,
   rerun: (id) => ghCall(["run", "rerun", String(id)]),
   async park(pr, reason) {
     const person = await resolveParkPerson(pr, "cancelled-ci", "finding", "");
-    const question = "How should the cancelled workflow recovery continue?";
-    const decision: ParkedDecision = {
-      schema: "parked-decision/v1",
-      class: "human-decision",
-      call: {
-        id: "a",
-        question,
-        options: [
-          {
-            id: "rerun",
-            name: "Re-run safely",
-            summary:
-              "Restart the cancelled workflow after checking its event and permissions.",
-            pay: ["Another CI run and a manual check."],
-          },
-          {
-            id: "repair",
-            name: "Repair workflow first",
-            summary:
-              "Fix the concurrency or event configuration before another run.",
-            pay: ["A workflow change and delayed merge."],
-          },
-        ],
-        recommended: "rerun",
-        why: "Inspect why automatic recovery could not finish; repair the workflow first if its event still carries the hold.",
-      },
-      steps: [
-        reason,
-        "Record the result in a pull-request comment and re-arm the drive.",
-      ],
-      alreadyDone:
-        "The drive checked the exact head, workflow replacements and CI hold history, and bounded automatic recovery to one re-run per head. " +
-        reason,
-    };
+    const decision = cancelledCiDecision(reason);
+    const question = decision.call.question;
     const store = await openStore(pr);
     const capacity = await parkAdmissionContext(pr, store.stateDir);
     await store.update((state) => {
@@ -123,6 +104,79 @@ const live: RecoveryDeps = {
     });
   },
 };
+
+/**
+ * The timeline read once for a recovery poll: the label history and the CI
+ * hold's replay check both need it, and it is paginated.
+ */
+function timelineDeps(
+  pr: string,
+): Pick<RecoveryDeps, "labelWrites" | "rerunnable"> {
+  let read: ReturnType<typeof readTimeline> | undefined;
+  const timeline = () => (read ??= readTimeline(pr));
+  return {
+    rerunnable: (_pr, runs) =>
+      rerunnableRuns(pr, runs, async () => {
+        const events = await timeline();
+        return events.ok ? events.value : null;
+      }),
+    async labelWrites() {
+      const events = await timeline();
+      if (!events.ok) {
+        console.error(
+          `cancelled CI recovery: the label history is unreadable (${events.failure.code}: ${events.failure.reason}); every cancellation counts against the head's re-run`,
+        );
+        return [];
+      }
+      let holdLabel: string | null;
+      try {
+        holdLabel = holdLabelPolicy();
+      } catch (err) {
+        console.error(
+          `cancelled CI recovery: the CI hold label is unreadable (${err instanceof Error ? err.message : String(err)}); every cancellation counts against the head's re-run`,
+        );
+        return [];
+      }
+      return labelWriteTimes(events.value, holdLabel);
+    },
+  };
+}
+
+/** The `cancelled-ci` park's framed decision for a recovery that stopped for `reason`. */
+export function cancelledCiDecision(reason: string): ParkedDecision {
+  return {
+    schema: "parked-decision/v1",
+    class: "human-decision",
+    call: {
+      id: "a",
+      question: "How should the cancelled workflow recovery continue?",
+      options: [
+        {
+          id: RERUN_OPTION,
+          name: "Re-run safely",
+          summary:
+            "On re-arm, the drive grants this head one more re-run, checks the head and the CI hold again, requests the re-run and waits for its replacement.",
+          pay: [
+            "Another CI run; a run created under the CI hold still parks again with that reason.",
+          ],
+        },
+        {
+          id: "repair",
+          name: "Repair workflow first",
+          summary:
+            "Fix the concurrency or event configuration before another run.",
+          pay: ["A workflow change and delayed merge."],
+        },
+      ],
+      recommended: RERUN_OPTION,
+      why: "The drive repeats the automatic recovery's checks before it re-runs; repair the workflow first if its runs are still created under the CI hold or its concurrency keeps cancelling the run.",
+    },
+    steps: [reason, "Answer in a pull-request comment and re-arm the drive."],
+    alreadyDone:
+      "The drive checked the exact head, workflow replacements and CI hold history, and bounded automatic recovery to one re-run per head. " +
+      reason,
+  };
+}
 
 /** A required-check subset at acquisition; all cancelled workflow jobs at final convergence. */
 export async function recoverCancelledOnHead(
@@ -218,6 +272,7 @@ export async function recoverCancelledOnHead(
   try {
     const answer = await recoverCancelled(pr, head, relevant, runs, {
       ...live,
+      ...timelineDeps(pr),
       async rerun(id) {
         if (!(await live.confirm(pr, head)))
           return {
@@ -236,7 +291,12 @@ export async function recoverCancelledOnHead(
 /** A re-run replaces cancelled jobs with pending ones before it supplies results. */
 async function waitForRequestedRun(pr: string, head: string) {
   const record = await readCancellation(pr, head);
-  if (record?.requestedAt !== null && (record?.workflowIds?.length ?? 0) > 0) {
+  const workflowIds =
+    record?.requestedAt !== null ? (record?.workflowIds ?? []) : [];
+  const labelRuns = new Set(
+    [...(await labelReruns(pr)).keys()].map((key) => Number(key.split(":")[0])),
+  );
+  if (workflowIds.length > 0 || labelRuns.size > 0) {
     const runs = await workflowRunsFor("{owner}", "{repo}", head);
     if (runs === null) {
       console.error(
@@ -247,8 +307,8 @@ async function waitForRequestedRun(pr: string, head: string) {
     if (
       runs.some(
         (run) =>
-          record?.workflowIds?.includes(run.workflowId) &&
-          run.status !== "completed",
+          run.status !== "completed" &&
+          (workflowIds.includes(run.workflowId) || labelRuns.has(run.id)),
       )
     )
       return "wait";

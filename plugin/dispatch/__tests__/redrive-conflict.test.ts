@@ -335,7 +335,7 @@ describe("jig dispatch --apply re-drives a drive that stopped on a conflict", ()
     ]);
   }, 90_000);
 
-  it("reads a base branch once a tick however many pull requests stand on it, and only for a ledger that stopped 9", async () => {
+  it("reads the shared base once for changed-file evidence and once for the stopped ledger", async () => {
     const w = fixture({ mergeable: "CONFLICTING" });
     w.setPrs("open", [
       openPr(7, HEAD, { mergeable: "CONFLICTING" }),
@@ -347,7 +347,10 @@ describe("jig dispatch --apply re-drives a drive that stopped on a conflict", ()
     machineFile(w, [account(w, "a", "a@example.com")], {}, []);
     const r = await w.dispatch(["--json"]);
     expectSpawnExit(r, 0);
-    expect(baseReads(w)).toEqual([`repos/${SLUG}/git/ref/heads/main`]);
+    expect(baseReads(w)).toEqual([
+      `repos/${SLUG}/git/ref/heads/main`,
+      `repos/${SLUG}/git/ref/heads/main`,
+    ]);
   });
 });
 
@@ -522,7 +525,7 @@ describe("a parked drive whose pull request conflicts with its base", () => {
       const receipt = await tick(w);
       expect(launches(receipt)).toEqual([]);
       expect(notified(receipt)).toEqual([["PR #7", "parked", "sent"]]);
-      expect(baseReads(w)).toEqual([]);
+      expect(baseReads(w)).toEqual([`repos/${SLUG}/git/ref/heads/main`]);
       w.close();
       current = null;
     }

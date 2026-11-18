@@ -23,6 +23,7 @@ import {
 import { gcGit as git } from "../git.ts";
 import {
   localSteps,
+  removalUnsettled,
   removeThroughOrca,
   removeWithGit,
 } from "../worktree-removal.ts";
@@ -38,9 +39,15 @@ import {
   guardedCollection,
   type GuardedRemoval,
   isGoneClaim,
+  inventoryFailureLine,
+  isSupersededClaim,
   LAUNCH_VETO,
+  proveInventoryFailure,
   proveGone,
+  proveSuperseded,
   releaseGone,
+  releaseSupersededClaim,
+  supersededClaims,
 } from "./worktree-guard.ts";
 import {
   markingSince,
@@ -52,14 +59,20 @@ import {
   canonicalWorktree,
   orcaLiveness,
   preserveLegacyContent,
-  runtimeWorktreeProof,
-  unchangedSinceProof,
   worktreeIdentity,
   worktreePolicy,
   type WorktreeIdentity,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
+import {
+  keepHolds,
+  releaseHolds,
+  unchangedAndHeld,
+  holdableIdentity,
+  type HeadHold,
+} from "./worktree-head-hold.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
+import { DEFAULT_REGENERABLE_PATHS } from "../regenerable-paths.ts";
 import { currentMs } from "../../shared/time.ts";
 import {
   processWorktreeRoot,
@@ -71,7 +84,10 @@ import {
   retireProcessWorktreeCompletions,
 } from "../process-worktrees.ts";
 import { snapshotBaseHooks } from "./worktree-base-hooks.ts";
-import { ownedCheckoutProof } from "./worktree-owned-proof.ts";
+import {
+  managedCheckoutProof,
+  ownedCheckoutProof,
+} from "./worktree-owned-proof.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
 /** Seconds `orca worktree rm` may take: it deletes the checkout's files. */
@@ -156,9 +172,9 @@ function listedIn(
 }
 /**
  * The selected worktrees, each marked with the runtime that manages it, and
- * a line for each claim a collector that ended left on a worktree under
- * `roots` that is gone from Orca's list and from the disk: no worktree is
- * listed to settle it with.
+ * a line for each claim a collector of `repository` that ended left on a
+ * worktree under `roots` that is gone from Orca's list and from the disk, or
+ * was made again since: no worktree is listed to settle it with.
  */
 async function orcaInventory(
   command: string,
@@ -166,16 +182,21 @@ async function orcaInventory(
   selected: { id: string; details: Record<string, unknown> }[],
   roots: string[],
 ): Promise<Outcome<Resource[]>> {
-  const stale = goneClaims((path) =>
+  const mine = (path: string) =>
     roots.some(
       (root) => within(normalize(path), root) || underRoot(path, root),
-    ),
-  );
-  const unreadable = unreadableClaims();
+    );
+  const stale = goneClaims(mine, repository);
+  const unlisted = [...unreadableClaims(), ...supersededClaims(mine)];
   if (selected.length === 0 && stale.length === 0)
-    return ok([...selected, ...unreadable]);
+    return ok([...selected, ...unlisted]);
   const managed = await orcaWorktrees(command, repository);
-  if (!managed.ok) return managed;
+  if (!managed.ok) {
+    // Claims settled without Orca's list are still evaluated, no worktree is
+    // offered while its runtime is unknown, and the failure stays on the receipt.
+    if (unlisted.length === 0) return managed;
+    return ok([inventoryFailureLine(managed.failure.reason), ...unlisted]);
+  }
   const listed = listedIn(managed.value);
   // A checkout gone from the disk can still be registered with Git: the claim
   // is then the resource, not the registration.
@@ -202,7 +223,7 @@ async function orcaInventory(
       entry.details.claimNote = `a dead collection's launch guard claim stands on this worktree${submitted ? ` (orca worktree rm was called under it at ${submitted})` : ""} and keeps launches out; it is settled by a collection that removes the worktree, or inspect and remove its admission by hand`;
     }
   }
-  return ok([...kept, ...gone, ...unreadable]);
+  return ok([...kept, ...gone, ...unlisted]);
 }
 /** The path with its nearest existing ancestor resolved, the spelling git and the disk agree on. */
 function resolvedPath(path: string): string {
@@ -238,10 +259,19 @@ function orcaPath(resource: Resource): string | null {
     ? resource.details.orcaPath
     : null;
 }
+/** The answer with what a hold left appended to its reason, when one did. */
+function withKept(collected: Collected, left: string | null): Collected {
+  return left === null
+    ? collected
+    : { ...collected, reason: `${collected.reason}; ${left}` };
+}
+
 /**
  * Collect a worktree Orca manages through Orca: the repository's remove hook
  * inside it, its reflection findings parked, then `orca worktree rm`, so its
  * card, terminals and agent records go with it. Never `git worktree remove`.
+ * Its head is held from the final comparison with `identity`, what the
+ * runner's final proof saw, through that call.
  */
 async function collectThroughOrca(
   command: string,
@@ -250,6 +280,8 @@ async function collectThroughOrca(
   repository: string,
   declaration: string,
   legacy: LegacyPolicy | undefined,
+  regenerablePaths: readonly string[],
+  identity: WorktreeIdentity | undefined,
   retireCompletions?: () => Outcome<void>,
 ): Promise<Collected> {
   const { id, guard } = orcaWorktree;
@@ -258,15 +290,19 @@ async function collectThroughOrca(
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
-  const failure = (outcome: { failure: { code: string; reason: string } }) => ({
-    outcome:
-      outcome.failure.code === LAUNCH_VETO
-        ? ("refused" as const)
-        : ("failed" as const),
-    reason: outcome.failure.reason,
-  });
+  const holds: HeadHold[] = [];
+  // Every answer releases the hold, and says so when the release failed.
+  const released = (collected: Collected): Collected =>
+    withKept(collected, releaseHolds(holds, log));
+  const failure = (outcome: { failure: { code: string; reason: string } }) =>
+    released({
+      outcome: outcome.failure.code === LAUNCH_VETO ? "refused" : "failed",
+      reason: outcome.failure.reason,
+    });
   let snapshot: { hook: string; dir: string } | null = null;
   try {
+    const holdable = await holdableIdentity(resource.id, identity);
+    if ("stop" in holdable) return holdable.stop;
     // The retiring branch supplies the hook, and this runs unattended, so the
     // hook that runs is the declared base-branch commit's, never the branch's.
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
@@ -291,7 +327,7 @@ async function collectThroughOrca(
           admitAfterHook(
             worktree,
             legacy,
-            async () => {
+            async (final) => {
               const live = await orcaLiveness(command, worktree);
               if (live !== null)
                 return failed("live", `kept after the hook: ${live.reason}`);
@@ -300,11 +336,20 @@ async function collectThroughOrca(
               const launch = launched();
               if (launch !== null)
                 return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
-              return unheld(worktree);
+              const held = await unheld(worktree);
+              if (!held.ok) return held;
+              // Last, as on an agent tool's tree: nothing slow follows it.
+              return unchangedAndHeld(
+                worktree,
+                holdable.identity,
+                final,
+                holds,
+              );
             },
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
         // The last step before the call: an unanswered call keeps the claim.
         submit: () => guard.submit(),
@@ -313,24 +358,38 @@ async function collectThroughOrca(
     guard.settle(removed);
     // An archive written before a step that then failed stays, named in the
     // receipt, and expires with the receipts.
-    if (!removed.ok)
-      return archived === null
-        ? failure(removed)
-        : { ...failure(removed), details: { archive: archived } };
-    return orcaCompletionRetirementResult(
-      resource,
-      removed.value,
-      archived,
-      retireCompletions,
+    if (!removed.ok) {
+      // Orca may be deleting the worktree still, by this call or by the dead
+      // run's whose admission was taken over: the hold stays, as the claim.
+      const left =
+        removalUnsettled(removed) || guard.unsettled()
+          ? keepHolds(holds)
+          : null;
+      return withArchiveOf(withKept(failure(removed), left), archived);
+    }
+    return released(
+      orcaCompletionRetirementResult(
+        resource,
+        removed.value,
+        archived,
+        retireCompletions,
+      ),
     );
   } catch (error) {
     // A step that throws (a platform error, or a defect) fails the removal.
-    return {
-      outcome: "failed",
-      reason: error instanceof Error ? error.message : String(error),
-      ...(archived === null ? {} : { details: { archive: archived } }),
-    };
+    const failed = withArchiveOf(
+      {
+        outcome: "failed",
+        reason: error instanceof Error ? error.message : String(error),
+      },
+      archived,
+    );
+    // A submitted admission, this run's or a dead run's taken over, may still
+    // be removing the worktree: the hold stays, as the claim does.
+    if (!guard.unsettled()) return released(failed);
+    return withKept(failed, keepHolds(holds));
   } finally {
+    releaseHolds(holds, log);
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
@@ -384,6 +443,39 @@ function orcaCompletionRetirementResult(
     },
   };
 }
+/** The answer for an Orca claim that needs no collection: unreadable, gone or superseded; null for any other. */
+function settledClaim(
+  resource: Resource,
+  repository: string,
+): Collected | null {
+  if (isUnreadableClaim(resource))
+    return {
+      outcome: "refused",
+      reason: "kept: an admission gc cannot read is for a person to inspect",
+    };
+  if (isGoneClaim(resource)) return releaseGone(resource, repository);
+  if (isSupersededClaim(resource)) return releaseSupersededClaim(resource);
+  return null;
+}
+/** A process-owned worktree is collected only while its owner is idle and Orca does not also list it. */
+async function checkProcessOwner(
+  resource: Resource,
+  repository: string,
+  final: WorktreeIdentity,
+  orca: string | undefined,
+): Promise<Outcome<void>> {
+  const idle = await processWorktreeIdle(resource.id, repository, final);
+  if (!idle.ok) return idle;
+  if (orca === undefined) return ok(undefined);
+  const managed = await orcaWorktrees(orca, repository);
+  if (!managed.ok) return managed;
+  return managed.value.has(canonicalWorktree(resource.id))
+    ? failed(
+        "dual-managed",
+        "process-owned worktree is also listed by Orca; reconcile its runtime ownership before collection",
+      )
+    : ok(undefined);
+}
 /** Kept when a process holds the worktree, or holders could not be read. */
 async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
   if ((await processHolder(worktree)) !== false)
@@ -397,26 +489,29 @@ async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
  * The last admission before a worktree goes, after its hook and park: what
  * removal relies on (`checks`), the one-time archive of its ignored content,
  * then `checks` again, since the archive may have run for minutes and an
- * agent or process can have started meanwhile. `archived` is told of an
+ * agent or process can have started meanwhile; that second run is told it is
+ * the `final` one, the last before removal. `archived` is told of an
  * archive as soon as it is written, so every failure after it names it.
  */
 async function admitAfterHook(
   worktree: string,
   legacy: LegacyPolicy | undefined,
-  checks: () => Promise<Outcome<undefined, string>>,
+  checks: (final: boolean) => Promise<Outcome<undefined, string>>,
   archived: (written: Archived | null) => void,
+  regenerablePaths: readonly string[],
 ): Promise<Outcome<undefined, string>> {
-  const before = await checks();
+  const before = await checks(false);
   if (!before.ok) return before;
   // Last, so the archive holds the content as the removal finds it.
   const preserved = await preserveLegacyContent(
     worktree,
     legacy,
     currentMs() + ARCHIVE_LIMIT_MS,
+    regenerablePaths,
   );
   if (!preserved.ok) return preserved;
   archived(preserved.value);
-  const after = await checks();
+  const after = await checks(true);
   if (!after.ok) return after;
   return ok(undefined);
 }
@@ -432,6 +527,7 @@ async function collectAgentWorktree(
   declaration: string,
   legacy: LegacyPolicy | undefined,
   identity: WorktreeIdentity | undefined,
+  regenerablePaths: readonly string[],
   checkOwner?: () => Promise<Outcome<void>>,
   retireCompletions?: () => Outcome<void>,
 ): Promise<Collected> {
@@ -439,17 +535,18 @@ async function collectAgentWorktree(
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
+  // The head held from the final comparison through the removal.
+  const holds: HeadHold[] = [];
+  // Every answer once the hold may be taken releases it, and says so when
+  // the release failed, since the lock then keeps git from moving the head.
   const withArchive = (collected: Collected): Collected =>
-    withArchiveOf(collected, archived);
+    withKept(withArchiveOf(collected, archived), releaseHolds(holds, log));
   let snapshot: { hook: string; dir: string } | null = null;
   try {
     // The commit and branch the runner's final proof saw: every check before
     // removal holds the tree to them.
-    if (identity === undefined)
-      return {
-        outcome: "failed",
-        reason: "kept: no final proof recorded the tree's commit and branch",
-      };
+    const holdable = await holdableIdentity(resource.id, identity);
+    if ("stop" in holdable) return holdable.stop;
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
     if (!taken.ok) return { outcome: "failed", reason: taken.failure.reason };
     snapshot = taken.value;
@@ -468,15 +565,22 @@ async function collectAgentWorktree(
             legacy,
             // The holder read can take half a minute, so the identity
             // comparison goes last: nothing slow stands between it and removal.
-            async () => {
+            async (final) => {
               const owner = await checkOwner?.();
               if (owner !== undefined && !owner.ok) return owner;
               const held = await unheld(worktree);
-              return held.ok ? unchangedSinceProof(worktree, identity) : held;
+              if (!held.ok) return held;
+              return unchangedAndHeld(
+                worktree,
+                holdable.identity,
+                final,
+                holds,
+              );
             },
             (written) => {
               archived = written;
             },
+            regenerablePaths,
           ),
       },
       remove: (worktree) => gitRemove(repository, worktree),
@@ -502,6 +606,7 @@ async function collectAgentWorktree(
       reason: error instanceof Error ? error.message : String(error),
     });
   } finally {
+    releaseHolds(holds, log);
     if (snapshot !== null)
       rmSync(snapshot.dir, { recursive: true, force: true });
   }
@@ -689,6 +794,7 @@ function proveClaim(
   repository: string,
 ): Proof | Promise<Proof> | null {
   if (isUnreadableClaim(resource)) return proveUnreadable(resource);
+  if (isSupersededClaim(resource)) return proveSuperseded();
   if (!isGoneClaim(resource)) return null;
   return proveGone(resource, async () => {
     const managed = await orcaWorktrees(orca, repository);
@@ -701,6 +807,8 @@ function proveEarly(
   resource: Resource,
   repository: string,
 ): Proof | Promise<Proof> | null {
+  const incomplete = proveInventoryFailure(resource);
+  if (incomplete !== null) return incomplete;
   const claim =
     orca === undefined ? null : proveClaim(orca, resource, repository);
   if (claim !== null) return claim;
@@ -719,9 +827,10 @@ export function worktreesKind(
   policy?: WorktreePolicy,
   orca?: string,
   archive?: ArchivePolicy,
+  regenerablePaths: readonly string[] = DEFAULT_REGENERABLE_PATHS,
 ): CollectionKind {
   const legacy = legacyPolicy(archive);
-  // What each agent tool tree's latest proof saw, for its collection.
+  // What each agent tool or Orca tree's latest proof saw, for its collection.
   const proved = new Map<string, WorktreeIdentity>();
   return {
     name: "worktrees",
@@ -784,27 +893,21 @@ export function worktreesKind(
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
         return { state: "unverified", reason: resolved.failure.reason };
-      const proving = { ...resolved.value, legacy: legacy() };
+      const proving = { ...resolved.value, regenerablePaths, legacy: legacy() };
+      const managed = orca !== undefined && orcaId(resource) !== null;
       proved.delete(resource.id);
-      if (orca !== undefined && orcaId(resource) !== null) {
-        const result = await runtimeWorktreeProof(
-          resource.id,
-          proving,
-          idleDays,
-          { orca },
-        );
-        return result.ok
-          ? withHeldBranch(resource, result.value)
-          : { state: "unverified", reason: result.failure.reason };
-      }
-      const result = await ownedCheckoutProof(
-        resource.id,
-        repository,
-        proving,
-        idleDays,
-        isAgentTool(resource),
-        isMapping(resource.details) && resource.details.runtime === "process",
-      );
+      const result =
+        orca !== undefined && managed
+          ? await managedCheckoutProof(resource.id, proving, idleDays, orca)
+          : await ownedCheckoutProof(
+              resource.id,
+              repository,
+              proving,
+              idleDays,
+              isAgentTool(resource),
+              isMapping(resource.details) &&
+                resource.details.runtime === "process",
+            );
       if (!result.ok)
         return { state: "unverified", reason: result.failure.reason };
       if (result.value.identity !== null)
@@ -812,44 +915,25 @@ export function worktreesKind(
       return withHeldBranch(resource, result.value.proof);
     },
     collect: async (resource) => {
-      if (orca !== undefined && isUnreadableClaim(resource))
-        return {
-          outcome: "refused",
-          reason:
-            "kept: an admission gc cannot read is for a person to inspect",
-        };
-      if (orca !== undefined && isGoneClaim(resource))
-        return releaseGone(resource);
+      const settled =
+        orca === undefined ? null : settledClaim(resource, repository);
+      if (settled !== null) return settled;
+      // What the tree's latest proof saw, taken once.
+      const final = proved.get(resource.id);
+      proved.delete(resource.id);
       const processOwned =
         isMapping(resource.details) && resource.details.runtime === "process";
       if (isAgentTool(resource) || processOwned) {
-        const final = proved.get(resource.id);
-        proved.delete(resource.id);
-        const checkProcessOwner = async (): Promise<Outcome<void>> => {
-          if (final === undefined) return ok(undefined);
-          const idle = await processWorktreeIdle(
-            resource.id,
-            repository,
-            final,
-          );
-          if (!idle.ok) return idle;
-          if (orca === undefined) return ok(undefined);
-          const managed = await orcaWorktrees(orca, repository);
-          if (!managed.ok) return managed;
-          return managed.value.has(canonicalWorktree(resource.id))
-            ? failed(
-                "dual-managed",
-                "process-owned worktree is also listed by Orca; reconcile its runtime ownership before collection",
-              )
-            : ok(undefined);
-        };
         return collectAgentWorktree(
           resource,
           repository,
           declaration,
           legacy(),
           final,
-          processOwned && final !== undefined ? checkProcessOwner : undefined,
+          regenerablePaths,
+          processOwned && final !== undefined
+            ? () => checkProcessOwner(resource, repository, final, orca)
+            : undefined,
           processOwned && final !== undefined
             ? () => retireProcessWorktreeCompletions(resource.id, repository)
             : undefined,
@@ -857,23 +941,30 @@ export function worktreesKind(
       }
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
-        return guardedCollection(resource, orcaPath(resource), (guard) =>
-          collectThroughOrca(
-            orca,
-            resource,
-            { id, guard },
-            repository,
-            declaration,
-            legacy(),
-            () => retireProcessWorktreeCompletions(resource.id, repository),
-          ),
+        return guardedCollection(
+          resource,
+          orcaPath(resource),
+          repository,
+          (guard) =>
+            collectThroughOrca(
+              orca,
+              resource,
+              { id, guard },
+              repository,
+              declaration,
+              legacy(),
+              regenerablePaths,
+              final,
+              () => retireProcessWorktreeCompletions(resource.id, repository),
+            ),
         );
       return {
         outcome: "refused",
         reason: "uncoordinated worktrees are report-only",
       };
     },
-    describe: (resource) => resource.id,
+    describe: (resource) =>
+      proveInventoryFailure(resource) ? "inventory" : resource.id,
     exclusive: (body) => exclusiveGcLock("worktrees", body),
   };
 }

@@ -32,7 +32,7 @@
  * `answer` verb's alone (`lib/answer-request.ts`).
  */
 import { ExitError } from "../shared/cli.ts";
-import { parseAddress } from "../shared/address.ts";
+import { formatAddress, parseAddress } from "../shared/address.ts";
 import { launchOf, LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import {
   argument,
@@ -54,6 +54,7 @@ import { readLogin } from "../ask/lib/forge.ts";
 import { machineFile } from "../ask/lib/local.ts";
 import { reading } from "../ask/lib/reading.ts";
 import { planAnswerRequest } from "./lib/answer.ts";
+import { openTrackerHere, planTrackerAnswer } from "./lib/answer-tracker.ts";
 import { planAssign } from "./lib/assign.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
@@ -117,7 +118,7 @@ export const sendCommand = command(
     }),
     as: optional(
       option("--as", string({ metavar: "LOGIN" }), {
-        description: message`Refuse unless this machine writes as LOGIN: the forge login, or for assign the tracker's user.`,
+        description: message`Refuse unless this machine writes as LOGIN: the forge login, or for assign and an answer on another tracker's item the tracker's user.`,
       }),
     ),
   }),
@@ -151,9 +152,41 @@ function standing(request: Request): string | null {
   return null;
 }
 
+/**
+ * A pick-up's answer on another tracker's item: its plan, or the address the
+ * forge writers take. The key is checked against the default branch's
+ * tracker, never the checkout's, before anything is looked up by it.
+ */
+async function planPickupAnswer(
+  resolved: ResolvedAddress,
+  strict: () => ResolvedAddress,
+  request: Extract<Request, { verb: "answer"; all: false }>,
+  as: string | undefined,
+  dryRun: boolean,
+): Promise<{ plan: Planned } | { resolved: ResolvedAddress }> {
+  if (resolved.address.station !== "pickup") return { resolved: strict() };
+  const trackerCtx = contextFor(resolved, reading(), null);
+  const opened = await openTrackerHere(trackerCtx, resolved.checkout);
+  const canonical = opened.ok
+    ? opened.value.keys?.(resolved.address.key)
+    : undefined;
+  if (!opened.ok || typeof canonical !== "string")
+    return { resolved: strict() };
+  const address = { ...resolved.address, key: canonical };
+  const onTracker = await planTrackerAnswer(
+    { ...trackerCtx, address, name: formatAddress(address) },
+    request,
+    { as, dryRun, open: () => opened },
+  );
+  if (onTracker !== null) return { plan: onTracker };
+  // The key is the default branch's own; the forge writers take it as canonicalized.
+  return { resolved: { ...resolved, address } };
+}
+
 /** The plan of `request` to the resolved address, or why it is refused. */
 async function planFor(
   resolved: ResolvedAddress,
+  strict: () => ResolvedAddress,
   request: Request,
   as: string | undefined,
   dryRun: boolean,
@@ -164,6 +197,11 @@ async function planFor(
     return resolved.checkout === null
       ? refused("no checkout of the repository is known here")
       : planAssign(ctx, resolved.checkout, as);
+  }
+  if (request.verb === "answer" && !request.all) {
+    const first = await planPickupAnswer(resolved, strict, request, as, dryRun);
+    if ("plan" in first) return first.plan;
+    resolved = first.resolved;
   }
   const login = writerLogin(await readLogin(r), as, "the forge");
   if (!login.ok) return login;
@@ -206,13 +244,20 @@ export async function sendMain(args: SendArguments): Promise<number> {
   });
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
-  const resolved = resolveAddress(
-    text,
-    second,
-    usage,
-    request.verb === "assign",
+  const strict = () =>
+    resolveAddress(text, second, usage, request.verb === "assign");
+  // A pick-up's answer first meets the tracker the default branch names, its key as written.
+  const resolved =
+    request.verb === "answer" && !request.all
+      ? resolveAddress(text, second, usage, true)
+      : strict();
+  const planned = await planFor(
+    resolved,
+    strict,
+    request,
+    args.as,
+    args.dryRun,
   );
-  const planned = await planFor(resolved, request, args.as, args.dryRun);
   if (!planned.ok) return refusal(planned.failure.reason);
   const plan = planned.value;
   console.log(renderPlan(plan, args.dryRun));

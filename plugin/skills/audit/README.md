@@ -21,7 +21,7 @@ added since, and it does not repeat a recommendation the team declined.
 1. **Configuration fit** (a script). Checks the repository's
    `.config/jig.yaml` against the plugin's
    [configuration schema](config-schema.yaml) and against the repository:
-   unknown, refused or deprecated fields, wrong types, commands and paths that
+   unknown, refused, retired or deprecated fields, wrong types, commands and paths that
    do not exist, required checks that never run, a tracker that cannot be
    reached, configured GitHub, Jira or Linear facet stores that cannot be used
    (on Jira, a facet's field missing from the create screen of an issue type
@@ -29,7 +29,8 @@ added since, and it does not repeat a recommendation the team declined.
    counts of open Jira issues before and after the configured
    pool issue-type scope, declared values the repository contradicts (`stacking: none` with
    stacked pull requests open), tracker labels its label taxonomy does not
-   define, and settings its shape suggests. It also reports what a run
+   define, a comment-only scheduled sweep missing `--position <file>` (so
+   issues past the read cap are never reached), and settings its shape suggests. It also reports what a run
    would trip over: a checkout behind its integration branch, a leftover
    `groundwork` configuration, `.context/` not ignored, a tracker command
    that resolves nowhere, a gate command that runs less than CI, and an AI

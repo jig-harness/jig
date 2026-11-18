@@ -349,6 +349,26 @@ describe("staleness", () => {
     expect(staleBanners(notBusy, CLOCK)[0]?.body).toStartWith("None of the ");
   });
 
+  it("says a repository's part is old because the newest tick that tried could not identify it", () => {
+    const partial = lineOf("partial");
+    const refusal = "the forge cannot say which repository this is";
+    const refused = {
+      ...partial,
+      repos: partial.repos.map((r) =>
+        r.slug === "example-org/mobile"
+          ? { ...r, slug: null, lastSlug: r.slug, refused: refusal }
+          : r,
+      ),
+    };
+    expect(staleBanners(refused, CLOCK)).toEqual([
+      {
+        key: "/srv/work/mobile",
+        title: "example-org/mobile has not been read since 16:05, 42 min ago.",
+        body: `The newest tick that tried could not read it (${refusal}). Its needs, queue and sessions below are as of the 16:05 tick.`,
+      },
+    ]);
+  });
+
   it("says when the server is not answering, and alarms", () => {
     expect(freshOf(line, CLOCK, true).detail).toContain(
       "The next tick is due 16:50.",
@@ -386,6 +406,54 @@ const ACCOUNT: LineAccount = {
 };
 
 describe("an account", () => {
+  it("shows local weights and keeps legacy snapshots readable", () => {
+    expect(accountView(ACCOUNT, CLOCK).weightText).toContain("weight 100");
+    const paused = accountView(
+      {
+        ...ACCOUNT,
+        weight: { configured: 0, effective: 0, reason: "host-local pause" },
+      },
+      CLOCK,
+    );
+    expect(paused.weightText).toContain("weight 0, effective 0");
+    expect(paused.free).toBe(false);
+    expect(paused.state).toBe("not admitted");
+    const invalid = accountView(
+      {
+        ...ACCOUNT,
+        weight: {
+          configured: null,
+          effective: 0,
+          reason: "accounts section does not read",
+        },
+      },
+      CLOCK,
+    );
+    expect(invalid.weightText).toContain("weight unreadable, effective 0");
+    expect(invalid.free).toBe(false);
+  });
+  it("restores the configured weight when a snapshot's wall has expired", () => {
+    const account = {
+      ...ACCOUNT,
+      weight: {
+        configured: 25,
+        effective: 0,
+        reason: "walled until 2026-11-03T16:10:00.000Z; local file",
+      },
+    };
+    expect(
+      accountView(
+        { ...account, wall: { resetAt: iso(18, 27), source: "test" } },
+        CLOCK,
+      ).weightText,
+    ).toContain("weight 25, effective 0");
+    expect(
+      accountView(
+        { ...account, wall: { resetAt: iso(16, 10), source: "test" } },
+        CLOCK,
+      ).weightText,
+    ).toBe("weight 25, effective 25; local file");
+  });
   it("shows how full it is", () => {
     const view = accountView({ ...ACCOUNT, held: 1 }, CLOCK);
     expect(view.heldText).toBe("1 of 2");

@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { claimBody } from "../../shared/records/forge-claims.ts";
 import {
   LAUNCH_CLAIM,
@@ -116,6 +117,9 @@ function resetCalls(w: World): void {
 const listings = (w: World, pr: number) =>
   ghCalls(w).filter((c) => c.includes(`/issues/${pr}/comments?per_page=100`))
     .length;
+
+const commentBatches = (w: World) =>
+  ghCalls(w).filter((c) => c.includes("query DispatchComments"));
 
 /** PR #9 merged, its `updatedAt` as given, carrying a person's follow-up marked done. */
 function settledMerge(w: World, updatedAt: string): void {
@@ -381,6 +385,138 @@ describe("a merge whose drive launches on this host all ended", () => {
     resetCalls(w);
     await report(w);
     expect(listings(w, 9)).toBe(1);
+  });
+});
+
+describe("launch claim observations outside the open and merged listings", () => {
+  const prs = [71, 72, 73, 74, 75, 76, 77, 78, 79];
+  const host = "sha256:cccccccccccccccc";
+
+  function ended(w: World, pr: number) {
+    const id = `20261106T120000Z-${String(pr).padStart(8, "0")}`;
+    const now = currentMs();
+    earlierRecord(w, {
+      id,
+      account: "a",
+      pr,
+      createdAt: isoFromMs(now - 3_600_000),
+    });
+    recordExit(
+      id,
+      {
+        at: isoFromMs(now - 1_800_000),
+        code: 0,
+        signal: null,
+      },
+      dispatchState(w),
+    );
+  }
+
+  function claim(pr: number, id: number) {
+    return forgeComment(
+      id,
+      claimBody(
+        LAUNCH_CLAIM,
+        launchClaim(
+          {
+            stage: "drive",
+            pr,
+            run: "tick",
+            action: "rearm",
+            record: "20261106T120000Z-cccccccc",
+            host,
+            owner: true,
+            facts: "",
+            writer: { host },
+          },
+          1,
+        ),
+      ),
+    );
+  }
+
+  it("replaces nine REST listings with one batch on each tick and sees edited or deleted claims", async () => {
+    const w = fixture();
+    for (const pr of prs) {
+      ended(w, pr);
+      w.setComments(pr, []);
+    }
+    ended(w, 0);
+    const first = await report(w);
+    expect({
+      batches: commentBatches(w).length,
+      listings: prs.reduce((total, pr) => total + listings(w, pr), 0),
+      invalidTarget: listings(w, 0),
+    }).toEqual({ batches: 1, listings: 0, invalidTarget: 0 });
+    expect(first.repos[0]?.shared?.ops).toEqual(
+      prs.map((pr) => ({ op: "list", target: `PR #${pr}`, ok: true })),
+    );
+
+    for (const { on71, on72, owners } of [
+      { on71: [claim(71, 7101)], on72: [claim(72, 7201)], owners: [host] },
+      { on71: [forgeComment(7101, "A regular comment")], on72: [], owners: [] },
+    ]) {
+      resetCalls(w);
+      w.setComments(71, on71);
+      w.setComments(72, on72);
+      const tick = await report(w);
+      expect(tick.repos[0]?.shared?.owners).toEqual(owners);
+      expect(commentBatches(w)).toHaveLength(1);
+      expect(prs.map((pr) => listings(w, pr))).toEqual(prs.map(() => 0));
+    }
+  });
+
+  function twoClaims(): World {
+    const w = fixture();
+    ended(w, 71);
+    ended(w, 72);
+    w.setComments(71, []);
+    return w;
+  }
+
+  async function expectFallback(w: World, firstRestReads: number) {
+    const tick = await report(w);
+    expect(commentBatches(w)).toHaveLength(1);
+    expect(listings(w, 71)).toBe(firstRestReads);
+    expect(listings(w, 72)).toBe(1);
+    expect(tick.repos[0]?.shared?.owners).toEqual([host]);
+  }
+
+  it.each(["missing body", "duplicate ID"])(
+    "reads the REST listing when a comment in the batch has a %s",
+    async (malformed) => {
+      const w = twoClaims();
+      const regular = forgeComment(7201, "A regular comment");
+      const marker = claim(72, 7202);
+      w.setComments(72, [regular, marker]);
+      const batch =
+        malformed === "missing body"
+          ? [regular, { ...marker, body: null }]
+          : [regular, regular];
+      writeFileSync(
+        join(w.dir, "batch-comments-72.json"),
+        JSON.stringify(batch),
+      );
+      await expectFallback(w, 0);
+    },
+  );
+
+  it("falls back for the one incomplete listing and for a refused batch", async () => {
+    const w = twoClaims();
+    w.setComments(72, [
+      ...Array.from({ length: 100 }, (_, i) =>
+        forgeComment(7300 + i, "A regular comment"),
+      ),
+      claim(72, 7400),
+    ]);
+    await expectFallback(w, 0);
+
+    for (const failure of ["comments-query-partial", "comments-query-fail"]) {
+      resetCalls(w);
+      writeFileSync(join(w.dir, failure), "");
+      await expectFallback(w, 1);
+      rmSync(join(w.dir, failure));
+    }
   });
 });
 

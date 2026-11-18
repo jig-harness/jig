@@ -10,7 +10,7 @@
  */
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { decisionOf } from "./line-decision.ts";
-import { decisionDigest } from "../../shared/decisions/digest.ts";
+import { dispatcherDecisionDigest } from "../../shared/decisions/station-digest.ts";
 import {
   type AnswerStation,
   frameStationDecision,
@@ -28,6 +28,7 @@ export interface StationContext {
   carriedBy(item: string): readonly number[] | null;
   /** Whether the repository's items are the forge's own issues. */
   itemsOnForge: boolean;
+  issueRepository?: string;
 }
 
 /** The context a repository's line input gives its needs' decisions: the act phase and the line build it alike, so both frame the same decision. */
@@ -36,7 +37,7 @@ export function stationContextOf(
   input:
     | {
         links?: import("./work-links.ts").WorkLinks | null | undefined;
-        tracker?: { adapter: string } | null | undefined;
+        tracker?: { adapter: string; repository?: string } | null | undefined;
       }
     | undefined,
 ): StationContext {
@@ -49,6 +50,9 @@ export function stationContextOf(
       return prs === null ? null : prs.map((p) => p.number);
     },
     itemsOnForge: input?.tracker?.adapter === "github",
+    ...(input?.tracker?.repository === undefined
+      ? {}
+      : { issueRepository: input.tracker.repository }),
   };
 }
 
@@ -225,6 +229,9 @@ function answerOf(
     address,
     on: pr !== null ? "pull-request" : ctx.itemsOnForge ? "issue" : "tracker",
     framedBy,
+    ...(pr === null && ctx.itemsOnForge
+      ? { repository: ctx.issueRepository ?? ctx.slug }
+      : {}),
   };
 }
 
@@ -239,17 +246,19 @@ function sessionKey(cause: NeedCause): StationKey | null {
 function answeredOf(
   action: Action,
   decision: LineDecision,
-): Pick<LineDecision, "answers" | "answerState" | "acted"> {
+): Pick<LineDecision, "answers" | "answerState" | "unread" | "acted"> {
   const answered = action.answered;
   if (answered === undefined || answered.digest !== decision.digest) return {};
   const acted = answered.acted;
   return {
     ...(answered.answers.length === 0 ? {} : { answers: answered.answers }),
     ...(answered.state === undefined ? {} : { answerState: answered.state }),
+    ...(answered.unread === undefined ? {} : { unread: answered.unread }),
     ...(acted === undefined
       ? {}
       : {
           acted: {
+            answer: acted.answer,
             option: acted.option,
             author: acted.author,
             outcome: acted.outcome,
@@ -299,7 +308,7 @@ function framedDecision(
       key: framed.key,
       kind: "finding",
       decision: framed.decision,
-      digest: decisionDigest(framed.decision),
+      digest: dispatcherDecisionDigest(framed),
       lines: [],
     }),
     answer: answerOf(framed.key, action, ctx, "dispatcher"),

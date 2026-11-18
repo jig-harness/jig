@@ -1,3 +1,4 @@
+import { parseFollowupSettings } from "../../../followup/scripts/lib/settings.ts";
 import { parseDeclaration } from "../../../../gc/config.ts";
 import { manualOpsLabel } from "../../../../dispatch/lib/owed-steps.ts";
 import { dispatchSection } from "../../../../dispatch/lib/section.ts";
@@ -6,6 +7,7 @@ import { ExitError } from "../../../../shared/cli.ts";
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { parseReviewConfig } from "../../../../shared/consumer.ts";
 import { swallow } from "../../../../shared/errors.ts";
+import { checkRules } from "../../../../shared/rule-matcher.ts";
 import { parseSpecsConfig } from "../../../../shared/spec/config.ts";
 import { ADAPTERS } from "../../../../shared/spec/registry.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
@@ -27,6 +29,7 @@ import { checkGitHubFacets } from "../../../do-item/scripts/lib/tracker/github/f
 import { checkJiraFacets } from "../../../do-item/scripts/lib/tracker/jira/facets.ts";
 import { checkLinearFacets } from "../../../do-item/scripts/lib/tracker/linear-facets.ts";
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
+import { parseGates } from "../../../do-item/scripts/lib/gates.ts";
 import { claimSettingsOf } from "../../../do-item/scripts/lib/claim-settings.ts";
 import { preflightCommandOf } from "../../../do-item/scripts/lib/preflight.ts";
 import { claimFromFindings, poolClaimFindings } from "./claim-fit.ts";
@@ -163,6 +166,8 @@ export function skillValidation(
       ADAPTERS.map((a) => a.name),
     ),
   );
+  const followup = parseFollowupSettings(config);
+  if (!followup.ok) refuse("followup", followup.failure.reason);
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
   attempt("drive-pr (severity formats)", () => {
     const review = config.review;
@@ -191,6 +196,11 @@ export function skillValidation(
     parseObligations(config.resolve_conflicts),
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
+  attempt("do-item (review gates)", () =>
+    parseGates(isRecord(config.do_item) ? config.do_item : {}),
+  );
+  const rules = checkRules(config);
+  if (!rules.ok) refuse("every skill (rule matcher)", rules.failure.reason);
   const gc = parseDeclaration(config.gc, root);
   if (!gc.ok) refuse("gc", gc.failure.reason);
   const dispatch = dispatchSection(config);

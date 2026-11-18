@@ -84,9 +84,10 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             sessions holding its slots. <b>Queue</b> is what the next ticks will
             start, hold or report. <b>History</b> shows how the recent ticks
             ran, one row per tick with its slowest phase, and the outcome log:
-            one row per ended launch, filtered by time, repository, stage,
-            account, class and reason. The filters are the page's address, so a
-            view is a link.
+            one row per ended launch with what its closing report concluded,
+            filtered by time, repository, stage, account, class, reason, the
+            report's cause and who wrote it. A row opens to all runs of its
+            work. The filters are the page's address, so a view is a link.
           </p>
           <p>
             Words with a dotted underline, chips and the <b>?</b> beside a
@@ -101,6 +102,16 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             this browser only and can be undone; a decision framed again drops
             them and says so. A pick that asks for authorization, or of an
             option that cannot be undone, copies on the second step.
+          </p>
+          <p>
+            With a GitHub token pasted under <b>Send from here</b> on What needs
+            you, a parked drive's card on github.com also has <b>Send</b>: once
+            you pick an option, it posts each decision's answer from this
+            browser straight to GitHub, as you, one comment per decision with
+            the record <code>jig send</code> writes. The token stays in this
+            browser and never reaches the host. A guarded pick sends on the
+            second step, as it copies. Send is offered only over HTTPS, from
+            this machine's loopback.
           </p>
         </div>
       </section>

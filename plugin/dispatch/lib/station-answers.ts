@@ -3,23 +3,27 @@
  * drive's parks, and the tick's step on the one that counts.
  *
  * Each tick on the host that owns the repository reads the comments on each
- * framed need's pull request, or its item where the items are the forge's
- * issues, through the reader every station shares (`answer-forms.ts`), with
- * the same rule for who may answer (`shared/trusted-authors.ts`). A comment
- * by the dispatcher's own login never answers: a dispatcher does not answer
- * on a person's behalf. An answer counts only when it names the decision's
- * current digest, so a word typed for earlier facts never acts on new ones;
- * each person's latest answer is theirs, and two that differ leave the need
- * disputed. A free answer is shown and never acted on: the tick carries out
- * an option, not words.
+ * framed need's pull request, or its item: a forge issue where the items are
+ * the forge's issues, else the item on its tracker (`tracker-answers.ts`),
+ * whose trusted authors count as the forge's members do. Every comment goes
+ * through the reader every station shares (`answer-forms.ts`), with the same
+ * rule for who may answer (`shared/trusted-authors.ts`). A comment by the
+ * dispatcher's own forge login, or by the user its tracker credential acts
+ * as, never answers: a dispatcher does not answer on a person's behalf.
+ * A need whose only answers on its tracker item are that user's reads as
+ * unread, with why, so whoever wrote them learns the tick will not act.
+ * An answer counts only when it names the decision's current digest, so a
+ * word typed for earlier facts never acts on new ones; each person's latest
+ * answer is theirs, and two that differ leave the need disputed. A free
+ * answer is shown and never acted on: the tick carries out an option, not
+ * words.
  *
  * The counted answer's step runs once (`station-answer-store.ts`): the row
  * is claimed first, the step checks its preconditions again and runs or
  * refuses with why, and the outcome is kept. For a decision the tick framed
  * the step is the option's (`StationPorts`); for one a pass framed, it
  * starts that stage again, a follow-up run again or a pickup released,
- * whose next session is handed the chosen option. A need answered Leave it
- * to me leaves Needs you for these facts.
+ * whose next session is handed the chosen option. A need answered with the hold option leaves Needs you for these facts.
  */
 import {
   answerView,
@@ -30,7 +34,7 @@ import {
   stationOptionId,
   type StationOptionId,
 } from "../../shared/decisions/station.ts";
-import { failed, type Outcome } from "../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
   type CommentLike,
   disputedAnswers,
@@ -41,6 +45,7 @@ import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-fr
 import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { type StationContext, stationDecision } from "./line-station.ts";
+import type { TrackerConversation } from "./tracker-answers.ts";
 import {
   claimedAt,
   type ActedAnswer,
@@ -102,7 +107,12 @@ function readStationAnswers(
   const parsed = comments
     .filter((c) => c.author.toLowerCase() !== mine)
     .flatMap((c) => {
-      const answer = parseAnswerComment(item, c, "conversation");
+      const answer = parseAnswerComment(
+        item,
+        c,
+        "conversation",
+        decision.answer?.framedBy === "dispatcher",
+      );
       if (answer === null) return [];
       // A structured answer acts only when it names the framing it answers.
       return answer.choice !== undefined && answer.digest !== decision.digest
@@ -126,6 +136,14 @@ export interface StationPorts {
     repo: string,
     number: number,
   ): Promise<Outcome<CommentLike[], "unreadable">>;
+  /**
+   * The comments of item `item` on a tracker other than the forge, each
+   * author named by the tracker and the tracker's own user's kept apart; why
+   * not, for a tracker that cannot name who wrote a comment.
+   */
+  trackerComments(
+    item: string,
+  ): Promise<Outcome<TrackerConversation, "unreadable">>;
   /** The dispatcher's own forge login, whose comments never answer. */
   self: string | null;
   /** Where the items are the forge's issues, the repository they are in; `null` otherwise. */
@@ -331,20 +349,27 @@ async function act(
   };
 }
 
-/** The repository and number whose comments answer a need, or `null` where answers are not read. */
+/** Where a need's answers are: a pull request or forge issue, or an item of another tracker. */
+type Where =
+  | { on: "forge"; repo: string; number: number }
+  | { on: "tracker"; item: string };
+
+/** Where the comments that answer a need are, or `null` where answers are not read. */
 function whereAnswered(
   action: Action,
   decision: LineDecision,
   slug: string,
   ports: StationPorts,
-): { repo: string; number: number } | null {
+): Where | null {
   const pr = prOf(action.target);
-  if (pr !== null) return { repo: slug, number: pr };
+  if (pr !== null) return { on: "forge", repo: slug, number: pr };
+  if (decision.answer?.on === "tracker")
+    return { on: "tracker", item: action.target };
   const issue = /^#(\d+)$/.exec(action.target);
   if (decision.answer?.on !== "issue" || issue === null) return null;
   return ports.issueRepository === null
     ? null
-    : { repo: ports.issueRepository, number: Number(issue[1]) };
+    : { on: "forge", repo: ports.issueRepository, number: Number(issue[1]) };
 }
 
 function isStationNeed(
@@ -362,7 +387,7 @@ interface Framed {
   action: Action & { cause: NeedCause };
   decision: LineDecision;
   digest: string;
-  where: { repo: string; number: number };
+  where: Where;
 }
 
 /** A need's decision and where its answers are, or `null` when its answers are not read. */
@@ -431,7 +456,35 @@ async function actedOn(
     : actedAnswer(row, root);
 }
 
-/** Read one need's answers onto its action and act on the one that counts; whether it was answered Leave it to me. */
+/** The comments at `where`, with the tracker's own user's kept apart (`null` on the forge, whose reader leaves out its login itself). */
+async function conversationAt(
+  where: Where,
+  ports: StationPorts,
+): Promise<
+  Outcome<
+    { comments: CommentLike[]; own: TrackerConversation["own"] | null },
+    "unreadable"
+  >
+> {
+  if (where.on === "tracker") return ports.trackerComments(where.item);
+  const listed = await ports.comments(where.repo, where.number);
+  return listed.ok ? ok({ comments: listed.value, own: null }) : listed;
+}
+
+/** Why a need's answers are not read when the only ones on its tracker item are by the user the tick's tracker credential acts as; `null` otherwise. */
+function ownOnly(
+  decision: LineDecision,
+  read: AnswerReading,
+  own: TrackerConversation["own"],
+  item: string,
+): string | null {
+  if (read.answers.length > 0) return null;
+  if (readStationAnswers(decision, own.comments, null).answers.length === 0)
+    return null;
+  return `the only answer on ${item} is by ${own.name}, the user the dispatcher's own tracker credential acts as, whose comments the tick never counts as an answer; answer on the tracker as another user, or give the dispatcher a tracker user of its own`;
+}
+
+/** Read one need's answers onto its action and act on the one that counts; whether it was answered I'll handle it — hide this card. */
 async function settleOne(
   framed: Framed,
   slug: string,
@@ -439,12 +492,23 @@ async function settleOne(
   root: string | undefined,
 ): Promise<boolean> {
   const { action, decision, digest, where } = framed;
-  const listed = await ports.comments(where.repo, where.number);
+  const listed = await conversationAt(where, ports);
   if (!listed.ok) {
     action.answered = { digest, answers: [], unread: listed.failure.reason };
     return false;
   }
-  const read = readStationAnswers(decision, listed.value, ports.self);
+  const { comments, own } = listed.value;
+  // The tracker's own user's comments are already kept apart, by its id.
+  const self = where.on === "forge" ? ports.self : null;
+  const read = readStationAnswers(decision, comments, self);
+  const unread =
+    own === null || where.on !== "tracker"
+      ? null
+      : ownOnly(decision, read, own, where.item);
+  if (unread !== null) {
+    action.answered = { digest, answers: [], unread };
+    return false;
+  }
   const answered: StationAnswered = {
     digest,
     answers: read.answers.map(answerView),
@@ -459,7 +523,7 @@ async function settleOne(
 
 /**
  * Read the answers to every framed need of `report` and act on the one
- * that counts, once; a need answered Leave it to me moves to the report's
+ * that counts, once; a need answered I'll handle it — hide this card moves to the report's
  * quiet entries, so it is neither notified nor shown for these facts.
  */
 export async function settleStationAnswers(
@@ -481,6 +545,6 @@ export async function settleStationAnswers(
     report.quiet.push({
       target: action.target,
       class: "answered-hold",
-      why: `${action.answered?.acted?.author ?? "a person"} chose Leave it to me for this ${action.cause ?? "need"}; it is not listed again until its facts change`,
+      why: `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`,
     });
 }

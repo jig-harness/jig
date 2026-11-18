@@ -14,6 +14,14 @@ import { refreshAccountIdentityBeforeSpawn } from "./identity.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
+import { DRIVER_REPORT_VARIABLE } from "../../../../../shared/driver-report.ts";
+import {
+  notePassStarted,
+  repairRound,
+  ROUND_VARIABLE,
+  withPassRound,
+} from "./pass-round.ts";
+
 import { span } from "./../../../../../shared/trace.ts";
 
 import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
@@ -54,6 +62,10 @@ export function passEnv(
   // The same for the notice of a recovered stop: only the driver that
   // recovered it may say so, and only to the review pass it spawns next.
   delete env.DRIVE_PR_PASS_NOTICE;
+  // A pass reads its round from its own spawn (`pass-round.ts`), and the
+  // dispatcher's report file is the driver's alone to write.
+  delete env[ROUND_VARIABLE];
+  delete env[DRIVER_REPORT_VARIABLE];
   if (task !== undefined) {
     env.DRIVE_PR_ROUND_TASK = task.task;
     env.DRIVE_PR_ROUND_TASK_DETAIL = task.detail;
@@ -160,6 +172,10 @@ export async function runRepairPass(
       "  the account-identity claim rewrite did not land before the repair pass — proceeding with a possibly-stale display; the heartbeat retries once this pass exits.",
     );
   }
+  // The pass's round, read before the checkpoint below, which stays the
+  // last await before the spawn.
+  const pr = process.env.DRIVE_PR_TARGET ?? "";
+  const round = await repairRound(pr);
   // Re-checked HERE, after the identity refresh above, not only by the
   // caller before this function was invoked: that refresh is itself an await
   // a mailbox directive can land during, so the caller's own pre-dispatch
@@ -180,10 +196,11 @@ export async function runRepairPass(
       stdout: "inherit",
       stderr: "inherit",
       detached: true,
-      env: passEnv({ task, detail, ...ci }),
+      env: withPassRound(passEnv({ task, detail, ...ci }), round),
       ...(deadlineSec > 0 ? { timeoutSec: deadlineSec } : {}),
       onSpawn: (h) => {
         driverRuntime.activePass = h;
+        notePassStarted(pr, round, null);
       },
     }),
   );

@@ -1,6 +1,6 @@
 ---
 name: operator
-description: "Ask and tell the line's stations for a person: where a pull request, tracker item or follow-up stands, what waits on a person, what was said to a station, and a person's command to one (hold, release, drive, answer a parked question, pause or stop a drive), through jig ask and jig send, a status answered as one fixed card. Not for doing a station's work or steering a drive in ways jig send has no verb for (use drive-pr); not for how Jig works (use jig)."
+description: "Ask and tell the line's stations for a person: where a pull request, item or follow-up stands, what waits on a person, and a person's command to a station (hold, release, drive, answer, pause, stop), through jig ask and jig send. Not for doing a station's work (use drive-pr) or how Jig works (use jig)."
 argument-hint: "[question | command]"
 allowed-tools: "Read AskUserQuestion Bash(jig ask *) Bash(jig send *)"
 ---
@@ -43,7 +43,8 @@ conversation.
 
 An address names one station on one piece of work: `station@owner/name#key`.
 Write the key as a second argument, never after a `#`, since some shells
-read `#` as the start of a comment.
+read `#` as the start of a comment. The stations and the verbs of `jig send`
+are listed in the Jig Protocol's [Addresses chapter](../../protocol/addresses.md).
 
 | The person names | The station | The key |
 | --- | --- | --- |
@@ -105,7 +106,9 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
   in the unfiltered list. Open an
   address (`jig ask` on it) only to say more about one entry. When `unread`
   is non-null or `tick` is null, relay why the line is unavailable, and
-  offer to ask about one address instead.
+  offer to ask about one address instead. When `incomplete` lists
+  repositories, the newest tick could not read them: what waits there is
+  as of the reading each names, or unknown; say so.
 - **A pick-up** is answered only on a machine with a checkout of its
   repository; elsewhere `ask` refuses and says why. Relay that.
 - **Exit `1`** means the key names nothing: no such pull request or item.
@@ -144,6 +147,8 @@ every time, from one `jig ask --waiting`:
 - `<address>`: <the act that settles it>, since <the date>. <the title>
   <when the entry names a question for a person: the question, quoted as the record's words>
 
+**Not read:** <each repository `incomplete` lists: as read at <its readAt> | never read; why it was refused>
+
 **Not listed:** drives that are running or that settle by themselves. Name a pull request or an item for its status card.
 ```
 
@@ -151,9 +156,11 @@ One repository block per repository the answer lists, in its order, and
 one line per entry, in its order. First check `unread` and `tick`: when
 `unread` is non-null or `tick` is null, relay the unavailable-line reason
 in place of the card, and ask which pull request or item to look at.
-Only with a read tick and an empty waiting list, put `Nothing
-waits on a person.` in place of the blocks. Open no address to fill the
-card.
+Put the **Not read** line only when `incomplete` lists a repository.
+Only with a read tick, an empty waiting list and an empty `incomplete`, put `Nothing
+waits on a person.` in place of the blocks; with an empty waiting list and
+repositories not read, put `Nothing waits on a person in what was read.`
+Open no address to fill the card.
 
 ### Filling in the card
 
@@ -162,7 +169,9 @@ earlier answer:
 
 - **`holder`** (Where it stands): who holds the station now. `none` means
   nobody does, which is normal between launches; when `last` is null, say no previous ended launch is available in this answer;
-  otherwise say how it ended, and when. With a holder, say the stage, the host and whether its
+  otherwise say how it ended, and when, and what `last.run` says it
+  concluded and suggests next, as the record's words; where it says the run
+  ended without a report, say so. With a holder, say the stage, the host and whether its
   process is alive, dead or unknown, and the account and session where the
   answer names them.
 - **`state`** (Where it stands): the station's state in its own words,
@@ -174,8 +183,9 @@ earlier answer:
   settles by itself (say on what, such as the dispatcher's next tick); or
   `person`, with the act that settles it (answer, re-arm, merge, approve,
   request a review, update the branch, re-run the follow-up, …) and its
-  `needAct`, which leads the line (Decide, Authorize, Reply, Do, Investigate or
-  Merge; the dashboard's card names the same one). A
+  `needAct`, which leads the line: one of
+  [the acts](../../protocol/needs-and-answers.md#what-a-need-asks-of-a-person),
+  the same one the dashboard's card names. A
   converged drive's answer names its lane of Ready to merge (merge now,
   approve first, update next) with the act and, in merge now, the merge
   command pinned to the verified head; where it says the repository's
@@ -258,6 +268,13 @@ admitted account in its existing worktree. It refuses a running drive, a
 person's recorded stop and a missing local tree. An exit `12` recovery gets
 one automatic attempt per head; its repeated stop names `rearm` for the
 person's next attempt after inspecting the handoff.
+
+Tree discovery first reads the drive listing and drive launches. When neither
+names an existing tree, it reads successful pickups that handed off to this
+pull request and Git's worktrees on its head branch across the known local
+clones. That fallback requires exactly one existing tree; several candidates
+are named and refused, as are incomplete reads. The tick checks the selected
+tree's ownership again before launching; the command never creates one.
 
 ### The rules for sending
 

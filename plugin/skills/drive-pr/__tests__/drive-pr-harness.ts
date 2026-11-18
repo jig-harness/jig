@@ -2049,7 +2049,12 @@ esac
 for a in "$@"; do
   case "$a" in
     graphql)             emit "$F/threads.json"; exit 0 ;;
-    *issues/*/timeline*) emit "$F/timeline.json"; exit 0 ;;
+    *issues/*/timeline*)
+      # The forge timing out on the timeline read, while every other read answers.
+      if [ -f "$F/timeline-unreachable" ]; then
+        echo "gh-stub: simulated timeline timeout" >&2; exit 1
+      fi
+      emit "$F/timeline.json"; exit 0 ;;
     *check-runs*)        emit "$F/check-runs.json"; exit 0 ;;
     *actions/runs*)      emit "$F/workflow-runs.json"; exit 0 ;;
     # Query string included: drive-status.ts paginates this endpoint with an

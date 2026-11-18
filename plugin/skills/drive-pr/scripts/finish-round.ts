@@ -192,6 +192,7 @@ import {
   DRIVE_HELD_ELSEWHERE_EXIT,
   SESSION_LEASE_HELD_EXIT,
 } from "./lib/state/lease.ts";
+import { ignoreDriveContext } from "./lib/context-ignore.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -1223,10 +1224,9 @@ async function main(): Promise<number> {
     );
   }
 
-  // `--untracked-files=normal` and `--ignore-submodules=none` are explicit,
-  // not decorative: `--porcelain` alone inherits `status.showUntrackedFiles`
-  // and the per-submodule `ignore` setting from config, either of which can
-  // report a tree with real leftovers as clean.
+  // `--untracked-files=normal` and `--ignore-submodules=none` are explicit:
+  // `--porcelain` alone inherits config that can report leftovers as clean.
+  await ignoreDriveContext(process.cwd(), false, "finish-round.ts");
   const dirtyRes = await git(
     [
       "status",

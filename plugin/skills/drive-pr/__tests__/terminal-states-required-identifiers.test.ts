@@ -33,8 +33,8 @@ import {
   findBareLiteralExits,
   findConstantProvenanceMismatches,
   findExitConstantMismatches,
-  runCheck,
 } from "./terminal-states-consistency.ts";
+import { runChapterCheck as runCheck } from "./protocol-test.ts";
 
 import { fileURLToPath } from "node:url";
 

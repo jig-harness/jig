@@ -20,6 +20,7 @@ import { guardedCollection } from "../kinds/worktree-guard.ts";
 import { type OrcaCall, removeThroughOrca } from "../worktree-removal.ts";
 
 const PATH = "/home/someone/orca/workspaces/app/topic";
+const REPO = "/home/someone/dev/app";
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -46,6 +47,7 @@ async function collect(root: string, answer: Answer) {
   const collected = await guardedCollection(
     { id: PATH, details: { runtime: "orca" } },
     PATH,
+    REPO,
     async (guard) => {
       const removed = await removeThroughOrca({
         worktree: PATH,
@@ -95,6 +97,29 @@ const refused: Answer = {
   stderr: "",
 };
 
+const stillDeleting: Answer = {
+  code: 1,
+  stdout: JSON.stringify({
+    ok: false,
+    error: {
+      code: "worktree_removal_in_progress",
+      message: "Stopped waiting, but Orca may still be deleting the checkout.",
+    },
+  }),
+  stderr: "",
+};
+const accepted: Answer = {
+  code: 0,
+  stdout: JSON.stringify({ ok: true, result: { removing: true } }),
+  stderr: "",
+};
+
+const notRemoved = (result: Record<string, unknown>): Answer => ({
+  code: 0,
+  stdout: JSON.stringify({ ok: true, result }),
+  stderr: "",
+});
+
 const emptyRefusal = (error: Record<string, string>): Answer => ({
   code: 1,
   stdout: JSON.stringify({ ok: false, error }),
@@ -116,6 +141,26 @@ describe("the admission around orca worktree rm", () => {
     ],
     ["a nonzero exit", exited, "orca worktree rm failed (exit 1)"],
     ["output that is not Orca's", garbled, "unreadable output"],
+    [
+      "Orca stopping its wait while it deletes",
+      stillDeleting,
+      "Orca is still deleting the checkout in the background",
+    ],
+    [
+      "a success that names no removal",
+      notRemoved({}),
+      "does not say the worktree was removed",
+    ],
+    [
+      "a success that says the worktree stays",
+      notRemoved({ removed: false }),
+      "does not say the worktree was removed",
+    ],
+    [
+      "an answer on accepting the removal",
+      accepted,
+      "Orca is still deleting the checkout in the background",
+    ],
   ])("is kept, marked submitted, after %s", async (_name, answer, why) => {
     const root = scratch();
     const { collected, atCall, file } = await collect(root, answer);
@@ -149,6 +194,7 @@ describe("the admission around orca worktree rm", () => {
     const collected = await guardedCollection(
       { id: PATH },
       PATH,
+      REPO,
       async (guard) => {
         // Another collection's admission now stands where gc's was.
         const text = JSON.parse(readFileSync(file, "utf8"));

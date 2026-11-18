@@ -64,8 +64,8 @@ with the review.
 | [Setting a repository up for Jig](init.md) | 26 |
 | [Work types](work-types.md) | 27 |
 | [Evidence before claims, and a debugging protocol](verify-and-debug.md) | 28 |
-| [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 29 |
-| [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
+| [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | Backlog: #1311 to #1315 |
+| [Routing work to an agent, a model and an effort](agent-routing.md) | Backlog: #1319 to #1321 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
@@ -79,9 +79,11 @@ with the review.
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 | [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 | [The classes of need, and where each is settled](need-classes.md) | 50 |
-| [The Jig Protocol, chapters generated from the code and held to it by a gate](protocol.md) | 53 |
+| [The Jig Protocol, chapters generated from the code and held to it by a gate](protocol.md) | Backlog: #1155, #1176, #1250 |
 | [What a dispatched session leaves and where it runs](dispatched-sessions.md) | 51 |
 | [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 55 |
+| [The epic planner, every epic planned and its plan kept current](epic-planner.md) | 56 |
+| [A follow-up skill for every repository](followup.md) | Backlog: #305 |
 | [Overlap-aware admission, each item's footprint weighed against all work in flight](overlap-aware-admission.md) | 57 |
 
 ## Starting a design

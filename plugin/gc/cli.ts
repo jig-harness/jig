@@ -41,6 +41,7 @@ const KINDS = [
   "tool-state",
   "scratch",
   "receipts",
+  "orca-terminals",
 ] as const satisfies readonly KindName[];
 
 /** A day's receipts (`2026-10-31`) or one run's id, as `receiptPaths` names them. */
@@ -155,7 +156,7 @@ export const gcCommand = command(
   } as const),
   {
     brief: message`Report and collect what agent sessions leave on this machine.`,
-    description: message`Reports the scratch directories, tool state, worktrees and old receipts the repository declares, with the evidence that their owners have finished, and writes a receipt for the run. Nothing is removed unless the run collects: with --collect, or with --scheduled on the configured collection weekday or under disk pressure.`,
+    description: message`Reports the scratch directories, tool state, worktrees, old receipts and idle Orca run tabs (the repository's kinds, and the machine's Orca kind, which the user's gc.orca.command enables), with the evidence that their owners have finished, and writes a receipt for the run. Nothing is removed unless the run collects: with --collect, or with --scheduled on the configured collection weekday or under disk pressure.`,
   },
 );
 

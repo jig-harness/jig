@@ -98,8 +98,10 @@ bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts"
 
 It checks the repository's `.config/jig.yaml` against the plugin's
 configuration schema (`${CLAUDE_SKILL_DIR}/config-schema.yaml`) and against the
-repository: unknown, refused and deprecated fields, wrong types, what the
-skills' own validation rejects, commands and paths that do not exist, required
+repository: unknown, refused, retired and deprecated fields, wrong types, what the
+skills' own validation rejects (a rule that names an unknown fact or gives a
+value of the wrong kind, in any field the
+[rule matchers' chapter](../../protocol/rule-matchers.md) lists, included), commands and paths that do not exist, required
 checks that never run, a tracker that cannot be reached (on Jira, with each
 `issue_tracker.jira.field_labels` entry resolved against the site), configured
 facet stores that cannot be used (GitHub, Jira and Linear; on Jira, a facet's
@@ -114,7 +116,9 @@ repository contradicts, tracker labels that the label taxonomy
 not define, a `review.taxonomy.types` that differs from that taxonomy
 (`taxonomy:<field>`), a repository that keeps issue facets on its tracker and
 runs no weekly sweep for issues filed without them
-(`suggestion:issue_tracker.sweep`), workflow steps that open pull requests
+(`suggestion:issue_tracker.sweep`), a comment-only scheduled sweep without
+`--position <file>` to reach issues past the read cap
+(`suggestion:issue_tracker.sweep.position`), workflow steps that open pull requests
 (`peter-evans/create-pull-request`, `gh pr create`) without an `automation:`
 label (`suggestion:automation-labels`), and settings its shape suggests. Each finding has an id
 (`config/<id>`). Exit 1 means at least one error; it is a finding, not a reason

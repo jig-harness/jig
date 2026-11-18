@@ -1,6 +1,6 @@
 ---
 name: changelog
-description: "Keep a repository's changelog from change notes: write the note for a change, check a branch against the repository's changelog configuration or the whole changelog against its format, convert a branch that edited the changelog itself, see which release the waiting notes make and which tags are owed; set a repository up for it, CI included (setup). Applies only where .config/jig.yaml sets changelog.file, except setup."
+description: "Keep a repository's changelog from change notes: write a change's note, check a branch or the whole changelog, convert a branch that edited the changelog, see the next release and the tags owed; set a repository up for it, CI included (setup). Only where .config/jig.yaml sets changelog.file, except setup."
 argument-hint: "[note | check | lint | status | convert | setup]"
 allowed-tools: "Read Write Edit Grep Glob Bash(bun *) Bash(git *)"
 ---

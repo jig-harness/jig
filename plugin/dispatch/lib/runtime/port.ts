@@ -13,8 +13,8 @@
  * every runtime takes as strings (`dispatchedName`, `dispatchedMark`,
  * `tabTitle`): a workspace it creates is named for the stage and the key,
  * its comment carries the mark with the launch record's id, and the record
- * keeps the same mark. A skill may rename the workspace to what the work
- * became; the mark in its comment and on its record still says the
+ * keeps the same mark. No skill renames the workspace after that; a person
+ * may, and the mark in its comment and on its record still says the
  * dispatcher started it.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -64,7 +64,13 @@ export interface JoinTargets {
 }
 
 export type SessionsReport =
-  | { ok: true; source: string; workspaces: Workspace[] }
+  | {
+      ok: true;
+      source: string;
+      workspaces: Workspace[];
+      /** When the tick's reader returned the listing (`readSessions` stamps it); the read state it holds is as of then. */
+      observedAt?: string;
+    }
   | { ok: false; source: string; reason: string; failure?: ReadFailure };
 
 /** The states in which an agent holds its stage. */
@@ -117,6 +123,12 @@ export interface NotifyTarget {
   signal?: AbortSignal;
   /** Exact dispatcher-owned read comment that may be replaced; rechecked under the lock. */
   replaceReadComment?: string;
+  /**
+   * The entries of an unread comment whose causes are settled, by key, and
+   * the exact dispatcher-only comment they were found in: an unread comment
+   * still exactly `comment` under the lock gives them up to make room.
+   */
+  settled?: { comment: string; keys: readonly string[] };
   /** Persist the actual locked projection before writing; return whether it is dispatcher-only. */
   prepareComment?: (
     before: string,
@@ -231,6 +243,21 @@ export interface SessionRuntime {
     repo: RepoTarget,
     target: ItemTarget | PullRequestTarget | NoticesTarget,
   ): Promise<RuntimeReceipt>;
+  /**
+   * Prove that a workspace `openWorkspace` did not just open for this launch
+   * (one joined to the pull request, a recovery's tree, a pending launch's
+   * recorded workspace) is still the pull request's checkout before anything
+   * runs in it: a checkout of the repository's clone, its origin the head
+   * repository at the head the forge reports, and its commit on that head's
+   * line of history. Why it is refused, or `null` once proven, within
+   * `timeoutMs` when given. The proof changes no work in the workspace.
+   */
+  verifyWorkspace(
+    repo: RepoTarget,
+    workspace: { id: string; path: string },
+    target: { pr: number; head: string },
+    timeoutMs?: number,
+  ): Promise<string | null>;
   /**
    * A session in the workspace that runs the stage, billed to `account`.
    * `key` is the launch record's token: a second call with a key already

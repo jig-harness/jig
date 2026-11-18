@@ -57,11 +57,8 @@ import {
   type TickContext,
   type TickOptions,
 } from "./tick-context.ts";
-import {
-  readSessions,
-  type RepoObservation,
-  type Tracked,
-} from "./tick-observe.ts";
+import { readSessions, type RepoObservation } from "./tick-observe.ts";
+import type { Tracked } from "./tick-tracker.ts";
 import { afterWait } from "./tick-plan.ts";
 import { aboutTargets } from "./line.ts";
 import { endOwnClaims } from "./tick-shared.ts";
@@ -91,6 +88,7 @@ export function applyState(
   nowMs: number,
   unreadable: string[],
   startedAt: number,
+  weights?: import("./local-weights.ts").AccountWeights,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -108,7 +106,8 @@ export function applyState(
     machine,
     runtime,
     records,
-    table: slotTable(machine.accounts, records, nowMs),
+    table: slotTable(machine.accounts, records, nowMs, undefined, weights),
+    weights,
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),
@@ -163,6 +162,7 @@ export async function actObserved(
     outcomes: readOutcomes(repo.slug),
     nowMs: context.nowMs,
     book,
+    rerunsHeld: context.rerunsHeld ?? null,
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
@@ -208,7 +208,13 @@ export async function actObserved(
       applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
       hooks
-        .guard("steward", () => applySteward(apply, observation))
+        .guard("steward", () =>
+          applySteward(
+            apply,
+            observation,
+            stationContextOf(repo.slug, context.lineInputs.get(report.path)),
+          ),
+        )
         .then(() =>
           applyStages(
             apply,

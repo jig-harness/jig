@@ -45,31 +45,76 @@
  * run, fetch or follow what it names. A writer that breaks the strict form
  * is a defect, and `encode` throws.
  */
-import { Defect } from "../errors.ts";
 import { isRecord } from "../guards.ts";
-import { attempt, type Failure, failed, ok, type Outcome } from "../outcome.ts";
+import {
+  attempt,
+  Defect,
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../outcome.ts";
 import { type RecordKind, recordKind } from "./registry.ts";
-import { readWriter, type Writer } from "./writer.ts";
-import { isoFromMs, parseMs } from "../time.ts";
+import { readWriter } from "./writer-shape.ts";
+import { type Infer, matches } from "../shapes.ts";
+import { type ENVELOPE_SHAPE, ENVELOPE_SHAPES } from "./envelope-shape.ts";
 
-export interface Envelope {
-  kind: string;
-  v: number;
-  key: string;
-  writer: Writer;
-  at: string;
-  generation?: number;
+export type Envelope = Infer<typeof ENVELOPE_SHAPE>;
+
+/** One field of the envelope, as a reader outside Jig meets it in the JSON. */
+export interface EnvelopeField {
+  readonly type: "string" | "integer" | "object";
+  /** Whether every record that carries the envelope carries the field. */
+  readonly required: boolean;
+  /** What the field says, and what the strict form holds it to. */
+  readonly meaning: string;
 }
 
-/** The envelope's fields: a payload never carries one of these names. */
-const ENVELOPE_FIELDS = [
-  "kind",
-  "v",
-  "key",
-  "writer",
-  "at",
-  "generation",
-] as const;
+/**
+ * The envelope's fields, in the order `encode` writes them: a payload never
+ * carries one of these names. The Jig Protocol's chapter on hidden comment
+ * markers prints them.
+ */
+export const ENVELOPE_FIELDS: Readonly<Record<keyof Envelope, EnvelopeField>> =
+  {
+    kind: {
+      type: "string",
+      required: true,
+      meaning:
+        "The record's kind, as the records registry names it. A kind the reader's registry does not hold does not read.",
+    },
+    v: {
+      type: "integer",
+      required: true,
+      meaning:
+        "The version of its kind's schema the record was written in, from 1. A version newer than the one the reader's release writes does not read.",
+    },
+    key: {
+      type: "string",
+      required: true,
+      meaning:
+        "What the record is about, unique within its kind (on the forge and the tracker, within its repository), in the shape its kind declares.",
+    },
+    writer: {
+      type: "object",
+      required: true,
+      meaning:
+        "Who wrote it: the forge login where the writer knows it, the host, and the boot, process id and start time of the writing process. On the forge and the tracker the host and the boot are digests, so a public comment names no machine.",
+    },
+    at: {
+      type: "string",
+      required: true,
+      meaning: "When it was written, as an ISO 8601 time.",
+    },
+    generation: {
+      type: "integer",
+      required: false,
+      meaning:
+        "For a record rewritten in place, or a claim on one round of something, a count: one past the highest the writer had read, or the round it claims.",
+    },
+  };
+
+const ENVELOPE_NAMES = Object.keys(ENVELOPE_FIELDS) as (keyof Envelope)[];
 
 /** A record read back: its envelope, and the rest of its fields as its payload. */
 export interface Enveloped {
@@ -94,24 +139,31 @@ export type ReadCode =
   | "no-marker";
 
 const ISO_TIME =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
-/** A real calendar day and time: no February 30, no 24:00. */
+/**
+ * A real calendar day and time: no February 30, no 24:00. It reads the fields
+ * itself because the codec also runs in the browser (the dashboard's Send),
+ * which stays on `Date` and cannot rely on Temporal (ADR-0018).
+ */
 function validTime(at: string): boolean {
-  return (
-    ISO_TIME.test(at) &&
-    Number.isFinite(parseMs(at)) &&
-    Number(at.slice(11, 13)) < 24 &&
-    isoFromMs(parseMs(`${at.slice(0, 10)}T00:00:00Z`)).slice(0, 10) ===
-      at.slice(0, 10)
-  );
+  if (!ISO_TIME.test(at)) return false;
+  const year = Number(at.slice(0, 4));
+  const month = Number(at.slice(5, 7));
+  const day = Number(at.slice(8, 10));
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > (days[month - 1] as number))
+    return false;
+  if (Number(at.slice(11, 13)) > 23) return false;
+  if (Number(at.slice(14, 16)) > 59 || Number(at.slice(17, 19)) > 59)
+    return false;
+  const offset = /[+-](\d{2}):(\d{2})$/.exec(at);
+  return offset === null || (Number(offset[1]) < 24 && Number(offset[2]) < 60);
 }
 
 /** A hidden marker's name: lowercase words joined by `-`, in `:`-separated parts. */
 const MARKER_NAME = /^[a-z][a-z0-9-]*(?::[a-z0-9-]+)*$/;
-
-const isCount = (v: unknown): v is number =>
-  typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 
 /** A registered kind whose records carry the envelope. */
 type EnvelopedKind = RecordKind & { key: RegExp };
@@ -144,7 +196,7 @@ function kindOf(
 
 /** Why a version is not one `kind` reads, or `null`. */
 function versionFault(v: unknown, kind: RecordKind): Failure<ReadCode> | null {
-  if (!isCount(v) || v < 1)
+  if (!matches(ENVELOPE_SHAPES.v, v))
     return {
       code: "bad-version",
       reason: `version ${shown(v)} is not a positive integer`,
@@ -168,12 +220,13 @@ function fieldFault(
       code: "bad-key",
       reason: `key ${shown(key)} is not a ${kind.name} key`,
     };
-  if (typeof at !== "string" || !validTime(at))
+  if (!matches(ENVELOPE_SHAPES.at, at) || !validTime(at))
     return {
       code: "bad-time",
       reason: `the time ${shown(at)} is not an ISO 8601 time`,
     };
-  return generation === undefined || isCount(generation)
+  return generation === undefined ||
+    matches(ENVELOPE_SHAPES.generation, generation)
     ? null
     : {
         code: "bad-generation",
@@ -230,7 +283,7 @@ export function encode(
   envelope: Envelope,
   payload: Record<string, unknown>,
 ): string {
-  const clash = ENVELOPE_FIELDS.find((field) => field in payload);
+  const clash = ENVELOPE_NAMES.find((field) => field in payload);
   if (clash !== undefined)
     throw new Defect(
       `the payload of a ${envelope.kind} record carries the envelope's field ${clash}`,

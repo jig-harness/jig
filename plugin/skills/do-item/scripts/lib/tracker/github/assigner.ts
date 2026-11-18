@@ -8,6 +8,7 @@
  */
 
 import type { Assigner, Tracker } from "../port.ts";
+import { AssignerUnknown } from "../assigner-unknown.ts";
 import type { Client } from "./client.ts";
 import { record, str } from "./read.ts";
 import { GitHubApiError } from "./transport.ts";
@@ -91,7 +92,9 @@ export function refuseForeign(
 }
 
 function loginsOf(nodes: unknown, key: string): string[] {
-  return (Array.isArray(nodes) ? nodes : []).map((n, i) =>
+  if (!Array.isArray(nodes))
+    throw new GitHubApiError(`issue ${key}.assignees: nodes missing`);
+  return nodes.map((n, i) =>
     str(record(n, `issue ${key} assignee ${i}`).login, "assignee.login"),
   );
 }
@@ -130,62 +133,72 @@ export async function canWrite(
   });
 }
 
+/**
+ * Who made the current assignment of `assignee` (default: the current
+ * assignee) to `key`: the newest assignment event naming that account. Every
+ * gap throws, a definite absence as `AssignerUnknown`.
+ */
+export async function assignmentActor(
+  client: Client,
+  key: string,
+  assignee: string | undefined,
+  signal?: AbortSignal,
+): Promise<{ id: string; name: string }> {
+  const ref = client.ref(key);
+  refuseForeign(client, ref, key);
+  const data = record(
+    await client.transport(
+      ASSIGNMENTS,
+      {
+        owner: ref.owner,
+        name: ref.name,
+        number: ref.number,
+      },
+      signal,
+      true,
+    ),
+    "data",
+  );
+  const issue = record(
+    record(data.repository, "repository").issue,
+    `issue ${key}`,
+  );
+  const current = record(issue.assignees, `issue ${key}.assignees`).nodes;
+  const logins = loginsOf(current, key);
+  const who = assignee ?? logins[0];
+  if (who === undefined)
+    throw new AssignerUnknown(`issue ${key} is assigned to nobody`);
+  if (!logins.some((l) => same(l, who)))
+    throw new AssignerUnknown(`issue ${key} is no longer assigned to ${who}`);
+  const timeline = record(issue.timelineItems, `issue ${key}.timelineItems`);
+  if (!Array.isArray(timeline.nodes))
+    throw new GitHubApiError(`issue ${key}.timelineItems: nodes missing`);
+  const latest = assignments(timeline.nodes, key)
+    .filter((a) => same(a.assignee, who))
+    .at(-1);
+  if (latest === undefined) {
+    if (record(timeline.pageInfo, "pageInfo").hasPreviousPage !== false)
+      throw new GitHubApiError(
+        `issue ${key}: the assignment of ${who} lies beyond the last ${EVENTS} assignment events or its page boundary is unknown`,
+      );
+    throw new AssignerUnknown(`issue ${key}: no assignment event names ${who}`);
+  }
+  if (latest.actor === null)
+    throw new AssignerUnknown(
+      `issue ${key}: the assignment of ${who} names no actor (a deleted account)`,
+    );
+  return { id: latest.actor, name: latest.actor };
+}
+
 export function assignerOperations(
   client: Client,
 ): Pick<Tracker, "assignedBy"> {
   return {
     async assignedBy(key, assignee, signal) {
-      const ref = client.ref(key);
-      refuseForeign(client, ref, key);
-      const data = record(
-        await client.transport(
-          ASSIGNMENTS,
-          {
-            owner: ref.owner,
-            name: ref.name,
-            number: ref.number,
-          },
-          signal,
-          true,
-        ),
-        "data",
-      );
-      const issue = record(
-        record(data.repository, "repository").issue,
-        `issue ${key}`,
-      );
-      const current = record(issue.assignees, `issue ${key}.assignees`).nodes;
-      const logins = loginsOf(current, key);
-      const who = assignee ?? logins[0];
-      if (who === undefined)
-        throw new GitHubApiError(`issue ${key} is assigned to nobody`);
-      if (!logins.some((l) => same(l, who)))
-        throw new GitHubApiError(
-          `issue ${key} is no longer assigned to ${who}`,
-        );
-      const timeline = record(
-        issue.timelineItems,
-        `issue ${key}.timelineItems`,
-      );
-      if (!Array.isArray(timeline.nodes))
-        throw new GitHubApiError(`issue ${key}.timelineItems: nodes missing`);
-      const latest = assignments(timeline.nodes, key)
-        .filter((a) => same(a.assignee, who))
-        .at(-1);
-      if (latest === undefined)
-        throw new GitHubApiError(
-          record(timeline.pageInfo, "pageInfo").hasPreviousPage === true
-            ? `issue ${key}: the assignment of ${who} lies beyond the last ${EVENTS} assignment events`
-            : `issue ${key}: no assignment event names ${who}`,
-        );
-      if (latest.actor === null)
-        throw new GitHubApiError(
-          `issue ${key}: the assignment of ${who} names no actor (a deleted account)`,
-        );
+      const actor = await assignmentActor(client, key, assignee, signal);
       return {
-        id: latest.actor,
-        name: latest.actor,
-        trusted: await canWrite(client, latest.actor, signal),
+        ...actor,
+        trusted: await canWrite(client, actor.id, signal),
       } satisfies Assigner;
     },
   };

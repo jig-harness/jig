@@ -190,6 +190,20 @@
     },
     {
       "kind": "command",
+      "name": "followup.arms",
+      "setting": "followup.arms",
+      "exit": null,
+      "runBy": "followup",
+      "shell": true,
+      "given": "The follow-up's merge facts as one JSON object on standard input (`followup.ts facts` prints the same object). Each entry's `check_command` runs from the repository root, as the integration branch's configuration names it.",
+      "answers": "Exit 0 and one verdict JSON object on standard output, `{\"verdict\": \"owed\"|\"not-owed\"|\"pending\"|\"unread\", \"items\": [...], \"evidence\": \"...\"}`, at most 64 KiB. A run past its deadline, any other exit, or output that is not such an object records the arm `unread` with the reason, never `not-owed`.",
+      "commandStore": true,
+      "deadlineSec": 60,
+      "deadlineChangedBy": "JIG_FOLLOWUP_CHECK_TIMEOUT_SEC",
+      "meaning": "A repository's own follow-up arm, read-only: says whether a merge owes what that arm checks. The followup skill records its verdict through the same ledger as every other arm."
+    },
+    {
+      "kind": "command",
       "name": "descar.lint_command",
       "setting": "descar.lint_command",
       "exit": null,
@@ -314,5 +328,723 @@
       "deadlineChangedBy": "JIG_CODE_STATS_COMMAND_TIMEOUT_SEC",
       "meaning": "The last layer of code-stats' classification of the repository's files."
     }
-  ]
+  ],
+  "schemas": {
+    "validation-plan": {
+      "type": "object",
+      "properties": {
+        "validation": {
+          "type": "object",
+          "properties": {
+            "testbox": {
+              "type": "object",
+              "properties": {
+                "required": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["required"],
+              "additionalProperties": true
+            }
+          },
+          "required": ["testbox"],
+          "additionalProperties": true
+        }
+      },
+      "required": ["validation"],
+      "additionalProperties": true
+    },
+    "classify-output": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "area": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "code",
+            "test",
+            "docs",
+            "config",
+            "data",
+            "generated",
+            "fixture",
+            "asset",
+            "vendored",
+            "other"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "module": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "reflection-check": {
+      "type": "object",
+      "properties": {
+        "ok": true,
+        "reason": true,
+        "fix": true
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "reflection-append": {
+      "type": "object",
+      "properties": {
+        "stored": true
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "reflection-diagnose": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "followup-verdict": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "enum": ["owed", "not-owed", "pending", "unread"]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "string"
+        }
+      },
+      "required": ["verdict", "evidence"],
+      "additionalProperties": true
+    },
+    "reflection-event": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "const": 1
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "session": {
+              "type": "object",
+              "properties": {
+                "jig_version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "skills": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                },
+                "harness": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "entrypoint": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "wrapper": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["name", "version", "entrypoint", "wrapper"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stated": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "jig_version",
+                "skills",
+                "harness",
+                "model",
+                "mode",
+                "stated"
+              ],
+              "additionalProperties": true
+            },
+            "type": {
+              "const": "finding"
+            },
+            "change": {
+              "type": "object",
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "branch": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "issue": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["repository", "branch", "pull_request", "issue"],
+              "additionalProperties": true
+            },
+            "kind": {
+              "enum": ["error", "opportunity", "unhelpful-content"]
+            },
+            "severity": {
+              "enum": ["high", "medium", "low"]
+            },
+            "class": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "repository"
+                    },
+                    "name": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": ["scope", "name"],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "tool"
+                    },
+                    "tool": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    },
+                    "name": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "required": ["scope", "tool", "name"],
+                  "additionalProperties": true
+                }
+              ]
+            },
+            "title": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "suggested_fix": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "time_cost_minutes": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "v",
+            "id",
+            "at",
+            "session",
+            "type",
+            "change",
+            "kind",
+            "severity",
+            "class",
+            "target",
+            "title",
+            "description",
+            "suggested_fix"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "const": 1
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                },
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "jig_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    },
+                    "harness": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "entrypoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "wrapper": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version",
+                            "entrypoint",
+                            "wrapper"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "jig_version",
+                    "skills",
+                    "harness",
+                    "model",
+                    "mode",
+                    "stated"
+                  ],
+                  "additionalProperties": true
+                },
+                "type": {
+                  "const": "decision"
+                },
+                "finding": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "reason": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decision": {
+                  "enum": ["approved", "implemented", "deferred", "dismissed"]
+                },
+                "issue": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "v",
+                "id",
+                "at",
+                "session",
+                "type",
+                "finding",
+                "reason",
+                "decision"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "const": 1
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                },
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "jig_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    },
+                    "harness": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "entrypoint": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "wrapper": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version",
+                            "entrypoint",
+                            "wrapper"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "jig_version",
+                    "skills",
+                    "harness",
+                    "model",
+                    "mode",
+                    "stated"
+                  ],
+                  "additionalProperties": true
+                },
+                "type": {
+                  "const": "decision"
+                },
+                "finding": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}|drv-[0-9a-f]{32})$"
+                },
+                "reason": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "\\S"
+                },
+                "pull_request": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decision": {
+                  "const": "escalated"
+                },
+                "issue": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "v",
+                "id",
+                "at",
+                "session",
+                "type",
+                "finding",
+                "reason",
+                "decision",
+                "issue"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        }
+      ]
+    }
+  }
 }

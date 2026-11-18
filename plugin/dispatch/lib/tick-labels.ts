@@ -40,7 +40,9 @@ export async function projectObserved(
     opened.report,
     labels,
     {
+      // The forge's read, its drives as the plan reads them (the machine view).
       ...forge,
+      drives: observation.drives,
       listed: opened.listed && ctx.owner,
       serialized,
     },

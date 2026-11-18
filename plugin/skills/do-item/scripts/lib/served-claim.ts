@@ -7,6 +7,7 @@ import {
 import { blocksWithin } from "./blocker-chain.ts";
 import { servedParentHold } from "../../../../dispatch/lib/sources/served-parents.ts";
 import type {
+  AssignmentResult,
   CanonicalState,
   Issue,
   PoolIssue,
@@ -14,8 +15,21 @@ import type {
   TrackerUser,
 } from "./tracker/port.ts";
 
+const assignmentFailureReasons: Record<
+  Extract<AssignmentResult, { assigned: false }>["reason"],
+  string
+> = {
+  race: "assignment raced the claim; queue must refresh",
+  unverified:
+    "assignment could not be verified within the deadline; queue must refresh",
+  "race-unverified":
+    "assignment race seen but the replaced owner could not be verified within the deadline; refresh the queue and reconcile the assignment",
+};
+
 export interface ServedClaim {
   person: string;
+  /** Factory inheritance authorizes through person but assigns the credential viewer. */
+  factoryClaimant?: TrackerUser;
   /** The epic the claimed item's authority is inherited through; with `blocking`, the epic of that item. */
   ancestor?: string;
   /** A served item the claimed one blocks: the claim pulls an unassigned blocker forward on that item's authority. */
@@ -143,6 +157,27 @@ function inheritedAssignmentMismatch(
   return claimed ? !only(holders, user) : holders.length !== 0;
 }
 
+/** A claimed child belongs to its claimant; all other ancestry nodes belong to the authority. */
+function conflictingAncestor(
+  current: string,
+  key: string,
+  claimed: boolean,
+  holders: TrackerUser[],
+  authority: TrackerUser,
+): boolean {
+  if (current === key && claimed) return false;
+  return holders.some((holder) => holder.id !== authority.id);
+}
+
+/** Factory work authorizes against its factory assignee; served work uses its claimant. */
+async function authorityUser(
+  tracker: Tracker,
+  claimant: TrackerUser,
+  options: ServedClaim,
+): Promise<TrackerUser> {
+  return options.factoryClaimant ? tracker.user(options.person) : claimant;
+}
+
 /** The live parent links, rather than a queue snapshot, establish inherited authority. */
 async function validateAssignment(
   tracker: Tracker,
@@ -151,6 +186,7 @@ async function validateAssignment(
   options: ServedClaim,
   claimed = false,
 ): Promise<string | null> {
+  const authority = await authorityUser(tracker, user, options);
   const seen = new Set<string>();
   let current = key;
   for (;;) {
@@ -177,8 +213,14 @@ async function validateAssignment(
     )
       return `${key} no longer has the expected assignment`;
     if (current === (options.ancestor ?? key))
-      return authorityReason(tracker, current, holders, user, options.person);
-    if (holders.some((h) => h.id !== user.id))
+      return authorityReason(
+        tracker,
+        current,
+        holders,
+        authority,
+        options.person,
+      );
+    if (conflictingAncestor(current, key, claimed, holders, authority))
       return `${current} has a conflicting assignee`;
     if (!node.issue.parent)
       return `${options.ancestor} is no longer an ancestor of ${key}`;
@@ -285,13 +327,19 @@ async function validatePulled(
 }
 
 /** The live links, not a queue snapshot, establish authority: a pulled blocker through the item it blocks. */
-function validateClaim(
+async function validateClaim(
   tracker: Tracker,
   key: string,
   user: TrackerUser,
   options: ServedClaim,
   claimed = false,
 ): Promise<string | null> {
+  if (options.factoryClaimant) {
+    const item = await tracker.poolIssue(key);
+    if (item === null) return `${key} cannot be read`;
+    const gate = await planHold(tracker, item, options);
+    if (gate !== null) return gate;
+  }
   return options.blocking
     ? validatePulled(tracker, key, user, options, claimed)
     : validateAssignment(tracker, key, user, options, claimed);
@@ -446,7 +494,7 @@ export async function servedClaimStillStands(
   key: string,
   options: ServedClaim,
 ): Promise<string | null> {
-  const user = await tracker.user(options.person);
+  const user = options.factoryClaimant ?? (await tracker.user(options.person));
   const standDown = await startedStandDown(tracker, key, user, options);
   return standDown && standDown.outcome !== "claimed"
     ? (standDown.reason ?? `${key} changed`)
@@ -499,11 +547,12 @@ async function assignInherited(
   if (!inherits || !assignUnassigned) return null;
   const outsideNow = await stateBeforeAssignment(tracker, key, options);
   if (outsideNow) return outsideNow;
-  if (await assignUnassigned(key, user)) return null;
+  const assignment = await assignUnassigned(key, user);
+  if (assignment.assigned) return null;
   return {
     outcome: "stood_down",
     issue: key,
-    reason: `${key}: assignment raced the claim; queue must refresh`,
+    reason: `${key}: ${assignmentFailureReasons[assignment.reason]}`,
   };
 }
 
@@ -513,7 +562,7 @@ async function claimServed(
   key: string,
   options: ServedClaim,
 ): Promise<ClaimResult> {
-  const user = await tracker.user(options.person);
+  const user = options.factoryClaimant ?? (await tracker.user(options.person));
   const blocked = await blockedNow(tracker, key);
   if (blocked) return blocked;
   const problem = await validateClaim(tracker, key, user, options);
@@ -565,4 +614,16 @@ function absentStartState(key: string, options: ServedClaim): ClaimResult {
         why: "state",
         reason: `${key} has no in_progress state in its workflow`,
       };
+}
+
+/** Factory inheritance keeps the authorizing epic's assignment and claims its empty child for the viewer. */
+export async function claimFactoryIssue(
+  tracker: Tracker,
+  key: string,
+  options: ServedClaim & { ancestor: string },
+): Promise<ClaimResult> {
+  return claimServedIssue(tracker, key, {
+    ...options,
+    factoryClaimant: await tracker.viewer(),
+  });
 }

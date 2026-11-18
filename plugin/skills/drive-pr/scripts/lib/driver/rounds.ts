@@ -8,6 +8,8 @@ import { isDigits } from "./../cli.ts";
 import {
   ciRepairRounds,
   finalCiWitnessPolls,
+  FINAL_CI_POLL_SECONDS,
+  finalRegateLimit,
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
@@ -15,6 +17,8 @@ import {
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
+
+import { statusViewFlags } from "./final-regate.ts";
 
 import { infraRecoveryBudget } from "./infra-recovery.ts";
 
@@ -146,7 +150,12 @@ export async function runDriverRounds({
   // The head `witnessWaits` is counting against — see the reset at its own
   // branch for why the count is per-head rather than per-drive.
   const witnessWaitHead = "";
-  const finalCiWait = new FinalCiWait(pr);
+  const finalCiWait = new FinalCiWait(
+    pr,
+    undefined,
+    undefined,
+    FINAL_CI_POLL_SECONDS * 1000,
+  );
   const pauseMaxRaw = process.env.DRIVE_PR_PAUSE_MAX_SEC ?? "1800";
   const pauseMaxSec =
     isDigits(pauseMaxRaw) &&
@@ -214,6 +223,10 @@ export async function runDriverRounds({
     held,
     witnessWaitHead,
     witnessWaitLimit,
+    statusView: statusViewFlags(forward),
+    finalRegates: 0,
+    finalRegateKey: "",
+    finalRegateLimit: finalRegateLimit(),
     maxRoundsN,
     deadlineRetryBudget,
     stallExtraRound: false,

@@ -99,45 +99,24 @@ export const FORGE_BODY_LIMIT = 65_536;
 /** How much of the handoff narrative travels with the ledger. */
 export const NARRATIVE_LINES = 20;
 
-/** One held item as the ledger carries it; `outcome` is the first cut. */
-export interface LedgerHeld {
-  key: string;
-  kind: "thread" | "finding";
-  round: number;
-  actor: string;
-  outcome?: "accepted" | "moot";
-  commentUrl?: string;
-  /** A held finding's answer, posted once its push lands; cut with `outcome`. */
-  reason?: string;
-  verifiedSha?: string;
-}
-
-export interface LedgerDriver {
-  /** The working tree driving (`resolveActor`). */
-  actor: string;
-  /** The clone, by machine and state directory: two clones never share one. */
-  clone: string;
-  /** When this ledger was written: the driver's heartbeat across clones. */
-  heartbeat: string;
-  /** `stopped` once the driver has exited, with its exit code. */
-  state: "running" | "stopped";
-  exit?: number;
-  /** Explicit operator stop, preserved when a forced termination has no exit. */
-  personStop?: { at: string; reason: string };
-  /** This writer distinguishes operator stops from accidental no-exit stops. */
-  recoveryVersion?: 1;
-  /** The driver's lock acquisition time: which run of that tree it is. */
-  started?: string;
-  /** Its claim position: its own claim's id, or the position its clone's ledger recorded when it continued that ledger. */
-  position?: number;
-}
-
-/** A takeover claim the ledger's writer knows to be in force. */
-export interface LedgerClaimRef {
-  id: number;
-  clone: string;
-  generation: number;
-}
+export type {
+  LedgerHeld,
+  LedgerDriver,
+  LedgerClaimRef,
+} from "./ledger-shapes.ts";
+import {
+  LEDGER_DRIVER_SHAPE,
+  LEDGER_PAYLOAD_FIELDS,
+  type LedgerHeld,
+  type LedgerDriver,
+  type LedgerClaimRef,
+} from "./ledger-shapes.ts";
+import { matches } from "../../../../../shared/shapes.ts";
+import {
+  TAKEOVER_GENERATION_SHAPE,
+  TAKEOVER_LEGACY_SHAPE,
+  TAKEOVER_PAYLOAD_SHAPE,
+} from "../../../../../shared/records/forge-claim-shapes.ts";
 
 export interface Ledger {
   ledgerVersion: number;
@@ -431,61 +410,16 @@ export function opensWith(body: string, marker: string): boolean {
   return body.replaceAll("\r", "").trimStart().startsWith(marker);
 }
 
-const isText = (v: unknown): v is string => typeof v === "string";
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 0;
 
-/** A held item's round: a count, or `-1` for an unconfirmed hold. */
-const isHeldRound = (v: unknown): boolean =>
-  typeof v === "number" && Number.isInteger(v) && v >= -1;
-
-function isLedgerHeld(v: unknown): v is LedgerHeld {
-  return (
-    isRecord(v) &&
-    isText(v.key) &&
-    v.key !== "" &&
-    (v.kind === "thread" || v.kind === "finding") &&
-    isHeldRound(v.round) &&
-    isText(v.actor) &&
-    (v.outcome === undefined ||
-      v.outcome === "accepted" ||
-      v.outcome === "moot") &&
-    (v.commentUrl === undefined || isText(v.commentUrl)) &&
-    (v.reason === undefined || isText(v.reason)) &&
-    (v.verifiedSha === undefined || isText(v.verifiedSha))
-  );
-}
-
-function isRecoveryFields(v: Record<string, unknown>): boolean {
-  if (v.recoveryVersion !== undefined && v.recoveryVersion !== 1) return false;
-  if (v.personStop === undefined) return true;
-  return (
-    isRecord(v.personStop) &&
-    isText(v.personStop.at) &&
-    Number.isFinite(parseMs(v.personStop.at)) &&
-    isText(v.personStop.reason)
-  );
-}
-
+/** A driver's timestamps are instants as well as strings in its JSON shape. */
 function isLedgerDriver(v: unknown): v is LedgerDriver {
   return (
-    isRecord(v) &&
-    isText(v.actor) &&
-    isText(v.clone) &&
-    isText(v.heartbeat) &&
+    matches(LEDGER_DRIVER_SHAPE, v) &&
     Number.isFinite(parseMs(v.heartbeat)) &&
-    (v.state === "running" || v.state === "stopped") &&
-    (v.exit === undefined || isCount(v.exit)) &&
-    isRecoveryFields(v) &&
-    (v.started === undefined ||
-      (isText(v.started) && Number.isFinite(parseMs(v.started)))) &&
-    (v.position === undefined || isCount(v.position))
-  );
-}
-
-function isClaimRef(v: unknown): v is LedgerClaimRef {
-  return (
-    isRecord(v) && isCount(v.id) && isText(v.clone) && isCount(v.generation)
+    (v.started === undefined || Number.isFinite(parseMs(v.started))) &&
+    (v.personStop === undefined || Number.isFinite(parseMs(v.personStop.at)))
   );
 }
 
@@ -495,44 +429,34 @@ function isParkedList(v: unknown): boolean {
 }
 
 function ledgerFault(v: Record<string, unknown>): string {
-  const checks: Array<[string, boolean]> = [
-    ["generation", isCount(v.generation) && v.generation > 0],
-    ["pr", isCount(v.pr)],
-    ["round", isCount(v.round)],
-    ["attempts", isCount(v.attempts)],
-    ["attemptsHead", isText(v.attemptsHead)],
-    ["deadlineRetries", isCount(v.deadlineRetries)],
-    ["phase", isText(v.phase)],
-    ["lastCountedHead", isText(v.lastCountedHead)],
-    ["verifiedSha", isText(v.verifiedSha)],
-    ["readyMarkedRound", isCount(v.readyMarkedRound)],
-    ["parked", isParkedList(v.parked)],
-    ["held", Array.isArray(v.held) && v.held.every(isLedgerHeld)],
-    ["quotaPark", v.quotaPark === null || isRecord(v.quotaPark)],
-    [
-      "takeovers",
+  // These checks interpret fields after their shared JSON descriptions hold.
+  const semantic: Record<string, () => boolean> = {
+    parked: () => isParkedList(v.parked),
+    takeovers: () =>
       Array.isArray(v.takeovers) &&
-        v.takeovers.every(
-          (t) =>
-            isRecord(t) &&
-            isTakeoverRecord({ ...t, fromAccount: null, toAccount: null }),
-        ),
-    ],
-    ["claims", Array.isArray(v.claims) && v.claims.every(isClaimRef)],
-    [
-      "decisions",
+      v.takeovers.every(
+        (t) =>
+          isRecord(t) &&
+          isTakeoverRecord({ ...t, fromAccount: null, toAccount: null }),
+      ),
+    decisions: () =>
       Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
-    ],
-    ["events", isOptionalEvents(v.events)],
-    ["ciActions", isOptionalCiActions(v.ciActions)],
-    ["rulings", isOptionalRulings(v.rulings)],
-    ["resolvedParks", isOptionalResolvedParks(v.resolvedParks)],
-    ["driver", isLedgerDriver(v.driver)],
-    ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
-    ["cut", Array.isArray(v.cut) && v.cut.every(isText)],
-  ];
-  return checks
-    .filter(([, ok]) => !ok)
+    events: () => isOptionalEvents(v.events),
+    ciActions: () => isOptionalCiActions(v.ciActions),
+    rulings: () => isOptionalRulings(v.rulings),
+    resolvedParks: () => isOptionalResolvedParks(v.resolvedParks),
+    driver: () => isLedgerDriver(v.driver),
+  };
+  return Object.entries(LEDGER_PAYLOAD_FIELDS)
+    .filter(
+      ([name, shape]) =>
+        name !== "ledgerVersion" &&
+        !(
+          ((shape.optional && v[name] === undefined) ||
+            matches(shape, v[name])) &&
+          (semantic[name]?.() ?? true)
+        ),
+    )
     .map(([name]) => name)
     .join(", ");
 }
@@ -611,11 +535,15 @@ export function takeoverKey(generation: number): string {
 const CLAIM_TEXT =
   "**Drive claim** · `drive-pr-takeover-claim` · a driver in another clone claims the drive of this pull request: a takeover from a driver whose ledger heartbeat is older than the lease window, or a start where no driver of that clone held it. Of the claims on one ledger generation the earliest wins; a driver that finds a newer claim than its own stops at its next round boundary.";
 
-/** Why a takeover claim's record is not one, or `null` when it is. */
+/**
+ * Why a takeover claim's record is not one, or `null` when it is: its payload
+ * fits `TAKEOVER_PAYLOAD_SHAPE`, and its key is its generation's.
+ */
 function takeoverFault(r: ClaimRecord): string | null {
-  const { actor, clone } = r.payload;
-  if (!isText(actor) || !isText(clone)) return "it names no actor and clone";
-  return isCount(r.generation) && r.key === takeoverKey(r.generation)
+  if (!matches(TAKEOVER_PAYLOAD_SHAPE, r.payload))
+    return "it names no actor and clone";
+  return matches(TAKEOVER_GENERATION_SHAPE, r.generation) &&
+    r.key === takeoverKey(r.generation)
     ? null
     : `its key ${r.key} is not its generation's`;
 }
@@ -630,15 +558,14 @@ function legacyClaim(body: string): Outcome<ClaimRecord, "unreadable"> | null {
   } catch {
     return failed("unreadable", "a takeover claim's data is not JSON");
   }
-  if (!isRecord(v) || !isCount(v.generation) || !isText(v.at)) return null;
-  const record = {
+  if (!matches(TAKEOVER_LEGACY_SHAPE, v)) return null;
+  return ok({
     key: takeoverKey(v.generation),
     generation: v.generation,
     at: v.at,
     payload: { actor: v.actor, clone: v.clone },
     legacy: true,
-  };
-  return takeoverFault(record) === null ? ok(record) : null;
+  });
 }
 
 /**

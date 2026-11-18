@@ -24,7 +24,8 @@
  *   ending, the end carrying how long it waited: `serial-holds.ts`, and a
  *   park leaving its ledger, answered, decided provisionally or removed,
  *   an answered one timed when its receipt says it was resolved:
- *   `park-events.ts`).
+ *   `park-events.ts`, and, once per tick of the `notify` stage, the notices
+ *   workspace's read state: `notices-read.ts`).
  *
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
@@ -36,6 +37,7 @@
  * filters on.
  */
 import { derivedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -50,6 +52,7 @@ import {
   targetOf,
 } from "./launches.ts";
 import { sessionResultClass } from "./session-result-class.ts";
+import { unwrittenResult } from "./session-startup.ts";
 import { type ReportFields, reportFields } from "./closing-report-store.ts";
 import { stewardNoSubmitCause } from "./pass-output.ts";
 import { existingStateDb, stateDb } from "./state.ts";
@@ -96,6 +99,8 @@ export interface EndedRow extends ReportFields {
   /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
   title?: string;
   url?: string;
+  /** For a run that left no report: the path of its transcript's copy on the host, until the copy is removed (`transcript-copy.ts`). */
+  transcript?: string;
 }
 
 /** One cause the tick observed. */
@@ -118,6 +123,8 @@ export interface EventRow {
   durationMs?: number;
   /** For a park that left its ledger (`park-events.ts`): what it was and how it was settled. */
   park?: ParkFacts;
+  /** For `notices_read` (`notices-read.ts`): whether the notices workspace was read; `null` when its state is not known. */
+  read?: boolean | null;
   /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
   title?: string;
   url?: string;
@@ -408,6 +415,12 @@ function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
+  // Its question, if it asked one, is about the host that could not write its result: never a person's.
+  if (unwrittenResult(r))
+    return {
+      class: "died",
+      reason: `no result recorded: this host could not write it (since ${r.unwritten}); the host's health check reports the cause`,
+    };
   // A steward that did not submit has no outcome, even if its retained output
   // contains a Question line that the generic classifier can describe.
   if (r.record.action === "steward" && r.result === null)
@@ -415,6 +428,7 @@ function sessionClass(
   const result = sessionResultClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,
+    r.waitsFor,
   );
   if (result !== null) return result;
   const s = r.state;
@@ -502,6 +516,8 @@ export function endedRow(
 ): EndedRow {
   const { record } = r;
   const placed = classifyEnded(r, endedAt, facts);
+  const wait = testLockNote(record, undefined, true);
+  if (wait !== null) placed.reason += `; ${wait}`;
   // A re-drive ends like any re-arm; its reason also names why it was launched.
   const redriven =
     record.redrive?.conflictStop === true

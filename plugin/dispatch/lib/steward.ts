@@ -1,8 +1,8 @@
 /** The owner-local steward's closed records, digest and durable once-only decisions. */
 import { createHash } from "node:crypto";
 import { isMapping } from "../../shared/config-layers.ts";
-import { NEED_ACTS, type NeedAct } from "../../shared/acts.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { matches } from "../../shared/shapes.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { stateRoot } from "../receipts.ts";
 import { stateDb } from "./state.ts";
@@ -10,34 +10,62 @@ import type { Action, DrivenPr } from "./types.ts";
 import type { FailureRow } from "./failures.ts";
 import type { LineLoad } from "./dashboard-contract.ts";
 import type { StewardTargetEvidence } from "./steward-evidence.ts";
+import type { UnreportedRun } from "./steward-causes.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
+import { inTransaction } from "../../shared/records/db.ts";
+import {
+  STEWARD_LIST_SHAPE,
+  STEWARD_REASONED_SHAPE,
+  STEWARD_RECORD_SHAPE,
+  type StewardRecord,
+} from "./steward-record-shapes.ts";
+import {
+  STEWARD_COMMON_FIELDS,
+  STEWARD_RECORD_KINDS,
+} from "./steward-record-values.ts";
+
+export type { StewardRecord };
 
 export const STEWARD_DEADLINE_SEC = 900;
 export const STEWARD_RESUME =
   "Take the option you recommended and record it as a decision taken unattended";
-export type StewardRecord =
-  | {
-      kind: "rearm";
-      target: string;
-      facts: string;
-      class: string;
-      reason: string;
-    }
-  | { kind: "resume"; record: string; reason: string }
-  | { kind: "need"; target: string; act: NeedAct; ask: string; reason: string }
-  | {
-      kind: "facet";
-      target: string;
-      facet: "priority" | "type" | "size";
-      value: string | number;
-      reason: string;
-    }
-  | { kind: "order"; targets: string[]; reason: string };
+/** What kind of judgment a member of the judgment backlog waits on. */
+export type BacklogKind =
+  | "stalled"
+  | "followup-failed"
+  | "rearm"
+  | "resume"
+  | "facet"
+  | "need"
+  | "cause";
+
+/** One item of the judgment backlog: its kind, its target and the facts that make it this occurrence. */
+export interface BacklogMember {
+  kind: BacklogKind;
+  /** `PR #7`, an item key, or for a resume or a cause the ended launch's id. */
+  target: string;
+  facts: string;
+}
+
+/** A need that already arrives framed, and who framed it: context for the steward, never a target for its `need` record. */
+export interface FramedNeed {
+  target: string;
+  cause: string;
+  framedBy: "park" | "session" | "dispatcher";
+  /** The framed question, when its framing states one. */
+  question: string | null;
+}
+
 export interface StewardDigest {
   version: 1;
   repo: string;
+  /** The judgment backlog the pass was started on; absent from a digest kept before the trigger read it. */
+  backlog?: BacklogMember[];
   drives: DrivenPr[];
+  /** The needs with no framing: the only targets a `need` record may name. */
   needs: Action[];
+  /** The needs that arrive framed, with their framing: never reframed. */
+  framed?: FramedNeed[];
   queue: PoolIssue[];
   passes: Array<{
     record: string;
@@ -49,6 +77,8 @@ export interface StewardDigest {
   failures: FailureRow[];
   load: LineLoad | null;
   history?: unknown[];
+  /** The runs that ended with no report and no explanation, with their transcript excerpts: the only records a `cause` record may name. */
+  unreported?: UnreportedRun[];
   /** Facts read for this digest, never authority for applying a record. */
   targets?: StewardTargetEvidence[];
   /** Current targets are always first; only this many additional historical targets are read. */
@@ -91,157 +121,76 @@ export function recordBelongsToDigest(
       return record.targets.every((target) =>
         digest.queue.some((issue) => issue.identifier === target),
       );
+    case "cause":
+      return (digest.unreported ?? []).some(
+        (run) => run.record === record.record,
+      );
   }
 }
 
-/** The cadence or the rolling hourly cap rules a run out whatever the input: checked before the digest is read. */
-export function stewardWaits(
+/** The steward passes the host starts in a rolling hour, across its repositories. */
+const STEWARD_HOURLY_BUDGET = 3;
+
+/** Whether the host's passes in the rolling hour before `now` spent its budget. */
+export function stewardBudgetSpent(
   runs: readonly { at: number }[],
   now: number,
-  every: number,
 ): boolean {
-  const latest = [...runs].sort((a, b) => b.at - a.at)[0];
   return (
-    (latest !== undefined && (now - latest.at < every || latest.at > now)) ||
-    runs.filter((r) => r.at > now - 3_600_000).length >= 3
+    runs.filter((r) => r.at > now - 3_600_000).length >= STEWARD_HOURLY_BUDGET
   );
 }
 
-/** A changed input, the cadence and a rolling hourly cap must all permit a run. */
-export function stewardDue(
-  hash: string,
-  runs: readonly { hash: string; at: number }[],
-  now: number,
-  every: number,
-): boolean {
-  const latest = [...runs].sort((a, b) => b.at - a.at)[0];
-  return !stewardWaits(runs, now, every) && latest?.hash !== hash;
+export function memberKey(member: BacklogMember): string {
+  return JSON.stringify([member.kind, member.target, member.facts]);
 }
 
-/** Times in receipts and measured gauges do not turn unchanged work into a new digest. */
-export function digestHash(digest: StewardDigest): string {
-  const { load: _load, ...stable } = digest;
-  const ordered = {
-    ...stable,
-    drives: [...stable.drives]
-      .sort((a, b) => a.number - b.number)
-      .map(({ why: _why, ...p }) => p),
-    needs: stable.needs
-      .map((a) => ({
-        stage: a.stage,
-        target: a.target,
-        cause: a.cause,
-        evidence: a.evidence,
-      }))
-      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-    queue: [...stable.queue].sort((a, b) =>
-      a.identifier.localeCompare(b.identifier),
-    ),
-    passes: [...stable.passes].sort((a, b) => a.record.localeCompare(b.record)),
-    targets: stable.targets?.toSorted((a, b) =>
-      a.target.localeCompare(b.target),
-    ),
-    failures: [...stable.failures].sort((a, b) => a.key.localeCompare(b.key)),
-    history: [...(stable.history ?? [])].sort((a, b) =>
-      JSON.stringify(a).localeCompare(JSON.stringify(b)),
-    ),
-  };
+/** The trigger's hash: the judgment backlog's members alone, whatever else the line did. */
+export function backlogHash(members: readonly BacklogMember[]): string {
   return createHash("sha256")
     .update(
-      JSON.stringify(ordered, (key, value) =>
-        ["heartbeatAgeMinutes", "stewardAct", "stewardAsk"].includes(key)
-          ? undefined
-          : value,
+      JSON.stringify(
+        members.map(memberKey).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
       ),
     )
     .digest("hex");
 }
 
-function nonempty(v: unknown): v is string {
-  return typeof v === "string" && v.trim() !== "" && v.length <= 4000;
+/** The fields a record of `kind` may carry, or none for a kind the steward has not. */
+function fieldsOf(kind: string): readonly string[] | undefined {
+  if (!Object.hasOwn(STEWARD_RECORD_KINDS, kind)) return undefined;
+  const own = STEWARD_RECORD_KINDS[kind as keyof typeof STEWARD_RECORD_KINDS];
+  return [...Object.keys(STEWARD_COMMON_FIELDS), ...Object.keys(own.fields)];
 }
+
+/**
+ * The records of a submission, or why it is refused: the first record that
+ * does not read refuses the whole submission. Each record is checked for its
+ * reason, then for its kind and the names of its fields, then against its
+ * kind's shape (`steward-record-shapes.ts`).
+ */
 export function checkedRecords(
   value: unknown,
 ): Outcome<StewardRecord[], "invalid"> {
-  if (!Array.isArray(value) || value.length > 100)
+  if (!matches(STEWARD_LIST_SHAPE, value))
     return failed(
       "invalid",
       "the steward submits at most 100 records as a JSON array",
     );
   for (const r of value) {
-    if (!isMapping(r) || !nonempty(r.reason))
+    if (!matches(STEWARD_REASONED_SHAPE, r))
       return failed("invalid", "each steward record needs a reason");
-    const shapes: Record<string, string[]> = {
-      rearm: ["kind", "target", "facts", "class", "reason"],
-      resume: ["kind", "record", "reason"],
-      need: ["kind", "target", "act", "ask", "reason"],
-      facet: ["kind", "target", "facet", "value", "reason"],
-      order: ["kind", "targets", "reason"],
-    };
-    const keys = Object.hasOwn(shapes, String(r.kind))
-      ? shapes[String(r.kind)]
-      : undefined;
+    const kind = (r as { kind?: unknown }).kind;
+    const keys = typeof kind === "string" ? fieldsOf(kind) : undefined;
     if (!keys || Object.keys(r).some((k) => !keys.includes(k)))
       return failed(
         "invalid",
         "the steward record kind or fields are not allowed",
       );
-    const valid = recordValues(r);
-    if (!valid) return failed("invalid", "a steward record has invalid values");
+    if (!matches(STEWARD_RECORD_SHAPE, r))
+      return failed("invalid", "a steward record has invalid values");
   }
   return ok(value as StewardRecord[]);
-}
-
-function recordValues(r: Record<string, unknown>): boolean {
-  switch (r.kind) {
-    case "rearm":
-      return rearmValues(r);
-    case "resume":
-      return nonempty(r.record);
-    case "need":
-      return needValues(r);
-    case "facet":
-      return facetValues(r);
-    case "order":
-      return orderValues(r);
-    default:
-      return false;
-  }
-}
-function rearmValues(r: Record<string, unknown>): boolean {
-  return (
-    nonempty(r.target) &&
-    /^PR #[1-9]\d*$/.test(r.target) &&
-    nonempty(r.facts) &&
-    nonempty(r.class)
-  );
-}
-function needValues(r: Record<string, unknown>): boolean {
-  return (
-    nonempty(r.target) &&
-    nonempty(r.ask) &&
-    (NEED_ACTS as readonly unknown[]).includes(r.act)
-  );
-}
-function facetValues(r: Record<string, unknown>): boolean {
-  if (!nonempty(r.target)) return false;
-  if (r.facet === "priority")
-    return (
-      Number.isInteger(r.value) && Number(r.value) >= 1 && Number(r.value) <= 4
-    );
-  return (
-    ["size", "type"].includes(String(r.facet)) &&
-    nonempty(r.value) &&
-    r.value.length <= 100
-  );
-}
-function orderValues(r: Record<string, unknown>): boolean {
-  return (
-    Array.isArray(r.targets) &&
-    r.targets.length <= 100 &&
-    r.targets.every(nonempty) &&
-    new Set(r.targets).size === r.targets.length
-  );
 }
 
 /** A human stop or a registry park never becomes a steward retry. */
@@ -278,11 +227,22 @@ export function keepStewardRun(
     .query(
       "INSERT INTO steward_runs (id, repo, hash, at_ms, digest) VALUES (?, ?, ?, ?, ?)",
     )
-    .run(id, digest.repo, digestHash(digest), at, JSON.stringify(digest));
+    .run(
+      id,
+      digest.repo,
+      backlogHash(digest.backlog ?? []),
+      at,
+      JSON.stringify(digest),
+    );
+}
+/** Take back a run whose pass never started, so its backlog members stay unjudged. */
+export function forgetStewardRun(id: string, root = stateRoot()): void {
+  stateDb(root).query("DELETE FROM steward_runs WHERE id = ?").run(id);
 }
 /**
- * Erase the output-bearing fields (each target's last-pass tail and each
- * pass's quoted question context) from digests older than the retention,
+ * Erase the output-bearing fields (each target's last-pass tail, each
+ * pass's quoted question context, and each unreported run's transcript
+ * excerpt and output tail) from digests older than the retention,
  * in step with launch pruning. The rest of the digest stays.
  */
 export function eraseStewardOutput(
@@ -334,14 +294,39 @@ function erasedPassFields(passes: unknown): boolean {
   return changed;
 }
 
+/** Empty each run's transcript excerpt and output tail; whether any held one. */
+function erasedExcerpts(unreported: unknown): boolean {
+  let changed = false;
+  for (const run of Array.isArray(unreported) ? unreported : []) {
+    if (!isMapping(run)) continue;
+    if (isMapping(run.excerpt) && run.excerpt.unavailable === undefined) {
+      run.excerpt = {
+        untrusted: true,
+        unavailable: "erased after the retention period",
+      };
+      changed = true;
+    }
+    if (run.output !== null && run.output !== undefined) {
+      run.output = null;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /**
  * Whether every structure that can hold output has the shape the erasers
  * walk, so a malformed one is tombstoned rather than left with its text.
  */
 function outputFieldsReadable(digest: unknown): boolean {
   if (!isMapping(digest)) return false;
-  const { targets, passes } = digest;
+  const { targets, passes, unreported } = digest;
   if (targets !== undefined && !Array.isArray(targets)) return false;
+  if (
+    unreported !== undefined &&
+    !(Array.isArray(unreported) && unreported.every(isMapping))
+  )
+    return false;
   if (!Array.isArray(passes) || !passes.every(isMapping)) return false;
   return (targets ?? []).every((t: unknown) => {
     if (!isMapping(t)) return false;
@@ -375,7 +360,8 @@ function erasedOutput(text: string): string | null {
     return UNREADABLE_TOMBSTONE;
   const erasedTargets = erasedTails(digest.targets);
   const erasedPasses = erasedPassFields(digest.passes);
-  const changed = erasedTargets || erasedPasses;
+  const erasedRuns = erasedExcerpts(digest.unreported);
+  const changed = erasedTargets || erasedPasses || erasedRuns;
   return changed ? JSON.stringify(digest) : null;
 }
 export function readStewardDigest(
@@ -406,7 +392,8 @@ function isStewardDigest(value: unknown): value is StewardDigest {
       value.passes,
       value.failures,
     ].every(Array.isArray) &&
-    (value.history === undefined || Array.isArray(value.history))
+    (value.history === undefined || Array.isArray(value.history)) &&
+    (value.unreported === undefined || Array.isArray(value.unreported))
   );
 }
 export function submitStewardRecords(
@@ -418,7 +405,7 @@ export function submitStewardRecords(
   if (!checked.ok) return checked;
   return attempt("unreadable", "the steward records could not be kept", () => {
     const db = stateDb(root);
-    return db.transaction(() => {
+    return inTransaction(db, () => {
       const row = db
         .query("SELECT submitted FROM steward_runs WHERE id = ?")
         .get(run) as { submitted: number } | null;
@@ -433,7 +420,7 @@ export function submitStewardRecords(
         "UPDATE launches SET result = 'done', result_at = ? WHERE id = ? AND result IS NULL",
       ).run(currentIso(), run);
       return "submitted" as const;
-    })();
+    });
   });
 }
 export function stewardRecords(

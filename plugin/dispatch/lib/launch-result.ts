@@ -9,12 +9,39 @@ import { inTransaction, stateDb } from "./state.ts";
 import type { FramedResult } from "./framed-result.ts";
 import { storedEndedRow } from "./closing-report-store.ts";
 import { currentIso } from "../../shared/time.ts";
+import { testLockNote } from "./test-lock-note.ts";
+import { RATE_LIMIT_WAIT, type WaitFor } from "./wait-for.ts";
+
+/**
+ * A row's answer. A `waits` result is kept as `failed` with the time in
+ * `result_until`, so a copy of the plugin that knows no `waits` reads a
+ * failed pass, which it holds until a person settles it.
+ */
+export function asResult(
+  value: string | null,
+  until: string | null = null,
+): SessionResult | null {
+  if (value === "failed" && until !== null) return "waits";
+  return value === "done" || value === "failed" ? value : null;
+}
+
+/** A record's recorded answer; `null` when none. */
+export function readResult(
+  id: string,
+  root = stateRoot(),
+): SessionResult | null {
+  const row = stateDb(root)
+    .query("SELECT result, result_until FROM launches WHERE id = ?")
+    .get(id) as { result: string | null; result_until: string | null } | null;
+  return asResult(row?.result ?? null, row?.result_until ?? null);
+}
 
 /**
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
  * false when the record already had one, which stands. A `waits` result
  * carries `until`: it is kept as `failed` with `until` beside it
- * (`asResult`). A pickup the repository's start rules refused carries its
+ * (`asResult`), and what it waits for (`wait`, a rate limit's reset when
+ * absent). A pickup the repository's start rules refused carries its
  * `refusal`, written with it; a pass that stopped for a person carries the
  * decision it framed (`framed`), written with it too.
  */
@@ -26,6 +53,7 @@ export function recordResult(
   refusal: PickupRefusal | null = null,
   until?: string,
   framed?: FramedResult,
+  wait: WaitFor = RATE_LIMIT_WAIT,
 ): boolean {
   if (result === "waits" && until === undefined)
     throw new Defect("a waits result needs the time it waits until");
@@ -34,7 +62,7 @@ export function recordResult(
   return inTransaction(db, () => {
     const done = db
       .query(
-        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ?, refusal = ?, result_decision = ? WHERE id = ? AND result IS NULL",
+        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ?, refusal = ?, result_decision = ?, result_wait = ? WHERE id = ? AND result IS NULL",
       )
       .run(
         result === "waits" ? "failed" : result,
@@ -43,10 +71,11 @@ export function recordResult(
         until ?? null,
         refused,
         framed === undefined ? null : JSON.stringify(framed),
+        result === "waits" ? JSON.stringify(wait) : null,
         id,
       );
     if (done.changes !== 1) return false;
-    reclassifyEnded(db, id, result, next);
+    reclassifyEnded(db, id, result, next, wait);
     return true;
   });
 }
@@ -57,22 +86,26 @@ function reclassifyEnded(
   id: string,
   result: SessionResult,
   next: NextOwner | null,
+  waitFor: WaitFor,
 ): void {
   const row = storedEndedRow(db, id);
   if (row === null || (row.stage !== "pickup" && row.stage !== "followup"))
     return;
   const storedExit = db
-    .query("SELECT exit FROM launches WHERE id = ?")
-    .get(id) as { exit: string | null };
+    .query("SELECT exit, record FROM launches WHERE id = ?")
+    .get(id) as { exit: string | null; record: string };
   const exit: unknown =
     storedExit.exit === null ? null : JSON.parse(storedExit.exit);
   const placed = sessionResultClass(
     result,
     isMapping(exit) ? exit.said : undefined,
+    waitFor,
   );
   if (placed === null) throw new Defect("a recorded result must classify");
+  // The ended row named the last wait for the test lock; the new reason keeps it.
+  const wait = testLockNote(JSON.parse(storedExit.record), undefined, true);
   row.class = placed.class;
-  row.reason = placed.reason;
+  row.reason = wait === null ? placed.reason : `${placed.reason}; ${wait}`;
   row.next =
     row.stage === "pickup" && (result === "done" || result === "waits")
       ? next

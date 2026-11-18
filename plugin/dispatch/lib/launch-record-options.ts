@@ -22,6 +22,12 @@ function optionalSeconds(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+/** Whether a value is absent or a positive whole number. */
+function optionalPositiveInteger(value: unknown): boolean {
+  if (value === undefined) return true;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
 /** Whether a value is absent or an array whose members are strings. */
 function optionalStrings(value: unknown): boolean {
   return (
@@ -44,6 +50,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "noReplay",
       "servedPerson",
       "ancestorEpic",
+      "factoryAncestor",
       "blockingFor",
       "stewardResume",
       "stewardContext",
@@ -58,7 +65,9 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalStrings(value.claimedItems) &&
     optionalStrings(value.releasedItems) &&
     optionalStrings(value.codexPassArgs) &&
-    optionalSeconds(value.passTimeoutSec) &&
+    [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&
+    optionalPositiveInteger(value.followupWithinMs) &&
+    optionalPositiveInteger(value.accountLaunchOrdinal) &&
     optionalBooleans(value, [
       "rearmConsumed",
       "pooled",
@@ -71,10 +80,25 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       value.standing === null ||
       isStandingAnswer(value.standing)) &&
     (value.answered === undefined || isCarriedAnswer(value.answered)) &&
-    optionalTime(value.endedAt) &&
-    optionalTime(value.cancelledAt) &&
-    optionalTime(value.openedAt) &&
+    [value.endedAt, value.cancelledAt, value.openedAt].every(optionalTime) &&
+    optionalTestLockWait(value.testLockWait) &&
     isRedrive(value.redrive)
+  );
+}
+
+/** Whether a value is absent or a stored test-lock observation. */
+function optionalTestLockWait(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isMapping(value) &&
+      Number.isSafeInteger(value.pid) &&
+      (value.pid as number) > 0 &&
+      typeof value.workspace === "string" &&
+      typeof value.since === "string" &&
+      Number.isFinite(parseMs(value.since)) &&
+      typeof value.observedAt === "string" &&
+      Number.isFinite(parseMs(value.observedAt)) &&
+      typeof value.waiting === "boolean")
   );
 }
 

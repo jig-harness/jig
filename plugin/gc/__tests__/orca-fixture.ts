@@ -55,11 +55,26 @@ export interface OrcaState {
    * How `rm` goes wrong: `exit` exits nonzero with no reply, and
    * `unreadable` prints output that is not Orca's, both removing nothing;
    * `lost-reply` removes the worktree, then exits nonzero with no output, as
-   * a reply lost on its way back.
+   * a reply lost on its way back; `accepted` answers that Orca is still
+   * deleting the worktree, removing nothing yet, and `in-progress` refuses
+   * the call for a removal already under way, removing nothing either;
+   * `refused` refuses it.
    */
-  rm?: "exit" | "unreadable" | "lost-reply";
+  rm?:
+    | "exit"
+    | "unreadable"
+    | "lost-reply"
+    | "accepted"
+    | "in-progress"
+    | "refused";
   /** Where `rm` reads gc's admission for the worktree, copying it to `admission-at-rm.json`. */
   guard?: string;
+  /**
+   * Where a process in the worktree tries a commit: `rm` before Orca removes
+   * it, writing the attempt's exit code and error output to `window-commit`;
+   * `ps` once, at the first registry read after the remove hook ran.
+   */
+  commitAt?: "rm" | "ps";
 }
 
 /** A fake `orca` reading and writing its registry in `state.json`. */
@@ -80,6 +95,12 @@ const answer = (result) => { console.log(JSON.stringify({ ok: true, result })); 
 const refuse = (code) => { console.log(JSON.stringify({ ok: false, error: { code, message: code } })); process.exit(1); };
 if (state.fail.includes(sub)) { console.error("orca: runtime unavailable"); process.exit(1); }
 const value = (flag) => args[args.indexOf(flag) + 1];
+const root = ${JSON.stringify(root)};
+const commit = (tree, message) =>
+  Bun.spawnSync(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-C", tree, "commit", "-q", "--allow-empty", "-m", message], { stdout: "pipe", stderr: "pipe" });
+if (sub === "ps" && state.commitAt === "ps" && existsSync(join(root, "hook-ran")) && !existsSync(join(root, "late-commit"))) {
+  writeFileSync(join(root, "late-commit"), String(commit(state.worktrees[0].path, "late").exitCode));
+}
 if (sub === "list") {
   if (value("--repo") !== "path:" + state.repo) refuse("repo_not_found");
   answer({ worktrees: state.worktrees.map(({ id, path }) => ({ id, path })), totalCount: state.worktrees.length, truncated: false });
@@ -106,6 +127,13 @@ if (sub === "rm") {
   }
   if (state.rm === "exit") { console.error("orca: connection lost"); process.exit(1); }
   if (state.rm === "unreadable") { console.log("orca: something went sideways"); process.exit(0); }
+  if (state.rm === "accepted") answer({ removing: true });
+  if (state.rm === "in-progress") refuse("worktree_removal_in_progress");
+  if (state.rm === "refused") refuse("worktree_dirty");
+  if (state.commitAt === "rm") {
+    const tried = commit(row.path, "window");
+    writeFileSync(join(root, "window-commit"), tried.exitCode + "\\n" + tried.stderr.toString());
+  }
   const removed = Bun.spawnSync(["git", "-C", state.repo, "worktree", "remove", row.path]);
   if (removed.exitCode !== 0) refuse("worktree_dirty");
   state.worktrees = state.worktrees.filter((entry) => entry !== row);
@@ -128,6 +156,7 @@ export function setup() {
     kinds: ["worktrees"],
     worktree_roots: [roots],
     scratch_prefixes: [],
+    regenerable_paths: [".fallow"],
   };
   mkdirSync(join(repo, ".config", "worktree-hooks"), { recursive: true });
   writeFileSync(join(repo, ".config/jig.yaml"), dump({ gc: declaration }));
@@ -286,4 +315,52 @@ export function calls(f: ReturnType<typeof setup>): string[] {
   return existsSync(file)
     ? readFileSync(file, "utf8").split("\n").filter(Boolean)
     : [];
+}
+
+export function commitAndPush(
+  f: ReturnType<typeof setup>,
+  message: string,
+  files: Record<string, string>,
+): void {
+  for (const [name, text] of Object.entries(files))
+    writeFileSync(join(f.tree, name), text);
+  f.command(["git", "-C", f.tree, "add", "-A"]);
+  f.command(["git", "-C", f.tree, "commit", "-m", message]);
+  f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+  f.command(["git", "-C", f.tree, "fetch", "origin"]);
+  f.refreshGh();
+}
+
+/**
+ * Detach the checkout at its head and make `gh` answer the forge's pull
+ * requests for a commit with the merged pull request #12 at `head`, that it
+ * has no other commit (as the forge refuses one), and no pull request for any
+ * branch.
+ */
+export function detachWithMergedPull(
+  f: ReturnType<typeof setup>,
+  head: string,
+): void {
+  f.command(["git", "-C", f.tree, "switch", "--quiet", "--detach"]);
+  const pulls = [
+    {
+      number: 12,
+      state: "closed",
+      merged_at: "2026-11-01T00:00:00Z",
+      head: { sha: head, repo: { full_name: "acme/app" } },
+    },
+  ];
+  writeFakeProgram(
+    join(f.root, "bin", "gh"),
+    `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
+const args = process.argv.slice(2);
+if (args[0] === "api" && !args.at(-1).includes(${JSON.stringify(head)})) {
+  console.error("gh: No commit found for SHA: " + args.at(-1) + " (HTTP 422)");
+  process.exit(1);
+}
+console.log(JSON.stringify(args[0] === "api" ? ${JSON.stringify(pulls)} : []));
+`,
+  );
 }

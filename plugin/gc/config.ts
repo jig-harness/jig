@@ -7,14 +7,22 @@ import {
   userConfigPath,
 } from "../shared/config-layers.ts";
 import { failed, type Failure, ok, type Outcome } from "../shared/outcome.ts";
+import {
+  DEFAULT_REGENERABLE_PATHS,
+  regenerablePaths,
+} from "./regenerable-paths.ts";
 import type { KindName } from "./types.ts";
 import { DEFAULT_ARCHIVE_MAX_BYTES } from "./legacy-archive.ts";
 
 const REPOSITORY_KINDS = ["worktrees", "tool-state", "scratch"] as const;
+/** The kinds that belong to the machine, not to a repository. */
+const MACHINE_KINDS = ["receipts", "orca-terminals"] as const;
 export interface Declaration {
-  kinds: Exclude<KindName, "receipts">[];
+  kinds: Exclude<KindName, (typeof MACHINE_KINDS)[number]>[];
   worktree_roots: string[];
   scratch_prefixes: string[];
+  /** Literal paths relative to a worktree; absent on older machine records. */
+  regenerable_paths?: string[];
 }
 export interface RepositoryEntry {
   path: string;
@@ -34,8 +42,12 @@ export interface MachineConfig {
   min_free_bytes: number;
   /** The most the one-time archive of one worktree's ignored content may hold; 0 archives nothing. */
   archive_max_bytes: number;
-  /** Orca's command, for a run no Orca terminal started (the scheduler's). */
-  orca?: { command: string };
+  /**
+   * Orca's command, for a run no Orca terminal started (the scheduler's),
+   * and the hours a run tab must be idle before the `orca-terminals` kind
+   * closes it.
+   */
+  orca?: { command: string; terminal_idle_hours: number };
 }
 /** A configuration gc refuses: the run collects nothing and exits 2. */
 type Configured<T> = Outcome<T, "configuration">;
@@ -93,7 +105,7 @@ function kindList(value: unknown, machine: boolean): Configured<KindName[]> {
   const result = list(value, "gc.kinds");
   if (!result.ok) return result;
   const allowed: readonly string[] = machine
-    ? [...REPOSITORY_KINDS, "receipts"]
+    ? [...REPOSITORY_KINDS, ...MACHINE_KINDS]
     : REPOSITORY_KINDS;
   if (result.value.some((kind) => !allowed.includes(kind)))
     return refused(`gc.kinds supports ${allowed.join(", ")}`);
@@ -107,7 +119,7 @@ export function parseDeclaration(
   if (!gc.ok) return gc;
   const known = keys(
     gc.value,
-    ["kinds", "worktree_roots", "scratch_prefixes"],
+    ["kinds", "worktree_roots", "scratch_prefixes", "regenerable_paths"],
     "gc",
   );
   if (!known.ok) return known;
@@ -127,7 +139,10 @@ export function parseDeclaration(
   if (!worktree_roots.ok) return worktree_roots;
   const scratch_prefixes = paths("scratch_prefixes");
   if (!scratch_prefixes.ok) return scratch_prefixes;
+  const regenerable = regenerablePaths(gc.value.regenerable_paths);
+  if (!regenerable.ok) return regenerable;
   return ok({
+    regenerable_paths: regenerable.value,
     kinds: kinds.value as Declaration["kinds"],
     worktree_roots: worktree_roots.value,
     scratch_prefixes: scratch_prefixes.value,
@@ -155,7 +170,16 @@ function repositoryEntry(item: unknown): Configured<RepositoryEntry> {
   const path = values.path as string;
   if (!isAbsolute(path))
     return refused("gc.repositories.path must be absolute");
-  const bounds = parseDeclaration(values.bounds, path);
+  // Older installation records predate regenerable_paths.  A missing bound
+  // grants no deletion authority; only a new repository declaration receives
+  // the repository default.
+  const legacyBounds = isMapping(values.bounds)
+    ? {
+        ...values.bounds,
+        regenerable_paths: values.bounds.regenerable_paths ?? [],
+      }
+    : values.bounds;
+  const bounds = parseDeclaration(legacyBounds, path);
   if (!bounds.ok) return bounds;
   return ok({
     path,
@@ -283,16 +307,28 @@ export function parseMachine(value: unknown): Configured<MachineConfig> {
  * Orca's command as an absolute path: the scheduler's `PATH` is not the
  * shell's, so a bare name could find another program or none.
  */
-function orcaEntry(value: unknown): Configured<{ command: string }> {
+function orcaEntry(
+  value: unknown,
+): Configured<NonNullable<MachineConfig["orca"]>> {
   const orca = mapping(value, "gc.orca");
   if (!orca.ok) return orca;
-  const known = keys(orca.value, ["command"], "gc.orca");
+  const known = keys(orca.value, ["command", "terminal_idle_hours"], "gc.orca");
   if (!known.ok) return known;
   const command = orca.value.command;
   if (typeof command !== "string" || !isAbsolute(command))
     return refused("gc.orca.command must be an absolute path");
-  return ok({ command });
+  // The default is the shortest guard: machine policy can only lengthen it.
+  const hours = integer(
+    orca.value.terminal_idle_hours ?? DEFAULT_TERMINAL_IDLE_HOURS,
+    "gc.orca.terminal_idle_hours",
+    DEFAULT_TERMINAL_IDLE_HOURS,
+    8760,
+  );
+  if (!hours.ok) return hours;
+  return ok({ command, terminal_idle_hours: hours.value });
 }
+/** Hours a run tab stays idle before the `orca-terminals` kind closes it. */
+const DEFAULT_TERMINAL_IDLE_HOURS = 24;
 /** The configuration gc runs with: the machine's policy and the repository's declaration. */
 export interface GcConfiguration {
   machine: MachineConfig;
@@ -347,9 +383,15 @@ export function boundDeclaration(
   const scratch_prefixes = current.scratch_prefixes.filter((path) =>
     bounds.scratch_prefixes.includes(path),
   );
+  const currentPaths = current.regenerable_paths ?? DEFAULT_REGENERABLE_PATHS;
+  const boundPaths = bounds.regenerable_paths ?? DEFAULT_REGENERABLE_PATHS;
+  const regenerable_paths = currentPaths.filter((path) =>
+    boundPaths.some((bound) => path === bound || path.startsWith(`${bound}/`)),
+  );
   return {
-    declaration: { kinds, worktree_roots, scratch_prefixes },
+    declaration: { kinds, worktree_roots, scratch_prefixes, regenerable_paths },
     widened:
+      regenerable_paths.length !== currentPaths.length ||
       kinds.length !== current.kinds.length ||
       worktree_roots.length !== current.worktree_roots.length ||
       scratch_prefixes.length !== current.scratch_prefixes.length,

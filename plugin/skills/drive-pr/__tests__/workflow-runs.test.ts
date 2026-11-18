@@ -263,6 +263,137 @@ describe("a cancelled check never reads as passing", () => {
     ).toBe("cancelled: tests");
   });
 
+  it("stays unknown when the replacing run skipped the job's matrix legs", () => {
+    const cancelled = [
+      workflowRun(40, "cancelled"),
+      workflowRun(41, "success", T4),
+    ];
+    for (const legs of [
+      [job("tests (1/2)", "skipped", 41), job("tests (2/2)", "skipped", 41)],
+      [job("tests (1/2)", "success", 41), job("tests (2/2)", "skipped", 41)],
+    ])
+      expect(
+        verdict(
+          [job("tests", "cancelled", 40), job("lint", "success", 41), ...legs],
+          cancelled,
+        ),
+      ).toBe("cancelled: tests");
+    // Every leg ran to a result: the cancelled template is replaced.
+    expect(
+      verdict(
+        [
+          job("tests", "cancelled", 40),
+          job("tests (1/2)", "success", 41),
+          job("tests (2/2)", "success", 41),
+        ],
+        cancelled,
+      ),
+    ).toBe("green");
+  });
+
+  it("judges each replacing run's reports on their own", () => {
+    // One successor skipped the exact name; another ran every expanded leg.
+    expect(
+      verdict(
+        [
+          job("tests", "cancelled", 40),
+          job("tests", "skipped", 41),
+          job("lint", "success", 41),
+          job("tests (1/2)", "success", 42),
+          job("tests (2/2)", "success", 42),
+        ],
+        [
+          workflowRun(40, "cancelled"),
+          workflowRun(41, "success", T3),
+          workflowRun(42, "success", T4),
+        ],
+      ),
+    ).toBe("green");
+  });
+
+  it("reads matrix legs by the cancelled job's own name, or its unexpanded template", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    // Another job whose name only shares the text before its parenthesis is
+    // not a leg of this one.
+    expect(
+      verdict(
+        [
+          job("Tests (unit)", "cancelled", 40),
+          job("Tests (unit) (1/2)", "success", 41),
+          job("Tests (unit) (2/2)", "success", 41),
+          job("Tests (integration)", "skipped", 41),
+        ],
+        runs,
+      ),
+    ).toBe("green");
+    // A template cancelled before its matrix expanded, whose legs skipped.
+    const template = `suite (linux, \${{ matrix.shard }}/3)`;
+    expect(
+      verdict(
+        [
+          job(template, "cancelled", 40),
+          job("suite (1/3)", "skipped", 41),
+          job("lint", "success", 41),
+        ],
+        runs,
+      ),
+    ).toBe(`cancelled: ${template}`);
+  });
+
+  it("needs a result from every leg that shares a name", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    for (const name of ["tests", "tests (linux)"]) {
+      const cancelled = job(name, "cancelled", 40);
+      const kept = (conclusion: string) =>
+        withoutSuperseded(
+          [cancelled, job(name, "success", 41), job(name, conclusion, 41)],
+          runs,
+        ).includes(cancelled);
+      expect(kept("skipped")).toBe(true);
+      expect(kept("failure")).toBe(false);
+    }
+  });
+
+  it("finds a template's matrix suffix outside its expressions", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    const template = `suite (linux, \${{ format(' ({0})', matrix.shard) }}/3)`;
+    const legs = (conclusion: string) => [
+      job(template, "cancelled", 40),
+      job("suite (linux, 1/3)", conclusion, 41),
+      job("lint", "success", 41),
+    ];
+    expect(verdict(legs("skipped"), runs)).toBe(`cancelled: ${template}`);
+    expect(verdict(legs("success"), runs)).toBe("green");
+  });
+
+  it("finds the enclosing matrix suffix around a nested literal group", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    const template = `suite (${"$"}{{ matrix.os }} (unit))`;
+    const legs = (conclusion: string) => [
+      job(template, "cancelled", 40),
+      job("suite (linux (unit))", conclusion, 41),
+      job("lint", "success", 41),
+    ];
+    expect(verdict(legs("skipped"), runs)).toBe(`cancelled: ${template}`);
+    expect(verdict(legs("success"), runs)).toBe("green");
+  });
+
+  it("ignores expression terminators inside quoted strings", () => {
+    const runs = [workflowRun(40, "cancelled"), workflowRun(41, "success", T4)];
+    for (const template of [
+      `suite (${"$"}{{ matrix.os || '}} )' }} (unit))`,
+      `suite (${"$"}{{ matrix.os || 'it''s }} )' }} (unit))`,
+    ]) {
+      const legs = (conclusion: string) => [
+        job(template, "cancelled", 40),
+        job("suite (linux (unit))", conclusion, 41),
+        job("lint", "success", 41),
+      ];
+      expect(verdict(legs("skipped"), runs)).toBe(`cancelled: ${template}`);
+      expect(verdict(legs("success"), runs)).toBe("green");
+    }
+  });
+
   it("stays unknown when the workflow runs cannot be read, or there is none", () => {
     const runs = [job("gates", "cancelled", 40), job("gates", "success", 41)];
     // Unreadable: nothing is dropped, and the check runs read on their own.
@@ -359,7 +490,12 @@ describe("a true failure beside a cancelled sibling", () => {
     ];
     expect(verdict(runs, workflowRuns)).toBe("failing: gates, unit");
     expect(failingRunsOf(runs, workflowRuns)).toEqual([
-      { id: 41, createdAt: T1, jobNames: ["gates", "unit"] },
+      {
+        id: 41,
+        createdAt: T1,
+        conclusion: "failure",
+        jobNames: ["gates", "unit"],
+      },
     ]);
   });
 

@@ -66,7 +66,12 @@ import { markerMain } from "./marker.ts";
 import { probeMain } from "./probe-command.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
 import { upgradeLine } from "../runtime/upgrade-record.ts";
-import { framedResultMain, refusedResultMain, resultMain } from "./result.ts";
+import {
+  framedResultMain,
+  guardedResult,
+  refusedResultMain,
+  resultMain,
+} from "./result.ts";
 import { reportFileMain } from "./report-command.ts";
 import { runTick } from "./tick.ts";
 
@@ -189,7 +194,7 @@ const result = command(
       description: message`The record's token, named in the session's prompt.`,
     }),
     outcome: argument(string({ metavar: "done|failed|waits" }), {
-      description: message`How the session ended; waits is a pickup the tracker's rate limit stopped.`,
+      description: message`How the session ended; waits is a pickup or a follow-up a rate limit stopped, or a follow-up whose arm is still pending.`,
     }),
     pr: optional(
       option("--pr", countValue("PR"), {
@@ -213,12 +218,17 @@ const result = command(
     ),
     reasons: multiple(
       option("--reason", string({ metavar: "REASON" }), {
-        description: message`The reason the refused claim printed: once, or once per --key.`,
+        description: message`The reason the refused claim printed: once, or once per --key. With waits: what it waits for, rate-limit (the default) or pending, a follow-up's arm still pending.`,
       }),
     ),
     until: optional(
       option("--until", string({ metavar: "TIME" }), {
-        description: message`With waits: when the tracker's rate limit resets (ISO 8601); the item starts again after it.`,
+        description: message`With waits: when the rate limit resets, or when to look at the pending arm again (ISO 8601, at most a day ahead); the item or the follow-up starts again after it.`,
+      }),
+    ),
+    arm: optional(
+      option("--arm", string({ metavar: "NAME" }), {
+        description: message`With waits --reason pending: the arm still pending and what it waits for, in one line, which a person is told if it stays pending past dispatch.followup_within.`,
       }),
     ),
     decision: optional(
@@ -583,10 +593,46 @@ async function decisionResult(
   return framedResultMain(args.record, args.token, args.outcome, text);
 }
 
+/** `waits --until <time> [--reason rate-limit|pending] [--arm <name>]`: no handoff, refusal or decision beside it. */
+function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
+  if (
+    [args.pr, args.none, args.decision].some((v) => v !== undefined) ||
+    args.refused.length > 0 ||
+    args.keys.length > 0 ||
+    args.reasons.length > 1
+  ) {
+    console.error(
+      "jig dispatch result: waits takes --until, and at most one --reason and one --arm; no --pr, --none, --decision, --refused or --key",
+    );
+    return 2;
+  }
+  const reason = args.reasons[0];
+  return resultMain([
+    args.record,
+    args.token,
+    args.outcome,
+    ...(args.until === undefined ? [] : ["--until", args.until]),
+    ...(reason === undefined ? [] : ["--reason", reason]),
+    ...(args.arm === undefined ? [] : ["--arm", args.arm]),
+  ]);
+}
+
+/** A `waits` result forwarded, or `--arm` refused beside any other; `null` for any other result. */
+function waitsRoute(
+  args: Extract<Subcommand, { action: "result" }>,
+): number | null {
+  if (args.outcome === "waits") return waitsResult(args);
+  if (args.arm === undefined) return null;
+  console.error("jig dispatch result: --arm goes only with waits");
+  return 2;
+}
+
 /** Forward a session result and its mutually exclusive handoff arguments. */
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
 ): number | Promise<number> {
+  const waited = waitsRoute(args);
+  if (waited !== null) return waited;
   if (args.decision !== undefined)
     return decisionResult({ ...args, decision: args.decision });
   if (
@@ -682,7 +728,10 @@ function subcommandMain(
   args: Subcommand,
   script: string,
 ): number | Promise<number> {
-  if (args.action === "result") return sessionResultMain(args);
+  if (args.action === "result")
+    return guardedResult(args.record, args.token, () =>
+      sessionResultMain(args),
+    );
   if (args.action === "report")
     return reportFileMain(args.record, args.token, args.file);
   if (args.action === "receipts") return showReceipts(args.runId);

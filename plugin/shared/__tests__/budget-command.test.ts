@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { recordCall } from "../outbound/ledger.ts";
+import { recordCall, UNATTRIBUTED } from "../outbound/ledger.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -59,4 +59,141 @@ test("jig budget refuses a window beyond retained history", () => {
   );
   expectSpawnExit(result, 2);
   expect(result.stderr.toString()).toContain("integer from 1 to 168");
+});
+
+test("jig budget keeps unchanged request traffic separate from primary quota cost", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-budget-unchanged-"));
+  roots.push(root);
+  const path = join(root, "budget.sqlite");
+  recordCall({
+    path,
+    system: "github",
+    credential: "github:test",
+    operation: "GET /repos/{}/{}/pulls/{}",
+    caller: "tick:one",
+    unit: "requests",
+    requests: 1,
+    cost: 0,
+    estimated: false,
+    durationMs: 1,
+  });
+  const script = `import {main} from ${JSON.stringify(jig)}; import {withLedgerPath} from ${JSON.stringify(ledger)}; process.exit(await withLedgerPath(${JSON.stringify(path)},()=>main(["budget","--json"])));`;
+  const result = Bun.spawnSync([process.execPath, "--eval", script], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(result, 0);
+  const answer = JSON.parse(result.stdout.toString());
+  expect(answer.operations[0]).toMatchObject({
+    requests: 1,
+    cost: 0,
+    unknownCost: 0,
+    estimated: 0,
+  });
+});
+
+test("jig budget shows spending no counted call explains as unattributed, never as an operation", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-budget-unattributed-"));
+  roots.push(root);
+  const path = join(root, "budget.sqlite");
+  recordCall({
+    path,
+    system: "github",
+    credential: "github:test",
+    operation: UNATTRIBUTED,
+    caller: UNATTRIBUTED,
+    unit: "points",
+    requests: 0,
+    cost: 19,
+    estimated: false,
+    durationMs: 0,
+  });
+  const run = (json: boolean) => {
+    // The script is fixed text; the values reach it through the environment.
+    const script =
+      "const {main} = await import(process.env.TEST_JIG); const {withLedgerPath} = await import(process.env.TEST_LEDGER); process.exit(await withLedgerPath(process.env.TEST_PATH, () => main(JSON.parse(process.env.TEST_ARGS))));";
+    const result = Bun.spawnSync([process.execPath, "--eval", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        TEST_JIG: jig,
+        TEST_LEDGER: ledger,
+        TEST_PATH: path,
+        TEST_ARGS: JSON.stringify(json ? ["budget", "--json"] : ["budget"]),
+      },
+    });
+    expectSpawnExit(result, 0);
+    return result.stdout.toString();
+  };
+  const answer = JSON.parse(run(true));
+  expect(answer.operations).toEqual([
+    expect.objectContaining({
+      operation: UNATTRIBUTED,
+      unattributed: true,
+      requests: 0,
+      cost: 19,
+    }),
+  ]);
+  expect(answer.callers[0]).toMatchObject({ unattributed: true });
+  const text = run(false);
+  expect(text).toContain(
+    "github github:test unattributed: 19 points the reported balance shows spent that no counted call explains",
+  );
+  expect(text).not.toContain(`${UNATTRIBUTED}:`);
+});
+
+test("jig budget counts a route's 304 answers apart from its other requests", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-budget-not-modified-"));
+  roots.push(root);
+  const path = join(root, "budget.sqlite");
+  const call = {
+    path,
+    system: "github",
+    credential: "github:test",
+    operation: "GET /repos/{}/{}/issues/{}/comments",
+    caller: "pass:one",
+    unit: "requests",
+    requests: 1,
+    estimated: false,
+    durationMs: 1,
+  };
+  recordCall({ ...call, cost: 1 });
+  recordCall({ ...call, cost: 0, notModified: 1 });
+  recordCall({ ...call, cost: 0, notModified: 1 });
+  recordCall({ ...call, operation: "GET /repos/{}/{}/pulls/{}", cost: 1 });
+  const run = (args: string[]) => {
+    const script =
+      "const {main} = await import(process.env.TEST_JIG); const {withLedgerPath} = await import(process.env.TEST_LEDGER); process.exit(await withLedgerPath(process.env.TEST_PATH, () => main(JSON.parse(process.env.TEST_ARGS))));";
+    const result = Bun.spawnSync([process.execPath, "--eval", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        TEST_JIG: jig,
+        TEST_LEDGER: ledger,
+        TEST_PATH: path,
+        TEST_ARGS: JSON.stringify(args),
+      },
+    });
+    expectSpawnExit(result, 0);
+    return result.stdout.toString();
+  };
+  const answer = JSON.parse(run(["budget", "--json"]));
+  const byRoute = (operation: string) =>
+    answer.operations.find(
+      (o: { operation: string }) => o.operation === operation,
+    );
+  expect(byRoute(call.operation)).toMatchObject({
+    requests: 3,
+    notModified: 2,
+    cost: 1,
+  });
+  expect(byRoute("GET /repos/{}/{}/pulls/{}")).toMatchObject({
+    requests: 1,
+    notModified: 0,
+  });
+  expect(run(["budget"])).toContain(
+    `${call.operation}: 3 requests (2 answered 304 Not Modified), 1 requests`,
+  );
 });

@@ -1,5 +1,6 @@
 /** Direct assignments obey the same ancestor execution plans as inherited work. */
 import type {
+  DispatchRawIssue,
   PoolIssue,
   QueueParent,
   Tracker,
@@ -7,6 +8,7 @@ import type {
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { PickupReads } from "../pickup-reads.ts";
 import { trackerScope, type HeldIssue } from "./served-reads.ts";
+import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
 import { planKeys, servedPlan } from "./served-plan.ts";
 
 /**
@@ -15,9 +17,13 @@ import { planKeys, servedPlan } from "./served-plan.ts";
  * reads it again only when the queue did not carry it.
  */
 export interface ParentReads {
+  readonly readAt?: number;
+  metadataEpoch?(key: string): number;
   pool(key: string): Promise<PoolIssue | null>;
   /** One read per key in the tick, where the reads are shared. */
   once?<T>(key: string, read: () => Promise<T>): Promise<T>;
+  /** An issue's native row, where the reads hold native rows. */
+  raw?(key: string): Promise<DispatchRawIssue | null>;
   held?(key: string): HeldIssue | undefined;
   parentBody?(key: string): QueueParent | undefined;
 }
@@ -29,6 +35,7 @@ function directReads(tracker: Tracker): ParentReads {
 
 interface Body {
   updatedAt: string;
+  readAt?: number | undefined;
   description: string;
   parent: string | null;
 }
@@ -47,12 +54,29 @@ function carriedBody(
     : null;
 }
 
+/** GitHub ancestry edits may leave the issue timestamp unchanged. */
+function readingAt(
+  tracker: Tracker,
+  reads: ParentReads,
+  issue: PoolIssue,
+): number | undefined {
+  return tracker.adapter === "github" && tracker.dispatchSource !== undefined
+    ? (reads.metadataEpoch?.(issue.identifier) ?? reads.readAt)
+    : undefined;
+}
+
 /** A kept entry, when it is the issue's current one. */
-function current<T extends { updatedAt: string }>(
+function current<T extends { updatedAt: string; readAt?: number | undefined }>(
   kept: T | null,
   issue: PoolIssue,
+  readAt?: number,
 ): T | null {
-  return issue.updatedAt && kept?.updatedAt === issue.updatedAt ? kept : null;
+  return issue.updatedAt &&
+    kept?.updatedAt === issue.updatedAt &&
+    (readAt === undefined ||
+      (typeof kept.readAt === "number" && kept.readAt >= readAt))
+    ? kept
+    : null;
 }
 
 /** Keeps what a read carried, for a tick whose reads carry none (the kept reading is reused). */
@@ -67,16 +91,39 @@ function remember<T>(
   return value;
 }
 
+/**
+ * What the issue's native row in this reading carries of its description and
+ * parent, as current as the row: `null` where the reads hold no native row
+ * or the row does not carry them.
+ */
+async function rowBody(
+  tracker: Tracker,
+  issue: PoolIssue,
+  reads: ParentReads,
+): Promise<Body | null> {
+  const describe = tracker.dispatchSource?.describe;
+  if (describe === undefined || reads.raw === undefined) return null;
+  const row = await reads.raw(issue.identifier);
+  const carried = row === null ? null : describe(row);
+  return carried === null
+    ? null
+    : { updatedAt: issue.updatedAt ?? "", ...carried };
+}
+
 async function body(
   tracker: Tracker,
   issue: PoolIssue,
   cache: PickupReads,
   reads: ParentReads,
 ): Promise<Body | null> {
+  const native = await rowBody(tracker, issue, reads);
+  if (native !== null) return native;
   const key = `${trackerScope(tracker)}:parent-plan:${issue.identifier}`;
-  const kept = current(cache.get<Body>(key), issue);
+  const readAt = readingAt(tracker, reads, issue);
+  const kept = current(cache.get<Body>(key), issue, readAt);
   const carried = carriedBody(reads.parentBody?.(issue.identifier), issue);
-  if (carried !== null) return remember(cache, key, carried, kept, issue);
+  if (carried !== null)
+    return remember(cache, key, { ...carried, readAt }, kept, issue);
   if (kept !== null) return kept;
   const read = () => tracker.getIssue(issue.identifier);
   const full = await (reads.once === undefined
@@ -85,6 +132,7 @@ async function body(
   if (full === null || full.identifier !== issue.identifier) return null;
   const value = {
     updatedAt: issue.updatedAt ?? "",
+    readAt,
     description: full.description,
     parent: full.parent?.identifier ?? null,
   };
@@ -99,14 +147,21 @@ async function parentOf(
   reads: ParentReads,
 ): Promise<{ parent: string | null } | null> {
   const key = `${trackerScope(tracker)}:parent-of:${issue.identifier}`;
+  const readAt = readingAt(tracker, reads, issue);
   const kept = current(
-    cache.get<{ updatedAt: string; parent: string | null }>(key),
+    cache.get<{
+      updatedAt: string;
+      parent: string | null;
+      readAt?: number | undefined;
+    }>(key),
     issue,
+    readAt,
   );
   const held = reads.held?.(issue.identifier);
   if (held !== undefined && held.parent !== undefined) {
     const value = {
       updatedAt: issue.updatedAt ?? "",
+      readAt,
       parent: held.parent?.issue.identifier ?? null,
     };
     return { parent: remember(cache, key, value, kept, issue).parent };
@@ -116,13 +171,14 @@ async function parentOf(
   return full === null ? null : { parent: full.parent };
 }
 
-/** No merge evidence is inferred from tracker completion; such edges stay held. */
+/** Tracker completion never substitutes for directly verified delivering merges. */
 export async function servedParentHold(
   tracker: Tracker,
   issue: PoolIssue,
   cache: PickupReads,
   block?: string,
   reads: ParentReads = directReads(tracker),
+  merges?: PlanMergeReader,
 ): Promise<string | null> {
   const seen = new Set<string>();
   let child = issue;
@@ -144,6 +200,11 @@ export async function servedParentHold(
       parent.identifier,
       parentBody.description,
       block,
+      async (description, block) =>
+        (await planMergeEvidence(tracker, description, block, merges)) ?? {
+          merged: [],
+          held: {},
+        },
     );
     if (held !== null) return held;
     child = parent;
@@ -174,12 +235,14 @@ async function parentStepHold(
   parent: string,
   description: string,
   block?: string,
+  merges?: PlanMergeReader,
 ): Promise<string | null> {
   const selected = servedPlan(
     description,
     parent,
     await planLive(reads, description, block),
     block,
+    await merges?.(description, block),
   );
   if (selected.error) return selected.error;
   if (!selected.present) return null;
@@ -188,4 +251,42 @@ async function parentStepHold(
   return selected.order.includes(child)
     ? null
     : "waiting on the epic execution plan";
+}
+
+/** The complete ancestor chain, with the direct child whose slot each parent owns. */
+export async function servedParentSteps(
+  tracker: Tracker,
+  issue: PoolIssue,
+  cache: PickupReads,
+  reads: ParentReads,
+): Promise<Array<{
+  parent: PoolIssue;
+  child: string;
+  description: string;
+}> | null> {
+  const steps: Array<{
+    parent: PoolIssue;
+    child: string;
+    description: string;
+  }> = [];
+  const seen = new Set<string>();
+  let child = issue;
+  let up = await parentOf(tracker, child, cache, reads);
+  for (;;) {
+    if (seen.has(child.identifier) || seen.size >= 100 || up === null)
+      return null;
+    seen.add(child.identifier);
+    if (up.parent === null) return steps;
+    const parent = await reads.pool(up.parent);
+    if (parent === null || parent.truncated.length) return null;
+    const full = await body(tracker, parent, cache, reads);
+    if (full === null) return null;
+    steps.push({
+      parent,
+      child: child.identifier,
+      description: full.description,
+    });
+    child = parent;
+    up = { parent: full.parent };
+  }
 }

@@ -108,3 +108,183 @@ test("a window whose refill keeps pace is safe and a fixed window predicts exhau
   delete balance.record.complexity.refillMs;
   expect(quotaRisks(data, now)).toHaveLength(1);
 });
+
+test("search requests are not core spending", () => {
+  const search: LedgerRow = {
+    ...row(),
+    system: "github",
+    credential: "github:test",
+    operation: "GET /search/issues",
+    unit: "requests",
+    requests: 500,
+    cost: 500,
+  };
+  const github: LedgerReport = {
+    rows: [search],
+    balances: [
+      {
+        key: "github:test",
+        system: "github",
+        record: {
+          requests: { limit: 5000, remaining: 100, resetAt: now + hour },
+          complexity: { limit: 5000, remaining: 4000, resetAt: now + hour },
+          limitedUntil: null,
+          why: null,
+          observedAt: now,
+        },
+      },
+    ],
+  };
+  expect(quotaRisks(github, now)).toEqual([]);
+});
+
+test("unchanged GitHub traffic is reported without forecasting primary depletion", () => {
+  const data = report();
+  data.rows = [
+    {
+      ...row(),
+      system: "github",
+      credential: "github:test",
+      operation: "GET /repos/{}/{}/pulls/{}",
+      unit: "requests",
+      requests: 2000,
+      cost: 0,
+    },
+  ];
+  const balance = data.balances[0];
+  if (balance === undefined) throw new Error("fixture has no balance");
+  balance.key = "github:test";
+  balance.system = "github";
+  balance.record.requests = { limit: 5000, remaining: 10, resetAt: now + hour };
+  expect(quotaRisks(data, now)).toEqual([]);
+  const line = spendingLines(systemSpending(data, "tick:one", now))[0];
+  expect(line).toContain("tick spent 2000 requests, 0 requests");
+  const charged = data.rows[0];
+  if (charged === undefined) throw new Error("fixture has no spending row");
+  charged.cost = 20;
+  expect(quotaRisks(data, now)[0]).toMatchObject({
+    window: "requests",
+    spent: 20,
+  });
+});
+
+test("unknown GitHub primary spending forecasts conservatively", () => {
+  const data = report();
+  data.rows = [
+    {
+      ...row(),
+      system: "github",
+      credential: "github:test",
+      operation: "GET /repos/{}/{}/pulls/{}",
+      unit: "requests",
+      requests: 2000,
+      cost: 0,
+      unknownCost: 2000,
+    },
+  ];
+  const balance = data.balances[0];
+  if (balance === undefined) throw new Error("fixture has no balance");
+  balance.key = "github:test";
+  balance.system = "github";
+  balance.record.requests = { limit: 5000, remaining: 10, resetAt: now + hour };
+  expect(quotaRisks(data, now)[0]).toMatchObject({
+    window: "requests",
+    spent: 2000,
+  });
+});
+
+/** A GitHub owner's record and the rows of its credentials. */
+function github(rows: LedgerRow[]): LedgerReport {
+  return {
+    rows,
+    balances: [
+      {
+        key: "github:owner",
+        system: "github",
+        record: {
+          requests: { limit: 5000, remaining: 100, resetAt: now + hour },
+          complexity: { limit: 5000, remaining: 100, resetAt: now + hour },
+          limitedUntil: null,
+          why: null,
+          observedAt: now,
+        },
+      },
+    ],
+  };
+}
+
+const pullView = (window: string | null): LedgerRow => ({
+  ...row(),
+  system: "github",
+  credential: "github:token",
+  owner: window === null ? null : "github:owner",
+  window,
+  operation: "pr view",
+  unit: "requests",
+  requests: 500,
+  cost: 500,
+  estimated: 500,
+});
+
+test("a GraphQL subcommand spends the GraphQL window of its owner's record, marked as estimated", () => {
+  const risks = quotaRisks(github([pullView("complexity")]), now);
+  expect(risks).toHaveLength(1);
+  expect(risks[0]).toMatchObject({
+    key: "github:owner",
+    window: "complexity",
+    spent: 500,
+    estimated: true,
+    operations: ["pr view"],
+  });
+  const [need] = lowQuotaNeeds(risks, [], new Date(now).toISOString());
+  expect(need?.reason).toContain("(includes estimated costs)");
+  const line = spendingLines(
+    systemSpending(github([pullView("complexity")]), "tick:one", now),
+  )[0];
+  expect(line).toContain("by window: graphql 500 (includes estimates)");
+});
+
+test("spending no evidence placed is reported as unknown, never as core or GraphQL", () => {
+  const report = github([
+    pullView("unknown"),
+    {
+      ...pullView("requests"),
+      operation: "GET /repos/{}/{}",
+      cost: 200,
+      estimated: 0,
+    },
+  ]);
+  const risks = quotaRisks(report, now);
+  expect(risks).toHaveLength(1);
+  expect(risks[0]).toMatchObject({
+    window: "requests",
+    spent: 200,
+    estimated: false,
+    unknownWindow: 500,
+  });
+  const [need] = lowQuotaNeeds(risks, [], new Date(now).toISOString());
+  expect(need?.reason).toContain(
+    "500 more in a window the ledger could not name",
+  );
+  expect(spendingLines(systemSpending(report, "tick:one", now))[0]).toContain(
+    "unknown 500 (includes estimates)",
+  );
+});
+
+test("a row written before owners were kept counts against its credential's record, its window inferred", () => {
+  const legacy = github([
+    { ...pullView(null), credential: "github:owner", cost: 300 },
+  ]);
+  expect(quotaRisks(legacy, now)[0]).toMatchObject({
+    window: "requests",
+    spent: 300,
+    estimated: true,
+  });
+  // A row of another owner does not count.
+  expect(
+    quotaRisks(
+      github([{ ...pullView("requests"), owner: "github:else" }]),
+      now,
+    ),
+  ).toEqual([]);
+});

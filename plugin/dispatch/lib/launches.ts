@@ -16,7 +16,9 @@
  *   so exactly one wrapper ever claims a record; a headless stage reserves
  *   pending supervisor and child identities, each acknowledged once by its
  *   owner under that launch's token;
- * - `exit`, the wrapper's again: the stage's exit, once it ended; first write wins;
+ * - `exit`, the wrapper's again: the stage's exit, once it ended; first write
+ *   wins, and only its bounded output (`context`) is ever taken out again,
+ *   with the run's transcript copy (`transcript-copy.ts`);
  * - `result`, a pickup's session's or a follow-up pass's own answer
  *   (`done` or `failed`), written once by `jig dispatch result` under the
  *   record's token.
@@ -52,10 +54,12 @@ import {
   uncertainCleanupState,
   type StageSupervision,
 } from "./launch-supervision.ts";
+import { ordinalAnchors } from "./account-ordinal.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
 import { type KeptReport, readKeptReport } from "./closing-report-store.ts";
+import { readRoundSessions, type RoundSession } from "./round-sessions.ts";
 import {
   type PickupRefusal,
   readRefusal,
@@ -63,6 +67,7 @@ import {
   waitsOf,
 } from "./pickup-refusal.ts";
 export type { PickupRefusal, RefusedMember };
+import type { WaitFor } from "./wait-for.ts";
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
@@ -87,6 +92,9 @@ export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
 import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
+import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
+import { latestDeaths, witnessedState } from "./launch-recovery.ts";
+import { asResult } from "./launch-result.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
 import { isoOf, parseMs } from "../../shared/time.ts";
 
@@ -117,7 +125,8 @@ export function isInteractive(
 /**
  * A pickup's session's or a follow-up pass's own answer, recorded through
  * `jig dispatch result`: `waits` is a pickup the tracker's rate limit
- * stopped, to be started again once the limit resets (`waitsUntil`).
+ * stopped, or a follow-up a rate limit or an arm still pending stopped, to
+ * be started again once its time has come (`waitsUntil`, `waitsFor`).
  */
 export type SessionResult = "done" | "failed" | "waits";
 
@@ -131,6 +140,8 @@ export interface LaunchAttempt {
 
 /** The tick's part of a record. */
 export interface LaunchRecord {
+  /** The last attributable test-lock wait this host observed, retained after it ends. */
+  testLockWait?: import("./test-lock-waits.ts").TestLockWait;
   stewardResume?: string;
   stewardDecision?: number;
   stewardContext?: string;
@@ -146,6 +157,8 @@ export interface LaunchRecord {
   /** The item a pickup starts; `null` for a drive or a follow-up. */
   item: string | null;
   account: string;
+  /** Launch count for this vendor/configuration directory; absent on older records. */
+  accountLaunchOrdinal?: number;
   vendor: "claude" | "codex";
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
@@ -156,6 +169,8 @@ export interface LaunchRecord {
   headless?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
+  /** Factory-assigned epic whose authority an unassigned child inherits. */
+  factoryAncestor?: string;
   /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
   blockingFor?: string;
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
@@ -206,7 +221,7 @@ export interface LaunchRecord {
   /**
    * The dispatched mark the launch's workspace was named and marked with
    * (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this
-   * record's id. It joins a workspace a skill renamed to its launch.
+   * record's id. It joins a workspace renamed since to its launch.
    * `null` on a record written before the mark was kept.
    */
   mark?: string | null;
@@ -220,6 +235,10 @@ export interface LaunchRecord {
   endedAt?: string;
   /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
   cancelledAt?: string;
+  /** For a follow-up: the machine file's `failures.rerun_died` when the record was written, kept only when it is `0`, which runs no follow-up again after a death or an unwritten result. */
+  rerunDied?: number;
+  /** For a follow-up: the repository's `dispatch.followup_within` when the record was written, the longest its follow-up may wait on an arm still pending (`followup-waits.ts`); absent on a record written before it was kept, read as the field's default. */
+  followupWithinMs?: number;
   /** For a follow-up: its prompt offered the routine question tags (`routine-questions.ts`), so its question's class is read from its tag. Absent on a record written before passes tagged their questions. */
   routineTags?: boolean;
   /** For a follow-up's routine run again: the question the earlier pass stopped on and the classes whose standing answers its prompt gives; absent on any other record. */
@@ -270,6 +289,8 @@ export interface LaunchExit {
   /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
   said?: string;
   usage?: string; // a drive's exit on drive.ts's usage error: the end of its message, one line
+  /** For a Codex pass: the session id it printed at its start, which finds its transcript (`transcript-copy.ts`). */
+  session?: string;
 }
 
 export type LaunchState =
@@ -299,14 +320,20 @@ export interface ReadRecord {
   /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
   next?: NextOwner | null;
-  /** For a `waits` result, when the pickup may start again (ISO 8601). */
+  /** For a `waits` result, when the pickup or the follow-up may start again (ISO 8601). */
   waitsUntil?: string;
+  /** For a `waits` result, what it waits for: a rate limit's reset, or a follow-up's arm still pending (`wait-for.ts`). */
+  waitsFor?: WaitFor;
   /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
   refusal?: PickupRefusal | null;
   /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
   framed?: FramedResult;
+  /** When the pass's result or the stage's exit could not be written on this host (`unwritten-result.ts`); absent otherwise. */
+  unwritten?: string;
   /** The run's closing report (`closing-report-store.ts`); absent or `null` when it left none. */
   report?: KeptReport | null;
+  /** A drive's pass session ids, round by round (`round-sessions.ts`); absent or empty when it recorded none. */
+  sessions?: RoundSession[];
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -498,10 +525,13 @@ export interface LaunchRow {
   result_next?: string | null;
   /** A pickup that waits on a tracker's rate limit: when it may start again. */
   result_until?: string | null;
+  /** What a `waits` result waits for, as JSON (`wait-for.ts`). */
+  result_wait?: string | null;
   refusal?: string | null;
   /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
   result_decision?: string | null;
   report?: string | null;
+  sessions?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -555,45 +585,29 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
   return {
     record,
     state: stateOf(row, null, thisHost()),
-    ...answerOf(row),
+    ...answerOf(row, record, root),
   };
 }
 
-/** What a row says the session answered: its result, handoff, refusal, framed decision and closing report. */
-function answerOf(row: LaunchRow): Omit<ReadRecord, "record" | "state"> {
+/** What a row says the session answered (its result, handoff, refusal, framed decision and closing report), and the evidence that it could not be written. */
+function answerOf(
+  row: LaunchRow,
+  record: LaunchRecord,
+  root: string,
+): Omit<ReadRecord, "record" | "state"> {
   return {
     result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
     ...framedOf(row.result_decision),
+    ...unwrittenOf(root, row.id, record.token),
     report: readKeptReport(row.report),
+    sessions: readRoundSessions(row.sessions),
   };
 }
 
-export { recordResult } from "./launch-result.ts";
-
-/**
- * A row's answer. A `waits` result is kept as `failed` with the time in
- * `result_until`, so a copy of the plugin that knows no `waits` reads a
- * failed pass, which it holds until a person settles it.
- */
-export function asResult(
-  value: string | null,
-  until: string | null = null,
-): SessionResult | null {
-  if (value === "failed" && until !== null) return "waits";
-  return value === "done" || value === "failed" ? value : null;
-}
-
-/** A record's recorded answer; `null` when none. */
-export function readResult(
-  id: string,
-  root = stateRoot(),
-): SessionResult | null {
-  const row = launchRow(id, root);
-  return asResult(row?.result ?? null, row?.result_until ?? null);
-}
+export { asResult, readResult, recordResult } from "./launch-result.ts";
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
 export function claimOf(row: LaunchRow): LaunchClaim | null | undefined {
@@ -747,8 +761,8 @@ export async function readLaunches(
     }
     records.push({
       record,
-      state: stateOf(row, rows, here),
-      ...answerOf(row),
+      state: witnessedState(stateOf(row, rows, here), record, root),
+      ...answerOf(row, record, root),
     });
   }
   return { records, unreadable };
@@ -838,6 +852,7 @@ export function pruneLaunches(
 ): string[] {
   const cutoff = nowMs - days * 86_400_000;
   const kept = latestRefusals(records);
+  for (const id of ordinalAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
   for (const id of unsettledStartups(records, settled)) kept.add(id);
   for (const latest of [
@@ -845,6 +860,7 @@ export function pruneLaunches(
     latestRedrives,
     latestArms,
     latestDriveRefusals,
+    latestDeaths,
   ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)
@@ -885,7 +901,9 @@ export function pruneLaunches(
       removeSettled.run(record.id);
     }
   });
-  return removed.map(({ record }) => record.id);
+  const ids = removed.map(({ record }) => record.id);
+  removeUnwritten(root, ids);
+  return ids;
 }
 
 /** The launch records whose claim ends are all written on the forge, so their pull requests need no read to be ended. */
@@ -919,6 +937,7 @@ export function removeRecord(id: string, root = stateRoot()): void {
     db.query("DELETE FROM launches WHERE id = ?").run(id);
     db.query("DELETE FROM settled_ends WHERE record = ?").run(id);
   });
+  removeUnwritten(root, [id]);
 }
 
 /** A row as `inspectRow` read it: what a conditional removal compares against. */
@@ -972,6 +991,7 @@ export function removeRecordIf(
       .run(id, seen.claim, seen.exit);
     if (result.changes === 0) return false;
     db.query("DELETE FROM nudges WHERE record = ?").run(id);
+    removeUnwritten(root, [id]);
     return true;
   });
 }

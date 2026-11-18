@@ -46,7 +46,7 @@ const TAG = `${CACHEDIR_TAG_SIGNATURE}\n# a cache\n`;
 const HANDOFF = `# Drive handoff — PR #7\n\n${HANDOFF_MACHINE_BLOCK}\n\nnotes\n`;
 
 describe("marked ignored content", () => {
-  test("Jig's working files are set aside with their rules, a self-ignoring directory is not", () => {
+  test("Jig's working files and the default cache are set aside with their rules", () => {
     const root = tree({
       ".context/scratch/reply.md": "draft\n",
       ".context/drive-mailbox/CACHEDIR.TAG": TAG,
@@ -63,8 +63,9 @@ describe("marked ignored content", () => {
         { path: ".context/empty/", rule: "empty" },
         { path: ".context/pr-drive-7.md", rule: "drive-handoff" },
         { path: ".context/scratch/", rule: "jig-scratch" },
+        { path: ".fallow/", rule: "regenerable-path" },
       ],
-      other: [".fallow/"],
+      other: [],
     });
   });
 
@@ -162,6 +163,54 @@ describe("marked ignored content", () => {
       rebuildable: ["node_modules/"],
       setAside: [{ path: ".context/scratch/", rule: "jig-scratch" }],
       other: [],
+    });
+  });
+});
+
+describe("declared regenerable ignored paths", () => {
+  test("a declaration covers only itself and descendants, including a collapsed parent", () => {
+    const root = tree({
+      "build/cache/blob": "cache",
+      "build/cache-copy/note": "keep",
+      "build/note": "keep",
+      "output.bin": "output",
+    });
+    expect(
+      classifyIgnored(root, ["build/", "output.bin"], undefined, [
+        "build/cache",
+        "output.bin",
+      ]),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        setAside: [
+          { path: "build/cache/", rule: "regenerable-path" },
+          { path: "output.bin", rule: "regenerable-path" },
+        ],
+        other: ["build/cache-copy/", "build/note"],
+      },
+    });
+  });
+
+  test("a symlink or a path beneath one has no declaration proof", () => {
+    const root = tree({ "real/cache/blob": "keep" });
+    symlinkSync(join(root, "real"), join(root, "linked"));
+    expect(
+      classifyIgnored(root, ["linked", "linked/cache/"], undefined, [
+        "linked",
+        "linked/cache",
+      ]),
+    ).toMatchObject({
+      ok: true,
+      value: { setAside: [], other: ["linked", "linked/cache/"] },
+    });
+  });
+
+  test("a configured empty list disables default caches", () => {
+    const root = tree({ ".fallow/cache.bin": "cache" });
+    expect(classifyIgnored(root, [".fallow/"], undefined, [])).toMatchObject({
+      ok: true,
+      value: { setAside: [], other: [".fallow/"] },
     });
   });
 });

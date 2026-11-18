@@ -1,11 +1,12 @@
+import { factoryWalkView } from "./factory-walk-view.ts";
 /**
  * The pickups the tracker wants: the items assigned to the repository's
  * factory identity (`dispatch.identity`) in a dispatch state
  * (`dispatch.states`), read through the tracker interface. Only an
  * assignment a person with write access made starts a pickup, so each item's
- * current assignment is traced to its maker (`assignedBy`); an item whose
- * assigner cannot write, or whose history cannot be read, is reported and
- * never planned.
+ * current assignment is traced to its maker (`trusted-assigner.ts`); an item
+ * whose assigner cannot write, or whose history cannot be read, is reported
+ * and never planned.
  *
  * With a ready pool (`dispatch.pool`), the unassigned items in its states
  * are pickups too, trusted by who made them ready (`ready-pool.ts`).
@@ -24,6 +25,7 @@
 import { cacheForTracker } from "./tracker-cache.ts";
 import { sharedView, type ServedView } from "./served-reads.ts";
 import { nativeQueueRequirements } from "../../../skills/do-item/scripts/lib/tracker/dispatch-source.ts";
+import { type AssignedBy, byTrustedAssigner } from "./trusted-assigner.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
@@ -39,6 +41,7 @@ import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
 import { limitedRow } from "./served-failures.ts";
 import {
   readServedPickups,
+  freshServedPickup,
   type ServedPolicy,
   type ServedOptions,
 } from "./served.ts";
@@ -86,6 +89,9 @@ import type {
 import { currentMs } from "../../../shared/time.ts";
 
 export interface TrackerReading {
+  /** Full started epic rows retained from the existing claimed read. */
+  epicRoots?: PoolIssue[];
+  factoryView?: ServedView;
   read: RecordRead;
   wanted: WantedItem[];
   unplaced: Unplaced[];
@@ -105,12 +111,13 @@ async function readClaimed(
   tracker: Tracker,
   identity: string,
   tick?: FacetBound,
-): Promise<ClaimedItem[] | Unplaced> {
+): Promise<Array<ClaimedItem & { queueIssue: PoolIssue }> | Unplaced> {
   const unread = (why: string, cut?: ReadFailure): Unplaced => ({
     target: `items in ${workingNames(tracker)}`,
     record: "tracker",
     reason: `the items ${identity} claimed could not be read, so stalls and double claims are not checked: ${why}`,
-    ...(cut === undefined ? {} : { readFailed: true as const, failure: cut }),
+    readFailed: true,
+    ...(cut === undefined ? {} : { failure: cut }),
   });
   if (ended(tick)) return unread(passedBefore("they were read"), CUT_AT_BOUND);
   try {
@@ -131,6 +138,7 @@ async function readClaimed(
       )
       .map((i) => ({
         key: i.identifier,
+        queueIssue: i,
         title: i.title,
         url: i.url,
         state: i.state.name,
@@ -141,7 +149,7 @@ async function readClaimed(
     if (isRateLimited(error)) throw error;
     return unread(
       failureText(error),
-      ended(tick) ? (readFailureOfError(error) ?? CUT_AT_BOUND) : undefined,
+      readFailureOfError(error) ?? (ended(tick) ? CUT_AT_BOUND : undefined),
     );
   }
 }
@@ -168,133 +176,6 @@ function withGaps(
 }
 
 /**
- * The assigned items a person with write access assigned, wanted; the
- * others, and those whose assigner cannot be read or `tick` ended before
- * it was, unplaced with why.
- */
-async function byTrustedAssigner(
-  tracker: Tracker,
-  issues: ReadonlyArray<PoolIssue>,
-  identity: string,
-  view?: ServedView,
-  tick?: FacetBound,
-): Promise<{
-  wanted: WantedItem[];
-  unplaced: Unplaced[];
-  limited?: TrackerRateLimited;
-}> {
-  const wanted: WantedItem[] = [];
-  const unplaced: Unplaced[] = [];
-  for (const issue of issues) {
-    if (view === undefined && ended(tick)) {
-      unplaced.push({
-        target: issue.identifier,
-        title: issue.title,
-        url: issue.url,
-        record: "tracker",
-        reason: `assigned to ${identity} in ${issue.state.name}, but ${passedBefore("who assigned it was read")}`,
-        readFailed: true,
-        failure: CUT_AT_BOUND,
-      });
-      continue;
-    }
-    const read = await readAssigner(tracker, issue, identity, view, tick);
-    if ("limited" in read)
-      return { wanted: [], unplaced, limited: read.limited };
-    if ("unplaced" in read) {
-      unplaced.push(read.unplaced);
-      continue;
-    }
-    wanted.push(read.wanted);
-  }
-  return { wanted, unplaced };
-}
-
-type AssignedBy = Awaited<ReturnType<Tracker["assignedBy"]>>;
-
-/** Who assigned one item, held to `tick` where there is one; the rate limit or an unplaced item when the read failed. */
-async function readAssignedBy(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  view?: ServedView,
-  tick?: FacetBound,
-): Promise<
-  { by: AssignedBy } | { unplaced: Unplaced } | { limited: TrackerRateLimited }
-> {
-  try {
-    const by =
-      view === undefined
-        ? await heldTo(
-            (signal) => tracker.assignedBy(issue.identifier, identity, signal),
-            tick,
-          )
-        : await view.once(
-            `assignment ${issue.identifier} ${identity} ${issue.updatedAt ?? ""}`,
-            () => tracker.assignedBy(issue.identifier, identity, tick?.signal),
-          );
-    return { by };
-  } catch (error) {
-    if (isRateLimited(error)) return { limited: error };
-    return {
-      unplaced: {
-        target: issue.identifier,
-        title: issue.title,
-        url: issue.url,
-        record: "tracker",
-        reason: `who assigned it cannot be read: ${failureText(error)}`,
-        ...(ended(tick)
-          ? {
-              readFailed: true as const,
-              failure: readFailureOfError(error) ?? CUT_AT_BOUND,
-            }
-          : {}),
-      },
-    };
-  }
-}
-
-/** One assigned item's assigner read, held to `tick` where there is one, as a wanted item, an unplaced one or the rate limit. */
-async function readAssigner(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  view?: ServedView,
-  tick?: FacetBound,
-): Promise<
-  | { wanted: WantedItem }
-  | { unplaced: Unplaced }
-  | { limited: TrackerRateLimited }
-> {
-  const read = await readAssignedBy(tracker, issue, identity, view, tick);
-  if (!("by" in read)) return read;
-  const { by } = read;
-  if (!by.trusted) {
-    return {
-      unplaced: {
-        target: issue.identifier,
-        title: issue.title,
-        url: issue.url,
-        record: "tracker",
-        reason: `assigned to ${identity} by ${by.name}, who cannot write to ${tracker.team}; only a person with write access starts a pickup`,
-        cause: "assigner-cannot-write",
-      },
-    };
-  }
-  return {
-    wanted: {
-      key: issue.identifier,
-      title: issue.title,
-      url: issue.url,
-      state: issue.state.name,
-      assignee: issue.assignee?.name ?? identity,
-      assignedBy: by.name,
-      ...(issue.updatedAt === undefined ? {} : { updatedAt: issue.updatedAt }),
-    },
-  };
-}
-
-/**
  * The assigned items split by who assigned them, and the claimed items; the
  * tracker's rate limit, when either read met it, instead of a reading
  * the limit cut short.
@@ -303,33 +184,38 @@ async function trustedAndClaimed(
   tracker: Tracker,
   identity: string,
   issues: ReadonlyArray<PoolIssue>,
+  cache: PickupReads,
   view?: ServedView,
   tick?: FacetBound,
 ): Promise<
-  | { limited: TrackerRateLimited }
+  | { limited: TrackerRateLimited; unplaced: Unplaced[] }
   | {
       wanted: WantedItem[];
       unplaced: Unplaced[];
       claimed: Awaited<ReturnType<typeof readClaimed>>;
+      assigners: Map<string, AssignedBy>;
     }
 > {
-  const { wanted, unplaced, limited } = await byTrustedAssigner(
+  const { wanted, unplaced, limited, assigners } = await byTrustedAssigner(
     tracker,
     issues,
     identity,
+    cache,
     view,
     tick,
   );
-  if (limited !== undefined) return { limited };
+  if (limited !== undefined) return { limited, unplaced };
   try {
     return {
       wanted,
       unplaced,
+      assigners,
       claimed:
         view === undefined
           ? await readClaimed(tracker, identity, tick)
           : view.progress().map((i) => ({
               key: i.identifier,
+              queueIssue: i,
               title: i.title,
               url: i.url,
               state: i.state.name,
@@ -340,7 +226,7 @@ async function trustedAndClaimed(
             })),
     };
   } catch (error) {
-    if (isRateLimited(error)) return { limited: error };
+    if (isRateLimited(error)) return { limited: error, unplaced };
     throw error;
   }
 }
@@ -565,11 +451,30 @@ async function readFactoryPickups(
       assigned.failure,
     );
   const issues = assigned.value;
-  const read = await trustedAndClaimed(tracker, identity, issues, view, tick);
-  if ("limited" in read)
-    return limitedFactory(tracker, identity, read.limited, stores, view);
-  if (view?.unavailable !== undefined)
-    return unavailableFactory(tracker, identity, view, stores);
+  const read = await trustedAndClaimed(
+    tracker,
+    identity,
+    issues,
+    cache,
+    view,
+    tick,
+  );
+  if ("limited" in read) {
+    const limited = limitedFactory(
+      tracker,
+      identity,
+      read.limited,
+      stores,
+      view,
+    );
+    limited.unplaced.unshift(...read.unplaced);
+    return limited;
+  }
+  if (view?.unavailable !== undefined) {
+    const unavailable = unavailableFactory(tracker, identity, view, stores);
+    unavailable.unplaced.unshift(...read.unplaced);
+    return unavailable;
+  }
   const { wanted, unplaced } = read;
   const claimed = await scopedClaims(
     tracker,
@@ -580,10 +485,7 @@ async function readFactoryPickups(
     tick,
   );
   unplaced.push(...claimed.unplaced);
-  const record =
-    stores === undefined || facets === undefined
-      ? undefined
-      : withGaps(stores, issues);
+  const record = factoryFacetRecord(stores, facets, issues);
   return {
     read: {
       record: "tracker",
@@ -594,8 +496,46 @@ async function readFactoryPickups(
     },
     wanted,
     unplaced,
+    epicRoots: epicRootsOf(read.claimed),
+    factoryView:
+      view ??
+      factoryWalkView(
+        tracker,
+        identity,
+        issues,
+        progressRows(read.claimed),
+        read.assigners,
+        tick ?? bound,
+      ),
     claimed: claimed.items,
   };
+}
+
+/** Facet gaps belong to a report only when that read was requested. */
+function factoryFacetRecord(
+  stores: FacetRecord | undefined,
+  facets: PickupBounds | undefined,
+  issues: PoolIssue[],
+): FacetRecord | undefined {
+  return stores === undefined || facets === undefined
+    ? undefined
+    : withGaps(stores, issues);
+}
+
+function progressRows(
+  claimed: Array<ClaimedItem & { queueIssue: PoolIssue }> | Unplaced,
+): PoolIssue[] {
+  return Array.isArray(claimed) ? claimed.map((row) => row.queueIssue) : [];
+}
+
+/** Full epic rows already paid for by the claimed-item read. */
+function epicRootsOf(
+  claimed: Array<ClaimedItem & { queueIssue: PoolIssue }> | Unplaced,
+): PoolIssue[] {
+  if (!Array.isArray(claimed)) return [];
+  return claimed
+    .map((c) => c.queueIssue)
+    .filter((i) => i.isEpic && i.hasOpenChildren);
 }
 
 /**
@@ -630,8 +570,17 @@ export async function freshPickup(
   key: string,
   policy?: ServedPolicy,
   pooled?: boolean,
+  factoryAncestor?: string,
 ): Promise<PoolIssue | string> {
   if (section.identity === null) return "dispatch.identity is no longer set";
+  if (factoryAncestor !== undefined)
+    return freshServedPickup(
+      tracker,
+      key,
+      section.identity,
+      factoryAncestor,
+      policy,
+    );
   // A pool pickup stays one: an assignment since the plan read it must not
   // move it to the assigned lane, whose checks are the assigner's alone.
   if (pooled === true) return freshPoolPickup(tracker, section, key, policy);
@@ -704,6 +653,7 @@ export async function readPickups(
     hitl?: string;
     manualOps?: string;
     executionPlanBlock?: string;
+    mergeEvidence?: import("./plan-merges.ts").PlanMergeReader | undefined;
     repoScope?: import("./served-repo.ts").RepoScope;
     views?: import("./served-reads.ts").ServedViews;
     unlabeled?: import("./served-repo.ts").UnlabeledMode;
@@ -733,18 +683,46 @@ export async function readPickups(
       : await readPool(once, section, served, facets?.bound()),
     once,
   );
-  if (served === undefined || served.people.length === 0) return factory;
-  const extra = await readServedPickups(
-    once(),
-    served.people,
-    servedReadOptions(served),
-  );
+  // A failed shared native scope is a wall for every lane. A factory-only
+  // claim failure is not: served identities can still be read independently.
+  if (
+    factory.claimed === null &&
+    once().dispatchSource !== undefined &&
+    factoryReading.factoryView === undefined
+  )
+    return factory;
+  const roots = [
+    ...(factoryReading.epicRoots ?? []),
+    ...factoryReading.wanted.flatMap((i) =>
+      i.queueIssue === undefined ? [] : [i.queueIssue],
+    ),
+  ];
+  if ((served?.people.length ?? 0) === 0 && roots.length === 0) return factory;
+  const extra = await readServedPickups(once(), served?.people ?? [], {
+    ...(served === undefined
+      ? { nowMs: currentMs(), headroom: true }
+      : servedReadOptions(served)),
+    epicWidth: section.epicWidth,
+    ...(section.identity === null
+      ? {}
+      : {
+          factory: {
+            identity: section.identity,
+            roots,
+            view: factoryReading.factoryView,
+            eligible: new Set(factoryReading.wanted.map((item) => item.key)),
+          },
+        }),
+  });
   const keys = new Set(extra.wanted.map((i) => i.key));
+  const rejected = new Set(extra.unplaced.map((i) => i.target));
   return {
     read: servedRead(factory.read, extra),
     wanted: [
       ...extra.wanted,
-      ...factory.wanted.filter((i) => !keys.has(i.key)),
+      ...factory.wanted.filter(
+        (i) => i.pooled === true && !keys.has(i.key) && !rejected.has(i.key),
+      ),
     ],
     unplaced: onceEach([...factory.unplaced, ...extra.unplaced]),
     // A queue the rate limit stopped part way, or one that failed to read,

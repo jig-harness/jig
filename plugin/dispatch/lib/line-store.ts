@@ -120,8 +120,20 @@ const DECISION_FIELDS: Fields = {
           note: (n) => n === undefined || isString(n),
         }),
     })(value),
+  acted: (value) =>
+    value === undefined ||
+    value === null ||
+    hasFields(value, {
+      option: isString,
+      author: isString,
+      answer: (v) => v === undefined || isString(v),
+      outcome: (v) =>
+        v === null || v === "done" || v === "refused" || v === "held",
+      detail: nullOr(isString),
+    }),
   answerState: (value) =>
     value === undefined || value === "stale" || value === "disputed",
+  unread: (value) => value === undefined || isString(value),
   answer: (value) =>
     value === undefined ||
     hasFields(value, {
@@ -129,6 +141,7 @@ const DECISION_FIELDS: Fields = {
       address: isString,
       on: (v) => v === "pull-request" || v === "issue" || v === "tracker",
       framedBy: (v) => v === "session" || v === "dispatcher",
+      repository: (v) => v === undefined || isString(v),
     }),
 };
 
@@ -152,6 +165,8 @@ const ENTRY_FIELDS = {
     reason: isString,
     question: (value) =>
       value === undefined || value === null || isString(value),
+    concluded: (value) =>
+      value === undefined || value === null || isString(value),
     decisions: listOf(DECISION_FIELDS),
     workspaces: Array.isArray,
     workspace: (value) =>
@@ -166,6 +181,13 @@ const ENTRY_FIELDS = {
     samples: listOf(SAMPLE_FIELDS),
   },
   accounts: {
+    weight: (value) =>
+      value === undefined ||
+      hasFields(value, {
+        configured: nullOr(isNumber),
+        effective: isNumber,
+        reason: isString,
+      }),
     name: isString,
     vendor: isString,
     cap: isNumber,
@@ -207,6 +229,8 @@ const TICK_FIELDS: Fields = {
   busy: (value) => Array.isArray(value) && value.every(isString),
   lowBudget: nullOr((value) => Array.isArray(value) && value.every(isString)),
   defects: isNumber,
+  refused: (value) =>
+    value === undefined || (Array.isArray(value) && value.every(isString)),
 };
 
 const LOAD_GAUGES = [
@@ -264,6 +288,9 @@ const LINE_FIELDS: Fields = {
   timeZone: (value) => value === undefined || isZone(value),
   lastAccount: nullOr(isString),
   needs: listOf(ENTRY_FIELDS.needs),
+  answeredHolds: (value) =>
+    value === undefined ||
+    listOf({ repo: isString, target: isString, why: isString })(value),
   sessions: listOf(ENTRY_FIELDS.sessions),
   accounts: listOf(ENTRY_FIELDS.accounts),
   queue: listOf(ENTRY_FIELDS.queue),
