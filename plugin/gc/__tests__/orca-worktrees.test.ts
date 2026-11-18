@@ -515,6 +515,22 @@ describe.skipIf(
     expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
   }, 60_000);
 
+  test("a registry longer than Orca's default page still proves a checkout idle", () => {
+    const f = setup();
+    idle(f);
+    f.writeState({ filler: 250 });
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "collected",
+    });
+    expect(existsSync(f.tree)).toBe(false);
+    expect(calls(f)).toContainEqual(
+      expect.stringMatching(/^worktree ps --limit \d+ --json$/),
+    );
+    expect(calls(f)).toContainEqual(
+      expect.stringMatching(/^worktree list --repo \S+ --limit \d+ --json$/),
+    );
+  }, 60_000);
+
   test("an unreadable registry refuses collection", () => {
     const f = setup();
     idle(f);
