@@ -94,7 +94,7 @@ function associationOptions(context: MergeContext) {
     ...(context.onFailure === undefined
       ? {}
       : {
-          onFailure: (err: unknown) => {
+          onFailure: (err: OutboundError) => {
             state.reported = true;
             context.onFailure?.(err);
           },
