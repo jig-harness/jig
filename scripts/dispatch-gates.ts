@@ -14,13 +14,13 @@ const moduleSuffixes = [".ts", ".tsx", ".mts", ".js", ".mjs", "/index.ts"];
 const literalPath = /^(["'`])(\.{1,2}\/[^"'`$]*)\1$/;
 
 /**
- * How many test files a targeted run takes beyond the ones a change names or
- * sits beside. A file run alone takes seconds, so this bounds a run outside
- * the lock to minutes when a change touches a widely imported module.
+ * How many test files a targeted run takes. A file run alone takes seconds, so
+ * this keeps a run outside the lock to minutes when a change reaches a widely
+ * used module.
  */
 export const DISPATCH_TEST_LIMIT = 40;
 
-/** The tests a targeted run takes, and how many importers it leaves to CI. */
+/** The tests a targeted run takes, and how many it leaves to CI. */
 export interface DispatchTests {
   tests: string[];
   leftToCi: number;
@@ -95,20 +95,22 @@ export function selectDispatchTests(
         !/(^|\/)(fixtures?|\.context|dist|seeds)\//.test(path),
     )
     .sort();
-  const named = candidates.filter(
+  const changedTests = candidates.filter((path) => touched.has(path));
+  const nearby = candidates.filter(
     (path) =>
-      touched.has(path) ||
+      !touched.has(path) &&
       sources.some((source) => isRelatedTest(path, source)),
   );
+  const named = new Set([...changedTests, ...nearby]);
   const importers = candidates.filter(
     (path) =>
-      !named.includes(path) &&
+      !named.has(path) &&
       importsFor(path).some((source) => touched.has(source)),
   );
-  const taken = importers.slice(0, Math.max(0, limit - named.length));
+  const ordered = [...changedTests, ...nearby, ...importers];
   return {
-    tests: [...named, ...taken].sort(),
-    leftToCi: importers.length - taken.length,
+    tests: ordered.slice(0, limit).sort(),
+    leftToCi: Math.max(0, ordered.length - limit),
   };
 }
 
@@ -163,9 +165,16 @@ export function dispatchTestPaths(root: string): DispatchTests {
     ...untracked,
   ];
   const files = [...gitPaths(root, ["ls-files", "-z"]), ...untracked];
+  // The website's tests need its own dependencies, which CI's website job
+  // installs and a dispatched worktree usually lacks.
+  const websiteInstalled = existsSync(join(root, "website/node_modules"));
   return selectDispatchTests(
     changed,
-    files.filter((path) => existsSync(join(root, path))),
+    files.filter(
+      (path) =>
+        existsSync(join(root, path)) &&
+        (websiteInstalled || !path.startsWith("website/")),
+    ),
     (test) => testImports(root, test),
   );
 }

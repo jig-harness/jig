@@ -16,6 +16,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type DispatchTests,
   dispatchTestEnv,
   dispatchTestPaths,
   useDispatchFastGates,
@@ -416,6 +417,44 @@ export interface GateRun {
   dispatch: boolean;
 }
 
+/**
+ * The targeted run, or none outside an opted-in dispatch launch. A selection
+ * that cannot be made is a stage that could not check, so the others report.
+ */
+function dispatchRun(
+  repository: string,
+  env: Record<string, string | undefined>,
+): GateRun | null {
+  let selection: DispatchTests;
+  try {
+    if (!useDispatchFastGates(repository, env)) return null;
+    selection = dispatchTestPaths(repository);
+  } catch (error: unknown) {
+    const failed: Stage = {
+      name: "dispatch test selection",
+      check: () => {
+        throw error;
+      },
+    };
+    return {
+      stages: [...dispatchPlan([], env), failed],
+      notes: [],
+      dispatch: true,
+    };
+  }
+  const { tests, leftToCi } = selection;
+  return {
+    stages: dispatchPlan(tests, env),
+    notes: [
+      ...(tests.length ? [] : ["dispatch gates: no matching local test files"]),
+      ...(leftToCi
+        ? [`dispatch gates: ${leftToCi} test files left to CI`]
+        : []),
+    ],
+    dispatch: true,
+  };
+}
+
 /** The run these arguments and this environment ask for. */
 export function gateRun(
   fast: boolean,
@@ -423,21 +462,8 @@ export function gateRun(
   repository: string,
   env: Record<string, string | undefined> = process.env,
 ): GateRun {
-  if (!fast && !part && useDispatchFastGates(repository, env)) {
-    const { tests, leftToCi } = dispatchTestPaths(repository);
-    return {
-      stages: dispatchPlan(tests, env),
-      notes: [
-        ...(tests.length
-          ? []
-          : ["dispatch gates: no matching local test files"]),
-        ...(leftToCi
-          ? [`dispatch gates: ${leftToCi} importing test files left to CI`]
-          : []),
-      ],
-      dispatch: true,
-    };
-  }
+  const dispatch = fast || part ? null : dispatchRun(repository, env);
+  if (dispatch) return dispatch;
   const skipped = fast ? [] : skippedSuites(process.platform, env);
   return {
     stages: plan(

@@ -114,6 +114,7 @@ function changedRepository(config: string): string {
     "other/late.test.ts": 'await import("../lib/thing.ts");\n',
     "other/dynamic.test.ts": "await import(`../lib/${name}.ts`);\n",
     "other/unrelated.test.ts": 'import { x } from "./x.ts";\n',
+    "website/site.test.ts": 'import { thing } from "../lib/thing.ts";\n',
   };
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -181,6 +182,31 @@ test("the targeted tests run outside the lock, without the line's variables", as
   ]);
 });
 
+test("the website's tests run only where its dependencies are installed", async () => {
+  const { dispatchTestPaths } = await import("./dispatch-gates.ts");
+  const root = changedRepository("gates:\n  dispatch_fast: true\n");
+  expect(dispatchTestPaths(root).tests).not.toContain("website/site.test.ts");
+  mkdirSync(join(root, "website/node_modules"), { recursive: true });
+  expect(dispatchTestPaths(root).tests).toContain("website/site.test.ts");
+});
+
+test("a selection that fails could not check, and the other stages still run", async () => {
+  const { dispatchPlan, gateRun, runStages } = await import("./gates.ts");
+  const root = changedRepository("gates:\n  dispatch_fast: true\n");
+  git(root, "update-ref", "-d", "refs/remotes/origin/main");
+  const run = gateRun(false, undefined, root, launch);
+  expect(run.dispatch).toBe(true);
+  expect(run.stages.map((stage) => stage.name)).toEqual([
+    ...dispatchPlan([], launch).map((stage) => stage.name),
+    "dispatch test selection",
+  ]);
+  const last = run.stages.at(-1);
+  if (!last) throw new Error("the run has no stages");
+  expect(await runStages([last], root)).toEqual([
+    { name: "dispatch test selection", status: 2 },
+  ]);
+});
+
 test("a change that selects no test adds no test stage", async () => {
   const { dispatchPlan, plan, testStage } = await import("./gates.ts");
   const quick = plan(
@@ -222,20 +248,21 @@ test("targeted gates select changed tests and nearby tests named for changed sou
   });
 });
 
-test("tests that only import a changed file stop at the limit", async () => {
+test("the limit keeps changed tests first, then nearby ones, then importers", async () => {
   const { selectDispatchTests } = await import("./dispatch-gates.ts");
   const importers = ["a", "b", "c", "d"].map((name) => `t/${name}.test.ts`);
-  expect(
+  const select = (limit: number) =>
     selectDispatchTests(
       ["lib/run.ts", "t/z.test.ts"],
       [...importers, "t/z.test.ts", "lib/run.test.ts"],
       (test) => (importers.includes(test) ? ["lib/run.ts"] : []),
-      3,
-    ),
-  ).toEqual({
+      limit,
+    );
+  expect(select(3)).toEqual({
     tests: ["lib/run.test.ts", "t/a.test.ts", "t/z.test.ts"],
     leftToCi: 3,
   });
+  expect(select(1)).toEqual({ tests: ["t/z.test.ts"], leftToCi: 5 });
 });
 
 test("a command stage runs with exactly the environment it names", async () => {
