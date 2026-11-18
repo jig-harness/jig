@@ -12,7 +12,11 @@ import {
 
 import { driverRuntime } from "./runtime.ts";
 
-import { snapshotQuotaSessions, prepareQuotaSpawn } from "./../quota/index.ts";
+import {
+  snapshotQuotaSessions,
+  prepareQuotaSpawn,
+  reportPreparedQuotaSpawn,
+} from "./../quota/index.ts";
 
 import { resolveAccountIdentity } from "./../identity.ts";
 
@@ -180,28 +184,9 @@ export async function prepareReviewPass(
   }
   if (notice !== "") baseEnv.DRIVE_PR_PASS_NOTICE = notice;
   const prepared = prepareQuotaSpawn(context.agent, baseEnv);
-  if (prepared !== null) {
-    // Said out loud, once per round. This is the only place the driver
-    // rewrites a command the caller gave it, and an operator whose CLI
-    // does not understand the injected flag sees the round die instantly
-    // with a usage error for a command they never typed — with nothing
-    // anywhere connecting the two, or naming the way out.
-    //
-    // Two shapes, told apart by argv length rather than the correlation's
-    // own `sessionId` being non-null: a minted or exact-resume-value
-    // correlation both leave `sessionId` a real string, but only the
-    // MINTED one actually injects `--session-id` into argv — an
-    // exact-resume-value or a vendor-confirmed-no-id correlation (a
-    // deliberate `--continue`/`-c`/ambiguous `--resume`) leaves argv
-    // unchanged, so describing either of those as an "amended" flag
-    // injection would name a mutation that never happened.
-    const amended = prepared.argv.length !== context.agent.length;
-    console.error(
-      amended
-        ? `pass argv amended for quota attribution: --session-id ${prepared.correlation.sessionId} (DRIVE_PR_QUOTA_NO_SPAWN_PREP=1 disables)`
-        : `pass correlated for quota attribution without amending argv: ${prepared.correlation.vendor} session ${prepared.correlation.sessionId ?? "(no exact id — a deliberately resumed/continued session)"} (DRIVE_PR_QUOTA_NO_SPAWN_PREP=1 disables)`,
-    );
-  }
+  // Said out loud, once per round. This is the only place the driver rewrites
+  // a command the caller gave it, and repair passes use the same account.
+  reportPreparedQuotaSpawn(context.agent, prepared);
 
   return {
     prepared,

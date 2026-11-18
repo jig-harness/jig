@@ -80,7 +80,14 @@ function closeObservedOutput(
     // escalation and regular captured streams to their existing handlers.
     if (!hasCapturedOutput) clearTimeout(timers.kill);
     const drain = setTimeout(() => {
-      for (const stream of streams) stream.destroy();
+      // A descendant can retain an inherited pipe after the leader exits.
+      // We must bound that wait, but do not make a dropped diagnostic silent.
+      for (const stream of streams) {
+        console.error(
+          "jig: inherited output forwarding ended before the stream closed; later diagnostics may be incomplete",
+        );
+        stream.destroy();
+      }
     }, OBSERVED_DRAIN_MS);
     child.once("close", () => clearTimeout(drain));
   });

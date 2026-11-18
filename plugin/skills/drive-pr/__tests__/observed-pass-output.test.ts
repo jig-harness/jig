@@ -47,7 +47,10 @@ it.skipIf(
     ]);
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
     expect(stdout).toStartWith("leader output\n");
-    expect(stderr).toBe("leader error\n");
+    expect(stderr).toStartWith("leader error\n");
+    expect(stderr).toContain(
+      "inherited output forwarding ended before the stream closed",
+    );
     const result = JSON.parse(stdout.trimEnd().split("\n").at(-1) ?? "");
     expect(result.timedOut).toBe(false);
     expect(result.observed.sort()).toEqual([

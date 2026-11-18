@@ -12,7 +12,7 @@ import { NO_BACKGROUND_TASKS } from "../pass-command.ts";
 import { refreshAccountIdentityBeforeSpawn } from "./identity.ts";
 
 import { driverRuntime } from "./runtime.ts";
-import { prepareQuotaSpawn } from "../quota/index.ts";
+import { prepareQuotaSpawn, reportPreparedQuotaSpawn } from "../quota/index.ts";
 
 import { DRIVER_REPORT_VARIABLE } from "../../../../../shared/driver-report.ts";
 import {
@@ -180,6 +180,7 @@ export async function runRepairPass(
   // Reuse the Claude session argument handling without applying quota
   // accounting to repairs.
   const prepared = prepareQuotaSpawn(agent, env);
+  reportPreparedQuotaSpawn(agent, prepared);
   // Re-checked HERE, after the identity refresh above, not only by the
   // caller before this function was invoked: that refresh is itself an await
   // a mailbox directive can land during, so the caller's own pre-dispatch
