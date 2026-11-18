@@ -112,7 +112,7 @@ export function openShared(
  */
 async function addEndedLaunches(
   ctx: SharedContext,
-  forge: ForgeRead,
+  forge: Readonly<ForgeRead>,
   records: readonly ReadRecord[],
   claims: DriveClaims,
   nowMs: number,
@@ -139,7 +139,7 @@ async function addEndedLaunches(
 /** This host's launch records whose claims may still owe an end, by the pull request outside the open drives they name. */
 function endedLaunches(
   slug: string,
-  forge: ForgeRead,
+  forge: Readonly<ForgeRead>,
   records: readonly ReadRecord[],
 ): Map<number, ReadRecord[]> {
   const open = new Set(forge.drives.map((d) => d.number));
@@ -218,22 +218,32 @@ function keptEnded(
     : claims;
 }
 
+/** The launch claims of every host, and the forge's drives as this host's records and those claims settle them. */
+export interface ClaimsRead {
+  claims: DriveClaims;
+  /** The machine view of the forge's drives (`settleDrives`); the forge's read is left as the forge gave it. */
+  drives: DrivenPr[];
+}
+
 /**
  * Read the launch claims of every drive the forge gave, and the heads of
  * each whose latest re-arm failed (`failed-rearms.ts`), and settle each
  * drive's stop on a conflict by this host's records and then by another
- * host's claims. The claims are read through `reader`, the tick's comment
- * listings in the observe phase, and an ended launch's merge from the
- * claims a tick kept of it.
+ * host's claims, into a list of its own: nothing of what this host did is
+ * written into `forge`. The claims are read through `reader`, the tick's
+ * comment listings where the observe phase passes them, and an ended
+ * launch's merge from the claims a tick kept of it. When several listings
+ * are still missing, it asks for them in one bounded batch first; incomplete
+ * listings fall through to their own REST reads.
  */
 export async function readDriveClaims(
   ctx: SharedContext,
-  forge: ForgeRead,
+  forge: Readonly<ForgeRead>,
   records: readonly ReadRecord[],
-  reader: SharedRecords,
+  reader: SharedRecords = ctx.records,
   nowMs: number,
   reads: TickReads,
-): Promise<DriveClaims> {
+): Promise<ClaimsRead> {
   const reading = { ...ctx, records: reader };
   const claims: DriveClaims = forge.ok
     ? await readSharedDrives(reading, forge.drives)
@@ -246,8 +256,7 @@ export async function readDriveClaims(
     forge.open,
     records,
   );
-  forge.drives = settleDrives(ctx, weighed, records, claims);
-  return claims;
+  return { claims, drives: settleDrives(ctx, weighed, records, claims) };
 }
 
 /**

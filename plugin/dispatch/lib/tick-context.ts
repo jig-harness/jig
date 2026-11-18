@@ -20,6 +20,7 @@ import { boundAt, type TickBound } from "./sources/bounded.ts";
 import type { PreparedPriorities } from "./tick-priorities.ts";
 import type { TickReads } from "./tick-reads.ts";
 import type { RepoReport } from "./types.ts";
+import type { WorldView } from "./world-view.ts";
 
 export interface TickOptions {
   repos: string[];
@@ -34,6 +35,14 @@ export interface TickOptions {
   poolSize?: number;
   /** How long the act phase waits for another tick's act lock before it gives up, in milliseconds. */
   actLockWaitMs?: number;
+  /**
+   * What the observe phase reads the forge and the tracker through
+   * (`world-view.ts`), made once for the tick from its direct view: a caller
+   * wraps the direct view, serves from it where it holds nothing, or
+   * replaces it. The direct view when absent. Given by a caller in the same
+   * process, never from the command line or a file.
+   */
+  world?: (direct: WorldView) => WorldView;
 }
 
 /** What one repository's turn needs beyond its path. */
@@ -60,6 +69,8 @@ export interface TickContext {
   actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
+  /** What the observe phase reads the forge and the tracker through (`world-view.ts`); the direct view over `reads` when absent. */
+  world?: WorldView;
   /** Why runs again of the follow-ups the host failed are held this tick (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
   rerunsHeld?: string | null;
   /** Each repository's failure ledger book, by `owner/name`, opened by its first action. */

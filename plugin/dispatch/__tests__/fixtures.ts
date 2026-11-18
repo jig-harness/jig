@@ -567,6 +567,8 @@ export interface World {
   setIssues(nodes: Array<Record<string, unknown>>): void;
   /** From the issue listing after the `n`th on, the tracker answers with `nodes` instead: a change between a tick's reads. */
   setIssuesAfter(n: number, nodes: Array<Record<string, unknown>>): void;
+  /** The tracker's GraphQL operations the world answered so far, by name, in the order they came. */
+  trackerOps(): string[];
   /** Who made each issue's assignment, by issue number. */
   setAssigner(number: number, login: string, permission: string): void;
   setPrs(state: "open" | "merged", prs: unknown[]): void;
@@ -702,6 +704,7 @@ export function world(): World {
   });
 
   let issues: Array<Record<string, unknown>> = [];
+  const ops: string[] = [];
   const assigners = new Map<number, { login: string; permission: string }>();
   const server = Bun.serve({
     port: 0,
@@ -712,6 +715,7 @@ export function world(): World {
         variables: Record<string, unknown>;
       };
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1];
+      ops.push(op ?? "");
       // The tracker preflight's read, which every repository of the world answers.
       const data = op?.startsWith("TrackerFacet")
         ? { repository: noFacetStores(query) }
@@ -858,6 +862,7 @@ export function world(): World {
     setIssuesAfter: (after, nodes) => {
       later = { after: listings + after, nodes };
     },
+    trackerOps: () => [...ops],
     setAssigner: (number, login, permission) => {
       assigners.set(number, { login, permission });
     },

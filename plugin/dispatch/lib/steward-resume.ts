@@ -221,7 +221,7 @@ function witnessOf(
 ): boolean {
   if (competed(state, source.record, pending)) return false;
   if (pending && !sameTarget(source.record, pending)) return false;
-  return !observation.forge.drives.some(
+  return !observation.drives.some(
     (p) =>
       targetOf(source.record) === `PR #${p.number}` &&
       (["parked", "stopped-by-person"].includes(p.class) ||

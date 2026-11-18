@@ -7,10 +7,19 @@
  * fell silent, the clone's drive doctor (`sources/doctor.ts`). It hands the plan
  * one `RepoObservation`.
  *
- * Opening a repository takes its target and its configuration from the
- * tick's query of it (`forge-batch.ts`), which also lists its open pull
- * requests and their comments for the forge's read; a query that does not
- * read leaves each of these to its own read.
+ * The repository's target and configuration, the tracker's part and the
+ * forge's part (its open pull requests with their ledgers, its merges) are
+ * read through the tick's world view (`world-view.ts`), whose facts carry
+ * their freshness class. The launch claims (the shared records), Control's
+ * reads and the board read the forge directly. The forge's drives as this
+ * host's launch records and every host's claims settle them are the
+ * machine view, `RepoObservation.drives`, kept apart from the forge's read:
+ * nothing of what this host did is written into a fact the view returned.
+ *
+ * In the direct view, opening a repository takes its target and its
+ * configuration from the tick's query of it (`forge-batch.ts`), which also
+ * lists its open pull requests and their comments for the forge's read; a
+ * query that does not read leaves each of these to its own read.
  *
  * Every repository is observed at once, and within one the sources that do
  * not depend on each other are read side by side: the tracker beside the
@@ -38,13 +47,7 @@
  * tick still plans on what it read, writes its receipt and lets its locks
  * go in time; the next tick reads the rest.
  */
-import { type Pool, pool as proofPool } from "./pool.ts";
-import { planMergeReader } from "./sources/plan-merges.ts";
-import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
-import {
-  type IssueKeys,
-  issueKeysOf,
-} from "../../skills/do-item/scripts/lib/tracker/keys.ts";
+import type { IssueKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { heldPullRequests } from "./actions/labels.ts";
 import {
@@ -59,10 +62,8 @@ import {
   sampleThreads,
   tickThreadReader,
 } from "./expectations.ts";
-import { defaultBranchConfig, repoTarget } from "./forge.ts";
 import type { LabelConfig } from "./labels.ts";
 import type { ReadRecord } from "./launches.ts";
-import { endedPassOver } from "./actions/pickup-hold.ts";
 import { type MachineRepository, machineRepository } from "./machine-config.ts";
 import { previousFollowupSince } from "../receipts.ts";
 import type {
@@ -71,12 +72,7 @@ import type {
   SessionsReader,
   SessionsReport,
 } from "./runtime/port.ts";
-import {
-  branchPattern,
-  followupCommandOn,
-  readSection,
-  trackerConfigOf,
-} from "./section.ts";
+import { branchPattern, followupCommandOn, readSection } from "./section.ts";
 import { type PhaseTimer, settled } from "./phase-timer.ts";
 import {
   type RepoReflection,
@@ -89,11 +85,10 @@ import {
   type SharedContext,
 } from "./shared-launches.ts";
 import { observeContention } from "./sources/contention.ts";
+import type { FilesObservation } from "./sources/pr-files.ts";
 import { type HolderReadings, readHolders } from "./sources/doctor.ts";
 import type { readDrives } from "./sources/ledgers.ts";
-import { batchSafePickups } from "./queue-batch-areas.ts";
-import { slotTable } from "./accounts.ts";
-import type { ServedPerson } from "./serve-config.ts";
+import { pickupHeadroom } from "./tick-trackers.ts";
 import {
   CUT_AT_BOUND,
   cutRead,
@@ -105,38 +100,31 @@ import {
   type TickBound,
   within,
 } from "./sources/bounded.ts";
-import { readPickups } from "./sources/tracker.ts";
-import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
-import { type ForgeRead, readForge } from "./tick-forge.ts";
+import type { ForgeRead } from "./tick-forge.ts";
+import type { Tracked } from "./tick-tracker.ts";
 import {
-  scopeOf,
-  trackerDefaultKey,
-  unlabeledModeOf,
-} from "./sources/served-repo.ts";
+  type ConfigurationOutcome,
+  type TargetOutcome,
+  type WorldView,
+  worldOf,
+} from "./world-view.ts";
 import { lowBudget, type TickReads, type TickBudget } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
-import {
-  type Failure,
-  failed,
-  ok,
-  type Outcome,
-} from "../../shared/outcome.ts";
+import { type Failure, failed, type Outcome } from "../../shared/outcome.ts";
 import { clearsByWaiting } from "../../shared/outbound/failure.ts";
 import {
-  combinedFailure,
   lastForgeReading,
   readFailureOf,
   readFailureOfError,
 } from "./read-failures.ts";
 import type {
-  ClaimedItem,
   DispatchSection,
+  DrivenPr,
   RepoPhase,
   RepoReport,
   RepoTarget,
-  WantedItem,
 } from "./types.ts";
 import { currentIso, isoFromMs } from "../../shared/time.ts";
 import { observeTestLockWaits } from "./test-lock-waits.ts";
@@ -151,6 +139,8 @@ export interface ObserveContext {
   records: ReadRecord[];
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
+  /** What the forge and the tracker are read through (`world-view.ts`); the direct view over `reads` when absent. */
+  world?: WorldView | undefined;
   /** The tick's bound: when it must have ended, less its receipt's time, and the signal that fires then; absent for a tick no launcher bounds. */
   bound?: TickBound;
 }
@@ -173,21 +163,6 @@ export interface OpenedRepo {
   reflection: RepoReflection["reflection"];
 }
 
-/** What the tracker gives one repository's tick. */
-export interface Tracked {
-  servedPolicy?: import("./sources/served.ts").ServedPolicy;
-  keys: IssueKeys | null;
-  /** The configured adapter (`issue_tracker.adapter`); `null` when the tracker configuration does not read. */
-  adapter: string | null;
-  /** For GitHub Issues, the repository the issues are in (`owner/name`); `null` for any other tracker. */
-  issueRepository: string | null;
-  pickups: WantedItem[];
-  /** `null` when the claimed items could not be read. */
-  claimed: ClaimedItem[] | null;
-  /** The tracker opened for the read, for the pickups' fresh reads; `null` when none was. */
-  tracker: Tracker | null;
-}
-
 /** Everything one repository's observe phase read, handed to its plan, act and label phases. */
 export interface RepoObservation {
   /** Cached forge budget from this tick, for optional act-phase evidence reads. */
@@ -199,11 +174,21 @@ export interface RepoObservation {
   shared: TickShared;
   /** The shared records as the forge's login, for the stages that claim through them. */
   ctx: SharedContext;
+  /** What the forge said: the world view's read, never rewritten by what this host did. */
   forge: ForgeRead;
+  /**
+   * The machine view of the forge's drives: each of `forge.drives` as the
+   * plan reads it once this host's launch records and every host's claims
+   * settle it (`settleDrives`). Every stage after the observe phase plans
+   * from these.
+   */
+  drives: DrivenPr[];
   claims: DriveClaims;
   join: JoinTargets;
   sessions: SessionsReport;
   serialized: Contention;
+  /** Changed-file paths and their freshness, kept in memory for planning. */
+  prFiles?: FilesObservation;
   /** The pull requests a person's hold label keeps every stage off. */
   held: Set<number>;
   /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
@@ -215,10 +200,12 @@ export interface RepoObservation {
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
 export async function openRepo(
   path: string,
-  context: Pick<ObserveContext, "options" | "nowMs" | "reads" | "bound">,
+  context: Pick<
+    ObserveContext,
+    "options" | "nowMs" | "reads" | "bound" | "world"
+  >,
 ): Promise<OpenedRepo | RepoReport> {
   const { options, nowMs } = context;
-  const { pool } = context.reads;
   const passed = (): RepoReport => {
     const cut = passedRead("this repository was opened");
     return refusedBy(
@@ -230,22 +217,16 @@ export async function openRepo(
   };
   if (ended(context.bound)) return passed();
   const entry = machineRepository(options.machine ?? null, path);
-  // The tick's query of the repository, else its view and its file read one by one.
-  const queried = await context.reads.repository(path);
-  // The one-by-one reads are not started once the bound has ended.
-  if (!queried.ok && ended(context.bound)) return passed();
-  let target: Awaited<ReturnType<typeof repoTarget>>;
+  // The world view's repository facts: the tick's query of it, else its view and its file read one by one.
+  const world = worldOf(context);
+  let target: TargetOutcome;
   try {
-    target = queried.ok
-      ? ok(queried.value.target)
-      : await pool.run(() =>
-          heldRead(context.bound, "this repository was identified", () =>
-            repoTarget(path),
-          ),
-        );
+    target = await heldTo(() => world.target(path), context.bound);
   } catch (error) {
+    if (ended(context.bound)) return passed();
     target = failed("unreadable", failureText(error), error);
   }
+  if (!target.ok && target.failure.code === "passed") return passed();
   if (!target.ok)
     return refusedBy(
       path,
@@ -253,8 +234,8 @@ export async function openRepo(
       target.failure,
       nowMs,
     );
-  const repo: RepoTarget = target.value;
-  let config: Awaited<ReturnType<typeof defaultBranchConfig>>;
+  const repo: RepoTarget = target.value.value;
+  let config: ConfigurationOutcome;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
   const unread = (why: string, cause?: Failure): RepoReport => ({
     ...refusedBy(
@@ -266,18 +247,13 @@ export async function openRepo(
     slug: repo.slug,
   });
   try {
-    config = queried.ok
-      ? ok(queried.value.config)
-      : await pool.run(() =>
-          heldRead(context.bound, "its dispatch section was read", () =>
-            defaultBranchConfig(repo),
-          ),
-        );
+    config = await heldTo(() => world.configuration(path, repo), context.bound);
   } catch (error) {
+    if (ended(context.bound)) return passed();
     return unread(failureText(error));
   }
   if (!config.ok) return unread(config.failure.reason, config.failure);
-  const file = config.value;
+  const file = config.value.value;
   const read = readSection(file, where);
   if (!read.ok) return unread(failureText(read.failure.reason));
   const { values, section } = read.value;
@@ -373,58 +349,103 @@ export async function observeRepo(
   const trackerReport = side();
   const forgeReport = side();
 
-  // The forge: the open pull requests and their ledgers, the merges, and the launch claims of every host.
+  // The world view: the tracker, and the forge's open pull requests and their ledgers and its merges.
+  const world = worldOf(context);
   const labels = section.labels.enabled ? section.labels : null;
   const shared = openShared(repo.slug, opened.owner, reads.comments);
   let tracked: Tracked;
   let forge: ForgeRead;
   try {
     [tracked, forge] = await settled(
-      timer.time("tracker", () =>
-        pool.run(() =>
-          readTracker(
-            values,
-            repo,
-            section,
-            trackerReport,
-            where,
-            context.bound,
-            opened.stages.has("pickup")
-              ? (context.options.machine?.serve ?? [])
-              : [],
-            context.options.machine?.serveDefaults,
-            nowMs,
-            context.options.machine == null ||
-              slotTable(
-                context.options.machine.accounts,
-                records,
+      timer.time("tracker", async () => {
+        try {
+          const fact = await heldTo(
+            () =>
+              world.tracker({
+                values,
+                repo,
+                section,
+                report: trackerReport,
+                where,
+                people: opened.stages.has("pickup")
+                  ? (context.options.machine?.serve ?? [])
+                  : [],
+                serveDefaults: context.options.machine?.serveDefaults,
                 nowMs,
-                undefined,
-                context.weights,
-              ).some(
-                (s) =>
-                  s.held < s.account.maxPerAccount &&
-                  s.wall === null &&
-                  !s.wallUnrecorded &&
-                  (s.weight.configured ?? 0) > 0,
-              ),
-            reads,
-            records,
-            opened.tracker,
-          ),
-        ),
-      ),
-      timer.time("forge", () =>
-        readForge(
-          repo,
-          forgeReport,
-          section,
-          labels,
-          nowMs,
-          shared.records,
-          reads,
-        ),
-      ),
+                headroom: pickupHeadroom(context, records),
+                records,
+                preparedTracker: opened.tracker,
+              }),
+            context.bound,
+          );
+          // Planning orders the pickups for this host: it gets its own copy, never the view's fact.
+          return {
+            ...fact.value,
+            pickups: [...fact.value.pickups],
+            claimed: fact.value.claimed && [...fact.value.claimed],
+          };
+        } catch (error) {
+          if (context.bound?.signal.aborted !== true) throw error;
+          // The bound ended the read: a failed tracker reading, beside the forge's facts.
+          trackerReport.records.push({
+            record: "tracker",
+            source: where,
+            ok: false,
+            detail: cutRead("the tracker was read").failure.reason,
+            failure: CUT_AT_BOUND,
+          });
+          const none: Tracked = {
+            keys: null,
+            adapter: null,
+            issueRepository: null,
+            pickups: [],
+            claimed: null,
+            tracker: null,
+          };
+          return none;
+        }
+      }),
+      timer.time("forge", async () => {
+        try {
+          const facts = await heldTo(
+            () =>
+              world.forge({
+                repo,
+                report: forgeReport,
+                section,
+                labels,
+                nowMs,
+                shared: shared.records,
+              }),
+            context.bound,
+          );
+          return facts.value;
+        } catch (error) {
+          if (context.bound?.signal.aborted !== true) throw error;
+          // The bound ended the read: a failed forge reading, beside the tracker's facts.
+          forgeReport.records.push({
+            record: "forge",
+            source: `gh ${repo.slug}`,
+            ok: false,
+            detail: `the pull requests cannot be read: ${cutRead("the pull requests were read").failure.reason}${lastForgeReading(repo.path, nowMs)}`,
+            failure: CUT_AT_BOUND,
+          });
+          const none: ForgeRead = {
+            ok: false,
+            open: [],
+            openReadable: false,
+            read: new Set(),
+            scoped: labels?.onlyLabeled === true,
+            inScope: new Set(),
+            disputed: new Set(),
+            created: new Map(),
+            drives: [],
+            merged: [],
+            login: null,
+          };
+          return none;
+        }
+      }),
     );
   } finally {
     // What either read before a defect stays on the report.
@@ -437,7 +458,8 @@ export async function observeRepo(
   // The launch claims of every host, beside the runtime: which of them a session holds.
   const ctx = shared.context(forge.login);
   const join = joinTargets(tracked.keys, values, forge);
-  const [claims, sessions] = await settled(
+  // The machine view beside it: the forge's drives as this host's launch records and every host's claims settle them.
+  const [{ claims, drives }, sessions] = await settled(
     timer.time("claims", () =>
       readDriveClaims(
         ctx,
@@ -458,7 +480,7 @@ export async function observeRepo(
   );
 
   const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
-  const serialized = await timer.time("observe", () =>
+  const { serialized, prFiles } = await timer.time("observe", () =>
     pool.run(async () => {
       const skipped = await optionalSkipped(reads, context.bound);
       const threads = boundedThreads(
@@ -473,7 +495,7 @@ export async function observeRepo(
         },
         repo,
         report,
-        forge.drives,
+        drives,
         sessions,
         forge.created,
         threads,
@@ -488,6 +510,7 @@ export async function observeRepo(
         report,
         {
           ...forge,
+          drives,
           heldElsewhere: heldElsewhere(claims),
           owner: ctx.owner,
         },
@@ -504,13 +527,13 @@ export async function observeRepo(
     pool.run(() =>
       ended(context.bound)
         ? Promise.resolve(
-            unstartedBoard(forge.drives, passedBefore("the board was read")),
+            unstartedBoard(drives, passedBefore("the board was read")),
           )
-        : boardHeldTo(context.bound, forge.drives, () =>
+        : boardHeldTo(context.bound, drives, () =>
             observeBoard({
               slug: repo.slug,
               values,
-              drives: forge.drives,
+              drives,
               open: forge.open,
               held,
               serialized,
@@ -520,10 +543,9 @@ export async function observeRepo(
           ),
     ),
   );
-  if (board.ok || convergedDrives(forge.drives).length > 0)
-    report.board = board;
+  if (board.ok || convergedDrives(drives).length > 0) report.board = board;
   // A silent drive's holder, read only when one fell silent.
-  const holders = forge.drives.some((d) => d.class === "silent")
+  const holders = drives.some((d) => d.class === "silent")
     ? await timer.time("observe", () =>
         pool.run(() =>
           heldRead(context.bound, "the clone's drive doctor ran", () =>
@@ -545,10 +567,12 @@ export async function observeRepo(
     shared,
     ctx,
     forge,
+    drives,
     claims,
     join,
     sessions,
     serialized,
+    ...(prFiles === undefined ? {} : { prFiles }),
     held,
     board,
     ...(holders === undefined ? {} : { holders }),
@@ -683,207 +707,6 @@ async function observeRunning(
       reason,
       ...(failure === undefined ? {} : { readFailed: true as const, failure }),
     });
-}
-
-/** The tracker's failed record, carrying the class of the call that failed it. */
-function trackerFailure(
-  where: string,
-  error: unknown,
-): RepoReport["records"][number] {
-  const failure = readFailureOfError(error);
-  return {
-    record: "tracker",
-    source: where,
-    ok: false,
-    detail: `the tracker cannot be opened: ${failureText(error)}`,
-    ...(failure === undefined ? {} : { failure }),
-  };
-}
-
-/**
- * The pool merge proofs run through, one per tick and shared by every
- * repository: the enclosing tracker read holds a slot of the tick's pool,
- * which never lends a second one to the same read, so proof chains take a
- * pool of their own, as wide as the tick's configured `poolSize`, rather
- * than waiting on it. Proof chains and ordinary reads each stay within that
- * width, so the tick's reads in flight never exceed twice it.
- */
-const proofPools = new WeakMap<Pool, Pool>();
-function proofPoolOf(tickPool: Pool): Pool {
-  let proofs = proofPools.get(tickPool);
-  if (proofs === undefined) {
-    proofs = proofPool(tickPool.size);
-    proofPools.set(tickPool, proofs);
-  }
-  return proofs;
-}
-
-/** The merge-proof reader for one repository, collecting its failures in `failures`. */
-function mergeReaderOf(
-  tracker: Tracker,
-  from: {
-    values: Record<string, unknown>;
-    repo: RepoTarget;
-    config: ReturnType<typeof trackerConfigOf>;
-    keySource: string | undefined;
-    bound: TickBound | undefined;
-  },
-  pool: Pool,
-  failures: unknown[],
-): ReturnType<typeof planMergeReader> {
-  const { values, repo, config } = from;
-  const base = (values.repository as { base_branch?: unknown } | undefined)
-    ?.base_branch;
-  return planMergeReader(tracker, {
-    root: repo.path,
-    repository: repo.slug,
-    trunk: typeof base === "string" ? base : repo.defaultBranch,
-    keySource: from.keySource ?? "(?!)",
-    trackerRepository:
-      config.adapter === "github"
-        ? (config.github.repository ?? repo.slug)
-        : undefined,
-    bodyLinkRequired:
-      (values.pull_requests as { issue_link?: unknown } | undefined)
-        ?.issue_link !== "none",
-    bound: from.bound,
-    pool,
-    onFailure: (error) => failures.push(error),
-  });
-}
-
-/** The pickup read, failed with what the merge proofs could not read. */
-function withMergeFailures<R extends { ok: boolean; detail: string }>(
-  read: R,
-  mergeFailures: readonly unknown[],
-): R {
-  if (mergeFailures.length === 0) return read;
-  const failure = combinedFailure([
-    ...(read.ok ? [] : [(read as { failure?: unknown }).failure as never]),
-    ...mergeFailures.map(readFailureOfError),
-  ]);
-  const { failure: _previousFailure, ...rest } = read as R & {
-    failure?: unknown;
-  };
-  return {
-    ...rest,
-    ok: false,
-    detail: `${read.detail}; merge proof could not be read: ${failureText(mergeFailures[0])}`,
-    ...(failure === undefined ? {} : { failure }),
-  } as R;
-}
-
-/** The served policy one repository's pickup read runs under. */
-function servedPolicyOf(
-  from: {
-    values: Record<string, unknown>;
-    repo: RepoTarget;
-    config: ReturnType<typeof trackerConfigOf>;
-    serveDefaults: Readonly<Record<string, string>> | undefined;
-  },
-  mergeEvidence: ReturnType<typeof planMergeReader>,
-): NonNullable<Tracked["servedPolicy"]> {
-  const { values, repo, config } = from;
-  const item = values.do_item as { execution_plan_block?: unknown } | undefined;
-  const scope = scopeOf(values);
-  return {
-    mergeEvidence,
-    hitl: config.labels.hitl,
-    manualOps: config.labels.manualOps,
-    ...(typeof item?.execution_plan_block === "string"
-      ? { executionPlanBlock: item.execution_plan_block }
-      : {}),
-    ...(scope === undefined ? {} : { repoScope: scope }),
-    unlabeled: unlabeledModeOf({
-      scope,
-      adapter: config.adapter,
-      team: config.team ?? "",
-      site: config.jira.site,
-      defaults: from.serveDefaults,
-      repoPath: repo.path,
-    }),
-    trackerNamespace: trackerDefaultKey(
-      config.adapter,
-      config.team ?? "",
-      config.jira.site,
-    ),
-  };
-}
-
-/** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
-async function readTracker(
-  values: Record<string, unknown>,
-  repo: RepoTarget,
-  section: DispatchSection,
-  report: RepoReport,
-  where: string,
-  bound: TickBound | undefined,
-  people: readonly ServedPerson[],
-  serveDefaults: Readonly<Record<string, string>> | undefined,
-  nowMs: number,
-  headroom: boolean,
-  reads: Pick<TickReads, "budget" | "servedViews" | "pool">,
-  records: readonly ReadRecord[],
-  preparedTracker?: Tracker,
-): Promise<Tracked> {
-  const tracked: Tracked = {
-    keys: null,
-    adapter: null,
-    issueRepository: null,
-    pickups: [],
-    claimed: null,
-    tracker: null,
-  };
-  try {
-    const config = trackerConfigOf(values, repo.slug);
-    tracked.keys = issueKeysOf(config);
-    tracked.adapter = config.adapter;
-    tracked.issueRepository =
-      config.adapter === "github" ? config.github.repository : null;
-    const tracker = preparedTracker ?? openTracker(config, repo.path);
-    const mergeFailures: unknown[] = [];
-    tracked.servedPolicy = servedPolicyOf(
-      { values, repo, config, serveDefaults },
-      mergeReaderOf(
-        tracker,
-        { values, repo, config, keySource: tracked.keys?.source, bound },
-        proofPoolOf(reads.pool),
-        mergeFailures,
-      ),
-    );
-    const reading = await readPickups(
-      () => {
-        tracked.tracker = tracker;
-        return tracker;
-      },
-      section,
-      { bound: () => facetBound(bound?.deadline), tick: bound },
-      {
-        people,
-        nowMs,
-        headroom,
-        passOver: endedPassOver(records, repo.slug, nowMs),
-        ...tracked.servedPolicy,
-        ...(reads.servedViews === undefined
-          ? {}
-          : { views: reads.servedViews }),
-      },
-    );
-    reading.read = withMergeFailures(reading.read, mergeFailures);
-    report.records.push(reading.read);
-    report.unplaced.push(...reading.unplaced);
-    tracked.pickups = await batchSafePickups(
-      repo,
-      values,
-      reading.wanted,
-      !lowBudget(await reads.budget()),
-      bound,
-    );
-    if (reading.read.ok) tracked.claimed = reading.claimed;
-  } catch (error) {
-    report.records.push(trackerFailure(where, error));
-  }
-  return tracked;
 }
 
 /**

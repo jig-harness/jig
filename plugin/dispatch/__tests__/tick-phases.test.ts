@@ -9,6 +9,7 @@
  * the optional reads are skipped. Each tick runs in a child with its own
  * home (fixtures.ts), the locks as real files in its state directory.
  */
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
@@ -28,6 +29,7 @@ import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import {
+  BASE_SHA,
   HEAD_SHA,
   ledgerComment,
   openPr,
@@ -297,6 +299,123 @@ const SERIAL_CATALOG = `areas:
     deployTier: none
     serialize: true
 `;
+
+it("reports path counts, refreshes changed comparisons and retires closed pull requests", async () => {
+  const { w } = fixture();
+  const pr = 8;
+  const open = {
+    ...openPr(pr, "contributor/topic"),
+    baseRefOid: BASE_SHA,
+    baseRef: { target: { oid: BASE_SHA } },
+  };
+  const paths = Array.from(
+    { length: 101 },
+    (_, index) => `src/file-${index}.ts`,
+  );
+  const fileCalls = () =>
+    readFileSync(join(w.dir, "gh-calls.log"), "utf8")
+      .split("\n")
+      .filter((call) => call.includes(`pulls/${pr}/files?`)).length;
+
+  w.setPrs("open", [open]);
+  w.setFiles(pr, paths);
+  const first = await w.dispatch(["--json"]);
+  expectSpawnExit(first, 0);
+  expect(fileCalls()).toBe(2);
+  expect(JSON.parse(first.stdout).repos[0].prFiles).toEqual([
+    {
+      pr,
+      status: "fresh",
+      pathCount: paths.length,
+      readAt: expect.any(String),
+      ageMs: 0,
+    },
+  ]);
+
+  const second = await w.dispatch(["--json"]);
+  expectSpawnExit(second, 0);
+  expect(fileCalls()).toBe(2);
+  expect(JSON.parse(second.stdout).repos[0].prFiles).toEqual([
+    expect.objectContaining({ pr, status: "cached", pathCount: paths.length }),
+  ]);
+
+  // Both branches may point at the same commit when the PR is retargeted.
+  w.setPrs("open", [{ ...open, baseRefName: "release" }]);
+  w.setFiles(pr, ["src/retargeted.ts"]);
+  const retargeted = await w.dispatch(["--json"]);
+  expectSpawnExit(retargeted, 0);
+  expect(fileCalls()).toBe(3);
+  expect(JSON.parse(retargeted.stdout).repos[0].prFiles).toEqual([
+    expect.objectContaining({
+      pr,
+      status: "fresh",
+      pathCount: 1,
+    }),
+  ]);
+
+  // GitHub's comparison snapshot can lag behind the live base tip.
+  w.setPrs("open", [
+    {
+      ...open,
+      baseRefName: "release",
+      baseRef: { target: { oid: "d".repeat(40) } },
+    },
+  ]);
+  w.setFiles(pr, ["src/base-advanced.ts"]);
+  const advanced = await w.dispatch(["--json"]);
+  expectSpawnExit(advanced, 0);
+  expect(fileCalls()).toBe(4);
+  expect(JSON.parse(advanced.stdout).repos[0].prFiles).toEqual([
+    expect.objectContaining({
+      pr,
+      status: "fresh",
+      pathCount: 1,
+    }),
+  ]);
+
+  const db = new Database(join(dispatchState(w), "state.sqlite"));
+  const ownKey = `forge:pr-files:${SLUG}:${pr}`;
+  const neighboringKey = `forge:pr-files:${SLUG}-neighbor:${pr}`;
+  const kept = db.query("SELECT key FROM pickup_reads WHERE key = ?");
+  try {
+    expect(kept.get(ownKey)).not.toBeNull();
+    db.query("INSERT INTO pickup_reads (key, value) VALUES (?, ?)").run(
+      neighboringKey,
+      "{}",
+    );
+  } finally {
+    db.close();
+  }
+
+  w.setPrs("open", []);
+  const closed = await w.dispatch(["--json"]);
+  expectSpawnExit(closed, 0);
+  expect(JSON.parse(closed.stdout).repos[0].prFiles).toEqual([]);
+  const closedDb = new Database(join(dispatchState(w), "state.sqlite"));
+  try {
+    expect(
+      closedDb
+        .query("SELECT key FROM pickup_reads WHERE key IN (?, ?) ORDER BY key")
+        .all(ownKey, neighboringKey),
+    ).toEqual([{ key: neighboringKey }]);
+  } finally {
+    closedDb.close();
+  }
+
+  w.setPrs("open", [
+    {
+      ...open,
+      baseRefName: "release",
+      baseRef: { target: { oid: "d".repeat(40) } },
+    },
+  ]);
+  const reopened = await w.dispatch(["--json"]);
+  expectSpawnExit(reopened, 0);
+  expect(fileCalls()).toBe(5);
+  expect(JSON.parse(reopened.stdout).repos[0].prFiles).toEqual([
+    expect.objectContaining({ pr, status: "fresh", pathCount: 1 }),
+  ]);
+}, 60_000);
 
 describe("a low budget", () => {
   /** Two converged drives on a serialized area, both conflicting, and a running one. */

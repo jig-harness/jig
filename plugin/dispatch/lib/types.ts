@@ -738,6 +738,8 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** Changed-file evidence for every open pull request, including aged or unread comparisons. */
+  prFiles?: import("./sources/pr-files.ts").PrFileSummary[];
   /** The board read's part: its converged pull requests placed in Ready to merge or wherever their reason says, or why it did not read; absent when it did not run. */
   board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
