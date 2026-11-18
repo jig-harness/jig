@@ -23,9 +23,77 @@ the [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 
 When a step calls for a fresh or separate session and the runtime cannot
 start one, prepare a concise brief for the person to run in a separate session.
-The brief names the input, the required return, and the durable record to
-update. Wait for that return; do not perform the delegated work in the
+The brief names the input, the required return, and the repository record
+to update, if any. Wait for that return; do not perform the delegated work in the
 coordinating session. This rule applies to every delegation below.
+
+## The notebook
+
+Each topic keeps its record in an **orchestration notebook**: a folder on
+this host at `$JIG_HOME/orchestrate/<topic>/` (`~/.jig/orchestrate/<topic>/`
+by default), outside every repository's working tree and never committed.
+Every agent tool reads and writes it the same way; it belongs to no agent's
+profile or memory facility. It holds:
+
+- **`state.md`**, the current state: rewritten whole at every change of state,
+  and kept to about 150 lines. Each of its sections is required, with "None."
+  under one that is empty:
+  - `## Focus`: the tracks and where each stands, with demoted tracks
+    marked as ideas (step 13);
+  - `## Waiting on the person`: each decision, numbered, with its
+    recommendation;
+  - `## Owed`: each act this session owes, with its due date;
+  - `## Running`: the delegated work in flight, and when it started;
+  - `## Cautions`: what was learned that a successor must not relearn;
+  - `## Next act`: the first thing a successor does;
+  - `## Links`: the issues, plans, pull requests and decision records the
+    topic touches, linked and never copied.
+- **`journal/YYYY-MM-DD.md`**, one file a day (UTC), only ever appended to:
+  each decision, ruling and action, with its reason. Read it only when a
+  question needs the history, never in full at start.
+
+The notebook replaces no repository record: decision records, the plan and
+the tracker stay where they are, and `state.md` links to them.
+
+Reach it through its script only, from the repository root, with the topic
+as the person gave it; the script names the folder, so "Release cadence" and
+`release-cadence` are one topic. `state` and `journal` read the text from
+standard input (a quoted here-document in a POSIX shell; in PowerShell a
+here-string piped in, after `$OutputEncoding = [Text.UTF8Encoding]::new()` so
+the text arrives as UTF-8):
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/notebook.ts" open "<topic>"
+bun "${CLAUDE_SKILL_DIR}/scripts/notebook.ts" state "<topic>"
+bun "${CLAUDE_SKILL_DIR}/scripts/notebook.ts" journal "<topic>"
+bun "${CLAUDE_SKILL_DIR}/scripts/notebook.ts" list
+```
+
+`open` creates a new topic's folder and prints the folder, the resume prompt
+for each agent tool, the journal's days and `state.md`. `state` replaces
+`state.md` whole and refuses (exit `3`, nothing written) a state missing a
+section; past 150 lines it writes and warns, and the next rewrite moves the
+history to the journal; on that refusal, add the missing section and run it
+again. `journal` appends one timestamped entry to today's file. `list` names
+each topic with when its state was written. Every command refuses (exit `4`)
+a notebook whose resolved destination lies inside a Git working tree, whether
+`JIG_HOME` lies in one or a symbolic link on the way (the `orchestrate`
+folder, the topic folder, `journal` or a day's file) leads into one; exit `1` is a folder or file that
+could not be read or written. On exit `4` or `1`, use step 12's fallback.
+
+When each part is written:
+
+1. **On start**, before step 1, run `open`. When it prints a state, resume
+   from it alone: bring back `## Waiting on the person` with its
+   recommendations, then take `## Next act`, and go on at the step the state
+   shows; read no other record to resume. When it reports a new topic, run
+   `list`, and if a listed topic looks like the one meant, ask the person
+   which it is before writing to either.
+2. **At natural pauses** (a decision recorded, an issue started, delegated
+   work returned, the person leaving), append what happened and why to the
+   journal, then rewrite `state.md`.
+3. **At handover** (step 15), rewrite `state.md` last: it is the record the
+   successor resumes from.
 
 ## Procedure
 
@@ -153,12 +221,18 @@ this session's earlier picture.
 
 ### 12. Keep a durable record
 
-At every change of state, update the tracks, decisions, issue numbers and
-what is owed in the repository or host's existing durable record facility,
-so a later session can resume. Delegate its maintenance to a separate
-session. With no such facility, use a plain file outside the repository;
-with no writable persistent facility, give the person the complete record
-to save and supply on return, and state that it has not been persisted.
+At every change of state, update the [notebook](#the-notebook) so a later
+session can resume: the tracks, decisions, issue numbers and what is owed.
+This session writes the notebook itself, since it holds the state and the
+notebook is no repository file; the repository's own records (decision
+records, the plan, the tracker) are kept by the fresh sessions above and
+linked from `state.md`. Wherever this procedure says "durable record", it
+means the notebook, which only this session writes: a brief to a fresh
+session names the repository record it updates, never the notebook.
+Where the notebook cannot be written, use a
+plain file outside the repository with the same sections; with no writable
+persistent facility, give the person the complete record to save and supply
+on return, and state that it has not been persisted.
 
 ### 13. Demote without losing what was learned
 
@@ -186,26 +260,28 @@ the context to fill. Hand over only with their agreement, never silently.
 
 Once the person agrees:
 
-1. Have step 12's record session bring the durable record up to date, so
+1. Append the handover to the journal and rewrite `state.md` (step 12), so
    it holds the current state, each decision with its date, what waits on
    the person, the acts this session still owes, the cautions learned, and
-   a first act for the successor.
+   a first act for the successor under `## Next act`.
 2. Start the successor through the host's session facility, opened in the
    surface the person works in (prefer the one this session runs in, such as
-   a chat view rather than a terminal), as a new session running
-   `/jig:orchestrate` with a directive that points at the record. Keep the
-   directive short ("resume from <record>; begin with its first act"): the
-   record stays the single source of the state, so the directive cannot
-   drift from it. Where the host has no such facility, give the person the
-   exact command to run, the runtime's agent command with that directive,
-   and wait for them to say it started. Where step 12 could persist no
-   record, tell the person to give the successor the record they saved.
+   a chat view rather than a terminal), as a new session given the resume
+   prompt `open` printed for its agent tool (`/jig:orchestrate <topic>` in
+   Claude Code). The topic alone points at the record: the successor's start
+   reads the notebook, which stays the single source of the state, so the
+   prompt cannot drift from it. Where the host has no such facility, give
+   the person the exact command to run, the runtime's agent command with
+   that prompt, and wait for them to say it started. Where step 12 could
+   persist no notebook, give the successor a directive that points at the
+   record step 12 kept instead, or tell the person to give it the record
+   they saved.
 3. After a minute or so, confirm the successor is alive: it is listed and
    its session is live, or, where the person started it, they say it is
    still running. If it is gone, start it again (or give the person the
-   command again) with a directive that says its first act may be partly
-   done, so it checks before repeating it, and repeat this confirmation
-   after every replacement. Where liveness cannot be established, a
+   command again) with the resume prompt and a line saying its first act
+   may be partly done, so it checks before repeating it, and repeat this
+   confirmation after every replacement. Where liveness cannot be established, a
    successor may still be running, so this session keeps ownership but stays
    quiescent (it sends no commands, launches nothing and updates no record)
    and tells the person; it resumes work, or goes on to step 4, only once

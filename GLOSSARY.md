@@ -598,6 +598,11 @@ make, use the entry's term instead.
   during *topic coordination*. It receives answers, issue numbers and
   demotions from the coordinating session, keeping plan-tool mechanics out
   of the person's discussion.
+- **Orchestration notebook** — the host-local record of one *topic
+  coordination*: a folder outside every repository, never committed, holding
+  the topic's current state, rewritten whole at every change, and a dated
+  journal that is only ever added to. A fresh session given only the topic
+  resumes from the state, so a handover needs no agent's private memory.
 
 - **Cause fingerprint** — a stable identity for one cause of a scheduled
   failure, built from the check or prerequisite, its scope and a normalized
