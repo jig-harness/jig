@@ -73,6 +73,17 @@ function passedBound(context: MergeContext, what: string): null {
   return null;
 }
 
+/** A proof that answered in a form that does not read is unread too, never an observed absence. */
+function unreadProof(context: MergeContext, what: string): null {
+  context.onFailure?.(
+    new OutboundError(
+      "invalid",
+      `${what} answered in a form that does not read`,
+    ),
+  );
+  return null;
+}
+
 function associationOptions(context: MergeContext) {
   const timeoutSec = secondsLeft(context.bound);
   return {
@@ -116,31 +127,40 @@ async function directFact(
     return null;
   }
   try {
-    const value = JSON.parse(result.stdout);
-    if (typeof value?.mergedAt !== "string") return null;
-    const files = await pullRequestFiles(context.repository, pr, context.bound);
-    if (!files.ok) {
-      const failure = outboundOf(files.failure);
-      if (failure !== null)
-        context.onFailure?.(new OutboundError(failure.code, failure.reason));
-      swallow(
-        files.failure,
-        "an incomplete file listing keeps the conflict edge held",
-      );
-      return null;
-    }
-    const fact = {
-      mergedAt: value.mergedAt,
-      base: value.baseRefName,
-      files: files.value,
-    };
-    if (!isMergeFact(fact)) return null;
-    writeMergeFact(context.repository, pr, fact);
-    return fact;
+    return await factFrom(context, pr, JSON.parse(result.stdout));
   } catch (error) {
     swallow(error, "unreadable merge facts leave a conflict edge held");
+    return unreadProof(context, "a merge proof");
+  }
+}
+
+/** The merge fact a direct merge view and its complete file listing prove, kept once read. */
+async function factFrom(
+  context: MergeContext,
+  pr: number,
+  value: { mergedAt?: unknown; baseRefName?: unknown } | null,
+): Promise<MergeFact | null> {
+  if (typeof value?.mergedAt !== "string")
+    return unreadProof(context, "a merge proof");
+  const files = await pullRequestFiles(context.repository, pr, context.bound);
+  if (!files.ok) {
+    const failure = outboundOf(files.failure);
+    if (failure !== null)
+      context.onFailure?.(new OutboundError(failure.code, failure.reason));
+    swallow(
+      files.failure,
+      "an incomplete file listing keeps the conflict edge held",
+    );
     return null;
   }
+  const fact = {
+    mergedAt: value.mergedAt,
+    base: value.baseRefName,
+    files: files.value,
+  };
+  if (!isMergeFact(fact)) return unreadProof(context, "a merge proof");
+  writeMergeFact(context.repository, pr, fact);
+  return fact;
 }
 
 /** The merge facts of the numbered pull requests that read as merged. */
@@ -189,13 +209,17 @@ export function planMergeReader(
           term,
           associationOptions(context),
         );
-        return found === null ? null : note(found);
+        return found === null
+          ? unreadProof(context, "a linked-pull-request search")
+          : note(found);
       },
       view: async (pr) => {
         if (ended(context.bound))
           return passedBound(context, "a linked-pull-request view");
         const found = await reads.links.view(pr, associationOptions(context));
-        if (found !== null) note([found]);
+        if (found === null)
+          return unreadProof(context, "a linked-pull-request view");
+        note([found]);
         return found;
       },
     };
