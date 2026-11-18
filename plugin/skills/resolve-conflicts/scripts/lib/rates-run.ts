@@ -12,6 +12,7 @@ import { errnoCode, swallow } from "../../../../shared/errors.ts";
 import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 import {
   type Ancestry,
+  ancestryFrom,
   type ConflictEvidence,
   type LiveEvent,
   liveEvent,
@@ -104,16 +105,8 @@ export function ancestryOf(git: Git, pr: CohortPr): Ancestry {
     head,
     `^${final[1]}`,
   ]);
-  const text = listed.stdout.toString("utf8").trim();
-  if (listed.code !== 0 || text === "") return null;
-  const rows = text.split("\n").map((line) => line.split(" "));
-  rows.push(final);
-  return {
-    commits: new Set(rows.map((r) => r[0] as string)),
-    merges: new Set(
-      rows.filter((r) => r.length > 2).map((r) => r[0] as string),
-    ),
-  };
+  if (listed.code !== 0) return null;
+  return ancestryFrom(listed.stdout.toString("utf8"), final);
 }
 
 /** The files a commit changed against its first parent, both names of a rename; null when the clone cannot tell. */

@@ -208,6 +208,26 @@ export function replayComplete(
   );
 }
 
+/**
+ * A pull request's ancestry from `git rev-list --first-parent --parents`
+ * over its head, less its merge's first parent (`listed`), and its merge
+ * commit's own `--parents` row (`landed`); null when nothing was listed.
+ */
+export function ancestryFrom(listed: string, landed: string[]): Ancestry {
+  if (listed.trim() === "") return null;
+  const rows = listed
+    .trim()
+    .split("\n")
+    .map((line) => line.split(" "));
+  rows.push(landed);
+  return {
+    commits: new Set(rows.map((r) => r[0] as string)),
+    merges: new Set(
+      rows.filter((r) => r.length > 2).map((r) => r[0] as string),
+    ),
+  };
+}
+
 /** Only this PR's ancestry counts, excluding base and imported branch history. */
 async function observeSample(
   sample: PrSample,
@@ -430,18 +450,8 @@ export function realConflictDeps(
         ],
         gitOpts,
       );
-      if (result.code !== 0 || result.stdout.trim() === "") return null;
-      const rows = result.stdout
-        .trim()
-        .split("\n")
-        .map((line) => line.split(" "));
-      rows.push(finalParents);
-      return {
-        commits: new Set(rows.map((r) => r[0] as string)),
-        merges: new Set(
-          rows.filter((r) => r.length > 2).map((r) => r[0] as string),
-        ),
-      };
+      if (result.code !== 0) return null;
+      return ancestryFrom(result.stdout, finalParents);
     },
     async noForcePush(sample) {
       const query = `query($owner:String!,$name:String!,$pr:Int!){repository(owner:$owner,name:$name){pullRequest(number:$pr){headRefOid timelineItems(first:1,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{__typename}}}}}`;

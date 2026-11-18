@@ -122,6 +122,30 @@ function rebasedFrom(pr: CohortPr, commit: FirstParent): boolean {
 }
 
 /**
+ * The first-parent commits `pr` accounts for, newest first: its merge commit
+ * at `at`, and, when that commit has one parent, the commits before it that
+ * are its branch's commits rebased, up to its commit count, stopping at one
+ * `taken` by another pull request.
+ */
+function commitsOf(
+  pr: CohortPr,
+  firstParents: readonly FirstParent[],
+  at: number,
+  taken: (commit: FirstParent) => boolean,
+): string[] {
+  const last = firstParents[at] as FirstParent;
+  const commits = [last.commit];
+  if (last.parents.length !== 1) return commits;
+  for (const next of firstParents.slice(at + 1)) {
+    if (commits.length >= pr.commitCount) break;
+    if (next.parents.length !== 1 || taken(next) || !rebasedFrom(pr, next))
+      break;
+    commits.push(next.commit);
+  }
+  return commits;
+}
+
+/**
  * Each pull request's first-parent commits, newest first, and the commits
  * no pull request accounts for. A pull request accounts for its merge
  * commit, and, when that commit has one parent and the branch had more than
@@ -143,21 +167,9 @@ export function mapFirstParents(
     const at =
       pr.mergeCommit === null ? undefined : position.get(pr.mergeCommit);
     if (at === undefined) continue;
-    const last = firstParents[at] as FirstParent;
-    const commits = [last.commit];
-    if (last.parents.length === 1)
-      for (let i = at + 1; commits.length < pr.commitCount; i++) {
-        const next = firstParents[i];
-        if (
-          next === undefined ||
-          next.parents.length !== 1 ||
-          merges.has(next.commit) ||
-          owner.has(next.commit) ||
-          !rebasedFrom(pr, next)
-        )
-          break;
-        commits.push(next.commit);
-      }
+    const taken = (c: FirstParent) =>
+      merges.has(c.commit) || owner.has(c.commit);
+    const commits = commitsOf(pr, firstParents, at, taken);
     for (const commit of commits) owner.set(commit, pr.number);
     byPr.set(pr.number, commits);
   }
@@ -202,6 +214,39 @@ export interface RatesInput {
   commitFiles: (commit: string) => string[] | null;
 }
 
+/**
+ * The files a pull request counts for: the forge's list and each of its
+ * first-parent commits' files. `cut` when the forge's list was cut and no
+ * commit of its is in the clone to complete it.
+ */
+function filesOfPr(
+  pr: CohortPr,
+  commits: readonly string[],
+  commitFiles: RatesInput["commitFiles"],
+): { files: Set<string>; cut: boolean } {
+  const local = commits.map(commitFiles);
+  const files = new Set([...pr.files, ...local.flatMap((l) => l ?? [])]);
+  return { files, cut: pr.filesCut && local.every((l) => l === null) };
+}
+
+/** Count one pull request toward `path`: an unknown one apart from both counts. */
+function countPath(
+  byPath: Map<string, PathRate>,
+  path: string,
+  observation: Observation,
+): void {
+  const rate = byPath.get(path) ?? {
+    path,
+    merged: 0,
+    conflicted: 0,
+    unknown: 0,
+  };
+  byPath.set(path, rate);
+  if (observation === "unknown") rate.unknown += 1;
+  else rate.merged += 1;
+  if (observation === "conflicted") rate.conflicted += 1;
+}
+
 /** The rates of one window. */
 export function buildRates(input: RatesInput): Rates {
   const { evidence } = input;
@@ -216,24 +261,9 @@ export function buildRates(input: RatesInput): Rates {
     const observation = observe(pr, evidence, input.ancestry(pr), replayed);
     counts[observation] += 1;
     const commits = mapped.byPr.get(pr.number) ?? [];
-    const local = commits.map(input.commitFiles);
-    const files = new Set(pr.files);
-    for (const list of local) for (const f of list ?? []) files.add(f);
-    if (pr.filesCut && local.every((l) => l === null)) counts.filesCut += 1;
-    for (const path of files) {
-      const rate = byPath.get(path) ?? {
-        path,
-        merged: 0,
-        conflicted: 0,
-        unknown: 0,
-      };
-      byPath.set(path, rate);
-      if (observation === "unknown") rate.unknown += 1;
-      else {
-        rate.merged += 1;
-        if (observation === "conflicted") rate.conflicted += 1;
-      }
-    }
+    const { files, cut } = filesOfPr(pr, commits, input.commitFiles);
+    if (cut) counts.filesCut += 1;
+    for (const path of files) countPath(byPath, path, observation);
     pullRequests.push({
       number: pr.number,
       mergedAt: pr.mergedAt,

@@ -40,7 +40,7 @@
  * listing holds), is a failure value: the tick then reads the same facts one
  * by one, as it would without this.
  */
-import { isRecord } from "../../shared/guards.ts";
+import { isRecord, valueAt } from "../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import {
@@ -53,7 +53,7 @@ import {
 } from "../../shared/outbound/paging.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { failedBy, outboundOf } from "../../shared/outbound/failure.ts";
-import { ghRunFailure } from "../../shared/outbound/github.ts";
+import { graphqlAnswer } from "../../shared/outbound/github.ts";
 import { checksFail } from "./automation.ts";
 import {
   cutRead,
@@ -271,11 +271,7 @@ function partial(reason: string): Read<never> {
   return failed("unreadable", reason);
 }
 
-function field(value: unknown, ...path: string[]): unknown {
-  let at = value;
-  for (const key of path) at = isRecord(at) ? at[key] : undefined;
-  return at;
-}
+const field = valueAt;
 
 const text = (v: unknown): v is string => typeof v === "string";
 
@@ -459,27 +455,14 @@ function configOf(repository: unknown): Read<string | null> {
 }
 
 /** One query's answer, run in `cwd` where it names the repository by the checkout. */
-async function graphql(args: string[], cwd?: string): Promise<Asked<unknown>> {
-  const began = currentMs();
-  const r = await ghCall(["api", "graphql", ...args], {
-    stderr: "pipe",
-    env: ghRepoEnv(),
-    ...(cwd === undefined ? {} : { cwd }),
-  });
-  const failure = ghRunFailure(r, currentMs() - began);
-  if (failure !== null) {
-    const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    return failedBy(
-      failure.code === "too-costly" ? "too-costly" : "unreadable",
-      failure,
-      `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-    );
-  }
-  try {
-    return ok(JSON.parse(r.stdout));
-  } catch (error) {
-    return failed("unreadable", "the query's answer is not JSON", error);
-  }
+function graphql(args: string[], cwd?: string): Promise<Asked<unknown>> {
+  return graphqlAnswer(() =>
+    ghCall(["api", "graphql", ...args], {
+      stderr: "pipe",
+      env: ghRepoEnv(),
+      ...(cwd === undefined ? {} : { cwd }),
+    }),
+  );
 }
 
 /** One page of the repository's query, as the forge answered it in the checkout at `path`. */

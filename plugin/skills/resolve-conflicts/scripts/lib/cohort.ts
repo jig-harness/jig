@@ -19,12 +19,11 @@
  * it stops is cut, and does not read: a cohort read in part would count too
  * few pull requests for the paths it missed.
  */
-import { isRecord } from "../../../../shared/guards.ts";
+import { isRecord, isString, valueAt } from "../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
-import { failedBy } from "../../../../shared/outbound/failure.ts";
-import { ghRunFailure } from "../../../../shared/outbound/github.ts";
+import { graphqlAnswer } from "../../../../shared/outbound/github.ts";
 import { readShrinking } from "../../../../shared/outbound/paging.ts";
-import { currentMs, isoFromMs, parseMs } from "../../../../shared/time.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 import { ghCall, ghRepoEnv } from "../../../drive-pr/scripts/lib/proc.ts";
 
 export const COHORT_SCHEMA = "merged-pr-cohort/v1";
@@ -130,13 +129,8 @@ export type AskCohortPage = (
   size: number,
 ) => Promise<Outcome<unknown, "unreadable" | "too-costly">>;
 
-function field(value: unknown, ...path: string[]): unknown {
-  let at = value;
-  for (const key of path) at = isRecord(at) ? at[key] : undefined;
-  return at;
-}
-
-const text = (v: unknown): v is string => typeof v === "string";
+const field = valueAt;
+const text = isString;
 const instant = (v: unknown): v is string =>
   text(v) && Number.isFinite(parseMs(v));
 
@@ -410,14 +404,9 @@ const inWindow = (pr: CohortPr, since: number | null, until: number | null) => {
  * the kept listing holds where this one did not reach. `cut` when the listing
  * reaches its bound first, `unreadable` when a page does not read.
  */
-export async function readCohort(
-  input: CohortInput,
-): Promise<Outcome<Cohort, CohortCode>> {
-  const { since, until, now, ask } = input;
-  const size = input.pageSize ?? COHORT_PAGE;
-  const limit = input.limit ?? COHORT_LIMIT;
-  const kept = parseCohortCache(input.cache);
-  const walk: Walk = {
+/** A fresh walk of the listing. */
+function startWalk(): Walk {
+  return {
     repository: null,
     defaultBranch: null,
     listed: new Map(),
@@ -427,6 +416,16 @@ export async function readCohort(
     stopAt: Number.NEGATIVE_INFINITY,
     reusing: false,
   };
+}
+
+/** Page through the listing until it stops; `cut` at the bound, `unreadable` when a page does not read. */
+async function walkListing(
+  input: CohortInput,
+  kept: CohortCache | null,
+): Promise<Outcome<Walk, CohortCode>> {
+  const size = input.pageSize ?? COHORT_PAGE;
+  const limit = input.limit ?? COHORT_LIMIT;
+  const walk = startWalk();
   let after: string | null = null;
   for (;;) {
     if (walk.count >= limit)
@@ -434,23 +433,34 @@ export async function readCohort(
         "cut",
         `the merged pull request listing reached its bound of ${limit} pull requests before it reached the window's start`,
       );
-    const page = await askPage(ask, after, Math.min(size, limit - walk.count));
+    const page = await askPage(
+      input.ask,
+      after,
+      Math.min(size, limit - walk.count),
+    );
     if (!page.ok) return page;
-    const done = takePage(walk, page.value, kept, since);
+    const done = takePage(walk, page.value, kept, input.since);
     if (!done.ok) return done;
-    if (done.value) break;
+    if (done.value) return ok(walk);
     after = page.value.next;
   }
+}
+
+/** The cohort a complete walk and the kept listing give together. */
+function cohortOf(
+  walk: Walk,
+  kept: CohortCache | null,
+  input: CohortInput,
+): Cohort {
+  const { since, until } = input;
   const repository = walk.repository as string;
   const all = new Map<number, CohortPr>();
-  if (walk.reusing && kept !== null)
-    for (const pr of kept.prs)
-      if (inWindow(pr, since, null)) all.set(pr.number, pr);
-  for (const [n, pr] of walk.listed)
-    if (inWindow(pr, since, null)) all.set(n, pr);
+  const sources = walk.reusing && kept !== null ? [kept.prs] : [];
+  for (const pr of [...sources.flat(), ...walk.listed.values()])
+    if (inWindow(pr, since, null)) all.set(pr.number, pr);
   const keep = [...all.values()].sort((a, b) => a.number - b.number);
   const prs = keep.filter((pr) => inWindow(pr, since, until));
-  return ok({
+  return {
     repository,
     defaultBranch: walk.defaultBranch,
     prs,
@@ -465,10 +475,23 @@ export async function readCohort(
       schema: COHORT_SCHEMA,
       repository,
       since: since === null ? null : isoFromMs(since),
-      listedAt: isoFromMs(now),
+      listedAt: isoFromMs(input.now),
       prs: keep,
     },
-  });
+  };
+}
+
+/**
+ * The cohort of the window `[since, until)`: what the listing reads, and what
+ * the kept listing holds where this one did not reach. `cut` when the listing
+ * reaches its bound first, `unreadable` when a page does not read.
+ */
+export async function readCohort(
+  input: CohortInput,
+): Promise<Outcome<Cohort, CohortCode>> {
+  const kept = parseCohortCache(input.cache);
+  const walk = await walkListing(input, kept);
+  return walk.ok ? ok(cohortOf(walk.value, kept, input)) : walk;
 }
 
 /**
@@ -476,37 +499,23 @@ export async function readCohort(
  * at `cwd`, whose repository the forge client's `{owner}` and `{repo}` name.
  */
 export function askCohortPage(cwd: string): AskCohortPage {
-  return async (after, size) => {
-    const began = currentMs();
-    const r = await ghCall(
-      [
-        "api",
-        "graphql",
-        "-f",
-        `query=${QUERY}`,
-        "-F",
-        "owner={owner}",
-        "-F",
-        "name={repo}",
-        "-F",
-        `first=${size}`,
-        ...(after === null ? [] : ["-f", `after=${after}`]),
-      ],
-      { stderr: "pipe", env: ghRepoEnv(), cwd },
+  return (after, size) =>
+    graphqlAnswer(() =>
+      ghCall(
+        [
+          "api",
+          "graphql",
+          "-f",
+          `query=${QUERY}`,
+          "-F",
+          "owner={owner}",
+          "-F",
+          "name={repo}",
+          "-F",
+          `first=${size}`,
+          ...(after === null ? [] : ["-f", `after=${after}`]),
+        ],
+        { stderr: "pipe", env: ghRepoEnv(), cwd },
+      ),
     );
-    const failure = ghRunFailure(r, currentMs() - began);
-    if (failure !== null) {
-      const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-      return failedBy(
-        failure.code === "too-costly" ? "too-costly" : "unreadable",
-        failure,
-        `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-      );
-    }
-    try {
-      return ok(JSON.parse(r.stdout));
-    } catch (error) {
-      return failed("unreadable", "the listing's answer is not JSON", error);
-    }
-  };
 }
