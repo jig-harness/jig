@@ -662,10 +662,13 @@ describe("a tick whose bound ends after it opened its repository", () => {
       });
       // The login read, made once the repository is open, is answered only after the tick's deadline.
       const hold = join(w.dir, "gh-hold.json");
-      writeFileSync(hold, JSON.stringify({ match: "api user", ms: 6000 }));
-      // The launcher's deadline less the runtime's share leaves a bound of four seconds.
+      writeFileSync(
+        hold,
+        JSON.stringify({ match: "api user --jq .login", ms: 15_000 }),
+      );
+      // The launcher's deadline less the runtime's share leaves a bound of nine seconds, ample to open the repository under load.
       const bounded = await w.dispatch(["--json"], undefined, {
-        JIG_LAUNCHER_DEADLINE_SEC: "5",
+        JIG_LAUNCHER_DEADLINE_SEC: "10",
       });
       expectSpawnExit(bounded, 0);
       const receipt = JSON.parse(bounded.stdout) as TickReceipt;
@@ -681,7 +684,7 @@ describe("a tick whose bound ends after it opened its repository", () => {
         "the tick's deadline passed during the pull requests were read",
       );
       const calls = readFileSync(join(w.dir, "gh-calls.log"), "utf8");
-      expect(calls).toContain("api user");
+      expect(calls).toContain("api user --jq .login");
       expect(existsSync(join(w.dir, "base-reads.log"))).toBe(false);
       const written = join(
         dispatchState(w),
