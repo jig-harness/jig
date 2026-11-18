@@ -29,6 +29,7 @@ import type {
   PickupRelaunch,
   RepoReport,
   RepoTarget,
+  DispatchSection,
 } from "../types.ts";
 import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import {
@@ -39,10 +40,11 @@ import {
   replay,
   replayable,
   startRecord,
+  timeLeftMs,
   waits,
 } from "./launch.ts";
 import { holdingRecords } from "./pickup-hold.ts";
-import { currentIso } from "../../../shared/time.ts";
+import { currentIso, currentMs } from "../../../shared/time.ts";
 
 /** What a relaunch needs beyond the apply state. */
 export interface RelaunchContext {
@@ -52,6 +54,9 @@ export interface RelaunchContext {
   deadlineSec: number;
   /** Reads the tree again; `readPickupTree` unless a test gives another. */
   trees?: TreeReader;
+  section: Pick<DispatchSection, "stalledRelaunch">;
+  rerunsHeld: string | null;
+  serves: readonly string[];
 }
 
 /** Why the relaunch must not start now; `null` when what the plan read still holds. */
@@ -64,9 +69,18 @@ async function changed(
   own?: string,
 ): Promise<string | null> {
   const records = state.records.filter((r) => r.record.repo === repo.slug);
+  if (ctx.section.stalledRelaunch === "never")
+    return "dispatch.stalled_relaunch is now never";
+  if (ctx.rerunsHeld !== null)
+    return `the host health gate is failing: ${ctx.rerunsHeld}`;
   const source = records.find((r) => r.record.id === relaunch.record);
   if (source === undefined)
     return `the launch record it finishes, ${relaunch.record}, is no longer this host's`;
+  if (
+    source.record.servedPerson !== undefined &&
+    !ctx.serves.includes(source.record.servedPerson)
+  )
+    return `${source.record.servedPerson} is no longer served by this host`;
   const again = records.find(
     (r) =>
       r.record.id !== own &&
@@ -96,7 +110,11 @@ async function changed(
   if (held.kind === "unknown") return held.reason;
   if (held.kind === "running")
     return `a session started since the plan read it: ${held.workspaces.map((w) => w.path).join(", ")}`;
-  const tree = (ctx.trees ?? readPickupTree)(path);
+  const left = timeLeftMs(state);
+  const tree = (ctx.trees ?? readPickupTree)(
+    path,
+    left === null ? undefined : currentMs() + Math.max(0, left),
+  );
   if (tree.kind === "unread") return tree.why;
   return tree.head === relaunch.head
     ? null
@@ -174,6 +192,8 @@ async function relaunchOne(
     source.passTimeoutSec ?? ctx.deadlineSec,
   );
   if ("outcome" in admitted) return admitted.outcome;
+  const after = await changed(state, repo, ctx, action.target, relaunch);
+  if (after !== null) return waits(action, after, admitted.slots.account.name);
   const record = relaunchRecord(state, source, relaunch, admitted.slots);
   const started = await startRecord(state, record, admitted.slots);
   const begun = started.outcome === "launched" || started.outcome === "retried";

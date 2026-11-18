@@ -175,6 +175,7 @@ export async function actObserved(
     merged: forge.merged,
     join: observation.join,
     sessions: observation.sessions,
+    rerunsHeld: context.rerunsHeld ?? null,
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
     book,
@@ -252,6 +253,7 @@ interface ApplyInputs {
   merged: MarkedPr[];
   join: JoinTargets;
   sessions: SessionsReport;
+  rerunsHeld: string | null;
   shared: SharedContext;
   /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
   unplaced: ReadonlyMap<number, string>;
@@ -345,6 +347,7 @@ async function applyStages(
               ? {}
               : { servedPolicy: tracked.servedPolicy }),
             sessions: fresh,
+            rerunsHeld: inputs.rerunsHeld,
           });
       },
     ],

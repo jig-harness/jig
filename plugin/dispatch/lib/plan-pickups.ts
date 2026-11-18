@@ -426,7 +426,11 @@ function planClaimed(
   plan.idleNow.push(item.key);
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
-  if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
+  if (
+    (pr.step?.kind === "quiet" || pr.step?.kind === "move") &&
+    settledByPr(item.key, pr.step, plan)
+  )
+    return;
   const latest = latestPickupFor(item.key, input.launches);
   // A pass whose result the host could not write is relaunched in its tree, once the health check passes, before a person is asked; a pull request it opened moves its item first.
   const early =

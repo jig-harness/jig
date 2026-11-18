@@ -840,6 +840,18 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
   return new Set([...latest.values()].map((r) => r.record.id));
 }
 
+/** Relaunch records are durable recovery evidence: keep each head and source. */
+function relaunchAnchors(records: ReadRecord[]): Set<string> {
+  const kept = new Set<string>();
+  for (const { record } of records) {
+    if (record.relaunchOf === undefined || record.relaunchHead === undefined)
+      continue;
+    kept.add(record.id);
+    kept.add(record.relaunchOf);
+  }
+  return kept;
+}
+
 /** When an ended or died record finished; `null` for one still holding its stage. */
 function finishedAt(record: LaunchRecord, state: LaunchState): number | null {
   if (state.kind === "ended") return parseMs(state.exit.at);
@@ -856,6 +868,7 @@ export function pruneLaunches(
   const cutoff = nowMs - days * 86_400_000;
   const kept = latestRefusals(records);
   for (const id of ordinalAnchors(records)) kept.add(id);
+  for (const id of relaunchAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
   for (const id of unsettledStartups(records, settled)) kept.add(id);
   for (const latest of [

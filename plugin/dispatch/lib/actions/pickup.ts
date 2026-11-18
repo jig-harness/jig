@@ -83,6 +83,8 @@ export interface PickupContext {
   branchPattern: string;
   /** The runtime's answer read afresh, for the read just before a launch. */
   sessions: () => Promise<SessionsReport>;
+  /** Why the host's recovery gate is closed, if it is. */
+  rerunsHeld?: string | null;
 }
 
 /** Why the item must not be started now; `null` when nothing changed. */
@@ -432,6 +434,15 @@ export async function applyPickups(
   await applyRelaunches(state, repo, report, {
     sessions: ctx.sessions,
     deadlineSec: deadlineSec(ctx),
+    section: ctx.section,
+    rerunsHeld: ctx.rerunsHeld ?? null,
+    serves:
+      state.machine.serve
+        ?.map(
+          (person) =>
+            person.tracker[ctx.tracker.adapter as "github" | "linear" | "jira"],
+        )
+        .filter((person): person is string => person !== undefined) ?? [],
   });
   // A pickup that waits passes its start to the next.
   for (const action of pickupSequence(state, report, wanted))
